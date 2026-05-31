@@ -18,6 +18,7 @@ class Capability(StrEnum):
     CONTACTS = "contacts"
     LLM_PROXY = "llm_proxy"
     TELEGRAM = "telegram"
+    HTTP = "http"
 
 
 class Access(IntEnum):

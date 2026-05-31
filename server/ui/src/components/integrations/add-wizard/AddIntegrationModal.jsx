@@ -10,6 +10,18 @@ import {
     VerifyingStep as BotVerifyingStep,
 } from './BotTokenSteps.jsx';
 import { OauthCapabilitiesStep, OauthGcpSetupStep, OauthRedirectStep } from './OAuthSteps.jsx';
+import {
+    ExplainerStep as TokenExplainerStep,
+    CredentialsStep as TokenCredentialsStep,
+    ConnectingStep as TokenConnectingStep,
+} from './TokenSteps.jsx';
+
+const TOKEN_DEFAULTS = {
+    baseUrl: '',
+    headerName: 'Authorization',
+    headerTemplate: 'Bearer {token}',
+    token: '',
+};
 
 export default function AddIntegrationModal({ onClose, onAdded }) {
     const [provider, setProvider] = useState(null);
@@ -34,6 +46,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
         pending: null,
         status: null,
     });
+    const [token, setToken] = useState(TOKEN_DEFAULTS);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
@@ -144,6 +157,52 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
             setSubmitting(false);
         } catch (err) {
             setError({code: 'NETWORK', message: err?.message || 'Request failed'});
+            setSubmitting(false);
+            setStep(2);
+        }
+    };
+
+    const handleTokenSubmit = async () => {
+        setSubmitting(true);
+        setError(null);
+        setStep(3);
+        const baseUrl = token.baseUrl.trim();
+        // The backend derives the integration ID's suffix from the label, so
+        // fall back to the host when the user left the label blank.
+        const label = form.label.trim() || `HTTP · ${baseUrl}`;
+        try {
+            const resp = await fetch('/api/integrations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    slug: provider.slug,
+                    label,
+                    auth_blob: {
+                        base_url: baseUrl,
+                        header_name: token.headerName.trim() || 'Authorization',
+                        header_template: token.headerTemplate.trim() || 'Bearer {token}',
+                        token: token.token,
+                    },
+                    permissions: { http: form.permissions.http || 'r' },
+                }),
+            });
+            const body = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                setError({
+                    code: body?.error?.code || 'ERROR',
+                    message: body?.error?.message || `HTTP ${resp.status}`,
+                });
+                setSubmitting(false);
+                setStep(2);
+                return;
+            }
+            setResult(body);
+            setSubmitting(false);
+        } catch (err) {
+            setError({
+                code: 'NETWORK',
+                message: err?.message || 'Request failed',
+            });
             setSubmitting(false);
             setStep(2);
         }
@@ -274,6 +333,9 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                         onPick={(p) => {
                             setProvider(p);
                             setStep(1);
+                            if (p.authFlow === 'token') {
+                                setToken(TOKEN_DEFAULTS);
+                            }
                             if (p.authFlow === 'oauth_device') {
                                 const caps = {};
                                 const access = {};
@@ -294,6 +356,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                     <SuccessScreen
                         provider={provider}
                         form={form}
+                        token={token}
                         result={result}
                         onAddAnother={() => {
                             setProvider(null);
@@ -309,6 +372,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                                 capabilities: {}, access: {},
                                 pending: null, status: null,
                             });
+                            setToken(TOKEN_DEFAULTS);
                             setError(null);
                         }}
                         onDone={() => { onAdded?.(); }}
@@ -332,6 +396,27 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                         />
                     ) : (
                         <BotVerifyingStep />
+                    )
+                ) : provider.authFlow === 'token' ? (
+                    step === 1 ? (
+                        <TokenExplainerStep
+                            onBack={() => setProvider(null)}
+                            onNext={() => setStep(2)}
+                        />
+                    ) : step === 2 ? (
+                        <TokenCredentialsStep
+                            provider={provider}
+                            token={token}
+                            setToken={setToken}
+                            form={form}
+                            setForm={setForm}
+                            error={error}
+                            onBack={() => setStep(1)}
+                            onCancel={onClose}
+                            onSubmit={handleTokenSubmit}
+                        />
+                    ) : (
+                        <TokenConnectingStep />
                     )
                 ) : provider.authFlow === 'oauth_device' ? (
                     step === 1 ? (

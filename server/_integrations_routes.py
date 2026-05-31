@@ -44,10 +44,19 @@ def _derive_suffix_from_email(auth_blob: dict[str, Any] | None) -> str | None:
     email = auth_blob.get("email")
     if not isinstance(email, str):
         return None
-    local = email.split("@", 1)[0].lower()
-    cleaned = _SUFFIX_DASH_RUNS.sub("-", _SUFFIX_NON_ALLOWED.sub("-", local)).strip("-")
-    cleaned = cleaned[:48]
-    return cleaned or None
+    return _sanitize_suffix(email.split("@", 1)[0])
+
+
+def _sanitize_suffix(raw: str) -> str | None:
+    """Reduce arbitrary text to the supervisor's ``[a-z0-9_-]`` suffix set.
+
+    Returns ``None`` if nothing usable survives. The supervisor enforces the
+    actual format invariant — this just spares the frontend from inventing IDs.
+    """
+    cleaned = _SUFFIX_DASH_RUNS.sub(
+        "-", _SUFFIX_NON_ALLOWED.sub("-", raw.lower()),
+    ).strip("-")
+    return cleaned[:48] or None
 
 
 async def _supervisor_call(verb: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -128,7 +137,20 @@ async def handle_add_integration(request: web.Request) -> web.Response:
     if slug.startswith("llm_"):
         if "permissions" not in body:
             body["permissions"] = {}
+    elif slug == "http":
+        # http integrations have no email — derive the suffix from the label
+        # so the ID stays out of the user's mental model, same as the
+        # email-local-part derivation does for the credential providers.
+        label = body.get("label")
+        derived = _sanitize_suffix(label) if isinstance(label, str) else None
+        if not derived:
+            return error_response(
+                "BAD_REQUEST", "A label is required to name this integration.",
+            )
+        body["user_suffix"] = derived
     elif not body.get("user_suffix"):
+        # No explicit user_suffix (the bot_token / oauth_device wizard flows
+        # submit one directly) — derive it from the user's email.
         derived = _derive_suffix_from_email(body.get("auth_blob"))
         if not derived:
             return error_response(

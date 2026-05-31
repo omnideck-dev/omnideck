@@ -81,14 +81,34 @@ export const PROVIDERS = [
         ],
         baseScopes: ['openid', 'email', 'profile'],
     },
+    {
+        slug: 'http',
+        authFlow: 'token',
+        category: 'Custom',
+        title: 'HTTP API',
+        description: 'Any REST endpoint with a token',
+        icon: 'bi-plug',
+        vendor: 'the API',
+        capabilities: ['http'],
+    },
 ];
 
 export function errorCopy(error, provider) {
     const vendor = provider?.vendor ?? provider?.title ?? 'this provider';
     const isOauth = provider?.authFlow === 'oauth_device';
     const isBotToken = provider?.authFlow === 'bot_token';
+    const isToken = provider?.authFlow === 'token';
     switch (error?.code) {
         case 'AUTH':
+            if (isToken) {
+                return {
+                    title: 'The endpoint rejected the token',
+                    description:
+                        'The base URL responded but refused the token. Double-check '
+                        + 'the token value and that the header name and template match '
+                        + 'what the API expects.',
+                };
+            }
             if (isOauth) {
                 return {
                     title: `${vendor} rejected the OAuth client`,
@@ -145,6 +165,8 @@ export function slugifyEmail(email) {
     return local.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
 }
 
+// Token / bot_token integrations have no email to derive an ID from, so
+// the label becomes the user-suffix. Same sanitizer rules as slugifyEmail.
 export function slugifyLabel(label) {
     if (!label) return '';
     return label.toLowerCase()

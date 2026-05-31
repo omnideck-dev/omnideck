@@ -171,6 +171,31 @@ _LLM_OPENAI_COMPAT = CatalogEntry(
     host_paths=(),
 )
 
+_HTTP = CatalogEntry(
+    slug="http",
+    command=["python", "-m", "integrations.brokers.http_broker"],
+    capabilities={Capability.HTTP: Access.READ_WRITE},
+    static_env={},
+    env_injection={
+        # Base URL the broker scopes every request to. All paths resolve
+        # against this and the resolved host must match — that's the only
+        # thing keeping a prompt-injected agent from pointing the token
+        # at an attacker-controlled URL.
+        "base_url": "BASE_URL",
+        # Header name to attach the token under. Broker defaults to
+        # "Authorization" when absent.
+        "header_name": "AUTH_HEADER_NAME",
+        # Template for the header value; the literal "{token}" placeholder is
+        # substituted with the secret. Broker defaults to "Bearer {token}".
+        "header_template": "AUTH_HEADER_TEMPLATE",
+        "token": "TOKEN",
+    },
+    host_paths=(
+        HostPathBinding(role="downloads", env_var="DOWNLOADS_DIR", mode="write"),
+    ),
+)
+
+
 _GOOGLE_WORKSPACE = CatalogEntry(
     slug="google_workspace",
     command=["python", "-m", "integrations.brokers.google_workspace_broker"],
@@ -227,6 +252,7 @@ DEFAULT_CATALOG: dict[str, CatalogEntry] = {
     "llm_openai_compat": _LLM_OPENAI_COMPAT,
     "google_workspace": _GOOGLE_WORKSPACE,
     "telegram": _TELEGRAM,
+    "http": _HTTP,
 }
 
 
