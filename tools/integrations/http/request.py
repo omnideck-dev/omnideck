@@ -135,7 +135,7 @@ def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         "Each integration owns its base URL and auth token; you supply a path "
         "under that base URL and the token is added automatically. Paths "
         "pointing at another host are rejected. "
-        f"Available integration IDs: {ids_line}.\n\n"
+        f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"
         "    integration_id: Which configured API to call through.\n"
         "    method: HTTP method, e.g. \"GET\" or \"POST\".\n"

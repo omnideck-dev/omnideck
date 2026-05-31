@@ -46,6 +46,46 @@ class AddIntegrationModal:
         """Verify & save button on the credentials step."""
         return self.page.get_by_test_id("wizard-submit")
 
+    @property
+    def done(self) -> Locator:
+        """Done button on the success screen."""
+        return self.page.get_by_test_id("wizard-done")
+
+    # ── Token (http) flow fields ─────────────────────────────────────
+    @property
+    def base_url_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-base-url")
+
+    @property
+    def header_name_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-header-name")
+
+    @property
+    def header_template_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-header-template")
+
+    @property
+    def token_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-token")
+
+    @property
+    def label_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-label")
+
+    def fill_http(
+        self,
+        *,
+        base_url: str,
+        token: str,
+        label: str = "",
+    ) -> "AddIntegrationModal":
+        """Fill the token-flow credentials step (assumes it's visible)."""
+        self.base_url_input.fill(base_url)
+        self.token_input.fill(token)
+        if label:
+            self.label_input.fill(label)
+        return self
+
     def cancel(self) -> None:
         """Close via the footer Cancel link."""
         self.page.get_by_role("button", name="Cancel").first.click()
@@ -95,3 +135,16 @@ class IntegrationsTab:
     # ── List + detail (master-detail UI) ─────────────────────────────
     def row(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-row-{integration_id}")
+
+    def open_detail(self, integration_id: str) -> None:
+        """Click a row to open its detail pane."""
+        self.row(integration_id).click()
+
+    def label_input(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-label-input-{integration_id}")
+
+    def save_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-save-{integration_id}")
+
+    def remove_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-remove-{integration_id}")
