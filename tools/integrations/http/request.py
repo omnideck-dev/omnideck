@@ -19,45 +19,30 @@ async def http_request(
     integration_id: str,
     method: str,
     path: str,
-    query: dict[str, str | list[str]] | None = None,
-    headers: dict[str, str] | None = None,
-    body: str | dict[str, Any] | list[Any] | None = None,
+    query: dict | None = None,
+    headers: dict | None = None,
+    body: dict | None = None,
     file_path: str | None = None,
 ) -> str:
-    """Send one HTTP request through a configured token-auth integration.
+    """Make an HTTP request to a configured API and return the response.
 
-    The integration owns the base URL and the auth header — the agent
-    supplies a path that resolves against that base. Paths that resolve
-    off-host are refused server-side. The agent can include a request body
-    as a string or JSON-encodable object via ``body``, or upload a local
-    file's bytes by setting ``file_path`` (mutually exclusive with ``body``).
+    The integration owns the base URL and the auth token; you supply a path
+    that resolves against that base. Paths pointing at any other host are
+    rejected. Use ``body`` for a JSON request body, or ``file_path`` to upload
+    a local file's contents.
 
     Args:
-        integration_id: Identifier of the configured http integration to
-            call through. The token attached to the request is whichever
-            secret was bound to that integration at setup.
-        method: HTTP method. ``GET``, ``HEAD``, ``OPTIONS`` are allowed on
-            read-only integrations; ``POST``, ``PUT``, ``PATCH``, ``DELETE``
-            need a read-write integration.
-        path: Request path. Resolved against the integration's base URL —
-            absolute URLs and paths that escape the base's host are refused.
-        query: Optional query parameters. Values may be strings or lists of
-            strings (lists repeat the key in the final URL).
-        headers: Optional extra request headers. The integration's auth
-            header is attached server-side and cannot be overridden here;
-            ``Authorization`` / ``Cookie`` and similar are silently dropped.
-        body: Optional request body. Strings are sent as ``text/plain``;
-            dicts and lists are JSON-encoded with ``application/json``.
-            Mutually exclusive with ``file_path``.
-        file_path: Optional path to a local file whose bytes become the
-            request body. The content type is guessed from the extension
-            (``application/octet-stream`` fallback). Mutually exclusive
-            with ``body``.
+        integration_id: Which configured API to call through.
+        method: HTTP method, e.g. "GET" or "POST".
+        path: Path under the API's base URL, e.g. "/user/repos".
+        query: Query parameters as a flat object, e.g. {"state": "open"}.
+        headers: Extra request headers. The auth header is added automatically.
+        body: JSON request body as an object. Do not combine with file_path.
+        file_path: Local file to upload as the request body. Do not combine with body.
 
     Returns:
-        Plain text — a short status + content-type line, then either the
-        inline body or a "<n bytes written to <path>" line when the response
-        was binary or larger than the inline cap. Errors return a short notice.
+        The response status and body as text. Large or binary responses are
+        saved to a file and the path is returned instead.
     """
     if body is not None and file_path is not None:
         return "Cannot set both 'body' and 'file_path' on one request."
@@ -134,9 +119,9 @@ def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         integration_id: str,
         method: str,
         path: str,
-        query: dict[str, str | list[str]] | None = None,
-        headers: dict[str, str] | None = None,
-        body: str | dict[str, Any] | list[Any] | None = None,
+        query: dict | None = None,
+        headers: dict | None = None,
+        body: dict | None = None,
         file_path: str | None = None,
     ) -> str:
         return await http_request(
@@ -146,25 +131,21 @@ def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     _http_request.__name__ = http_request.__name__
     _http_request.__doc__ = (
-        "Send one HTTP request through a configured token-auth integration. "
-        "Each integration is scoped to a single base URL; the path you supply "
-        "is resolved against that base and paths that escape the host are "
-        "refused. The integration's auth header is attached server-side. "
-        f"Valid integration IDs: {ids_line}.\n\n"
+        "Make an HTTP request to a configured API and return the response. "
+        "Each integration owns its base URL and auth token; you supply a path "
+        "under that base URL and the token is added automatically. Paths "
+        "pointing at another host are rejected. "
+        f"Available integration IDs: {ids_line}.\n\n"
         "Args:\n"
-        "    integration_id: Which integration to send the request through.\n"
-        "    method: HTTP method (GET/HEAD/OPTIONS on read-only integrations;\n"
-        "        POST/PUT/PATCH/DELETE need read-write).\n"
-        "    path: Request path relative to the integration's base URL.\n"
-        "    query: Optional query params; values may be strings or list of strings.\n"
-        "    headers: Optional extra headers (Authorization/Cookie are stripped).\n"
-        "    body: Optional request body — string sent as text/plain, dict/list\n"
-        "        sent as JSON. Mutually exclusive with file_path.\n"
-        "    file_path: Optional local file whose bytes become the request body;\n"
-        "        content type is guessed from the extension.\n\n"
+        "    integration_id: Which configured API to call through.\n"
+        "    method: HTTP method, e.g. \"GET\" or \"POST\".\n"
+        "    path: Path under the API's base URL, e.g. \"/user/repos\".\n"
+        "    query: Query parameters as a flat object, e.g. {\"state\": \"open\"}.\n"
+        "    headers: Extra request headers. The auth header is added automatically.\n"
+        "    body: JSON request body as an object. Do not combine with file_path.\n"
+        "    file_path: Local file to upload as the body. Do not combine with body.\n\n"
         "Returns:\n"
-        "    Plain text — '<status> (<n> bytes, content-type: ...)' followed by\n"
-        "    the inline body, or a 'body written to <path>' line for binary or\n"
-        "    large responses.\n"
+        "    The response status and body as text. Large or binary responses are\n"
+        "    saved to a file and the path is returned instead.\n"
     )
     return _http_request
