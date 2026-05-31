@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ async def list_email_folders(integration_id: str) -> str:
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
+    except broker_client.IntegrationAuthFailed:
+        return auth_failed_message(integration_id)
     except broker_client.IntegrationError as exc:
         logger.warning("list_email_folders(%r) failed: %s", integration_id, exc)
         return f"Failed to list folders for {integration_id!r}: {exc}"

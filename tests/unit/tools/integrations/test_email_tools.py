@@ -649,3 +649,42 @@ async def test_download_email_attachment_reports_not_found(
         "Failed to download attachment '99' from '100': "
         "no attachment '99' in uid=100"
     )
+
+
+# ── auth-failed handling across every email tool ─────────────────────────────
+
+_AUTH_FAILED_MESSAGE = (
+    "Integration 'icloud_personal' rejected its credentials — "
+    "reconnect it in Settings to continue."
+)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_email_tools_surface_auth_failed_as_reconnect_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the broker reports the upstream rejected the credentials, every
+    email tool returns the same actionable reconnect notice rather than the
+    generic ``Failed to ...`` line — the agent can't fix an auth failure by
+    retrying, so the message points the user at Settings instead.
+
+    ``IntegrationAuthFailed`` subclasses ``IntegrationError``, so this also
+    pins the except-ordering: the specific branch must win over the generic
+    one in each tool.
+    """
+    _patch_call(monkeypatch, exc=broker_client.IntegrationAuthFailed("rejected"))
+
+    assert await list_email_folders("icloud_personal") == _AUTH_FAILED_MESSAGE
+    assert await list_email_messages("icloud_personal", "INBOX") == _AUTH_FAILED_MESSAGE
+    assert await search_email("icloud_personal", "anything") == _AUTH_FAILED_MESSAGE
+    assert await read_email_message("icloud_personal", "INBOX", "1") == _AUTH_FAILED_MESSAGE
+    assert await download_email_attachment(
+        "icloud_personal", "INBOX", "1", "2",
+    ) == _AUTH_FAILED_MESSAGE
+    assert await send_email(
+        "icloud_personal", to=["a@b.com"], subject="s", body="b",
+    ) == _AUTH_FAILED_MESSAGE
+    assert await move_email(
+        "icloud_personal", "INBOX", ["1"], "Archive",
+    ) == _AUTH_FAILED_MESSAGE
