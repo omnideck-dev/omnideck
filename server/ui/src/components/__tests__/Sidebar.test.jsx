@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
 
-const COLLAPSE_KEY = 'omnideck_sidebar_collapsed';
+const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 
 function setup(props = {}) {
     const onPanelToggle = vi.fn();

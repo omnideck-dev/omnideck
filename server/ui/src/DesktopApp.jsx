@@ -47,11 +47,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [networkViewOpen, setNetworkViewOpen] = useState(false);
     const { profilesHook, features } = useAppData();
     const [selectedProfileId, setSelectedProfileId] = useState(() => {
-        return localStorage.getItem('omnideck_profile_id') || 'omnideck';
+        return localStorage.getItem('computron_profile_id') || 'omnideck';
     });
     const handleProfileChange = useCallback((id) => {
         setSelectedProfileId(id);
-        localStorage.setItem('omnideck_profile_id', id);
+        localStorage.setItem('computron_profile_id', id);
     }, []);
 
     // Setup wizard state

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const _SETTINGS_KEY = 'omnideck_settings';
+const _SETTINGS_KEY = 'computron_settings';
 
 function _loadSavedSettings() {
     try {

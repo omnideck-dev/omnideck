@@ -17,7 +17,7 @@ export default function MobileApp({ dark, onToggleTheme }) {
 
     // Profile-based configuration — default to 'omnideck'
     const [selectedProfileId] = useState(() => {
-        return localStorage.getItem('omnideck_profile_id') || 'omnideck';
+        return localStorage.getItem('computron_profile_id') || 'omnideck';
     });
     const { addToast } = useToast();
 
