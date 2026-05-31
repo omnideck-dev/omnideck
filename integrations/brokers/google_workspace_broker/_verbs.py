@@ -28,6 +28,7 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     # Drive verbs — shared shape with the rclone broker so the agent's Drive
     # tools work uniformly against either backend.
     "drive_list": (Capability.DRIVE, Access.READ),
+    "drive_search": (Capability.DRIVE, Access.READ),
     "drive_download": (Capability.DRIVE, Access.READ),
     "drive_upload": (Capability.DRIVE, Access.READ_WRITE),
     "drive_mkdir": (Capability.DRIVE, Access.READ_WRITE),
@@ -100,6 +101,7 @@ class VerbDispatcher:
         self._handlers: dict[str, _Handler] = {}
         if self._drive is not None:
             self._handlers["drive_list"] = self._handle_drive_list
+            self._handlers["drive_search"] = self._handle_drive_search
             self._handlers["drive_download"] = self._handle_drive_download
             self._handlers["drive_upload"] = self._handle_drive_upload
             self._handlers["drive_mkdir"] = self._handle_drive_mkdir
@@ -178,6 +180,20 @@ class VerbDispatcher:
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
         return {"entries": [_drive_entry(f) for f in files]}
+
+    async def _handle_drive_search(self, args: dict[str, Any]) -> dict[str, Any]:
+        name_contains = _require_str(args, "name_contains")
+        mime_type = args.get("mime_type") or None
+        limit = _require_int(args, "limit", default=50)
+        try:
+            files = await _run_sync(
+                self._drive.search_files, name_contains, mime_type, limit,
+            )
+        except HttpError as exc:
+            raise _wrap_http_error(exc) from exc
+        # Google's index returns whatever matches up to limit. We never
+        # truncate here — only when the agent's limit is the cap.
+        return {"entries": [_drive_entry(f) for f in files], "truncated": False}
 
     async def _handle_drive_download(self, args: dict[str, Any]) -> dict[str, Any]:
         handle = _require_str(args, "handle")

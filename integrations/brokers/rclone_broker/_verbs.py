@@ -23,6 +23,7 @@ from integrations.permissions import Access, Capability, Permissions
 # so the unified Drive tool layer is backend-agnostic.
 _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     "drive_list": (Capability.DRIVE, Access.READ),
+    "drive_search": (Capability.DRIVE, Access.READ),
     "drive_download": (Capability.DRIVE, Access.READ),
     "drive_upload": (Capability.DRIVE, Access.READ_WRITE),
     "drive_mkdir": (Capability.DRIVE, Access.READ_WRITE),
@@ -72,6 +73,18 @@ def _rcd_entry(raw: dict[str, Any], parent_path: str) -> dict[str, Any]:
     }
 
 
+def _rcd_recursive_entry(raw: dict[str, Any]) -> dict[str, Any]:
+    """Project a recursive-list entry: rclone's ``Path`` is already the full handle."""
+    return {
+        "name": str(raw.get("Name", "")),
+        "handle": str(raw.get("Path", raw.get("Name", ""))),
+        "is_dir": bool(raw.get("IsDir", False)),
+        "size": int(raw.get("Size", 0) or 0),
+        "mime_type": str(raw.get("MimeType", "")),
+        "modified": str(raw.get("ModTime", "")),
+    }
+
+
 def _map_rcd_error(exc: RcdError) -> RpcError:
     """Translate an :class:`RcdError` into an :class:`RpcError` for the wire."""
     if isinstance(exc, RcdAuthError):
@@ -95,6 +108,7 @@ class VerbDispatcher:
 
         self._handlers: dict[str, _Handler] = {
             "drive_list": self._handle_drive_list,
+            "drive_search": self._handle_drive_search,
             "drive_download": self._handle_drive_download,
             "drive_upload": self._handle_drive_upload,
             "drive_mkdir": self._handle_drive_mkdir,
@@ -144,6 +158,46 @@ class VerbDispatcher:
             ]
         items = items[: max(0, limit)]
         return {"entries": [_rcd_entry(item, parent) for item in items]}
+
+    async def _handle_drive_search(self, args: dict[str, Any]) -> dict[str, Any]:
+        # rclone has no server-side search for iCloud Drive — rcd has to walk
+        # the tree itself. We ask for a full recursive list, then filter
+        # locally. The scan budget caps how many entries we'll inspect before
+        # giving up: matters on huge drives where the full recursive list
+        # could be tens of thousands of entries.
+        scan_budget = 2000
+        name_needle = _require_str(args, "name_contains").lower()
+        mime_type = args.get("mime_type") or ""
+        limit_raw = args.get("limit", 50)
+        limit = int(limit_raw) if isinstance(limit_raw, int) else 50
+        if limit <= 0:
+            return {"entries": [], "truncated": False}
+
+        result = await self._rcd.call(
+            "operations/list",
+            {"fs": _REMOTE_FS, "remote": "", "opt": {"recurse": True}},
+        )
+        items = result.get("list", [])
+
+        matches: list[dict[str, Any]] = []
+        scanned = 0
+        truncated = False
+        for item in items:
+            if scanned >= scan_budget:
+                truncated = True
+                break
+            scanned += 1
+            name = str(item.get("Name", ""))
+            if name_needle not in name.lower():
+                continue
+            if mime_type and mime_type != str(item.get("MimeType", "")):
+                continue
+            matches.append(_rcd_recursive_entry(item))
+            if len(matches) >= limit:
+                # Hit the result cap. If unscanned items remain, flag truncated.
+                truncated = scanned < len(items)
+                break
+        return {"entries": matches, "truncated": truncated}
 
     async def _handle_drive_download(self, args: dict[str, Any]) -> dict[str, Any]:
         remote_path = _validate_remote_path(_require_str(args, "handle"))

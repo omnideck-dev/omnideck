@@ -36,6 +36,7 @@ class _StubDriveClient:
         # Default canned returns.
         self.list_files_return: list[dict[str, Any]] = []
         self.list_in_parent_matching_return: list[dict[str, Any]] = []
+        self.search_files_return: list[dict[str, Any]] = []
         self.export_file_return: tuple[bytes, str, str] = (b"hello", "f.txt", "text/plain")
         self.upload_file_return: dict[str, Any] = {"id": "u1", "name": "up.txt", "mimeType": "text/plain"}
         self.create_folder_return: dict[str, Any] = {"id": "fld1", "name": "New", "mimeType": "application/vnd.google-apps.folder"}
@@ -58,6 +59,15 @@ class _StubDriveClient:
     ) -> list[dict[str, Any]]:
         self._record("list_in_parent_matching", parent_id, name_substring, limit)
         return self.list_in_parent_matching_return
+
+    def search_files(
+        self,
+        name_contains: str,
+        mime_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        self._record("search_files", name_contains, mime_type, limit)
+        return self.search_files_return
 
     def export_file(self, file_id: str) -> tuple[bytes, str, str]:
         self._record("export_file", file_id)
@@ -206,6 +216,38 @@ async def test_drive_list_path_not_found(tmp_path: Path) -> None:
     stub.paths["Missing"] = None
     with pytest.raises(RpcError, match="path not found"):
         await d.dispatch("drive_list", {"handle": "Missing"})
+
+
+# --- drive_search ----------------------------------------------------------
+
+async def test_drive_search_passes_args_to_client(tmp_path: Path) -> None:
+    d, stub = _dispatcher(tmp_path=tmp_path)
+    stub.search_files_return = [
+        {"id": "1", "name": "report.pdf", "mimeType": "application/pdf"},
+        {"id": "2", "name": "report_v2.pdf", "mimeType": "application/pdf"},
+    ]
+    result = await d.dispatch(
+        "drive_search",
+        {"name_contains": "report", "mime_type": "application/pdf", "limit": 10},
+    )
+    assert [e["name"] for e in result["entries"]] == ["report.pdf", "report_v2.pdf"]
+    assert [e["handle"] for e in result["entries"]] == ["id:1", "id:2"]
+    assert result["truncated"] is False
+    assert ("search_files", ("report", "application/pdf", 10), {}) in stub.calls
+
+
+async def test_drive_search_omits_mime_when_not_given(tmp_path: Path) -> None:
+    d, stub = _dispatcher(tmp_path=tmp_path)
+    stub.search_files_return = []
+    await d.dispatch("drive_search", {"name_contains": "x"})
+    # No mime_type → passed as None.
+    assert ("search_files", ("x", None, 50), {}) in stub.calls
+
+
+async def test_drive_search_requires_name_contains(tmp_path: Path) -> None:
+    d, _ = _dispatcher(tmp_path=tmp_path)
+    with pytest.raises(RpcError, match="name_contains"):
+        await d.dispatch("drive_search", {})
 
 
 # --- drive_download --------------------------------------------------------

@@ -185,6 +185,79 @@ async def test_drive_list_traversal_blocked() -> None:
         await d.dispatch("drive_list", {"handle": "../secret"})
 
 
+# --- drive_search --------------------------------------------------------
+
+async def test_drive_search_walks_recursively_and_filters() -> None:
+    d, rcd = _dispatcher()
+    rcd.responses["operations/list"] = {"list": [
+        {"Name": "report.pdf", "Path": "report.pdf", "IsDir": False},
+        {"Name": "photo.jpg", "Path": "photo.jpg", "IsDir": False},
+        {"Name": "Tax", "Path": "Tax", "IsDir": True},
+        {"Name": "REPORT_v2.pdf", "Path": "Tax/REPORT_v2.pdf", "IsDir": False},
+    ]}
+    result = await d.dispatch("drive_search", {"name_contains": "report"})
+    names = [e["name"] for e in result["entries"]]
+    assert names == ["report.pdf", "REPORT_v2.pdf"]
+    assert result["entries"][1]["handle"] == "Tax/REPORT_v2.pdf"
+    assert result["truncated"] is False
+    # Should have asked rcd for a recursive list of the whole drive.
+    assert rcd.calls[0] == (
+        "operations/list",
+        {"fs": "default:", "remote": "", "opt": {"recurse": True}},
+    )
+
+
+async def test_drive_search_mime_filter() -> None:
+    d, rcd = _dispatcher()
+    rcd.responses["operations/list"] = {"list": [
+        {"Name": "a.pdf", "Path": "a.pdf", "MimeType": "application/pdf"},
+        {"Name": "a.jpg", "Path": "a.jpg", "MimeType": "image/jpeg"},
+    ]}
+    result = await d.dispatch(
+        "drive_search", {"name_contains": "a", "mime_type": "application/pdf"},
+    )
+    assert [e["name"] for e in result["entries"]] == ["a.pdf"]
+
+
+async def test_drive_search_limit_truncates() -> None:
+    d, rcd = _dispatcher()
+    rcd.responses["operations/list"] = {"list": [
+        {"Name": f"file{i}.txt", "Path": f"file{i}.txt"} for i in range(10)
+    ]}
+    result = await d.dispatch(
+        "drive_search", {"name_contains": "file", "limit": 3},
+    )
+    assert len(result["entries"]) == 3
+    assert result["truncated"] is True
+
+
+async def test_drive_search_zero_limit_is_empty() -> None:
+    d, rcd = _dispatcher()
+    rcd.responses["operations/list"] = {"list": [
+        {"Name": "foo", "Path": "foo"},
+    ]}
+    result = await d.dispatch(
+        "drive_search", {"name_contains": "foo", "limit": 0},
+    )
+    assert result == {"entries": [], "truncated": False}
+
+
+async def test_drive_search_no_match() -> None:
+    d, rcd = _dispatcher()
+    rcd.responses["operations/list"] = {"list": [
+        {"Name": "foo.txt", "Path": "foo.txt"},
+    ]}
+    result = await d.dispatch("drive_search", {"name_contains": "bar"})
+    assert result["entries"] == []
+    assert result["truncated"] is False
+
+
+async def test_drive_search_requires_name_contains() -> None:
+    d, _ = _dispatcher()
+    with pytest.raises(RpcError, match="name_contains"):
+        await d.dispatch("drive_search", {})
+
+
 # --- drive_download ------------------------------------------------------
 
 async def test_drive_download_calls_copyfile_with_local_dst(tmp_path: Path) -> None:

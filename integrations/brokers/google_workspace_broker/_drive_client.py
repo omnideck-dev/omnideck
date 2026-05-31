@@ -178,6 +178,45 @@ class DriveClient:
             parent_id = files[0]["id"]
         return parent_id
 
+    def search_files(
+        self,
+        name_contains: str,
+        mime_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Search the whole drive for entries whose name contains a substring.
+
+        Drive's ``name contains`` operator is case-insensitive and runs
+        against Google's index — no client-side walk needed. ``mime_type``,
+        if given, is an exact match on the file's mimeType field.
+        """
+        safe = name_contains.replace("'", "\\'")
+        parts = [f"name contains '{safe}'", "trashed = false"]
+        if mime_type:
+            safe_mime = mime_type.replace("'", "\\'")
+            parts.append(f"mimeType = '{safe_mime}'")
+        q = " and ".join(parts)
+        results: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(results) < limit:
+            page_size = min(limit - len(results), 100)
+            resp = (
+                self._service().files()
+                .list(
+                    q=q,
+                    fields=_LIST_FIELDS,
+                    pageSize=page_size,
+                    pageToken=page_token,
+                    orderBy="folder,modifiedTime desc",
+                )
+                .execute()
+            )
+            results.extend(resp.get("files", []))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        return results[:limit]
+
     def list_in_parent_matching(
         self,
         parent_id: str,

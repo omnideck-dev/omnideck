@@ -95,8 +95,10 @@ async def get_core_tools() -> list[Callable[..., Any]]:
         from tools.integrations.drive import (
             build_drive_download_tool,
             build_drive_list_tool,
+            build_drive_search_tool,
         )
         tools.append(build_drive_list_tool(drive_ids))
+        tools.append(build_drive_search_tool(drive_ids))
         tools.append(build_drive_download_tool(drive_ids))
 
     drive_write_ids = _ids_with_access(records, Capability.DRIVE, Access.READ_WRITE)
