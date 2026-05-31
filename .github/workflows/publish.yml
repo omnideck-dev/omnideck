@@ -1,4 +1,4 @@
-name: Publish Multi-Arch Image
+name: CI
 
 on:
   push:
