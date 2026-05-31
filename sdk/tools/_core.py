@@ -121,4 +121,12 @@ async def get_core_tools() -> list[Callable[..., Any]]:
         tools.append(build_list_contacts_tool(contacts_ids))
         tools.append(build_search_contacts_tool(contacts_ids))
 
+    # The generic call_api tool is offered as soon as any http integration
+    # is at least readable. The broker promotes the per-call access check to
+    # read_write when the HTTP method is mutating, so a single tool covers both.
+    http_ids = _ids_with_access(records, Capability.HTTP, Access.READ)
+    if http_ids:
+        from tools.integrations.http.call_api import build_call_api_tool
+        tools.append(build_call_api_tool(http_ids))
+
     return tools
