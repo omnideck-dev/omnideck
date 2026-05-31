@@ -76,8 +76,9 @@ function formatPermissions(perms) {
         .join(', ');
 }
 
-export function SuccessScreen({ provider, form, result, onAddAnother, onDone }) {
+export function SuccessScreen({ provider, form, token, result, onAddAnother, onDone }) {
     const permsSummary = formatPermissions(result.permissions);
+    const isToken = provider.authFlow === 'token';
     return (
         <>
             <Stepper step={4} />
@@ -94,12 +95,17 @@ export function SuccessScreen({ provider, form, result, onAddAnother, onDone }) 
                                 <td>{result.id}</td>
                             </tr>
                             <tr>
-                                <td>Account</td>
-                                <td>{form.email}</td>
+                                <td>{isToken ? 'Base URL' : 'Account'}</td>
+                                <td>{isToken ? token?.baseUrl : form.email}</td>
                             </tr>
                             <tr>
                                 <td>Label</td>
-                                <td>{form.label || `${provider.title} · ${form.email}`}</td>
+                                <td>
+                                    {form.label
+                                        || (isToken
+                                            ? `HTTP · ${token?.baseUrl ?? ''}`
+                                            : `${provider.title} · ${form.email}`)}
+                                </td>
                             </tr>
                             <tr>
                                 <td>Permissions</td>

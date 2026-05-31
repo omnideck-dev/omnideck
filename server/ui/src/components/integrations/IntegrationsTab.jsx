@@ -28,6 +28,11 @@ const SLUG_META = {
         icon: 'bi-google',
         category: 'Productivity Suites',
     },
+    http: {
+        label: 'HTTP API',
+        icon: 'bi-plug',
+        category: 'Custom',
+    },
 };
 
 // Per-state visuals + helper copy. The supervisor reports the state on
@@ -341,6 +346,7 @@ const CAP_LABELS = {
     calendar: 'Calendar',
     drive: 'Drive',
     contacts: 'Contacts',
+    http: 'HTTP',
 };
 
 function permsDirty(draft, original) {
