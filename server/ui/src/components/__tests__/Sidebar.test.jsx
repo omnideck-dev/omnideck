@@ -29,7 +29,7 @@ describe('Sidebar', () => {
     it('starts expanded with the wordmark and nav labels visible', () => {
         setup();
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
-        expect(screen.getByText('COMPUTRON')).toBeInTheDocument();
+        expect(screen.getByText('OMNIDECK')).toBeInTheDocument();
         expect(screen.getByText('New chat')).toBeInTheDocument();
         expect(screen.getByText('Goals')).toBeInTheDocument();
     });
@@ -39,7 +39,7 @@ describe('Sidebar', () => {
         setup();
         await user.click(screen.getByTestId('sidebar-toggle'));
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
-        expect(screen.queryByText('COMPUTRON')).not.toBeInTheDocument();
+        expect(screen.queryByText('OMNIDECK')).not.toBeInTheDocument();
         expect(screen.queryByText('New chat')).not.toBeInTheDocument();
         expect(screen.queryByText('Goals')).not.toBeInTheDocument();
     });

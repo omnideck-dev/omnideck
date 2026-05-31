@@ -47,7 +47,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [networkViewOpen, setNetworkViewOpen] = useState(false);
     const { profilesHook, features } = useAppData();
     const [selectedProfileId, setSelectedProfileId] = useState(() => {
-        return localStorage.getItem('computron_profile_id') || 'computron';
+        return localStorage.getItem('computron_profile_id') || 'omnideck';
     });
     const handleProfileChange = useCallback((id) => {
         setSelectedProfileId(id);
@@ -165,7 +165,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 agentDispatch({
                     type: 'AGENT_STARTED',
                     agentId: turn.agentId,
-                    agentName: 'COMPUTRON',
+                    agentName: 'OMNIDECK',
                     parentAgentId: null,
                     instruction: '',
                     correlationId: null,

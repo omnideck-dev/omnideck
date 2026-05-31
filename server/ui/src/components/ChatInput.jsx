@@ -19,7 +19,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
     const profileName = selectedProfile?.name;
     const placeholder = isStreaming
         ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
-        : `Message ${profileName || 'Computron'}…`;
+        : `Message ${profileName || 'Omnideck'}…`;
 
     useEffect(() => {
         if (draft) {

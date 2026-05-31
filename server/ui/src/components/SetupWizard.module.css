@@ -108,6 +108,12 @@
     margin: 0 0 0.5rem;
 }
 
+/* The heading is focused programmatically on each step to announce it to
+   screen readers; it's not a tab stop, so suppress the default focus box. */
+.title:focus {
+    outline: none;
+}
+
 .subtitle {
     font-size: 0.85rem;
     color: var(--text-primary);

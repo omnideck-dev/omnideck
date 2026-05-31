@@ -33,7 +33,7 @@ function renderView() {
     };
 }
 
-function startAgent(dispatch, id, { name = 'computron', parent = null, instruction = '' } = {}) {
+function startAgent(dispatch, id, { name = 'omnideck', parent = null, instruction = '' } = {}) {
     dispatch({
         type: 'AGENT_STARTED',
         agentId: id,
@@ -61,7 +61,7 @@ describe('AgentActivityView', () => {
         const { dispatch } = renderView();
         startAgent(dispatch, 'a1', { instruction: 'Go to example.com' });
 
-        expect(screen.getAllByText('Computron')).toHaveLength(2); // breadcrumb + title
+        expect(screen.getAllByText('Omnideck')).toHaveLength(2); // breadcrumb + title
         expect(screen.getByText('Go to example.com')).toBeInTheDocument();
     });
 

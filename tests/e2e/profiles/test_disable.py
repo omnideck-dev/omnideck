@@ -73,7 +73,7 @@ def test_disable_default_profile_shows_inline_error(page: Page):
     """Attempting to disable the currently-set default_agent is blocked."""
     # Read current default so we can target it precisely
     settings_data = page.request.get("/api/settings").json()
-    default_id = settings_data.get("default_agent", "computron")
+    default_id = settings_data.get("default_agent", "omnideck")
 
     settings = SettingsPage(page).goto()
     settings.profiles.select(default_id)

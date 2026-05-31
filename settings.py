@@ -29,7 +29,7 @@ _SETTINGS_FILE = "settings.json"
 # the new key onto their already-persisted file.
 _DEFAULTS: dict[str, Any] = {
     "setup_complete": False,
-    "default_agent": "computron",
+    "default_agent": "omnideck",
     # Direct-connect providers: {name: {"base_url": "..."}}. Brokered
     # providers (with API keys) live in the integrations vault, not here.
     "direct_providers": {},

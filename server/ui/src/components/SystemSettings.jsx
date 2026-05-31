@@ -10,7 +10,7 @@ import ChevronRightIcon from './icons/ChevronRightIcon';
 export default function SystemSettings() {
     const [providers, setProviders] = useState([]);
     const [profiles, setProfiles] = useState([]);
-    const [settings, setSettings] = useState({ default_agent: 'computron' });
+    const [settings, setSettings] = useState({ default_agent: 'omnideck' });
     const [loading, setLoading] = useState(true);
     const [visionAdvancedOpen, setVisionAdvancedOpen] = useState(false);
 
@@ -92,7 +92,7 @@ export default function SystemSettings() {
                 </div>
                 <select
                     className={styles.select}
-                    value={settings.default_agent || 'computron'}
+                    value={settings.default_agent || 'omnideck'}
                     onChange={(e) => updateSetting('default_agent', e.target.value)}
                 >
                     {profiles.map((p) => (

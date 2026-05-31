@@ -29,15 +29,15 @@ class TestMigration002:
         """Profiles that already exist on disk are not overwritten."""
         dest = state_dir / "agent_profiles"
         dest.mkdir(parents=True)
-        # Write a custom version of computron.json
-        custom = {"id": "computron", "name": "My Custom Computron", "description": "custom"}
-        (dest / "computron.json").write_text(json.dumps(custom))
+        # Write a custom version of omnideck.json
+        custom = {"id": "omnideck", "name": "My Custom Omnideck", "description": "custom"}
+        (dest / "omnideck.json").write_text(json.dumps(custom))
 
         migrate(state_dir)
 
         # The custom version should be preserved
-        data = json.loads((dest / "computron.json").read_text())
-        assert data["name"] == "My Custom Computron"
+        data = json.loads((dest / "omnideck.json").read_text())
+        assert data["name"] == "My Custom Omnideck"
 
     def test_creates_profiles_dir(self, state_dir):
         """The agent_profiles directory is created if it doesn't exist."""

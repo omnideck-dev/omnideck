@@ -15,9 +15,9 @@ const _noop = () => {};
 export default function MobileApp({ dark, onToggleTheme }) {
     const [drawerOpen, setDrawerOpen] = useState(false);
 
-    // Profile-based configuration — default to 'computron'
+    // Profile-based configuration — default to 'omnideck'
     const [selectedProfileId] = useState(() => {
-        return localStorage.getItem('computron_profile_id') || 'computron';
+        return localStorage.getItem('computron_profile_id') || 'omnideck';
     });
     const { addToast } = useToast();
 

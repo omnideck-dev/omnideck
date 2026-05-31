@@ -26,7 +26,7 @@ def _isolate_profiles(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "agents._agent_profiles.load_settings",
-        lambda: {"default_agent": "computron"},
+        lambda: {"default_agent": "omnideck"},
     )
 
 
@@ -99,13 +99,13 @@ class TestProfileCRUD:
         assert list_agent_profiles() == []
 
     def test_list_profiles_sorted(self):
-        """Profiles are sorted by name, Computron first."""
+        """Profiles are sorted by name, Omnideck first."""
         save_agent_profile(_make_profile(id="zebra", name="Zebra"))
-        save_agent_profile(_make_profile(id="computron", name="Computron"))
+        save_agent_profile(_make_profile(id="omnideck", name="Omnideck"))
         save_agent_profile(_make_profile(id="alpha", name="Alpha"))
         result = list_agent_profiles()
         names = [p.name for p in result]
-        assert names == ["Computron", "Alpha", "Zebra"]
+        assert names == ["Omnideck", "Alpha", "Zebra"]
 
     def test_delete_profile(self):
         """Deleted profile is gone."""
@@ -244,11 +244,11 @@ class TestGetDefaultProfile:
 
     def test_returns_configured_default(self):
         """Returns the profile whose id matches settings.default_agent."""
-        save_agent_profile(_make_profile(id="computron", name="Computron"))
+        save_agent_profile(_make_profile(id="omnideck", name="Omnideck"))
         p = get_default_profile()
-        assert p.id == "computron"
+        assert p.id == "omnideck"
 
-    def test_honors_non_computron_default(self, monkeypatch):
+    def test_honors_non_omnideck_default(self, monkeypatch):
         """Returns whichever profile is configured as default_agent."""
         monkeypatch.setattr(
             "agents._agent_profiles.load_settings",
