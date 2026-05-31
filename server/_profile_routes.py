@@ -172,7 +172,7 @@ async def handle_list_agents(_request: web.Request) -> web.Response:
     """Return agent profile IDs and the default agent."""
     from settings import load_settings
     profiles = list_agent_profiles()
-    default_agent = load_settings().get("default_agent", "computron")
+    default_agent = load_settings().get("default_agent", "omnideck")
     return web.json_response({
         "agents": [p.id for p in profiles],
         "default": default_agent,

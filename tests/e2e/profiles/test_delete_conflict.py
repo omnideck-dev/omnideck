@@ -80,6 +80,6 @@ def test_switching_profiles_clears_conflict(page: Page, blocking_goal):
     settings.builder.delete()
     expect(settings.builder.delete_conflict).to_be_visible()
 
-    # Switch to Computron (always present — it's the default)
-    settings.profiles.select("computron")
+    # Switch to Omnideck (always present — it's the default)
+    settings.profiles.select("omnideck")
     expect(settings.builder.delete_conflict).to_be_hidden()
