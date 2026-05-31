@@ -4,14 +4,60 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
 
 permissions:
   contents: read
   packages: write
 
 jobs:
+  # Tests gate everything. They run on PRs and pushes; the image is only built
+  # and published on pushes, and only after both test jobs pass.
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # Python version comes from .python-version (3.12.10); --frozen installs
+      # exactly what uv.lock pins, with no re-resolution.
+      - name: Install dependencies
+        run: uv sync --frozen --extra test
+
+      - name: Run unit tests
+        run: just unit
+
+  ui-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      # Node 24 tracks the container's LTS line (it installs the latest LTS,
+      # currently 24.x). `cache-dependency-path` keys the npm cache on the lockfile.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/ui/package-lock.json
+
+      - name: Run UI tests
+        run: just test-ui run
+
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
+    needs: [unit-tests, ui-tests]
+    if: github.event_name == 'push'
     strategy:
       matrix:
         include:
