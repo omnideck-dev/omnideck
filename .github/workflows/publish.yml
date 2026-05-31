@@ -23,7 +23,7 @@ jobs:
         uses: extractions/setup-just@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8
+        uses: astral-sh/setup-uv@v7
 
       # Python version comes from .python-version (3.12.10); --frozen installs
       # exactly what uv.lock pins, with no re-resolution.
