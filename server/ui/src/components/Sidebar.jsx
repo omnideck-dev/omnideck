@@ -3,7 +3,7 @@ import AudioIndicator from './AudioIndicator.jsx';
 import RecentConversations from './RecentConversations.jsx';
 import styles from './Sidebar.module.css';
 
-const COLLAPSE_KEY = 'computron_sidebar_collapsed';
+const COLLAPSE_KEY = 'omnideck_sidebar_collapsed';
 
 // Panels reachable from the nav. Settings + theme live in the footer;
 // conversations live inline in the recent list below the nav. The agent
@@ -23,7 +23,7 @@ function _readCollapsed() {
 
 /**
  * Left navigation rail. Collapses to an icon-only strip or expands to
- * show labels, the COMPUTRON wordmark, and a primary "New chat" button.
+ * show labels, the OMNIDECK wordmark, and a primary "New chat" button.
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({

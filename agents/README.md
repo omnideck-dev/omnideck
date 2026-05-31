@@ -8,11 +8,11 @@ Agent definitions and the SDK that powers the tool-call loop.
 
 | Agent | Role | Has Browser | Has Custom Tools | Default Location |
 |-------|------|:-----------:|:----------------:|------------------|
-| **Computron** | Top-level orchestrator — decomposes tasks, delegates to sub-agents | via browser agent tool | yes | `ollama/computron/` |
+| **Omnideck** | Top-level orchestrator — decomposes tasks, delegates to sub-agents | via browser agent tool | yes | `ollama/omnideck/` |
 | **Browser Agent** | Browses the web using Playwright tools | yes | no | `ollama/browser/` |
 | **Sub-Agent** | Worker for code, file processing, data analysis | no | yes | `ollama/sub_agent/` |
 
-Computron delegates browsing to the browser agent and heavy computation to sub-agents. Sub-agents **cannot** browse — they have no browser tools.
+Omnideck delegates browsing to the browser agent and heavy computation to sub-agents. Sub-agents **cannot** browse — they have no browser tools.
 
 ### Sub-Agents
 

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 PROFILES_SUBDIR = "agent_profiles"
 
-COMPUTRON_ID = "computron"
+OMNIDECK_ID = "omnideck"
 
 
 class AgentProfile(BaseModel):
@@ -73,7 +73,7 @@ def _load_all() -> dict[str, AgentProfile]:
 def list_agent_profiles(include_disabled: bool = False) -> list[AgentProfile]:
     """Return agent profiles.
 
-    Ordering: Computron first (if present and not filtered out), then the
+    Ordering: Omnideck first (if present and not filtered out), then the
     remaining profiles sorted by name.
 
     Args:
@@ -83,8 +83,8 @@ def list_agent_profiles(include_disabled: bool = False) -> list[AgentProfile]:
     """
     profiles = _load_all()
     result: list[AgentProfile] = []
-    if COMPUTRON_ID in profiles:
-        result.append(profiles.pop(COMPUTRON_ID))
+    if OMNIDECK_ID in profiles:
+        result.append(profiles.pop(OMNIDECK_ID))
     result.extend(sorted(profiles.values(), key=lambda p: p.name))
     if not include_disabled:
         result = [p for p in result if p.enabled]
@@ -170,7 +170,7 @@ def duplicate_agent_profile(profile_id: str, new_name: str | None = None) -> Age
 
 
 __all__ = [
-    "COMPUTRON_ID",
+    "OMNIDECK_ID",
     "PROFILES_SUBDIR",
     "AgentProfile",
     "apply_llm_config_to_profiles",

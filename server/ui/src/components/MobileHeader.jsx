@@ -7,7 +7,7 @@ export default function MobileHeader({ dark, onToggleTheme, onNewConversation, a
   return (
     <div className={styles.header}>
       <div className={styles.headerInner}>
-        <div className={styles.appTitle}>COMPUTRON</div>
+        <div className={styles.appTitle}>OMNIDECK</div>
         <div className={styles.actions}>
           <AudioIndicator
             audio={audio}

@@ -134,7 +134,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
             // window.open from inside an event handler dodges popup blockers.
             const popup = window.open(
                 body.authorize_url,
-                'computron-google-oauth',
+                'omnideck-google-oauth',
                 'width=600,height=720',
             );
             setOauth(o => ({...o, pending: body, status: 'pending', popup}));

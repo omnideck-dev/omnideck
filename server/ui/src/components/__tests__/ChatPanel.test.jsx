@@ -29,8 +29,8 @@ describe('ChatPanel title bar', () => {
     });
 
     it('shows the agent name as the title when a root agent exists', () => {
-        renderPanel({ rootAgent: { name: 'Computron' } });
-        expect(screen.getByTestId('chat-title')).toHaveTextContent('Computron');
+        renderPanel({ rootAgent: { name: 'Omnideck' } });
+        expect(screen.getByTestId('chat-title')).toHaveTextContent('Omnideck');
     });
 
     it('hides the turn count for an empty conversation', () => {

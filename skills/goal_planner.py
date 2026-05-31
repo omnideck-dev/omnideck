@@ -23,7 +23,7 @@ _SKILL = Skill(
         - "code_expert": coder skill, low temp, thinking enabled
         - "research_agent": browser + coder skills, medium temp
         - "creative_writer": high temp, top_p sampling
-        - Omit agent_profile for the default Computron agent
+        - Omit agent_profile for the default Omnideck agent
 
         Task instructions must be fully self-contained — include all URLs, file
         paths, criteria, and output expectations. The executing agent has no
