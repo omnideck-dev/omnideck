@@ -26,6 +26,18 @@ export const PROVIDERS = [
         capabilities: ['email'],
     },
     {
+        slug: 'telegram',
+        authFlow: 'bot_token',
+        category: 'Messaging',
+        title: 'Telegram',
+        description: 'Bidirectional bot + push notifications',
+        icon: 'bi-telegram',
+        vendor: 'Telegram',
+        botFatherUrl: 'https://t.me/BotFather',
+        userInfoBotUrl: 'https://t.me/userinfobot',
+        capabilities: ['telegram'],
+    },
+    {
         slug: 'google_workspace',
         authFlow: 'oauth_device',
         category: 'Productivity Suites',
@@ -84,6 +96,7 @@ export const PROVIDERS = [
 export function errorCopy(error, provider) {
     const vendor = provider?.vendor ?? provider?.title ?? 'this provider';
     const isOauth = provider?.authFlow === 'oauth_device';
+    const isBotToken = provider?.authFlow === 'bot_token';
     const isToken = provider?.authFlow === 'token';
     switch (error?.code) {
         case 'AUTH':
@@ -104,6 +117,15 @@ export function errorCopy(error, provider) {
                         + 'Other common causes: the OAuth client type isn\'t "Desktop app", '
                         + 'or the app hasn\'t been published '
                         + '(Google Auth Platform → Audience → Publish app).',
+                };
+            }
+            if (isBotToken) {
+                return {
+                    title: `${vendor} rejected the bot token`,
+                    description:
+                        'The token from BotFather may be mistyped or revoked. '
+                        + 'Open @BotFather, run /mybots, pick your bot, and '
+                        + '"API Token" to copy a fresh token.',
                 };
             }
             return {
@@ -143,9 +165,12 @@ export function slugifyEmail(email) {
     return local.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
 }
 
-// Token integrations have no email to derive an ID from, so the label
-// becomes the user-suffix. Same sanitizer rules as slugifyEmail.
+// Token / bot_token integrations have no email to derive an ID from, so
+// the label becomes the user-suffix. Same sanitizer rules as slugifyEmail.
 export function slugifyLabel(label) {
     if (!label) return '';
-    return label.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    return label.toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48);
 }
