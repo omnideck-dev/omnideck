@@ -1,4 +1,4 @@
-"""Unit tests for the http_request agent tool.
+"""Unit tests for the call_api agent tool.
 
 Same pattern as ``test_drive_tools.py``: stub ``broker_client.call`` to
 return canned shapes (or raise) and assert on the resulting string.
@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from integrations import broker_client
-from tools.integrations.http.request import build_http_request_tool, http_request
+from tools.integrations.http.call_api import build_call_api_tool, call_api
 
 
 def _patch_call(
@@ -55,7 +55,7 @@ async def test_inline_json_response_formatted(
         },
     )
 
-    out = await http_request("linear", "GET", "/issues")
+    out = await call_api("linear", "GET", "/issues")
     assert out.startswith("200 (11 bytes, content-type: application/json)")
     assert '{"ok":true}' in out
 
@@ -76,7 +76,7 @@ async def test_spilled_response_reports_path(
         },
     )
 
-    out = await http_request("linear", "GET", "/avatar.png")
+    out = await call_api("linear", "GET", "/avatar.png")
     assert "4096 bytes" in out
     assert "image/png" in out
     assert "body written to /home/computron/downloads/http_linear_abc.png" in out
@@ -97,7 +97,7 @@ async def test_redirect_surfaces_location(
             "body_path": None,
         },
     )
-    out = await http_request("linear", "GET", "/issues")
+    out = await call_api("linear", "GET", "/issues")
     assert "302" in out
     assert "location: /v2/issues" in out
 
@@ -113,7 +113,7 @@ async def test_method_and_path_passed_through(
             "size": 0, "body": "", "body_path": None,
         },
     )
-    await http_request("linear", "delete", "/issues/42")
+    await call_api("linear", "delete", "/issues/42")
     assert captured["verb"] == "http_request"
     assert captured["integration_id"] == "linear"
     assert captured["args"]["method"] == "delete"
@@ -131,7 +131,7 @@ async def test_query_and_headers_forwarded(
             "size": 2, "body": "ok", "body_path": None,
         },
     )
-    await http_request(
+    await call_api(
         "linear", "GET", "/issues",
         query={"tag": ["a", "b"]},
         headers={"X-Trace-Id": "abc"},
@@ -151,7 +151,7 @@ async def test_body_dict_passed_through(
             "size": 2, "body": "{}", "body_path": None,
         },
     )
-    await http_request("linear", "POST", "/issues", body={"title": "x"})
+    await call_api("linear", "POST", "/issues", body={"title": "x"})
     assert captured["args"]["body"] == {"title": "x"}
 
 
@@ -171,7 +171,7 @@ async def test_file_path_encodes_base64_and_guesses_content_type(
         },
     )
 
-    await http_request("linear", "PUT", "/upload", file_path=str(f))
+    await call_api("linear", "PUT", "/upload", file_path=str(f))
     args = captured["args"]
     assert "body" not in args
     assert base64.b64decode(args["body_b64"]) == payload
@@ -193,7 +193,7 @@ async def test_file_path_unknown_extension_falls_back_to_octet_stream(
         },
     )
 
-    await http_request("linear", "PUT", "/upload", file_path=str(f))
+    await call_api("linear", "PUT", "/upload", file_path=str(f))
     assert captured["args"]["body_content_type"] == "application/octet-stream"
 
 
@@ -201,7 +201,7 @@ async def test_file_path_unknown_extension_falls_back_to_octet_stream(
 async def test_body_and_file_path_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     # broker should not be called when both are set.
     _patch_call(monkeypatch, result=None)
-    out = await http_request(
+    out = await call_api(
         "linear", "POST", "/x", body="hi", file_path="/etc/hostname",
     )
     assert "Cannot set both" in out
@@ -212,7 +212,7 @@ async def test_missing_file_reports_clearly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     _patch_call(monkeypatch, result=None)
-    out = await http_request(
+    out = await call_api(
         "linear", "PUT", "/upload", file_path=str(tmp_path / "missing.bin"),
     )
     assert "Cannot read file" in out
@@ -224,7 +224,7 @@ async def test_not_connected_maps_to_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationNotConnected("nope"))
-    out = await http_request("linear", "GET", "/")
+    out = await call_api("linear", "GET", "/")
     assert "not connected" in out
 
 
@@ -233,7 +233,7 @@ async def test_write_denied_explains_read_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
-    out = await http_request("linear", "POST", "/issues")
+    out = await call_api("linear", "POST", "/issues")
     assert "read-only" in out
     assert "'POST'" in out
 
@@ -243,20 +243,20 @@ async def test_generic_integration_error_surfaced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationError("upstream 500"))
-    out = await http_request("linear", "GET", "/")
+    out = await call_api("linear", "GET", "/")
     assert "failed" in out.lower()
     assert "upstream 500" in out
 
 
 def test_build_tool_docstring_lists_ids() -> None:
-    tool = build_http_request_tool(["linear", "notion"])
-    assert tool.__name__ == "http_request"
+    tool = build_call_api_tool(["linear", "notion"])
+    assert tool.__name__ == "call_api"
     assert tool.__doc__ is not None
     assert "'linear'" in tool.__doc__
     assert "'notion'" in tool.__doc__
 
 
 def test_build_tool_docstring_handles_empty_ids() -> None:
-    tool = build_http_request_tool([])
+    tool = build_call_api_tool([])
     assert tool.__doc__ is not None
     assert "(none registered)" in tool.__doc__

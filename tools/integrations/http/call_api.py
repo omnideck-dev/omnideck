@@ -15,7 +15,7 @@ from integrations import broker_client
 logger = logging.getLogger(__name__)
 
 
-async def http_request(
+async def call_api(
     integration_id: str,
     method: str,
     path: str,
@@ -78,7 +78,7 @@ async def http_request(
         )
     except broker_client.IntegrationError as exc:
         logger.warning(
-            "http_request(%r, %s %s) failed: %s",
+            "call_api(%r, %s %s) failed: %s",
             integration_id, method.upper(), path, exc,
         )
         return f"Request through {integration_id!r} failed: {exc}"
@@ -110,12 +110,12 @@ def _format_response(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
+def build_call_api_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
     """Turn-scoped wrapper whose docstring advertises the current IDs."""
     ids = sorted(integration_ids)
     ids_line = ", ".join(repr(i) for i in ids) if ids else "(none registered)"
 
-    async def _http_request(
+    async def _call_api(
         integration_id: str,
         method: str,
         path: str,
@@ -124,13 +124,13 @@ def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         body: dict | None = None,
         file_path: str | None = None,
     ) -> str:
-        return await http_request(
+        return await call_api(
             integration_id, method, path,
             query=query, headers=headers, body=body, file_path=file_path,
         )
 
-    _http_request.__name__ = http_request.__name__
-    _http_request.__doc__ = (
+    _call_api.__name__ = call_api.__name__
+    _call_api.__doc__ = (
         "Make an HTTP request to a configured API and return the response. "
         "Each integration owns its base URL and auth token; you supply a path "
         "under that base URL and the token is added automatically. Paths "
@@ -148,4 +148,4 @@ def build_http_request_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         "    The response status and body as text. Large or binary responses are\n"
         "    saved to a file and the path is returned instead.\n"
     )
-    return _http_request
+    return _call_api
