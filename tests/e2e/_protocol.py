@@ -1,7 +1,7 @@
 """Directive-protocol helpers for driving the FakeProvider in e2e tests.
 
-The e2e suite runs the app with ``COMPUTRON_FAKE_LLM=1``, which swaps the real
-LLM for an in-process fake (``sdk/providers/_fake.py``). The fake reads these
+The e2e suite runs the app with ``MOCK_LLM=1``, which swaps the real
+LLM for an in-process fake. The fake reads these
 directives out of the user message and performs the matching deterministic
 actions — calling the same real tools a model would — so chat-driven tests are
 fast and need no model.

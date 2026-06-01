@@ -322,9 +322,9 @@ e2e *args:
     # ENABLE_DESKTOP=false (explicit) skips xfce + VNC + noVNC so ports 5900/6080
     # stay free for a concurrently-running dev container.
     # PORT=$port picks a non-8080 app port so the two aiohttp servers coexist.
-    # COMPUTRON_FAKE_LLM=1 swaps in the in-process FakeProvider so the suite runs
+    # MOCK_LLM=1 swaps in the in-process FakeProvider so the suite runs
     # without a real LLM backend (no Ollama, no GPU). Tests drive agent behaviour
-    # via the directive protocol the fake understands (see sdk/providers/_fake.py).
+    # via the directive protocol the fake understands.
     # --network=host is kept for the browser-tool test (Chrome under the container).
     docker run -d --rm --name "$name" \
         --shm-size=256m --network=host \
@@ -332,7 +332,7 @@ e2e *args:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e ENABLE_CUSTOM_TOOLS=true \
-        -e COMPUTRON_FAKE_LLM=1 \
+        -e MOCK_LLM=1 \
         $env_args \
         -v "$state/home:/home/computron:rw" \
         -v "$state/state:/var/lib/computron:rw" \

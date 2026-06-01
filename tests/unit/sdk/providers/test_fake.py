@@ -176,7 +176,7 @@ async def test_list_models_offline():
 def test_env_gating_routes_to_fake(monkeypatch):
     import sdk.providers as providers
 
-    monkeypatch.setenv("COMPUTRON_FAKE_LLM", "1")
+    monkeypatch.setenv("MOCK_LLM", "1")
     providers.reset_provider()
     try:
         provider = providers.get_provider("ollama")

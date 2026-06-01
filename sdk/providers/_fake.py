@@ -1,7 +1,7 @@
 """Deterministic in-process LLM provider for tests.
 
 This provider lets the whole app run without any real LLM backend. It is
-selected by ``get_provider`` when the ``COMPUTRON_FAKE_LLM`` environment
+selected by ``get_provider`` when the ``MOCK_LLM`` environment
 variable is set, so both ``/api/models`` and the chat tool-loop are served
 from canned, deterministic behaviour.
 
