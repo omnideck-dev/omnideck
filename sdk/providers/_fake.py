@@ -52,6 +52,7 @@ from ._models import (
 _FAKE_MODELS: list[ModelInfo] = [
     ModelInfo(name="kimi-k2.5:cloud", context_window=200_000, supports_thinking=True),
     ModelInfo(name="qwen3.5:cloud", context_window=128_000, supports_images=True),
+    ModelInfo(name="gemma3:cloud", context_window=128_000, supports_images=True),
     ModelInfo(name="fake-model", context_window=32_000),
 ]
 
