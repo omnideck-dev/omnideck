@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._format import format_envelope
 from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
@@ -45,16 +46,8 @@ async def list_email_messages(integration_id: str, folder: str, limit: int = 20)
     headers = result.get("headers", [])
     if not headers:
         return f"No messages in {folder!r}."
-    lines = [_format_envelope(h) for h in headers]
+    lines = [format_envelope(h) for h in headers]
     return f"Recent messages in {folder!r} ({len(lines)}):\n" + "\n".join(lines)
-
-
-def _format_envelope(h: dict[str, Any]) -> str:
-    uid = h.get("uid", "?")
-    date = h.get("date") or ""
-    sender = h.get("from_") or "(no sender)"
-    subject = h.get("subject") or "(no subject)"
-    return f"- [{uid}] {date}  {sender}  —  {subject}"
 
 
 def build_list_email_messages_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:

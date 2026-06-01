@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._format import format_size
 from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
@@ -57,16 +58,7 @@ async def download_email_attachment(
     path = result.get("path", "")
     filename = result.get("filename") or "(unnamed)"
     size = result.get("size", 0)
-    return f"Saved {filename!r} to {path} ({_format_size(size)})."
-
-
-def _format_size(size: int) -> str:
-    """Compact human-readable byte count — same shape as the listing tool."""
-    if size < 1024:
-        return f"{size}B"
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f}KB"
-    return f"{size / (1024 * 1024):.1f}MB"
+    return f"Saved {filename!r} to {path} ({format_size(size)})."
 
 
 def build_download_email_attachment_tool(
