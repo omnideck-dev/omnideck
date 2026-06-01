@@ -78,6 +78,8 @@ class AnthropicProvider(BaseAPIProvider):
             "messages": converted,
             "max_tokens": opts.get("num_predict") or opts.get("max_tokens") or 16384,
         }
+        if system_prompt:
+            kwargs["system"] = system_prompt
         if opts.get("temperature") is not None:
             kwargs["temperature"] = opts["temperature"]
         if opts.get("top_k") is not None:
@@ -96,20 +98,10 @@ class AnthropicProvider(BaseAPIProvider):
             budget = budget_map.get(thinking_budget, max_tok // 2)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": max(1024, budget)}
 
-        # Prompt caching — mark the end of the stable prefix (tools + system)
-        # with an ephemeral cache breakpoint so repeated turns reuse it at a
-        # large discount. cache_control must live on a content block; the
-        # Messages API rejects it as a top-level request field. A breakpoint on
-        # the system block also caches the tools that precede it; when there is
-        # no system prompt, fall back to marking the last tool.
-        if system_prompt:
-            kwargs["system"] = [{
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }]
-        elif tools:
-            kwargs["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+        # Automatic prompt caching — Anthropic places a cache breakpoint at
+        # the end of the cacheable prefix. Subsequent turns with the same
+        # prefix read from cache at 90% discount.
+        kwargs["cache_control"] = {"type": "ephemeral"}
 
         return kwargs
 
