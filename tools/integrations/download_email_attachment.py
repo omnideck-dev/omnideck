@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ async def download_email_attachment(
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
+    except broker_client.IntegrationAuthFailed:
+        return auth_failed_message(integration_id)
     except broker_client.IntegrationError as exc:
         logger.warning(
             "download_email_attachment(%r, %r, %r, %r) failed: %s",
