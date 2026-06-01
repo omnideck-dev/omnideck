@@ -205,7 +205,7 @@ async function renderApp() {
     return { dispatch, ...result };
 }
 
-function startRoot(dispatch, id, { name = 'computron' } = {}) {
+function startRoot(dispatch, id, { name = 'omnideck' } = {}) {
     dispatch({
         type: 'AGENT_STARTED',
         agentId: id,

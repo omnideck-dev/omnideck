@@ -1,17 +1,110 @@
-name: Publish Multi-Arch Image
+name: CI
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
 
 permissions:
   contents: read
   packages: write
 
 jobs:
+  # Tests gate everything. They run on PRs and pushes; the image is only built
+  # and published on pushes, and only after both test jobs pass.
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # Python version comes from .python-version (3.12.10); --frozen installs
+      # exactly what uv.lock pins, with no re-resolution.
+      - name: Install dependencies
+        run: uv sync --frozen --extra test
+
+      - name: Run unit tests
+        run: just unit
+
+  ui-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      # Node 24 tracks the container's LTS line (it installs the latest LTS,
+      # currently 24.x). `cache-dependency-path` keys the npm cache on the lockfile.
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/ui/package-lock.json
+
+      - name: Run UI tests
+        run: just test-ui run
+
+  # Full-stack e2e, post-merge on main. Runs after the multi-arch image is
+  # built and published, then pulls that exact image and runs the suite against
+  # it — no build here. `just e2e` runs the app with MOCK_LLM=1 (in-process
+  # FakeProvider — no Ollama, GPU, or API keys) and drives the real UI with
+  # Playwright from the host. Since the image was just published from this same
+  # commit, its baked source/deps/UI already match the checkout.
+  e2e-tests:
+    needs: merge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra test
+
+      # Tests run a browser on the host against the containerized app, so the
+      # runner needs Chromium and its system libraries.
+      - name: Install Playwright browser
+        run: uv run playwright install --with-deps chromium
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull published image
+        run: docker pull "ghcr.io/${{ github.repository }}:latest"
+
+      # E2E_SKIP_BUILD reuses the pulled image instead of building. The recipe
+      # still syncs source + rebuilds the UI in-container, which is a redundant
+      # no-op overlay here since the image already carries this commit's source.
+      - name: Run e2e tests
+        env:
+          E2E_IMAGE: ghcr.io/${{ github.repository }}:latest
+          E2E_SKIP_BUILD: "1"
+        run: just e2e
+
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
+    needs: [unit-tests, ui-tests]
+    if: github.event_name == 'push'
     strategy:
       matrix:
         include:
@@ -22,7 +115,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -54,7 +147,7 @@ jobs:
           echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${platform//\//-}.txt"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ strategy.job-index }}
           path: /tmp/digests/*.txt
@@ -66,7 +159,7 @@ jobs:
     needs: build
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: digests-*
           path: /tmp/digests
@@ -84,7 +177,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |

@@ -67,12 +67,12 @@ describe('_historyToMessages', () => {
 describe('_mergeFileOutputs', () => {
     function _turn(turnIdx, files) {
         const events = [
-            { type: 'agent_started', agent_id: `root.computron.${turnIdx}`, parent_agent_id: null },
+            { type: 'agent_started', agent_id: `root.omnideck.${turnIdx}`, parent_agent_id: null },
         ];
         for (const f of files) {
-            events.push({ type: 'file_output', agent_id: `root.computron.${turnIdx}`, ...f });
+            events.push({ type: 'file_output', agent_id: `root.omnideck.${turnIdx}`, ...f });
         }
-        events.push({ type: 'agent_completed', agent_id: `root.computron.${turnIdx}` });
+        events.push({ type: 'agent_completed', agent_id: `root.omnideck.${turnIdx}` });
         return events;
     }
 

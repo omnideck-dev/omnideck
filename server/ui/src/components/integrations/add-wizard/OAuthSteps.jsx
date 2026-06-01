@@ -15,7 +15,7 @@ export function OauthCapabilitiesStep({
             <div className={styles.wzBodyLeft}>
                 <h2 className={styles.wzTitle}>Connect {provider.title}</h2>
                 <p className={styles.wzSubtitle}>
-                    Computron uses your own Google OAuth credentials — no
+                    Omnideck uses your own Google OAuth credentials — no
                     shared app, no third-party servers. The next screen
                     walks you through a one-time ~5 minute setup in Google
                     Cloud Console.
@@ -199,7 +199,7 @@ export function OauthGcpSetupStep({
                             </p>
                             <p>
                                 Why this step: in Testing mode the refresh token expires
-                                after 7 days, which means Computron loses access weekly.
+                                after 7 days, which means Omnideck loses access weekly.
                                 Publishing makes tokens long-lived.
                             </p>
                         </div>
@@ -213,7 +213,7 @@ export function OauthGcpSetupStep({
                                 <strong> Clients → + Create client</strong>.
                             </p>
                             <ul>
-                                <li><strong>Application type:</strong> Desktop app ← Computron uses the loopback redirect flow that this client type enables.</li>
+                                <li><strong>Application type:</strong> Desktop app ← Omnideck uses the loopback redirect flow that this client type enables.</li>
                                 <li><strong>Name:</strong> anything.</li>
                             </ul>
                             <p>
@@ -290,7 +290,7 @@ export function OauthRedirectStep({ provider, oauth, error, onCancel, onRestart 
     const reopenPopup = () => {
         if (!authorizeUrl) return;
         window.open(
-            authorizeUrl, 'computron-google-oauth',
+            authorizeUrl, 'omnideck-google-oauth',
             'width=600,height=720',
         );
     };

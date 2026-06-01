@@ -8,6 +8,8 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._format import format_size
+from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,8 @@ async def read_email_message(integration_id: str, folder: str, uid: str) -> str:
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
+    except broker_client.IntegrationAuthFailed:
+        return auth_failed_message(integration_id)
     except broker_client.IntegrationError as exc:
         logger.warning("read_email_message(%r, %r, %r) failed: %s", integration_id, folder, uid, exc)
         return f"Failed to read message {uid} in {folder!r}: {exc}"
@@ -55,20 +59,11 @@ async def read_email_message(integration_id: str, folder: str, uid: str) -> str:
             head_block += (
                 f"  - id={att.get('id', '')}  {att.get('filename', '(unnamed)')}"
                 f"  ({att.get('mime_type', 'application/octet-stream')},"
-                f" {_format_size(att.get('size', 0))})\n"
+                f" {format_size(att.get('size', 0))})\n"
             )
     if not body:
         return head_block + "\n(no text body)"
     return head_block + "\n" + body
-
-
-def _format_size(size: int) -> str:
-    """Compact human-readable byte count: ``1.2KB`` / ``245KB`` / ``3.4MB``."""
-    if size < 1024:
-        return f"{size}B"
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f}KB"
-    return f"{size / (1024 * 1024):.1f}MB"
 
 
 def build_read_email_message_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:

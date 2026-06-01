@@ -11,6 +11,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ async def send_email(
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
+    except broker_client.IntegrationAuthFailed:
+        return auth_failed_message(integration_id)
     except broker_client.IntegrationWriteDenied:
         return f"Writes are disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:

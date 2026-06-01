@@ -9,6 +9,7 @@ Uses a single conversation to avoid redundant LLM calls.
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import bash, send_file, write_file
 from tests.e2e.pages import ChatView
 
 LLM_TIMEOUT = 180_000
@@ -16,20 +17,19 @@ LLM_TIMEOUT = 180_000
 
 @pytest.fixture(scope="module")
 def preview_page(browser, browser_context_args):
-    """Set up a conversation that produces browser, terminal, and file tabs.
+    """Set up a conversation that produces terminal and file tabs.
 
-    Sends a single explicit prompt that triggers all preview types, then
-    clicks Preview on a file output to open a file tab.
+    Sends a single directive prompt that triggers multiple preview types,
+    then clicks Preview on a file output to open a file tab.
     """
     context = browser.new_context(**browser_context_args)
     page = context.new_page()
     chat = ChatView(page).goto().new_conversation()
 
     chat.send(
-        'to enable e2e testing do the following: '
-        'run echo "hello" on the command line, '
-        'create a simple text file called hello.txt that says "hello" '
-        'and send it to me',
+        bash('echo "hello"')
+        + write_file("hello.txt", "hello")
+        + send_file("hello.txt")
     ).wait_streaming(timeout=LLM_TIMEOUT)
 
     has_terminal = chat.preview.terminal_tab.is_visible()

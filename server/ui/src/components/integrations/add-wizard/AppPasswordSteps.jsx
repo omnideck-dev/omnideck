@@ -61,7 +61,7 @@ export function CredentialsStep({ provider, form, setForm, error, onBack, onCanc
                 <h2 className={styles.wzTitle}>Generate &amp; paste</h2>
                 <p className={styles.wzSubtitle}>
                     Create an app-specific password in your {provider.vendor} account
-                    settings, name it "Computron," and paste it below.
+                    settings, name it "Omnideck," and paste it below.
                 </p>
                 <div className={styles.wzContent}>
                     <a

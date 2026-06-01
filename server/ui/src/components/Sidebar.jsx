@@ -23,7 +23,7 @@ function _readCollapsed() {
 
 /**
  * Left navigation rail. Collapses to an icon-only strip or expands to
- * show labels, the COMPUTRON wordmark, and a primary "New chat" button.
+ * show labels, the OMNIDECK wordmark, and a primary "New chat" button.
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({

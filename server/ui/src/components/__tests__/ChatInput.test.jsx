@@ -10,7 +10,7 @@ describe('ChatInput', () => {
     it('renders textarea and buttons', () => {
         render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
 
-        expect(screen.getByPlaceholderText('Message Computron…')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Message Omnideck…')).toBeInTheDocument();
         expect(screen.getByLabelText('Attach file')).toBeInTheDocument();
         expect(screen.getByLabelText('Send message')).toBeInTheDocument();
     });
@@ -20,7 +20,7 @@ describe('ChatInput', () => {
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Hello world');
         await user.click(screen.getByLabelText('Send message'));
 
@@ -32,7 +32,7 @@ describe('ChatInput', () => {
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, '  test message  ');
         await user.click(screen.getByLabelText('Send message'));
 
@@ -44,7 +44,7 @@ describe('ChatInput', () => {
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Hello');
         await user.click(screen.getByLabelText('Send message'));
 
@@ -56,7 +56,7 @@ describe('ChatInput', () => {
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Test{Enter}');
 
         expect(onSend).toHaveBeenCalledWith('Test', null);
@@ -67,7 +67,7 @@ describe('ChatInput', () => {
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Line 1{Shift>}{Enter}{/Shift}Line 2');
 
         expect(onSend).not.toHaveBeenCalled();
@@ -173,7 +173,7 @@ describe('ChatInput', () => {
             expect(screen.getByTestId('attachment-image')).toBeInTheDocument();
         });
 
-        const textarea = screen.getByPlaceholderText('Message Computron…');
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Check this image');
         await user.click(screen.getByLabelText('Send message'));
 
@@ -241,7 +241,7 @@ describe('ChatInput', () => {
                 expect(screen.getByTestId('attachment-image')).toBeInTheDocument();
             });
 
-            const textarea = screen.getByPlaceholderText('Message Computron…');
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
             await user.type(textarea, 'External image');
             await user.click(screen.getByLabelText('Send message'));
 

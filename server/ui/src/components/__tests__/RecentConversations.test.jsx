@@ -3,8 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RecentConversations from '../RecentConversations.jsx';
 
+// A fixed mid-day instant. Both the session timestamps and the component's
+// own `new Date()` are pinned to this, so the day-bucket assignments don't
+// shift with the wall clock (notably the midnight boundary, where a session
+// dated "1 hour ago" would otherwise fall into yesterday's bucket).
+const FIXED_NOW = new Date('2026-06-01T12:00:00.000Z');
+
 function isoAgo({ days = 0, hours = 0 }) {
-    const d = new Date();
+    const d = new Date(FIXED_NOW);
     d.setDate(d.getDate() - days);
     d.setHours(d.getHours() - hours);
     return d.toISOString();
@@ -27,8 +33,17 @@ function mockFetch(sessions = SESSIONS) {
     });
 }
 
-beforeEach(() => mockFetch());
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+    // Fake only Date (not setTimeout/microtasks) so waitFor + userEvent still
+    // run on real timers while the component reads the pinned "now".
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_NOW);
+    mockFetch();
+});
+afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
 
 describe('RecentConversations', () => {
     it('lists fetched conversations grouped by day', async () => {
