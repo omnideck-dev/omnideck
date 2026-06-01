@@ -429,12 +429,6 @@ _require-image:
 _require-running:
     @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
 
-# Hash of every file baked into the image. e2e overlays source + rebuilds the UI
-# at runtime, so the image only needs rebuilding when one of these changes. CI
-# stamps the published image with this value and reuses it when the hash matches.
-_env-hash:
-    @cat container/Dockerfile container/entrypoint.sh pyproject.toml uv.lock {{UI_DIR}}/package-lock.json | sha256sum | cut -d' ' -f1
-
 # Tar-pipe working tree into container at /opt/computron.
 # Excludes heavy/generated dirs so the stream stays small.
 _sync-src ctr:

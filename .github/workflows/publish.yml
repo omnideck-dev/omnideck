@@ -54,19 +54,16 @@ jobs:
       - name: Run UI tests
         run: just test-ui run
 
-  # Full-stack e2e: runs the app with MOCK_LLM=1 (in-process FakeProvider — no
-  # Ollama, GPU, or API keys) and drives the real UI with Playwright from the
-  # host. `just e2e` overlays the working-tree source and rebuilds the UI inside
-  # the container at runtime, so the image only supplies the baked environment
-  # (OS + system deps + Python/Node deps). We therefore reuse the published main
-  # image whenever its env-hash label matches, and only rebuild from scratch
-  # when container/Dockerfile or a dependency manifest actually changed.
+  # Full-stack e2e, post-merge on main. Runs after the multi-arch image is
+  # built and published, then pulls that exact image and runs the suite against
+  # it — no build here. `just e2e` runs the app with MOCK_LLM=1 (in-process
+  # FakeProvider — no Ollama, GPU, or API keys) and drives the real UI with
+  # Playwright from the host. Since the image was just published from this same
+  # commit, its baked source/deps/UI already match the checkout.
   e2e-tests:
+    needs: merge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Job-level so the optional Docker Hub login below can gate on presence.
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -92,42 +89,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Authenticated pulls dodge Docker Hub's per-IP anonymous rate limit when
-      # a from-scratch build has to fetch the base image. Skipped when no secret.
-      - name: Log in to Docker Hub
-        if: ${{ env.DOCKERHUB_USERNAME != '' }}
-        uses: docker/login-action@v4
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
+      - name: Pull published image
+        run: docker pull "ghcr.io/${{ github.repository }}:latest"
 
-      # Reuse the published image when its baked env matches this checkout;
-      # otherwise fall through to a full build in the run step.
-      - name: Select e2e image
-        id: img
-        run: |
-          set -euo pipefail
-          latest="ghcr.io/${{ github.repository }}:latest"
-          want=$(just _env-hash)
-          if docker pull "$latest" >/dev/null 2>&1; then
-            got=$(docker inspect --format '{{ index .Config.Labels "org.computron.envhash" }}' "$latest" 2>/dev/null || echo "")
-            if [ -n "$got" ] && [ "$got" = "$want" ]; then
-              echo "✅ Published image env matches ($want) — reusing, no build"
-              echo "image=$latest" >> "$GITHUB_OUTPUT"
-              echo "skip_build=1" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "↻ Env changed (image=${got:-none} want=$want) — rebuilding"
-          else
-            echo "↻ No published image to reuse — building from scratch"
-          fi
-          echo "image=" >> "$GITHUB_OUTPUT"
-          echo "skip_build=0" >> "$GITHUB_OUTPUT"
-
+      # E2E_SKIP_BUILD reuses the pulled image instead of building. The recipe
+      # still syncs source + rebuilds the UI in-container, which is a redundant
+      # no-op overlay here since the image already carries this commit's source.
       - name: Run e2e tests
         env:
-          E2E_IMAGE: ${{ steps.img.outputs.image }}
-          E2E_SKIP_BUILD: ${{ steps.img.outputs.skip_build }}
+          E2E_IMAGE: ghcr.io/${{ github.repository }}:latest
+          E2E_SKIP_BUILD: "1"
         run: just e2e
 
   # Build each platform natively on its own runner — no QEMU emulation.
@@ -146,9 +117,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install just
-        uses: extractions/setup-just@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -159,12 +127,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Stamp the image with a hash of its env-defining files so the e2e job
-      # can tell whether a published image still matches a given checkout.
-      - name: Compute env-hash
-        id: envhash
-        run: echo "hash=$(just _env-hash)" >> "$GITHUB_OUTPUT"
-
       - name: Build and push (${{ matrix.platform }})
         id: build
         uses: docker/build-push-action@v7
@@ -173,7 +135,6 @@ jobs:
           file: container/Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          labels: org.computron.envhash=${{ steps.envhash.outputs.hash }}
           # Push by digest only — tags applied in the merge job.
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true
           cache-from: type=gha,scope=${{ matrix.platform }}
