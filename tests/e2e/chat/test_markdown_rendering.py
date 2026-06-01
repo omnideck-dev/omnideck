@@ -7,23 +7,22 @@ activity view.
 
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
 LLM_TIMEOUT = 180_000
 
-CHAT_PROMPT = (
-    "Respond with exactly this markdown and nothing else:\n\n"
+_MARKDOWN = (
     "Here is a function:\n\n"
     "```python\ndef hello():\n    return 'world'\n```\n\n"
     "It returns `'world'`."
 )
 
-SUBAGENT_PROMPT = (
-    "Spawn a sub-agent. The sub-agent's only job is to respond with exactly "
-    "this markdown and nothing else:\n\n"
-    "```python\ndef hello():\n    return 'world'\n```\n\n"
-    "After the sub-agent finishes, say done."
-)
+# Reply with exactly the markdown above.
+CHAT_PROMPT = say(_MARKDOWN)
+
+# Spawn a sub-agent that replies with the markdown, then say "done".
+SUBAGENT_PROMPT = spawn(say(_MARKDOWN)) + say("done")
 
 
 def test_code_blocks_render_in_chat(page: Page):

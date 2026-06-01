@@ -8,9 +8,14 @@ toggle, fullscreen, download).
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import send_file, write_file
 from tests.e2e.pages import ChatView
 
 LLM_TIMEOUT = 300_000
+
+_TXT = "/home/computron/hello.txt"
+_MD = "/home/computron/hello.md"
+_HTML = "/home/computron/hello.html"
 
 
 @pytest.fixture(scope="module")
@@ -21,11 +26,9 @@ def file_types_page(browser, browser_context_args):
     chat = ChatView(page).goto().new_conversation()
 
     chat.send(
-        "to enable e2e testing, create these three files in /home/computron/ "
-        "and use send_file to send each one to me:\n"
-        '1) /home/computron/hello.txt — a plain text file containing "hello from text file"\n'
-        "2) /home/computron/hello.md — a markdown file with a heading and a bullet list\n"
-        "3) /home/computron/hello.html — a simple HTML page with a heading that says hello",
+        write_file(_TXT, "hello from text file") + send_file(_TXT)
+        + write_file(_MD, "# Hello\n\n- one\n- two") + send_file(_MD)
+        + write_file(_HTML, "<html><body><h1>hello</h1></body></html>") + send_file(_HTML)
     ).wait_streaming(timeout=LLM_TIMEOUT)
 
     assert chat.file_preview_btns.count() >= 1, "No file outputs were sent by the agent"

@@ -1,8 +1,9 @@
 """E2E tests for the inline recent-conversations list in the sidebar.
 
 Verifies listing, recency order, switching between, and deleting
-conversations. One test uses a real LLM response; the rest seed
-conversations directly in the container for speed and determinism.
+conversations. One test drives a fake-provider response via the directive
+protocol; the rest seed conversations directly in the container for speed
+and determinism.
 """
 
 import json
@@ -11,6 +12,7 @@ import time
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
+from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView, RecentConversations
 
 LLM_TIMEOUT = 180_000
@@ -54,9 +56,9 @@ def test_recent_list_is_visible_on_load(page: Page):
 
 
 def test_conversation_appears_after_real_message(page: Page):
-    """A real LLM conversation shows up in the recent list."""
+    """A conversation shows up in the recent list after a turn."""
     chat = ChatView(page).goto().new_conversation()
-    chat.send("reply with just the word yes").wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(say("yes")).wait_streaming(timeout=LLM_TIMEOUT)
 
     recent = RecentConversations(page)
     expect(recent.items.first).to_be_visible(timeout=10_000)

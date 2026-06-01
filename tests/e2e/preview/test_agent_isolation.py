@@ -8,6 +8,7 @@ network view shows only that agent's previews.
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import bash, send_file, spawn, write_file
 from tests.e2e.pages import AgentActivityView, ChatView, NetworkView
 
 LLM_TIMEOUT = 600_000
@@ -26,15 +27,19 @@ def isolation_page(browser, browser_context_args):
     page = context.new_page()
     chat = ChatView(page).goto().new_conversation()
 
+    agent_one = (
+        bash('echo "agent-one"')
+        + write_file("one.txt", "hello from agent one")
+        + send_file("one.txt")
+    )
+    agent_two = (
+        bash('echo "agent-two"')
+        + write_file("two.txt", "hello from agent two")
+        + send_file("two.txt")
+    )
     chat.send(
-        "to enable e2e testing of sub-agent isolation, spawn two sub-agents "
-        "in parallel using profile code_expert:\n"
-        '1) first agent: run echo "agent-one" in bash, then create a text '
-        'file called one.txt containing "hello from agent one" and use '
-        "send_file to send it\n"
-        '2) second agent: run echo "agent-two" in bash, then create a text '
-        'file called two.txt containing "hello from agent two" and use '
-        "send_file to send it",
+        spawn(agent_one, profile="code_expert")
+        + spawn(agent_two, profile="code_expert")
     ).wait_streaming(timeout=LLM_TIMEOUT)
 
     network = NetworkView(page)
