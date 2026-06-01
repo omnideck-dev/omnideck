@@ -297,9 +297,16 @@ e2e *args:
     # Per-branch image so concurrent worktrees don't clobber each other.
     # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
-    image="computron_9000:e2e-${branch_tag}"
-    echo "🏗️  Building ${image}"
-    docker build -f container/Dockerfile -t "$image" .
+    # E2E_IMAGE + E2E_SKIP_BUILD let CI reuse a prebuilt image (e.g. the
+    # published main image) instead of building — source is synced in below
+    # regardless, so a matching baked env is all that's needed.
+    image="${E2E_IMAGE:-computron_9000:e2e-${branch_tag}}"
+    if [ "${E2E_SKIP_BUILD:-0}" = "1" ]; then
+        echo "⏭️  Reusing image ${image} (E2E_SKIP_BUILD=1)"
+    else
+        echo "🏗️  Building ${image}"
+        docker build -f container/Dockerfile -t "$image" .
+    fi
     name="computron_e2e"
     port=9090
     state=$(mktemp -d)
@@ -421,6 +428,12 @@ _require-image:
 # Fail if the dev container isn't running
 _require-running:
     @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
+
+# Hash of every file baked into the image. e2e overlays source + rebuilds the UI
+# at runtime, so the image only needs rebuilding when one of these changes. CI
+# stamps the published image with this value and reuses it when the hash matches.
+_env-hash:
+    @cat container/Dockerfile container/entrypoint.sh pyproject.toml uv.lock {{UI_DIR}}/package-lock.json | sha256sum | cut -d' ' -f1
 
 # Tar-pipe working tree into container at /opt/computron.
 # Excludes heavy/generated dirs so the stream stays small.
