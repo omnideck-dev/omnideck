@@ -54,6 +54,46 @@ jobs:
       - name: Run UI tests
         run: just test-ui run
 
+  # Full-stack e2e: `just e2e` builds the container image, runs the app with
+  # MOCK_LLM=1 (in-process FakeProvider — no Ollama, GPU, or API keys), then
+  # drives the real UI with Playwright from the host. First run is slow because
+  # the heavy image builds from scratch; the runner has no warm layer cache.
+  e2e-tests:
+    runs-on: ubuntu-latest
+    # Job-level so the optional Docker Hub login below can gate on presence.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra test
+
+      # Tests run a browser on the host against the containerized app, so the
+      # runner needs Chromium and its system libraries.
+      - name: Install Playwright browser
+        run: uv run playwright install --with-deps chromium
+
+      # Authenticated pulls dodge Docker Hub's per-IP anonymous rate limit when
+      # the base image is fetched. Skipped automatically when no secret is set.
+      - name: Log in to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Run e2e tests
+        run: just e2e
+
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
     needs: [unit-tests, ui-tests]
