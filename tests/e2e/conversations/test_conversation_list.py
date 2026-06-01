@@ -7,6 +7,7 @@ conversations directly in the container for speed and determinism.
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Page, expect
 
@@ -17,19 +18,74 @@ LLM_TIMEOUT = 180_000
 CONV_DIR = "/var/lib/computron/conversations"
 
 
+def _messages_to_events_jsonl(conv_id: str, messages: list[dict]) -> str:
+    """Synthesize the events.jsonl that resume now reads from.
+
+    Timestamps are derived from the wall clock so seeded conversations
+    sort correctly alongside live-created ones — ``started_at`` is the
+    first event's timestamp, not the file's mtime.
+    """
+    agent_id = "root.computron.1"
+    started = datetime.now(UTC)
+    started_ts = started.isoformat()
+    lines = [json.dumps({
+        "id": f"evt_{conv_id}_started",
+        "type": "agent_started",
+        "timestamp": started_ts,
+        "conversation_id": conv_id,
+        "agent_id": agent_id,
+        "agent_name": "COMPUTRON",
+        "parent_agent_id": None,
+    })]
+    for i, m in enumerate(messages, start=1):
+        role = m.get("role")
+        ts = (started + timedelta(seconds=i)).isoformat()
+        base = {
+            "id": f"evt_{conv_id}_{i}",
+            "timestamp": ts,
+            "conversation_id": conv_id,
+            "agent_id": agent_id,
+        }
+        if role == "user":
+            lines.append(json.dumps({**base, "type": "user_message",
+                                       "content": m.get("content", ""), "attachments": []}))
+        elif role == "assistant":
+            tcs = []
+            for tc in (m.get("tool_calls") or []):
+                fn = tc.get("function") or {}
+                tcs.append({"id": tc.get("id"),
+                            "name": fn.get("name"),
+                            "arguments": fn.get("arguments")})
+            lines.append(json.dumps({**base, "type": "iteration",
+                                       "iteration_index": i - 1,
+                                       "content": m.get("content"),
+                                       "thinking": m.get("thinking"),
+                                       "tool_calls": tcs}))
+        elif role == "tool":
+            lines.append(json.dumps({**base, "type": "tool_result",
+                                       "tool_call_id": m.get("tool_call_id"),
+                                       "tool_name": m.get("tool_name"),
+                                       "content": m.get("content", "")}))
+    return "\n".join(lines) + "\n"
+
+
 def _seed_conversation(
     conv_id: str,
     messages: list[dict],
     *,
     title: str = "",
 ) -> str:
-    """Create a conversation on disk inside the container."""
-    msgs_json = json.dumps(messages)
+    """Create a conversation on disk inside the container.
+
+    Writes ``events.jsonl`` (the source of truth the resume API reads)
+    plus optional ``metadata.json`` for the title.
+    """
+    events_jsonl = _messages_to_events_jsonl(conv_id, messages)
     script = (
         "import json, pathlib\n"
         f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
         "d.mkdir(parents=True, exist_ok=True)\n"
-        f"(d / 'history.json').write_text({msgs_json!r})\n"
+        f"(d / 'events.jsonl').write_text({events_jsonl!r})\n"
     )
     if title:
         meta = json.dumps({"title": title})

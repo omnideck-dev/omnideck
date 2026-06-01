@@ -46,7 +46,6 @@ function _makeAgent(id, name, parentId, instruction, startedAt, correlationId = 
         desktopActive: false,
         generationPreview: null,
         openFiles: [],           // file preview tabs
-        activeTool: null,        // what tool is running right now
         completedAt: null,       // when the agent finished (for frozen elapsed time)
         iteration: null,         // current loop iteration
         maxIterations: null,     // budget limit
@@ -116,14 +115,14 @@ function _agentReducer(state, action) {
         }
 
         case 'AGENT_COMPLETED': {
-            const { agentId, status } = action;
+            const { agentId, status, timestamp } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             return {
                 ...state,
                 agents: {
                     ...state.agents,
-                    [agentId]: { ...agent, status, activeTool: null, completedAt: Date.now() },
+                    [agentId]: { ...agent, status, completedAt: timestamp || Date.now() },
                 },
             };
         }
@@ -281,19 +280,6 @@ function _agentReducer(state, action) {
                 agents: {
                     ...state.agents,
                     [agentId]: { ...agent, generationPreview: merged },
-                },
-            };
-        }
-
-        case 'UPDATE_ACTIVE_TOOL': {
-            const { agentId, toolName } = action;
-            const agent = state.agents[agentId];
-            if (!agent) return state;
-            return {
-                ...state,
-                agents: {
-                    ...state.agents,
-                    [agentId]: { ...agent, activeTool: toolName },
                 },
             };
         }

@@ -34,7 +34,26 @@ def test_stats_reflects_history_growth():
         context_limit=100_000,
     )
     before = cm.stats.context_used
-    history.append({"role": "user", "content": "x" * 600})
+    history.seed_events([
+        {
+            "id": "evt_started",
+            "type": "agent_started",
+            "timestamp": "2026-01-01T00:00:00",
+            "conversation_id": "test",
+            "agent_id": "test-agent",
+            "agent_name": "test-agent",
+            "parent_agent_id": None,
+        },
+        {
+            "id": "evt_u",
+            "type": "user_message",
+            "timestamp": "2026-01-01T00:00:01",
+            "conversation_id": "test",
+            "agent_id": "test-agent",
+            "content": "x" * 600,
+            "attachments": [],
+        },
+    ])
     after = cm.stats.context_used
     assert after > before
 

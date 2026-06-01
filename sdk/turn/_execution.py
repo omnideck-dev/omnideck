@@ -2,12 +2,22 @@
 
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from agents.types import Agent
 from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, get_current_agent_name, publish_event
+from sdk.events import (
+    AgentEvent,
+    ContentPayload,
+    IterationPayload,
+    IterationToolCall,
+    ToolResultPayload,
+    TurnEndPayload,
+    get_current_agent_name,
+    publish_event,
+)
 from sdk.providers import ChatDelta, ChatResponse, ProviderError, get_provider
 from sdk.skills.agent_state import _active_agent_state
 from sdk.tools import _execute_tool_call
@@ -112,8 +122,12 @@ async def _run_tool_with_hooks(
     tool_call: Any,
     tools: list[Callable[..., Any]],
     hooks: list[Any],
-) -> dict[str, Any]:
-    """Execute a single tool call with before/after hooks."""
+) -> None:
+    """Execute a single tool call with before/after hooks.
+
+    Publishes a ``ToolResultPayload`` for the call. The result also flows
+    into the history view through that event — there is no return value.
+    """
     tool_name = tool_call.function.name
     tool_arguments = tool_call.function.arguments
 
@@ -135,12 +149,15 @@ async def _run_tool_with_hooks(
         if fn:
             tool_result = fn(tool_name, tool_arguments, tool_result)
 
-    return {
-        "role": "tool",
-        "tool_name": tool_name,
-        "tool_call_id": tool_call.id,
-        "content": tool_result,
-    }
+    try:
+        publish_event(AgentEvent(payload=ToolResultPayload(
+            type="tool_result",
+            tool_call_id=tool_call.id,
+            tool_name=tool_name,
+            content=str(tool_result) if tool_result is not None else "",
+        )))
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to publish tool_result event")
 
 
 async def run_turn(
@@ -229,17 +246,18 @@ async def run_turn(
                 content = response.message.content
                 thinking = response.message.thinking
                 tool_calls = response.message.tool_calls
+                # Some providers (e.g. Ollama) don't issue tool_call ids.
+                # Mint one synchronously so iteration events, tool_result
+                # events, and the persisted assistant message all share a
+                # stable identifier — otherwise parallel tool calls race
+                # in publish order and the pairing back to the originating
+                # call becomes positional and fragile.
+                for tc in tool_calls or []:
+                    if not tc.id:
+                        tc.id = f"call_{uuid.uuid4().hex[:8]}"
                 # Serialize tool calls to plain dicts for history storage so
                 # providers can reconstruct their own types on the next turn.
                 serialized_tool_calls = [tc.model_dump() for tc in tool_calls] if tool_calls else None
-                assistant_message = {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": serialized_tool_calls,
-                    "thinking": thinking,
-                    "agent_name": get_current_agent_name(),
-                }
-                history.append(assistant_message)
                 # Emit full content only if no deltas were streamed (fallback path)
                 if not streamed_deltas:
                     try:
@@ -248,6 +266,23 @@ async def run_turn(
                         )))
                     except Exception:  # pragma: no cover - defensive
                         logger.exception("Failed to publish model AgentEvent event")
+                try:
+                    publish_event(AgentEvent(payload=IterationPayload(
+                        type="iteration",
+                        iteration_index=iteration - 1,
+                        thinking=thinking,
+                        content=content,
+                        tool_calls=[
+                            IterationToolCall(
+                                id=tc.id,
+                                name=tc.function.name,
+                                arguments=tc.function.arguments,
+                            )
+                            for tc in (tool_calls or [])
+                        ],
+                    )))
+                except Exception:  # pragma: no cover - defensive
+                    logger.exception("Failed to publish iteration event")
                 if content is not None:
                     final_content = content
 
@@ -272,9 +307,7 @@ async def run_turn(
                     async with sem:
                         return await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
 
-                results = await asyncio.gather(*[_run(tc) for tc in tool_calls])
-                for tool_result in results:
-                    history.append(tool_result)
+                await asyncio.gather(*[_run(tc) for tc in tool_calls])
 
             except StopRequestedError:
                 logger.info("Agent '%s' tool loop stopped by user request", agent.name)

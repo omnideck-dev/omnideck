@@ -25,23 +25,40 @@ LLM_TIMEOUT = 180_000
 _FIXTURE_RED_SQUARE = Path(__file__).resolve().parent.parent / "fixtures" / "red_square.png"
 
 
-def _minimal_chat_response() -> str:
-    """JSONL response with just enough to let the UI finish streaming."""
+def _minimal_chat_response(*, attachments: list[dict] | None = None) -> str:
+    """JSONL response with just enough to let the UI finish streaming.
+
+    Mirrors the real backend: a ``user_message`` event is published
+    before any model work, carrying the image attachment metadata. The
+    FE clears its optimistic pending bubble when this lands.
+    """
+    user_payload: dict = {
+        "type": "user_message", "content": "describe this image",
+        "attachments": attachments or [], "is_nudge": False,
+    }
     events = [
         {"payload": {"type": "agent_started", "agent_id": "root",
                      "agent_name": "computron", "parent_agent_id": None},
          "agent_id": "root", "agent_name": "computron",
-         "timestamp": "2026-05-09T00:00:00", "depth": 0},
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
+        {"payload": user_payload,
+         "agent_id": "root", "agent_name": "computron",
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
         {"payload": {"type": "content", "content": "ok"},
          "agent_id": "root", "agent_name": "computron",
-         "timestamp": "2026-05-09T00:00:00", "depth": 0},
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
+        {"payload": {"type": "iteration", "iteration_index": 0,
+                     "content": "ok", "thinking": None,
+                     "tool_calls": []},
+         "agent_id": "root", "agent_name": "computron",
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
         {"payload": {"type": "agent_completed", "agent_id": "root",
                      "agent_name": "computron", "status": "success"},
          "agent_id": "root", "agent_name": "computron",
-         "timestamp": "2026-05-09T00:00:00", "depth": 0},
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
         {"payload": {"type": "turn_end"},
          "agent_id": "root", "agent_name": "computron",
-         "timestamp": "2026-05-09T00:00:00", "depth": 0},
+         "timestamp": "2026-05-09T00:00:00+00:00", "depth": 0},
     ]
     return "".join(json.dumps(e) + "\n" for e in events)
 
@@ -83,7 +100,11 @@ def test_image_upload_round_trip(page: Page):
         route.fulfill(
             status=200,
             headers={"Content-Type": "application/json"},
-            body=_minimal_chat_response(),
+            body=_minimal_chat_response(attachments=[{
+                "filename": _FIXTURE_RED_SQUARE.name,
+                "content_type": "image/png",
+                "path": f"/home/computron/uploads/{_FIXTURE_RED_SQUARE.name}",
+            }]),
         )
 
     page.route("**/api/chat", handler)
@@ -102,11 +123,9 @@ def test_image_upload_round_trip(page: Page):
         "uploaded base64 doesn't match the original file bytes"
     )
 
-    # 2. User bubble renders the image as a base64 data URL.
+    # 2. User bubble renders the uploaded image. The path the backend
+    # returned points at the container_file_handler route, so the FE
+    # uses it directly as the <img src> rather than re-embedding bytes.
     user_msg = page.get_by_test_id("message-user").last
-    img = user_msg.locator("img[src^='data:image/']")
+    img = user_msg.locator(f"img[src*='{_FIXTURE_RED_SQUARE.name}']")
     expect(img).to_be_visible(timeout=5_000)
-    src = img.get_attribute("src") or ""
-    assert expected_b64 in src, (
-        "user bubble image src doesn't contain the uploaded image bytes"
-    )

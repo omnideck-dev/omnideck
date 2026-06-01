@@ -282,7 +282,7 @@ export default function SetupWizard({ onComplete }) {
                             className={styles.title}
                             tabIndex={-1}
                         >
-                            Welcome to Computron
+                            Welcome to Omnideck
                         </h1>
                         <p className={styles.subtitle}>
                             Let's get you set up. We'll connect to your LLM provider, then

@@ -115,7 +115,6 @@ export default memo(AgentCard, (prev, next) => {
     const a = prev.agent, b = next.agent;
     return (
         a.status === b.status &&
-        a.activeTool === b.activeTool &&
         a.childIds.length === b.childIds.length &&
         a.browserTabs === b.browserTabs &&
         a.lastBrowserTabId === b.lastBrowserTabId &&

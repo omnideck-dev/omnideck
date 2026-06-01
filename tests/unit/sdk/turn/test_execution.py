@@ -25,6 +25,7 @@ from sdk.providers._models import (
     ToolCallFunction,
 )
 from sdk.skills.agent_state import AgentState, _active_agent_state
+import sdk.turn._execution as _execution
 from sdk.turn._execution import ToolLoopError, run_turn
 from sdk.turn._turn import StopRequestedError
 
@@ -156,11 +157,24 @@ def _patch_parallel_config():
         yield cfg
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _patch_publish_event():
-    """Stub event publishing so tests don't need a live dispatcher."""
-    with patch(f"{_MOD}.publish_event") as mock:
-        yield mock
+    """Spy that captures published events for tests that need to assert on them.
+
+    The shared sdk conftest already forwards published events into the
+    test's ConversationHistory. This fixture additionally wraps the
+    forwarder so individual tests can inspect calls. Not autouse — most
+    tests don't need to introspect events.
+    """
+    real_publish = _execution.publish_event
+
+    def spy(event):
+        spy.mock(event)
+        real_publish(event)
+
+    spy.mock = MagicMock()
+    with patch.object(_execution, "publish_event", spy):
+        yield spy.mock
 
 
 @pytest.fixture(autouse=True)

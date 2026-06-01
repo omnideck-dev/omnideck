@@ -20,6 +20,7 @@ import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
+import { replayEventsToAgentState } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
 import { AgentStateProvider, useAgentState, useAgentDispatch } from './hooks/useAgentState.jsx';
 import { useToast } from './components/ToastProvider.jsx';
@@ -126,11 +127,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 });
             }
         },
-        // When an agent uses a tool, update the card badge. Activity log
-        // entries are buffered by useStreamingChat for correct ordering.
-        onAgentToolCall: ({ name, agentId }) => {
-            agentDispatch({ type: 'UPDATE_ACTIVE_TOOL', agentId, toolName: name });
-        },
         // Sub-agent text tokens, batched ~60x/sec. We merge content and
         // thinking in one update so they don't get jumbled together.
         onAgentContent: ({ agentId, content, thinking }) => {
@@ -153,59 +149,54 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         onActivityEntry: ({ agentId, entry }) => {
             agentDispatch({ type: 'APPEND_ACTIVITY', agentId, entry });
         },
-        // A previously-saved conversation just finished loading. Replay each
-        // turn through the same actions a live turn fires (AGENT_STARTED →
-        // APPEND_ACTIVITY × N → AGENT_COMPLETED) so resume and live share one
-        // render path. React 18 batches all dispatches within this async
-        // callback into a single render — no streaming/replay animation.
-        onConversationLoaded: ({ conversationId, turnSpecs, previewState }) => {
+        // A previously-saved conversation just finished loading. Replay
+        // the persisted events through useAgentState so the network
+        // view, per-agent activity logs, and preview panels all match
+        // what live SSE would have produced. React 18 batches all
+        // dispatches within this async callback into one render.
+        onConversationLoaded: ({ events, previewState }) => {
             agentDispatch({ type: 'RESET' });
+            replayEventsToAgentState(events, agentDispatch);
 
-            for (const turn of turnSpecs) {
-                agentDispatch({
-                    type: 'AGENT_STARTED',
-                    agentId: turn.agentId,
-                    agentName: 'COMPUTRON',
-                    parentAgentId: null,
-                    instruction: '',
-                    correlationId: null,
-                    timestamp: Date.now(),
-                });
-                for (const entry of turn.entries) {
-                    agentDispatch({ type: 'APPEND_ACTIVITY', agentId: turn.agentId, entry });
+            // The latest root agent's id is where re-opened preview tabs
+            // (saved by the user before the page reload) need to land,
+            // so the per-turn carry-over keeps them visible on the next
+            // live turn.
+            let lastRootAgentId = null;
+            for (const ev of events) {
+                if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+                    lastRootAgentId = ev.agent_id;
                 }
-                agentDispatch({
-                    type: 'AGENT_COMPLETED',
-                    agentId: turn.agentId,
-                    status: 'success',
-                });
             }
-
-            const lastTurn = turnSpecs[turnSpecs.length - 1];
-            if (!lastTurn) {
+            if (!lastRootAgentId) {
                 _pendingActiveTabRef.current = null;
                 return;
             }
 
-            // Preview state hangs on the LAST synthetic agent. When the user
-            // sends a new live message, the reducer's per-turn carry-over
-            // copies the preview state onto the new live root.
             const openFilenames = Array.isArray(previewState?.open_files)
                 ? previewState.open_files
                 : [];
             if (openFilenames.length > 0) {
                 const byName = new Map();
-                for (const t of turnSpecs) {
-                    for (const e of t.entries) {
-                        if (e?.type === 'file_output' && e.filename && !byName.has(e.filename)) {
-                            byName.set(e.filename, e);
-                        }
+                for (const ev of events) {
+                    if (ev?.type === 'file_output' && ev.filename && !byName.has(ev.filename)) {
+                        byName.set(ev.filename, ev);
                     }
                 }
                 for (const name of openFilenames) {
                     const item = byName.get(name);
                     if (item) {
-                        agentDispatch({ type: 'OPEN_FILE', agentId: lastTurn.agentId, item });
+                        agentDispatch({
+                            type: 'OPEN_FILE',
+                            agentId: lastRootAgentId,
+                            item: {
+                                type: 'file_output',
+                                filename: item.filename,
+                                content_type: item.content_type,
+                                path: item.path || null,
+                                timestamp: item.timestamp,
+                            },
+                        });
                     }
                 }
             }
@@ -217,7 +208,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }).current;
 
     const {
-        messages,
+        turns,
         isStreaming,
         sendMessage,
         sendNudge,
@@ -443,7 +434,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     <div className={`${styles.chatColumn} ${networkViewOpen || goalsActive || flyoutPanel === 'settings' ? styles.hidden : ''}`}
                          style={{ width: hasPreview && !networkViewOpen && !goalsActive && flyoutPanel !== 'settings' ? `${preview.splitPosition}%` : '100%' }}>
                         <ChatPanel
-                            messages={messages}
+                            turns={turns}
                             onSend={handleSend}
                             onStop={stopGeneration}
                             isStreaming={isStreaming}

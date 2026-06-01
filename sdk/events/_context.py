@@ -27,16 +27,33 @@ if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
 
 from sdk.skills.agent_state import AgentState, _active_agent_state
 
-from ._dispatcher import EventDispatcher
 from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload, ContentPayload
 
 logger = logging.getLogger(__name__)
 
 
-# Active dispatcher for the current coroutine context.
-_current_dispatcher: ContextVar[EventDispatcher | None] = ContextVar(
-    "assistant_events_current_dispatcher", default=None
+# Active conversation for the current coroutine context. Set by turn_scope
+# (or its equivalent). publish_event routes through the conversation's
+# add_event so the in-memory log is updated synchronously before observers
+# fan out — no race.
+_current_conversation: ContextVar[Any | None] = ContextVar(
+    "assistant_events_current_conversation", default=None
 )
+
+
+def get_current_conversation() -> Any | None:
+    """Return the active conversation for this context, or None."""
+    return _current_conversation.get()
+
+
+def set_current_conversation(conv: Any | None) -> object:
+    """Bind a conversation as the active write target. Returns the reset token."""
+    return _current_conversation.set(conv)
+
+
+def reset_current_conversation(token: object) -> None:
+    """Restore the previous conversation binding."""
+    _current_conversation.reset(token)  # type: ignore[arg-type]
 
 
 # Stack of (context_id, agent_name) frames for nested agent/tool executions.
@@ -69,9 +86,6 @@ def get_current_agent_id() -> str | None:
     return stack[-1][0] if stack else None
 
 
-def get_current_dispatcher() -> EventDispatcher | None:
-    """Return the active event dispatcher for the current context, or None."""
-    return _current_dispatcher.get()
 
 
 def get_current_depth() -> int:
@@ -176,31 +190,30 @@ async def agent_span(
 
 
 def publish_event(event: AgentEvent) -> None:
-    """Publish an AgentEvent via the dispatcher bound to this context.
+    """Publish an AgentEvent to the active conversation.
 
-    No-op when no dispatcher is set. The event is enriched with the current
-    agent name and depth from the context stack before dispatch.
+    Enriches the event with the current agent name / depth / agent id
+    from the context stack, then writes it to the conversation. The
+    conversation appends synchronously and fans out to its observers
+    (disk writer, SSE stream, etc.). No-op when no conversation is bound.
 
     Args:
         event: The AgentEvent instance to publish.
     """
-    dispatcher = _current_dispatcher.get()
-    if dispatcher is None:
-        # Intentionally a low-level debug message to avoid noisy logs in contexts
-        # where publishing is optional.
-        logger.debug("No active dispatcher; dropping event publish request.")
+    conv = _current_conversation.get()
+    if conv is None:
+        logger.debug("No active conversation; dropping event.")
         return
 
     stack = _context_stack.get()
+    enriched = event.model_copy(
+        update={
+            "agent_name": stack[-1][1] if stack else None,
+            "depth": len(stack) - 1 if stack else 0,
+            "agent_id": stack[-1][0] if stack else None,
+        }
+    )
     try:
-        dispatcher.publish(
-            event.model_copy(
-                update={
-                    "agent_name": stack[-1][1] if stack else None,
-                    "depth": len(stack) - 1 if stack else 0,
-                    "agent_id": stack[-1][0] if stack else None,
-                }
-            )
-        )
-    except Exception:  # pragma: no cover - defensive logging path
-        logger.exception("Failed to publish AgentEvent event")
+        conv.add_event(enriched)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to add event to conversation")

@@ -5,56 +5,62 @@ the real rendered DOM (CSS transitions, click handler wiring, real
 event-loop ordering with the streaming pipeline).
 """
 
-import json
-
 import pytest
 from playwright.sync_api import Page, Route, expect
 
+from tests.e2e.network._sse import _evt, build_jsonl
 from tests.e2e.pages import ChatView, NetworkView
-
-
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
-
-
-def _event(payload_type, agent_id="root", agent_name="computron",
-           depth=0, **payload_fields):
-    payload = {"type": payload_type, **payload_fields}
-    if payload_type in ("agent_started", "agent_completed"):
-        payload.setdefault("agent_id", agent_id)
-        payload.setdefault("agent_name", agent_name)
-    return {
-        "payload": payload,
-        "agent_id": agent_id,
-        "agent_name": agent_name,
-        "timestamp": "2026-05-09T00:00:00",
-        "depth": depth,
-    }
 
 
 # Sub-agent has a multi-line instruction and one tool call with multiple
 # arguments — enough to exercise both the instruction toggle and the
 # tool-call expand interaction.
-INSTRUCTED_AGENT_EVENTS = _build_jsonl([
-    _event("agent_started", agent_id="root", agent_name="computron",
-           parent_agent_id=None),
-    _event("content", content="Spawning a helper."),
-    _event("agent_started", agent_id="sub1", agent_name="helper_agent",
-           parent_agent_id="root", depth=1,
-           instruction="First line summary.\n\nLonger detail that only appears when the instruction is expanded."),
-    _event("content", agent_id="sub1", agent_name="helper_agent",
-           depth=1, content="Working on it."),
-    _event("tool_call", agent_id="sub1", agent_name="helper_agent", depth=1,
-           name="replace_in_file",
-           arguments={"path": "config.yaml", "old": "debug: false", "new": "debug: true"}),
-    _event("content", agent_id="sub1", agent_name="helper_agent",
-           depth=1, content="Done."),
-    _event("agent_completed", agent_id="sub1", agent_name="helper_agent",
-           depth=1, status="success"),
-    _event("content", content="Helper finished."),
-    _event("agent_completed", agent_id="root", agent_name="computron",
-           status="success"),
-    _event("turn_end"),
+INSTRUCTED_AGENT_EVENTS = build_jsonl([
+    _evt({"type": "agent_started", "agent_id": "root",
+          "agent_name": "computron", "parent_agent_id": None},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "user_message", "content": "do the work",
+          "attachments": [], "is_nudge": False},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "content", "content": "Spawning a helper."},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Spawning a helper.", "thinking": None,
+          "tool_calls": []},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_started", "agent_id": "sub1",
+          "agent_name": "helper_agent", "parent_agent_id": "root",
+          "instruction": "First line summary.\n\nLonger detail that only appears when the instruction is expanded."},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "content", "content": "Working on it."},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "tool_call", "name": "replace_in_file",
+          "arguments": {"path": "config.yaml", "old": "debug: false",
+                        "new": "debug: true"}},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "content", "content": "Done."},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Working on it.\nDone.", "thinking": None,
+          "tool_calls": [{"id": "tc1", "name": "replace_in_file",
+                          "arguments": {"path": "config.yaml",
+                                         "old": "debug: false",
+                                         "new": "debug: true"}}]},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "agent_completed", "agent_id": "sub1",
+          "agent_name": "helper_agent", "status": "success"},
+         agent_id="sub1", agent_name="helper_agent", depth=1),
+    _evt({"type": "content", "content": "Helper finished."},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "iteration", "iteration_index": 1,
+          "content": "Helper finished.", "thinking": None,
+          "tool_calls": []},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_completed", "agent_id": "root",
+          "agent_name": "computron", "status": "success"},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "turn_end"},
+         agent_id="root", agent_name="computron"),
 ])
 
 

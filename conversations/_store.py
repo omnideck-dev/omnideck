@@ -3,12 +3,8 @@
 All conversation data is stored under per-conversation subdirectories::
 
     {home_dir}/conversations/{conv_id}/
-        history.json          # main agent LLM messages
-        events.json           # agent events for UI streaming
-        sub_agents/
-            {NAME}_{hex}.json # sub-agent message histories
-        summaries/
-            {id}.json         # compaction records
+        events.jsonl      # append-only event log (source of truth)
+        metadata.json     # title, preview state, loaded skills
 """
 
 from __future__ import annotations
@@ -22,7 +18,7 @@ from typing import Any
 
 from config import load_config
 
-from ._models import ConversationSummary, SummaryRecord
+from ._models import ConversationSummary
 
 logger = logging.getLogger(__name__)
 
@@ -34,87 +30,6 @@ def _get_conversations_dir() -> Path:
 
 def _get_conv_dir(conversation_id: str) -> Path:
     return _get_conversations_dir() / conversation_id
-
-
-# -- Conversation history persistence ------------------------------------------
-
-
-def save_conversation_history(conversation_id: str, messages: list[dict[str, Any]]) -> None:
-    """Save raw ConversationHistory messages for a conversation."""
-    conv_dir = _get_conv_dir(conversation_id)
-    conv_dir.mkdir(parents=True, exist_ok=True)
-
-    path = conv_dir / "history.json"
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(messages, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-
-def load_conversation_history(conversation_id: str) -> list[dict[str, Any]] | None:
-    """Load raw ConversationHistory messages for a conversation."""
-    path = _get_conv_dir(conversation_id) / "history.json"
-    if not path.exists():
-        return None
-    try:
-        data: list[dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
-        return data
-    except Exception:
-        logger.exception("Failed to load conversation history %s", conversation_id)
-        return None
-
-
-# -- Agent event persistence ---------------------------------------------------
-
-
-def save_agent_events(conversation_id: str, events: list[dict[str, Any]]) -> None:
-    """Append agent events for a conversation."""
-    conv_dir = _get_conv_dir(conversation_id)
-    conv_dir.mkdir(parents=True, exist_ok=True)
-
-    path = conv_dir / "events.json"
-    existing: list[dict[str, Any]] = []
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.exception("Failed to load agent events %s", conversation_id)
-
-    existing.extend(events)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-
-def load_agent_events(conversation_id: str) -> list[dict[str, Any]]:
-    """Load agent events for a conversation."""
-    path = _get_conv_dir(conversation_id) / "events.json"
-    if not path.exists():
-        return []
-    try:
-        data: list[dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
-        return data
-    except Exception:
-        logger.exception("Failed to load agent events %s", conversation_id)
-        return []
-
-
-# -- Sub-agent history persistence ---------------------------------------------
-
-
-def save_sub_agent_history(
-    conversation_id: str,
-    agent_name: str,
-    short_id: str,
-    messages: list[dict[str, Any]],
-) -> None:
-    """Save a sub-agent's message history."""
-    sub_dir = _get_conv_dir(conversation_id) / "sub_agents"
-    sub_dir.mkdir(parents=True, exist_ok=True)
-
-    path = sub_dir / f"{agent_name}_{short_id}.json"
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(messages, indent=2), encoding="utf-8")
-    tmp.replace(path)
 
 
 # -- Conversation metadata persistence ---------------------------------------
@@ -147,14 +62,10 @@ def load_loaded_skills(conversation_id: str) -> set[str]:
 
 
 def save_conversation_title(conversation_id: str, title: str) -> None:
-    """Save or update the title for a conversation.
-    
-    Titles are stored in a metadata.json file alongside the conversation history.
-    This allows titles to be persisted independently of the message history.
-    """
+    """Save or update the title for a conversation."""
     conv_dir = _get_conv_dir(conversation_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
-    
+
     metadata_path = conv_dir / "metadata.json"
     metadata: dict[str, Any] = {"title": title}
     if metadata_path.exists():
@@ -163,7 +74,7 @@ def save_conversation_title(conversation_id: str, title: str) -> None:
             metadata = {**existing, "title": title}
         except Exception:
             pass
-    
+
     tmp = metadata_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     tmp.replace(metadata_path)
@@ -184,18 +95,7 @@ def load_conversation_metadata(conversation_id: str) -> dict[str, Any]:
 
 
 def save_preview_state(conversation_id: str, state: dict[str, Any]) -> None:
-    """Persist the user's preview-panel tab state for a conversation.
-
-    Shape of `state`:
-        {
-            "open_files": ["report.html", ...],
-            "active_tab": "file:report.html" | "browser" | null,
-            "browser_visible": bool,
-            "terminal_visible": bool,
-            "desktop_visible": bool,
-            "generation_visible": bool,
-        }
-    """
+    """Persist the user's preview-panel tab state for a conversation."""
     conv_dir = _get_conv_dir(conversation_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
 
@@ -223,7 +123,12 @@ def load_preview_state(conversation_id: str) -> dict[str, Any]:
 # -- Conversation listing and deletion -----------------------------------------
 
 def list_conversations() -> list[ConversationSummary]:
-    """List all conversations by scanning subdirectories."""
+    """List all conversations by scanning subdirectories.
+
+    A conversation is recognised by the presence of ``events.jsonl``.
+    The first user message and turn count are derived from the event
+    log; the title comes from ``metadata.json`` if present.
+    """
     conv_root = _get_conversations_dir()
     if not conv_root.exists():
         return []
@@ -232,32 +137,49 @@ def list_conversations() -> list[ConversationSummary]:
     for entry in conv_root.iterdir():
         if not entry.is_dir():
             continue
-        history_path = entry / "history.json"
-        if not history_path.exists():
+        events_path = entry / "events.jsonl"
+        if not events_path.exists():
             continue
         try:
-            messages: list[dict[str, Any]] = json.loads(
-                history_path.read_text(encoding="utf-8"),
-            )
-            user_msgs = [m for m in messages if m.get("role") == "user"]
-            first_msg = user_msgs[0].get("content", "") if user_msgs else ""
-            # Truncate for listing display
+            first_msg = ""
+            turn_count = 0
+            first_event_ts = ""
+            with events_path.open(encoding="utf-8") as f:
+                for raw in f:
+                    if not raw.strip():
+                        continue
+                    e = json.loads(raw)
+                    if not first_event_ts:
+                        first_event_ts = e.get("timestamp", "") or ""
+                    # Count user messages only on the root agent so
+                    # nudges to sub-agents don't inflate the turn
+                    # count. Root agent ids look like ``root.<profile>.<n>``;
+                    # sub-agents append further segments, so the depth
+                    # is the number of dots minus two.
+                    if e.get("type") == "user_message" and (
+                        e.get("agent_id") or ""
+                    ).count(".") == 2:
+                        turn_count += 1
+                        if not first_msg:
+                            first_msg = e.get("content", "") or ""
             if len(first_msg) > 200:
                 first_msg = first_msg[:200] + "..."
-            started_at = datetime.fromtimestamp(
-                history_path.stat().st_mtime, tz=UTC,
+            # started_at = timestamp of the first event in the log. mtime
+            # would shift forward every time we append a new event, putting
+            # every active conversation into the "Today" bucket.
+            started_at = first_event_ts or datetime.fromtimestamp(
+                events_path.stat().st_mtime, tz=UTC,
             ).isoformat()
-            
-            # Load title from metadata (if available)
+
             metadata = load_conversation_metadata(entry.name)
             title = metadata.get("title", "")
-            
+
             summaries.append(ConversationSummary(
                 conversation_id=entry.name,
                 first_message=first_msg,
                 title=title,
                 started_at=started_at,
-                turn_count=len(user_msgs),
+                turn_count=turn_count,
             ))
         except Exception:
             logger.exception("Failed to read conversation %s", entry.name)
@@ -282,63 +204,3 @@ def delete_conversation(conversation_id: str) -> bool:
         except OSError:
             break
     return True
-
-
-# -- Summary record persistence ------------------------------------------------
-
-
-def save_summary_record(record: SummaryRecord) -> None:
-    """Persist a summary record to {conv_id}/summaries/{id}.json."""
-    conv_id = record.conversation_id or "default"
-    summaries_dir = _get_conv_dir(conv_id) / "summaries"
-    summaries_dir.mkdir(parents=True, exist_ok=True)
-
-    path = summaries_dir / f"{record.id}.json"
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(record.model_dump(), indent=2),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
-
-
-def load_summary_record(conversation_id: str, record_id: str) -> SummaryRecord | None:
-    """Load a summary record by conversation and record ID."""
-    path = _get_conv_dir(conversation_id) / "summaries" / f"{record_id}.json"
-    if not path.exists():
-        return None
-    try:
-        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-        return SummaryRecord.model_validate(data)
-    except Exception:
-        logger.exception("Failed to load summary record %s", record_id)
-        return None
-
-
-def list_summary_records(conversation_id: str | None = None) -> list[SummaryRecord]:
-    """Load summary records, optionally filtered by conversation."""
-    dirs_to_scan: list[Path] = []
-    if conversation_id:
-        summaries_dir = _get_conv_dir(conversation_id) / "summaries"
-        if summaries_dir.exists():
-            dirs_to_scan.append(summaries_dir)
-    else:
-        conv_root = _get_conversations_dir()
-        if conv_root.exists():
-            for entry in conv_root.iterdir():
-                if entry.is_dir():
-                    sd = entry / "summaries"
-                    if sd.exists():
-                        dirs_to_scan.append(sd)
-
-    records: list[SummaryRecord] = []
-    for d in dirs_to_scan:
-        for path in d.glob("*.json"):
-            try:
-                data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-                records.append(SummaryRecord.model_validate(data))
-            except Exception:
-                logger.exception("Failed to load summary record from %s", path)
-
-    records.sort(key=lambda r: r.created_at, reverse=True)
-    return records

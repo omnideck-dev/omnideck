@@ -33,7 +33,7 @@ class _CompleteBody(BaseModel):
     main_model: str
     vision_model: str | None = None
     context_window: int | None = None
-    default_agent: str = "computron"
+    default_agent: str = "omnideck"
 
 
 async def handle_complete(request: web.Request) -> web.Response:

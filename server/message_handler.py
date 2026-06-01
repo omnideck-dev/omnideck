@@ -17,29 +17,31 @@ from agents import (
 )
 from agents.types import Agent, Data
 from conversations import (
+    EventsLogWriter,
     generate_conversation_title,
-    load_agent_events,
-    load_conversation_history,
+    load_events_jsonl,
     load_loaded_skills,
     load_preview_state,
-    save_agent_events,
     save_conversation_title,
     save_loaded_skills,
 )
 from sdk import (
-    PersistenceHook,
     default_hooks,
     run_turn,
 )
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
+from sdk.context._view import build_llm_history
 from sdk.events import (
     AgentEvent,
     ContentPayload,
     TurnEndPayload,
+    UserAttachment,
+    UserMessagePayload,
     agent_span,
-    get_current_dispatcher,
+    publish_event,
+    reset_current_conversation,
+    set_current_conversation,
 )
-from sdk.hooks._agent_event_buffer import AgentEventBufferHook
 from sdk.skills import AgentState, get_skill
 from sdk.tools._core import get_core_tools
 from sdk.turn import is_turn_active, turn_scope
@@ -133,11 +135,15 @@ async def _get_conversation(conversation_id: str) -> tuple[ConversationHistory, 
     if conversation_id in _conversations:
         _conversations.move_to_end(conversation_id)
         return _conversations[conversation_id], False
-    persisted = load_conversation_history(conversation_id)
-    is_new = persisted is None
+    events = load_events_jsonl(conversation_id)
+    is_new = not events
     if is_new:
         logger.info("Creating new conversation %s", conversation_id)
-    _conversations[conversation_id] = ConversationHistory(persisted, instance_id=conversation_id)
+    history = ConversationHistory(
+        instance_id=conversation_id, conversation_id=conversation_id,
+    )
+    history.seed_events(events)
+    _conversations[conversation_id] = history
     await _evict_lru_conversation(exclude=conversation_id)
     return _conversations[conversation_id], is_new
 
@@ -174,29 +180,59 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
+_UI_REPLAY_EVENT_TYPES: frozenset[str] = frozenset({
+    "agent_started",
+    "agent_completed",
+    "user_message",
+    "iteration",
+    "tool_result",
+    "browser_screenshot",
+    "terminal_output",
+    "file_output",
+    "spawn_requested",
+    "compaction",
+})
+
+
 async def resume_conversation(conversation_id: str) -> dict | None:
-    """Load a conversation's full-fidelity history, events, and preview state.
+    """Load a conversation's history derived from events.jsonl.
 
     Returns a dict with:
-        messages: LLM messages from history.json.
-        events: persisted agent events (file_output, browser_screenshot, etc.)
-            from events.json. The UI uses these to reconstruct inline file
-            blocks in the chat and the preview tabs on restore.
-        preview_state: persisted preview-panel state (open file list,
-            active tab, per-preview visibility flags).
+        messages: LLM messages derived from the event log via
+            ``build_llm_history``.
+        events: subset of the event log used by the UI to replay
+            structural state (agent lifecycle, screenshots, terminal
+            output, file outputs).
+        preview_state: persisted preview-panel state.
 
-    None if the conversation isn't found.
+    Returns None when no events.jsonl is present — conversations
+    created before the events-first cutover have no replay source and
+    cannot be opened.
     """
-    messages = load_conversation_history(conversation_id)
-    if messages is None:
+    events = load_events_jsonl(conversation_id)
+    if not events:
         return None
 
-    _conversations[conversation_id] = ConversationHistory(messages, instance_id=conversation_id)
+    history = ConversationHistory(
+        instance_id=conversation_id, conversation_id=conversation_id,
+    )
+    history.seed_events(events)
+    _conversations[conversation_id] = history
     _conversations.move_to_end(conversation_id)
     await _evict_lru_conversation(exclude=conversation_id)
+
+    ui_events = [
+        e for e in events if e.get("type") in _UI_REPLAY_EVENT_TYPES
+    ]
+
+    # User-facing view: original messages, not the post-compaction LLM
+    # view. The frontend interleaves compaction chips at their points.
+    ui_messages = build_llm_history(
+        events, conversation_id, apply_compactions=False,
+    )
     return {
-        "messages": messages,
-        "events": load_agent_events(conversation_id),
+        "messages": ui_messages,
+        "events": ui_events,
         "preview_state": load_preview_state(conversation_id),
     }
 
@@ -218,9 +254,16 @@ def _refresh_system_message(history: ConversationHistory, system_prompt: str) ->
     history.set_system_message(instruction)
 
 
-def _augment_message_with_attachments(message: str, data: Sequence[Data]) -> str:
-    """Write attachments to the virtual computer and return an augmented message."""
+def _augment_message_with_attachments(
+    message: str, data: Sequence[Data]
+) -> tuple[str, list[UserAttachment]]:
+    """Write attachments to the virtual computer.
+
+    Returns the LLM-facing augmented message text and the structured
+    attachment metadata for the user_message event.
+    """
     file_lines = []
+    attachments: list[UserAttachment] = []
     for d in data:
         container_path = receive_attachment(
             base64_encoded=d.base64_encoded,
@@ -229,9 +272,15 @@ def _augment_message_with_attachments(message: str, data: Sequence[Data]) -> str
         )
         name = d.filename or "unnamed"
         file_lines.append(f"  - {name} ({d.content_type}) -> {container_path}")
+        attachments.append(UserAttachment(
+            filename=name,
+            content_type=d.content_type,
+            path=container_path,
+        ))
 
     files_block = "\n".join(file_lines)
-    return f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
+    augmented = f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
+    return augmented, attachments
 
 
 def _build_agent_from_profile(profile: AgentProfile) -> Agent:
@@ -248,6 +297,8 @@ async def _run_turn(
     active_agent: Agent,
     profile: AgentProfile,
     user_content: str,
+    user_message_text: str,
+    user_attachments: list[UserAttachment],
     conversation_id: str,
     handler: Callable[[AgentEvent], object],
     is_new_conversation: bool = False,
@@ -298,43 +349,51 @@ async def _run_turn(
         ],
     )
 
-    async with turn_scope(handler=handler, conversation_id=conversation_id):
-        # Subscribe event buffer to capture agent lifecycle/preview events
-        event_buffer = AgentEventBufferHook()
-        dispatcher = get_current_dispatcher()
-        if dispatcher:
-            dispatcher.subscribe(event_buffer.handle_event)
+    async with turn_scope(conversation_id=conversation_id):
+        events_log = EventsLogWriter(conv_id)
+        # Conversation owns the canonical event log. All observers — the
+        # disk writer and the SSE bridge that streams to the response —
+        # subscribe to the conversation directly. publish_event writes
+        # inline, so the model never reads a stale view.
+        history.subscribe(events_log.handle_event)
+        history.subscribe(handler)
+        conv_token = set_current_conversation(history)
+        try:
+            async with agent_span(
+                active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
+            ):
+                try:
+                    publish_event(AgentEvent(payload=UserMessagePayload(
+                        type="user_message",
+                        content=user_message_text,
+                        attachments=user_attachments,
+                    )))
+                except Exception:  # pragma: no cover - defensive
+                    logger.exception("Failed to publish user_message event")
+                # Build full system prompt: profile prompt + loaded skill prompts
+                full_prompt = active_agent.instruction
+                skill_prompt = agent_state.build_skill_prompt()
+                if skill_prompt:
+                    full_prompt = full_prompt + "\n" + skill_prompt
+                _refresh_system_message(history, full_prompt)
 
-        async with agent_span(
-            active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
-        ):
-            history.append({"role": "user", "content": user_content})
-            # Build full system prompt: profile prompt + loaded skill prompts
-            full_prompt = active_agent.instruction
-            skill_prompt = agent_state.build_skill_prompt()
-            if skill_prompt:
-                full_prompt = full_prompt + "\n" + skill_prompt
-            _refresh_system_message(history, full_prompt)
-
-            hooks = default_hooks(
-                active_agent,
-                max_iterations=active_agent.max_iterations,
-                ctx_manager=ctx_manager,
-            )
-
-            hooks.append(
-                PersistenceHook(
-                    conversation_id=conv_id,
-                    history=history,
+                hooks = default_hooks(
+                    active_agent,
+                    max_iterations=active_agent.max_iterations,
+                    ctx_manager=ctx_manager,
                 )
-            )
 
-            with suppress(StopRequestedError):
-                await run_turn(
-                    history=history,
-                    agent=active_agent,
-                    hooks=hooks,
-                )
+                with suppress(StopRequestedError):
+                    await run_turn(
+                        history=history,
+                        agent=active_agent,
+                        hooks=hooks,
+                    )
+        finally:
+            reset_current_conversation(conv_token)
+            history.unsubscribe(events_log.handle_event)
+            history.unsubscribe(handler)
+            await history.drain_observers()
 
         # Persist loaded skills so they survive across turns and restarts
         if agent_state.loaded_skill_names:
@@ -342,19 +401,6 @@ async def _run_turn(
                 save_loaded_skills(conv_id, agent_state.loaded_skill_names)
             except Exception:
                 logger.exception("Failed to save loaded skills for '%s'", conv_id)
-
-        # Yield to event loop so call_soon callbacks (sync event handlers)
-        # have a chance to run before we read the buffer
-        await asyncio.sleep(0)
-
-        # Save agent events after the turn (outside agent_span so completion is captured)
-        buffered_events = event_buffer.get_events()
-        if buffered_events:
-            try:
-                save_agent_events(conv_id, buffered_events)
-                logger.info("Saved %d agent events for conv=%s", len(buffered_events), conv_id)
-            except Exception:
-                logger.exception("Failed to save agent events for '%s'", conv_id)
 
         # Generate a title for new conversations after the first successful turn
         if is_new_conversation and conversation_id:
@@ -397,8 +443,9 @@ async def handle_user_message(
     history, is_new_conversation = await _get_conversation(conversation_id)
 
     user_content = message
+    user_attachments: list[UserAttachment] = []
     if data:
-        user_content = _augment_message_with_attachments(message, data)
+        user_content, user_attachments = _augment_message_with_attachments(message, data)
 
     if not profile_id:
         msg = "profile_id is required"
@@ -431,6 +478,8 @@ async def handle_user_message(
                     active_agent=active_agent,
                     profile=profile,
                     user_content=user_content,
+                    user_message_text=message,
+                    user_attachments=user_attachments,
                     conversation_id=conversation_id,
                     handler=_queue_handler,
                     is_new_conversation=is_new_conversation,

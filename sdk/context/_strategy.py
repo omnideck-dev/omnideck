@@ -2,8 +2,7 @@
 
 import asyncio
 import logging
-import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -13,9 +12,15 @@ from sdk.providers import get_provider
 from rich.panel import Panel
 from rich.text import Text
 
-from conversations import SummaryRecord, save_summary_record
-from sdk.events import get_current_agent_name
-from sdk.turn import get_conversation_id
+from sdk.events import (
+    AgentEvent,
+    CompactionAudit,
+    CompactionPayload,
+    CompactionScope,
+    CompactionStats,
+    get_current_agent_name,
+    publish_event,
+)
 from settings import load_settings
 
 from ._history import ConversationHistory
@@ -66,6 +71,16 @@ _THINKING_CAP = 200
 
 # Approximate characters per token for estimating chunk boundaries.
 _CHARS_PER_TOKEN = 4
+
+
+def _parse_iso_seconds(ts: str) -> float | None:
+    """Parse an ISO-8601 timestamp to a POSIX float, or return None."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts).timestamp()
+    except (ValueError, TypeError):
+        return None
 
 # Fraction of the summarizer's context window to use for input.
 # Leaves room for the system prompt (~500 tokens) and generated output
@@ -120,10 +135,10 @@ _SUMMARIZE_PROMPT = (
     "clicked search'\n"
     "  Browser RIGHT: 'Searched Google Flights nonstop AUS→ORD Apr 10-12. "
     "Best: American $634, United $714, Delta $558'\n"
-    "  Code WRONG: 'Read sdk/events/_dispatcher.py'\n"
-    "  Code RIGHT: 'EventDispatcher (sdk/events/_dispatcher.py): async pub/sub, "
-    "subscribe(handler)/unsubscribe()/publish(event) methods, supports async "
-    "context manager'\n"
+    "  Code WRONG: 'Read sdk/context/_history.py'\n"
+    "  Code RIGHT: 'ConversationHistory (sdk/context/_history.py): owns the "
+    "in-memory event log, subscribe(handler)/unsubscribe()/add_event(event) "
+    "for observer fan-out, drain_observers() waits for async observers'\n"
     "- For code: preserve key signatures, field names, and behavioural details "
     "found in file contents — these are the primary value of code analysis.\n"
     "- For research: MUST INCLUDE URLs needed to revisit results. Omit "
@@ -237,13 +252,15 @@ class LLMCompactionStrategy:
         return stats.fill_ratio >= self._threshold
 
     async def apply(self, history: ConversationHistory, stats: ContextStats) -> None:
-        """Summarize old messages and replace them with a compact summary."""
-        non_system = history.non_system_messages
+        """Summarize old messages and publish a CompactionPayload event.
 
-        # Pin the first user message — it will be kept but may be updated
-        # with an extracted intent history if the user changed topics.
-        first_user_idx, has_pinned = _find_first_user(non_system)
-        pin_offset = 1 if has_pinned else 0
+        The strategy never mutates ``history``. After this method returns,
+        the next read of ``history.messages`` derives the compacted view
+        from the new event in the log.
+        """
+        non_system = history.non_system_messages
+        first_user_idx, has_first_user = _find_first_user(non_system)
+        pin_offset = 1 if has_first_user else 0
 
         body = non_system[pin_offset:]
         keep_count = _count_kept_by_assistant_groups(
@@ -256,8 +273,15 @@ class LLMCompactionStrategy:
         if not compactable:
             return
 
-        # Collect all user messages before history mutation for intent
-        # extraction.  Includes the pinned message, compactable, and kept.
+        # Resolve kept_from_id / kept_to_id from the agent's own event log.
+        # kept_from_id is the event id of the (keep_recent_groups)-th-from-
+        # last iteration event — everything earlier (within this agent's
+        # scope) gets compacted. kept_to_id is the most recent event for
+        # this agent at the moment compaction fires.
+        kept_from_id, kept_to_id = self._resolve_kept_bounds(history)
+        if kept_from_id is None or kept_to_id is None:
+            return
+
         all_user_contents = []
         for m in non_system:
             if m.get("role") == "user":
@@ -265,14 +289,12 @@ class LLMCompactionStrategy:
                 if content and not content.startswith(_SUMMARY_PREFIX):
                     all_user_contents.append(content)
 
-        # Extract any prior summary so we can merge facts forward.
         prior_summary = _extract_prior_summary(compactable)
 
-        # Resolve model up front so we can unload on any exit path.
         resolved = self._resolve_model()
         if resolved is None:
             return
-        _resolved_provider, resolved_model, resolved_options = resolved
+        _resolved_provider, resolved_model, _resolved_options = resolved
 
         import time as _time
         t0 = _time.monotonic()
@@ -293,79 +315,167 @@ class LLMCompactionStrategy:
             return
         elapsed = _time.monotonic() - t0
 
-        # Extract user intent if multiple user messages exist (experiment 29).
-        # When the user changes topics mid-conversation, the pinned first
-        # message becomes stale.  Replace it with an LLM-extracted intent
-        # history that tracks how the user's requests evolved.
-        intent_history = None
-        if has_pinned and len(all_user_contents) > 1:
+        # If the agent received multiple distinct user messages, the first
+        # one likely no longer reflects current intent. Ask the summarizer
+        # to produce a consolidated intent history; the new compaction
+        # event will replace the first user message's content with this at
+        # build time.
+        user_intent_summary = None
+        if has_first_user and len(all_user_contents) > 1:
             try:
-                intent_history = await self._extract_intent(all_user_contents)
+                user_intent_summary = await self._extract_intent(all_user_contents)
                 logger.info(
                     "LLMCompactionStrategy: extracted intent from %d user messages",
                     len(all_user_contents),
                 )
             except Exception:
                 logger.exception(
-                    "Intent extraction failed, keeping original pinned message",
+                    "Intent extraction failed, keeping original first user message",
                 )
-
-        # Persist the summarization event for quality evaluation.
-        record = SummaryRecord(
-            id=str(uuid.uuid4()),
-            created_at=datetime.now(UTC).isoformat(),
-            model=model_name,
-            input_messages=compactable,
-            input_char_count=sum(len(m.get("content") or "") for m in compactable),
-            prior_summary=prior_summary,
-            summary_text=summary,
-            summary_char_count=len(summary),
-            messages_compacted=len(compactable),
-            fill_ratio=stats.fill_ratio,
-            conversation_id=get_conversation_id() or "default",
-            agent_name=get_current_agent_name() or "",
-            options=resolved_options if isinstance(resolved_options, dict) else {},
-            elapsed_seconds=round(elapsed, 1),
-            source_history=history.instance_id,
-            user_message_post_compaction=intent_history,
-        )
-
-        # Save the pinned user message content before mutation. On the first
-        # compaction this is the user's real original message; on subsequent
-        # compactions it's the previous intent history. The true original is
-        # in the earliest summary record (by created_at).
-        if has_pinned:
-            pinned_idx = 1 if history.system_message is not None else 0
-            record.user_message_pre_compaction = (
-                history.get_mutable(pinned_idx).get("content") or ""
-            )
-
-        save_summary_record(record)
-
-        # Determine the range to drop within the full history list.
-        # Skip system message (if any) and the pinned first user message.
-        start = (1 if history.system_message is not None else 0) + pin_offset
-        end = start + len(compactable)
 
         _log_compaction(stats, len(compactable), summary)
 
-        # Replace compactable messages with summary.
-        history.drop_range(start, end)
-        history.insert(start, {
-            "role": "assistant",
-            "content": _SUMMARY_PREFIX + summary,
-        })
+        input_char_count = sum(len(m.get("content") or "") for m in compactable)
+        presentation_stats = self._compute_stats(
+            history=history,
+            kept_from_id=kept_from_id,
+            context_before=stats.context_used,
+            context_limit=stats.context_limit,
+            input_char_count=input_char_count,
+            summary_text=summary,
+        )
+        try:
+            publish_event(AgentEvent(payload=CompactionPayload(
+                type="compaction",
+                kept_from_id=kept_from_id,
+                kept_to_id=kept_to_id,
+                summary_text=summary,
+                user_intent_summary=user_intent_summary,
+                audit=CompactionAudit(
+                    model=model_name,
+                    input_char_count=input_char_count,
+                    elapsed_seconds=round(elapsed, 1),
+                ),
+                stats=presentation_stats,
+            )))
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to publish compaction event")
 
-        # Update the pinned first user message with the extracted intent
-        # history so the agent sees the current objective, not the stale
-        # original request.
-        if intent_history is not None and has_pinned:
-            pinned_idx = 1 if history.system_message is not None else 0
-            pinned_msg = history.get_mutable(pinned_idx)
-            pinned_msg["content"] = _INTENT_PREFIX + intent_history
-
-        # Unload the summarizer model to free VRAM for the main agent.
         await _unload_model(model_name)
+
+    def _resolve_kept_bounds(
+        self, history: ConversationHistory,
+    ) -> tuple[str | None, str | None]:
+        """Return (kept_from_id, kept_to_id) from this agent's event log.
+
+        kept_from_id is the event id of the iteration that anchors the
+        recent-kept group; kept_to_id is the most recent event for the
+        agent. Returns ``(None, None)`` if there aren't enough iterations
+        yet to compact safely.
+        """
+        # Filter by agent_name (not agent_id) — agent_id gets a fresh
+        # ".N" suffix every turn, which would hide iterations from
+        # earlier turns and stop compaction from ever firing on a
+        # multi-turn conversation.
+        agent_name = get_current_agent_name()
+        if agent_name is None:
+            return None, None
+        my_events = [
+            e for e in history.recorded_events
+            if e.get("agent_name") == agent_name
+        ]
+        if not my_events:
+            return None, None
+        my_iterations = [e for e in my_events if e["type"] == "iteration"]
+        if len(my_iterations) < self._keep_recent_groups:
+            return None, None
+        kept_from_id = my_iterations[-self._keep_recent_groups]["id"]
+        kept_to_id = my_events[-1]["id"]
+        return kept_from_id, kept_to_id
+
+    def _compute_stats(
+        self,
+        *,
+        history: ConversationHistory,
+        kept_from_id: str,
+        context_before: int,
+        context_limit: int,
+        input_char_count: int,
+        summary_text: str,
+    ) -> CompactionStats:
+        """Compute presentation stats for the chip panel at compaction time.
+
+        Walks the agent's event log to count what's being compacted,
+        derives an estimated post-compaction context size from the chars
+        replaced vs. the summary's own size, and bundles everything into
+        a CompactionStats. All approximations use chars/4 ≈ tokens.
+        """
+        # Filter by the logical agent (agent_name), not agent_id — the
+        # latter gets a fresh ".N" suffix on every turn, which would hide
+        # iterations and tool results from earlier turns.
+        agent_name = get_current_agent_name()
+        my_events = (
+            [e for e in history.recorded_events if e.get("agent_name") == agent_name]
+            if agent_name else []
+        )
+
+        # The range this compaction summarized: from just after the
+        # previous compaction (or log start) up to but not including
+        # kept_from_id.
+        prior_idx = None
+        for i in range(len(my_events) - 1, -1, -1):
+            if my_events[i].get("type") == "compaction":
+                prior_idx = i
+                break
+        range_start = (prior_idx + 1) if prior_idx is not None else 0
+        kept_idx = None
+        for i, e in enumerate(my_events):
+            if e.get("id") == kept_from_id:
+                kept_idx = i
+                break
+        range_end = kept_idx if kept_idx is not None else len(my_events)
+        compacted = my_events[range_start:range_end]
+
+        scope = CompactionScope(
+            user_messages=sum(1 for e in compacted if e.get("type") == "user_message"),
+            iterations=sum(1 for e in compacted if e.get("type") == "iteration"),
+            tool_results=sum(1 for e in compacted if e.get("type") == "tool_result"),
+        )
+        sub_agents_spawned = sum(
+            1 for e in compacted if e.get("type") == "spawn_requested"
+        )
+
+        spanned_seconds = None
+        if compacted:
+            first_ts = _parse_iso_seconds(compacted[0].get("timestamp", ""))
+            last_ts = _parse_iso_seconds(compacted[-1].get("timestamp", ""))
+            if first_ts is not None and last_ts is not None:
+                spanned_seconds = max(0.0, last_ts - first_ts)
+
+        summary_chars = len(summary_text)
+        summary_lines = summary_text.count("\n") + 1 if summary_text else 0
+        summary_tokens = summary_chars // _CHARS_PER_TOKEN
+
+        # Estimate post-compaction context: subtract the input chars the
+        # summarizer replaced, add the summary's own size.
+        input_tokens = input_char_count // _CHARS_PER_TOKEN
+        context_after_est = max(0, context_before - input_tokens + summary_tokens)
+        saved_tokens = max(0, context_before - context_after_est)
+        saved_ratio = (saved_tokens / context_before) if context_before > 0 else 0.0
+
+        return CompactionStats(
+            context_before=context_before,
+            context_after=context_after_est,
+            context_limit=context_limit,
+            saved_tokens=saved_tokens,
+            saved_ratio=saved_ratio,
+            spanned_seconds=spanned_seconds,
+            scope=scope,
+            sub_agents_spawned=sub_agents_spawned,
+            summary_chars=summary_chars,
+            summary_tokens=summary_tokens,
+            summary_lines=summary_lines,
+        )
 
     async def _summarize(
         self,

@@ -298,16 +298,39 @@ describe('useAgentState reducer', () => {
             expect(getState().selectedAgentId).toBe('root-1');
         });
 
-        it('AGENT_COMPLETED sets status and clears activeTool', () => {
+        it('AGENT_COMPLETED sets status', () => {
             const { getState, dispatch } = renderWithProvider();
 
             dispatch(agentStarted('root-1'));
-            dispatch({ type: 'UPDATE_ACTIVE_TOOL', agentId: 'root-1', toolName: 'browse_page' });
             dispatch(agentCompleted('root-1', 'success'));
 
             const agent = getState().agents['root-1'];
             expect(agent.status).toBe('success');
-            expect(agent.activeTool).toBeNull();
+        });
+
+        it('AGENT_COMPLETED honours an explicit timestamp (used by resume replay)', () => {
+            // Live SSE omits the field and falls back to Date.now(); the
+            // events.jsonl replay path passes the persisted event time so
+            // the network-view elapsed badge shows the real duration
+            // instead of "0s" for every resumed completion.
+            const { getState, dispatch } = renderWithProvider();
+            const persistedTs = Date.parse('2026-06-01T16:28:03+00:00');
+            dispatch(agentStarted('root-1'));
+            dispatch({
+                type: 'AGENT_COMPLETED', agentId: 'root-1',
+                status: 'success', timestamp: persistedTs,
+            });
+            expect(getState().agents['root-1'].completedAt).toBe(persistedTs);
+        });
+
+        it('AGENT_COMPLETED falls back to Date.now() when no timestamp is provided', () => {
+            const { getState, dispatch } = renderWithProvider();
+            const before = Date.now();
+            dispatch(agentStarted('root-1'));
+            dispatch(agentCompleted('root-1', 'success'));
+            const completedAt = getState().agents['root-1'].completedAt;
+            expect(completedAt).toBeGreaterThanOrEqual(before);
+            expect(completedAt).toBeLessThanOrEqual(Date.now());
         });
     });
 

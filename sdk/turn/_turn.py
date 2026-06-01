@@ -21,8 +21,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-from sdk.events._context import _current_dispatcher
-from sdk.events._dispatcher import EventDispatcher, EventHandler
 
 logger = logging.getLogger(__name__)
 
@@ -89,49 +87,32 @@ def any_turn_active() -> bool:
 
 @asynccontextmanager
 async def turn_scope(
-    handler: EventHandler | None = None,
     conversation_id: str | None = None,
 ) -> AsyncIterator[None]:
-    """Set up and tear down everything needed for a single conversation turn.
+    """Set up and tear down per-turn state.
 
-    This ensures:
-    - A fresh EventDispatcher is created and bound so ``publish_event`` works
-    - A fresh stop event is created and bound so ``check_stop`` works from any
-      depth without parameter passing
-    - The conversation is registered as active so ``is_turn_active`` returns True
-    - If a handler is provided, it is subscribed for the duration of the turn
-    - In-flight async handler tasks are drained before teardown
-    - Teardown always occurs, even if the body raises
+    Binds a stop event so ``check_stop`` works from any depth and
+    registers the conversation as active. Event fan-out happens via the
+    bound conversation's observer list — the caller is responsible for
+    subscribing observers and calling ``set_current_conversation`` before
+    publishing.
 
     Args:
-        handler: Optional subscriber callable (sync or async).
         conversation_id: Conversation identifier for per-conversation isolation.
 
     Yields:
         None
     """
     sid = conversation_id or _DEFAULT_CONVERSATION_ID
-    dispatcher = EventDispatcher()
     stop_event = asyncio.Event()
     _active_conversations.add(sid)
     _active_stop_events[sid] = stop_event
-    dispatcher_token = _current_dispatcher.set(dispatcher)
     stop_token = _stop_event.set(stop_event)
     conversation_token = _conversation_id.set(sid)
     try:
-        if handler is not None:
-            async with dispatcher.subscription(handler):
-                yield None
-        else:
-            yield None
+        yield None
     finally:
-        try:
-            await dispatcher.drain()
-        except Exception:
-            logger.exception("Error draining event dispatcher for conversation '%s'", sid)
-        finally:
-            _current_dispatcher.reset(dispatcher_token)
-            _stop_event.reset(stop_token)
-            _conversation_id.reset(conversation_token)
-            _active_conversations.discard(sid)
-            _active_stop_events.pop(sid, None)
+        _stop_event.reset(stop_token)
+        _conversation_id.reset(conversation_token)
+        _active_conversations.discard(sid)
+        _active_stop_events.pop(sid, None)

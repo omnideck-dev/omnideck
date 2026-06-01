@@ -4,189 +4,70 @@ Verifies that agent cards from a previous turn persist in the network
 view when a second turn spawns new agents.
 """
 
-import json
-
 from playwright.sync_api import Page, Route, expect
 
+from tests.e2e.network._sse import _evt, build_jsonl
 from tests.e2e.pages import ChatView, NetworkView
 
 
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
+def _turn(root: str, sub_specs: list[tuple[str, str]],
+          user_text: str, base_offset: int) -> str:
+    """Build one root-+-N-subs turn. ``sub_specs`` is a list of
+    ``(agent_id, agent_name)`` pairs."""
+    def ts(n: int) -> str:
+        return f"2026-05-03T10:0{base_offset}:{n:02d}+00:00"
+
+    events: list[dict] = [
+        _evt({"type": "agent_started", "agent_id": root,
+              "agent_name": "computron", "parent_agent_id": None},
+             agent_id=root, agent_name="computron", ts=ts(0)),
+        _evt({"type": "user_message", "content": user_text,
+              "attachments": [], "is_nudge": False},
+             agent_id=root, agent_name="computron", ts=ts(1)),
+    ]
+    for i, (sid, sname) in enumerate(sub_specs, start=2):
+        events.append(_evt(
+            {"type": "agent_started", "agent_id": sid,
+             "agent_name": sname, "parent_agent_id": root},
+            agent_id=sid, agent_name=sname, depth=1, ts=ts(i),
+        ))
+    for i, (sid, sname) in enumerate(sub_specs, start=10):
+        events.extend([
+            _evt({"type": "content", "content": f"{sname} done."},
+                 agent_id=sid, agent_name=sname, depth=1, ts=ts(i)),
+            _evt({"type": "iteration", "iteration_index": 0,
+                  "content": f"{sname} done.", "thinking": None,
+                  "tool_calls": []},
+                 agent_id=sid, agent_name=sname, depth=1, ts=ts(i)),
+            _evt({"type": "agent_completed", "agent_id": sid,
+                  "agent_name": sname, "status": "success"},
+                 agent_id=sid, agent_name=sname, depth=1, ts=ts(i)),
+        ])
+    events.extend([
+        _evt({"type": "content", "content": f"{user_text} complete."},
+             agent_id=root, agent_name="computron", ts=ts(50)),
+        _evt({"type": "iteration", "iteration_index": 0,
+              "content": f"{user_text} complete.", "thinking": None,
+              "tool_calls": []},
+             agent_id=root, agent_name="computron", ts=ts(50)),
+        _evt({"type": "agent_completed", "agent_id": root,
+              "agent_name": "computron", "status": "success"},
+             agent_id=root, agent_name="computron", ts=ts(51)),
+        _evt({"type": "turn_end"},
+             agent_id=root, agent_name="computron", ts=ts(52)),
+    ])
+    return build_jsonl(events)
 
 
-TURN_1_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root1",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-        },
-        "agent_id": "root1",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "t1_sub1",
-            "agent_name": "research_agent",
-            "parent_agent_id": "root1",
-        },
-        "agent_id": "t1_sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:01",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Done."},
-        "agent_id": "t1_sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:02",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "t1_sub1",
-            "agent_name": "research_agent",
-            "status": "success",
-        },
-        "agent_id": "t1_sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:03",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Turn 1 complete."},
-        "agent_id": "root1",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:04",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "root1",
-            "agent_name": "computron",
-            "status": "success",
-        },
-        "agent_id": "root1",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:05",
-        "depth": 0,
-    },
-    {
-        "payload": {"type": "turn_end"},
-        "agent_id": "root1",
-        "timestamp": "2026-05-03T10:00:06",
-        "depth": 0,
-    },
-])
-
-TURN_2_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root2",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-        },
-        "agent_id": "root2",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:01:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "t2_sub1",
-            "agent_name": "code_expert",
-            "parent_agent_id": "root2",
-        },
-        "agent_id": "t2_sub1",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:01:01",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "t2_sub2",
-            "agent_name": "creative_writer",
-            "parent_agent_id": "root2",
-        },
-        "agent_id": "t2_sub2",
-        "agent_name": "creative_writer",
-        "timestamp": "2026-05-03T10:01:02",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Code done."},
-        "agent_id": "t2_sub1",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:01:03",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Writing done."},
-        "agent_id": "t2_sub2",
-        "agent_name": "creative_writer",
-        "timestamp": "2026-05-03T10:01:04",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "t2_sub1",
-            "agent_name": "code_expert",
-            "status": "success",
-        },
-        "agent_id": "t2_sub1",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:01:05",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "t2_sub2",
-            "agent_name": "creative_writer",
-            "status": "success",
-        },
-        "agent_id": "t2_sub2",
-        "agent_name": "creative_writer",
-        "timestamp": "2026-05-03T10:01:06",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Turn 2 complete."},
-        "agent_id": "root2",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:01:07",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "root2",
-            "agent_name": "computron",
-            "status": "success",
-        },
-        "agent_id": "root2",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:01:08",
-        "depth": 0,
-    },
-    {
-        "payload": {"type": "turn_end"},
-        "agent_id": "root2",
-        "timestamp": "2026-05-03T10:01:09",
-        "depth": 0,
-    },
-])
+TURN_1_EVENTS = _turn(
+    "root1", [("t1_sub1", "research_agent")],
+    user_text="turn 1", base_offset=0,
+)
+TURN_2_EVENTS = _turn(
+    "root2",
+    [("t2_sub1", "code_expert"), ("t2_sub2", "creative_writer")],
+    user_text="turn 2", base_offset=1,
+)
 
 
 def test_cards_persist_across_turns(page: Page):

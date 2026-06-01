@@ -66,7 +66,7 @@ def _complete_setup_wizard(browser, wizard_choices):
     page.goto("/")
 
     # Step 0: Welcome
-    page.get_by_text("Welcome to Computron").wait_for(state="visible", timeout=10_000)
+    page.get_by_text("Welcome to Omnideck").wait_for(state="visible", timeout=10_000)
     page.get_by_role("button", name="Get Started").click()
 
     # Step 1: Provider — pick Ollama with localhost URL (network=host)
@@ -89,7 +89,7 @@ def _complete_setup_wizard(browser, wizard_choices):
     # Step 4: Ready
     page.get_by_text("You're all set").wait_for(state="visible")
     page.get_by_role("button", name="Start Chatting").click()
-    page.get_by_text("Welcome to Computron").wait_for(state="hidden")
+    page.get_by_text("Welcome to Omnideck").wait_for(state="hidden")
 
     # Wait for settings to persist before closing — the wizard's async
     # save can still be in-flight when the UI dismisses.

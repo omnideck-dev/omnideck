@@ -4,122 +4,56 @@ Verifies that agent cards display the correct status dot classes for
 success, error, and running states.
 """
 
-import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from playwright.sync_api import Page, Route, expect
 
+from tests.e2e.network._sse import _evt, build_jsonl
 from tests.e2e.pages import ChatView, NetworkView
-
-
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
 
 
 # ── Mock with mixed success/error outcomes ───────────────────────────────
 
-MIXED_STATUS_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "ok_agent",
-            "agent_name": "successful_agent",
-            "parent_agent_id": "root",
-        },
-        "agent_id": "ok_agent",
-        "agent_name": "successful_agent",
-        "timestamp": "2026-05-03T10:00:01",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "fail_agent",
-            "agent_name": "failing_agent",
-            "parent_agent_id": "root",
-        },
-        "agent_id": "fail_agent",
-        "agent_name": "failing_agent",
-        "timestamp": "2026-05-03T10:00:02",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Success."},
-        "agent_id": "ok_agent",
-        "agent_name": "successful_agent",
-        "timestamp": "2026-05-03T10:00:03",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "About to fail."},
-        "agent_id": "fail_agent",
-        "agent_name": "failing_agent",
-        "timestamp": "2026-05-03T10:00:04",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "ok_agent",
-            "agent_name": "successful_agent",
-            "status": "success",
-        },
-        "agent_id": "ok_agent",
-        "agent_name": "successful_agent",
-        "timestamp": "2026-05-03T10:00:05",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "fail_agent",
-            "agent_name": "failing_agent",
-            "status": "error",
-        },
-        "agent_id": "fail_agent",
-        "agent_name": "failing_agent",
-        "timestamp": "2026-05-03T10:00:06",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "One failed."},
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:07",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "status": "success",
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:08",
-        "depth": 0,
-    },
-    {
-        "payload": {"type": "turn_end"},
-        "agent_id": "root",
-        "timestamp": "2026-05-03T10:00:09",
-        "depth": 0,
-    },
+MIXED_STATUS_EVENTS = build_jsonl([
+    _evt({"type": "agent_started", "agent_id": "root",
+          "agent_name": "computron", "parent_agent_id": None},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "user_message", "content": "go",
+          "attachments": [], "is_nudge": False},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_started", "agent_id": "ok_agent",
+          "agent_name": "successful_agent", "parent_agent_id": "root"},
+         agent_id="ok_agent", agent_name="successful_agent", depth=1),
+    _evt({"type": "agent_started", "agent_id": "fail_agent",
+          "agent_name": "failing_agent", "parent_agent_id": "root"},
+         agent_id="fail_agent", agent_name="failing_agent", depth=1),
+    _evt({"type": "content", "content": "Success."},
+         agent_id="ok_agent", agent_name="successful_agent", depth=1),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Success.", "thinking": None, "tool_calls": []},
+         agent_id="ok_agent", agent_name="successful_agent", depth=1),
+    _evt({"type": "content", "content": "About to fail."},
+         agent_id="fail_agent", agent_name="failing_agent", depth=1),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "About to fail.", "thinking": None, "tool_calls": []},
+         agent_id="fail_agent", agent_name="failing_agent", depth=1),
+    _evt({"type": "agent_completed", "agent_id": "ok_agent",
+          "agent_name": "successful_agent", "status": "success"},
+         agent_id="ok_agent", agent_name="successful_agent", depth=1),
+    _evt({"type": "agent_completed", "agent_id": "fail_agent",
+          "agent_name": "failing_agent", "status": "error"},
+         agent_id="fail_agent", agent_name="failing_agent", depth=1),
+    _evt({"type": "content", "content": "One failed."},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "One failed.", "thinking": None, "tool_calls": []},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_completed", "agent_id": "root",
+          "agent_name": "computron", "status": "success"},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "turn_end"}, agent_id="root", agent_name="computron"),
 ])
 
 
@@ -127,38 +61,18 @@ MIXED_STATUS_EVENTS = _build_jsonl([
 # Uses a streaming HTTP server so Playwright's fetch stays open, keeping
 # the stop button visible and agents in "running" state.
 
-RUNNING_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "working",
-            "agent_name": "working_agent",
-            "parent_agent_id": "root",
-        },
-        "agent_id": "working",
-        "agent_name": "working_agent",
-        "timestamp": "2026-05-03T10:00:01",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Working..."},
-        "agent_id": "working",
-        "agent_name": "working_agent",
-        "timestamp": "2026-05-03T10:00:02",
-        "depth": 1,
-    },
+RUNNING_EVENTS = build_jsonl([
+    _evt({"type": "agent_started", "agent_id": "root",
+          "agent_name": "computron", "parent_agent_id": None},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "user_message", "content": "do work",
+          "attachments": [], "is_nudge": False},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_started", "agent_id": "working",
+          "agent_name": "working_agent", "parent_agent_id": "root"},
+         agent_id="working", agent_name="working_agent", depth=1),
+    _evt({"type": "content", "content": "Working..."},
+         agent_id="working", agent_name="working_agent", depth=1),
 ])
 
 
@@ -177,35 +91,15 @@ class _StreamingHandler(BaseHTTPRequestHandler):
         # Hold connection open so frontend stays in streaming state
         self.complete_event.wait(timeout=30)
         # Send completion events
-        finish = _build_jsonl([
-            {
-                "payload": {
-                    "type": "agent_completed",
-                    "agent_id": "working",
-                    "agent_name": "working_agent",
-                    "status": "success",
-                },
-                "agent_id": "working",
-                "timestamp": "2026-05-03T10:00:10",
-                "depth": 1,
-            },
-            {
-                "payload": {
-                    "type": "agent_completed",
-                    "agent_id": "root",
-                    "agent_name": "computron",
-                    "status": "success",
-                },
-                "agent_id": "root",
-                "timestamp": "2026-05-03T10:00:11",
-                "depth": 0,
-            },
-            {
-                "payload": {"type": "turn_end"},
-                "agent_id": "root",
-                "timestamp": "2026-05-03T10:00:12",
-                "depth": 0,
-            },
+        finish = build_jsonl([
+            _evt({"type": "agent_completed", "agent_id": "working",
+                  "agent_name": "working_agent", "status": "success"},
+                 agent_id="working", agent_name="working_agent", depth=1),
+            _evt({"type": "agent_completed", "agent_id": "root",
+                  "agent_name": "computron", "status": "success"},
+                 agent_id="root", agent_name="computron"),
+            _evt({"type": "turn_end"},
+                 agent_id="root", agent_name="computron"),
         ])
         self.wfile.write(finish.encode())
         self.wfile.flush()

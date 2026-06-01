@@ -157,13 +157,40 @@ describe('Message ephemeral status and activity footer', () => {
         expect(eph).toHaveTextContent('Thinking…');
     });
 
-    it('shows ephemeral with tool name when last entry is a tool_call', () => {
+    it('shows ephemeral with tool name when currentTool is set', () => {
+        // The "Calling X…" indicator is driven by the currentTool prop
+        // (Turn computes it by walking iteration.tool_calls against
+        // arriving tool_results), not by inspecting entries.
         const entries = [
-            { type: 'content', content: 'about to look', timestamp: 1 },
-            { type: 'tool_call', name: 'run_bash_cmd', arguments: { cmd: 'ls' }, timestamp: 2 },
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd',
+              arguments: { cmd: 'ls' }, timestamp: 2 },
         ];
-        render(<Message role="assistant" entries={entries} streaming />);
-        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Calling run_bash_cmd…');
+        render(
+            <Message role="assistant" entries={entries} streaming
+                currentTool={{ id: 'tc1', name: 'run_bash_cmd' }} />,
+        );
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
+            'Calling run_bash_cmd…',
+        );
+    });
+
+    it('shows Thinking… ephemeral once the tool has returned (currentTool null)', () => {
+        // Tool finished; the iteration is still in entries but the
+        // tool_result removed the tool from the running queue, so the
+        // ephemeral falls back to "Thinking…" while the model generates
+        // the next iteration.
+        const entries = [
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd', timestamp: 2 },
+        ];
+        render(
+            <Message role="assistant" entries={entries} streaming
+                currentTool={null} />,
+        );
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
+            'Thinking…',
+        );
     });
 
     it('shows Thinking… ephemeral row when streaming with no entries yet', () => {

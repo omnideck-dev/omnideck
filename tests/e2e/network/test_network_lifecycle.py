@@ -5,136 +5,68 @@ then verifies core network indicator behavior, card metadata, and
 navigation.
 """
 
-import json
-
 import pytest
 from playwright.sync_api import Page, Route, expect
 
+from tests.e2e.network._sse import _evt, build_jsonl
 from tests.e2e.pages import ChatView, NetworkView
 
 
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
-
-
-MOCK_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-            "instruction": "Do some research and write code",
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "sub1",
-            "agent_name": "research_agent",
-            "parent_agent_id": "root",
-            "instruction": "Research the topic",
-        },
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:01",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "sub2",
-            "agent_name": "code_expert",
-            "parent_agent_id": "root",
-            "instruction": "Write the implementation",
-        },
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:02",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Research complete."},
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:03",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "tool_call", "name": "bash"},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:04",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "tool_call", "name": "write_file"},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:05",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Code written."},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:06",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "sub1",
-            "agent_name": "research_agent",
-            "status": "success",
-        },
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:07",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "sub2",
-            "agent_name": "code_expert",
-            "status": "success",
-        },
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:08",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Both tasks done."},
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:09",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "status": "success",
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:10",
-        "depth": 0,
-    },
-    {
-        "payload": {"type": "turn_end"},
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:11",
-        "depth": 0,
-    },
+MOCK_EVENTS = build_jsonl([
+    _evt({"type": "agent_started", "agent_id": "root",
+          "agent_name": "computron", "parent_agent_id": None,
+          "instruction": "Do some research and write code"},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "user_message", "content": "do the work",
+          "attachments": [], "is_nudge": False},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_started", "agent_id": "sub1",
+          "agent_name": "research_agent", "parent_agent_id": "root",
+          "instruction": "Research the topic"},
+         agent_id="sub1", agent_name="research_agent", depth=1),
+    _evt({"type": "agent_started", "agent_id": "sub2",
+          "agent_name": "code_expert", "parent_agent_id": "root",
+          "instruction": "Write the implementation"},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    # Sub-agent 1: content stream + final iteration.
+    _evt({"type": "content", "content": "Research complete."},
+         agent_id="sub1", agent_name="research_agent", depth=1),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Research complete.", "thinking": None,
+          "tool_calls": []},
+         agent_id="sub1", agent_name="research_agent", depth=1),
+    # Sub-agent 2: two tool calls + final content.
+    _evt({"type": "tool_call", "name": "bash"},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    _evt({"type": "tool_call", "name": "write_file"},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    _evt({"type": "content", "content": "Code written."},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Code written.", "thinking": None,
+          "tool_calls": [
+              {"id": "tc1", "name": "bash", "arguments": None},
+              {"id": "tc2", "name": "write_file", "arguments": None},
+          ]},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    _evt({"type": "agent_completed", "agent_id": "sub1",
+          "agent_name": "research_agent", "status": "success"},
+         agent_id="sub1", agent_name="research_agent", depth=1),
+    _evt({"type": "agent_completed", "agent_id": "sub2",
+          "agent_name": "code_expert", "status": "success"},
+         agent_id="sub2", agent_name="code_expert", depth=1),
+    # Root's wrap-up iteration.
+    _evt({"type": "content", "content": "Both tasks done."},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "iteration", "iteration_index": 0,
+          "content": "Both tasks done.", "thinking": None,
+          "tool_calls": []},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "agent_completed", "agent_id": "root",
+          "agent_name": "computron", "status": "success"},
+         agent_id="root", agent_name="computron"),
+    _evt({"type": "turn_end"},
+         agent_id="root", agent_name="computron"),
 ])
 
 

@@ -6,7 +6,7 @@ event payloads, default values, and JSON-serializable output shape.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -25,9 +25,9 @@ def test_agent_event_defaults():
     Validates that metadata fields default to None and a timestamp is set.
     """
 
-    before = datetime.utcnow()
+    before = datetime.now(UTC)
     resp = AgentEvent(payload=ContentPayload(type="content"))
-    after = datetime.utcnow()
+    after = datetime.now(UTC)
 
     assert resp.payload.type == "content"
     assert resp.payload.content is None
@@ -37,6 +37,17 @@ def test_agent_event_defaults():
     assert isinstance(resp.timestamp, datetime)
     # timestamp should be within the test window
     assert before - timedelta(seconds=1) <= resp.timestamp <= after + timedelta(seconds=1)
+
+
+@pytest.mark.unit
+def test_to_flat_dict_emits_timezone_suffixed_timestamp():
+    """The persisted events.jsonl timestamp must carry the UTC suffix
+    so the frontend (which uses Date.parse) doesn't interpret it as
+    local time. Naive isoformat output (no tz) made network-view
+    elapsed counters go negative on resume."""
+    flat = AgentEvent(payload=ContentPayload(type="content")).to_flat_dict("c")
+    ts = flat["timestamp"]
+    assert ts.endswith("+00:00"), f"expected UTC suffix, got: {ts}"
 
 
 @pytest.mark.unit

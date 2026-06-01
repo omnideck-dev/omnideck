@@ -29,7 +29,7 @@ def _event(payload_type, agent_id="root", agent_name="computron",
         "payload": payload,
         "agent_id": agent_id,
         "agent_name": agent_name,
-        "timestamp": "2026-05-09T00:00:00",
+        "timestamp": "2026-05-09T00:00:00+00:00",
         "depth": depth,
     }
 
@@ -41,10 +41,14 @@ _HTML_B64 = base64.b64encode(_HTML_BYTES).decode()
 _FILE_OUTPUT_EVENTS = _build_jsonl([
     _event("agent_started", agent_id="root", agent_name="computron",
            parent_agent_id=None),
+    _event("user_message", content="write a report",
+           attachments=[], is_nudge=False),
     _event("file_output", filename="report.html",
            content_type="text/html", content=_HTML_B64,
            path="/tmp/report.html"),
     _event("content", content="Wrote report.html."),
+    _event("iteration", iteration_index=0,
+           content="Wrote report.html.", thinking=None, tool_calls=[]),
     _event("agent_completed", agent_id="root", agent_name="computron",
            status="success"),
     _event("turn_end"),

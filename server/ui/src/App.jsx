@@ -1,12 +1,8 @@
 import React, { useState, useEffect, Suspense } from 'react';
 
-import useIsMobile from './hooks/useIsMobile.js';
-
 const DesktopApp = React.lazy(() => import('./DesktopApp.jsx'));
-const MobileApp = React.lazy(() => import('./MobileApp.jsx'));
 
 function App() {
-    const isMobile = useIsMobile();
     const [dark, setDark] = useState(false);
 
     useEffect(() => {
@@ -22,10 +18,7 @@ function App() {
 
     return (
         <Suspense fallback={null}>
-            {isMobile
-                ? <MobileApp dark={dark} onToggleTheme={toggleTheme} />
-                : <DesktopApp dark={dark} onToggleTheme={toggleTheme} />
-            }
+            <DesktopApp dark={dark} onToggleTheme={toggleTheme} />
         </Suspense>
     );
 }

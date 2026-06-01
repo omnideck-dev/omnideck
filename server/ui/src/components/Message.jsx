@@ -17,12 +17,13 @@ function _isHidden(entry) {
     return entry?.type === 'thinking' || entry?.type === 'tool_call';
 }
 
-/** Describe what the agent is currently doing, based on the last entry. */
-function _ephemeralText(entry) {
-    if (!entry) return 'Thinking…';
-    if (entry.type === 'thinking') return 'Thinking…';
-    if (entry.type === 'tool_call') return `Calling ${entry.name || 'tool'}…`;
-    return 'Working…';
+/** Caption for the ephemeral activity row. ``currentTool`` is set when
+ * an iteration's tool_call is awaiting its tool_result; otherwise the
+ * model is either streaming text (which renders inline, so this row is
+ * hidden) or thinking between iterations. */
+function _ephemeralText(currentTool) {
+    if (currentTool?.name) return `Calling ${currentTool.name}…`;
+    return 'Thinking…';
 }
 
 /** Build the per-turn summary shown on the activity footer. */
@@ -43,7 +44,8 @@ function _summary(hidden) {
  * full chronological activity on click. Content, spawn cards, and file
  * outputs stay inline as they always have.
  */
-function AssistantMessage({ entries, onPreview, streaming, spawnedAgents, onSelectAgent }) {
+function AssistantMessage({ entries, onPreview, streaming, currentTool,
+                            spawnedAgents, onSelectAgent }) {
     const [activityOpen, setActivityOpen] = useState(false);
     const list = Array.isArray(entries) ? entries : [];
     const hasEntries = list.length > 0;
@@ -51,11 +53,11 @@ function AssistantMessage({ entries, onPreview, streaming, spawnedAgents, onSele
     const hiddenEntries = list.filter(_isHidden);
     const lastEntry = list[list.length - 1];
 
-    // Only stream-animate inline when the actively-streaming entry is one
-    // we're rendering. If the last entry is hidden (thinking/tool_call),
-    // the ephemeral row takes over.
+    // Stream-animate the inline content when the most recent entry is a
+    // visible one (content / spawn_requested / file_output). Otherwise
+    // the ephemeral row owns the "what is the agent doing" indicator.
     const streamInline = streaming && _isVisibleInline(lastEntry);
-    const showEphemeral = streaming && !_isVisibleInline(lastEntry);
+    const showEphemeral = streaming && !streamInline;
     const summary = _summary(hiddenEntries);
 
     return (
@@ -73,7 +75,7 @@ function AssistantMessage({ entries, onPreview, streaming, spawnedAgents, onSele
                 {showEphemeral && (
                     <div className={styles.ephemeral} data-testid="ephemeral-status">
                         <span className={styles.pulse} aria-hidden="true" />
-                        <span className={styles.ephemeralText}>{_ephemeralText(lastEntry)}</span>
+                        <span className={styles.ephemeralText}>{_ephemeralText(currentTool)}</span>
                     </div>
                 )}
                 {!streaming && summary && (

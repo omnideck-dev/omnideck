@@ -7,16 +7,25 @@ from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
 from agents.types import Agent
-from sdk import PersistenceHook, default_hooks, run_turn
+from conversations import EventsLogWriter
+from sdk import default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events._context import agent_span, get_current_dispatcher
-from sdk.events._models import FileOutputPayload
+from sdk.events._context import (
+    agent_span,
+    publish_event,
+    reset_current_conversation,
+    set_current_conversation,
+)
+from sdk.events._models import (
+    AgentEvent,
+    FileOutputPayload,
+    UserMessagePayload,
+)
 from sdk.skills import AgentState, get_skill
 from sdk.tools._core import get_core_tools
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
-    from sdk.events._models import AgentEvent
     from tasks._models import Goal, Task, TaskResult
     from tasks._store import TaskStore
 
@@ -47,11 +56,9 @@ class TaskExecutor:
         agent = await self._build_agent(task)
 
         history = ConversationHistory(
-            [
-                {"role": "system", "content": agent.instruction},
-                {"role": "user", "content": instruction},
-            ],
+            [{"role": "system", "content": agent.instruction}],
             instance_id=conversation_id,
+            conversation_id=conversation_id,
         )
 
         file_paths: list[str] = []
@@ -61,25 +68,32 @@ class TaskExecutor:
                 file_paths.append(event.payload.path)
 
         async with turn_scope(conversation_id=conversation_id):
-            dispatcher = get_current_dispatcher()
-            if dispatcher:
-                dispatcher.subscribe(_capture_file_output)
-            state = AgentState(await get_core_tools() + (agent.tools or []))
-            ctx_manager = ContextManager(
-                history=history,
-                agent_state=state,
-                context_limit=agent.context_window,
-                agent_name=agent.name,
-                strategies=[
-                    LLMCompactionStrategy(threshold=agent.compaction_threshold),
-                ],
-            )
-            hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
-            hooks.append(
-                PersistenceHook(conversation_id=conversation_id, history=history)
-            )
-            async with agent_span(agent.name, instruction=instruction, agent_state=state):
-                result = await run_turn(history, agent, hooks=hooks)
+            events_log = EventsLogWriter(conversation_id)
+            history.subscribe(events_log.handle_event)
+            history.subscribe(_capture_file_output)
+            conv_token = set_current_conversation(history)
+            try:
+                state = AgentState(await get_core_tools() + (agent.tools or []))
+                ctx_manager = ContextManager(
+                    history=history,
+                    agent_state=state,
+                    context_limit=agent.context_window,
+                    agent_name=agent.name,
+                    strategies=[
+                        LLMCompactionStrategy(threshold=agent.compaction_threshold),
+                    ],
+                )
+                hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
+                async with agent_span(agent.name, instruction=instruction, agent_state=state):
+                    publish_event(AgentEvent(payload=UserMessagePayload(
+                        type="user_message", content=instruction,
+                    )))
+                    result = await run_turn(history, agent, hooks=hooks)
+            finally:
+                reset_current_conversation(conv_token)
+                history.unsubscribe(events_log.handle_event)
+                history.unsubscribe(_capture_file_output)
+                await history.drain_observers()
 
         return result or "", file_paths
 

@@ -13,6 +13,7 @@ Covers four scenarios:
 
 import json
 import re
+from datetime import UTC, datetime, timedelta
 import time
 
 import pytest
@@ -29,45 +30,81 @@ def _seed_conversation_with_files(
     conv_id: str,
     files: list[dict],
     *,
-    title: str = "restored conv",
+    title: str | None = None,
     preview_state: dict | None = None,
 ) -> None:
     """Seed a conversation + the files its events reference.
 
     Each ``files`` item: {"filename", "content_type", "content"} (utf-8 text).
-    History gets one user + one assistant turn; events.json carries a
-    file_output per file plus the bracketing root agent_started / completed.
+    The events.jsonl carries one user + one assistant turn plus a
+    file_output per file, bracketed by root agent_started / completed.
     """
-    history = [
-        {"role": "user", "content": "make me some files"},
-        {"role": "assistant", "content": "done"},
-    ]
-    events = [
-        {"type": "agent_started", "agent_id": "root.computron.1",
-         "agent_name": "COMPUTRON", "parent_agent_id": None,
-         "instruction": "", "timestamp": "2026-05-20T12:00:00"},
-    ]
-    for f in files:
-        events.append({
-            "type": "file_output",
+    # Use wall-clock timestamps so this seeded conversation sorts above
+    # any live-created ones earlier in the session — started_at now
+    # reads the first event's timestamp.
+    base = datetime.now(UTC)
+    def _t(offset: int) -> str:
+        return (base + timedelta(seconds=offset)).isoformat()
+    events_jsonl_lines = [
+        json.dumps({
+            "id": f"evt_{conv_id}_started",
+            "type": "agent_started",
+            "timestamp": _t(0),
+            "conversation_id": conv_id,
             "agent_id": "root.computron.1",
+            "agent_name": "COMPUTRON",
+            "parent_agent_id": None,
+        }),
+        json.dumps({
+            "id": f"evt_{conv_id}_user",
+            "type": "user_message",
+            "timestamp": _t(1),
+            "conversation_id": conv_id,
+            "agent_id": "root.computron.1",
+            "content": "make me some files",
+            "attachments": [],
+        }),
+        json.dumps({
+            "id": f"evt_{conv_id}_iter",
+            "type": "iteration",
+            "timestamp": _t(2),
+            "conversation_id": conv_id,
+            "agent_id": "root.computron.1",
+            "iteration_index": 0,
+            "content": "done",
+            "thinking": None,
+            "tool_calls": [],
+        }),
+    ]
+    for i, f in enumerate(files, start=3):
+        events_jsonl_lines.append(json.dumps({
+            "id": f"evt_{conv_id}_file_{i}",
+            "type": "file_output",
+            "timestamp": _t(i),
+            "conversation_id": conv_id,
+            "agent_id": "root.computron.1",
+            "agent_name": "COMPUTRON",
             "filename": f["filename"],
             "content_type": f["content_type"],
             "path": f"{VC_HOME}/{f['filename']}",
-            "timestamp": "2026-05-20T12:00:01",
-        })
-    events.append({
-        "type": "agent_completed", "agent_id": "root.computron.1",
-        "agent_name": "COMPUTRON", "status": "success",
-        "timestamp": "2026-05-20T12:00:02",
-    })
+        }))
+    events_jsonl_lines.append(json.dumps({
+        "id": f"evt_{conv_id}_completed",
+        "type": "agent_completed",
+        "timestamp": _t(60),
+        "conversation_id": conv_id,
+        "agent_id": "root.computron.1",
+        "agent_name": "COMPUTRON",
+        "status": "success",
+    }))
+    events_jsonl = "\n".join(events_jsonl_lines) + "\n"
 
-    metadata: dict = {"title": title}
+    # Default title = conv_id so the recent-list search can find this
+    # seed by its unique nonce.
+    metadata: dict = {"title": title if title is not None else conv_id}
     if preview_state is not None:
         metadata["preview_state"] = preview_state
 
-    history_json = json.dumps(history)
-    events_json = json.dumps(events)
     metadata_json = json.dumps(metadata)
     file_payloads = json.dumps(files)
 
@@ -75,8 +112,7 @@ def _seed_conversation_with_files(
         "import json, pathlib\n"
         f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
         "d.mkdir(parents=True, exist_ok=True)\n"
-        f"(d / 'history.json').write_text({history_json!r})\n"
-        f"(d / 'events.json').write_text({events_json!r})\n"
+        f"(d / 'events.jsonl').write_text({events_jsonl!r})\n"
         f"(d / 'metadata.json').write_text({metadata_json!r})\n"
         f"home = pathlib.Path('{VC_HOME}')\n"
         f"for f in json.loads({file_payloads!r}):\n"
@@ -115,7 +151,9 @@ def test_resume_renders_file_block_inline_in_chat(page: Page):
 
     try:
         ChatView(page).goto()
-        RecentConversations(page).items.first.click()
+        # Search-and-open by the nonce-stamped title so the test is
+        # robust to recency ordering and exercises search on the way in.
+        RecentConversations(page).open_by_title(conv_id)
 
         # The inline FileOutput block is identified by its Preview button.
         # Scope to the assistant message so we don't false-match a tab.
@@ -151,7 +189,9 @@ def test_resume_restores_open_file_tab(page: Page):
 
     try:
         ChatView(page).goto()
-        RecentConversations(page).items.first.click()
+        # Search-and-open by the nonce-stamped title so the test is
+        # robust to recency ordering and exercises search on the way in.
+        RecentConversations(page).open_by_title(conv_id)
 
         panel = PreviewPanel(page)
         expect(panel.file_tab(filename)).to_be_visible(timeout=5_000)
@@ -187,7 +227,9 @@ def test_resume_restores_active_tab_selection(page: Page):
 
     try:
         ChatView(page).goto()
-        RecentConversations(page).items.first.click()
+        # Search-and-open by the nonce-stamped title so the test is
+        # robust to recency ordering and exercises search on the way in.
+        RecentConversations(page).open_by_title(conv_id)
 
         panel = PreviewPanel(page)
         expect(panel.file_tab(file_a)).to_be_visible(timeout=5_000)
@@ -231,7 +273,9 @@ def test_resume_does_not_reopen_closed_tabs(page: Page):
 
     try:
         ChatView(page).goto()
-        RecentConversations(page).items.first.click()
+        # Search-and-open by the nonce-stamped title so the test is
+        # robust to recency ordering and exercises search on the way in.
+        RecentConversations(page).open_by_title(conv_id)
 
         panel = PreviewPanel(page)
         expect(panel.file_tab(open_file)).to_be_visible(timeout=5_000)

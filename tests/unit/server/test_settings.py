@@ -25,7 +25,7 @@ class TestLoadSettings:
         """Returns defaults when file doesn't exist."""
         s = load_settings()
         assert s["setup_complete"] is False
-        assert s["default_agent"] == "computron"
+        assert s["default_agent"] == "omnideck"
         assert s["direct_providers"] == {}
         assert s["vision_provider"] == ""
         assert s["vision_model"] == ""

@@ -11,7 +11,7 @@ from playwright.sync_api import Page, expect
 def test_app_loads_after_setup(page: Page):
     """After setup, the chat UI should load without showing the wizard."""
     page.goto("/")
-    expect(page.get_by_text("Welcome to Computron")).not_to_be_visible()
+    expect(page.get_by_text("Welcome to Omnideck")).not_to_be_visible()
     expect(page.locator("textarea")).to_be_visible()
 
 
@@ -22,9 +22,9 @@ def test_settings_setup_complete(page: Page):
 
 
 def test_settings_default_agent(page: Page):
-    """The default agent should be set to computron."""
+    """The default agent should be set to omnideck."""
     settings = page.request.get("/api/settings").json()
-    assert settings["default_agent"] == "computron"
+    assert settings["default_agent"] == "omnideck"
 
 
 def test_settings_direct_provider(page: Page):
@@ -64,7 +64,7 @@ def test_settings_title_model(page: Page, wizard_choices):
 def test_ootb_profiles_all_have_same_model(page: Page, wizard_choices):
     """All OOTB profiles should have the picked model + provider."""
     profiles = page.request.get("/api/profiles").json()
-    ootb_ids = {"computron", "code_expert", "research_agent", "creative_writer"}
+    ootb_ids = {"omnideck", "code_expert", "research_agent", "creative_writer"}
     for profile in profiles:
         if profile["id"] in ootb_ids:
             assert profile["model"] == wizard_choices["main_model"], (
@@ -80,7 +80,7 @@ def test_ootb_profiles_all_have_same_model(page: Page, wizard_choices):
 def test_ootb_profiles_have_context_window(page: Page):
     """All OOTB profiles should have a non-zero context_window after setup."""
     profiles = page.request.get("/api/profiles").json()
-    ootb_ids = {"computron", "code_expert", "research_agent", "creative_writer"}
+    ootb_ids = {"omnideck", "code_expert", "research_agent", "creative_writer"}
     for profile in profiles:
         if profile["id"] in ootb_ids:
             ctx = profile.get("context_window")
