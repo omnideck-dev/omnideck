@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import os
 from pathlib import Path
 
 from config import load_config
@@ -20,7 +21,17 @@ _PROVIDER_PATHS: dict[str, str] = {
     "openai_compat": "sdk.providers._openai:OpenAIProvider",
     "openrouter": "sdk.providers._openai:OpenAIProvider",
     "anthropic": "sdk.providers._anthropic:AnthropicProvider",
+    "fake": "sdk.providers._fake:FakeProvider",
 }
+
+# When set, every provider name resolves to the in-process FakeProvider so the
+# app runs end-to-end without a real LLM backend (used by the e2e suite).
+_MOCK_LLM_ENV = "MOCK_LLM"
+
+
+def _mock_llm_enabled() -> bool:
+    return os.environ.get(_MOCK_LLM_ENV, "").lower() in ("1", "true", "yes", "on")
+
 
 _provider_cache: dict[str, Provider] = {}
 
@@ -81,7 +92,11 @@ def get_provider(provider_name: str) -> Provider:
     cached = _provider_cache.get(provider_name)
     if cached is not None:
         return cached
-    instance = _create_provider(provider_name)
+    if _mock_llm_enabled():
+        instance: Provider = _provider_class("fake")()
+        logger.info("Using FakeProvider for %r (%s set)", provider_name, _MOCK_LLM_ENV)
+    else:
+        instance = _create_provider(provider_name)
     _provider_cache[provider_name] = instance
     return instance
 

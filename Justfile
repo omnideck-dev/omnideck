@@ -297,9 +297,16 @@ e2e *args:
     # Per-branch image so concurrent worktrees don't clobber each other.
     # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
-    image="computron_9000:e2e-${branch_tag}"
-    echo "🏗️  Building ${image}"
-    docker build -f container/Dockerfile -t "$image" .
+    # E2E_IMAGE + E2E_SKIP_BUILD let CI reuse a prebuilt image (e.g. the
+    # published main image) instead of building — source is synced in below
+    # regardless, so a matching baked env is all that's needed.
+    image="${E2E_IMAGE:-computron_9000:e2e-${branch_tag}}"
+    if [ "${E2E_SKIP_BUILD:-0}" = "1" ]; then
+        echo "⏭️  Reusing image ${image} (E2E_SKIP_BUILD=1)"
+    else
+        echo "🏗️  Building ${image}"
+        docker build -f container/Dockerfile -t "$image" .
+    fi
     name="computron_e2e"
     port=9090
     state=$(mktemp -d)
@@ -317,18 +324,22 @@ e2e *args:
     docker rm -f "$name" 2>/dev/null || true
     env_args=""; [ -f .env ] && env_args="--env-file .env"
 
-    # --network=host so the container reaches host-local ollama (as :11434).
     # DISPLAY=:$port — derive from port so multiple containers (dev, manual-test,
     # e2e) sharing the host network namespace can't collide on X abstract sockets.
     # ENABLE_DESKTOP=false (explicit) skips xfce + VNC + noVNC so ports 5900/6080
     # stay free for a concurrently-running dev container.
     # PORT=$port picks a non-8080 app port so the two aiohttp servers coexist.
+    # MOCK_LLM=1 swaps in the in-process FakeProvider so the suite runs
+    # without a real LLM backend (no Ollama, no GPU). Tests drive agent behaviour
+    # via the directive protocol the fake understands.
+    # --network=host is kept for the browser-tool test (Chrome under the container).
     docker run -d --rm --name "$name" \
-        --gpus all --shm-size=256m --network=host \
+        --shm-size=256m --network=host \
         -e PORT=$port \
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e ENABLE_CUSTOM_TOOLS=true \
+        -e MOCK_LLM=1 \
         $env_args \
         -v "$state/home:/home/computron:rw" \
         -v "$state/state:/var/lib/computron:rw" \
