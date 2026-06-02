@@ -95,6 +95,7 @@ button:active:not(:disabled){transform:translateY(1px);}
   padding:2px 7px;border-radius:var(--radius-sm);text-transform:uppercase;}
 .tag.builtin{background:var(--accent-muted);color:var(--accent);}
 .tag.custom{background:var(--success-muted);color:var(--success);}
+.tag.overridden{background:var(--warning-muted);color:var(--warning);}
 .tag.off{background:var(--surface);color:var(--text-tertiary);border:1px solid var(--border);}
 .metaRow{display:flex;gap:var(--sp-3);font-size:.7rem;color:var(--text-tertiary);}
 
@@ -201,7 +202,9 @@ button:active:not(:disabled){transform:translateY(1px);}
   <section class="screen active" id="screen-skills">
     <div class="intro">
       Skills are now <b>editable</b>. A skill is a reusable instruction (the "skill text") plus an optional set of
-      <b>tool bundles</b> it grants. Built-in skills can be edited or duplicated; you can also author your own.
+      <b>tool bundles</b> it grants. Built-in skills are <b>starters</b>: edit one and your changes are saved as an
+      <b>override</b> layered on top — the shipped default stays intact and <b>Reset to default</b> restores it any time.
+      You can also author your own skills from scratch.
     </div>
     <div class="split">
       <!-- LIST -->
@@ -257,13 +260,7 @@ edits: old_text must match exactly one location in the file.</textarea>
             <div class="bundleChips" id="assignedChips"></div>
           </div>
         </div>
-        <div class="actionBar">
-          <button class="btn danger sm">Delete</button>
-          <span class="spacer"></span>
-          <button class="btn ghost sm">Revert</button>
-          <button class="btn outline sm">Duplicate</button>
-          <button class="btn filled sm">Save skill</button>
-        </div>
+        <div class="actionBar" id="actionBar"></div>
       </div>
     </div>
   </section>
@@ -339,11 +336,11 @@ const BUNDLES = [
 
 /* ─── Sample skills (built-ins + a custom one) ─── */
 const SKILLS = [
-  {name:'coder', desc:'File I/O, code editing, bash execution, codebase search', kind:'builtin', enabled:true, bundles:['coding']},
-  {name:'browser', desc:'Web browsing, page interaction, form filling, screenshots', kind:'builtin', enabled:true, bundles:['browser','webfetch']},
-  {name:'goal_planner', desc:'Break large tasks into tracked sub-goals', kind:'builtin', enabled:true, bundles:[]},
-  {name:'researcher', desc:'Browse, fetch, and persist findings to memory', kind:'custom', enabled:true, bundles:['browser','webfetch','memory']},
-  {name:'image_generation', desc:'Generate images from text prompts', kind:'builtin', enabled:false, bundles:['media']},
+  {name:'coder', desc:'File I/O, code editing, bash execution, codebase search', kind:'builtin', overridden:false, enabled:true, bundles:['coding']},
+  {name:'browser', desc:'Web browsing, page interaction, form filling, screenshots', kind:'builtin', overridden:true, enabled:true, bundles:['browser','webfetch']},
+  {name:'goal_planner', desc:'Break large tasks into tracked sub-goals', kind:'builtin', overridden:false, enabled:true, bundles:[]},
+  {name:'researcher', desc:'Browse, fetch, and persist findings to memory', kind:'custom', overridden:false, enabled:true, bundles:['browser','webfetch','memory']},
+  {name:'image_generation', desc:'Generate images from text prompts', kind:'builtin', overridden:false, enabled:false, bundles:['media']},
 ];
 
 const bundleById = id => BUNDLES.find(b=>b.id===id);
@@ -359,10 +356,11 @@ function renderList(){
     btn.className = 'skillItem' + (i===selectedSkill?' sel':'');
     btn.onclick = ()=>{selectedSkill=i;renderList();renderEditor();};
     const kindTag = s.kind==='builtin'?'<span class="tag builtin">Built-in</span>':'<span class="tag custom">Custom</span>';
+    const ovrTag = (s.kind==='builtin'&&s.overridden)?'<span class="tag overridden">Overridden</span>':'';
     const offTag = s.enabled?'':'<span class="tag off">Off</span>';
     const toolCount = s.bundles.reduce((n,bid)=>n+(bundleById(bid)?.tools.length||0),0);
     btn.innerHTML = `
-      <div class="row1"><span class="nm">${s.name}</span>${kindTag}${offTag}</div>
+      <div class="row1"><span class="nm">${s.name}</span>${kindTag}${ovrTag}${offTag}</div>
       <div class="ds">${s.desc}</div>
       <div class="metaRow"><span>${s.bundles.length} bundle${s.bundles.length!==1?'s':''}</span><span>${toolCount} tools</span></div>`;
     el.appendChild(btn);
@@ -377,8 +375,28 @@ function renderEditor(){
   document.getElementById('fDesc').value = s.desc;
   const tag = document.getElementById('edTag');
   const sub = document.getElementById('edSub');
-  if(s.kind==='builtin'){tag.className='tag builtin';tag.textContent='Built-in';sub.textContent='Built-in skill · edits override the bundled default';}
-  else{tag.className='tag custom';tag.textContent='Custom';sub.textContent='Custom skill · authored in the UI';}
+  const bar = document.getElementById('actionBar');
+  if(s.kind==='builtin'){
+    if(s.overridden){tag.className='tag overridden';tag.textContent='Overridden';
+      sub.textContent='Built-in starter · your edits override it · reset restores the shipped default';}
+    else{tag.className='tag builtin';tag.textContent='Built-in';
+      sub.textContent='Built-in starter · saving your changes creates an override';}
+    // Built-ins can't be deleted — only reset to their shipped default.
+    bar.innerHTML = `
+      <button class="btn ghost sm" ${s.overridden?'':'disabled'} title="Restore the shipped default">↺ Reset to default</button>
+      <span class="spacer"></span>
+      <button class="btn ghost sm">Discard changes</button>
+      <button class="btn outline sm">Duplicate</button>
+      <button class="btn filled sm">Save override</button>`;
+  } else {
+    tag.className='tag custom';tag.textContent='Custom';sub.textContent='Custom skill · authored in the UI';
+    bar.innerHTML = `
+      <button class="btn danger sm">Delete</button>
+      <span class="spacer"></span>
+      <button class="btn ghost sm">Discard changes</button>
+      <button class="btn outline sm">Duplicate</button>
+      <button class="btn filled sm">Save skill</button>`;
+  }
   renderChips();
 }
 
