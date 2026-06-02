@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Editable Skills &amp; Tool Bundles — Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ─── SIGNAL design tokens (mirrored from server/ui/src/global.css) ─── */
+:root{
+  --canvas:#f8f9fb; --surface:#eef0f5; --elevated:#fff;
+  --text-primary:#0f172a; --text-secondary:#475569; --text-tertiary:#94a3b8;
+  --border:#e2e8f0; --border-subtle:#f1f5f9; --border-strong:#cbd5e1;
+  --accent:#2563eb; --accent-hover:#1d4ed8; --accent-muted:rgba(37,99,235,0.08); --accent-glow:rgba(37,99,235,0.15);
+  --success:#16a34a; --success-muted:rgba(22,163,74,0.08);
+  --warning:#d97706; --warning-muted:rgba(217,119,6,0.08);
+  --danger:#dc2626; --danger-muted:rgba(220,38,38,0.08);
+  --scrim:rgba(15,23,42,0.40);
+  --shadow-sm:0 1px 2px rgba(15,23,42,0.05);
+  --shadow-md:0 2px 8px rgba(15,23,42,0.08),0 1px 2px rgba(15,23,42,0.04);
+  --shadow-lg:0 4px 16px rgba(15,23,42,0.10),0 2px 4px rgba(15,23,42,0.05);
+  --shadow-glow:0 0 0 3px var(--accent-glow);
+  --radius-sm:4px; --radius-md:6px; --radius-lg:8px; --radius-xl:12px; --radius-full:999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+  --font-brand:'Share Tech Mono','Roboto Mono','Consolas',monospace;
+  --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-code:'JetBrains Mono','Fira Mono','Consolas',monospace;
+  --ease:cubic-bezier(0.4,0,0.2,1);
+}
+[data-theme="dark"]{
+  --canvas:#0c0e14; --surface:#151821; --elevated:#1e2130;
+  --text-primary:#e8ecf4; --text-secondary:#8892a8; --text-tertiary:#4a5168;
+  --border:#252a3a; --border-subtle:#1a1e2a; --border-strong:#363d52;
+  --accent:#3b82f6; --accent-hover:#60a5fa; --accent-muted:rgba(59,130,246,0.12); --accent-glow:rgba(59,130,246,0.20);
+  --success:#4ade80; --success-muted:rgba(74,222,128,0.12);
+  --warning:#fbbf24; --warning-muted:rgba(251,191,36,0.12);
+  --danger:#f87171; --danger-muted:rgba(248,113,113,0.12);
+  --scrim:rgba(0,0,0,0.60);
+  --shadow-md:0 2px 8px rgba(0,0,0,0.4),0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg:0 4px 16px rgba(0,0,0,0.5),0 2px 4px rgba(0,0,0,0.3);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{background:var(--canvas);color:var(--text-primary);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
+button{font:inherit;cursor:pointer;border:none;background:transparent;color:var(--text-primary);border-radius:var(--radius-md);transition:background 150ms var(--ease),color 150ms var(--ease),border-color 150ms var(--ease),box-shadow 150ms var(--ease);}
+button:active:not(:disabled){transform:translateY(1px);}
+*::-webkit-scrollbar{width:6px;height:6px;}
+*::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+
+/* ─── Mockup chrome (not part of the real app) ─── */
+.mock-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:var(--sp-3);
+  padding:var(--sp-2) var(--sp-4);background:var(--elevated);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);}
+.mock-bar .brand{font-family:var(--font-brand);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-secondary);}
+.mock-bar .spacer{flex:1;}
+.mock-note{font-size:.72rem;color:var(--text-tertiary);}
+.mock-toggle{height:28px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-md);font-size:12px;color:var(--text-secondary);}
+.mock-toggle:hover{background:var(--surface);}
+
+/* ─── Settings shell ─── */
+.page{max-width:1080px;margin:0 auto;padding:var(--sp-6) var(--sp-5);}
+.tabBar{display:flex;gap:var(--sp-1);border-bottom:1px solid var(--border);margin-bottom:var(--sp-5);}
+.tab{padding:var(--sp-2) var(--sp-3);font-family:var(--font-brand);font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-tertiary);border-bottom:2px solid transparent;border-radius:0;}
+.tab:hover{color:var(--text-secondary);}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+.screen{display:none;}
+.screen.active{display:block;}
+
+/* ─── Buttons ─── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--radius-md);
+  font-size:13px;font-weight:500;border:1px solid transparent;}
+.btn.outline{border-color:var(--border);color:var(--text-primary);}
+.btn.outline:hover{background:var(--surface);border-color:var(--border-strong);}
+.btn.filled{background:var(--accent);color:#fff;}
+.btn.filled:hover{background:var(--accent-hover);}
+.btn.ghost{color:var(--text-tertiary);}
+.btn.ghost:hover{color:var(--text-primary);background:var(--surface);}
+.btn.danger{background:var(--danger-muted);color:var(--danger);}
+.btn.sm{height:26px;padding:0 10px;font-size:12px;}
+
+/* ─── Master-detail layout for Skills ─── */
+.split{display:grid;grid-template-columns:280px 1fr;gap:var(--sp-5);align-items:start;}
+.listHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3);}
+.listHead h2{margin:0;font-family:var(--font-brand);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary);}
+.skillList{display:flex;flex-direction:column;gap:var(--sp-2);}
+.skillItem{text-align:left;width:100%;padding:var(--sp-3);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px;}
+.skillItem:hover{border-color:var(--border-strong);}
+.skillItem.sel{border-color:var(--accent);box-shadow:var(--shadow-glow);background:var(--elevated);}
+.skillItem .row1{display:flex;align-items:center;gap:var(--sp-2);}
+.skillItem .nm{font-weight:600;font-size:13.5px;}
+.skillItem .ds{font-size:.74rem;color:var(--text-secondary);line-height:1.35;}
+.tag{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:.62rem;letter-spacing:.04em;
+  padding:2px 7px;border-radius:var(--radius-sm);text-transform:uppercase;}
+.tag.builtin{background:var(--accent-muted);color:var(--accent);}
+.tag.custom{background:var(--success-muted);color:var(--success);}
+.tag.off{background:var(--surface);color:var(--text-tertiary);border:1px solid var(--border);}
+.metaRow{display:flex;gap:var(--sp-3);font-size:.7rem;color:var(--text-tertiary);}
+
+/* ─── Editor panel ─── */
+.editor{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
+.editorHead{display:flex;align-items:center;justify-content:space-between;padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border-subtle);background:var(--elevated);}
+.editorHead .ttl{font-size:15px;font-weight:600;}
+.editorHead .sub{font-size:.72rem;color:var(--text-tertiary);margin-top:2px;}
+.editorBody{padding:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field > label{font-family:var(--font-brand);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);}
+.field .help{font-size:.7rem;color:var(--text-tertiary);}
+.input,.textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--canvas);color:var(--text-primary);
+  font-family:var(--font-body);font-size:13px;padding:8px 10px;outline:none;transition:border-color 120ms,box-shadow 120ms;}
+[data-theme="dark"] .input,[data-theme="dark"] .textarea{background:var(--elevated);}
+.input{height:34px;}
+.input:focus,.textarea:focus{border-color:var(--accent);box-shadow:var(--shadow-glow);}
+.textarea{min-height:200px;resize:vertical;font-family:var(--font-code);font-size:12.5px;line-height:1.55;}
+
+.sectionLbl{display:flex;align-items:center;justify-content:space-between;}
+.sectionLbl .l{font-family:var(--font-brand);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);}
+
+/* ─── Assigned bundle chips ─── */
+.bundleChips{display:flex;flex-wrap:wrap;gap:var(--sp-2);}
+.bundleChip{display:inline-flex;align-items:center;gap:8px;padding:6px 8px 6px 10px;border:1px solid var(--border);
+  border-radius:var(--radius-full);background:var(--elevated);box-shadow:var(--shadow-sm);font-size:12.5px;}
+.bundleChip .ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;}
+.bundleChip .cnt{font-size:.66rem;color:var(--text-tertiary);font-family:var(--font-brand);}
+.bundleChip .x{width:18px;height:18px;border-radius:var(--radius-full);display:inline-flex;align-items:center;justify-content:center;
+  color:var(--text-tertiary);font-size:14px;line-height:1;}
+.bundleChip .x:hover{background:var(--danger-muted);color:var(--danger);}
+.addBundle{border:1px dashed var(--border-strong);background:transparent;color:var(--text-secondary);border-radius:var(--radius-full);
+  padding:6px 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;}
+.addBundle:hover{border-color:var(--accent);color:var(--accent);}
+.emptyHint{font-size:.74rem;color:var(--text-tertiary);font-style:italic;}
+
+.actionBar{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-5);border-top:1px solid var(--border-subtle);background:var(--elevated);}
+.actionBar .spacer{flex:1;}
+
+/* ─── Tool Bundles reference ─── */
+.bundleGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:var(--sp-3);}
+.bundleCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;}
+.bundleCardHead{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);width:100%;text-align:left;}
+.bundleCardHead:hover{background:var(--elevated);}
+.bundleIcon{width:32px;height:32px;flex-shrink:0;border-radius:var(--radius-md);background:var(--accent-muted);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:16px;}
+.bundleCardHead .info{flex:1;min-width:0;}
+.bundleCardHead .nm{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;}
+.bundleCardHead .ds{font-size:.72rem;color:var(--text-secondary);margin-top:2px;line-height:1.35;}
+.bundleCardHead .chev{color:var(--text-tertiary);font-size:12px;transition:transform 150ms var(--ease);}
+.bundleCard.open .chev{transform:rotate(90deg);}
+.toolList{display:none;padding:var(--sp-2) var(--sp-4) var(--sp-4);border-top:1px solid var(--border-subtle);flex-wrap:wrap;gap:6px;}
+.bundleCard.open .toolList{display:flex;}
+.toolPill{font-family:var(--font-code);font-size:11.5px;padding:3px 8px;border-radius:var(--radius-sm);background:var(--canvas);
+  border:1px solid var(--border);color:var(--text-secondary);}
+.pkgTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--text-tertiary);text-transform:uppercase;
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 6px;}
+.gateTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--warning);background:var(--warning-muted);
+  border-radius:var(--radius-sm);padding:1px 6px;text-transform:uppercase;}
+
+.intro{background:var(--accent-muted);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius-md);
+  padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-5);font-size:.78rem;color:var(--text-secondary);line-height:1.5;}
+.intro b{color:var(--text-primary);}
+
+/* ─── Modal: assign bundles ─── */
+.scrim{position:fixed;inset:0;background:var(--scrim);display:none;align-items:flex-start;justify-content:center;padding-top:72px;z-index:60;}
+.scrim.open{display:flex;}
+.modal{background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
+  width:560px;max-width:92%;max-height:calc(100vh - 140px);display:flex;flex-direction:column;overflow:hidden;}
+.modalHead{padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;}
+.modalHead .t{font-size:15px;font-weight:600;}
+.modalHead .x{width:28px;height:28px;border-radius:var(--radius-md);color:var(--text-tertiary);display:flex;align-items:center;justify-content:center;font-size:18px;}
+.modalHead .x:hover{background:var(--surface);color:var(--text-primary);}
+.modalBody{padding:var(--sp-3) var(--sp-4);overflow-y:auto;display:flex;flex-direction:column;gap:var(--sp-2);}
+.pick{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-md);
+  background:var(--surface);text-align:left;width:100%;}
+.pick:hover{border-color:var(--border-strong);background:var(--canvas);}
+.pick.checked{border-color:var(--accent);background:var(--accent-muted);}
+.pick .box{width:18px;height:18px;border:1.5px solid var(--border-strong);border-radius:var(--radius-sm);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;}
+.pick.checked .box{background:var(--accent);border-color:var(--accent);}
+.pick .info{flex:1;min-width:0;}
+.pick .nm{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;}
+.pick .ds{font-size:.7rem;color:var(--text-secondary);margin-top:1px;}
+.modalFoot{padding:var(--sp-3) var(--sp-5);border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:var(--sp-2);}
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <span class="brand">Computron 9000 · Mockup</span>
+  <span class="mock-note">Editable Skills &amp; Tool Bundles — v1 design exploration (static prototype)</span>
+  <span class="spacer"></span>
+  <button class="mock-toggle" id="themeBtn">◐ Theme</button>
+</div>
+
+<div class="page">
+  <nav class="tabBar">
+    <button class="tab active" data-screen="skills">Skills</button>
+    <button class="tab" data-screen="bundles">Tool Bundles</button>
+  </nav>
+
+  <!-- ════════ SCREEN 1: SKILLS (master-detail) ════════ -->
+  <section class="screen active" id="screen-skills">
+    <div class="intro">
+      Skills are now <b>editable</b>. A skill is a reusable instruction (the "skill text") plus an optional set of
+      <b>tool bundles</b> it grants. Built-in skills can be edited or duplicated; you can also author your own.
+    </div>
+    <div class="split">
+      <!-- LIST -->
+      <div>
+        <div class="listHead">
+          <h2>Skills</h2>
+          <button class="btn filled sm" onclick="newSkill()">+ New</button>
+        </div>
+        <div class="skillList" id="skillList"></div>
+      </div>
+
+      <!-- EDITOR -->
+      <div class="editor">
+        <div class="editorHead">
+          <div>
+            <div class="ttl" id="edTitle">coder</div>
+            <div class="sub" id="edSub">Built-in skill · editing a copy keeps the original intact</div>
+          </div>
+          <span class="tag builtin" id="edTag">Built-in</span>
+        </div>
+        <div class="editorBody">
+          <div class="field">
+            <label>Name</label>
+            <input class="input" id="fName" value="coder" />
+            <span class="help">Short identifier the agent uses with <code>load_skill()</code>.</span>
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <input class="input" id="fDesc" value="File I/O, code editing, bash execution, codebase search" />
+            <span class="help">One line shown in the skill catalog.</span>
+          </div>
+          <div class="field">
+            <label>Skill text (prompt)</label>
+            <textarea class="textarea" id="fPrompt">Full access to the virtual computer filesystem and shell.
+
+STARTING A TASK — first check if your instructions reference existing files
+or folders. If they do, work in that existing folder. Otherwise, create a
+new folder under /home/computron/ with a descriptive name.
+
+READING FILES — always read a file before editing it. Use grep to locate
+relevant code, then read_file(start=N, end=M) for targeted sections.
+
+EDITING FILES — use apply_text_patch(path, old_text, new_text) for precise
+edits: old_text must match exactly one location in the file.</textarea>
+            <span class="help">Injected into the system prompt when this skill is loaded.</span>
+          </div>
+          <div class="field">
+            <div class="sectionLbl">
+              <span class="l">Tool bundles</span>
+              <button class="addBundle" onclick="openPicker()">+ Add bundle</button>
+            </div>
+            <span class="help">Bundles are app-defined groups of related tools. Adding a bundle grants the skill all tools inside it.</span>
+            <div class="bundleChips" id="assignedChips"></div>
+          </div>
+        </div>
+        <div class="actionBar">
+          <button class="btn danger sm">Delete</button>
+          <span class="spacer"></span>
+          <button class="btn ghost sm">Revert</button>
+          <button class="btn outline sm">Duplicate</button>
+          <button class="btn filled sm">Save skill</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ SCREEN 2: TOOL BUNDLES reference ════════ -->
+  <section class="screen" id="screen-bundles">
+    <div class="intro">
+      Tool bundles are <b>defined in the app</b> and grouped by package / integration. In v1 they're a fixed catalog —
+      not user-editable — but you can assign any of them to a skill. Click a bundle to see the tools it contains.
+    </div>
+    <div class="bundleGrid" id="bundleGrid"></div>
+  </section>
+</div>
+
+<!-- ════════ MODAL: assign bundles ════════ -->
+<div class="scrim" id="picker">
+  <div class="modal">
+    <div class="modalHead">
+      <span class="t">Add tool bundles</span>
+      <button class="x" onclick="closePicker()">×</button>
+    </div>
+    <div class="modalBody" id="pickerBody"></div>
+    <div class="modalFoot">
+      <button class="btn ghost sm" onclick="closePicker()">Cancel</button>
+      <button class="btn filled sm" onclick="applyPicker()">Add selected</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── Bundle catalog: app-defined groups mapped from the tools/ packages ─── */
+const BUNDLES = [
+  {id:'coding',   name:'Coding & Files', icon:'⌨', pkg:'virtual_computer', gate:null,
+   desc:'Read/write files, edit code, search, run shell commands.',
+   tools:['read_file','write_file','list_dir','grep','apply_text_patch','replace_in_file','run_bash_cmd','install_packages','make_dirs','move_path','remove_path']},
+  {id:'browser',  name:'Web Browsing', icon:'🌐', pkg:'browser', gate:null,
+   desc:'Drive a live browser — navigate, read, click, fill forms, screenshot.',
+   tools:['goto','new_tab','browse_page','read_page','click','fill_field','press_keys','scroll_page','go_back','inspect_page','execute_javascript','close_browser']},
+  {id:'webfetch', name:'Web Fetch', icon:'📄', pkg:'web', gate:null,
+   desc:'Fetch a page as clean text — no browser needed.',
+   tools:['fetch_url']},
+  {id:'memory',   name:'Memory', icon:'🧠', pkg:'memory', gate:null,
+   desc:'Persist and recall facts across conversations.',
+   tools:['remember','forget','load_memory']},
+  {id:'scratch',  name:'Scratchpad', icon:'📝', pkg:'scratchpad', gate:null,
+   desc:'Ephemeral notes scoped to the current session.',
+   tools:['save_to_scratchpad','recall_from_scratchpad']},
+  {id:'media',    name:'Media Generation', icon:'🎨', pkg:'generation', gate:'image/music generation',
+   desc:'Generate images and music with streaming previews.',
+   tools:['generate_image','generate_music']},
+  {id:'desktop',  name:'Desktop Control', icon:'🖥', pkg:'desktop', gate:'desktop',
+   desc:'Control a full GUI desktop — mouse, keyboard, screen reading.',
+   tools:['read_screen','describe_screen','mouse_click','mouse_double_click','mouse_drag','keyboard_type','keyboard_press','scroll','desktop_shell']},
+  {id:'datetime', name:'Date & Time', icon:'🕐', pkg:'misc', gate:null,
+   desc:'Current date/time and timezone helpers.',
+   tools:['datetime_tool']},
+  {id:'email',    name:'Email', icon:'✉', pkg:'integrations/email', gate:'Email integration',
+   desc:'Read, search, send, move mail and download attachments.',
+   tools:['list_email_folders','list_email_messages','read_email_message','search_email','send_email','move_email','download_email_attachment']},
+  {id:'calendar', name:'Calendar', icon:'📅', pkg:'integrations/calendar', gate:'Calendar integration',
+   desc:'List, create, update and delete calendar events.',
+   tools:['list_calendars','list_events','create_event','update_event','delete_event']},
+  {id:'drive',    name:'Google Drive', icon:'📁', pkg:'integrations/drive', gate:'Drive integration',
+   desc:'List, search, upload, share and manage Drive files.',
+   tools:['list_drive_files','search_drive_files','get_drive_file_metadata','upload_drive_file','export_drive_file','create_drive_folder','share_drive_file','update_drive_file','trash_drive_file']},
+  {id:'contacts', name:'Contacts', icon:'👤', pkg:'integrations/contacts', gate:'Contacts integration',
+   desc:'List and search the connected contacts directory.',
+   tools:['list_contacts','search_contacts']},
+  {id:'http',     name:'HTTP / API', icon:'🔌', pkg:'integrations/http', gate:'HTTP integration',
+   desc:'Call configured external HTTP APIs.',
+   tools:['call_api']},
+];
+
+/* ─── Sample skills (built-ins + a custom one) ─── */
+const SKILLS = [
+  {name:'coder', desc:'File I/O, code editing, bash execution, codebase search', kind:'builtin', enabled:true, bundles:['coding']},
+  {name:'browser', desc:'Web browsing, page interaction, form filling, screenshots', kind:'builtin', enabled:true, bundles:['browser','webfetch']},
+  {name:'goal_planner', desc:'Break large tasks into tracked sub-goals', kind:'builtin', enabled:true, bundles:[]},
+  {name:'researcher', desc:'Browse, fetch, and persist findings to memory', kind:'custom', enabled:true, bundles:['browser','webfetch','memory']},
+  {name:'image_generation', desc:'Generate images from text prompts', kind:'builtin', enabled:false, bundles:['media']},
+];
+
+const bundleById = id => BUNDLES.find(b=>b.id===id);
+let selectedSkill = 0;
+let pickerSelection = new Set();
+
+/* ─── Render skill list ─── */
+function renderList(){
+  const el = document.getElementById('skillList');
+  el.innerHTML = '';
+  SKILLS.forEach((s,i)=>{
+    const btn = document.createElement('button');
+    btn.className = 'skillItem' + (i===selectedSkill?' sel':'');
+    btn.onclick = ()=>{selectedSkill=i;renderList();renderEditor();};
+    const kindTag = s.kind==='builtin'?'<span class="tag builtin">Built-in</span>':'<span class="tag custom">Custom</span>';
+    const offTag = s.enabled?'':'<span class="tag off">Off</span>';
+    const toolCount = s.bundles.reduce((n,bid)=>n+(bundleById(bid)?.tools.length||0),0);
+    btn.innerHTML = `
+      <div class="row1"><span class="nm">${s.name}</span>${kindTag}${offTag}</div>
+      <div class="ds">${s.desc}</div>
+      <div class="metaRow"><span>${s.bundles.length} bundle${s.bundles.length!==1?'s':''}</span><span>${toolCount} tools</span></div>`;
+    el.appendChild(btn);
+  });
+}
+
+/* ─── Render editor for selected skill ─── */
+function renderEditor(){
+  const s = SKILLS[selectedSkill];
+  document.getElementById('edTitle').textContent = s.name || 'New skill';
+  document.getElementById('fName').value = s.name;
+  document.getElementById('fDesc').value = s.desc;
+  const tag = document.getElementById('edTag');
+  const sub = document.getElementById('edSub');
+  if(s.kind==='builtin'){tag.className='tag builtin';tag.textContent='Built-in';sub.textContent='Built-in skill · edits override the bundled default';}
+  else{tag.className='tag custom';tag.textContent='Custom';sub.textContent='Custom skill · authored in the UI';}
+  renderChips();
+}
+
+function renderChips(){
+  const s = SKILLS[selectedSkill];
+  const wrap = document.getElementById('assignedChips');
+  wrap.innerHTML='';
+  if(!s.bundles.length){
+    wrap.innerHTML = '<span class="emptyHint">No bundles — this skill contributes only its instruction text.</span>';
+    return;
+  }
+  s.bundles.forEach(bid=>{
+    const b = bundleById(bid); if(!b) return;
+    const chip = document.createElement('span');
+    chip.className='bundleChip';
+    chip.innerHTML = `<span class="ico">${b.icon}</span>${b.name}<span class="cnt">${b.tools.length}</span>
+      <button class="x" title="Remove" onclick="removeBundle('${bid}')">×</button>`;
+    wrap.appendChild(chip);
+  });
+}
+
+function removeBundle(bid){
+  const s = SKILLS[selectedSkill];
+  s.bundles = s.bundles.filter(x=>x!==bid);
+  renderChips();renderList();
+}
+
+function newSkill(){
+  SKILLS.push({name:'',desc:'',kind:'custom',enabled:true,bundles:[]});
+  selectedSkill = SKILLS.length-1;
+  renderList();renderEditor();
+  document.getElementById('fName').focus();
+}
+
+/* ─── Bundle picker modal ─── */
+function openPicker(){
+  const s = SKILLS[selectedSkill];
+  pickerSelection = new Set(s.bundles);
+  const body = document.getElementById('pickerBody');
+  body.innerHTML='';
+  BUNDLES.forEach(b=>{
+    const row = document.createElement('button');
+    const checked = pickerSelection.has(b.id);
+    row.className='pick'+(checked?' checked':'');
+    row.onclick = ()=>{
+      if(pickerSelection.has(b.id))pickerSelection.delete(b.id);else pickerSelection.add(b.id);
+      openPicker(); // re-render
+    };
+    const gate = b.gate?`<span class="gateTag">needs ${b.gate}</span>`:'';
+    row.innerHTML = `<span class="box">${checked?'✓':''}</span>
+      <span class="info"><span class="nm">${b.icon} ${b.name} ${gate}</span><span class="ds">${b.desc} · ${b.tools.length} tools</span></span>`;
+    body.appendChild(row);
+  });
+  document.getElementById('picker').classList.add('open');
+}
+function closePicker(){document.getElementById('picker').classList.remove('open');}
+function applyPicker(){
+  SKILLS[selectedSkill].bundles = BUNDLES.filter(b=>pickerSelection.has(b.id)).map(b=>b.id);
+  closePicker();renderChips();renderList();
+}
+
+/* ─── Tool bundles reference screen ─── */
+function renderBundles(){
+  const grid = document.getElementById('bundleGrid');
+  grid.innerHTML='';
+  BUNDLES.forEach(b=>{
+    const card = document.createElement('div');
+    card.className='bundleCard';
+    const gate = b.gate?`<span class="gateTag">needs ${b.gate}</span>`:'';
+    card.innerHTML = `
+      <button class="bundleCardHead" onclick="this.parentElement.classList.toggle('open')">
+        <span class="bundleIcon">${b.icon}</span>
+        <span class="info">
+          <span class="nm">${b.name} ${gate}</span>
+          <span class="ds">${b.desc}</span>
+        </span>
+        <span class="pkgTag">${b.pkg}</span>
+        <span class="chev">▶</span>
+      </button>
+      <div class="toolList">${b.tools.map(t=>`<span class="toolPill">${t}</span>`).join('')}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+/* ─── Tab + theme wiring ─── */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('screen-'+t.dataset.screen).classList.add('active');
+  };
+});
+document.getElementById('themeBtn').onclick = ()=>{
+  const h=document.documentElement;
+  h.dataset.theme = h.dataset.theme==='dark'?'light':'dark';
+};
+
+renderList();renderEditor();renderBundles();
+</script>
+</body>
+</html>
