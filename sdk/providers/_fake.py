@@ -13,7 +13,7 @@ of directives, each delimited by ``<<NAME ...>>`` ... ``<<END>>``:
     <<BASH>>command<<END>>         run_bash_cmd(cmd=command)
     <<WRITE path>>content<<END>>   write_file(path, content)
     <<SEND>>path<<END>>            send_file(path)
-    <<OPEN>>url<<END>>             open_url(url)
+    <<OPEN>>url<<END>>             new_tab(url)
     <<SPAWN profile>>...<<ENDSPAWN>>
         spawn_agent(profile); the body is itself a directive sequence that
         the sub-agent runs. ``profile`` defaults to the default profile when
@@ -72,7 +72,7 @@ _REQUIRED_SKILL: dict[str, str] = {
     "write_file": "coder",
     "read_file": "coder",
     "replace_in_file": "coder",
-    "open_url": "browser",
+    "new_tab": "browser",
 }
 
 _COUNTER = {"n": 0}
@@ -189,7 +189,7 @@ def _named_tool_call(name: str, arg: str, body: str) -> ToolCall | None:
     if name == "SEND":
         return _tool_call("send_file", {"path": body.strip() or arg})
     if name == "OPEN":
-        return _tool_call("open_url", {"url": body.strip() or arg})
+        return _tool_call("new_tab", {"url": body.strip() or arg})
     return None  # SAY
 
 
