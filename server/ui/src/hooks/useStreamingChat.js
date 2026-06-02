@@ -250,6 +250,13 @@ export default function useStreamingChat(callbacks) {
     }, []);
     const abortControllerRef = useRef(null);
     const conversationIdRef = useRef(_uuid());
+    // Reactive mirror of conversationIdRef so the UI can highlight the
+    // open conversation and react when it changes.
+    const [activeConversationId, _setActiveConversationId] = useState(conversationIdRef.current);
+    const setConversationId = useCallback((id) => {
+        conversationIdRef.current = id;
+        _setActiveConversationId(id);
+    }, []);
     const rootAgentIdRef = useRef(null);
 
     const sendNudge = useCallback(async (message, agentId) => {
@@ -512,7 +519,7 @@ export default function useStreamingChat(callbacks) {
             });
             if (!resp.ok) return false;
             const data = await resp.json();
-            conversationIdRef.current = conversationId;
+            setConversationId(conversationId);
 
             // Build messages-with-entries the same as before, then split out
             // per-turn entries (one synthetic agent per turn) and reduce the
@@ -544,7 +551,7 @@ export default function useStreamingChat(callbacks) {
         } catch (_) {
             return false;
         }
-    }, [callbacks]);
+    }, [callbacks, setConversationId]);
 
     /** Persist the user's preview-panel tab state for the current conversation. */
     const savePreviewState = useCallback(async (state) => {
@@ -576,12 +583,13 @@ export default function useStreamingChat(callbacks) {
         fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => {});
         setIsStreaming(false);
         setMessages([]);
-        conversationIdRef.current = _uuid();
-    }, []);
+        setConversationId(_uuid());
+    }, [setConversationId]);
 
     return {
         messages,
         isStreaming,
+        activeConversationId,
         sendMessage,
         sendNudge,
         stopGeneration,
