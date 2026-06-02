@@ -11,7 +11,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, send_file, spawn, write_file
 from tests.e2e.pages import AgentActivityView, ChatView, NetworkView
 
-LLM_TIMEOUT = 600_000
+LLM_TIMEOUT = 20_000
 
 
 @pytest.fixture(scope="module")
@@ -27,15 +27,19 @@ def isolation_page(browser, browser_context_args):
     page = context.new_page()
     chat = ChatView(page).goto().new_conversation()
 
+    # send_file only accepts absolute paths under the home directory
+    # (/home/computron), so write there.
+    one = "/home/computron/one.txt"
+    two = "/home/computron/two.txt"
     agent_one = (
         bash('echo "agent-one"')
-        + write_file("one.txt", "hello from agent one")
-        + send_file("one.txt")
+        + write_file(one, "hello from agent one")
+        + send_file(one)
     )
     agent_two = (
         bash('echo "agent-two"')
-        + write_file("two.txt", "hello from agent two")
-        + send_file("two.txt")
+        + write_file(two, "hello from agent two")
+        + send_file(two)
     )
     chat.send(
         spawn(agent_one, profile="code_expert")

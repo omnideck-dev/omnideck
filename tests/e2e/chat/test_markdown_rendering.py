@@ -10,7 +10,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 
 _MARKDOWN = (
     "Here is a function:\n\n"

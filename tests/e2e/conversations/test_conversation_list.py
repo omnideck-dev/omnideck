@@ -15,7 +15,7 @@ from tests.e2e._helpers import container_exec
 from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView, RecentConversations
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 CONV_DIR = "/var/lib/computron/conversations"
 
 

@@ -14,7 +14,7 @@ from playwright.sync_api import expect
 from tests.e2e._protocol import bash, say
 from tests.e2e.pages import ChatView, RecentConversations
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 
 
 @pytest.fixture(scope="module")

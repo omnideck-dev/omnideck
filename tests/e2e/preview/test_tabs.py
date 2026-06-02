@@ -12,7 +12,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, send_file, write_file
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 
 
 @pytest.fixture(scope="module")
@@ -26,10 +26,13 @@ def preview_page(browser, browser_context_args):
     page = context.new_page()
     chat = ChatView(page).goto().new_conversation()
 
+    # send_file only accepts absolute paths under the home directory
+    # (/home/computron), so write there.
+    hello = "/home/computron/hello.txt"
     chat.send(
         bash('echo "hello"')
-        + write_file("hello.txt", "hello")
-        + send_file("hello.txt")
+        + write_file(hello, "hello")
+        + send_file(hello)
     ).wait_streaming(timeout=LLM_TIMEOUT)
 
     has_terminal = chat.preview.terminal_tab.is_visible()

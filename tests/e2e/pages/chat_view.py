@@ -6,7 +6,7 @@ from playwright.sync_api import Locator, Page
 
 from .preview_panel import PreviewPanel
 
-_DEFAULT_LLM_TIMEOUT = 180_000
+_DEFAULT_LLM_TIMEOUT = 20_000
 
 
 class ChatView:

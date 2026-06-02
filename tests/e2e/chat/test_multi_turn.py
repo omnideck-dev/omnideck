@@ -9,7 +9,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, say, send_file, write_file
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 
 
 def test_terminal_persists_across_turns(page: Page):
@@ -37,9 +37,11 @@ def test_file_tabs_persist_across_turns(page: Page):
     """File preview tabs from turn 1 should still be visible after turn 2."""
     chat = ChatView(page).goto().new_conversation()
 
-    # Turn 1 — ask the agent to create a file
+    # Turn 1 — ask the agent to create a file. send_file only accepts absolute
+    # paths under the home directory (/home/computron), so write there.
+    persist = "/home/computron/persist_test.txt"
     chat.send(
-        write_file("persist_test.txt", "hello") + send_file("persist_test.txt")
+        write_file(persist, "hello") + send_file(persist)
     ).wait_streaming(timeout=LLM_TIMEOUT)
 
     assert chat.file_preview_btns.count() > 0, (

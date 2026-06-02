@@ -5,7 +5,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 180_000
+LLM_TIMEOUT = 20_000
 
 
 def test_title_bar_is_present(page: Page):
