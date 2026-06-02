@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import styles from './inference.module.css';
-import ChevronRightIcon from '../icons/ChevronRightIcon';
 import ToggleSwitch from '../ToggleSwitch.jsx';
 import { isSupported } from './inferenceConstants.js';
 
@@ -20,20 +18,10 @@ const ADVANCED_HELP = {
 };
 
 export default function InferenceAdvanced({ draft, provider, onChange }) {
-    const [showAdvanced, setShowAdvanced] = useState(false);
-
     return (
         <>
-            <button
-                className={styles.advancedToggle}
-                onClick={() => setShowAdvanced((v) => !v)}
-            >
-                <ChevronRightIcon className={`${styles.chevron} ${showAdvanced ? styles.chevronOpen : ''}`} />
-                Advanced Settings
-            </button>
-
-            {showAdvanced && (
-                <div className={styles.advancedBody}>
+            <div className={styles.sectionLabel}>Advanced Settings</div>
+            <div className={styles.advancedBody}>
                     <div className={styles.advancedField}>
                         <label className={styles.fieldRow}>
                             <span className={styles.fieldLabel}>Temperature</span>
@@ -175,8 +163,7 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                             <span className={styles.fieldHint}>{ADVANCED_HELP.thinking_budget}</span>
                         </div>
                     )}
-                </div>
-            )}
+            </div>
         </>
     );
 }

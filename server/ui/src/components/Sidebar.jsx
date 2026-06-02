@@ -116,6 +116,7 @@ export default function Sidebar({
             ) : (
                 <RecentConversations
                     onLoadConversation={onLoadConversation}
+                    onNewConversation={onNewConversation}
                     activeConversationId={activeConversationId}
                     refreshSignal={conversationsRefresh}
                 />

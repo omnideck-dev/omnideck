@@ -100,6 +100,60 @@ describe('RecentConversations', () => {
         );
     });
 
+    it('opens a new conversation when the active one is deleted', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        render(
+            <RecentConversations
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c1"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const firstRow = screen.getAllByTestId('recent-item')[0];
+        await user.click(firstRow.querySelector('[data-testid="recent-delete"]'));
+
+        await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not open a new conversation when a non-active one is deleted', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        render(
+            <RecentConversations
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c2"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const firstRow = screen.getAllByTestId('recent-item')[0];
+        await user.click(firstRow.querySelector('[data-testid="recent-delete"]'));
+
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        expect(onNewConversation).not.toHaveBeenCalled();
+    });
+
+    it('clears the search box with the clear button', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        // No clear button until there's a query to clear.
+        expect(screen.queryByTestId('recent-search-clear')).not.toBeInTheDocument();
+
+        await user.type(screen.getByTestId('recent-search'), 'snake');
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(1);
+
+        await user.click(screen.getByTestId('recent-search-clear'));
+        expect(screen.getByTestId('recent-search')).toHaveValue('');
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+        expect(screen.queryByTestId('recent-search-clear')).not.toBeInTheDocument();
+    });
+
     it('marks the active conversation', async () => {
         render(<RecentConversations onLoadConversation={vi.fn()} activeConversationId="c2" />);
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
