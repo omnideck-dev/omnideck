@@ -12,14 +12,21 @@ A self-hosted agentic workbench in a single container. Bring your own LLMs — s
 
 ## Install the CLI
 
-The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Download the binary for your platform and put it on your path:
+The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Download the binary for your platform and put it on your path.
+
+**Linux** (and Windows via [WSL2](https://learn.microsoft.com/windows/wsl/install)):
 
 ```bash
-curl -L -o omnideck https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-linux-amd64
-chmod +x omnideck && sudo mv omnideck /usr/local/bin/
+curl -L https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-linux-amd64 -o omnideck && chmod +x omnideck && sudo mv omnideck /usr/local/bin/
 ```
 
-Swap `omnideck-linux-amd64` for your platform: `omnideck-darwin-arm64` (Apple Silicon), `omnideck-darwin-amd64` (Intel Mac), or `omnideck-linux-arm64`. Windows runs the Linux binary under [WSL2](https://learn.microsoft.com/windows/wsl/install). All builds are on the [releases page](https://github.com/omnideck-dev/cli/releases/latest).
+**macOS** (Apple Silicon):
+
+```bash
+curl -L https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-darwin-arm64 -o omnideck && chmod +x omnideck && sudo mv omnideck /usr/local/bin/
+```
+
+On Intel Macs or ARM Linux, use the `darwin-amd64` / `linux-arm64` build from the [releases page](https://github.com/omnideck-dev/cli/releases/latest).
 
 Verify it's on your path:
 
