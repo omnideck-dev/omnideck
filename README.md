@@ -12,17 +12,14 @@ A self-hosted agentic workbench in a single container. Bring your own LLMs — s
 
 ## Install the CLI
 
-The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Download the prebuilt binary for your platform and put it on your path:
+The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. This one-liner detects your OS and architecture, downloads the matching binary, and installs it to your path — it works on Linux, macOS, and Windows via [WSL2](https://learn.microsoft.com/windows/wsl/install):
 
 ```bash
-# pick the asset for your OS/arch: omnideck-{linux,darwin}-{amd64,arm64}
-curl -L -o omnideck \
-  https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-linux-amd64
-chmod +x omnideck
-sudo mv omnideck /usr/local/bin/
+curl -L -o omnideck "https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
+  && chmod +x omnideck && sudo mv omnideck /usr/local/bin/
 ```
 
-Binaries for macOS (`darwin-amd64`, `darwin-arm64`) and Linux (`amd64`, `arm64`) are attached to every [release](https://github.com/omnideck-dev/cli/releases/latest).
+Prefer to grab it by hand? Binaries for Linux and macOS (`amd64` and `arm64`) are attached to every [release](https://github.com/omnideck-dev/cli/releases/latest).
 
 Verify it's on your path:
 
