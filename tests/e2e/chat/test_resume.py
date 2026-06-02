@@ -14,8 +14,6 @@ from playwright.sync_api import expect
 from tests.e2e._protocol import bash, say
 from tests.e2e.pages import ChatView, RecentConversations
 
-LLM_TIMEOUT = 180_000
-
 
 @pytest.fixture(scope="module")
 def resumed(browser, browser_context_args):
@@ -33,8 +31,8 @@ def resumed(browser, browser_context_args):
     cw2 = f"ALPHA-{nonce}"
 
     chat = ChatView(page).goto().new_conversation()
-    chat.send(bash(f'echo "{cw1}"')).wait_streaming(timeout=LLM_TIMEOUT)
-    chat.send(say(cw2)).wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(bash(f'echo "{cw1}"')).wait_streaming()
+    chat.send(say(cw2)).wait_streaming()
 
     # Sanity: confirm the live render produced what we'll later expect to
     # come back. Tool calls are hidden inline and surfaced via the per-turn
@@ -45,10 +43,12 @@ def resumed(browser, browser_context_args):
     )
     assert page.get_by_text(cw2).count() >= 1, "cw2 missing before switch"
 
-    # Switch to a fresh conversation; previous markers should leave the DOM.
+    # Switch to a fresh conversation; message bubbles should be cleared.
+    # Codeword text may persist in the sidebar's recent-conversations label,
+    # so scope the "gone" assertions to the message containers.
     chat.new_conversation()
-    expect(page.get_by_text(cw1)).to_have_count(0)
-    expect(page.get_by_text(cw2)).to_have_count(0)
+    expect(page.get_by_test_id("message-user")).to_have_count(0)
+    expect(page.get_by_test_id("message-assistant")).to_have_count(0)
     expect(page.get_by_test_id("activity-toggle")).to_have_count(0)
 
     # Resume the prior conversation. Topmost row = most recent

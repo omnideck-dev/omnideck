@@ -34,7 +34,7 @@ def _named(name):
 
 # Tools available "as if" the coder/browser skills were already loaded.
 _CODER = [_named("run_bash_cmd"), _named("write_file"), _named("send_file")]
-_BROWSER = [_named("open_url")]
+_BROWSER = [_named("new_tab")]
 
 
 def _tool_result(messages, tool_name, content="ok"):
@@ -131,7 +131,7 @@ class TestOpenAndSpawn:
             FakeProvider(), _user("<<OPEN>>https://example.com<<END>>"), tools=_BROWSER
         )
         call = final.message.tool_calls[0]
-        assert call.function.name == "open_url"
+        assert call.function.name == "new_tab"
         assert call.function.arguments == {"url": "https://example.com"}
 
     async def test_open_loads_browser_skill_when_unavailable(self):

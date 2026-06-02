@@ -92,9 +92,7 @@ jobs:
       - name: Pull published image
         run: docker pull "ghcr.io/${{ github.repository }}:latest"
 
-      # E2E_SKIP_BUILD reuses the pulled image instead of building. The recipe
-      # still syncs source + rebuilds the UI in-container, which is a redundant
-      # no-op overlay here since the image already carries this commit's source.
+      # E2E_SKIP_BUILD runs the pulled image as-is instead of building one.
       - name: Run e2e tests
         env:
           E2E_IMAGE: ghcr.io/${{ github.repository }}:latest
