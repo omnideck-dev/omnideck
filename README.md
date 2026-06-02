@@ -12,14 +12,17 @@ A self-hosted agentic workbench in a single container. Bring your own LLMs — s
 
 ## Install the CLI
 
-The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Build it from source (a Homebrew tap is on the way):
+The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Download the prebuilt binary for your platform and put it on your path:
 
 ```bash
-git clone https://github.com/omnideck-dev/cli
-cd cli
-go build -ldflags="-s -w" -o omnideck .
+# pick the asset for your OS/arch: omnideck-{linux,darwin}-{amd64,arm64}
+curl -L -o omnideck \
+  https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-linux-amd64
+chmod +x omnideck
 sudo mv omnideck /usr/local/bin/
 ```
+
+Binaries for macOS (`darwin-amd64`, `darwin-arm64`) and Linux (`amd64`, `arm64`) are attached to every [release](https://github.com/omnideck-dev/cli/releases/latest).
 
 Verify it's on your path:
 
