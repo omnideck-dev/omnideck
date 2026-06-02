@@ -10,7 +10,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
-LLM_TIMEOUT = 20_000
 
 _MARKDOWN = (
     "Here is a function:\n\n"
@@ -28,7 +27,7 @@ SUBAGENT_PROMPT = spawn(say(_MARKDOWN)) + say("done")
 def test_code_blocks_render_in_chat(page: Page):
     """Fenced code blocks and inline code render correctly in the chat view."""
     chat = ChatView(page).goto().new_conversation()
-    chat.send(CHAT_PROMPT).wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(CHAT_PROMPT).wait_streaming()
 
     msg = page.get_by_test_id("message-assistant").last
 
@@ -49,7 +48,7 @@ def test_code_blocks_render_in_chat(page: Page):
 def test_code_blocks_render_in_activity_view(page: Page):
     """Code blocks render correctly in the agent activity view."""
     chat = ChatView(page).goto().new_conversation()
-    chat.send(SUBAGENT_PROMPT).wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(SUBAGENT_PROMPT).wait_streaming()
 
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=10_000)

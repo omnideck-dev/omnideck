@@ -11,8 +11,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, send_file, spawn, write_file
 from tests.e2e.pages import AgentActivityView, ChatView, NetworkView
 
-LLM_TIMEOUT = 20_000
-
 
 @pytest.fixture(scope="module")
 def isolation_page(browser, browser_context_args):
@@ -41,10 +39,12 @@ def isolation_page(browser, browser_context_args):
         + write_file(two, "hello from agent two")
         + send_file(two)
     )
+    # Two sub-agent spawns, each running its own tool loop — slower than a
+    # single-agent turn, so allow more than the default budget.
     chat.send(
         spawn(agent_one, profile="code_expert")
         + spawn(agent_two, profile="code_expert")
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming(timeout=30_000)
 
     network = NetworkView(page)
     assert network.indicator.is_visible(), (

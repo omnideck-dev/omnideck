@@ -12,11 +12,11 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import open_url
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 20_000
-
 
 def test_browser_snapshot_appears(page: Page):
     """Browsing produces a browser preview tab — Chrome launched successfully."""
     chat = ChatView(page).goto().new_conversation()
-    chat.send(open_url("https://example.com")).wait_streaming(timeout=LLM_TIMEOUT)
+    # A cold Chromium launch in the container is the slow path here, well
+    # beyond the default turn budget.
+    chat.send(open_url("https://example.com")).wait_streaming(timeout=30_000)
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
