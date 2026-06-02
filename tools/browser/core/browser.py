@@ -587,7 +587,19 @@ class Browser:
 
         Returns:
             The newly created Playwright ``Page``.
+
+        Raises:
+            BrowserToolError: If the open-tab limit is already reached.
         """
+        limit = load_config().tools.browser.max_open_tabs
+        open_count = len(self.open_tabs())
+        if open_count >= limit:
+            raise BrowserToolError(
+                f"Tab limit reached ({open_count}/{limit} open). Close a tab with "
+                f"close_tab(tab=N) before opening another, or reuse an existing tab "
+                f"with goto(url, tab=N).\n{self._tab_listing()}",
+                tool="new_tab",
+            )
         page = await self._context.new_page()
         await page.set_viewport_size(_viewport())
         self._attach_download_listener(page)
