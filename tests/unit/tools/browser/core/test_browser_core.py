@@ -2,8 +2,11 @@ import pytest
 
 from typing import Any
 
+from config import load_config
 from tools.browser.core.browser import Browser
 from tools.browser.core.exceptions import BrowserToolError
+
+_MAX_OPEN_TABS = load_config().tools.browser.max_open_tabs
 
 
 class FakePage:
@@ -73,6 +76,38 @@ async def test_new_page_assigns_monotonic_id() -> None:
     assert browser.tab_id_of(p1) == 1
     assert browser.tab_id_of(p2) == 2
     assert browser.tab_id_of(p3) == 3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_page_refuses_past_open_tab_limit() -> None:
+    """new_page raises once the open-tab limit is reached."""
+    ctx = FakeContext()
+    browser = Browser(context=ctx, extra_headers={})  # type: ignore[arg-type]
+
+    for _ in range(_MAX_OPEN_TABS):
+        await browser.new_page()
+
+    with pytest.raises(BrowserToolError, match="Tab limit reached"):
+        await browser.new_page()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_page_allowed_after_closing_a_tab() -> None:
+    """Closing a tab frees a slot so new_page succeeds again."""
+    ctx = FakeContext()
+    browser = Browser(context=ctx, extra_headers={})  # type: ignore[arg-type]
+
+    pages = [await browser.new_page() for _ in range(_MAX_OPEN_TABS)]
+
+    # Closing one tab drops the open count below the limit.
+    pages[0]._closed = True  # type: ignore[attr-defined]
+    browser._tab_id_of.pop(pages[0], None)
+
+    # Should not raise now that a slot is free.
+    await browser.new_page()
+    assert len(browser.open_tabs()) == _MAX_OPEN_TABS
 
 
 @pytest.mark.unit
