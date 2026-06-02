@@ -44,9 +44,21 @@ def open_url(url: str) -> str:
     return f"<<OPEN>>{url}<<END>>"
 
 
-def spawn(body: str, profile: str = "") -> str:
-    """Agent spawns a sub-agent (profile defaults to the default profile).
-
-    *body* is itself a directive sequence the sub-agent runs.
+def fail(message: str = "fake failure") -> str:
+    """Agent raises after any preceding tool directives, ending with an
+    ``error`` status. Use inside a ``spawn`` body to make a sub-agent
+    fail, or at the top level to fail the root turn.
     """
-    return f"<<SPAWN {profile}>>{body}<<ENDSPAWN>>"
+    return f"<<FAIL>>{message}<<END>>"
+
+
+def spawn(body: str, profile: str = "", name: str = "") -> str:
+    """Agent spawns a sub-agent.
+
+    *body* is itself a directive sequence the sub-agent runs. *profile*
+    defaults to the default profile. *name* sets the sub-agent's display
+    name in the UI (defaults to ``SUBAGENT``) — pass it when a test
+    needs to tell sibling sub-agents apart in the network view.
+    """
+    arg = f"{profile}|{name}" if name else profile
+    return f"<<SPAWN {arg}>>{body}<<ENDSPAWN>>"

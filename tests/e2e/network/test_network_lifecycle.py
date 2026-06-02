@@ -1,90 +1,32 @@
 """E2E test for agent network indicator and card basics.
 
-Mocks the /api/chat JSONL stream to control agent spawning precisely,
-then verifies core network indicator behavior, card metadata, and
-navigation.
+Driven by the fake LLM (MOCK_LLM): the root really spawns two
+sub-agents, so the network indicator, card metadata (names, sub-agent
+and tool badges, elapsed time), and navigation all reflect genuine
+agent-lifecycle events.
+
+  - research_agent: no tool work → no tool badge.
+  - code_expert:    runs two bash commands → "2 tools" badge.
 """
 
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 
-from tests.e2e.network._sse import _evt, build_jsonl
+from tests.e2e._protocol import bash, say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
-
-MOCK_EVENTS = build_jsonl([
-    _evt({"type": "agent_started", "agent_id": "root",
-          "agent_name": "computron", "parent_agent_id": None,
-          "instruction": "Do some research and write code"},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "user_message", "content": "do the work",
-          "attachments": [], "is_nudge": False},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "agent_started", "agent_id": "sub1",
-          "agent_name": "research_agent", "parent_agent_id": "root",
-          "instruction": "Research the topic"},
-         agent_id="sub1", agent_name="research_agent", depth=1),
-    _evt({"type": "agent_started", "agent_id": "sub2",
-          "agent_name": "code_expert", "parent_agent_id": "root",
-          "instruction": "Write the implementation"},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    # Sub-agent 1: content stream + final iteration.
-    _evt({"type": "content", "content": "Research complete."},
-         agent_id="sub1", agent_name="research_agent", depth=1),
-    _evt({"type": "iteration", "iteration_index": 0,
-          "content": "Research complete.", "thinking": None,
-          "tool_calls": []},
-         agent_id="sub1", agent_name="research_agent", depth=1),
-    # Sub-agent 2: two tool calls + final content.
-    _evt({"type": "tool_call", "name": "bash"},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    _evt({"type": "tool_call", "name": "write_file"},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    _evt({"type": "content", "content": "Code written."},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    _evt({"type": "iteration", "iteration_index": 0,
-          "content": "Code written.", "thinking": None,
-          "tool_calls": [
-              {"id": "tc1", "name": "bash", "arguments": None},
-              {"id": "tc2", "name": "write_file", "arguments": None},
-          ]},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    _evt({"type": "agent_completed", "agent_id": "sub1",
-          "agent_name": "research_agent", "status": "success"},
-         agent_id="sub1", agent_name="research_agent", depth=1),
-    _evt({"type": "agent_completed", "agent_id": "sub2",
-          "agent_name": "code_expert", "status": "success"},
-         agent_id="sub2", agent_name="code_expert", depth=1),
-    # Root's wrap-up iteration.
-    _evt({"type": "content", "content": "Both tasks done."},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "iteration", "iteration_index": 0,
-          "content": "Both tasks done.", "thinking": None,
-          "tool_calls": []},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "agent_completed", "agent_id": "root",
-          "agent_name": "computron", "status": "success"},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "turn_end"},
-         agent_id="root", agent_name="computron"),
-])
-
-
-def _mock_chat(route: Route):
-    route.fulfill(
-        status=200,
-        headers={"Content-Type": "application/json"},
-        body=MOCK_EVENTS,
-    )
+LLM_TIMEOUT = 180_000
 
 
 @pytest.fixture
 def network_after_turn(page: Page):
-    """Send a mocked multi-agent turn and return the NetworkView."""
+    """Spawn a real two-sub-agent tree and return the NetworkView."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat)
-    chat.send("test")
-    chat.wait_streaming()
+    chat.send(
+        spawn(say("done"), profile="research_agent", name="research_agent")
+        + spawn(bash("echo a") + bash("echo b") + say("done"),
+                profile="code_expert", name="code_expert")
+    ).wait_streaming(timeout=LLM_TIMEOUT)
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=5000)
     return network
@@ -106,7 +48,6 @@ def test_indicator_complete_status(page: Page, network_after_turn):
 
 def test_indicator_clears_on_new_conversation(page: Page, network_after_turn):
     """Starting a new conversation removes the indicator."""
-    page.unroute("**/api/chat")
     ChatView(page).new_conversation()
     expect(network_after_turn.indicator).not_to_be_visible()
 
@@ -120,7 +61,7 @@ def test_cards_render_with_correct_names(page: Page, network_after_turn):
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
     assert network_after_turn.agent_cards.count() == 3
 
-    network_after_turn.card_by_name("Computron")
+    network_after_turn.card_by_name("Omnideck")
     network_after_turn.card_by_name("Research Agent")
     network_after_turn.card_by_name("Code Expert")
 
@@ -130,7 +71,7 @@ def test_root_card_sub_agent_badge(page: Page, network_after_turn):
     network_after_turn.open()
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
 
-    root = network_after_turn.card_by_name("Computron")
+    root = network_after_turn.card_by_name("Omnideck")
     expect(root.sub_agent_badge).to_contain_text("2 sub-agents")
 
 

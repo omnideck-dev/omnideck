@@ -1,114 +1,32 @@
 """E2E test for the spawn_agent grouped card in the chat stream.
 
-Mocks the /api/chat JSONL stream so the root agent spawns two
-sub-agents, then verifies the SpawnCard renders inline in the
-assistant turn and that clicking a row drills into that agent's
-activity view.
+Driven by the fake LLM (MOCK_LLM): the root agent really spawns two
+sub-agents in parallel via spawn_agent, and we verify the SpawnCard
+groups them into one inline card and that clicking a row drills into
+that agent's activity view — the same code path the app uses.
 """
 
-import json
-
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import say, spawn
 from tests.e2e.pages import ChatView
 
-
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
-
-
-def _event(payload: dict, agent_id: str, agent_name: str, ts: str, depth: int) -> dict:
-    return {
-        "payload": payload,
-        "agent_id": agent_id,
-        "agent_name": agent_name,
-        "timestamp": ts,
-        "depth": depth,
-    }
-
-
-MOCK_EVENTS = _build_jsonl([
-    _event(
-        {"type": "agent_started", "agent_id": "root", "agent_name": "computron",
-         "parent_agent_id": None, "instruction": "Delegate the work"},
-        "root", "computron", "2026-05-03T10:00:00+00:00", 0,
-    ),
-    _event({"type": "user_message", "content": "delegate this",
-            "attachments": [], "is_nudge": False},
-           "root", "computron", "2026-05-03T10:00:00+00:00", 0),
-    # Root iteration 0: model planned two spawn_agent tool calls.
-    _event({"type": "iteration", "iteration_index": 0,
-            "content": "Delegating.", "thinking": None,
-            "tool_calls": [
-                {"id": "tc1", "name": "spawn_agent",
-                 "arguments": {"agent_name": "research_agent"}},
-                {"id": "tc2", "name": "spawn_agent",
-                 "arguments": {"agent_name": "code_expert"}},
-            ]},
-           "root", "computron", "2026-05-03T10:00:00+00:00", 0),
-    _event({"type": "spawn_requested", "correlation_id": "c-1"},
-           "root", "computron", "2026-05-03T10:00:01+00:00", 0),
-    _event({"type": "spawn_requested", "correlation_id": "c-2"},
-           "root", "computron", "2026-05-03T10:00:01+00:00", 0),
-    _event(
-        {"type": "agent_started", "agent_id": "sub1", "agent_name": "research_agent",
-         "parent_agent_id": "root", "instruction": "Research the topic",
-         "correlation_id": "c-1"},
-        "sub1", "research_agent", "2026-05-03T10:00:02+00:00", 1,
-    ),
-    _event(
-        {"type": "agent_started", "agent_id": "sub2", "agent_name": "code_expert",
-         "parent_agent_id": "root", "instruction": "Write the implementation",
-         "correlation_id": "c-2"},
-        "sub2", "code_expert", "2026-05-03T10:00:03+00:00", 1,
-    ),
-    _event({"type": "content", "content": "Research complete."}, "sub1",
-           "research_agent", "2026-05-03T10:00:04+00:00", 1),
-    _event({"type": "iteration", "iteration_index": 0,
-            "content": "Research complete.", "thinking": None,
-            "tool_calls": []},
-           "sub1", "research_agent", "2026-05-03T10:00:04+00:00", 1),
-    _event({"type": "content", "content": "Code written."}, "sub2",
-           "code_expert", "2026-05-03T10:00:05+00:00", 1),
-    _event({"type": "iteration", "iteration_index": 0,
-            "content": "Code written.", "thinking": None,
-            "tool_calls": []},
-           "sub2", "code_expert", "2026-05-03T10:00:05+00:00", 1),
-    _event({"type": "agent_completed", "agent_id": "sub1",
-            "agent_name": "research_agent", "status": "success"}, "sub1",
-           "research_agent", "2026-05-03T10:00:06+00:00", 1),
-    _event({"type": "agent_completed", "agent_id": "sub2",
-            "agent_name": "code_expert", "status": "success"}, "sub2",
-           "code_expert", "2026-05-03T10:00:07+00:00", 1),
-    _event({"type": "content", "content": "Both tasks done."}, "root",
-           "computron", "2026-05-03T10:00:08+00:00", 0),
-    _event({"type": "iteration", "iteration_index": 1,
-            "content": "Both tasks done.", "thinking": None,
-            "tool_calls": []},
-           "root", "computron", "2026-05-03T10:00:08+00:00", 0),
-    _event({"type": "agent_completed", "agent_id": "root",
-            "agent_name": "computron", "status": "success"}, "root",
-           "computron", "2026-05-03T10:00:09+00:00", 0),
-    _event({"type": "turn_end"}, "root", "computron", "2026-05-03T10:00:10+00:00", 0),
-])
-
-
-def _mock_chat(route: Route):
-    route.fulfill(
-        status=200,
-        headers={"Content-Type": "application/json"},
-        body=MOCK_EVENTS,
-    )
+LLM_TIMEOUT = 180_000
 
 
 @pytest.fixture
 def chat_after_spawn(page: Page) -> ChatView:
-    """Send a mocked turn that spawns two sub-agents."""
+    """Send a turn that spawns two named sub-agents in parallel."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat)
-    chat.send("delegate this")
-    chat.wait_streaming()
+    # Two consecutive spawns → the fake emits both spawn_agent calls in
+    # one response → the UI groups them into a single spawn card. The
+    # display name is title-cased per word for the row label, so a
+    # lowercase "research_agent" renders as "Research Agent".
+    chat.send(
+        spawn(say("done"), profile="research_agent", name="research_agent")
+        + spawn(say("done"), profile="code_expert", name="code_expert")
+    ).wait_streaming(timeout=LLM_TIMEOUT)
     expect(page.get_by_test_id("spawn-card")).to_be_visible(timeout=5000)
     return chat
 

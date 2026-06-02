@@ -59,7 +59,7 @@ _FAKE_MODELS: list[ModelInfo] = [
 # its body may contain nested <<END>> directives for the sub-agent to run.
 _DIRECTIVE_RE = re.compile(
     r"<<SPAWN(?P<spawn_arg>[^>]*)>>(?P<spawn_body>.*?)<<ENDSPAWN>>"
-    r"|<<(?P<name>SAY|BASH|WRITE|SEND|OPEN)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
+    r"|<<(?P<name>SAY|BASH|WRITE|SEND|OPEN|FAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -206,14 +206,27 @@ def _plan(
 
     tool_calls: list[ToolCall] = []
     say_parts: list[str] = []
+    # If a FAIL directive is present, the agent raises once it has
+    # completed the tool steps that precede it — driving a genuine
+    # error status through the real agent loop (run_turn re-raises →
+    # the agent span records status="error").
+    fail_after: int | None = None
+    fail_msg = ""
     for m in directives:
         if m.group("spawn_body") is not None:
+            # spawn_arg is "profile" or "profile|NAME". The optional name
+            # sets the sub-agent's UI display name so sibling sub-agents
+            # can be told apart in the network view; it defaults to
+            # SUBAGENT.
+            spawn_profile, _, spawn_name = (
+                m.group("spawn_arg").strip().partition("|")
+            )
             tool_calls.append(_tool_call(
                 "spawn_agent",
                 {
                     "instructions": m.group("spawn_body").strip(),
-                    "profile": m.group("spawn_arg").strip() or _default_profile_id(),
-                    "agent_name": "SUBAGENT",
+                    "profile": spawn_profile.strip() or _default_profile_id(),
+                    "agent_name": spawn_name.strip() or "SUBAGENT",
                 },
             ))
             continue
@@ -221,11 +234,18 @@ def _plan(
         if name == "SAY":
             say_parts.append(m.group("body"))
             continue
+        if name == "FAIL":
+            if fail_after is None:  # first FAIL wins
+                fail_after = len(tool_calls)
+                fail_msg = m.group("body").strip() or "fake failure"
+            continue
         call = _named_tool_call(name, m.group("arg"), m.group("body"))
         if call is not None:
             tool_calls.append(call)
 
     completed = _completed_step_count(messages)
+    if fail_after is not None and completed >= fail_after:
+        raise RuntimeError(fail_msg)
     if completed < len(tool_calls):
         # Issue the next directive (one per round to preserve order). If it
         # needs a skill that isn't loaded yet, load that skill first.
@@ -234,6 +254,18 @@ def _plan(
         available = {getattr(t, "__name__", "") for t in (tools or [])}
         if skill and next_call.function.name not in available:
             return "tools", [_tool_call("load_skill", {"name": skill})]
+        # Consecutive spawns go out together in one response — a model
+        # delegating to several agents issues the spawn_agent calls in
+        # parallel, which the UI groups into a single spawn card. Other
+        # tools stay one-per-round so their results sequence cleanly.
+        if next_call.function.name == "spawn_agent":
+            batch = []
+            i = completed
+            while (i < len(tool_calls)
+                   and tool_calls[i].function.name == "spawn_agent"):
+                batch.append(tool_calls[i])
+                i += 1
+            return "tools", batch
         return "tools", [next_call]
 
     return "final", "\n".join(say_parts) if say_parts else "done"

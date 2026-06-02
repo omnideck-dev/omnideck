@@ -54,10 +54,16 @@ async def test_directive_drives_tool_then_reply():
 
     token = _active_agent_state.set(AgentState(base_tools=[run_bash_cmd]))
     try:
+        # NOTE: do not patch ``publish_event`` here. The events-first
+        # conftest bridge patches it with a forwarder that routes tool
+        # results into history via handle_event — the only path by which
+        # the loop's tool result reaches the history view. A no-op patch
+        # overrides that forwarder, so the tool result never lands, the
+        # fake planner re-emits the same BASH directive every iteration,
+        # and the loop spins forever.
         with (
             patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
             patch(f"{_MOD}._get_parallel_config", return_value=cfg),
-            patch(f"{_MOD}.publish_event"),
             patch(f"{_MOD}.get_current_agent_name", return_value="fake-agent"),
         ):
             result = await run_turn(history, _agent(), hooks=[])
@@ -86,7 +92,6 @@ async def test_plain_prompt_without_directives_echoes():
         with (
             patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
             patch(f"{_MOD}._get_parallel_config", return_value=MagicMock(enabled=False, max_concurrent=1)),
-            patch(f"{_MOD}.publish_event"),
             patch(f"{_MOD}.get_current_agent_name", return_value="fake-agent"),
         ):
             result = await run_turn(history, _agent(), hooks=[])
