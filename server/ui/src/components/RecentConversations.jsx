@@ -28,7 +28,7 @@ function _label(convo) {
  * over a day-grouped, scrollable list. Clicking a row loads that
  * conversation; a hover delete removes it.
  */
-export default function RecentConversations({ onLoadConversation, activeConversationId, refreshSignal = 0 }) {
+export default function RecentConversations({ onLoadConversation, onNewConversation, activeConversationId, refreshSignal = 0 }) {
     const { items, loading, deleting, handleDelete } = useListPanel(
         '/api/conversations/sessions',
         { getId: (s) => s.conversation_id, refreshSignal },
@@ -51,13 +51,15 @@ export default function RecentConversations({ onLoadConversation, activeConversa
             .map((b) => ({ bucket: b, items: byBucket.get(b) }));
     }, [items, query]);
 
-    const onDelete = (e, conversationId) => {
+    const onDelete = async (e, conversationId) => {
         e.stopPropagation();
-        handleDelete(
+        await handleDelete(
             conversationId,
             `/api/conversations/sessions/${conversationId}`,
             (s) => s.conversation_id !== conversationId,
         );
+        // Deleting the open conversation leaves nothing selected — start fresh.
+        if (conversationId === activeConversationId) onNewConversation?.();
     };
 
     return (
@@ -72,6 +74,17 @@ export default function RecentConversations({ onLoadConversation, activeConversa
                     aria-label="Search conversations"
                     data-testid="recent-search"
                 />
+                {query && (
+                    <button
+                        className={styles.clearBtn}
+                        onClick={() => setQuery('')}
+                        title="Clear search"
+                        aria-label="Clear search"
+                        data-testid="recent-search-clear"
+                    >
+                        <i className="bi bi-x-lg" />
+                    </button>
+                )}
             </div>
 
             <div className={styles.list}>

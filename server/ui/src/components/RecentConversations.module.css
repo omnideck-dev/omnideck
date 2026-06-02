@@ -35,6 +35,20 @@
     outline: none;
 }
 .search input::placeholder { color: var(--text-tertiary); }
+.clearBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+}
+.clearBtn:hover { color: var(--text-primary); }
+.clearBtn i { font-size: 11px; }
 
 /* ── Scrollable list ─────────────────────────────────── */
 .list {

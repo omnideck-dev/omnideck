@@ -88,6 +88,67 @@ def test_search_filters_the_recent_list(page: Page):
         _delete_conversation(other_id)
 
 
+def test_clear_search_button_resets_the_filter(page: Page):
+    """The clear button empties the search box and restores the full list."""
+    nonce = time.time_ns()
+    keep_id = f"e2e_clear_keep_{nonce}"
+    other_id = f"e2e_clear_other_{nonce}"
+    _seed_conversation(keep_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=f"FindMe {nonce}")
+    _seed_conversation(other_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=f"Unrelated {nonce}")
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.items.first).to_be_visible(timeout=5000)
+
+        # No clear button until there's a query.
+        expect(recent.search_clear).not_to_be_visible()
+
+        recent.search.fill(f"FindMe {nonce}")
+        expect(page.get_by_text(f"Unrelated {nonce}")).not_to_be_visible()
+
+        recent.search_clear.click()
+        expect(recent.search).to_have_value("")
+        expect(recent.search_clear).not_to_be_visible()
+        expect(page.get_by_text(f"FindMe {nonce}")).to_be_visible()
+        expect(page.get_by_text(f"Unrelated {nonce}")).to_be_visible()
+    finally:
+        _delete_conversation(keep_id)
+        _delete_conversation(other_id)
+
+
+def test_deleting_active_conversation_opens_a_new_one(page: Page):
+    """Deleting the currently open conversation clears the chat into a fresh one."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_delete_active_{nonce}"
+    title = f"DeleteActive {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": f"OPEN_MARKER_{nonce}"},
+        {"role": "assistant", "content": "I am open."},
+    ], title=title)
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.items.first).to_be_visible(timeout=5000)
+
+        # Open it so it becomes the active conversation.
+        recent.item(0).open()
+        user_msgs = page.get_by_test_id("message-user")
+        expect(user_msgs.first).to_contain_text(f"OPEN_MARKER_{nonce}", timeout=10_000)
+
+        # Deleting the active conversation starts a fresh, empty one.
+        recent.item(0).delete()
+        expect(page.get_by_text(title)).not_to_be_visible()
+        expect(page.get_by_test_id("message-user")).to_have_count(0)
+    finally:
+        _delete_conversation(conv_id)
+
+
 def test_multiple_conversations_listed_in_recency_order(page: Page):
     """Seeded conversations appear in most-recent-first order."""
     nonce = time.time_ns()
