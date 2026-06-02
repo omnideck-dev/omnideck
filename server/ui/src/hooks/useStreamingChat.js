@@ -249,9 +249,13 @@ export default function useStreamingChat(callbacks) {
         _setIsStreaming(val);
     }, []);
     const abortControllerRef = useRef(null);
+    // The open conversation id is this hook's primary key — every request it
+    // makes (send, nudge, stop, resume, preview-state) is keyed by it. The ref
+    // is the source of truth so callbacks can read it synchronously mid-flight,
+    // before any re-render lands. The state below mirrors it purely so rendered
+    // consumers (the sidebar's active-row highlight) update when it changes;
+    // always flip both together via setConversationId, never the ref alone.
     const conversationIdRef = useRef(_uuid());
-    // Reactive mirror of conversationIdRef so the UI can highlight the
-    // open conversation and react when it changes.
     const [activeConversationId, _setActiveConversationId] = useState(conversationIdRef.current);
     const setConversationId = useCallback((id) => {
         conversationIdRef.current = id;
