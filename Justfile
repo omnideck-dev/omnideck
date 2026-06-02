@@ -297,9 +297,10 @@ e2e *args:
     # Per-branch image so concurrent worktrees don't clobber each other.
     # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
-    # E2E_IMAGE + E2E_SKIP_BUILD let CI reuse a prebuilt image (e.g. the
-    # published main image) instead of building — source is synced in below
-    # regardless, so a matching baked env is all that's needed.
+    # The build context is the working tree (uncommitted edits included), so the
+    # built image already carries the code under test — we run it as-is, no
+    # source overlay. E2E_IMAGE + E2E_SKIP_BUILD let CI skip the build and run a
+    # prebuilt image (e.g. the published main image) directly instead.
     image="${E2E_IMAGE:-computron_9000:e2e-${branch_tag}}"
     if [ "${E2E_SKIP_BUILD:-0}" = "1" ]; then
         echo "⏭️  Reusing image ${image} (E2E_SKIP_BUILD=1)"
@@ -345,12 +346,7 @@ e2e *args:
         -v "$state/state:/var/lib/computron:rw" \
         "$image"
 
-    just _sync-src "$name"
-    docker exec "$name" bash -c "cd /opt/computron/{{UI_DIR}} && npm run build"
-    # Bounce the container so it picks up the synced code + fresh dist
-    docker restart "$name" >/dev/null
-
-    # Wait for the synced app to come up on the e2e port
+    # Wait for the app to come up on the e2e port
     ready=false
     for i in $(seq 1 30); do
         if curl -s "http://localhost:$port/api/settings" >/dev/null 2>&1; then

@@ -6,7 +6,11 @@ from playwright.sync_api import Locator, Page
 
 from .preview_panel import PreviewPanel
 
-_DEFAULT_LLM_TIMEOUT = 180_000
+# Ceiling for a turn to finish streaming. With the in-process fake there's no
+# model latency, so this only needs to cover the real tool work a turn does
+# (a bash subprocess, file I/O). Browser launches and sub-agent spawns are
+# slower and pass an explicit timeout at the call site.
+_DEFAULT_TURN_TIMEOUT = 10_000
 
 
 class ChatView:
@@ -26,7 +30,7 @@ class ChatView:
         textarea.press("Enter")
         return self
 
-    def wait_streaming(self, timeout: int = _DEFAULT_LLM_TIMEOUT) -> "ChatView":
+    def wait_streaming(self, timeout: int = _DEFAULT_TURN_TIMEOUT) -> "ChatView":
         """Wait until the assistant finishes streaming (Stop button disappears)."""
         stop_btn = self.page.locator("button[title='Stop generation']")
         try:

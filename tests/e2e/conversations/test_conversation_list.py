@@ -16,7 +16,6 @@ from tests.e2e._helpers import container_exec
 from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView, RecentConversations
 
-LLM_TIMEOUT = 180_000
 CONV_DIR = "/var/lib/computron/conversations"
 
 
@@ -114,7 +113,7 @@ def test_recent_list_is_visible_on_load(page: Page):
 def test_conversation_appears_after_real_message(page: Page):
     """A conversation shows up in the recent list after a turn."""
     chat = ChatView(page).goto().new_conversation()
-    chat.send(say("yes")).wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(say("yes")).wait_streaming()
 
     recent = RecentConversations(page)
     expect(recent.items.first).to_be_visible(timeout=10_000)

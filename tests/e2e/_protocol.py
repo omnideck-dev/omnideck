@@ -40,7 +40,7 @@ def send_file(path: str) -> str:
 
 
 def open_url(url: str) -> str:
-    """Agent opens *url* via the browser tool (browser skill auto-loaded)."""
+    """Agent opens *url* in a new browser tab (browser skill auto-loaded)."""
     return f"<<OPEN>>{url}<<END>>"
 
 

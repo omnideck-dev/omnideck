@@ -5,8 +5,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 180_000
-
 
 def test_title_bar_is_present(page: Page):
     """The chat view shows a title bar with a title."""
@@ -22,7 +20,7 @@ def test_turn_count_appears_after_a_turn(page: Page):
     # No turns yet — the count is hidden.
     expect(page.get_by_test_id("chat-turns")).to_have_count(0)
 
-    chat.send(say("hello")).wait_streaming(timeout=LLM_TIMEOUT)
+    chat.send(say("hello")).wait_streaming()
 
     expect(page.get_by_test_id("chat-turns")).to_be_visible()
     expect(page.get_by_test_id("chat-turns")).to_contain_text("1 turn")
