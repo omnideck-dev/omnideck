@@ -41,33 +41,46 @@
 }
 *,*::before,*::after{box-sizing:border-box;}
 html,body{margin:0;padding:0;height:100%;}
-body{background:var(--canvas);color:var(--text-primary);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
-button{font:inherit;cursor:pointer;border:none;background:transparent;color:var(--text-primary);border-radius:var(--radius-md);transition:background 150ms var(--ease),color 150ms var(--ease),border-color 150ms var(--ease),box-shadow 150ms var(--ease);}
+body{background:var(--canvas);color:var(--text-primary);font-family:var(--font-body);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;}
+button{font:inherit;cursor:pointer;border:none;background:transparent;color:var(--text-primary);border-radius:var(--radius-md);
+  transition:background 150ms var(--ease),color 150ms var(--ease),border-color 150ms var(--ease),opacity .15s;}
 button:active:not(:disabled){transform:translateY(1px);}
-*::-webkit-scrollbar{width:6px;height:6px;}
-*::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+*::-webkit-scrollbar{width:8px;height:8px;}
+*::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-sm);}
+*::-webkit-scrollbar-track{background:transparent;}
 
-/* ─── Mockup chrome (not part of the real app) ─── */
-.mock-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:var(--sp-3);
-  padding:var(--sp-2) var(--sp-4);background:var(--elevated);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);}
+/* ─── Mockup chrome (NOT part of the real app) ─── */
+.mock-bar{flex-shrink:0;display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-4);
+  background:var(--elevated);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);}
 .mock-bar .brand{font-family:var(--font-brand);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-secondary);}
 .mock-bar .spacer{flex:1;}
 .mock-note{font-size:.72rem;color:var(--text-tertiary);}
 .mock-toggle{height:28px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-md);font-size:12px;color:var(--text-secondary);}
 .mock-toggle:hover{background:var(--surface);}
 
-/* ─── Settings shell ─── */
-.page{max-width:1080px;margin:0 auto;padding:var(--sp-6) var(--sp-5);}
-.tabBar{display:flex;gap:var(--sp-1);border-bottom:1px solid var(--border);margin-bottom:var(--sp-5);}
-.tab{padding:var(--sp-2) var(--sp-3);font-family:var(--font-brand);font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;
-  color:var(--text-tertiary);border-bottom:2px solid transparent;border-radius:0;}
-.tab:hover{color:var(--text-secondary);}
-.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+/* ─── Settings page shell (from SettingsPage.module.css) ─── */
+.page{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--canvas);}
+.tabBar{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 1.5rem;flex-shrink:0;background:var(--canvas);}
+.tab{font-family:var(--font-brand);font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--text-primary);opacity:.4;background:none;border:none;border-radius:0;border-bottom:2px solid transparent;
+  padding:.65rem 1rem;transition:opacity .15s,border-color .15s;}
+.tab:hover{opacity:.7;}
+.tab.active{opacity:1;border-bottom-color:var(--accent);}
+.tab.inert{cursor:default;}
+.tab.inert:hover{opacity:.4;}
 
-.screen{display:none;}
-.screen.active{display:block;}
+/* Sub-toggle (segmented control) inside the Skills tab */
+.subRow{flex-shrink:0;display:flex;align-items:center;gap:var(--sp-3);padding:.6rem 1.5rem 0;}
+.subToggle{display:inline-flex;gap:2px;padding:3px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);}
+.seg{padding:5px 14px;font-size:12.5px;font-weight:500;color:var(--text-secondary);border-radius:var(--radius-sm);}
+.seg:hover{color:var(--text-primary);}
+.seg.active{background:var(--elevated);color:var(--text-primary);box-shadow:var(--shadow-sm);}
 
-/* ─── Buttons ─── */
+.content{flex:1;overflow:hidden;display:flex;}
+.screen{display:none;flex:1;min-height:0;}
+.screen.active{display:flex;}
+
+/* ─── Button primitive (from primitives/Button.module.css) ─── */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--radius-md);
   font-size:13px;font-weight:500;border:1px solid transparent;}
 .btn.outline{border-color:var(--border);color:var(--text-primary);}
@@ -77,110 +90,93 @@ button:active:not(:disabled){transform:translateY(1px);}
 .btn.ghost{color:var(--text-tertiary);}
 .btn.ghost:hover{color:var(--text-primary);background:var(--surface);}
 .btn.danger{background:var(--danger-muted);color:var(--danger);}
-.btn.sm{height:26px;padding:0 10px;font-size:12px;}
 
-/* ─── Master-detail layout for Skills ─── */
-.split{display:grid;grid-template-columns:280px 1fr;gap:var(--sp-5);align-items:start;}
-.listHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3);}
-.listHead h2{margin:0;font-family:var(--font-brand);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary);}
-.skillList{display:flex;flex-direction:column;gap:var(--sp-2);}
-.skillItem{text-align:left;width:100%;padding:var(--sp-3);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-  box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px;}
-.skillItem:hover{border-color:var(--border-strong);}
-.skillItem.sel{border-color:var(--accent);box-shadow:var(--shadow-glow);background:var(--elevated);}
-.skillItem .row1{display:flex;align-items:center;gap:var(--sp-2);}
-.skillItem .nm{font-weight:600;font-size:13.5px;}
-.skillItem .ds{font-size:.74rem;color:var(--text-secondary);line-height:1.35;}
-.tag{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:.62rem;letter-spacing:.04em;
-  padding:2px 7px;border-radius:var(--radius-sm);text-transform:uppercase;}
-.tag.builtin{background:var(--accent-muted);color:var(--accent);}
-.tag.custom{background:var(--success-muted);color:var(--success);}
-.tag.overridden{background:var(--warning-muted);color:var(--warning);}
-.tag.off{background:var(--surface);color:var(--text-tertiary);border:1px solid var(--border);}
-.metaRow{display:flex;gap:var(--sp-3);font-size:.7rem;color:var(--text-tertiary);}
+/* ─── List panel (from ProfileList.module.css) ─── */
+.panel{width:40%;min-width:280px;max-width:420px;height:100%;display:flex;flex-direction:column;background:var(--canvas);
+  border-right:1px solid var(--border);flex-shrink:0;}
+.panelHeader{display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem;border-bottom:1px solid var(--border);flex-shrink:0;}
+.headerLabel{font-family:var(--font-brand);font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-primary);opacity:.7;}
+.newBtn{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 var(--sp-2);border-radius:var(--radius-sm);
+  background:var(--accent-muted);color:var(--accent);border:1px solid transparent;font-family:var(--font-brand);font-size:10px;letter-spacing:.04em;}
+.newBtn:hover{background:var(--accent);color:#fff;}
+.list{flex:1;overflow-y:auto;padding:0;margin:0;list-style:none;}
+.item{display:block;padding:.5rem .75rem;cursor:pointer;border-bottom:1px solid var(--border);border-left:2px solid transparent;
+  transition:background .15s,border-color .15s;outline:none;}
+.item:hover{background:var(--surface);}
+.item.itemActive{background:var(--accent-muted);border-left:2px solid var(--accent);}
+.item.itemDisabled .name,.item.itemDisabled .desc{opacity:.45;}
+.itemBody{display:flex;flex-direction:column;gap:.15rem;min-width:0;}
+.item .name{font-size:.82rem;font-weight:600;color:var(--text-primary);line-height:1.3;}
+.item .desc{font-size:.72rem;color:var(--text-primary);opacity:.5;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.badges{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.15rem;}
+.badge{display:inline-block;font-family:var(--font-brand);font-size:.65rem;padding:.1em .45em;border-radius:3px;letter-spacing:.02em;line-height:1.4;white-space:nowrap;}
+.badgeSkill{background:var(--success-muted);color:var(--success);border:1px solid var(--success-muted);}
+.badgeParam{background:var(--border-subtle);color:var(--text-primary);opacity:.5;border:1px solid var(--border);}
+.badgeStarter{background:var(--accent-muted);color:var(--accent);border:1px solid var(--accent-muted);}
+.badgeDisabled{background:var(--danger-muted);color:var(--danger);border:1px solid var(--danger-muted);}
 
-/* ─── Editor panel ─── */
-.editor{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
-.editorHead{display:flex;align-items:center;justify-content:space-between;padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border-subtle);background:var(--elevated);}
-.editorHead .ttl{font-size:15px;font-weight:600;}
-.editorHead .sub{font-size:.72rem;color:var(--text-tertiary);margin-top:2px;}
-.editorBody{padding:var(--sp-5);display:flex;flex-direction:column;gap:var(--sp-5);}
-.field{display:flex;flex-direction:column;gap:6px;}
-.field > label{font-family:var(--font-brand);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);}
-.field .help{font-size:.7rem;color:var(--text-tertiary);}
-.input,.textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--canvas);color:var(--text-primary);
-  font-family:var(--font-body);font-size:13px;padding:8px 10px;outline:none;transition:border-color 120ms,box-shadow 120ms;}
-[data-theme="dark"] .input,[data-theme="dark"] .textarea{background:var(--elevated);}
-.input{height:34px;}
-.input:focus,.textarea:focus{border-color:var(--accent);box-shadow:var(--shadow-glow);}
-.textarea{min-height:200px;resize:vertical;font-family:var(--font-code);font-size:12.5px;line-height:1.55;}
+/* ─── Editor (from ProfileBuilder.module.css) ─── */
+.editor{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+.actionsBar{display:flex;align-items:center;gap:.5rem;padding:.5rem 1.5rem;border-bottom:1px solid var(--border);flex-shrink:0;}
+.actionsRight{display:flex;align-items:center;gap:.4rem;margin-left:auto;}
+.formBody{flex:1;overflow-y:auto;padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:0;}
+.section{padding:.75rem 0;border-top:1px solid var(--border);}
+.section:first-child{border-top:none;padding-top:0;}
+.sectionLabel{font-family:var(--font-brand);font-size:.78rem;color:var(--text-primary);opacity:.4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;}
+.sectionHelp{font-size:.72rem;color:var(--text-primary);opacity:.55;line-height:1.45;margin:-.25rem 0 .6rem;}
+.nameInput{width:100%;height:38px;font-size:1.05rem;margin-bottom:.5rem;font-weight:600;padding:0 .55rem;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);}
+.nameInput:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.textInput{width:100%;height:32px;font-size:.8rem;padding:0 .55rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);}
+.textInput:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.promptTextarea{width:100%;min-height:200px;font-family:var(--font-brand);font-size:.78rem;line-height:1.5;padding:.5rem;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);resize:vertical;}
+.promptTextarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.enabledToggle{display:grid;grid-template-columns:auto 1fr;column-gap:.5rem;row-gap:.15rem;align-items:center;margin-top:.6rem;cursor:pointer;user-select:none;}
+.enabledToggle input{grid-row:1;grid-column:1;margin:0;}
+.enabledToggleLabel{grid-row:1;grid-column:2;font-size:.85rem;font-weight:600;}
+.enabledHelp{grid-row:2;grid-column:2;font-size:.72rem;opacity:.6;line-height:1.4;}
 
-.sectionLbl{display:flex;align-items:center;justify-content:space-between;}
-.sectionLbl .l{font-family:var(--font-brand);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);}
+/* ─── Chip grid (from ProfileBuilder.module.css .chip) — bundle toggles ─── */
+.chipGrid{display:flex;flex-wrap:wrap;gap:.35rem;}
+.chip{display:inline-flex;align-items:center;gap:.3rem;font-family:var(--font-brand);font-size:.72rem;font-weight:500;padding:.3rem .6rem;
+  border-radius:var(--radius-full);border:1px solid var(--border);background:var(--surface);color:var(--text-primary);cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s;}
+.chip:hover{border-color:var(--success);}
+.chip.chipActive{background:var(--success-muted);border-color:var(--success-muted);color:var(--success);}
+.chip .chipCnt{opacity:.6;font-size:.66rem;}
+.chip .chipCheck{font-size:.7rem;line-height:1;}
 
-/* ─── Assigned bundle chips ─── */
-.bundleChips{display:flex;flex-wrap:wrap;gap:var(--sp-2);}
-.bundleChip{display:inline-flex;align-items:center;gap:8px;padding:6px 8px 6px 10px;border:1px solid var(--border);
-  border-radius:var(--radius-full);background:var(--elevated);box-shadow:var(--shadow-sm);font-size:12.5px;}
-.bundleChip .ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;}
-.bundleChip .cnt{font-size:.66rem;color:var(--text-tertiary);font-family:var(--font-brand);}
-.bundleChip .x{width:18px;height:18px;border-radius:var(--radius-full);display:inline-flex;align-items:center;justify-content:center;
-  color:var(--text-tertiary);font-size:14px;line-height:1;}
-.bundleChip .x:hover{background:var(--danger-muted);color:var(--danger);}
-.addBundle{border:1px dashed var(--border-strong);background:transparent;color:var(--text-secondary);border-radius:var(--radius-full);
-  padding:6px 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;}
-.addBundle:hover{border-color:var(--accent);color:var(--accent);}
-.emptyHint{font-size:.74rem;color:var(--text-tertiary);font-style:italic;}
+.emptyState{flex:1;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--text-primary);opacity:.4;font-style:italic;}
 
-.actionBar{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-5);border-top:1px solid var(--border-subtle);background:var(--elevated);}
-.actionBar .spacer{flex:1;}
-
-/* ─── Tool Bundles reference ─── */
-.bundleGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:var(--sp-3);}
-.bundleCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;}
-.bundleCardHead{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);width:100%;text-align:left;}
+/* ─── Tool Bundles reference (full-width scroll column) ─── */
+.refWrap{flex:1;overflow-y:auto;padding:1.25rem 1.5rem;}
+.tierLabel{font-family:var(--font-brand);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-primary);opacity:.5;
+  margin:1.4rem 0 .5rem;display:flex;align-items:baseline;gap:.6rem;}
+.tierLabel:first-child{margin-top:0;}
+.tierLabel .note{font-family:var(--font-body);font-size:.72rem;text-transform:none;letter-spacing:0;opacity:.8;}
+.bundleGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.6rem;}
+.bundleCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.bundleCard.core{border-style:dashed;}
+.bundleCardHead{display:flex;align-items:center;gap:.6rem;padding:.6rem .75rem;width:100%;text-align:left;}
 .bundleCardHead:hover{background:var(--elevated);}
-.bundleIcon{width:32px;height:32px;flex-shrink:0;border-radius:var(--radius-md);background:var(--accent-muted);color:var(--accent);
-  display:flex;align-items:center;justify-content:center;font-size:16px;}
+.bundleIcon{width:30px;height:30px;flex-shrink:0;border-radius:var(--radius-sm);background:var(--accent-muted);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:15px;}
+.bundleCard.core .bundleIcon{background:var(--border-subtle);color:var(--text-secondary);}
+.bundleCard.integration .bundleIcon{background:var(--warning-muted);color:var(--warning);}
 .bundleCardHead .info{flex:1;min-width:0;}
-.bundleCardHead .nm{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;}
-.bundleCardHead .ds{font-size:.72rem;color:var(--text-secondary);margin-top:2px;line-height:1.35;}
-.bundleCardHead .chev{color:var(--text-tertiary);font-size:12px;transition:transform 150ms var(--ease);}
+.bundleCardHead .nm{font-weight:600;font-size:.85rem;display:flex;align-items:center;gap:.4rem;}
+.bundleCardHead .ds{font-size:.72rem;color:var(--text-primary);opacity:.55;margin-top:1px;line-height:1.3;}
+.chev{color:var(--text-tertiary);font-size:11px;transition:transform 150ms var(--ease);}
 .bundleCard.open .chev{transform:rotate(90deg);}
-.toolList{display:none;padding:var(--sp-2) var(--sp-4) var(--sp-4);border-top:1px solid var(--border-subtle);flex-wrap:wrap;gap:6px;}
+.pkgTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--text-tertiary);text-transform:uppercase;border:1px solid var(--border);border-radius:3px;padding:1px 6px;}
+.gateTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--warning);background:var(--warning-muted);border-radius:3px;padding:1px 6px;text-transform:uppercase;}
+.toolList{display:none;padding:.4rem .75rem .7rem;border-top:1px solid var(--border-subtle);flex-wrap:wrap;gap:5px;}
 .bundleCard.open .toolList{display:flex;}
-.toolPill{font-family:var(--font-code);font-size:11.5px;padding:3px 8px;border-radius:var(--radius-sm);background:var(--canvas);
-  border:1px solid var(--border);color:var(--text-secondary);}
-.pkgTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--text-tertiary);text-transform:uppercase;
-  border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 6px;}
-.gateTag{font-family:var(--font-brand);font-size:.6rem;letter-spacing:.04em;color:var(--warning);background:var(--warning-muted);
-  border-radius:var(--radius-sm);padding:1px 6px;text-transform:uppercase;}
+.toolPill{font-family:var(--font-code);font-size:11px;padding:2px 7px;border-radius:3px;background:var(--canvas);border:1px solid var(--border);color:var(--text-secondary);}
 
 .intro{background:var(--accent-muted);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius-md);
-  padding:var(--sp-3) var(--sp-4);margin-bottom:var(--sp-5);font-size:.78rem;color:var(--text-secondary);line-height:1.5;}
+  padding:.7rem .9rem;margin-bottom:1rem;font-size:.78rem;color:var(--text-secondary);line-height:1.5;}
 .intro b{color:var(--text-primary);}
-
-/* ─── Modal: assign bundles ─── */
-.scrim{position:fixed;inset:0;background:var(--scrim);display:none;align-items:flex-start;justify-content:center;padding-top:72px;z-index:60;}
-.scrim.open{display:flex;}
-.modal{background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
-  width:560px;max-width:92%;max-height:calc(100vh - 140px);display:flex;flex-direction:column;overflow:hidden;}
-.modalHead{padding:var(--sp-4) var(--sp-5);border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;}
-.modalHead .t{font-size:15px;font-weight:600;}
-.modalHead .x{width:28px;height:28px;border-radius:var(--radius-md);color:var(--text-tertiary);display:flex;align-items:center;justify-content:center;font-size:18px;}
-.modalHead .x:hover{background:var(--surface);color:var(--text-primary);}
-.modalBody{padding:var(--sp-3) var(--sp-4);overflow-y:auto;display:flex;flex-direction:column;gap:var(--sp-2);}
-.pick{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-md);
-  background:var(--surface);text-align:left;width:100%;}
-.pick:hover{border-color:var(--border-strong);background:var(--canvas);}
-.pick.checked{border-color:var(--accent);background:var(--accent-muted);}
-.pick .box{width:18px;height:18px;border:1.5px solid var(--border-strong);border-radius:var(--radius-sm);flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;}
-.pick.checked .box{background:var(--accent);border-color:var(--accent);}
-.pick .info{flex:1;min-width:0;}
-.pick .nm{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;}
-.pick .ds{font-size:.7rem;color:var(--text-secondary);margin-top:1px;}
-.modalFoot{padding:var(--sp-3) var(--sp-5);border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:var(--sp-2);}
 </style>
 </head>
 <body>
@@ -193,52 +189,63 @@ button:active:not(:disabled){transform:translateY(1px);}
 </div>
 
 <div class="page">
+  <!-- Real Settings tab bar — Skills is a new tab alongside the existing ones -->
   <nav class="tabBar">
-    <button class="tab active" data-screen="skills">Skills</button>
-    <button class="tab" data-screen="bundles">Tool Bundles</button>
+    <button class="tab inert">Agent Profiles</button>
+    <button class="tab active">Skills</button>
+    <button class="tab inert">Providers</button>
+    <button class="tab inert">Integrations</button>
+    <button class="tab inert">Memory</button>
+    <button class="tab inert">Custom Tools</button>
+    <button class="tab inert">System</button>
   </nav>
 
-  <!-- ════════ SCREEN 1: SKILLS (master-detail) ════════ -->
-  <section class="screen active" id="screen-skills">
-    <div class="intro">
-      Skills are now <b>editable</b>. A skill is a reusable instruction (the "skill text") plus an optional set of
-      <b>tool bundles</b> it grants. Built-in skills are <b>starters</b>: edit one and your changes are saved as an
-      <b>override</b> layered on top — the shipped default stays intact and <b>Reset to default</b> restores it any time.
-      You can also author your own skills from scratch.
+  <!-- Sub-toggle within the Skills tab -->
+  <div class="subRow">
+    <div class="subToggle">
+      <button class="seg active" data-screen="skills">My Skills</button>
+      <button class="seg" data-screen="bundles">Tool Bundles</button>
     </div>
-    <div class="split">
+  </div>
+
+  <div class="content">
+    <!-- ════════ SCREEN 1: SKILLS (master-detail, matches ProfilesTab) ════════ -->
+    <section class="screen active" id="screen-skills">
       <!-- LIST -->
-      <div>
-        <div class="listHead">
-          <h2>Skills</h2>
-          <button class="btn filled sm" onclick="newSkill()">+ New</button>
+      <div class="panel">
+        <div class="panelHeader">
+          <span class="headerLabel">Skills</span>
+          <button class="newBtn" onclick="newSkill()">+ New</button>
         </div>
-        <div class="skillList" id="skillList"></div>
+        <ul class="list" id="skillList"></ul>
       </div>
 
       <!-- EDITOR -->
       <div class="editor">
-        <div class="editorHead">
-          <div>
-            <div class="ttl" id="edTitle">coder</div>
-            <div class="sub" id="edSub">Built-in skill · editing a copy keeps the original intact</div>
+        <div class="actionsBar">
+          <button class="btn danger" id="delBtn">Delete</button>
+          <div class="actionsRight">
+            <button class="btn ghost">Revert</button>
+            <button class="btn outline">Duplicate</button>
+            <button class="btn filled">Save</button>
           </div>
-          <span class="tag builtin" id="edTag">Built-in</span>
         </div>
-        <div class="editorBody">
-          <div class="field">
-            <label>Name</label>
-            <input class="input" id="fName" value="coder" />
-            <span class="help">Short identifier the agent uses with <code>load_skill()</code>.</span>
+        <div class="formBody" id="formBody">
+          <div class="section">
+            <div class="sectionLabel">Identity</div>
+            <input class="nameInput" id="fName" value="coder" />
+            <input class="textInput" id="fDesc" value="File I/O, code editing, bash execution, codebase search" />
+            <label class="enabledToggle">
+              <input type="checkbox" checked />
+              <span class="enabledToggleLabel">Enabled</span>
+              <span class="enabledHelp">Disabled skills are hidden from the agent and can't be loaded.</span>
+            </label>
           </div>
-          <div class="field">
-            <label>Description</label>
-            <input class="input" id="fDesc" value="File I/O, code editing, bash execution, codebase search" />
-            <span class="help">One line shown in the skill catalog.</span>
-          </div>
-          <div class="field">
-            <label>Skill text (prompt)</label>
-            <textarea class="textarea" id="fPrompt">Full access to the virtual computer filesystem and shell.
+
+          <div class="section">
+            <div class="sectionLabel">Skill text</div>
+            <div class="sectionHelp">Injected into the system prompt when the skill is loaded.</div>
+            <textarea class="promptTextarea" id="fPrompt">Full access to the virtual computer filesystem and shell.
 
 STARTING A TASK — first check if your instructions reference existing files
 or folders. If they do, work in that existing folder. Otherwise, create a
@@ -249,253 +256,193 @@ relevant code, then read_file(start=N, end=M) for targeted sections.
 
 EDITING FILES — use apply_text_patch(path, old_text, new_text) for precise
 edits: old_text must match exactly one location in the file.</textarea>
-            <span class="help">Injected into the system prompt when this skill is loaded.</span>
           </div>
-          <div class="field">
-            <div class="sectionLbl">
-              <span class="l">Tool bundles</span>
-              <button class="addBundle" onclick="openPicker()">+ Add bundle</button>
+
+          <div class="section">
+            <div class="sectionLabel">Tool bundles</div>
+            <div class="sectionHelp">
+              Toggle the bundles this skill grants. Bundles are app-defined groups of related tools.
+              Core tools (scratchpad, file output, sub-agents…) are always available and aren't listed here;
+              integration tools are governed by the Integrations tab.
             </div>
-            <span class="help">Bundles are app-defined groups of related tools. Adding a bundle grants the skill all tools inside it.</span>
-            <div class="bundleChips" id="assignedChips"></div>
+            <div class="chipGrid" id="bundleChips"></div>
           </div>
         </div>
-        <div class="actionBar" id="actionBar"></div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ════════ SCREEN 2: TOOL BUNDLES reference ════════ -->
-  <section class="screen" id="screen-bundles">
-    <div class="intro">
-      Tool bundles are <b>defined in the app</b> and grouped by package / integration. In v1 they're a fixed catalog —
-      not user-editable — but you can assign any of them to a skill. Click a bundle to see the tools it contains.
-    </div>
-    <div class="bundleGrid" id="bundleGrid"></div>
-  </section>
-</div>
-
-<!-- ════════ MODAL: assign bundles ════════ -->
-<div class="scrim" id="picker">
-  <div class="modal">
-    <div class="modalHead">
-      <span class="t">Add tool bundles</span>
-      <button class="x" onclick="closePicker()">×</button>
-    </div>
-    <div class="modalBody" id="pickerBody"></div>
-    <div class="modalFoot">
-      <button class="btn ghost sm" onclick="closePicker()">Cancel</button>
-      <button class="btn filled sm" onclick="applyPicker()">Add selected</button>
-    </div>
+    <!-- ════════ SCREEN 2: TOOL BUNDLES reference (three tiers) ════════ -->
+    <section class="screen" id="screen-bundles">
+      <div class="refWrap">
+        <div class="intro">
+          Tools come in <b>three tiers</b>. <b>Core tools</b> are always on for every agent. <b>Tool bundles</b> are
+          code-defined groups a skill can grant (curated — not just one per package). <b>Integration tools</b> appear
+          automatically when you connect an integration. Only the middle tier is assignable to skills.
+        </div>
+        <div id="bundleGrid"></div>
+      </div>
+    </section>
   </div>
 </div>
 
 <script>
-/* ─── Bundle catalog: app-defined groups mapped from the tools/ packages ─── */
-const BUNDLES = [
-  {id:'coding',   name:'Coding & Files', icon:'⌨', pkg:'virtual_computer', gate:null,
+/* ─── Tool catalog, three tiers ─── */
+/* tier: 'core' (always on) · 'bundle' (skill-assignable) · 'integration' (auto from Integrations) */
+const TOOLGROUPS = [
+  {id:'core', tier:'core', name:'Core tools', icon:'●', pkg:'always on', gate:null,
+   desc:'Included in every agent regardless of skills.',
+   tools:['save_to_scratchpad','recall_from_scratchpad','load_skill','list_available_skills','list_agent_profiles','spawn_agent','send_file','play_audio','describe_image']},
+
+  {id:'coding',   tier:'bundle', name:'Coding & Files', icon:'⌨', pkg:'virtual_computer', gate:null,
    desc:'Read/write files, edit code, search, run shell commands.',
    tools:['read_file','write_file','list_dir','grep','apply_text_patch','replace_in_file','run_bash_cmd','install_packages','make_dirs','move_path','remove_path']},
-  {id:'browser',  name:'Web Browsing', icon:'🌐', pkg:'browser', gate:null,
-   desc:'Drive a live browser — navigate, read, click, fill forms, screenshot.',
+  {id:'browser',  tier:'bundle', name:'Web Browsing', icon:'🌐', pkg:'browser', gate:null,
+   desc:'Drive a live browser — navigate, read, click, fill forms.',
    tools:['goto','new_tab','browse_page','read_page','click','fill_field','press_keys','scroll_page','go_back','inspect_page','execute_javascript','close_browser']},
-  {id:'webfetch', name:'Web Fetch', icon:'📄', pkg:'web', gate:null,
+  {id:'webfetch', tier:'bundle', name:'Web Fetch', icon:'📄', pkg:'web', gate:null,
    desc:'Fetch a page as clean text — no browser needed.',
    tools:['fetch_url']},
-  {id:'memory',   name:'Memory', icon:'🧠', pkg:'memory', gate:null,
+  {id:'memory',   tier:'bundle', name:'Memory', icon:'🧠', pkg:'memory', gate:null,
    desc:'Persist and recall facts across conversations.',
    tools:['remember','forget','load_memory']},
-  {id:'scratch',  name:'Scratchpad', icon:'📝', pkg:'scratchpad', gate:null,
-   desc:'Ephemeral notes scoped to the current session.',
-   tools:['save_to_scratchpad','recall_from_scratchpad']},
-  {id:'media',    name:'Media Generation', icon:'🎨', pkg:'generation', gate:'image/music generation',
+  {id:'media',    tier:'bundle', name:'Media Generation', icon:'🎨', pkg:'generation', gate:'image/music generation',
    desc:'Generate images and music with streaming previews.',
    tools:['generate_image','generate_music']},
-  {id:'desktop',  name:'Desktop Control', icon:'🖥', pkg:'desktop', gate:'desktop',
+  {id:'desktop',  tier:'bundle', name:'Desktop Control', icon:'🖥', pkg:'desktop', gate:'desktop',
    desc:'Control a full GUI desktop — mouse, keyboard, screen reading.',
    tools:['read_screen','describe_screen','mouse_click','mouse_double_click','mouse_drag','keyboard_type','keyboard_press','scroll','desktop_shell']},
-  {id:'datetime', name:'Date & Time', icon:'🕐', pkg:'misc', gate:null,
+  {id:'datetime', tier:'bundle', name:'Date & Time', icon:'🕐', pkg:'misc', gate:null,
    desc:'Current date/time and timezone helpers.',
    tools:['datetime_tool']},
-  {id:'email',    name:'Email', icon:'✉', pkg:'integrations/email', gate:'Email integration',
+
+  {id:'email',    tier:'integration', name:'Email', icon:'✉', pkg:'integrations/email', gate:'Email integration',
    desc:'Read, search, send, move mail and download attachments.',
    tools:['list_email_folders','list_email_messages','read_email_message','search_email','send_email','move_email','download_email_attachment']},
-  {id:'calendar', name:'Calendar', icon:'📅', pkg:'integrations/calendar', gate:'Calendar integration',
+  {id:'calendar', tier:'integration', name:'Calendar', icon:'📅', pkg:'integrations/calendar', gate:'Calendar integration',
    desc:'List, create, update and delete calendar events.',
    tools:['list_calendars','list_events','create_event','update_event','delete_event']},
-  {id:'drive',    name:'Google Drive', icon:'📁', pkg:'integrations/drive', gate:'Drive integration',
+  {id:'drive',    tier:'integration', name:'Google Drive', icon:'📁', pkg:'integrations/drive', gate:'Drive integration',
    desc:'List, search, upload, share and manage Drive files.',
    tools:['list_drive_files','search_drive_files','get_drive_file_metadata','upload_drive_file','export_drive_file','create_drive_folder','share_drive_file','update_drive_file','trash_drive_file']},
-  {id:'contacts', name:'Contacts', icon:'👤', pkg:'integrations/contacts', gate:'Contacts integration',
+  {id:'contacts', tier:'integration', name:'Contacts', icon:'👤', pkg:'integrations/contacts', gate:'Contacts integration',
    desc:'List and search the connected contacts directory.',
    tools:['list_contacts','search_contacts']},
-  {id:'http',     name:'HTTP / API', icon:'🔌', pkg:'integrations/http', gate:'HTTP integration',
+  {id:'http',     tier:'integration', name:'HTTP / API', icon:'🔌', pkg:'integrations/http', gate:'HTTP integration',
    desc:'Call configured external HTTP APIs.',
    tools:['call_api']},
 ];
+const ASSIGNABLE = TOOLGROUPS.filter(b=>b.tier==='bundle');
+const byId = id => TOOLGROUPS.find(b=>b.id===id);
 
-/* ─── Sample skills (built-ins + a custom one) ─── */
+/* ─── Sample skills. `origin` is provenance only — all skills edit identically. ─── */
 const SKILLS = [
-  {name:'coder', desc:'File I/O, code editing, bash execution, codebase search', kind:'builtin', overridden:false, enabled:true, bundles:['coding']},
-  {name:'browser', desc:'Web browsing, page interaction, form filling, screenshots', kind:'builtin', overridden:true, enabled:true, bundles:['browser','webfetch']},
-  {name:'goal_planner', desc:'Break large tasks into tracked sub-goals', kind:'builtin', overridden:false, enabled:true, bundles:[]},
-  {name:'researcher', desc:'Browse, fetch, and persist findings to memory', kind:'custom', overridden:false, enabled:true, bundles:['browser','webfetch','memory']},
-  {name:'image_generation', desc:'Generate images from text prompts', kind:'builtin', overridden:false, enabled:false, bundles:['media']},
+  {name:'coder', desc:'File I/O, code editing, bash execution, codebase search', origin:'starter', enabled:true, bundles:['coding']},
+  {name:'browser', desc:'Web browsing, page interaction, form filling, screenshots', origin:'starter', enabled:true, bundles:['browser','webfetch']},
+  {name:'goal_planner', desc:'Break large tasks into tracked sub-goals', origin:'starter', enabled:true, bundles:[]},
+  {name:'researcher', desc:'Browse, fetch, and persist findings to memory', origin:'custom', enabled:true, bundles:['browser','webfetch','memory']},
+  {name:'image_generation', desc:'Generate images from text prompts', origin:'starter', enabled:false, bundles:['media']},
 ];
+let sel = 0;
 
-const bundleById = id => BUNDLES.find(b=>b.id===id);
-let selectedSkill = 0;
-let pickerSelection = new Set();
-
-/* ─── Render skill list ─── */
+/* ─── Skill list (matches ProfileList) ─── */
 function renderList(){
   const el = document.getElementById('skillList');
-  el.innerHTML = '';
+  el.innerHTML='';
   SKILLS.forEach((s,i)=>{
-    const btn = document.createElement('button');
-    btn.className = 'skillItem' + (i===selectedSkill?' sel':'');
-    btn.onclick = ()=>{selectedSkill=i;renderList();renderEditor();};
-    const kindTag = s.kind==='builtin'?'<span class="tag builtin">Built-in</span>':'<span class="tag custom">Custom</span>';
-    const ovrTag = (s.kind==='builtin'&&s.overridden)?'<span class="tag overridden">Overridden</span>':'';
-    const offTag = s.enabled?'':'<span class="tag off">Off</span>';
-    const toolCount = s.bundles.reduce((n,bid)=>n+(bundleById(bid)?.tools.length||0),0);
-    btn.innerHTML = `
-      <div class="row1"><span class="nm">${s.name}</span>${kindTag}${ovrTag}${offTag}</div>
-      <div class="ds">${s.desc}</div>
-      <div class="metaRow"><span>${s.bundles.length} bundle${s.bundles.length!==1?'s':''}</span><span>${toolCount} tools</span></div>`;
-    el.appendChild(btn);
+    const li = document.createElement('li');
+    li.className='item'+(i===sel?' itemActive':'')+(s.enabled?'':' itemDisabled');
+    li.onclick = ()=>{sel=i;renderList();renderEditor();};
+    const toolCount = s.bundles.reduce((n,b)=>n+(byId(b)?.tools.length||0),0);
+    const originBadge = s.origin==='starter'?'<span class="badge badgeStarter">starter</span>':'';
+    const offBadge = s.enabled?'':'<span class="badge badgeDisabled">disabled</span>';
+    const bundleBadges = s.bundles.map(b=>`<span class="badge badgeSkill">${byId(b)?.name||b}</span>`).join('');
+    const toolBadge = toolCount?`<span class="badge badgeParam">${toolCount} tools</span>`:'';
+    li.innerHTML = `<div class="itemBody">
+        <span class="name">${s.name||'New skill'}</span>
+        <span class="desc">${s.desc||'No description yet'}</span>
+        <div class="badges">${offBadge}${originBadge}${bundleBadges}${toolBadge}</div>
+      </div>`;
+    el.appendChild(li);
   });
 }
 
-/* ─── Render editor for selected skill ─── */
+/* ─── Editor ─── */
 function renderEditor(){
-  const s = SKILLS[selectedSkill];
-  document.getElementById('edTitle').textContent = s.name || 'New skill';
+  const s = SKILLS[sel];
   document.getElementById('fName').value = s.name;
   document.getElementById('fDesc').value = s.desc;
-  const tag = document.getElementById('edTag');
-  const sub = document.getElementById('edSub');
-  const bar = document.getElementById('actionBar');
-  if(s.kind==='builtin'){
-    if(s.overridden){tag.className='tag overridden';tag.textContent='Overridden';
-      sub.textContent='Built-in starter · your edits override it · reset restores the shipped default';}
-    else{tag.className='tag builtin';tag.textContent='Built-in';
-      sub.textContent='Built-in starter · saving your changes creates an override';}
-    // Built-ins can't be deleted — only reset to their shipped default.
-    bar.innerHTML = `
-      <button class="btn ghost sm" ${s.overridden?'':'disabled'} title="Restore the shipped default">↺ Reset to default</button>
-      <span class="spacer"></span>
-      <button class="btn ghost sm">Discard changes</button>
-      <button class="btn outline sm">Duplicate</button>
-      <button class="btn filled sm">Save override</button>`;
-  } else {
-    tag.className='tag custom';tag.textContent='Custom';sub.textContent='Custom skill · authored in the UI';
-    bar.innerHTML = `
-      <button class="btn danger sm">Delete</button>
-      <span class="spacer"></span>
-      <button class="btn ghost sm">Discard changes</button>
-      <button class="btn outline sm">Duplicate</button>
-      <button class="btn filled sm">Save skill</button>`;
-  }
   renderChips();
 }
-
 function renderChips(){
-  const s = SKILLS[selectedSkill];
-  const wrap = document.getElementById('assignedChips');
+  const s = SKILLS[sel];
+  const wrap = document.getElementById('bundleChips');
   wrap.innerHTML='';
-  if(!s.bundles.length){
-    wrap.innerHTML = '<span class="emptyHint">No bundles — this skill contributes only its instruction text.</span>';
-    return;
-  }
-  s.bundles.forEach(bid=>{
-    const b = bundleById(bid); if(!b) return;
-    const chip = document.createElement('span');
-    chip.className='bundleChip';
-    chip.innerHTML = `<span class="ico">${b.icon}</span>${b.name}<span class="cnt">${b.tools.length}</span>
-      <button class="x" title="Remove" onclick="removeBundle('${bid}')">×</button>`;
+  ASSIGNABLE.forEach(b=>{
+    const on = s.bundles.includes(b.id);
+    const chip = document.createElement('button');
+    chip.className='chip'+(on?' chipActive':'');
+    chip.onclick = ()=>{
+      if(on) s.bundles = s.bundles.filter(x=>x!==b.id); else s.bundles.push(b.id);
+      renderChips();renderList();
+    };
+    const check = on?'<span class="chipCheck">✓</span>':'';
+    chip.innerHTML = `${check}${b.name}<span class="chipCnt">${b.tools.length}</span>`;
     wrap.appendChild(chip);
   });
 }
-
-function removeBundle(bid){
-  const s = SKILLS[selectedSkill];
-  s.bundles = s.bundles.filter(x=>x!==bid);
-  renderChips();renderList();
-}
-
 function newSkill(){
-  SKILLS.push({name:'',desc:'',kind:'custom',enabled:true,bundles:[]});
-  selectedSkill = SKILLS.length-1;
-  renderList();renderEditor();
+  SKILLS.push({name:'',desc:'',origin:'custom',enabled:true,bundles:[]});
+  sel = SKILLS.length-1; renderList(); renderEditor();
   document.getElementById('fName').focus();
 }
 
-/* ─── Bundle picker modal ─── */
-function openPicker(){
-  const s = SKILLS[selectedSkill];
-  pickerSelection = new Set(s.bundles);
-  const body = document.getElementById('pickerBody');
-  body.innerHTML='';
-  BUNDLES.forEach(b=>{
-    const row = document.createElement('button');
-    const checked = pickerSelection.has(b.id);
-    row.className='pick'+(checked?' checked':'');
-    row.onclick = ()=>{
-      if(pickerSelection.has(b.id))pickerSelection.delete(b.id);else pickerSelection.add(b.id);
-      openPicker(); // re-render
-    };
-    const gate = b.gate?`<span class="gateTag">needs ${b.gate}</span>`:'';
-    row.innerHTML = `<span class="box">${checked?'✓':''}</span>
-      <span class="info"><span class="nm">${b.icon} ${b.name} ${gate}</span><span class="ds">${b.desc} · ${b.tools.length} tools</span></span>`;
-    body.appendChild(row);
-  });
-  document.getElementById('picker').classList.add('open');
-}
-function closePicker(){document.getElementById('picker').classList.remove('open');}
-function applyPicker(){
-  SKILLS[selectedSkill].bundles = BUNDLES.filter(b=>pickerSelection.has(b.id)).map(b=>b.id);
-  closePicker();renderChips();renderList();
-}
-
-/* ─── Tool bundles reference screen ─── */
+/* ─── Tool Bundles reference (three tiers) ─── */
 function renderBundles(){
-  const grid = document.getElementById('bundleGrid');
-  grid.innerHTML='';
-  BUNDLES.forEach(b=>{
-    const card = document.createElement('div');
-    card.className='bundleCard';
-    const gate = b.gate?`<span class="gateTag">needs ${b.gate}</span>`:'';
-    card.innerHTML = `
-      <button class="bundleCardHead" onclick="this.parentElement.classList.toggle('open')">
-        <span class="bundleIcon">${b.icon}</span>
-        <span class="info">
-          <span class="nm">${b.name} ${gate}</span>
-          <span class="ds">${b.desc}</span>
-        </span>
-        <span class="pkgTag">${b.pkg}</span>
-        <span class="chev">▶</span>
-      </button>
-      <div class="toolList">${b.tools.map(t=>`<span class="toolPill">${t}</span>`).join('')}</div>`;
-    grid.appendChild(card);
+  const root = document.getElementById('bundleGrid');
+  root.innerHTML='';
+  const tiers = [
+    {tier:'core', label:'Always on', note:'Every agent gets these — not assignable.'},
+    {tier:'bundle', label:'Tool bundles', note:'Assignable to skills via the toggles in the editor.'},
+    {tier:'integration', label:'Provided by integrations', note:'Appear automatically when the integration is connected.'},
+  ];
+  tiers.forEach(t=>{
+    const lbl = document.createElement('div');
+    lbl.className='tierLabel';
+    lbl.innerHTML = `${t.label} <span class="note">${t.note}</span>`;
+    root.appendChild(lbl);
+    const grid = document.createElement('div');
+    grid.className='bundleGrid';
+    TOOLGROUPS.filter(b=>b.tier===t.tier).forEach(b=>{
+      const card = document.createElement('div');
+      card.className='bundleCard '+b.tier;
+      const gate = b.gate&&b.tier!=='core'?`<span class="gateTag">needs ${b.gate}</span>`:'';
+      card.innerHTML = `
+        <button class="bundleCardHead" onclick="this.parentElement.classList.toggle('open')">
+          <span class="bundleIcon">${b.icon}</span>
+          <span class="info"><span class="nm">${b.name} ${gate}</span><span class="ds">${b.desc}</span></span>
+          <span class="pkgTag">${b.pkg}</span>
+          <span class="chev">▶</span>
+        </button>
+        <div class="toolList">${b.tools.map(x=>`<span class="toolPill">${x}</span>`).join('')}</div>`;
+      grid.appendChild(card);
+    });
+    root.appendChild(grid);
   });
 }
 
-/* ─── Tab + theme wiring ─── */
-document.querySelectorAll('.tab').forEach(t=>{
+/* ─── wiring ─── */
+document.querySelectorAll('.seg').forEach(t=>{
   t.onclick = ()=>{
-    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('screen-'+t.dataset.screen).classList.add('active');
   };
 });
 document.getElementById('themeBtn').onclick = ()=>{
-  const h=document.documentElement;
-  h.dataset.theme = h.dataset.theme==='dark'?'light':'dark';
+  const h=document.documentElement; h.dataset.theme = h.dataset.theme==='dark'?'light':'dark';
 };
-
-renderList();renderEditor();renderBundles();
+renderList(); renderEditor(); renderBundles();
 </script>
 </body>
 </html>
