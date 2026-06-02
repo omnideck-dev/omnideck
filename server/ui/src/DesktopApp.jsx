@@ -215,6 +215,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         stopGeneration,
         loadConversation,
         newConversation: chatNewConversation,
+        activeConversationId,
         savePreviewState,
     } = useStreamingChat(_callbacks);
 
@@ -379,6 +380,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     desktopEnabled={features.desktop}
                     onOpenDesktop={openDesktop}
                     onLoadConversation={loadConversation}
+                    activeConversationId={activeConversationId}
                     conversationsRefresh={conversationsRefresh}
                     onPanelToggle={(panel) => {
                         // Close network view when opening a flyout panel

@@ -47,6 +47,10 @@ class RecentConversations:
     def search(self) -> Locator:
         return self.page.get_by_test_id("recent-search")
 
+    @property
+    def search_clear(self) -> Locator:
+        return self.page.get_by_test_id("recent-search-clear")
+
     def item(self, index: int) -> RecentConversationItem:
         return RecentConversationItem(self.items.nth(index))
 

@@ -548,7 +548,18 @@ export default function useStreamingChat(callbacks) {
         _setIsStreaming(val);
     }, []);
     const abortControllerRef = useRef(null);
+    // The open conversation id is this hook's primary key — every request it
+    // makes (send, nudge, stop, resume, preview-state) is keyed by it. The ref
+    // is the source of truth so callbacks can read it synchronously mid-flight,
+    // before any re-render lands. The state below mirrors it purely so rendered
+    // consumers (the sidebar's active-row highlight) update when it changes;
+    // always flip both together via setConversationId, never the ref alone.
     const conversationIdRef = useRef(_uuid());
+    const [activeConversationId, _setActiveConversationId] = useState(conversationIdRef.current);
+    const setConversationId = useCallback((id) => {
+        conversationIdRef.current = id;
+        _setActiveConversationId(id);
+    }, []);
     const rootAgentIdRef = useRef(null);
 
     const sendNudge = useCallback(async (message, agentId) => {
@@ -871,7 +882,7 @@ export default function useStreamingChat(callbacks) {
             });
             if (!resp.ok) return false;
             const data = await resp.json();
-            conversationIdRef.current = conversationId;
+            setConversationId(conversationId);
 
             const events = Array.isArray(data.events) ? data.events : [];
             // Seed the chat-side state first so a buggy callback can't
@@ -892,7 +903,7 @@ export default function useStreamingChat(callbacks) {
         } catch (_) {
             return false;
         }
-    }, [callbacks]);
+    }, [callbacks, setConversationId]);
 
     /** Persist the user's preview-panel tab state for the current conversation. */
     const savePreviewState = useCallback(async (state) => {
@@ -927,8 +938,8 @@ export default function useStreamingChat(callbacks) {
         setEvents([]);
         setInflightIteration(null);
         setPendingUserPrompt(null);
-        conversationIdRef.current = _uuid();
-    }, []);
+        setConversationId(_uuid());
+    }, [setConversationId]);
 
     // Derive the chat-view turn list from events + the in-flight
     // streaming state. Both resume and live feed `events`; the live
@@ -969,6 +980,7 @@ export default function useStreamingChat(callbacks) {
         events,
         turns,
         isStreaming,
+        activeConversationId,
         sendMessage,
         sendNudge,
         stopGeneration,
