@@ -2,6 +2,7 @@
 
 from textwrap import dedent
 
+from config import load_config
 from sdk.skills import Skill
 from tools.browser import (
     browse_page,
@@ -25,10 +26,13 @@ from tools.browser import (
 from tools.web import fetch_url
 from tools.virtual_computer import run_bash_cmd
 
+# Injected into the prompt so the stated cap always matches the enforced one.
+_MAX_TABS = load_config().tools.browser.max_open_tabs
+
 _SKILL = Skill(
     name="browser",
     description="Web browsing, page interaction, form filling, screenshots",
-    prompt=dedent("""\
+    prompt=dedent(f"""\
         Browser automation. Browser persists state (cookies/tabs) between calls.
 
         SELECTORS: Use ref numbers from browse_page() output.
@@ -66,6 +70,10 @@ _SKILL = Skill(
                                    you want to reuse a tab rather than
                                    open another one.
             close_tab(tab="3")   — close a tab when you're done with it.
+        At most {_MAX_TABS} tabs may be open at once. Default to reusing a
+        tab with goto(url, tab="N") rather than opening another, and
+        close_tab tabs you no longer need. Once {_MAX_TABS} are open,
+        new_tab errors until you close one.
         Page-acting tools (click, scroll_page, read_page, browse_page,
         fill_field, ...) all require ``tab="N"``. Tools error with the
         open-tab listing when ``tab`` is missing or unknown. Concurrent

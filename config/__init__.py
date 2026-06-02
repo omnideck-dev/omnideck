@@ -61,6 +61,7 @@ class BrowserToolsConfig(BaseModel):
     waits: "BrowserWaitConfig" = Field(default_factory=lambda: BrowserWaitConfig())
     scroll_warn_threshold: int = 5
     scroll_hard_limit: int = 10
+    max_open_tabs: int = 5  # Refuse to open a new tab past this many open at once
 
 
 class BrowserWaitConfig(BaseModel):
