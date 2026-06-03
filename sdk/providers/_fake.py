@@ -56,13 +56,63 @@ _FAKE_MODELS: list[ModelInfo] = [
     ModelInfo(name="fake-model", context_window=32_000),
 ]
 
-# One regex matches any directive, in order. SPAWN has its own terminator so
-# its body may contain nested <<END>> directives for the sub-agent to run.
-_DIRECTIVE_RE = re.compile(
-    r"<<SPAWN(?P<spawn_arg>[^>]*)>>(?P<spawn_body>.*?)<<ENDSPAWN>>"
-    r"|<<(?P<name>SAY|BASH|WRITE|SEND|OPEN|FAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
+# SPAWN open marker and the non-SPAWN directives. SPAWN bodies are
+# matched to their *balanced* <<ENDSPAWN>> by _iter_directives so a SPAWN
+# body may itself contain nested SPAWNs (multi-level delegation).
+_SPAWN_OPEN_RE = re.compile(r"<<SPAWN(?P<arg>[^>]*)>>", re.IGNORECASE)
+_ENDSPAWN_RE = re.compile(r"<<ENDSPAWN>>", re.IGNORECASE)
+_NONSPAWN_RE = re.compile(
+    r"<<(?P<name>SAY|BASH|WRITE|SEND|OPEN|FAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+def _iter_directives(task: str) -> list[tuple[str, str, str]]:
+    """Parse *task* into ordered (name, arg, body) directive tuples.
+
+    SPAWN blocks are matched to their balanced <<ENDSPAWN>> via a depth
+    counter, so a SPAWN body may contain nested SPAWNs. The body is
+    handed to the sub-agent verbatim; when that sub runs, it parses its
+    own (inner) directives the same way.
+    """
+    out: list[tuple[str, str, str]] = []
+    pos = 0
+    n = len(task)
+    while pos < n:
+        sm = _SPAWN_OPEN_RE.search(task, pos)
+        nm = _NONSPAWN_RE.search(task, pos)
+        candidates = [m for m in (sm, nm) if m is not None]
+        if not candidates:
+            break
+        m = min(candidates, key=lambda x: x.start())
+        if m is sm:
+            body_start = m.end()
+            depth = 1
+            j = body_start
+            end_close = None
+            while j < n:
+                nxt_open = _SPAWN_OPEN_RE.search(task, j)
+                nxt_close = _ENDSPAWN_RE.search(task, j)
+                if nxt_close is None:
+                    break  # unbalanced — treat the rest as the body
+                if nxt_open is not None and nxt_open.start() < nxt_close.start():
+                    depth += 1
+                    j = nxt_open.end()
+                else:
+                    depth -= 1
+                    if depth == 0:
+                        end_close = nxt_close
+                        break
+                    j = nxt_close.end()
+            if end_close is None:
+                out.append(("SPAWN", m.group("arg"), task[body_start:]))
+                break
+            out.append(("SPAWN", m.group("arg"), task[body_start:end_close.start()]))
+            pos = end_close.end()
+        else:
+            out.append((nm.group("name").upper(), nm.group("arg"), nm.group("body")))
+            pos = nm.end()
+    return out
 
 # Tools that live in a loadable skill rather than the core tool set. When a
 # directive needs one of these and it isn't loaded yet, the fake first calls
@@ -199,7 +249,7 @@ def _plan(
 ) -> tuple[str, Any]:
     """Plan the next step. Returns ("tools", [ToolCall]) or ("final", text)."""
     task = _latest_task(messages)
-    directives = list(_DIRECTIVE_RE.finditer(task))
+    directives = _iter_directives(task)
 
     # No protocol in the prompt: echo it back verbatim.
     if not directives:
@@ -213,34 +263,30 @@ def _plan(
     # the agent span records status="error").
     fail_after: int | None = None
     fail_msg = ""
-    for m in directives:
-        if m.group("spawn_body") is not None:
-            # spawn_arg is "profile" or "profile|NAME". The optional name
-            # sets the sub-agent's UI display name so sibling sub-agents
-            # can be told apart in the network view; it defaults to
-            # SUBAGENT.
-            spawn_profile, _, spawn_name = (
-                m.group("spawn_arg").strip().partition("|")
-            )
+    for name, arg, body in directives:
+        if name == "SPAWN":
+            # arg is "profile" or "profile|NAME". The optional name sets
+            # the sub-agent's UI display name so sibling sub-agents can be
+            # told apart in the network view; it defaults to SUBAGENT.
+            spawn_profile, _, spawn_name = arg.strip().partition("|")
             tool_calls.append(_tool_call(
                 "spawn_agent",
                 {
-                    "instructions": m.group("spawn_body").strip(),
+                    "instructions": body.strip(),
                     "profile": spawn_profile.strip() or _default_profile_id(),
                     "agent_name": spawn_name.strip() or "SUBAGENT",
                 },
             ))
             continue
-        name = m.group("name").upper()
         if name == "SAY":
-            say_parts.append(m.group("body"))
+            say_parts.append(body)
             continue
         if name == "FAIL":
             if fail_after is None:  # first FAIL wins
                 fail_after = len(tool_calls)
-                fail_msg = m.group("body").strip() or "fake failure"
+                fail_msg = body.strip() or "fake failure"
             continue
-        call = _named_tool_call(name, m.group("arg"), m.group("body"))
+        call = _named_tool_call(name, arg, body)
         if call is not None:
             tool_calls.append(call)
 

@@ -17,8 +17,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, fail, say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
-LLM_TIMEOUT = 180_000
-
 
 def test_error_agent_shows_error_dot(page: Page):
     """A failed sub-agent card displays the 'error' status dot.
@@ -29,7 +27,7 @@ def test_error_agent_shows_error_dot(page: Page):
     chat = ChatView(page).goto().new_conversation()
     chat.send(
         spawn(fail("boom"), name="failing_agent")
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming()
 
     network = NetworkView(page)
     network.open()
@@ -45,7 +43,7 @@ def test_success_agent_shows_complete_dot(page: Page):
     chat = ChatView(page).goto().new_conversation()
     chat.send(
         spawn(say("done"), name="successful_agent")
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming()
 
     network = NetworkView(page)
     network.open()
@@ -77,8 +75,10 @@ def test_running_agent_shows_running_dot(page: Page):
     dot_class = dot.get_attribute("class") or ""
     assert "running" in dot_class, f"Expected 'running' in class, got: {dot_class}"
 
-    # Let the sleep finish; the dot transitions to 'complete'.
-    chat.wait_streaming(timeout=LLM_TIMEOUT)
+    # Let the sleep finish; the dot transitions to 'complete'. The
+    # deliberate sleep runs past the default turn timeout, so this one
+    # call needs an explicit, longer wait.
+    chat.wait_streaming(timeout=30_000)
     page.wait_for_timeout(500)
     dot_class = dot.get_attribute("class") or ""
     assert "complete" in dot_class, f"Expected 'complete' after finish, got: {dot_class}"

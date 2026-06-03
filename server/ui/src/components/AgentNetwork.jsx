@@ -138,7 +138,7 @@ export default function AgentNetwork({ onClose, agentCount: agentCountProp }) {
     const displayCount = agentCountProp != null ? agentCountProp : agentCount;
 
     return (
-        <div className={styles.container}>
+        <div className={styles.container} data-testid="agent-network">
             <div className={styles.header}>
                 {onClose && <BackButton label="Chat" onClick={onClose} />}
                 <h2 className={styles.title}>Agent Network</h2>

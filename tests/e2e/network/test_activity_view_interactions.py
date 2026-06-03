@@ -1,85 +1,36 @@
 """E2E tests for activity view interactions: instruction toggle + tool-call expand.
 
-These verify behaviors that have unit coverage but are easy to break in
-the real rendered DOM (CSS transitions, click handler wiring, real
-event-loop ordering with the streaming pipeline).
+Driven by the fake LLM (MOCK_LLM): the root really spawns a helper
+sub-agent whose instruction is a multi-line brief and which runs a
+write_file tool — so the instruction-collapse and tool-row-expand
+widgets render off genuine lifecycle events.
+
+A real sub-agent's instruction is the spawn body, so the prose brief
+lives there alongside the directive that makes the sub act.
 """
 
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 
-from tests.e2e.network._sse import _evt, build_jsonl
+from tests.e2e._protocol import spawn, write_file
 from tests.e2e.pages import ChatView, NetworkView
 
-
-# Sub-agent has a multi-line instruction and one tool call with multiple
-# arguments — enough to exercise both the instruction toggle and the
-# tool-call expand interaction.
-INSTRUCTED_AGENT_EVENTS = build_jsonl([
-    _evt({"type": "agent_started", "agent_id": "root",
-          "agent_name": "computron", "parent_agent_id": None},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "user_message", "content": "do the work",
-          "attachments": [], "is_nudge": False},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "content", "content": "Spawning a helper."},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "iteration", "iteration_index": 0,
-          "content": "Spawning a helper.", "thinking": None,
-          "tool_calls": []},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "agent_started", "agent_id": "sub1",
-          "agent_name": "helper_agent", "parent_agent_id": "root",
-          "instruction": "First line summary.\n\nLonger detail that only appears when the instruction is expanded."},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "content", "content": "Working on it."},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "tool_call", "name": "replace_in_file",
-          "arguments": {"path": "config.yaml", "old": "debug: false",
-                        "new": "debug: true"}},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "content", "content": "Done."},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "iteration", "iteration_index": 0,
-          "content": "Working on it.\nDone.", "thinking": None,
-          "tool_calls": [{"id": "tc1", "name": "replace_in_file",
-                          "arguments": {"path": "config.yaml",
-                                         "old": "debug: false",
-                                         "new": "debug: true"}}]},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "agent_completed", "agent_id": "sub1",
-          "agent_name": "helper_agent", "status": "success"},
-         agent_id="sub1", agent_name="helper_agent", depth=1),
-    _evt({"type": "content", "content": "Helper finished."},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "iteration", "iteration_index": 1,
-          "content": "Helper finished.", "thinking": None,
-          "tool_calls": []},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "agent_completed", "agent_id": "root",
-          "agent_name": "computron", "status": "success"},
-         agent_id="root", agent_name="computron"),
-    _evt({"type": "turn_end"},
-         agent_id="root", agent_name="computron"),
-])
-
-
-def _mock_chat_with(body: str):
-    def handler(route: Route):
-        route.fulfill(
-            status=200,
-            headers={"Content-Type": "application/json"},
-            body=body,
-        )
-    return handler
+_INSTRUCTION = (
+    "First line summary.\n\n"
+    "Longer detail that only appears when the instruction is expanded."
+)
 
 
 def _open_helper_activity(page: Page):
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat_with(INSTRUCTED_AGENT_EVENTS))
-    chat.send("test")
-    chat.wait_streaming()
-    page.wait_for_timeout(200)
+    # code_expert has the coder skill pre-loaded, so write_file runs
+    # without an intervening load_skill step. A relative path keeps the
+    # tool row's first arg compact ("config.yaml").
+    chat.send(spawn(
+        _INSTRUCTION + "\n" + write_file("config.yaml", "debug: true"),
+        profile="code_expert",
+        name="helper_agent",
+    )).wait_streaming()
 
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=5000)
@@ -120,7 +71,7 @@ def test_activity_view_tool_call_expand(page: Page):
 
     tool_row = activity.root.get_by_test_id("activity-tool-call")
     expect(tool_row).to_be_visible()
-    expect(tool_row).to_contain_text("replace_in_file")
+    expect(tool_row).to_contain_text("write_file")
     # Collapsed line only shows the first arg, the rest are hidden behind …
     expect(tool_row).to_contain_text("path=")
     expect(tool_row).to_contain_text('"config.yaml"')
@@ -131,9 +82,7 @@ def test_activity_view_tool_call_expand(page: Page):
     expect(detail).to_be_visible()
     expect(detail).to_contain_text("path")
     expect(detail).to_contain_text('"config.yaml"')
-    expect(detail).to_contain_text("old")
-    expect(detail).to_contain_text('"debug: false"')
-    expect(detail).to_contain_text("new")
+    expect(detail).to_contain_text("content")
     expect(detail).to_contain_text('"debug: true"')
 
     # Toggling again collapses

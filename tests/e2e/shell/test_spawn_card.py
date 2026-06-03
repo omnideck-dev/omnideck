@@ -12,8 +12,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import say, spawn
 from tests.e2e.pages import ChatView
 
-LLM_TIMEOUT = 180_000
-
 
 @pytest.fixture
 def chat_after_spawn(page: Page) -> ChatView:
@@ -26,7 +24,7 @@ def chat_after_spawn(page: Page) -> ChatView:
     chat.send(
         spawn(say("done"), profile="research_agent", name="research_agent")
         + spawn(say("done"), profile="code_expert", name="code_expert")
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming()
     expect(page.get_by_test_id("spawn-card")).to_be_visible(timeout=5000)
     return chat
 

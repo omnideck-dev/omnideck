@@ -155,6 +155,25 @@ class TestOpenAndSpawn:
         # No explicit name → defaults to SUBAGENT.
         assert call.function.arguments["agent_name"] == "SUBAGENT"
 
+    async def test_nested_spawn_body_matches_balanced_endspawn(self):
+        # A SPAWN whose body itself contains two sibling SPAWNs: the outer
+        # body must capture the full nested block (balanced ENDSPAWN), and
+        # the root must issue exactly one spawn_agent (the planner).
+        inner = (
+            "<<SPAWN code_expert|EXECUTOR>><<SAY>>x<<END>><<ENDSPAWN>>"
+            "<<SPAWN code_expert|REVIEWER>><<SAY>>y<<END>><<ENDSPAWN>>"
+            "<<SAY>>planned<<END>>"
+        )
+        prompt = f"<<SPAWN research_agent|PLANNER>>{inner}<<ENDSPAWN>>"
+        final, _ = await _run(FakeProvider(), _user(prompt))
+        assert len(final.message.tool_calls) == 1
+        call = final.message.tool_calls[0]
+        assert call.function.name == "spawn_agent"
+        assert call.function.arguments["agent_name"] == "PLANNER"
+        # The planner's instructions are the full inner block, so when the
+        # planner runs it spawns EXECUTOR and REVIEWER itself.
+        assert call.function.arguments["instructions"] == inner
+
     async def test_spawn_arg_carries_optional_display_name(self):
         # "profile|NAME" sets the sub-agent's UI name so sibling
         # sub-agents can be distinguished in the network view.

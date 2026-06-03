@@ -15,8 +15,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, say, spawn
 from tests.e2e.pages import ChatView, NetworkView
 
-LLM_TIMEOUT = 180_000
-
 
 @pytest.fixture
 def network_after_turn(page: Page):
@@ -26,7 +24,7 @@ def network_after_turn(page: Page):
         spawn(say("done"), profile="research_agent", name="research_agent")
         + spawn(bash("echo a") + bash("echo b") + say("done"),
                 profile="code_expert", name="code_expert")
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming()
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=5000)
     return network

@@ -16,8 +16,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import send_file, write_file
 from tests.e2e.pages import ChatView, PreviewPanel, Sidebar
 
-LLM_TIMEOUT = 180_000
-
 
 @pytest.mark.e2e
 def test_new_chat_clears_open_preview_tabs(page: Page):
@@ -29,7 +27,7 @@ def test_new_chat_clears_open_preview_tabs(page: Page):
     chat.send(
         write_file(report, "<html><body>hello</body></html>")
         + send_file(report)
-    ).wait_streaming(timeout=LLM_TIMEOUT)
+    ).wait_streaming()
 
     # Open the file as a preview tab.
     preview_btn = page.get_by_test_id("file-preview-btn").first
