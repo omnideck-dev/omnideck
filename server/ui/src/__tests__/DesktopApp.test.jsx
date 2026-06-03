@@ -60,7 +60,15 @@ vi.mock('../components/AgentActivityView.jsx', () => ({
 }));
 
 vi.mock('../components/Sidebar.jsx', () => ({
-    default: () => <div data-testid="sidebar">Sidebar</div>,
+    default: ({ onPanelToggle, onNewConversation, onLoadConversation }) => (
+        <div data-testid="sidebar">
+            Sidebar
+            <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
+            <button data-testid="open-goals" onClick={() => onPanelToggle('goals')}>Goals</button>
+            <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
+            <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
+        </div>
+    ),
 }));
 
 vi.mock('../components/PreviewPanel.jsx', () => ({
@@ -85,6 +93,25 @@ vi.mock('../components/BrowserFullscreen.jsx', () => ({
 
 vi.mock('../components/SettingsPage.jsx', () => ({
     default: () => <div data-testid="settings-page">Settings</div>,
+}));
+
+vi.mock('../components/goals/GoalsView.jsx', () => ({
+    default: () => <div data-testid="goals-view">Goals</div>,
+}));
+
+vi.mock('../hooks/useGoals.js', () => ({
+    default: () => ({
+        goals: [],
+        runnerStatus: null,
+        selectedGoalId: null,
+        setSelectedGoalId: vi.fn(),
+        deleteGoal: vi.fn(),
+        deleteRun: vi.fn(),
+        pauseGoal: vi.fn(),
+        resumeGoal: vi.fn(),
+        triggerGoal: vi.fn(),
+        fetchGoalDetail: vi.fn(),
+    }),
 }));
 
 vi.mock('../components/SystemSettings.jsx', () => ({
@@ -491,6 +518,65 @@ describe('DesktopApp view transitions', () => {
             dispatch({ type: 'SELECT_AGENT', agentId: null });
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
+        });
+    });
+
+    // ── Escaping full-view panels (settings / goals) ────────────────
+    // Regression: starting or loading a conversation from a full-view
+    // panel left the user stuck because the chat column stayed hidden
+    // behind settings/goals.
+
+    describe('escaping settings / goals via conversation actions', () => {
+        it('new chat closes the settings page and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('new chat closes the goals view and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('loading a conversation closes the settings page and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('loading a conversation closes the goals view and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('new chat from the network view returns to chat', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            startSubAgent(dispatch, 's1', 'r1');
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            expect(screen.getByTestId('agent-network')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
     });
 

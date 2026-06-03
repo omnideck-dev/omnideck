@@ -293,8 +293,20 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         await chatNewConversation();
         preview.reset();
         setNetworkViewOpen(false);
+        // Leave whatever full-view panel (settings/goals) was open, otherwise
+        // the chat stays hidden behind it and the user is stuck.
+        setFlyoutPanel(null);
         agentDispatch({ type: 'RESET' });
     }, [chatNewConversation, preview.reset, agentDispatch]);
+
+    // Loading a conversation has to surface the chat too — same reason as
+    // newConversation: settings/goals/network fully replace the chat column.
+    const handleLoadConversation = useCallback((conversationId) => {
+        setNetworkViewOpen(false);
+        setFlyoutPanel(null);
+        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
+        return loadConversation(conversationId);
+    }, [loadConversation, agentDispatch]);
 
     // Refresh the recent-conversations list when a turn finishes — a new
     // conversation only lands in the sessions list once its first turn is
@@ -388,7 +400,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     onAudioEnded={() => setPendingAudio(null)}
                     desktopEnabled={features.desktop}
                     onOpenDesktop={openDesktop}
-                    onLoadConversation={loadConversation}
+                    onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
                     conversationsRefresh={conversationsRefresh}
                     onPanelToggle={(panel) => {
