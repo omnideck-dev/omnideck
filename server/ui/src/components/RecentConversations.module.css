@@ -61,6 +61,9 @@
 .list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
 
 .dayLabel {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     font-family: var(--font-code);
     font-size: 10px;
     text-transform: uppercase;
@@ -68,6 +71,7 @@
     color: var(--text-tertiary);
     padding: 10px 10px 4px;
 }
+.dayLabel i { font-size: 9px; }
 
 .item {
     display: flex;
@@ -92,23 +96,140 @@
     white-space: nowrap;
 }
 
-/* Delete — hidden until the row is hovered. */
-.deleteBtn {
+/* 3-dot menu trigger — hidden until the row is hovered or its menu is open. */
+.menuBtn {
     width: 22px;
     height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: none;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-tertiary);
     cursor: pointer;
     flex-shrink: 0;
     opacity: 0;
+    font-size: 13px;
 }
-.item:hover .deleteBtn,
-.deleteBtn:focus-visible { opacity: 1; }
-.deleteBtn:hover { background: var(--danger-muted); color: var(--danger); }
+.item:hover .menuBtn,
+.item.menuOpen .menuBtn,
+.menuBtn:focus-visible { opacity: 1; }
+.menuBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
+.item.menuOpen .menuBtn { color: var(--text-primary); }
+
+/* ── Context menu (portaled to body) ─────────────────── */
+.menu {
+    position: fixed;
+    z-index: var(--z-toast);
+    min-width: 168px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: var(--sp-1);
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.menuItem {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 30px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+.menuItem i { font-size: 12px; width: 14px; flex-shrink: 0; }
+.menuItem:hover { background: var(--accent-muted); color: var(--text-primary); }
+
+.menuSep {
+    height: 1px;
+    margin: var(--sp-1) 6px;
+    background: var(--border-subtle);
+}
+
+/* Delete routes through ConfirmButton; restyle it as a flush menu row that
+ * still escalates to the design language's solid danger fill when armed. */
+.menuDelete {
+    justify-content: flex-start;
+    width: 100%;
+    height: 30px;
+    padding: 0 10px;
+    gap: var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--danger);
+    font-size: 12.5px;
+    font-weight: 400;
+}
+.menuDelete i { font-size: 12px; width: 14px; }
+.menuDelete:hover:not(:disabled) { background: var(--danger-muted); }
+.menuDeleteArmed,
+.menuDeleteArmed:hover:not(:disabled) {
+    background: var(--danger);
+    color: #fff;
+    border-color: var(--danger);
+}
+
+/* ── Inline rename row ───────────────────────────────── */
+.renameRow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-1) var(--sp-2) 10px;
+}
+.renameInput {
+    width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .renameInput { background: var(--surface); }
+.renameActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+}
+.renameCancel,
+.renameSave {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 12px;
+    cursor: pointer;
+}
+.renameCancel {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+}
+.renameCancel:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.renameSave {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+}
+.renameSave:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
 
 .empty {
     padding: var(--sp-3) 10px;
