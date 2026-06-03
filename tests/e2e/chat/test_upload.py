@@ -67,10 +67,17 @@ def test_text_file_upload_round_trip(page: Page, tmp_path):
 
     def handler(route: Route) -> None:
         captured["body"] = route.request.post_data
+        # Mirror production: the backend echoes the uploaded file's
+        # metadata in the user_message event, which is what the rebuilt
+        # user bubble renders its attachment chip from.
         route.fulfill(
             status=200,
             headers={"Content-Type": "application/json"},
-            body=_minimal_chat_response(),
+            body=_minimal_chat_response(attachments=[{
+                "filename": "notes.txt",
+                "content_type": "text/plain",
+                "path": "/home/computron/uploads/notes.txt",
+            }]),
         )
 
     page.route("**/api/chat", handler)
