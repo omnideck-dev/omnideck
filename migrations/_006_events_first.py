@@ -61,14 +61,24 @@ class Event:
     payload: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        # depth + parent_agent_id are derived from the dotted agent_id so
+        # every event carries the same envelope shape the live runtime
+        # emits. Without depth, the UI's depth>0 sub-agent filter can't
+        # hide sub-agent traffic and it leaks into the main chat.
+        out = {
             "id": self.id,
             "type": self.type,
             "timestamp": self.timestamp,
             "conversation_id": self.conversation_id,
             "agent_id": self.agent_id,
             **self.payload,
+            # Derived last so they're authoritative over any stale value a
+            # spread payload carried in from the source record.
+            "depth": _depth_from_agent_id(self.agent_id),
         }
+        if self.type == "agent_started":
+            out["parent_agent_id"] = _parent_id_from_agent_id(self.agent_id)
+        return out
 
 
 @dataclass
@@ -134,6 +144,40 @@ def _fmt_iso(dt: datetime) -> str:
 def _offset_ts(anchor: datetime, micros: int) -> str:
     """Anchor + N microseconds. Used to give synthesized events ordering."""
     return _fmt_iso(anchor + timedelta(microseconds=micros))
+
+
+def _norm_ts(ts: str | None) -> str:
+    """Normalize any source timestamp to tz-aware ISO.
+
+    Some legacy timestamps are naive; routing them through parse+format
+    attaches UTC and makes the whole log uniformly tz-aware so the final
+    chronological sort compares like instants. A missing timestamp
+    anchors to the epoch (deterministic, sorts to the front) rather than
+    an unparseable empty string.
+    """
+    if not ts:
+        return _fmt_iso(datetime.fromtimestamp(0, tz=timezone.utc))
+    return _fmt_iso(_parse_iso(ts))
+
+
+def _depth_from_agent_id(agent_id: str) -> int:
+    """Derive nesting depth from a dotted agent_id.
+
+    Ids look like ``root.<name>.<n>[.<name>.<n>...]`` — each name/counter
+    pair past ``root`` is one level, so a single pair is the depth-0 root
+    and each additional pair is a sub-agent level.
+    """
+    pairs = max(0, (len(agent_id.split(".")) - 1) // 2)
+    return max(0, pairs - 1)
+
+
+def _parent_id_from_agent_id(agent_id: str) -> str | None:
+    """The parent agent's id: *agent_id* with its trailing name/counter
+    pair removed. Returns None for a depth-0 root (no parent)."""
+    parts = agent_id.split(".")
+    if len(parts) <= 3:
+        return None
+    return ".".join(parts[:-2])
 
 
 def parse_augmented_user_content(content: str) -> tuple[str, list[dict[str, str]]]:
@@ -385,7 +429,7 @@ def synthesize_agent_events(
                 Event(
                     id=_new_event_id(),
                     type="agent_started",
-                    timestamp=anchor_event["timestamp"],
+                    timestamp=_norm_ts(anchor_event.get("timestamp")),
                     conversation_id=conversation_id,
                     agent_id=current_agent_id,
                     payload={
@@ -646,7 +690,7 @@ def synthesize_compaction_events(
             Event(
                 id=_new_event_id(),
                 type="compaction",
-                timestamp=record.get("created_at") or "",
+                timestamp=_norm_ts(record.get("created_at")),
                 conversation_id=conversation_id,
                 agent_id=agent_id,
                 payload={
@@ -696,7 +740,7 @@ def synthesize_structural_events(
             Event(
                 id=_new_event_id(),
                 type=e["type"],
-                timestamp=e["timestamp"],
+                timestamp=_norm_ts(e.get("timestamp")),
                 conversation_id=conversation_id,
                 agent_id=e.get("agent_id") or "",
                 payload=payload,
@@ -845,12 +889,14 @@ def migrate_conversation(
             sub_compaction_events.extend(sub_comps)
             result.compaction_events += len(sub_comps)
 
-    # Combine all events and sort by timestamp.
+    # Combine all events and sort chronologically. Parse to instants so a
+    # mix of naive and tz-aware source timestamps compares correctly — a
+    # plain string sort would interleave them wrongly.
     all_events: list[Event] = (
         root_events + compaction_events + structural
         + sub_agent_events + sub_compaction_events
     )
-    all_events.sort(key=lambda e: e.timestamp)
+    all_events.sort(key=lambda e: _parse_iso(e.timestamp))
 
     # Write atomically.
     tmp = out_path.with_suffix(".jsonl.tmp")

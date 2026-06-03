@@ -13,7 +13,10 @@ from datetime import datetime, timezone
 
 from migrations._006_events_first import (
     Event,
+    _depth_from_agent_id,
     _fmt_iso,
+    _norm_ts,
+    _parent_id_from_agent_id,
     _parse_iso,
     _scope_for_compacted_range,
     synthesize_compaction_events,
@@ -48,6 +51,60 @@ def test_fmt_iso_always_emits_timezone_suffix():
     # tz-aware input passes through unchanged.
     aware = naive.replace(tzinfo=timezone.utc)
     assert _fmt_iso(aware) == "2026-06-01T16:28:03.477604+00:00"
+
+@pytest.mark.unit
+def test_depth_from_agent_id():
+    # root.<name>.<n> is depth 0; each extra name/counter pair is a level.
+    assert _depth_from_agent_id("root.computron.1") == 0
+    assert _depth_from_agent_id("root.small_context_window.8") == 0
+    assert _depth_from_agent_id("root.computron.1.researcher.2") == 1
+    assert _depth_from_agent_id("root.a.1.b.2.c.3") == 2
+    assert _depth_from_agent_id("root") == 0
+
+
+@pytest.mark.unit
+def test_parent_id_from_agent_id():
+    # A depth-0 root has no parent; deeper ids drop their last pair.
+    assert _parent_id_from_agent_id("root.computron.1") is None
+    assert _parent_id_from_agent_id("root") is None
+    assert _parent_id_from_agent_id("root.a.1.b.2") == "root.a.1"
+    assert _parent_id_from_agent_id("root.a.1.b.2.c.3") == "root.a.1.b.2"
+
+
+@pytest.mark.unit
+def test_to_dict_sets_depth_on_every_event():
+    # Without depth, the UI's depth>0 sub-agent filter can't hide
+    # sub-agent traffic from the main chat (the migrated-conversation leak).
+    root = Event(id="e1", type="user_message", timestamp="2026-01-01T00:00:00",
+                 conversation_id="c1", agent_id="root.x.1", payload={})
+    sub = Event(id="e2", type="user_message", timestamp="2026-01-01T00:00:00",
+                conversation_id="c1", agent_id="root.x.1.sub.2", payload={})
+    assert root.to_dict()["depth"] == 0
+    assert sub.to_dict()["depth"] == 1
+
+
+@pytest.mark.unit
+def test_to_dict_derives_parent_for_agent_started_and_overrides_stale_depth():
+    started = Event(
+        id="e1", type="agent_started", timestamp="2026-01-01T00:00:00",
+        conversation_id="c1", agent_id="root.x.1.sub.2",
+        # stale depth carried in from a spread source payload must lose.
+        payload={"agent_name": "SUB", "depth": 99},
+    )
+    d = started.to_dict()
+    assert d["depth"] == 1
+    assert d["parent_agent_id"] == "root.x.1"
+
+
+@pytest.mark.unit
+def test_norm_ts_normalizes_naive_and_missing():
+    assert _norm_ts("2026-06-01T16:28:03.477604").endswith("+00:00")
+    # Already tz-aware passes through.
+    assert _norm_ts("2026-06-01T16:28:03+00:00").endswith("+00:00")
+    # Missing/empty anchors to a parseable epoch, not an empty string.
+    assert _parse_iso(_norm_ts("")).year == 1970
+    assert _parse_iso(_norm_ts(None)).year == 1970
+
 
 CONV = "c1"
 ROOT_AGENT = "root.computron.1"
