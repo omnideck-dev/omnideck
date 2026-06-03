@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RecentConversations from '../RecentConversations.jsx';
@@ -26,11 +26,18 @@ const SESSIONS = [
 
 function mockFetch(sessions = SESSIONS) {
     global.fetch = vi.fn((url, opts) => {
-        if (opts?.method === 'DELETE') {
+        const method = opts?.method;
+        if (method === 'DELETE' || method === 'PATCH') {
             return Promise.resolve({ ok: true, status: 204 });
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve(sessions) });
     });
+}
+
+/** Open a row's 3-dot menu and return the menu element. */
+async function openRowMenu(user, row) {
+    await user.click(within(row).getByTestId('recent-menu-trigger'));
+    return screen.getByTestId('recent-menu');
 }
 
 beforeEach(() => {
@@ -83,60 +90,6 @@ describe('RecentConversations', () => {
         expect(onLoadConversation).toHaveBeenCalledWith('c1');
     });
 
-    it('deletes a conversation without loading it', async () => {
-        const user = userEvent.setup();
-        const onLoadConversation = vi.fn();
-        render(<RecentConversations onLoadConversation={onLoadConversation} />);
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
-
-        const firstRow = screen.getAllByTestId('recent-item')[0];
-        await user.click(firstRow.querySelector('[data-testid="recent-delete"]'));
-
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
-        expect(onLoadConversation).not.toHaveBeenCalled();
-        expect(global.fetch).toHaveBeenCalledWith(
-            '/api/conversations/sessions/c1',
-            expect.objectContaining({ method: 'DELETE' }),
-        );
-    });
-
-    it('opens a new conversation when the active one is deleted', async () => {
-        const user = userEvent.setup();
-        const onNewConversation = vi.fn();
-        render(
-            <RecentConversations
-                onLoadConversation={vi.fn()}
-                onNewConversation={onNewConversation}
-                activeConversationId="c1"
-            />,
-        );
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
-
-        const firstRow = screen.getAllByTestId('recent-item')[0];
-        await user.click(firstRow.querySelector('[data-testid="recent-delete"]'));
-
-        await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
-    });
-
-    it('does not open a new conversation when a non-active one is deleted', async () => {
-        const user = userEvent.setup();
-        const onNewConversation = vi.fn();
-        render(
-            <RecentConversations
-                onLoadConversation={vi.fn()}
-                onNewConversation={onNewConversation}
-                activeConversationId="c2"
-            />,
-        );
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
-
-        const firstRow = screen.getAllByTestId('recent-item')[0];
-        await user.click(firstRow.querySelector('[data-testid="recent-delete"]'));
-
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
-        expect(onNewConversation).not.toHaveBeenCalled();
-    });
-
     it('clears the search box with the clear button', async () => {
         const user = userEvent.setup();
         render(<RecentConversations onLoadConversation={vi.fn()} />);
@@ -173,5 +126,248 @@ describe('RecentConversations', () => {
         mockFetch([{ conversation_id: 'c9', first_message: 'hello there', started_at: isoAgo({ hours: 1 }) }]);
         render(<RecentConversations onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getByText('hello there')).toBeInTheDocument());
+    });
+});
+
+describe('RecentConversations — context menu', () => {
+    it('opens a per-row menu with pin, rename, and delete', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        expect(within(menu).getByTestId('recent-menu-pin')).toHaveTextContent('Pin');
+        expect(within(menu).getByTestId('recent-menu-rename')).toBeInTheDocument();
+        expect(within(menu).getByTestId('recent-menu-delete')).toBeInTheDocument();
+    });
+
+    it('closes the menu when clicking outside', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByTestId('recent-menu')).not.toBeInTheDocument();
+    });
+
+    it('does not load the conversation when opening its menu', async () => {
+        const user = userEvent.setup();
+        const onLoadConversation = vi.fn();
+        render(<RecentConversations onLoadConversation={onLoadConversation} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        expect(onLoadConversation).not.toHaveBeenCalled();
+    });
+});
+
+describe('RecentConversations — delete', () => {
+    it('deletes a conversation via the menu after a confirm click', async () => {
+        const user = userEvent.setup();
+        const onLoadConversation = vi.fn();
+        render(<RecentConversations onLoadConversation={onLoadConversation} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        const del = within(menu).getByTestId('recent-menu-delete');
+        // First click arms, second click fires.
+        await user.click(del);
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+        await user.click(screen.getByTestId('recent-menu-delete'));
+
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        expect(onLoadConversation).not.toHaveBeenCalled();
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/c1',
+            expect.objectContaining({ method: 'DELETE' }),
+        );
+    });
+
+    it('opens a new conversation when the active one is deleted', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        render(
+            <RecentConversations
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c1"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(screen.getByTestId('recent-menu-delete'));
+        await user.click(screen.getByTestId('recent-menu-delete'));
+
+        await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not open a new conversation when a non-active one is deleted', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        render(
+            <RecentConversations
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c2"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(screen.getByTestId('recent-menu-delete'));
+        await user.click(screen.getByTestId('recent-menu-delete'));
+
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        expect(onNewConversation).not.toHaveBeenCalled();
+    });
+});
+
+describe('RecentConversations — pin', () => {
+    it('pins a conversation into a Pinned section and persists it', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+        expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
+
+        const row = screen.getByText('snake game').closest('[data-testid="recent-item"]');
+        const menu = await openRowMenu(user, row);
+        await user.click(within(menu).getByTestId('recent-menu-pin'));
+
+        // A Pinned section appears with the pinned conversation under it.
+        const pinnedLabel = await screen.findByText('Pinned');
+        expect(pinnedLabel).toBeInTheDocument();
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/c2',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ pinned: true }),
+            }),
+        );
+    });
+
+    it('shows Unpin for an already-pinned conversation and unpins it', async () => {
+        const user = userEvent.setup();
+        mockFetch([
+            { conversation_id: 'p1', title: 'pinned chat', started_at: isoAgo({ hours: 1 }), pinned: true },
+            { conversation_id: 'c2', title: 'snake game', started_at: isoAgo({ hours: 3 }) },
+        ]);
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Pinned')).toBeInTheDocument());
+
+        const row = screen.getByText('pinned chat').closest('[data-testid="recent-item"]');
+        const menu = await openRowMenu(user, row);
+        expect(within(menu).getByTestId('recent-menu-pin')).toHaveTextContent('Unpin');
+        await user.click(within(menu).getByTestId('recent-menu-pin'));
+
+        await waitFor(() => expect(screen.queryByText('Pinned')).not.toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/p1',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ pinned: false }),
+            }),
+        );
+    });
+});
+
+describe('RecentConversations — rename', () => {
+    async function startRename(user, label) {
+        const row = screen.getByText(label).closest('[data-testid="recent-item"]');
+        const menu = await openRowMenu(user, row);
+        await user.click(within(menu).getByTestId('recent-menu-rename'));
+        return screen.getByTestId('recent-rename-input');
+    }
+
+    it('renames inline and saves via the Rename button', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const input = await startRename(user, 'snake game');
+        await user.clear(input);
+        await user.type(input, 'tetris clone');
+        await user.click(screen.getByTestId('recent-rename-save'));
+
+        await waitFor(() => expect(screen.getByText('tetris clone')).toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/c2',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ title: 'tetris clone' }),
+            }),
+        );
+    });
+
+    it('saves on Enter', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const input = await startRename(user, 'snake game');
+        await user.clear(input);
+        await user.type(input, 'pong{Enter}');
+
+        await waitFor(() => expect(screen.getByText('pong')).toBeInTheDocument());
+    });
+
+    it('disables the Rename button until the text changes', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const input = await startRename(user, 'snake game');
+        expect(screen.getByTestId('recent-rename-save')).toBeDisabled();
+        await user.type(input, '!');
+        expect(screen.getByTestId('recent-rename-save')).toBeEnabled();
+    });
+
+    it('caps the input at 50 characters', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const input = await startRename(user, 'snake game');
+        expect(input).toHaveAttribute('maxLength', '50');
+    });
+
+    it('cancels on Escape without persisting', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const input = await startRename(user, 'snake game');
+        await user.clear(input);
+        await user.type(input, 'discarded{Escape}');
+
+        expect(screen.getByText('snake game')).toBeInTheDocument();
+        expect(screen.queryByTestId('recent-rename-input')).not.toBeInTheDocument();
+        expect(global.fetch).not.toHaveBeenCalledWith(
+            expect.stringContaining('/api/conversations/sessions/c2'),
+            expect.objectContaining({ method: 'PATCH' }),
+        );
+    });
+
+    it('reverts to the first-message fallback when saved blank', async () => {
+        const user = userEvent.setup();
+        mockFetch([
+            { conversation_id: 'c5', title: 'has a title', first_message: 'original prompt text', started_at: isoAgo({ hours: 1 }) },
+        ]);
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('has a title')).toBeInTheDocument());
+
+        const input = await startRename(user, 'has a title');
+        await user.clear(input);
+        await user.click(screen.getByTestId('recent-rename-save'));
+
+        await waitFor(() => expect(screen.getByText('original prompt text')).toBeInTheDocument());
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/c5',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ title: '' }),
+            }),
+        );
     });
 });

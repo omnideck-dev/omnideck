@@ -5,6 +5,7 @@ from ._models import (
     SummaryRecord,
 )
 from ._store import (
+    conversation_exists,
     delete_conversation,
     list_conversations,
     list_summary_records,
@@ -16,6 +17,7 @@ from ._store import (
     load_summary_record,
     save_agent_events,
     save_conversation_history,
+    save_conversation_pinned,
     save_conversation_title,
     save_loaded_skills,
     save_preview_state,
@@ -29,6 +31,7 @@ from ._title_generation import (
 __all__ = [
     "ConversationSummary",
     "SummaryRecord",
+    "conversation_exists",
     "delete_conversation",
     "generate_conversation_title",
     "list_conversations",
@@ -41,6 +44,7 @@ __all__ = [
     "load_summary_record",
     "save_agent_events",
     "save_conversation_history",
+    "save_conversation_pinned",
     "save_conversation_title",
     "save_loaded_skills",
     "save_preview_state",
