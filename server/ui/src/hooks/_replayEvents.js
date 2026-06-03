@@ -19,9 +19,11 @@ function _parseTimestamp(ts) {
  *   terminal_output    → UPDATE_TERMINAL
  *   browser_screenshot → UPDATE_BROWSER_SNAPSHOT
  *
+ *   compaction         → APPEND_ACTIVITY {type: 'compaction', ...}
+ *
  * Events without a matching live dispatch (user_message, tool_result,
- * compaction, context_usage) are skipped — chat-side state derives them
- * directly from the events array.
+ * context_usage) are skipped — chat-side state derives them directly
+ * from the events array.
  */
 export function replayEventsToAgentState(events, dispatch) {
     if (!Array.isArray(events) || !dispatch) return;
@@ -98,6 +100,20 @@ export function replayEventsToAgentState(events, dispatch) {
                     },
                 });
                 break;
+            case 'compaction':
+                if (!agentId) break;
+                dispatch({
+                    type: 'APPEND_ACTIVITY',
+                    agentId,
+                    entry: {
+                        type: 'compaction',
+                        stats: ev.stats || null,
+                        summaryText: ev.summary_text || null,
+                        userIntentSummary: ev.user_intent_summary || null,
+                        timestamp: _parseTimestamp(ev.timestamp),
+                    },
+                });
+                break;
             case 'terminal_output':
                 if (!agentId) break;
                 dispatch({
@@ -120,8 +136,8 @@ export function replayEventsToAgentState(events, dispatch) {
                     },
                 });
                 break;
-            // user_message / tool_result / compaction / context_usage:
-            // not part of useAgentState — chat derives them from events.
+            // user_message / tool_result / context_usage: not part of
+            // useAgentState — chat derives them from events.
             default:
                 break;
         }

@@ -802,6 +802,26 @@ export default function useStreamingChat(callbacks) {
                             scheduleFlush();
                         }
 
+                        // Compaction → activity-rail marker. Main chat shows
+                        // depth-0 compactions as chips; this surfaces a
+                        // sub-agent's own compaction in its activity view.
+                        if (payload?.type === 'compaction' && data.agent_id && callbacks.onActivityEntry) {
+                            pending.push({
+                                callback: callbacks.onActivityEntry,
+                                args: {
+                                    agentId: data.agent_id,
+                                    entry: {
+                                        type: 'compaction',
+                                        stats: payload.stats || null,
+                                        summaryText: payload.summary_text || null,
+                                        userIntentSummary: payload.user_intent_summary || null,
+                                        timestamp: Date.now(),
+                                    },
+                                },
+                            });
+                            scheduleFlush();
+                        }
+
                         // Turn end — flush and mark done
                         if (payload?.type === 'turn_end') {
                             if (agentRafId !== null) {

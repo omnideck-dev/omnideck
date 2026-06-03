@@ -2,6 +2,7 @@ import { useState } from 'react';
 import MarkdownContent from './MarkdownContent.jsx';
 import SpawnCard from './SpawnCard.jsx';
 import FileOutput from './FileOutput.jsx';
+import CompactionRow from './CompactionRow.jsx';
 import styles from './ActivityRail.module.css';
 
 const _isSpawnRequested = (e) => e?.type === 'spawn_requested';
@@ -160,6 +161,23 @@ function _renderRow(entry, idx, opts) {
                 </div>
                 <div className={styles.main}>
                     <FileOutput item={entry} onPreview={onPreview} />
+                </div>
+            </div>
+        );
+    }
+
+    if (entry.type === 'compaction') {
+        return (
+            <div key={idx} className={styles.row} data-testid="activity-row-compaction">
+                <div className={styles.rail}>
+                    <span className={styles.marker} aria-hidden="true" />
+                </div>
+                <div className={styles.main}>
+                    <CompactionRow
+                        stats={entry.stats}
+                        summaryText={entry.summaryText}
+                        userIntentSummary={entry.userIntentSummary}
+                    />
                 </div>
             </div>
         );

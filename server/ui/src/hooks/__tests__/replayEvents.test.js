@@ -128,6 +128,32 @@ describe('replayEventsToAgentState', () => {
         });
     });
 
+    it('dispatches compaction as an activity entry on the agent that compacted', () => {
+        const d = vi.fn();
+        replayEventsToAgentState([
+            _agentStarted('root.test.1.sub.2', { parent: 'root.test.1' }),
+            {
+                type: 'compaction', agent_id: 'root.test.1.sub.2',
+                summary_text: 'did the thing',
+                user_intent_summary: 'wants the thing',
+                stats: { context_before: 20000, context_after: 8000,
+                    saved_tokens: 12000, saved_ratio: 0.6,
+                    scope: { user_messages: 1, iterations: 2, tool_results: 1 } },
+                timestamp: '2026-01-01T00:00:03',
+            },
+        ], d);
+        const c = d.mock.calls.find(([a]) => a.type === 'APPEND_ACTIVITY' && a.entry.type === 'compaction');
+        expect(c[0]).toMatchObject({
+            agentId: 'root.test.1.sub.2',
+            entry: {
+                type: 'compaction',
+                summaryText: 'did the thing',
+                userIntentSummary: 'wants the thing',
+            },
+        });
+        expect(c[0].entry.stats.saved_tokens).toBe(12000);
+    });
+
     it('dispatches terminal_output as UPDATE_TERMINAL on the emitting agent', () => {
         const d = vi.fn();
         const ev = {
@@ -192,13 +218,13 @@ describe('replayEventsToAgentState', () => {
     });
 
     it('skips chat-only event types so they do not pollute useAgentState', () => {
-        // user_message / tool_result / compaction / context_usage are
-        // consumed by the chat or context meter, not the agent state.
+        // user_message / tool_result / context_usage are consumed by the
+        // chat or context meter, not the agent state. (compaction now does
+        // dispatch — it surfaces as an activity-rail marker.)
         const d = vi.fn();
         replayEventsToAgentState([
             { type: 'user_message', agent_id: 'root', content: 'hi', attachments: [] },
             { type: 'tool_result', agent_id: 'root', tool_call_id: 'tc', content: 'ok' },
-            { type: 'compaction', agent_id: 'root', summary_text: 's' },
             { type: 'context_usage', agent_id: 'root', context_used: 100 },
         ], d);
         expect(d).not.toHaveBeenCalled();
