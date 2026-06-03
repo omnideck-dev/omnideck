@@ -9,8 +9,12 @@ from unittest.mock import patch
 import pytest
 
 from conversations._store import (
+    conversation_exists,
     delete_conversation,
     list_conversations,
+    load_conversation_metadata,
+    save_conversation_pinned,
+    save_conversation_title,
 )
 
 
@@ -143,3 +147,55 @@ class TestDeleteConversation:
     def test_delete_nonexistent(self, _conv_dir: Path) -> None:
         """Deleting a missing conversation returns False."""
         assert delete_conversation("nope") is False
+
+
+@pytest.mark.unit
+class TestConversationExists:
+    """Tests for the on-disk existence check."""
+
+    def test_exists_after_seed(self, _conv_dir: Path) -> None:
+        """A conversation with a persisted event log reports as existing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        assert conversation_exists("conv-1") is True
+
+    def test_missing(self, _conv_dir: Path) -> None:
+        """An unknown conversation does not exist."""
+        assert conversation_exists("nope") is False
+
+    def test_metadata_only_does_not_count(self, _conv_dir: Path) -> None:
+        """Metadata without an event log is not a real conversation."""
+        save_conversation_title("ghost", "orphan")
+        assert conversation_exists("ghost") is False
+
+
+@pytest.mark.unit
+class TestConversationPinned:
+    """Tests for the pinned flag on conversations."""
+
+    def test_unpinned_by_default(self, _conv_dir: Path) -> None:
+        """Conversations are not pinned unless flagged."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        assert list_conversations()[0].pinned is False
+
+    def test_pinned_flag_round_trips_through_listing(self, _conv_dir: Path) -> None:
+        """A saved pinned flag surfaces on the listing summary."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        assert list_conversations()[0].pinned is True
+
+    def test_pin_preserves_title(self, _conv_dir: Path) -> None:
+        """Pinning merges into existing metadata rather than clobbering it."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_pinned("conv-1", True)
+
+        meta = load_conversation_metadata("conv-1")
+        assert meta["title"] == "My Title"
+        assert meta["pinned"] is True
+
+    def test_unpin_after_pin(self, _conv_dir: Path) -> None:
+        """A conversation can be unpinned again."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        save_conversation_pinned("conv-1", False)
+        assert list_conversations()[0].pinned is False

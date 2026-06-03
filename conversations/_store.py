@@ -80,6 +80,29 @@ def save_conversation_title(conversation_id: str, title: str) -> None:
     tmp.replace(metadata_path)
 
 
+def save_conversation_pinned(conversation_id: str, pinned: bool) -> None:
+    """Save or update the pinned flag for a conversation.
+
+    Pinned conversations float to a dedicated section at the top of the
+    sidebar. The flag lives in metadata.json alongside the title.
+    """
+    conv_dir = _get_conv_dir(conversation_id)
+    conv_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata_path = conv_dir / "metadata.json"
+    metadata: dict[str, Any] = {}
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    metadata["pinned"] = pinned
+    tmp = metadata_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    tmp.replace(metadata_path)
+
+
 def load_conversation_metadata(conversation_id: str) -> dict[str, Any]:
     """Load conversation metadata including title.
 
@@ -171,8 +194,10 @@ def list_conversations() -> list[ConversationSummary]:
                 events_path.stat().st_mtime, tz=UTC,
             ).isoformat()
 
+            # Load title + pinned flag from metadata (if available)
             metadata = load_conversation_metadata(entry.name)
             title = metadata.get("title", "")
+            pinned = bool(metadata.get("pinned", False))
 
             summaries.append(ConversationSummary(
                 conversation_id=entry.name,
@@ -180,12 +205,18 @@ def list_conversations() -> list[ConversationSummary]:
                 title=title,
                 started_at=started_at,
                 turn_count=turn_count,
+                pinned=pinned,
             ))
         except Exception:
             logger.exception("Failed to read conversation %s", entry.name)
 
     summaries.sort(key=lambda s: s.started_at, reverse=True)
     return summaries
+
+
+def conversation_exists(conversation_id: str) -> bool:
+    """Report whether a conversation has a persisted event log on disk."""
+    return (_get_conv_dir(conversation_id) / "events.jsonl").exists()
 
 
 def delete_conversation(conversation_id: str) -> bool:

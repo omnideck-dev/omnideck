@@ -13,3 +13,4 @@ class ConversationSummary(BaseModel):
     title: str = ""  # Auto-generated title (max 60 chars)
     started_at: str = ""
     turn_count: int = 0
+    pinned: bool = False  # User-pinned to the top of the sidebar
