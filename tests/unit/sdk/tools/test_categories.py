@@ -1,18 +1,17 @@
-"""Unit tests for the standard tool-category registry.
+"""Unit tests for build_categories.
 
-A category groups related tools under a stable id and is the unit a skill
-grants. These tests cover the standard (non-integration) categories: which
-categories the feature flags expose, that they carry UI metadata, that their
-loaders resolve to real callables, and that local-grounding tools drop out
-when visual grounding is disabled.
+build_categories returns the categories available under a set of feature flags,
+keyed by id, each carrying its own tools. These cover which categories the flags
+expose, that each carries real callables and catalog metadata, and that the
+local-grounding tools appear only when visual grounding is on.
 """
 
 import pytest
 
 from config import FeaturesConfig
-from sdk.tools._categories import category_tools, get_category, list_categories
+from sdk.tools._categories import build_categories, get_categories
 
-_EXPECTED_STD_IDS = {
+_ALL_IDS = {
     "coding",
     "browser",
     "webfetch",
@@ -39,82 +38,65 @@ def _features(**overrides) -> FeaturesConfig:
 
 
 @pytest.mark.unit
-def test_lists_all_standard_categories_when_features_enabled() -> None:
-    ids = {c.id for c in list_categories(_features())}
-    assert ids == _EXPECTED_STD_IDS
+def test_all_categories_present_when_features_enabled() -> None:
+    assert set(build_categories(_features())) == _ALL_IDS
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "flag",
-    ["desktop", "image_generation", "music_generation", "custom_tools"],
-)
-def test_feature_gated_category_hidden_when_flag_off(flag: str) -> None:
-    ids = {c.id for c in list_categories(_features(**{flag: False}))}
+@pytest.mark.parametrize("flag", ["desktop", "image_generation", "music_generation", "custom_tools"])
+def test_feature_off_drops_its_category(flag: str) -> None:
+    ids = set(build_categories(_features(**{flag: False})))
     assert flag not in ids
-    # An ungated category is unaffected.
     assert "coding" in ids
 
 
 @pytest.mark.unit
-def test_every_listed_category_has_ui_metadata() -> None:
-    for c in list_categories(_features()):
+def test_each_category_has_metadata_and_callable_tools() -> None:
+    for c in build_categories(_features()).values():
         assert c.label, f"{c.id} missing label"
         assert c.description, f"{c.id} missing description"
-        assert c.icon.startswith("bi-"), f"{c.id} icon is not a Bootstrap Icon"
-        assert c.kind == "std"
+        assert c.tools, f"{c.id} has no tools"
+        assert all(callable(t) for t in c.tools)
 
 
 @pytest.mark.unit
-def test_category_tools_resolve_to_callables() -> None:
-    tools = category_tools("coding", _features())
-    assert tools
-    assert all(callable(t) for t in tools)
-    names = {t.__name__ for t in tools}
+def test_coding_category_contains_expected_tools() -> None:
+    coding = build_categories(_features())["coding"]
+    names = {t.__name__ for t in coding.tools}
     assert {"read_file", "run_bash_cmd"} <= names
 
 
 @pytest.mark.unit
-def test_browser_grounding_tool_stripped_when_visual_grounding_off() -> None:
-    on = {t.__name__ for t in category_tools("browser", _features(visual_grounding=True))}
-    off = {t.__name__ for t in category_tools("browser", _features(visual_grounding=False))}
+def test_browser_grounding_tool_follows_visual_grounding() -> None:
+    on = {t.__name__ for t in build_categories(_features(visual_grounding=True))["browser"].tools}
+    off = {t.__name__ for t in build_categories(_features(visual_grounding=False))["browser"].tools}
     assert "browser_visual_action" in on
     assert "browser_visual_action" not in off
-    # Non-grounding browser tools survive the strip.
     assert "goto" in off
 
 
 @pytest.mark.unit
-def test_desktop_grounding_tool_stripped_when_visual_grounding_off() -> None:
-    on = {t.__name__ for t in category_tools("desktop", _features(visual_grounding=True))}
-    off = {t.__name__ for t in category_tools("desktop", _features(visual_grounding=False))}
+def test_desktop_grounding_tool_follows_visual_grounding() -> None:
+    on = {t.__name__ for t in build_categories(_features(visual_grounding=True))["desktop"].tools}
+    off = {t.__name__ for t in build_categories(_features(visual_grounding=False))["desktop"].tools}
     assert "perform_visual_action" in on
     assert "perform_visual_action" not in off
     assert "mouse_click" in off
 
 
 @pytest.mark.unit
-def test_unknown_category_resolves_to_empty() -> None:
-    assert category_tools("does-not-exist", _features()) == []
+def test_custom_tools_category_present_only_when_feature_on() -> None:
+    on = build_categories(_features(custom_tools=True))
+    assert "custom_tools" in on
+    assert {t.__name__ for t in on["custom_tools"].tools} == {
+        "create_custom_tool",
+        "lookup_custom_tools",
+        "run_custom_tool",
+    }
+    assert "custom_tools" not in build_categories(_features(custom_tools=False))
 
 
 @pytest.mark.unit
-def test_feature_gated_category_tools_empty_when_flag_off() -> None:
-    assert category_tools("desktop", _features(desktop=False)) == []
-
-
-@pytest.mark.unit
-def test_custom_tools_category_resolves_when_feature_on() -> None:
-    names = {t.__name__ for t in category_tools("custom_tools", _features(custom_tools=True))}
-    assert {"create_custom_tool", "run_custom_tool", "lookup_custom_tools"} <= names
-
-
-@pytest.mark.unit
-def test_custom_tools_category_empty_when_feature_off() -> None:
-    assert category_tools("custom_tools", _features(custom_tools=False)) == []
-
-
-@pytest.mark.unit
-def test_get_category_returns_definition_or_none() -> None:
-    assert get_category("memory").id == "memory"
-    assert get_category("nope") is None
+def test_get_categories_is_built_once_and_held() -> None:
+    # Memoized for the process: the same object is returned each call.
+    assert get_categories() is get_categories()
