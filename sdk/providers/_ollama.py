@@ -214,7 +214,11 @@ class OllamaProvider:
             try:
                 show_resp = await self._client.show(name)
                 caps = list(getattr(show_resp, "capabilities", None) or [])
-                model_info = getattr(show_resp, "model_info", None) or {}
+                # The ollama client exposes show()'s model_info JSON field as
+                # the attribute ``modelinfo`` (no underscore). Reading
+                # ``model_info`` silently yields None, zeroing every model's
+                # detected context window.
+                model_info = getattr(show_resp, "modelinfo", None) or {}
                 ctx: int | None = None
                 for key, val in model_info.items():
                     if key.endswith(".context_length") and isinstance(val, int):
