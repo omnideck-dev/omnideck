@@ -115,10 +115,13 @@ class TestListConversations:
         _seed_events_jsonl(_conv_dir, "old", [
             {"role": "user", "content": "old"},
         ])
-        # Override "old" conv's timestamp to be earlier.
+        # Override "old" conv to be earlier. started_at is the FIRST event
+        # (the agent_started at :00), so shift the whole date — shifting
+        # only the user_message (:01) would leave both convs tied on
+        # started_at and the sort order would be arbitrary.
         old_path = _conv_dir / "old" / "events.jsonl"
         old_path.write_text(old_path.read_text().replace(
-            "2026-01-01T00:00:01", "2025-01-01T00:00:01",
+            "2026-01-01", "2025-01-01",
         ))
         _seed_events_jsonl(_conv_dir, "new", [
             {"role": "user", "content": "new"},
