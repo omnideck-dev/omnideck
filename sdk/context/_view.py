@@ -38,6 +38,35 @@ _SUMMARY_PREFIX = "[Conversation summary — earlier messages were compacted]\n\
 _INTENT_PREFIX = "[User intent history]\n"
 
 
+def events_for_agent(
+    events: list[dict[str, Any]],
+    conversation_id: str,
+    agent_filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the events that make up one agent's conversation thread.
+
+    This is the single definition of "which events are mine":
+
+    - per-agent view (``agent_filter`` set): events for that exact
+      ``agent_id``;
+    - root view (``agent_filter`` is None): events from any depth-0 agent
+      (``parent_agent_id`` is None). This spans every root turn regardless
+      of the per-turn ``.N`` agent_id suffix or which profile produced the
+      turn — so it stays stable across a mid-conversation profile switch.
+
+    Both the derived LLM/message view and compaction's kept-bounds
+    resolution read membership from here so the two cannot drift apart.
+    """
+    conv_events = [e for e in events if e.get("conversation_id") == conversation_id]
+    if agent_filter:
+        return [e for e in conv_events if e.get("agent_id") == agent_filter]
+    root_ids = {
+        e["agent_id"] for e in conv_events
+        if e["type"] == "agent_started" and not e.get("parent_agent_id")
+    }
+    return [e for e in conv_events if e.get("agent_id") in root_ids]
+
+
 def build_llm_history(
     events: list[dict[str, Any]],
     conversation_id: str,
@@ -63,16 +92,7 @@ def build_llm_history(
         A list of message dicts ready to send to a provider, in the
         same shape as today's history.json.
     """
-    conv_events = [e for e in events if e.get("conversation_id") == conversation_id]
-
-    if agent_filter:
-        evs = [e for e in conv_events if e.get("agent_id") == agent_filter]
-    else:
-        root_ids = {
-            e["agent_id"] for e in conv_events
-            if e["type"] == "agent_started" and not e.get("parent_agent_id")
-        }
-        evs = [e for e in conv_events if e.get("agent_id") in root_ids]
+    evs = events_for_agent(events, conversation_id, agent_filter)
 
     agent_names = {
         e["agent_id"]: e.get("agent_name")

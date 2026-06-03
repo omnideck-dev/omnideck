@@ -18,7 +18,6 @@ from sdk.events import (
     CompactionPayload,
     CompactionScope,
     CompactionStats,
-    get_current_agent_name,
     publish_event,
 )
 from settings import load_settings
@@ -373,17 +372,12 @@ class LLMCompactionStrategy:
         agent. Returns ``(None, None)`` if there aren't enough iterations
         yet to compact safely.
         """
-        # Filter by agent_name (not agent_id) — agent_id gets a fresh
-        # ".N" suffix every turn, which would hide iterations from
-        # earlier turns and stop compaction from ever firing on a
-        # multi-turn conversation.
-        agent_name = get_current_agent_name()
-        if agent_name is None:
-            return None, None
-        my_events = [
-            e for e in history.recorded_events
-            if e.get("agent_name") == agent_name
-        ]
+        # Scope to this thread via the same membership the derived view
+        # uses (root view for the root, exact agent_id for a sub-agent).
+        # Keying on agent_name instead would reset the iteration count on a
+        # mid-conversation profile switch (the name carries the profile),
+        # so a switch into a smaller window could never trigger compaction.
+        my_events = history.scoped_events
         if not my_events:
             return None, None
         my_iterations = [e for e in my_events if e["type"] == "iteration"]
@@ -410,14 +404,9 @@ class LLMCompactionStrategy:
         replaced vs. the summary's own size, and bundles everything into
         a CompactionStats. All approximations use chars/4 ≈ tokens.
         """
-        # Filter by the logical agent (agent_name), not agent_id — the
-        # latter gets a fresh ".N" suffix on every turn, which would hide
-        # iterations and tool results from earlier turns.
-        agent_name = get_current_agent_name()
-        my_events = (
-            [e for e in history.recorded_events if e.get("agent_name") == agent_name]
-            if agent_name else []
-        )
+        # Same thread scope as _resolve_kept_bounds — kept_from_id was
+        # resolved against this list, so the stats range must walk it too.
+        my_events = history.scoped_events
 
         # The range this compaction summarized: from just after the
         # previous compaction (or log start) up to but not including

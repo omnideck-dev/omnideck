@@ -48,7 +48,6 @@ async def test_compaction_publishes_payload_and_derived_view_shows_summary():
     captured = MagicMock(side_effect=lambda evt: published_payloads.append(evt.payload))
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.get_current_agent_name", return_value="test-agent"), \
          patch("sdk.context._strategy.publish_event", captured), \
          patch("sdk.context._strategy.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
@@ -88,7 +87,6 @@ async def test_compaction_does_not_mutate_history_directly():
     events_before = list(history.recorded_events)
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.get_current_agent_name", return_value="test-agent"), \
          patch("sdk.context._strategy.publish_event"), \
          patch("sdk.context._strategy.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
@@ -215,7 +213,6 @@ async def test_compaction_payload_carries_audit_fields():
     payloads: list = []
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.get_current_agent_name", return_value="test-agent"), \
          patch("sdk.context._strategy.publish_event",
                side_effect=lambda evt: payloads.append(evt.payload)), \
          patch("sdk.context._strategy.load_settings",
@@ -302,6 +299,18 @@ def _evt(type_: str, agent_name: str, evt_id: str, ts: str,
     }
 
 
+def _started(agent_id: str, agent_name: str, evt_id: str,
+             ts: str = "2026-01-01T00:00:00") -> dict:
+    """A depth-0 agent_started event — what marks an agent_id as part of
+    the root thread for scoped_events / build_llm_history membership."""
+    return {
+        **_evt("agent_started", agent_name, evt_id, ts),
+        "agent_id": agent_id,
+        "parent_agent_id": None,
+        "depth": 0,
+    }
+
+
 @pytest.mark.unit
 def test_compute_stats_full_population():
     """All scope counts, savings math, and spanned_seconds populate
@@ -310,6 +319,7 @@ def test_compute_stats_full_population():
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
+        _started("root.x.1", "AGENT_A", "as1"),
         _evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
         _evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
         _evt("tool_result", "AGENT_A", "t1", "2026-01-01T00:00:10"),
@@ -319,16 +329,14 @@ def test_compute_stats_full_population():
              "2026-01-01T00:01:30"),  # kept_from_id
     ])
 
-    with patch("sdk.context._strategy.get_current_agent_name",
-               return_value="AGENT_A"):
-        stats = strategy._compute_stats(
-            history=history,
-            kept_from_id="kept",
-            context_before=20000,
-            context_limit=30000,
-            input_char_count=40000,  # 40000 // 4 = 10000 tokens replaced
-            summary_text="line one\nline two\nline three",
-        )
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept",
+        context_before=20000,
+        context_limit=30000,
+        input_char_count=40000,  # 40000 // 4 = 10000 tokens replaced
+        summary_text="line one\nline two\nline three",
+    )
 
     assert stats.scope.user_messages == 1
     assert stats.scope.iterations == 2
@@ -350,33 +358,33 @@ def test_compute_stats_full_population():
 @pytest.mark.unit
 def test_compute_stats_cross_turn_agent_id_suffix():
     """Iterations from earlier turns (agent_id ends in .1) must be
-    counted when compaction fires on a later turn (agent_id ends in .2)
-    — the filter uses agent_name, not agent_id."""
+    counted when compaction fires on a later turn (agent_id ends in .2).
+    Both turns are depth-0 agents, so the root-view scope spans them
+    regardless of the per-turn ``.N`` agent_id suffix."""
     strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
+        _started("root.agent_a.1", "AGENT_A", "as1"),
         {**_evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
          "agent_id": "root.agent_a.1"},
         {**_evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
          "agent_id": "root.agent_a.1"},
+        _started("root.agent_a.2", "AGENT_A", "as2", "2026-01-01T00:01:00"),
         {**_evt("user_message", "AGENT_A", "u2", "2026-01-01T00:01:00"),
          "agent_id": "root.agent_a.2"},
         {**_evt("iteration", "AGENT_A", "kept", "2026-01-01T00:01:05"),
          "agent_id": "root.agent_a.2"},
     ])
 
-    # Current agent_id is the latest turn's suffix; agent_name stays stable.
-    with patch("sdk.context._strategy.get_current_agent_name",
-               return_value="AGENT_A"):
-        stats = strategy._compute_stats(
-            history=history,
-            kept_from_id="kept",
-            context_before=10000,
-            context_limit=30000,
-            input_char_count=4000,
-            summary_text="s",
-        )
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept",
+        context_before=10000,
+        context_limit=30000,
+        input_char_count=4000,
+        summary_text="s",
+    )
 
     assert stats.scope.user_messages == 2  # both turns
     assert stats.scope.iterations == 1     # only the prior turn's iteration
@@ -384,36 +392,77 @@ def test_compute_stats_cross_turn_agent_id_suffix():
 
 @pytest.mark.unit
 def test_resolve_kept_bounds_cross_turn_agent_id_suffix():
-    """Regression: _resolve_kept_bounds must filter by agent_name, not
-    agent_id. A fresh agent_id is minted every turn (e.g. ".1", ".2",
-    ".3"), so filtering by id at compaction time would only count the
-    current turn's iterations and prevent compaction from ever firing
-    in a multi-turn conversation."""
+    """Regression: _resolve_kept_bounds must scope by the root thread, not
+    a single agent_id. A fresh agent_id is minted every turn (e.g. ".1",
+    ".2", ".3"); scoping to one id would only count the current turn's
+    iterations and prevent compaction from ever firing in a multi-turn
+    conversation."""
     strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
+        _started("root.agent_a.1", "AGENT_A", "as1"),
         {**_evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
          "agent_id": "root.agent_a.1"},
         {**_evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
          "agent_id": "root.agent_a.1"},
+        _started("root.agent_a.2", "AGENT_A", "as2", "2026-01-01T00:01:00"),
         {**_evt("user_message", "AGENT_A", "u2", "2026-01-01T00:01:00"),
          "agent_id": "root.agent_a.2"},
         {**_evt("iteration", "AGENT_A", "i2", "2026-01-01T00:01:05"),
          "agent_id": "root.agent_a.2"},
+        _started("root.agent_a.3", "AGENT_A", "as3", "2026-01-01T00:02:00"),
         {**_evt("user_message", "AGENT_A", "u3", "2026-01-01T00:02:00"),
          "agent_id": "root.agent_a.3"},
         {**_evt("iteration", "AGENT_A", "i3", "2026-01-01T00:02:05"),
          "agent_id": "root.agent_a.3"},
     ])
 
-    with patch("sdk.context._strategy.get_current_agent_name",
-               return_value="AGENT_A"):
-        kept_from_id, kept_to_id = strategy._resolve_kept_bounds(history)
+    kept_from_id, kept_to_id = strategy._resolve_kept_bounds(history)
 
     # keep_recent_groups=2 → anchor is the 2nd-from-last iteration (i2).
     assert kept_from_id == "i2"
     # kept_to is the most recent event for the agent (i3 here).
+    assert kept_to_id == "i3"
+
+
+@pytest.mark.unit
+def test_resolve_kept_bounds_spans_mid_conversation_profile_switch():
+    """Regression: switching to a different profile mid-conversation
+    changes the root agent's name AND the profile segment of its
+    agent_id, but every turn is still a depth-0 root agent. The
+    iteration count must span the switch so compaction can fire on the
+    new (e.g. smaller-context) profile instead of resetting to zero."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        # Two turns under the original profile.
+        _started("root.code_expert.1", "CODE EXPERT", "as1"),
+        {**_evt("user_message", "CODE EXPERT", "u1", "2026-01-01T00:00:00"),
+         "agent_id": "root.code_expert.1"},
+        {**_evt("iteration", "CODE EXPERT", "i1", "2026-01-01T00:00:05"),
+         "agent_id": "root.code_expert.1"},
+        _started("root.code_expert.2", "CODE EXPERT", "as2",
+                 "2026-01-01T00:01:00"),
+        {**_evt("user_message", "CODE EXPERT", "u2", "2026-01-01T00:01:00"),
+         "agent_id": "root.code_expert.2"},
+        {**_evt("iteration", "CODE EXPERT", "i2", "2026-01-01T00:01:05"),
+         "agent_id": "root.code_expert.2"},
+        # User switches to a smaller-context profile; new name + agent_id.
+        _started("root.small_window.3", "SMALL WINDOW", "as3",
+                 "2026-01-01T00:02:00"),
+        {**_evt("user_message", "SMALL WINDOW", "u3", "2026-01-01T00:02:00"),
+         "agent_id": "root.small_window.3"},
+        {**_evt("iteration", "SMALL WINDOW", "i3", "2026-01-01T00:02:05"),
+         "agent_id": "root.small_window.3"},
+    ])
+
+    kept_from_id, kept_to_id = strategy._resolve_kept_bounds(history)
+
+    # All three iterations are visible across the profile switch, so the
+    # gate (keep_recent_groups=2) resolves real bounds instead of bailing.
+    assert kept_from_id == "i2"
     assert kept_to_id == "i3"
 
 
@@ -425,6 +474,7 @@ def test_compute_stats_second_compaction_skips_prior_range():
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
+        _started("root.x.1", "AGENT_A", "as1"),
         _evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
         _evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
         _evt("compaction", "AGENT_A", "c1", "2026-01-01T00:00:10"),
@@ -432,16 +482,14 @@ def test_compute_stats_second_compaction_skips_prior_range():
         _evt("iteration", "AGENT_A", "kept2", "2026-01-01T00:00:25"),
     ])
 
-    with patch("sdk.context._strategy.get_current_agent_name",
-               return_value="AGENT_A"):
-        stats = strategy._compute_stats(
-            history=history,
-            kept_from_id="kept2",
-            context_before=10000,
-            context_limit=30000,
-            input_char_count=4000,
-            summary_text="s",
-        )
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept2",
+        context_before=10000,
+        context_limit=30000,
+        input_char_count=4000,
+        summary_text="s",
+    )
 
     # Only i2 is in the range — u1 and i1 were summarized by c1.
     assert stats.scope.user_messages == 0

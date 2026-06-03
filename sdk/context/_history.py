@@ -28,7 +28,7 @@ from typing import Any
 
 from sdk.events._models import AgentEvent
 
-from ._view import build_llm_history
+from ._view import build_llm_history, events_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,20 @@ class ConversationHistory:
     def recorded_events(self) -> list[dict[str, Any]]:
         """Snapshot of the in-memory event log used for the derived view."""
         return list(self._events)
+
+    @property
+    def scoped_events(self) -> list[dict[str, Any]]:
+        """The events that make up *this* history's thread.
+
+        Same membership the derived message view uses (root view for the
+        root history, exact agent_id for a sub-agent). Used by compaction
+        to resolve kept bounds so it counts the right iterations.
+        """
+        if self._conversation_id is None:
+            return []
+        return events_for_agent(
+            self._events, self._conversation_id, self._agent_id,
+        )
 
     # -- mutation ----------------------------------------------------------
 
