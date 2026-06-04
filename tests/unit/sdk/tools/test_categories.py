@@ -1,15 +1,23 @@
-"""Unit tests for build_categories.
+"""Unit tests for the tool-category registry.
 
-build_categories returns the categories available under a set of feature flags,
-keyed by id, each carrying its own tools. These cover which categories the flags
-expose, that each carries real callables and catalog metadata, and that the
-local-grounding tools appear only when visual grounding is on.
+``build_categories`` returns the static tool categories under a set of feature
+flags, each carrying its tools; the integration categories name a capability and
+resolve their tools per turn against the live integrations. These cover which
+categories the flags expose, grounding tools following visual grounding, and
+integration categories resolving (or staying empty) by connection state.
 """
 
 import pytest
 
 from config import FeaturesConfig
-from sdk.tools._categories import build_categories, get_categories
+from integrations.permissions import Access, Capability
+from sdk.tools._categories import (
+    INTEGRATION_CATEGORIES,
+    build_categories,
+    get_categories,
+    integration_category_tools,
+)
+from tools.integrations.types import RegisteredIntegration
 
 _ALL_IDS = {
     "coding",
@@ -35,6 +43,11 @@ def _features(**overrides) -> FeaturesConfig:
     }
     base.update(overrides)
     return FeaturesConfig(**base)
+
+
+def _integrations(*, cap: Capability, access: Access, state: str = "running") -> list[RegisteredIntegration]:
+    """One running integration granting ``access`` for ``cap``."""
+    return [RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access}, state=state)]
 
 
 @pytest.mark.unit
@@ -100,3 +113,28 @@ def test_custom_tools_category_present_only_when_feature_on() -> None:
 def test_get_categories_is_built_once_and_held() -> None:
     # Memoized for the process: the same object is returned each call.
     assert get_categories() is get_categories()
+
+
+@pytest.mark.unit
+def test_integration_categories_listed_regardless_of_connection() -> None:
+    assert set(INTEGRATION_CATEGORIES) == {"email", "calendar", "drive", "contacts", "http"}
+
+
+@pytest.mark.unit
+def test_integration_category_resolves_read_tier_via_helper() -> None:
+    names = {
+        t.__name__ for t in integration_category_tools("email", _integrations(cap=Capability.EMAIL, access=Access.READ))
+    }
+    assert "search_email" in names
+    # Read tier only — write tools stay out at READ.
+    assert "send_email" not in names
+
+
+@pytest.mark.unit
+def test_integration_category_empty_when_disconnected() -> None:
+    assert integration_category_tools("email", []) == []
+
+
+@pytest.mark.unit
+def test_integration_category_unknown_id_yields_no_tools() -> None:
+    assert integration_category_tools("does-not-exist", _integrations(cap=Capability.EMAIL, access=Access.READ)) == []
