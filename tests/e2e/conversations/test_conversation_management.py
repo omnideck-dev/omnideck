@@ -7,6 +7,7 @@ pins are asserted to survive a reload, proving they persist server-side.
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Page, expect
 
@@ -29,9 +30,14 @@ def _seed_conversation(
     anchor plus a user_message per user message — so the conversation is
     recognized and reports the right first message / started_at.
     """
+    # started_at = first event timestamp, which the sidebar sorts on. Use a
+    # current time so the seeded conversation lands at the top of the list
+    # (the tests operate on item(0)); a fixed past date would sink it below
+    # other conversations the shared e2e container has accumulated.
+    base = datetime.now(UTC)
     events: list[dict] = [{
         "id": f"evt_{conv_id}_started", "type": "agent_started",
-        "timestamp": "2026-01-01T00:00:00", "conversation_id": conv_id,
+        "timestamp": base.isoformat(), "conversation_id": conv_id,
         "agent_id": "root.test.1", "agent_name": "TEST",
         "parent_agent_id": None, "depth": 0,
     }]
@@ -42,7 +48,7 @@ def _seed_conversation(
         n += 1
         events.append({
             "id": f"evt_{conv_id}_{n}", "type": "user_message",
-            "timestamp": f"2026-01-01T00:00:{n:02d}",
+            "timestamp": (base + timedelta(seconds=n)).isoformat(),
             "conversation_id": conv_id, "agent_id": "root.test.1",
             "agent_name": "TEST", "depth": 0,
             "content": m.get("content", ""), "attachments": [],

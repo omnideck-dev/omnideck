@@ -5,14 +5,18 @@ import TerminalIcon from '../components/icons/TerminalIcon.jsx';
 import DesktopIcon from '../components/icons/DesktopIcon.jsx';
 import SparkleIcon from '../components/icons/SparkleIcon.jsx';
 
-export default function usePreviewState(agentState, agentDispatch) {
+// The preview column follows the selected agent only when the caller is
+// actually showing that agent's detail view; otherwise it tracks the root
+// conversation. Without this gate a leftover selection would bleed a
+// sub-agent's previews into the root chat.
+export default function usePreviewState(agentState, agentDispatch, followSelectedAgent = false) {
     const [activeTab, setActiveTab] = useState(null);
     const [splitPosition, setSplitPosition] = useState(40);
     const [fullscreenItem, setFullscreenItem] = useState(null);
 
     const rootAgent = agentState.rootId ? agentState.agents[agentState.rootId] : null;
     const selectedAgentId = agentState.selectedAgentId;
-    const previewAgent = (selectedAgentId && agentState.agents[selectedAgentId]) || rootAgent;
+    const previewAgent = (followSelectedAgent && selectedAgentId && agentState.agents[selectedAgentId]) || rootAgent;
 
     const browserTabs = previewAgent?.browserTabs || {};
     // Stable rail order: numeric ids ascending.

@@ -10,9 +10,11 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQ
 // We only care about which panels / views are mounted, not their internals.
 
 vi.mock('../components/ChatPanel.jsx', () => ({
-    default: ({ networkActivated, networkAgentCount, onOpenNetwork }) => (
+    default: ({ turns, isStreaming, networkActivated, networkAgentCount, onOpenNetwork }) => (
         <div data-testid="chat-panel">
             Chat
+            <span data-testid="chat-messages">{turns?.length || 0} messages</span>
+            <span data-testid="chat-streaming">{isStreaming ? 'streaming' : 'idle'}</span>
             {networkActivated && (
                 <button data-testid="network-indicator" onClick={onOpenNetwork}>
                     {networkAgentCount} agents
@@ -60,7 +62,16 @@ vi.mock('../components/AgentActivityView.jsx', () => ({
 }));
 
 vi.mock('../components/Sidebar.jsx', () => ({
-    default: () => <div data-testid="sidebar">Sidebar</div>,
+    default: ({ onPanelToggle, onNewConversation, onLoadConversation }) => (
+        <div data-testid="sidebar">
+            Sidebar
+            <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
+            <button data-testid="open-goals" onClick={() => onPanelToggle('goals')}>Goals</button>
+            <button data-testid="close-panel" onClick={() => onPanelToggle(null)}>Close panel</button>
+            <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
+            <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
+        </div>
+    ),
 }));
 
 vi.mock('../components/PreviewPanel.jsx', () => ({
@@ -85,6 +96,25 @@ vi.mock('../components/BrowserFullscreen.jsx', () => ({
 
 vi.mock('../components/SettingsPage.jsx', () => ({
     default: () => <div data-testid="settings-page">Settings</div>,
+}));
+
+vi.mock('../components/goals/GoalsView.jsx', () => ({
+    default: () => <div data-testid="goals-view">Goals</div>,
+}));
+
+vi.mock('../hooks/useGoals.js', () => ({
+    default: () => ({
+        goals: [],
+        runnerStatus: null,
+        selectedGoalId: null,
+        setSelectedGoalId: vi.fn(),
+        deleteGoal: vi.fn(),
+        deleteRun: vi.fn(),
+        pauseGoal: vi.fn(),
+        resumeGoal: vi.fn(),
+        triggerGoal: vi.fn(),
+        fetchGoalDetail: vi.fn(),
+    }),
 }));
 
 vi.mock('../components/SystemSettings.jsx', () => ({
@@ -112,15 +142,26 @@ vi.mock('../hooks/useAgentProfiles.js', () => ({
     }),
 }));
 
-vi.mock('../hooks/useStreamingChat.js', () => ({
-    default: () => ({
+// Mutable holder so individual tests can simulate an in-progress stream.
+// Reset to defaults in beforeEach.
+const streamMock = vi.hoisted(() => {
+    const makeDefault = () => ({
         messages: [],
+        turns: [],
         isStreaming: false,
-        sendMessage: vi.fn(),
-        stopGeneration: vi.fn(),
-        loadConversation: vi.fn(),
-        newConversation: vi.fn(),
-    }),
+        sendMessage: () => {},
+        sendNudge: () => {},
+        stopGeneration: () => {},
+        loadConversation: () => {},
+        newConversation: () => {},
+        activeConversationId: null,
+        savePreviewState: () => {},
+    });
+    return { makeDefault, value: makeDefault() };
+});
+
+vi.mock('../hooks/useStreamingChat.js', () => ({
+    default: () => streamMock.value,
 }));
 
 vi.mock('../hooks/useModelSettings.js', () => ({
@@ -232,6 +273,7 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
 describe('DesktopApp view transitions', () => {
     beforeEach(() => {
         capturedDispatch = null;
+        streamMock.value = streamMock.makeDefault();
         // Mock the fetches DesktopApp's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -491,6 +533,185 @@ describe('DesktopApp view transitions', () => {
             dispatch({ type: 'SELECT_AGENT', agentId: null });
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
+        });
+    });
+
+    // ── Escaping full-view panels (settings / goals) ────────────────
+    // Regression: starting or loading a conversation from a full-view
+    // panel left the user stuck because the chat column stayed hidden
+    // behind settings/goals.
+
+    describe('escaping settings / goals via conversation actions', () => {
+        it('new chat closes the settings page and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('new chat closes the goals view and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('loading a conversation closes the settings page and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('loading a conversation closes the goals view and returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('toggling the active panel off returns to chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            act(() => fireEvent.click(screen.getByTestId('close-panel')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('switching from settings to goals shows only goals, never both', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+        });
+
+        it('opening settings from the network view hides the network', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            startSubAgent(dispatch, 's1', 'r1');
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            expect(screen.getByTestId('agent-network')).toBeInTheDocument();
+
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+            expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
+        });
+
+        it('keeps a running conversation alive when switching to goals', async () => {
+            const stopGeneration = vi.fn();
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                isStreaming: true,
+                // Events-first chat renders from `turns` (not `messages`),
+                // which is what DesktopApp passes to ChatPanel.
+                turns: [{ id: 't1' }, { id: 't2' }],
+                stopGeneration,
+            };
+            await renderApp();
+
+            // Chat is showing the in-progress conversation.
+            expect(screen.getByTestId('chat-messages')).toHaveTextContent('2 messages');
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
+
+            // Switch to goals mid-stream.
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            // The stream was never told to stop, and the chat stays mounted
+            // (hidden, not destroyed) so it keeps running in the background.
+            expect(stopGeneration).not.toHaveBeenCalled();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
+
+            // Back to chat — same conversation, still streaming.
+            act(() => fireEvent.click(screen.getByTestId('close-panel')));
+            expect(screen.getByTestId('chat-messages')).toHaveTextContent('2 messages');
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
+        });
+
+        it('new chat from the network view returns to chat', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            startSubAgent(dispatch, 's1', 'r1');
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            expect(screen.getByTestId('agent-network')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+    });
+
+    // ── Preview follows the active view, not a stale selection ──────
+
+    describe('preview content follows the active view', () => {
+        it('shows the selected agent preview in its detail view, root preview in chat', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: { url: 'https://root.com', title: 'Root', screenshot: TINY_PNG, tabId: 1 },
+            });
+            startSubAgent(dispatch, 's1', 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 's1',
+                snapshot: { url: 'https://sub.com', title: 'Sub', screenshot: TINY_PNG, tabId: 1 },
+            });
+
+            // Chat view tracks the root conversation.
+            expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
+
+            // Drill into the sub-agent — preview follows it.
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+        });
+
+        it('does not bleed a stale selection into the chat preview', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: { url: 'https://root.com', title: 'Root', screenshot: TINY_PNG, tabId: 1 },
+            });
+            startSubAgent(dispatch, 's1', 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 's1',
+                snapshot: { url: 'https://sub.com', title: 'Sub', screenshot: TINY_PNG, tabId: 1 },
+            });
+
+            // Drill into the sub-agent, then bounce out to settings and back.
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            act(() => fireEvent.click(screen.getByTestId('close-panel')));
+
+            // Back in chat the selection lingers, but the preview tracks the root.
+            expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
+            expect(screen.queryByText('Browser: https://sub.com')).not.toBeInTheDocument();
         });
     });
 
