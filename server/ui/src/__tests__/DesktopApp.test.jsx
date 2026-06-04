@@ -613,6 +613,62 @@ describe('DesktopApp view transitions', () => {
         });
     });
 
+    // ── Preview follows the active view, not a stale selection ──────
+
+    describe('preview content follows the active view', () => {
+        it('shows the selected agent preview in its detail view, root preview in chat', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: { url: 'https://root.com', title: 'Root', screenshot: TINY_PNG, tabId: 1 },
+            });
+            startSubAgent(dispatch, 's1', 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 's1',
+                snapshot: { url: 'https://sub.com', title: 'Sub', screenshot: TINY_PNG, tabId: 1 },
+            });
+
+            // Chat view tracks the root conversation.
+            expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
+
+            // Drill into the sub-agent — preview follows it.
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+        });
+
+        it('does not bleed a stale selection into the chat preview', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: { url: 'https://root.com', title: 'Root', screenshot: TINY_PNG, tabId: 1 },
+            });
+            startSubAgent(dispatch, 's1', 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 's1',
+                snapshot: { url: 'https://sub.com', title: 'Sub', screenshot: TINY_PNG, tabId: 1 },
+            });
+
+            // Drill into the sub-agent, then bounce out to settings and back.
+            act(() => fireEvent.click(screen.getByTestId('network-indicator')));
+            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            act(() => fireEvent.click(screen.getByTestId('close-panel')));
+
+            // Back in chat the selection lingers, but the preview tracks the root.
+            expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
+            expect(screen.queryByText('Browser: https://sub.com')).not.toBeInTheDocument();
+        });
+    });
+
     // ── Full lifecycle ──────────────────────────────────────────────
 
     describe('full lifecycle transitions', () => {

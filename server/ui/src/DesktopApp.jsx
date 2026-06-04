@@ -69,7 +69,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const goalsState = useGoals(view === 'goals');
     const { addToast } = useToast();
 
-    const preview = usePreviewState(agentState, agentDispatch);
+    // Preview follows the selected agent only while its detail view is up
+    // (network view); in chat/settings/goals it tracks the root conversation.
+    const preview = usePreviewState(agentState, agentDispatch, view === 'network');
 
     // Holds the active-tab id the resume callback wants to apply once
     // usePreviewState has the new root in scope. Synced in an effect below.
@@ -304,9 +306,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
         setView('chat');
-        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
         return loadConversation(conversationId);
-    }, [loadConversation, agentDispatch]);
+    }, [loadConversation]);
 
     // Refresh the recent-conversations list when a turn finishes — a new
     // conversation only lands in the sessions list once its first turn is
@@ -354,14 +355,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         return { networkAgentCount: total, networkRunningCount: running };
     }, [agentState.agents]);
 
+    // Opening the network lands on the graph, so drop any stale selection
+    // (it would otherwise reopen straight into an old agent's detail view).
     const handleOpenNetwork = useCallback(() => {
         setView('network');
-    }, []);
+        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
+    }, [agentDispatch]);
 
     const handleCloseNetwork = useCallback(() => {
         setView('chat');
-        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
-    }, [agentDispatch]);
+    }, []);
 
     // Drill straight into a sub-agent's activity view — e.g. from a
     // SpawnCard row in the chat.
@@ -371,11 +374,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }, [agentDispatch]);
 
     // Sidebar nav (settings/goals). A null panel means toggle back to chat.
-    // Clear any agent selection so it can't bleed into the next view.
     const handlePanelToggle = useCallback((panel) => {
         setView(panel || 'chat');
-        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
-    }, [agentDispatch]);
+    }, []);
 
     // Preview column rides alongside chat, or alongside an agent's detail view.
     const hasPreview = preview.tabs.length > 0
