@@ -37,14 +37,17 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
     // ── UI-only state (not duplicated in the reducer) ───────────────
     const [attachment, setAttachment] = useState(null);
-    const [flyoutPanel, setFlyoutPanel] = useState(null);
+    // The single top-level view. Mutually exclusive by construction, so a new
+    // chat or panel switch can't leave a stale view stacked underneath. Agent
+    // detail is a sub-state of 'network', keyed off selectedAgentId in the
+    // agent reducer — not a separate value here.
+    const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'goals' | 'network'
     const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
     const [conversationsRefresh, setConversationsRefresh] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
-    const [networkViewOpen, setNetworkViewOpen] = useState(false);
     const { profilesHook, features } = useAppData();
     const [selectedProfileId, setSelectedProfileId] = useState(() => {
         return localStorage.getItem('computron_profile_id') || 'omnideck';
@@ -63,8 +66,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         }).catch(() => setSetupComplete(false));
     }, []);
 
-    const goalsState = useGoals(flyoutPanel === 'goals');
-    const goalsActive = flyoutPanel === 'goals';
+    const goalsState = useGoals(view === 'goals');
     const { addToast } = useToast();
 
     const preview = usePreviewState(agentState, agentDispatch);
@@ -292,18 +294,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const newConversation = useCallback(async () => {
         await chatNewConversation();
         preview.reset();
-        setNetworkViewOpen(false);
-        // Leave whatever full-view panel (settings/goals) was open, otherwise
-        // the chat stays hidden behind it and the user is stuck.
-        setFlyoutPanel(null);
+        // Surface the chat — otherwise a panel/network view stays stacked on
+        // top and the new conversation is invisible. RESET clears the agent
+        // tree and any selection.
+        setView('chat');
         agentDispatch({ type: 'RESET' });
     }, [chatNewConversation, preview.reset, agentDispatch]);
 
-    // Loading a conversation has to surface the chat too — same reason as
-    // newConversation: settings/goals/network fully replace the chat column.
+    // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
-        setNetworkViewOpen(false);
-        setFlyoutPanel(null);
+        setView('chat');
         agentDispatch({ type: 'SELECT_AGENT', agentId: null });
         return loadConversation(conversationId);
     }, [loadConversation, agentDispatch]);
@@ -316,17 +316,20 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }, [isStreaming]);
 
     // ── Which layout to show ───────────────────────────────────────────
-    // Two top-level views:
+    // `view` picks exactly one of: chat, settings, goals, network. Each is a
+    // full replacement of the main column, so they're mutually exclusive by
+    // construction — no view can stay stacked under another.
     //
-    //   1. Simple chat (default) — chat + preview panels. Always shows the
-    //      root agent's conversation. When sub-agents have been spawned, a
-    //      network indicator appears so the user can navigate to the network.
+    //   chat (default) — chat + preview panels. Always shows the root agent's
+    //     conversation. When sub-agents spawn, a network indicator appears so
+    //     the user can navigate to the network.
+    //   settings / goals — full-screen panels opened from the sidebar.
+    //   network — full-screen agent graph. Click a card to drill into an
+    //     agent's detail view (network + selectedAgentId); close to return
+    //     to chat.
     //
-    //   2. Network view — full-screen agent graph. Click a card to drill
-    //      into an agent's activity view. Close to return to simple chat.
-    //
-    // Flow: simple chat ⇄ network view (via indicator/sidebar)
-    //       network → agent detail (click card) → back to network ("← Agents")
+    // Agent detail is a sub-state of network, not a fifth value: it's network
+    // with a selectedAgentId set in the agent reducer.
 
     // Compute network-visible agent stats for the indicator badge.
     // Counts all agents in trees that have sub-agents (same as the
@@ -352,23 +355,31 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }, [agentState.agents]);
 
     const handleOpenNetwork = useCallback(() => {
-        setNetworkViewOpen(true);
-        setFlyoutPanel(null);
+        setView('network');
     }, []);
 
     const handleCloseNetwork = useCallback(() => {
-        setNetworkViewOpen(false);
+        setView('chat');
         agentDispatch({ type: 'SELECT_AGENT', agentId: null });
     }, [agentDispatch]);
 
     // Drill straight into a sub-agent's activity view — e.g. from a
     // SpawnCard row in the chat.
     const handleSelectAgent = useCallback((agentId) => {
-        handleOpenNetwork();
+        setView('network');
         agentDispatch({ type: 'SELECT_AGENT', agentId });
-    }, [handleOpenNetwork, agentDispatch]);
+    }, [agentDispatch]);
 
-    const hasPreview = preview.tabs.length > 0 && !goalsActive && flyoutPanel !== 'settings' && (!networkViewOpen || !!agentState.selectedAgentId);
+    // Sidebar nav (settings/goals). A null panel means toggle back to chat.
+    // Clear any agent selection so it can't bleed into the next view.
+    const handlePanelToggle = useCallback((panel) => {
+        setView(panel || 'chat');
+        agentDispatch({ type: 'SELECT_AGENT', agentId: null });
+    }, [agentDispatch]);
+
+    // Preview column rides alongside chat, or alongside an agent's detail view.
+    const hasPreview = preview.tabs.length > 0
+        && (view === 'chat' || (view === 'network' && !!agentState.selectedAgentId));
 
     // Show setup wizard if setup is not complete
     if (setupComplete === false) {
@@ -390,7 +401,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={flyoutPanel}
+                    activePanel={view === 'settings' || view === 'goals' ? view : null}
                     dark={dark}
                     onToggleTheme={onToggleTheme}
                     onNewConversation={newConversation}
@@ -403,17 +414,13 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
                     conversationsRefresh={conversationsRefresh}
-                    onPanelToggle={(panel) => {
-                        // Close network view when opening a flyout panel
-                        if (networkViewOpen) handleCloseNetwork();
-                        setFlyoutPanel(panel);
-                    }}
+                    onPanelToggle={handlePanelToggle}
                 />
 
                 {/* Main content area */}
                 <div className={styles.mainContent}>
                     {/* Settings page — full view when settings icon clicked */}
-                    {flyoutPanel === 'settings' && (
+                    {view === 'settings' && (
                         <SettingsPage
                             memoryRefreshSignal={memoryRefreshSignal}
                             toolsRefreshSignal={toolsRefreshSignal}
@@ -425,7 +432,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                      * open. */}
 
                     {/* Goals split-screen view */}
-                    {goalsActive && (
+                    {view === 'goals' && (
                         <GoalsView
                             goals={goalsState.goals}
                             runnerStatus={goalsState.runnerStatus}
@@ -439,23 +446,23 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             fetchDetail={goalsState.fetchGoalDetail}
                         />
                     )}
-                    {!goalsActive && flyoutPanel !== 'settings' && networkViewOpen && !agentState.selectedAgentId && (
+                    {view === 'network' && !agentState.selectedAgentId && (
                         <div className={styles.networkArea}>
                             <AgentNetwork onClose={handleCloseNetwork} agentCount={networkAgentCount} />
                         </div>
                     )}
 
                     {/* Agent activity — left column when drilling into an agent */}
-                    {!goalsActive && flyoutPanel !== 'settings' && networkViewOpen && agentState.selectedAgentId && (
+                    {view === 'network' && agentState.selectedAgentId && (
                         <div className={styles.chatColumn}
                              style={{ width: hasPreview ? `${preview.splitPosition}%` : '100%' }}>
                             <AgentActivityView onNudge={sendNudge} onPreview={preview.openFile} />
                         </div>
                     )}
 
-                    {/* Chat — always mounted, hidden when goals/network/settings active */}
-                    <div className={`${styles.chatColumn} ${networkViewOpen || goalsActive || flyoutPanel === 'settings' ? styles.hidden : ''}`}
-                         style={{ width: hasPreview && !networkViewOpen && !goalsActive && flyoutPanel !== 'settings' ? `${preview.splitPosition}%` : '100%' }}>
+                    {/* Chat — always mounted, hidden when another view is active */}
+                    <div className={`${styles.chatColumn} ${view !== 'chat' ? styles.hidden : ''}`}
+                         style={{ width: hasPreview && view === 'chat' ? `${preview.splitPosition}%` : '100%' }}>
                         <ChatPanel
                             messages={messages}
                             onSend={handleSend}
