@@ -10,9 +10,11 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQ
 // We only care about which panels / views are mounted, not their internals.
 
 vi.mock('../components/ChatPanel.jsx', () => ({
-    default: ({ networkActivated, networkAgentCount, onOpenNetwork }) => (
+    default: ({ messages, isStreaming, networkActivated, networkAgentCount, onOpenNetwork }) => (
         <div data-testid="chat-panel">
             Chat
+            <span data-testid="chat-messages">{messages?.length || 0} messages</span>
+            <span data-testid="chat-streaming">{isStreaming ? 'streaming' : 'idle'}</span>
             {networkActivated && (
                 <button data-testid="network-indicator" onClick={onOpenNetwork}>
                     {networkAgentCount} agents
@@ -140,15 +142,25 @@ vi.mock('../hooks/useAgentProfiles.js', () => ({
     }),
 }));
 
-vi.mock('../hooks/useStreamingChat.js', () => ({
-    default: () => ({
+// Mutable holder so individual tests can simulate an in-progress stream.
+// Reset to defaults in beforeEach.
+const streamMock = vi.hoisted(() => {
+    const makeDefault = () => ({
         messages: [],
         isStreaming: false,
-        sendMessage: vi.fn(),
-        stopGeneration: vi.fn(),
-        loadConversation: vi.fn(),
-        newConversation: vi.fn(),
-    }),
+        sendMessage: () => {},
+        sendNudge: () => {},
+        stopGeneration: () => {},
+        loadConversation: () => {},
+        newConversation: () => {},
+        activeConversationId: null,
+        savePreviewState: () => {},
+    });
+    return { makeDefault, value: makeDefault() };
+});
+
+vi.mock('../hooks/useStreamingChat.js', () => ({
+    default: () => streamMock.value,
 }));
 
 vi.mock('../hooks/useModelSettings.js', () => ({
@@ -260,6 +272,7 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
 describe('DesktopApp view transitions', () => {
     beforeEach(() => {
         capturedDispatch = null;
+        streamMock.value = streamMock.makeDefault();
         // Mock the fetches DesktopApp's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -598,6 +611,36 @@ describe('DesktopApp view transitions', () => {
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
+        });
+
+        it('keeps a running conversation alive when switching to goals', async () => {
+            const stopGeneration = vi.fn();
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                isStreaming: true,
+                messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: '...' }],
+                stopGeneration,
+            };
+            await renderApp();
+
+            // Chat is showing the in-progress conversation.
+            expect(screen.getByTestId('chat-messages')).toHaveTextContent('2 messages');
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
+
+            // Switch to goals mid-stream.
+            act(() => fireEvent.click(screen.getByTestId('open-goals')));
+            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+
+            // The stream was never told to stop, and the chat stays mounted
+            // (hidden, not destroyed) so it keeps running in the background.
+            expect(stopGeneration).not.toHaveBeenCalled();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
+
+            // Back to chat — same conversation, still streaming.
+            act(() => fireEvent.click(screen.getByTestId('close-panel')));
+            expect(screen.getByTestId('chat-messages')).toHaveTextContent('2 messages');
+            expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
         });
 
         it('new chat from the network view returns to chat', async () => {
