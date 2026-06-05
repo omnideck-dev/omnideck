@@ -1,16 +1,17 @@
-"""Tests for skill resolution and agent-tool composition.
+"""Tests for skill resolution and agent-state composition.
 
 resolve_skill maps a stored record's tool category ids to live tools via
-``tool_categories`` and bundles them into a runtime Skill. compose_agent_tools
-assembles a profile's base tools (spawn/load gated by its autonomy toggles) plus
-its skills' tools, deduplicated. These mock ``tool_categories`` directly — what
-each category resolves to is the category registry's concern, tested separately.
+``tool_categories`` and bundles them into a runtime Skill. build_agent_state
+assembles a profile's AgentState: base tools (spawn/load gated by its autonomy
+toggles) plus its skills added as units, so prompts and tools both apply. These
+mock ``tool_categories`` directly — what each category resolves to is the
+category registry's concern, tested separately.
 """
 
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.skills._resolve import compose_agent_tools, resolve_skill, resolve_skill_by_name
+from sdk.skills._resolve import build_agent_state, resolve_skill, resolve_skill_by_name
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.tools._categories import ToolCategory
 
@@ -98,43 +99,52 @@ async def test_resolve_by_name():
 
 
 @pytest.mark.unit
-async def test_compose_includes_base_tools():
-    names = _names(await compose_agent_tools(_profile(skills=[])))
-    assert {"save_to_scratchpad", "datetime_tool"} <= names
+async def test_build_includes_base_tools():
+    state = await build_agent_state(_profile(skills=[]))
+    assert {"save_to_scratchpad", "datetime_tool"} <= _names(state.tools)
 
 
 @pytest.mark.unit
-async def test_compose_honors_allow_spawn():
-    on = _names(await compose_agent_tools(_profile(allow_spawn=True)))
-    off = _names(await compose_agent_tools(_profile(allow_spawn=False)))
+async def test_build_honors_allow_spawn():
+    on = _names((await build_agent_state(_profile(allow_spawn=True))).tools)
+    off = _names((await build_agent_state(_profile(allow_spawn=False))).tools)
     assert "spawn_agent" in on
     assert "spawn_agent" not in off
 
 
 @pytest.mark.unit
-async def test_compose_honors_allow_load_skills():
-    on = _names(await compose_agent_tools(_profile(allow_load_skills=True)))
-    off = _names(await compose_agent_tools(_profile(allow_load_skills=False)))
+async def test_build_honors_allow_load_skills():
+    on = _names((await build_agent_state(_profile(allow_load_skills=True))).tools)
+    off = _names((await build_agent_state(_profile(allow_load_skills=False))).tools)
     assert "load_skill" in on
     assert "load_skill" not in off
 
 
 @pytest.mark.unit
-async def test_compose_resolves_profile_skills():
+async def test_build_adds_profile_skill_tools():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    names = _names(await compose_agent_tools(_profile(skills=["coder"])))
-    assert "read_file" in names
+    state = await build_agent_state(_profile(skills=["coder"]))
+    assert "read_file" in _names(state.tools)
 
 
 @pytest.mark.unit
-async def test_compose_skips_unknown_skill():
-    names = _names(await compose_agent_tools(_profile(skills=["ghost"])))
-    assert "datetime_tool" in names  # base intact, no crash
+async def test_build_adds_profile_skill_prompts():
+    save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code.", tool_categories=["coding"]))
+    state = await build_agent_state(_profile(skills=["coder"]))
+    section = state.build_skill_prompt()
+    assert "Coder" in section
+    assert "Write code." in section
 
 
 @pytest.mark.unit
-async def test_compose_dedups_by_name():
+async def test_build_skips_unknown_skill():
+    state = await build_agent_state(_profile(skills=["ghost"]))
+    assert "datetime_tool" in _names(state.tools)  # base intact, no crash
+
+
+@pytest.mark.unit
+async def test_build_dedups_tools_by_name():
     save_skill_record(SkillRecord(id="m1", name="M1", tool_categories=["memory"]))
     save_skill_record(SkillRecord(id="m2", name="M2", tool_categories=["memory"]))
-    tools = await compose_agent_tools(_profile(skills=["m1", "m2"]))
-    assert [t.__name__ for t in tools].count("remember") == 1
+    state = await build_agent_state(_profile(skills=["m1", "m2"]))
+    assert [t.__name__ for t in state.tools].count("remember") == 1

@@ -1,22 +1,23 @@
-"""Resolve stored skill records into runtime skills and compose agent tools.
+"""Resolve stored skill records into runtime skills and build agent state.
 
 A SkillRecord names the tool categories a skill grants; resolution turns those
 ids into live tool callables (via ``tool_categories``) and bundles them into a
 runtime Skill (prompt + tools).
 
-``compose_agent_tools`` assembles a profile's full tool set: the always-on base,
-the toggle-gated spawn/load tools, and every tool category its skills grant —
-deduplicated by name.
+``build_agent_state`` assembles a profile's AgentState: the toggle-gated base
+tools, plus each of the profile's skills added as a unit — so a skill's prompt
+*and* its tools both apply.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from sdk.skills._registry import Skill
 from sdk.skills._store import get_skill_record, list_skill_records
+from sdk.skills.agent_state import AgentState
 from sdk.tools._categories import tool_categories
 
 if TYPE_CHECKING:
@@ -87,41 +88,26 @@ def _base_tools(*, allow_spawn: bool, allow_load_skills: bool) -> list[Callable[
     return tools
 
 
-def _dedup_by_name(tools: Iterable[Callable[..., Any]]) -> list[Callable[..., Any]]:
-    """Drop duplicate tools, keeping the first of each ``__name__``.
+async def build_agent_state(profile: AgentProfile) -> AgentState:
+    """The AgentState for an agent built from ``profile``.
 
-    Integration builders mint fresh wrappers per call, so two skills granting the
-    same integration tool category would otherwise yield duplicate tools.
+    The toggle-gated base tools (spawn/load per the profile's autonomy toggles),
+    plus each of the profile's skills resolved and added as a unit — so its
+    prompt and tools both apply, and ``AgentState`` dedups tools by name. A
+    profile skill that no longer resolves is skipped with a warning.
     """
-    seen: set[Any] = set()
-    out: list[Callable[..., Any]] = []
-    for t in tools:
-        key = getattr(t, "__name__", None) or id(t)
-        if key not in seen:
-            seen.add(key)
-            out.append(t)
-    return out
-
-
-async def compose_agent_tools(profile: AgentProfile) -> list[Callable[..., Any]]:
-    """The full tool set for an agent built from ``profile``.
-
-    Base tools (spawn/load gated by the profile's autonomy toggles) plus every
-    tool category the profile's skills grant, deduplicated by name. A profile
-    skill that no longer resolves is skipped with a warning.
-    """
-    tools = _base_tools(allow_spawn=profile.allow_spawn, allow_load_skills=profile.allow_load_skills)
+    state = AgentState(_base_tools(allow_spawn=profile.allow_spawn, allow_load_skills=profile.allow_load_skills))
     for skill_id in profile.skills:
         skill = await resolve_skill(skill_id)
         if skill is None:
             logger.warning("profile %r references unknown skill %r; skipping", profile.id, skill_id)
             continue
-        tools.extend(skill.tools)
-    return _dedup_by_name(tools)
+        state.add(skill)
+    return state
 
 
 __all__ = [
-    "compose_agent_tools",
+    "build_agent_state",
     "resolve_skill",
     "resolve_skill_by_name",
 ]
