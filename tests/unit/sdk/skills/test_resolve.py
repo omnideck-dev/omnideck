@@ -19,8 +19,8 @@ from sdk.skills._resolve import (
     resolve_skill_by_name,
 )
 from sdk.skills._store import SkillRecord, save_skill_record
+from sdk.skills._tool_categories import ToolCategory
 from sdk.skills.agent_state import AgentState
-from sdk.tools._categories import ToolCategory
 
 
 def _tool(name):
@@ -47,7 +47,7 @@ def _isolate(tmp_path, monkeypatch):
     async def _cats():
         return _categories()
 
-    monkeypatch.setattr("sdk.tools._categories.tool_categories", _cats)
+    monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
 
 
 def _names(tools):

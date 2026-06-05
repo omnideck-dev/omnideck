@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from conversations import load_loaded_skills, save_loaded_skills
 from sdk.skills._registry import Skill
 from sdk.skills._store import get_skill_record, list_skill_records
+from sdk.skills._tool_categories import tool_categories
 from sdk.skills.agent_state import AgentState
 
 if TYPE_CHECKING:
@@ -48,10 +49,6 @@ async def _resolve(record: SkillRecord | None) -> Skill | None:
     """Build a runtime Skill from a record, mapping its tool categories to tools."""
     if record is None:
         return None
-    # Imported at call time: the category registry pulls in the tool packages,
-    # which depend on sdk.events, which imports this package — a load-time cycle.
-    from sdk.tools._categories import tool_categories
-
     categories = await tool_categories()
     tools: list[Callable[..., Any]] = []
     for cid in record.tool_categories:

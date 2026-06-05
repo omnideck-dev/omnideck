@@ -1,8 +1,8 @@
-"""Resolve an integration capability to the tool callables it currently backs.
+"""Resolve integration capabilities to the tool callables they currently back.
 
-One place owns the mapping from a capability to its tools, and the access
-thresholds that gate them, so that wiring isn't duplicated wherever integration
-tools are assembled.
+One place owns the mapping from a capability to its tools, the access thresholds
+that gate them, and whether a running integration provides it — so that wiring
+isn't duplicated wherever integration tools are assembled.
 
 Read tools are offered at ``Access.READ``; write tools only at
 ``Access.READ_WRITE``. A capability that no running integration provides at the
@@ -12,9 +12,11 @@ required access resolves to an empty list.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from integrations.permissions import Access, Capability
+from tools.integrations._state import registered_integrations
 from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
 from tools.integrations.create_event import build_create_event_tool
@@ -90,46 +92,97 @@ _BUILDERS: dict[Capability, dict[Access, list[ToolBuilder]]] = {
 }
 
 
-def _ids_with_access(
+@dataclass(frozen=True)
+class CapabilityTools:
+    """A capability's current tools, and whether a connected integration makes it available."""
+
+    tools: list[Callable[..., Any]]
+    available: bool
+
+
+def _ids_granting(
+    capability: Capability,
     integrations: Iterable[RegisteredIntegration],
-    cap: Capability,
     min_access: Access,
 ) -> frozenset[str]:
-    """Integration IDs that grant at least ``min_access`` for ``cap``.
+    """The ids of integrations that grant ``capability`` at ``min_access`` or above.
 
-    Two ways to be excluded: the integration isn't running (a dead or auth-failed
-    broker is skipped so the agent never calls into one that can't answer), or it
-    doesn't grant enough access — an integration that doesn't list ``cap`` at all
-    counts as ``Access.OFF``.
+    This id set is what a tool gets *scoped to* — a tool is built bound to the exact
+    integrations it's allowed to act on (see ``ToolBuilder`` above), so it has to know
+    which ids qualify. An integration is left out if it isn't running (a dead or
+    auth-failed broker, so the agent never calls one that can't answer) or grants too
+    little access — one that doesn't list ``capability`` counts as ``Access.OFF``.
+    ``Access`` is ordered, so ``>=`` reads as "this tier or higher".
     """
     return frozenset(
         integration.id
         for integration in integrations
         if integration.state == "running"
-        and integration.permissions.get(cap, Access.OFF) >= min_access
+        and integration.permissions.get(capability, Access.OFF) >= min_access
     )
 
 
-def integration_tools_for(
+def _capability_available(
+    capability: Capability,
+    integrations: Iterable[RegisteredIntegration],
+) -> bool:
+    """Whether a connected integration makes ``capability`` available (at least read access).
+
+    A capability isn't itself connected — an integration is, and a connected one
+    makes its capabilities available. This is the catalog's signal that the category
+    is usable: read straight from the integrations, not inferred from how many tools
+    resolved.
+    """
+    return bool(_ids_granting(capability, integrations, Access.READ))
+
+
+def _tools_for_capability(
     capability: Capability,
     integrations: Iterable[RegisteredIntegration],
 ) -> list[Callable[..., Any]]:
-    """Tool callables for ``capability`` given the current ``integrations``.
+    """The tools for ``capability``, each scoped to the integrations that may run it.
 
-    Each access tier's builders are bound to the integration ids that meet that
-    tier — READ tools cover every integration with at least read access, and
-    READ_WRITE tools only the ones that also grant writes. A capability no
-    running integration provides at the required access yields an empty list.
+    Walk the capability's access tiers; for each, build that tier's tools bound to the
+    ids that clear the tier. So read tools cover every integration with at least read
+    access, write tools only those that also grant writes — and one integration can
+    appear in both a read tool and a write tool.
+
+    Example — EMAIL with two Gmail accounts, A (read+write) and B (read-only)::
+
+        READ tier        ids {A, B}   ->  search_email / list_messages over both
+        READ_WRITE tier  ids {A}      ->  send_email / move_email over A only
+
+    A capability no running integration provides at any tier yields no tools.
     """
     tiers = _BUILDERS.get(capability)
     if tiers is None:
         return []
-    # _ids_with_access consumes the integrations once per tier, so materialize.
+    # _ids_granting re-scans the integrations once per tier, so materialize the list.
     integrations = list(integrations)
     tools: list[Callable[..., Any]] = []
-    # Build each tier's tools against the ids that clear that tier's access bar.
     for access, builders in tiers.items():
-        ids = _ids_with_access(integrations, capability, access)
+        ids = _ids_granting(capability, integrations, access)
         if ids:
             tools.extend(build(ids) for build in builders)
     return tools
+
+
+async def integration_tools_by_capability() -> dict[Capability, CapabilityTools]:
+    """Snapshot the registry and resolve every backed capability to its tools.
+
+    One registry read covers all capabilities, so a caller assembling the full
+    catalog never has to touch the integration registry itself.
+    """
+    integrations = list((await registered_integrations()).values())
+    by_capability: dict[Capability, CapabilityTools] = {}
+    for capability in _BUILDERS:
+        tools = _tools_for_capability(capability, integrations)
+        available = _capability_available(capability, integrations)
+        by_capability[capability] = CapabilityTools(tools=tools, available=available)
+    return by_capability
+
+
+__all__ = [
+    "CapabilityTools",
+    "integration_tools_by_capability",
+]

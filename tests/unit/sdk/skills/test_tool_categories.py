@@ -13,7 +13,7 @@ import pytest
 
 from config import FeaturesConfig
 from integrations.permissions import Access, Capability
-from sdk.tools._categories import _static_tool_categories, tool_categories
+from sdk.skills._tool_categories import _static_tool_categories, tool_categories
 from tools.integrations.types import RegisteredIntegration
 
 _STATIC_IDS = {
@@ -50,7 +50,7 @@ def _isolate(monkeypatch):
     async def _none():
         return {}
 
-    monkeypatch.setattr("sdk.tools._categories.registered_integrations", _none)
+    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _none)
     yield
     _static_tool_categories.cache_clear()
 
@@ -64,7 +64,7 @@ def _connect(monkeypatch, cap, access=Access.READ):
     async def _get():
         return {"acct-1": RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access})}
 
-    monkeypatch.setattr("sdk.tools._categories.registered_integrations", _get)
+    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _get)
 
 
 def _names(tools):
@@ -123,6 +123,15 @@ async def test_integration_category_resolves_when_connected(monkeypatch):
     names = _names(email.tools)
     assert "search_email" in names
     assert "send_email" not in names  # read tier only
+
+
+@pytest.mark.unit
+async def test_connected_flag_tracks_integration_state(monkeypatch):
+    cats = await tool_categories()
+    assert cats["coding"].connected is None  # static: no connection concept
+    assert cats["email"].connected is False  # integration, nothing connected
+    _connect(monkeypatch, Capability.EMAIL, Access.READ)
+    assert (await tool_categories())["email"].connected is True
 
 
 @pytest.mark.unit

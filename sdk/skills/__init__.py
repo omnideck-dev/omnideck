@@ -11,12 +11,14 @@ from ._resolve import (
     resolve_skill,
     resolve_skill_by_name,
 )
+from ._tool_categories import ToolCategory, tool_categories
 from ._tools import list_available_skills, load_skill
 from .agent_state import AgentState, get_active_agent_state
 
 __all__ = [
     "AgentState",
     "Skill",
+    "ToolCategory",
     "build_agent_state",
     "get_active_agent_state",
     "get_skill",
@@ -27,4 +29,5 @@ __all__ = [
     "register_skill",
     "resolve_skill",
     "resolve_skill_by_name",
+    "tool_categories",
 ]

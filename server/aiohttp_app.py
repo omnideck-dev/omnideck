@@ -35,6 +35,7 @@ from server._integrations_routes import register_integrations_routes
 from server._model_routes import register_model_routes
 from server._profile_routes import register_profile_routes
 from server._skill_routes import register_skill_routes
+from server._tool_category_routes import register_tool_category_routes
 from server._provider_routes import register_provider_routes
 from server._settings_routes import register_settings_routes
 from server._setup_routes import register_setup_routes
@@ -378,6 +379,9 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
 
     # Editable skills
     register_skill_routes(app)
+
+    # Tool-category catalog
+    register_tool_category_routes(app)
 
     # Application settings
     register_settings_routes(app)

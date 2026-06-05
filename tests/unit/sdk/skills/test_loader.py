@@ -8,8 +8,8 @@ import pytest
 
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tools import list_available_skills, load_skill
+from sdk.skills._tool_categories import ToolCategory
 from sdk.skills.agent_state import AgentState, _active_agent_state
-from sdk.tools._categories import ToolCategory
 
 
 def _make_tool(name: str):
@@ -28,7 +28,7 @@ def _isolate(tmp_path, monkeypatch):
     async def _cats():
         return {"coding": ToolCategory("coding", "Coding", "", [_make_tool("new_tool")])}
 
-    monkeypatch.setattr("sdk.tools._categories.tool_categories", _cats)
+    monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
 
 
 @pytest.fixture()

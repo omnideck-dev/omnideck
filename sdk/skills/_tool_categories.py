@@ -3,24 +3,19 @@
 A tool category groups related tools under a stable id; a skill grants tool
 categories, never individual tools. ``tool_categories()`` returns every category
 with the tools it currently grants — feature-gated static categories carry a
-fixed tool set, integration-backed categories resolve their tools against the
-connected integrations. Callers work only with the returned ``ToolCategory``
-objects; the static/integration split and the integration plumbing stay internal.
+fixed tool set, integration-backed categories take their tools and connection
+state from the integrations subsystem. Callers work only with the returned
+``ToolCategory`` objects.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from typing import Any
 
 from integrations.permissions import Capability
-from sdk.tools._integration_tools import integration_tools_for
-from tools.integrations import registered_integrations
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,29 +28,41 @@ class ToolCategory:
         description: One-line summary for the UI.
         tools: The tool callables this category currently grants — empty for an
             integration-backed category with nothing connected.
+        connected: Whether the backing integration is connected — None for a
+            static category, which has no connection concept.
     """
 
     id: str
     label: str
     description: str
     tools: list[Callable[..., Any]]
+    connected: bool | None = None
 
 
 async def tool_categories() -> dict[str, ToolCategory]:
     """Every tool category keyed by id, each with the tools it currently grants.
 
     Static categories come from the active feature flags (built once and held);
-    integration-backed categories resolve against the connected integrations, so
-    a category whose capability nothing provides is listed with no tools.
+    integration-backed categories take their current tools and connection state
+    from the integrations subsystem, so a category whose capability nothing
+    provides is listed with no tools.
     """
+    # Imported here, not at module top: reaching into the tools package runs its
+    # __init__, which pulls tools.browser -> sdk.events -> this package — a
+    # load-time cycle. By call time sdk.events is fully initialized.
+    from tools.integrations import CapabilityTools, integration_tools_by_capability
+
     categories = dict(_static_tool_categories())
-    integrations = list((await registered_integrations()).values())
+    by_capability = await integration_tools_by_capability()
     for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
+        backed = by_capability.get(integration.capability, CapabilityTools([], available=False))
+        # The category is "connected" when a connected integration makes its capability available.
         categories[cid] = ToolCategory(
             cid,
             integration.label,
             integration.description,
-            integration_tools_for(integration.capability, integrations),
+            backed.tools,
+            connected=backed.available,
         )
     return categories
 
@@ -185,7 +192,7 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
     return categories
 
 
-# ── Integration categories: a capability per id, resolved per turn ───────────
+# ── Integration categories: a capability per id, tools resolved per turn ──────
 
 
 @dataclass(frozen=True)
