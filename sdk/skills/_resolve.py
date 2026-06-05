@@ -6,19 +6,22 @@ runtime Skill (prompt + tools).
 
 ``build_agent_state`` assembles a profile's AgentState: the toggle-gated base
 tools, plus each of the profile's skills added as a unit — so a skill's prompt
-*and* its tools both apply.
+*and* its tools both apply. Given a conversation id, it also restores the skills
+that were loaded mid-conversation in earlier turns; ``persist_loaded_skills``
+writes them back. The conversation metadata is this package's to read and write
+— callers hand over a conversation id, not a list of skill ids.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
+from conversations import load_loaded_skills, save_loaded_skills
 from sdk.skills._registry import Skill
 from sdk.skills._store import get_skill_record, list_skill_records
 from sdk.skills.agent_state import AgentState
-from sdk.tools._categories import tool_categories
 
 if TYPE_CHECKING:
     from agents._agent_profiles import AgentProfile
@@ -45,6 +48,10 @@ async def _resolve(record: SkillRecord | None) -> Skill | None:
     """Build a runtime Skill from a record, mapping its tool categories to tools."""
     if record is None:
         return None
+    # Imported at call time: the category registry pulls in the tool packages,
+    # which depend on sdk.events, which imports this package — a load-time cycle.
+    from sdk.tools._categories import tool_categories
+
     categories = await tool_categories()
     tools: list[Callable[..., Any]] = []
     for cid in record.tool_categories:
@@ -88,13 +95,18 @@ def _base_tools(*, allow_spawn: bool, allow_load_skills: bool) -> list[Callable[
     return tools
 
 
-async def build_agent_state(profile: AgentProfile) -> AgentState:
+async def build_agent_state(profile: AgentProfile, *, conversation_id: str | None = None) -> AgentState:
     """The AgentState for an agent built from ``profile``.
 
     The toggle-gated base tools (spawn/load per the profile's autonomy toggles),
     plus each of the profile's skills resolved and added as a unit — so its
     prompt and tools both apply, and ``AgentState`` dedups tools by name. A
     profile skill that no longer resolves is skipped with a warning.
+
+    With a ``conversation_id``, the skills loaded mid-conversation in earlier
+    turns are restored on top (read from conversation metadata) — so a turn's
+    state is the profile's skills plus whatever that conversation has loaded.
+    Omit it for one-off agents (tasks, sub-agents) with no conversation history.
     """
     state = AgentState(_base_tools(allow_spawn=profile.allow_spawn, allow_load_skills=profile.allow_load_skills))
     for skill_id in profile.skills:
@@ -103,11 +115,40 @@ async def build_agent_state(profile: AgentProfile) -> AgentState:
             logger.warning("profile %r references unknown skill %r; skipping", profile.id, skill_id)
             continue
         state.add(skill)
+    if conversation_id is not None:
+        await _restore_skills(state, load_loaded_skills(conversation_id))
     return state
+
+
+async def _restore_skills(agent_state: AgentState, skill_ids: Iterable[str]) -> None:
+    """Resolve previously-loaded skills by id and add them to ``agent_state``.
+
+    Ids already loaded (e.g. granted by the profile) are skipped, and an id that
+    no longer resolves (the skill was deleted) is skipped with a warning — so
+    stale metadata is harmless.
+    """
+    for skill_id in skill_ids:
+        if skill_id in agent_state.loaded_skill_ids:
+            continue
+        skill = await resolve_skill(skill_id)
+        if skill is None:
+            logger.warning("loaded skill %r no longer resolves; skipping", skill_id)
+            continue
+        agent_state.add(skill)
+
+
+def persist_loaded_skills(agent_state: AgentState, conversation_id: str) -> None:
+    """Write the conversation's loaded skills to metadata so they survive turns.
+
+    The mirror of the restore that ``build_agent_state`` does for a conversation:
+    the ids re-resolve into the next turn's state.
+    """
+    save_loaded_skills(conversation_id, agent_state.loaded_skill_ids)
 
 
 __all__ = [
     "build_agent_state",
+    "persist_loaded_skills",
     "resolve_skill",
     "resolve_skill_by_name",
 ]

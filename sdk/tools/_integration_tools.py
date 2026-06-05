@@ -133,21 +133,3 @@ def integration_tools_for(
         if ids:
             tools.extend(build(ids) for build in builders)
     return tools
-
-
-async def all_integration_tools() -> list[Callable[..., Any]]:
-    """Every integration tool the currently registered integrations back.
-
-    The union of :func:`integration_tools_for` across all capabilities. Awaits
-    the integrations cache itself, so a caller that just wants every integration
-    tool doesn't have to know how integrations are fetched.
-    """
-    # Resolved at call time so the cache accessor is looked up fresh, not bound
-    # at import — keeps the patch point at ``tools.integrations`` intact.
-    from tools.integrations import registered_integrations
-
-    integrations = list((await registered_integrations()).values())
-    tools: list[Callable[..., Any]] = []
-    for capability in _BUILDERS:
-        tools.extend(integration_tools_for(capability, integrations))
-    return tools

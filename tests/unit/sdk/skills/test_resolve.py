@@ -11,8 +11,15 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.skills._resolve import build_agent_state, resolve_skill, resolve_skill_by_name
+from sdk.skills._resolve import (
+    _restore_skills,
+    build_agent_state,
+    persist_loaded_skills,
+    resolve_skill,
+    resolve_skill_by_name,
+)
 from sdk.skills._store import SkillRecord, save_skill_record
+from sdk.skills.agent_state import AgentState
 from sdk.tools._categories import ToolCategory
 
 
@@ -40,7 +47,7 @@ def _isolate(tmp_path, monkeypatch):
     async def _cats():
         return _categories()
 
-    monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("sdk.tools._categories.tool_categories", _cats)
 
 
 def _names(tools):
@@ -148,3 +155,71 @@ async def test_build_dedups_tools_by_name():
     save_skill_record(SkillRecord(id="m2", name="M2", tool_categories=["memory"]))
     state = await build_agent_state(_profile(skills=["m1", "m2"]))
     assert [t.__name__ for t in state.tools].count("remember") == 1
+
+
+@pytest.mark.unit
+async def test_build_restores_conversation_loaded_skills(monkeypatch):
+    """With a conversation id, skills loaded in earlier turns are restored on
+    top of the profile's skills — read from conversation metadata."""
+    save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
+    monkeypatch.setattr("sdk.skills._resolve.load_loaded_skills", lambda cid: {"coder"})
+    state = await build_agent_state(_profile(skills=[]), conversation_id="c1")
+    assert "coder" in state.loaded_skill_ids
+    assert "read_file" in _names(state.tools)
+
+
+@pytest.mark.unit
+async def test_build_without_conversation_id_skips_restore(monkeypatch):
+    """No conversation id means no metadata read and no restored skills."""
+    called = False
+
+    def _spy(cid):
+        nonlocal called
+        called = True
+        return {"coder"}
+
+    monkeypatch.setattr("sdk.skills._resolve.load_loaded_skills", _spy)
+    state = await build_agent_state(_profile(skills=[]))
+    assert called is False
+    assert state.loaded_skill_ids == frozenset()
+
+
+@pytest.mark.unit
+async def test_persist_loaded_skills_writes_ids(monkeypatch):
+    """persist_loaded_skills hands the state's loaded ids to the conversation store."""
+    saved = {}
+    monkeypatch.setattr(
+        "sdk.skills._resolve.save_loaded_skills",
+        lambda cid, ids: saved.update(cid=cid, ids=ids),
+    )
+    save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
+    state = AgentState([])
+    await _restore_skills(state, ["coder"])
+    persist_loaded_skills(state, "c1")
+    assert saved["cid"] == "c1"
+    assert saved["ids"] == frozenset({"coder"})
+
+
+@pytest.mark.unit
+async def test_restore_skills_resolves_and_adds_by_id():
+    save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
+    state = AgentState([])
+    await _restore_skills(state, ["coder"])
+    assert "coder" in state.loaded_skill_ids
+    assert "read_file" in _names(state.tools)
+
+
+@pytest.mark.unit
+async def test_restore_skills_skips_already_loaded():
+    save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
+    state = AgentState([])
+    await _restore_skills(state, ["coder"])
+    await _restore_skills(state, ["coder"])  # second restore is a no-op
+    assert state.loaded_skill_ids == frozenset({"coder"})
+
+
+@pytest.mark.unit
+async def test_restore_skills_skips_unresolvable_id():
+    state = AgentState([])
+    await _restore_skills(state, ["ghost"])  # no such record — stale metadata
+    assert state.loaded_skill_ids == frozenset()

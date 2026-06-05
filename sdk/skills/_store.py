@@ -28,7 +28,6 @@ class SkillRecord(BaseModel):
     description: str = ""
     prompt: str = ""
     tool_categories: list[str] = Field(default_factory=list)
-    enabled: bool = True
 
 
 def _skills_dir() -> Path:

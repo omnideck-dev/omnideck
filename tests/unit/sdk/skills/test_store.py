@@ -34,7 +34,7 @@ def _record(**overrides) -> SkillRecord:
 def test_minimal_record_defaults():
     r = SkillRecord(id="x", name="X")
     assert r.tool_categories == []
-    assert r.enabled is True
+    assert r.description == ""
 
 
 @pytest.mark.unit

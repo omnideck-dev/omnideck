@@ -24,13 +24,13 @@ class AgentState:
 
     def __init__(self, base_tools: list[Callable[..., Any]]) -> None:
         self._base_tools: list[Callable[..., Any]] = list(base_tools)
-        self._skills: dict[str, Skill] = {}
+        self._skills: dict[str, Skill] = {}  # keyed by skill id
 
     def add(self, skill: Skill) -> None:
         """Attach a skill to this state. No-op if already attached."""
-        if skill.name in self._skills:
+        if skill.id in self._skills:
             return
-        self._skills[skill.name] = skill
+        self._skills[skill.id] = skill
         logger.info(
             "Loaded skill '%s' (%d tools)",
             skill.name, len(skill.tools),
@@ -55,8 +55,8 @@ class AgentState:
         return result
 
     @property
-    def loaded_skill_names(self) -> frozenset[str]:
-        """Names of skills that have been loaded."""
+    def loaded_skill_ids(self) -> frozenset[str]:
+        """Ids of skills that have been loaded."""
         return frozenset(self._skills)
 
     def build_skill_prompt(self) -> str:
@@ -70,13 +70,6 @@ class AgentState:
             return ""
         parts = [f"### {s.name}\n{s.prompt}" for s in self._skills.values()]
         return "\n── Loaded Skills ──\n\n" + "\n\n".join(parts)
-
-    def find(self, name: str) -> Callable[..., Any] | None:
-        """Look up a tool by its function name."""
-        return next(
-            (t for t in self.tools if getattr(t, "__name__", None) == name),
-            None,
-        )
 
 
 def get_active_agent_state() -> "AgentState | None":

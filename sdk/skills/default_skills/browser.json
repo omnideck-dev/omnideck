@@ -6,6 +6,5 @@
   "tool_categories": [
     "browser",
     "webfetch"
-  ],
-  "enabled": true
+  ]
 }
