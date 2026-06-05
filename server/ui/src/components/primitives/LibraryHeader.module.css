@@ -1,0 +1,94 @@
+/* SIGNAL §27 Library Header — view tabs + scoped search. */
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: 0 var(--sp-5);
+    background: var(--canvas);
+    border-bottom: 1px solid var(--border);
+}
+
+.views {
+    display: flex;
+    gap: var(--sp-5);
+}
+
+.tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    padding: 12px 0;
+    cursor: pointer;
+    transition: color 150ms var(--ease), border-color 150ms var(--ease);
+    box-shadow: none;
+}
+
+.tab:hover {
+    color: var(--text-primary);
+}
+
+.tab.active {
+    color: var(--text-primary);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
+}
+
+.count {
+    font-family: var(--font-brand);
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: var(--radius-full);
+    background: var(--border-subtle);
+    color: var(--text-secondary);
+}
+
+.tab.active .count {
+    background: var(--accent);
+    color: #fff;
+}
+
+.right {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+
+.search {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.searchIcon {
+    position: absolute;
+    left: 10px;
+    font-size: 13px;
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+
+.input {
+    padding: 6px 10px 6px 30px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
