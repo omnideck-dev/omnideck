@@ -1,0 +1,10 @@
+{
+  "id": "music_generation",
+  "name": "music_generation",
+  "description": "Generate full songs and instrumental music from text prompts",
+  "prompt": "Music generation using ACE-Step 1.5.\n\ngenerate_music(prompt, lyrics, duration, quality, style) \u2014 creates\nfull songs and instrumental music.\n- prompt: be specific \u2014 genre, vocal type, emotion, instruments, tempo,\n  key, production style. E.g. \"pop-rock, powerful female vocal, energetic,\n  driving drums, 128 bpm, E major\"\n- lyrics: structure tags like [verse], [chorus], [bridge], [intro],\n  [outro]. Add style hints: [verse - whispered], [chorus - powerful].\n  Use \"[Instrumental]\" for no vocals.\n- duration: seconds (max 600). Sweet spot: 90-120s for vocals,\n  60-90s for instrumental.\n- quality: \"fast\" (instant drafts), \"quality\" (default), \"best\"\n  (highest fidelity)\n- style: genre preset that auto-tunes parameters \u2014 \"pop\", \"rock\",\n  \"hiphop\", \"electronic\", \"jazz\", \"classical\", \"ambient\", \"metal\",\n  \"lofi\". Leave empty to use defaults.\n\nCall send_file(path) for every generated file and play_audio(path) to\nplay audio in the browser. Never just mention the path.\n\nSOUND EFFECTS \u2014 for game sounds, UI sounds, bleeps, explosions, etc.,\nuse run_bash_cmd to generate WAV files programmatically (numpy + wave\nmodule, or ffmpeg). Do NOT use generate_music for sound effects.\n",
+  "tool_categories": [
+    "music_generation"
+  ],
+  "enabled": true
+}
