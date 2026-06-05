@@ -27,6 +27,10 @@ export default function useListPanel(endpoint, {
     const [deleting, setDeleting] = useState(null);
     const [newItemIds, setNewItemIds] = useState(new Set());
     const prevIdsRef = useRef(new Set());
+    // Pending "clear highlight" timer. Tracked so we can cancel it on unmount
+    // (or before scheduling the next one) — otherwise a late fire lands on an
+    // unmounted component.
+    const highlightTimerRef = useRef(null);
 
     // Store callbacks in refs so fetchItems doesn't depend on them
     const getIdRef = useRef(getId);
@@ -48,7 +52,8 @@ export default function useListPanel(endpoint, {
                 prevIdsRef.current = freshIds;
                 if (added.length > 0) {
                     setNewItemIds(new Set(added));
-                    setTimeout(() => setNewItemIds(new Set()), 700);
+                    clearTimeout(highlightTimerRef.current);
+                    highlightTimerRef.current = setTimeout(() => setNewItemIds(new Set()), 700);
                 }
                 setItems(fresh);
                 if (onFetchedRef.current) onFetchedRef.current(data);
@@ -62,6 +67,7 @@ export default function useListPanel(endpoint, {
 
     useEffect(() => { fetchItems(); }, [fetchItems]);
     useEffect(() => { if (refreshSignal > 0) fetchItems(); }, [refreshSignal, fetchItems]);
+    useEffect(() => () => clearTimeout(highlightTimerRef.current), []);
 
     const handleDelete = useCallback(async (key, deleteEndpoint, matchFn) => {
         setDeleting(key);

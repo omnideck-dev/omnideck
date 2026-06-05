@@ -1,0 +1,178 @@
+"""E2E tests for sidebar chat management: the 3-dot menu, renaming, pinning.
+
+Seeds conversations directly in the container for speed/determinism, then
+drives the per-row context menu to rename, pin, and unpin them. Renames and
+pins are asserted to survive a reload, proving they persist server-side.
+"""
+
+import json
+import time
+
+from playwright.sync_api import Page, expect
+
+from tests.e2e._helpers import container_exec
+from tests.e2e.pages import ChatView, RecentConversations
+
+CONV_DIR = "/var/lib/computron/conversations"
+
+
+def _seed_conversation(
+    conv_id: str,
+    messages: list[dict],
+    *,
+    title: str = "",
+    pinned: bool = False,
+) -> str:
+    """Create a conversation on disk inside the container."""
+    msgs_json = json.dumps(messages)
+    script = (
+        "import json, pathlib\n"
+        f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
+        "d.mkdir(parents=True, exist_ok=True)\n"
+        f"(d / 'history.json').write_text({msgs_json!r})\n"
+    )
+    meta: dict = {}
+    if title:
+        meta["title"] = title
+    if pinned:
+        meta["pinned"] = True
+    if meta:
+        script += f"(d / 'metadata.json').write_text({json.dumps(meta)!r})\n"
+    script += f"print('{conv_id}')\n"
+    return container_exec(script)
+
+
+def _delete_conversation(conv_id: str) -> None:
+    """Remove a seeded conversation from the container."""
+    container_exec(
+        "import shutil, pathlib\n"
+        f"p = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
+        "if p.exists(): shutil.rmtree(p)\n"
+    )
+
+
+def test_row_menu_exposes_pin_rename_delete(page: Page):
+    """The 3-dot menu opens with Pin, Rename, and Delete actions."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_menu_{nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=f"MenuChat {nonce}")
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.items.first).to_be_visible(timeout=5000)
+
+        recent.item(0).open_menu()
+        expect(page.get_by_test_id("recent-menu-pin")).to_have_text("Pin")
+        expect(page.get_by_test_id("recent-menu-rename")).to_be_visible()
+        expect(page.get_by_test_id("recent-menu-delete")).to_be_visible()
+
+        # Clicking outside closes the menu.
+        page.keyboard.press("Escape")
+        expect(page.get_by_test_id("recent-menu")).not_to_be_visible()
+    finally:
+        _delete_conversation(conv_id)
+
+
+def test_rename_conversation_persists(page: Page):
+    """Renaming via the menu updates the row and survives a reload."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_rename_{nonce}"
+    old_title = f"OldName {nonce}"
+    new_title = f"NewName {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=old_title)
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(page.get_by_text(old_title)).to_be_visible(timeout=5000)
+
+        recent.item(0).rename(new_title)
+        expect(page.get_by_text(new_title)).to_be_visible()
+        expect(page.get_by_text(old_title)).not_to_be_visible()
+
+        # Reload: the new title was persisted server-side.
+        page.reload()
+        expect(page.get_by_text(new_title)).to_be_visible(timeout=5000)
+    finally:
+        _delete_conversation(conv_id)
+
+
+def test_rename_blank_reverts_to_first_message(page: Page):
+    """Saving an empty rename falls back to the first message, not a blank row."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_rename_blank_{nonce}"
+    first_message = f"first prompt {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": first_message},
+        {"role": "assistant", "content": "ok"},
+    ], title=f"Titled {nonce}")
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(page.get_by_text(f"Titled {nonce}")).to_be_visible(timeout=5000)
+
+        recent.item(0).open_menu()
+        page.get_by_test_id("recent-menu-rename").click()
+        field = page.get_by_test_id("recent-rename-input")
+        field.fill("")
+        page.get_by_test_id("recent-rename-save").click()
+
+        expect(page.get_by_text(first_message)).to_be_visible()
+        expect(page.get_by_text(f"Titled {nonce}")).not_to_be_visible()
+    finally:
+        _delete_conversation(conv_id)
+
+
+def test_pin_conversation_moves_to_pinned_section(page: Page):
+    """Pinning surfaces a Pinned section and survives a reload."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_pin_{nonce}"
+    title = f"PinMe {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=title)
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(page.get_by_text(title)).to_be_visible(timeout=5000)
+        expect(recent.pinned_label).not_to_be_visible()
+
+        recent.item(0).toggle_pin()
+        expect(recent.pinned_label).to_be_visible()
+
+        # Reload: the pin was persisted server-side.
+        page.reload()
+        expect(recent.pinned_label).to_be_visible(timeout=5000)
+    finally:
+        _delete_conversation(conv_id)
+
+
+def test_unpin_conversation_hides_pinned_section(page: Page):
+    """Unpinning the only pinned chat removes the Pinned section."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_unpin_{nonce}"
+    title = f"UnpinMe {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=title, pinned=True)
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.pinned_label).to_be_visible(timeout=5000)
+
+        # The menu reads "Unpin" for an already-pinned chat.
+        recent.item(0).open_menu()
+        expect(page.get_by_test_id("recent-menu-pin")).to_have_text("Unpin")
+        page.get_by_test_id("recent-menu-pin").click()
+
+        expect(recent.pinned_label).not_to_be_visible()
+    finally:
+        _delete_conversation(conv_id)
