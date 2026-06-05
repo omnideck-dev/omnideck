@@ -87,7 +87,7 @@
   --sp-12: 48px;
 
   /* ── Font stacks ── */
-  --font-brand: 'Share Tech Mono', 'Roboto Mono', 'Consolas', monospace;
+  --font-brand: 'Roboto Mono', 'Consolas', monospace;
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
 
