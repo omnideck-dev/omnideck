@@ -60,16 +60,27 @@ class TestAgentState:
         ls.add(sk)
         assert len(ls.tools) == 2  # a (base) + b (skill), not a again
 
-    def test_add_tracks_skill_name(self):
-        """loaded_skill_ids reflects which skills have been added."""
+    def test_add_tracks_skill_id(self):
+        """skill_ids reflects every attached skill."""
         browser = _make_skill("browser", ["open_url"])
         coder = _make_skill("coder", ["read_file"])
         ls = AgentState([])
-        assert ls.loaded_skill_ids == frozenset()
+        assert ls.skill_ids == frozenset()
         ls.add(browser)
-        assert ls.loaded_skill_ids == frozenset({"browser"})
+        assert ls.skill_ids == frozenset({"browser"})
         ls.add(coder)
-        assert ls.loaded_skill_ids == frozenset({"browser", "coder"})
+        assert ls.skill_ids == frozenset({"browser", "coder"})
+
+    def test_load_marks_persistable_delta(self):
+        """load() skills count toward loaded_skill_ids; add() baseline skills are
+        attached but not part of the persisted delta."""
+        base = _make_skill("base", ["a"])
+        extra = _make_skill("extra", ["b"])
+        ls = AgentState([])
+        ls.add(base)  # profile baseline
+        ls.load(extra)  # loaded at runtime
+        assert ls.skill_ids == frozenset({"base", "extra"})
+        assert ls.loaded_skill_ids == frozenset({"extra"})
 
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
@@ -78,15 +89,14 @@ class TestAgentState:
         ls.add(sk)
         ls.add(sk)
         assert len(ls.tools) == 1
-        assert ls.loaded_skill_ids == frozenset({"sk"})
+        assert ls.skill_ids == frozenset({"sk"})
 
-    def test_loaded_skill_ids_is_frozen(self):
-        """loaded_skill_ids returns a frozenset (immutable snapshot)."""
+    def test_skill_ids_is_frozen(self):
+        """skill_ids returns a frozenset (immutable snapshot)."""
         sk = _make_skill("x", [])
         ls = AgentState([])
         ls.add(sk)
-        names = ls.loaded_skill_ids
-        assert isinstance(names, frozenset)
+        assert isinstance(ls.skill_ids, frozenset)
 
     def test_build_skill_prompt_empty(self):
         """build_skill_prompt returns empty string with no skills loaded."""

@@ -12,7 +12,7 @@ import pytest
 
 from agents._agent_profiles import AgentProfile
 from sdk.skills._resolve import (
-    _restore_skills,
+    _restore_persisted_loaded_skills,
     build_agent_state,
     persist_loaded_skills,
     resolve_skill,
@@ -135,6 +135,17 @@ async def test_build_adds_profile_skill_tools():
 
 
 @pytest.mark.unit
+async def test_build_profile_skills_stay_out_of_loaded_delta():
+    """A profile's skills attach but aren't part of the persisted delta, so the
+    profile is re-derived each turn and a profile edit isn't pinned to a
+    conversation by stale metadata."""
+    save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
+    state = await build_agent_state(_profile(skills=["coder"]))
+    assert "coder" in state.skill_ids
+    assert state.loaded_skill_ids == frozenset()
+
+
+@pytest.mark.unit
 async def test_build_adds_profile_skill_prompts():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code.", tool_categories=["coding"]))
     state = await build_agent_state(_profile(skills=["coder"]))
@@ -194,7 +205,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
     )
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
     state = AgentState([])
-    await _restore_skills(state, ["coder"])
+    await _restore_persisted_loaded_skills(state, ["coder"])
     persist_loaded_skills(state, "c1")
     assert saved["cid"] == "c1"
     assert saved["ids"] == frozenset({"coder"})
@@ -204,7 +215,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
 async def test_restore_skills_resolves_and_adds_by_id():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
     state = AgentState([])
-    await _restore_skills(state, ["coder"])
+    await _restore_persisted_loaded_skills(state, ["coder"])
     assert "coder" in state.loaded_skill_ids
     assert "read_file" in _names(state.tools)
 
@@ -213,13 +224,13 @@ async def test_restore_skills_resolves_and_adds_by_id():
 async def test_restore_skills_skips_already_loaded():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
     state = AgentState([])
-    await _restore_skills(state, ["coder"])
-    await _restore_skills(state, ["coder"])  # second restore is a no-op
+    await _restore_persisted_loaded_skills(state, ["coder"])
+    await _restore_persisted_loaded_skills(state, ["coder"])  # second restore is a no-op
     assert state.loaded_skill_ids == frozenset({"coder"})
 
 
 @pytest.mark.unit
 async def test_restore_skills_skips_unresolvable_id():
     state = AgentState([])
-    await _restore_skills(state, ["ghost"])  # no such record — stale metadata
+    await _restore_persisted_loaded_skills(state, ["ghost"])  # no such record — stale metadata
     assert state.loaded_skill_ids == frozenset()

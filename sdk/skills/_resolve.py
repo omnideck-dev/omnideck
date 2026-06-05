@@ -113,11 +113,11 @@ async def build_agent_state(profile: AgentProfile, *, conversation_id: str | Non
             continue
         state.add(skill)
     if conversation_id is not None:
-        await _restore_skills(state, load_loaded_skills(conversation_id))
+        await _restore_persisted_loaded_skills(state, load_loaded_skills(conversation_id))
     return state
 
 
-async def _restore_skills(agent_state: AgentState, skill_ids: Iterable[str]) -> None:
+async def _restore_persisted_loaded_skills(agent_state: AgentState, skill_ids: Iterable[str]) -> None:
     """Resolve previously-loaded skills by id and add them to ``agent_state``.
 
     Ids already loaded (e.g. granted by the profile) are skipped, and an id that
@@ -125,13 +125,13 @@ async def _restore_skills(agent_state: AgentState, skill_ids: Iterable[str]) -> 
     stale metadata is harmless.
     """
     for skill_id in skill_ids:
-        if skill_id in agent_state.loaded_skill_ids:
+        if skill_id in agent_state.skill_ids:
             continue
         skill = await resolve_skill(skill_id)
         if skill is None:
             logger.warning("loaded skill %r no longer resolves; skipping", skill_id)
             continue
-        agent_state.add(skill)
+        agent_state.load(skill)
 
 
 def persist_loaded_skills(agent_state: AgentState, conversation_id: str) -> None:

@@ -109,11 +109,11 @@ async def load_skill(name: str) -> str:
         _log_skill_error(name, error_msg)
         return error_msg
 
-    if skill.id in agent_state.loaded_skill_ids:
+    if skill.id in agent_state.skill_ids:
         _log_skill_already_loaded(name)
         return f"Skill '{name}' is already loaded."
 
-    agent_state.add(skill)
+    agent_state.load(skill)
     skill_tools = [getattr(t, "__name__", "?") for t in skill.tools]
     _log_skill_loaded(name, skill.description, skill_tools)
     return f"Loaded skill '{name}' ({len(skill_tools)} tools). Instructions added to system prompt."
