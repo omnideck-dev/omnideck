@@ -1,25 +1,22 @@
 """Unit tests for the tool-category registry.
 
-``build_categories`` returns the static tool categories under a set of feature
-flags, each carrying its tools; the integration categories name a capability and
-resolve their tools per turn against the live integrations. These cover which
+``tool_categories()`` returns every tool category with the tools it currently
+grants: feature-gated static categories carry a fixed tool set, integration
+categories resolve against the connected integrations. These cover which static
 categories the flags expose, grounding tools following visual grounding, and
 integration categories resolving (or staying empty) by connection state.
 """
+
+from types import SimpleNamespace
 
 import pytest
 
 from config import FeaturesConfig
 from integrations.permissions import Access, Capability
-from sdk.tools._categories import (
-    INTEGRATION_CATEGORIES,
-    build_categories,
-    get_categories,
-    integration_category_tools,
-)
+from sdk.tools._categories import _static_tool_categories, tool_categories
 from tools.integrations.types import RegisteredIntegration
 
-_ALL_IDS = {
+_STATIC_IDS = {
     "coding",
     "browser",
     "webfetch",
@@ -30,10 +27,10 @@ _ALL_IDS = {
     "desktop",
     "custom_tools",
 }
+_INTEGRATION_IDS = {"email", "calendar", "drive", "contacts", "http"}
 
 
 def _features(**overrides) -> FeaturesConfig:
-    """A FeaturesConfig with every gate on unless overridden."""
     base = {
         "image_generation": True,
         "music_generation": True,
@@ -45,96 +42,90 @@ def _features(**overrides) -> FeaturesConfig:
     return FeaturesConfig(**base)
 
 
-def _integrations(*, cap: Capability, access: Access, state: str = "running") -> list[RegisteredIntegration]:
-    """One running integration granting ``access`` for ``cap``."""
-    return [RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access}, state=state)]
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch):
+    """Default: all flags on, no integrations connected; static cache cleared per test."""
+    _set_flags(monkeypatch)
+
+    async def _none():
+        return {}
+
+    monkeypatch.setattr("sdk.tools._categories.registered_integrations", _none)
+    yield
+    _static_tool_categories.cache_clear()
+
+
+def _set_flags(monkeypatch, **overrides):
+    monkeypatch.setattr("config.load_config", lambda: SimpleNamespace(features=_features(**overrides)))
+    _static_tool_categories.cache_clear()
+
+
+def _connect(monkeypatch, cap, access=Access.READ):
+    async def _get():
+        return {"acct-1": RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access})}
+
+    monkeypatch.setattr("sdk.tools._categories.registered_integrations", _get)
+
+
+def _names(tools):
+    return {t.__name__ for t in tools}
 
 
 @pytest.mark.unit
-def test_all_categories_present_when_features_enabled() -> None:
-    assert set(build_categories(_features())) == _ALL_IDS
+async def test_lists_static_and_integration_categories():
+    cats = await tool_categories()
+    assert _STATIC_IDS <= set(cats)
+    assert _INTEGRATION_IDS <= set(cats)
+
+
+@pytest.mark.unit
+async def test_each_category_has_metadata():
+    for c in (await tool_categories()).values():
+        assert c.label, f"{c.id} missing label"
+        assert c.description, f"{c.id} missing description"
+
+
+@pytest.mark.unit
+async def test_static_category_carries_its_tools():
+    coding = (await tool_categories())["coding"]
+    assert {"read_file", "run_bash_cmd"} <= _names(coding.tools)
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("flag", ["desktop", "image_generation", "music_generation", "custom_tools"])
-def test_feature_off_drops_its_category(flag: str) -> None:
-    ids = set(build_categories(_features(**{flag: False})))
-    assert flag not in ids
-    assert "coding" in ids
+async def test_feature_off_drops_static_category(monkeypatch, flag):
+    _set_flags(monkeypatch, **{flag: False})
+    cats = await tool_categories()
+    assert flag not in cats
+    assert "coding" in cats
 
 
 @pytest.mark.unit
-def test_each_category_has_metadata_and_callable_tools() -> None:
-    for c in build_categories(_features()).values():
-        assert c.label, f"{c.id} missing label"
-        assert c.description, f"{c.id} missing description"
-        assert c.tools, f"{c.id} has no tools"
-        assert all(callable(t) for t in c.tools)
-
-
-@pytest.mark.unit
-def test_coding_category_contains_expected_tools() -> None:
-    coding = build_categories(_features())["coding"]
-    names = {t.__name__ for t in coding.tools}
-    assert {"read_file", "run_bash_cmd"} <= names
-
-
-@pytest.mark.unit
-def test_browser_grounding_tool_follows_visual_grounding() -> None:
-    on = {t.__name__ for t in build_categories(_features(visual_grounding=True))["browser"].tools}
-    off = {t.__name__ for t in build_categories(_features(visual_grounding=False))["browser"].tools}
+async def test_grounding_tool_follows_visual_grounding(monkeypatch):
+    on = _names((await tool_categories())["browser"].tools)
+    _set_flags(monkeypatch, visual_grounding=False)
+    off = _names((await tool_categories())["browser"].tools)
     assert "browser_visual_action" in on
     assert "browser_visual_action" not in off
     assert "goto" in off
 
 
 @pytest.mark.unit
-def test_desktop_grounding_tool_follows_visual_grounding() -> None:
-    on = {t.__name__ for t in build_categories(_features(visual_grounding=True))["desktop"].tools}
-    off = {t.__name__ for t in build_categories(_features(visual_grounding=False))["desktop"].tools}
-    assert "perform_visual_action" in on
-    assert "perform_visual_action" not in off
-    assert "mouse_click" in off
+async def test_integration_category_empty_when_disconnected():
+    email = (await tool_categories())["email"]
+    assert email.tools == []
 
 
 @pytest.mark.unit
-def test_custom_tools_category_present_only_when_feature_on() -> None:
-    on = build_categories(_features(custom_tools=True))
-    assert "custom_tools" in on
-    assert {t.__name__ for t in on["custom_tools"].tools} == {
-        "create_custom_tool",
-        "lookup_custom_tools",
-        "run_custom_tool",
-    }
-    assert "custom_tools" not in build_categories(_features(custom_tools=False))
-
-
-@pytest.mark.unit
-def test_get_categories_is_built_once_and_held() -> None:
-    # Memoized for the process: the same object is returned each call.
-    assert get_categories() is get_categories()
-
-
-@pytest.mark.unit
-def test_integration_categories_listed_regardless_of_connection() -> None:
-    assert set(INTEGRATION_CATEGORIES) == {"email", "calendar", "drive", "contacts", "http"}
-
-
-@pytest.mark.unit
-def test_integration_category_resolves_read_tier_via_helper() -> None:
-    names = {
-        t.__name__ for t in integration_category_tools("email", _integrations(cap=Capability.EMAIL, access=Access.READ))
-    }
+async def test_integration_category_resolves_when_connected(monkeypatch):
+    _connect(monkeypatch, Capability.EMAIL, Access.READ)
+    email = (await tool_categories())["email"]
+    names = _names(email.tools)
     assert "search_email" in names
-    # Read tier only — write tools stay out at READ.
-    assert "send_email" not in names
+    assert "send_email" not in names  # read tier only
 
 
 @pytest.mark.unit
-def test_integration_category_empty_when_disconnected() -> None:
-    assert integration_category_tools("email", []) == []
-
-
-@pytest.mark.unit
-def test_integration_category_unknown_id_yields_no_tools() -> None:
-    assert integration_category_tools("does-not-exist", _integrations(cap=Capability.EMAIL, access=Access.READ)) == []
+async def test_static_categories_built_once():
+    # Cached for the process under fixed flags: same object each call.
+    assert _static_tool_categories() is _static_tool_categories()

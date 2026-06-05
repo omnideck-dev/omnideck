@@ -33,6 +33,8 @@ class AgentProfile(BaseModel):
     provider: str = ""
     model: str = ""
     skills: list[str] = Field(default_factory=list)
+    allow_spawn: bool = True
+    allow_load_skills: bool = True
     temperature: float | None = None
     top_k: int | None = None
     top_p: float | None = None

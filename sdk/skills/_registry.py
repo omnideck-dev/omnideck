@@ -8,16 +8,20 @@ centralized.
 import logging
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 logger = logging.getLogger(__name__)
 
 
 class Skill(BaseModel):
-    """A loadable bundle of tools and a prompt fragment.
+    """A loadable bundle of tools and a prompt fragment — the resolved
+    counterpart of a persisted SkillRecord.
 
     Attributes:
-        name: Short identifier used in load_skill() calls.
+        id: Stable identifier (the SkillRecord id). Defaults to ``name`` when
+            unset, so a skill whose name equals its slug gets the right id with
+            no extra wiring.
+        name: Short identifier used in load_skill() calls; unique display name.
         description: One-line description shown in the skill catalog.
         prompt: Prompt fragment injected when the skill is loaded.
         tools: Tool callables provided by this skill. Typed as ``list[Any]``
@@ -29,12 +33,19 @@ class Skill(BaseModel):
             ``_ensure_builtins`` on the first tool-using turn).
     """
 
+    id: str = ""
     name: str
     description: str
     prompt: str
     tools: list[Any]
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="after")
+    def _default_id_to_name(self) -> "Skill":
+        if not self.id:
+            self.id = self.name
+        return self
 
 
 _SKILL_REGISTRY: dict[str, Skill] = {}

@@ -1,6 +1,6 @@
 """Skill record registry and persistence.
 
-A SkillRecord is the stored form of a skill: prompt text plus the category ids
+A SkillRecord is the stored form of a skill: prompt text plus the tool category ids
 it grants — no live tool callables. Records are JSON files in the state folder,
 one per id. ``id`` is the stable key referenced by profiles and conversations;
 ``name`` is the editable display field and must stay unique so the LLM-facing
@@ -21,13 +21,13 @@ SKILLS_SUBDIR = "skills"
 
 
 class SkillRecord(BaseModel):
-    """A stored, user-editable skill: a prompt plus the categories it grants."""
+    """A stored, user-editable skill: a prompt plus the tool categories it grants."""
 
     id: str
     name: str
     description: str = ""
     prompt: str = ""
-    categories: list[str] = Field(default_factory=list)
+    tool_categories: list[str] = Field(default_factory=list)
     enabled: bool = True
 
 
