@@ -548,6 +548,7 @@ export default function useStreamingChat(callbacks) {
                     conversationId,
                     turnSpecs,
                     previewState: data.preview_state || {},
+                    profileId: data.profile_id || null,
                 });
             }
             setMessages(transformed);

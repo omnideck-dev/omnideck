@@ -49,13 +49,17 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const [selectedProfileId, setSelectedProfileId] = useState(() => {
-        return localStorage.getItem('computron_profile_id') || 'omnideck';
-    });
-    const handleProfileChange = useCallback((id) => {
-        setSelectedProfileId(id);
-        localStorage.setItem('computron_profile_id', id);
-    }, []);
+
+    // Agent profile is per chat session, not global. `profileByConv` maps a
+    // conversation id to its chosen profile; conversations without an entry
+    // fall back to the system default, so a new chat never inherits whatever
+    // profile the previously viewed chat was using.
+    const [profileByConv, setProfileByConv] = useState({});
+    const [defaultProfileId, setDefaultProfileId] = useState('omnideck');
+    // Unsent draft text is also per session — kept in a ref so typing doesn't
+    // re-render the whole shell. ChatInput swaps drafts when the active
+    // conversation changes.
+    const draftStore = useRef({});
 
     // Setup wizard state
     const [setupComplete, setSetupComplete] = useState(null); // null = loading
@@ -63,6 +67,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     useEffect(() => {
         fetch('/api/settings').then(r => r.json()).then(data => {
             setSetupComplete(data.setup_complete || false);
+            if (data.default_agent) setDefaultProfileId(data.default_agent);
         }).catch(() => setSetupComplete(false));
     }, []);
 
@@ -162,7 +167,13 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         // APPEND_ACTIVITY × N → AGENT_COMPLETED) so resume and live share one
         // render path. React 18 batches all dispatches within this async
         // callback into a single render — no streaming/replay animation.
-        onConversationLoaded: ({ conversationId, turnSpecs, previewState }) => {
+        onConversationLoaded: ({ conversationId, turnSpecs, previewState, profileId }) => {
+            // Restore the profile this conversation was last using so the
+            // selector and outgoing requests reflect it. Falls back to the
+            // default for conversations saved before profiles were tracked.
+            if (profileId) {
+                setProfileByConv((m) => ({ ...m, [conversationId]: profileId }));
+            }
             agentDispatch({ type: 'RESET' });
 
             for (const turn of turnSpecs) {
@@ -231,6 +242,12 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         activeConversationId,
         savePreviewState,
     } = useStreamingChat(_callbacks);
+
+    // The profile for the open conversation: its own pick, or the default.
+    const selectedProfileId = profileByConv[activeConversationId] ?? defaultProfileId;
+    const handleProfileChange = useCallback((id) => {
+        setProfileByConv((m) => ({ ...m, [activeConversationId]: id }));
+    }, [activeConversationId]);
 
     // After a resume, apply the pending active-tab once the preview hook
     // re-renders with the new root agent and its restored files.
@@ -480,6 +497,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             onProfileChange={handleProfileChange}
                             profileRefreshSignal={profilesHook.revision}
                             onPreview={preview.openFile}
+                            conversationId={activeConversationId}
+                            draftStore={draftStore}
                         />
                     </div>
 

@@ -20,8 +20,10 @@ from conversations import (
     generate_conversation_title,
     load_agent_events,
     load_conversation_history,
+    load_conversation_profile,
     load_preview_state,
     save_agent_events,
+    save_conversation_profile,
     save_conversation_title,
 )
 from sdk import (
@@ -181,6 +183,8 @@ async def resume_conversation(conversation_id: str) -> dict | None:
             blocks in the chat and the preview tabs on restore.
         preview_state: persisted preview-panel state (open file list,
             active tab, per-preview visibility flags).
+        profile_id: the agent profile last used in this conversation, or
+            None if it predates per-conversation profiles.
 
     None if the conversation isn't found.
     """
@@ -195,6 +199,7 @@ async def resume_conversation(conversation_id: str) -> dict | None:
         "messages": messages,
         "events": load_agent_events(conversation_id),
         "preview_state": load_preview_state(conversation_id),
+        "profile_id": load_conversation_profile(conversation_id),
     }
 
 
@@ -386,6 +391,10 @@ async def handle_user_message(
     if not profile.model:
         msg = "No model configured. Complete the setup wizard to select a model."
         raise ValueError(msg)
+
+    # Lock this profile to the conversation so resuming it later restores the
+    # same agent. The latest selection wins if the user switches mid-thread.
+    save_conversation_profile(conversation_id, profile_id)
 
     try:
         # Bridge published events via a queue so we can stream them to the caller.
