@@ -58,10 +58,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // the in-view selection, not a cache of every session.
     const [convProfile, setConvProfile] = useState(null);
     const [defaultProfileId, setDefaultProfileId] = useState('omnideck');
-    // Unsent draft text is also per session — kept in a ref so typing doesn't
-    // re-render the whole shell. ChatInput swaps drafts when the active
-    // conversation changes.
-    const draftStore = useRef({});
 
     // Setup wizard state
     const [setupComplete, setSetupComplete] = useState(null); // null = loading
@@ -498,7 +494,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             profileRefreshSignal={profilesHook.revision}
                             onPreview={preview.openFile}
                             conversationId={activeConversationId}
-                            draftStore={draftStore}
                         />
                     </div>
 

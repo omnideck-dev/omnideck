@@ -12,8 +12,8 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draftStore }) {
-    const [message, setMessage] = useState(() => draftStore?.current?.[conversationId] || '');
+function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
+    const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
 
     const profileName = selectedProfile?.name;
@@ -21,28 +21,9 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
         ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
         : `Message ${profileName || 'Omnideck'}…`;
 
-    // Unsent text is owned per conversation. Writing it back on every change
-    // means switching chats just reloads the incoming draft below — text
-    // typed in one chat never leaks into another.
-    const updateMessage = (val) => {
-        setMessage(val);
-        if (draftStore) {
-            if (val) draftStore.current[conversationId] = val;
-            else delete draftStore.current[conversationId];
-        }
-    };
-
-    // Swap to the new conversation's stored draft when the active chat changes.
-    const prevConvRef = useRef(conversationId);
-    useEffect(() => {
-        if (prevConvRef.current === conversationId) return;
-        prevConvRef.current = conversationId;
-        setMessage(draftStore?.current?.[conversationId] || '');
-    }, [conversationId, draftStore]);
-
     useEffect(() => {
         if (draft) {
-            updateMessage(draft);
+            setMessage(draft);
             onDraftConsumed();
         }
     }, [draft, onDraftConsumed]);
@@ -79,7 +60,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
         e.preventDefault();
         if (!message.trim() && !fileData) return;
         onSend(message.trim(), fileData);
-        updateMessage('');
+        setMessage('');
         clearAttachment();
     };
 
@@ -143,7 +124,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
                 <textarea
                     className={styles.customInput}
                     value={message}
-                    onChange={(e) => updateMessage(e.target.value)}
+                    onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
