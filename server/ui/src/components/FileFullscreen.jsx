@@ -42,17 +42,6 @@ export default function FileFullscreen({ item, onClose }) {
 
     const headerActions = (
         <>
-            {stale && (
-                <button
-                    className={styles.refreshLink}
-                    onClick={refresh}
-                    title="File changed on disk — click to reload"
-                    data-testid="file-refresh"
-                >
-                    <RefreshIcon size={12} />
-                    Refresh
-                </button>
-            )}
             {showToggle && !isPdf && (
                 <div className={styles.toggle}>
                     <button
@@ -70,6 +59,17 @@ export default function FileFullscreen({ item, onClose }) {
                         Preview
                     </button>
                 </div>
+            )}
+            {stale && (
+                <button
+                    className={styles.refreshLink}
+                    onClick={refresh}
+                    title="File changed on disk — click to reload"
+                    data-testid="file-refresh"
+                >
+                    <RefreshIcon size={12} />
+                    Refresh
+                </button>
             )}
             {canCopy && (
                 <IconButton
