@@ -5,6 +5,7 @@ from __future__ import annotations
 from playwright.sync_api import Locator, Page
 
 from tests.e2e.pages.integrations_tab import IntegrationsTab
+from tests.e2e.pages.skills_tab import SkillsTab
 
 
 class ModelPickerLocator:
@@ -204,6 +205,7 @@ class SettingsPage:
         self.builder = ProfileBuilder(page)
         self.system = SystemTab(page)
         self.integrations = IntegrationsTab(page)
+        self.skills = SkillsTab(page)
 
     def goto(self) -> "SettingsPage":
         """Open Settings on the Agent Profiles tab (default)."""
@@ -237,6 +239,13 @@ class SettingsPage:
         self.goto()
         self.page.get_by_role("button", name="Memory").click()
         self.page.get_by_test_id("memory-tab").wait_for(state="visible")
+        return self
+
+    def goto_skills(self) -> "SettingsPage":
+        """Open Settings and switch to the Skills tab."""
+        self.goto()
+        self.page.get_by_role("button", name="Skills", exact=True).click()
+        self.page.get_by_test_id("skills-tab").wait_for(state="visible")
         return self
 
     def close(self) -> "SettingsPage":

@@ -6,6 +6,7 @@ import IntegrationsTab from './integrations/IntegrationsTab.jsx';
 import MemoryTab from './MemoryTab.jsx';
 import ProfilesTab from './ProfilesTab.jsx';
 import ProvidersTab from './providers/ProvidersTab.jsx';
+import SkillsTab from './skills/SkillsTab.jsx';
 import SystemSettings from './SystemSettings.jsx';
 import styles from './SettingsPage.module.css';
 
@@ -14,6 +15,7 @@ import styles from './SettingsPage.module.css';
 // `feature` gates visibility on a features.* flag.
 const ALL_TABS = [
     { id: 'profiles', label: 'Agent Profiles', Component: ProfilesTab },
+    { id: 'skills', label: 'Skills', Component: SkillsTab },
     { id: 'providers', label: 'Providers', Component: ProvidersTab },
     { id: 'integrations', label: 'Integrations', Component: IntegrationsTab },
     { id: 'memory', label: 'Memory', Component: MemoryTab },
