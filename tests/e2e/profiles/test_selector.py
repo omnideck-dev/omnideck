@@ -12,6 +12,13 @@ def test_new_profile_appears_in_chat_dropdown(page: Page):
 
     settings.builder.name_input.fill("")
     settings.builder.name_input.fill("Dropdown Test Agent")
+
+    # A model is required before the profile can be saved.
+    picker = settings.builder.model_picker
+    picker.open()
+    picker.items().first.wait_for(state="visible", timeout=10_000)
+    picker.items().first.click()
+
     settings.builder.save()
     page.wait_for_timeout(500)
 
