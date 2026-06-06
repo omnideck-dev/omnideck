@@ -14,8 +14,7 @@ import Sidebar from './components/Sidebar.jsx';
 import GoalsView from './components/goals/GoalsView.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
-import FilePreviewInline from './components/FilePreviewInline.jsx';
-import FileFullscreen from './components/FileFullscreen.jsx';
+import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
@@ -504,7 +503,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                         const filename = preview.activeTab.slice(5);
                                         const file = preview.openFiles.find(f => f.filename === filename);
                                         return file ? (
-                                            <FilePreviewInline
+                                            <FilePreview
                                                 item={file}
                                                 onFullscreen={() => preview.setFullscreenItem({ kind: 'file', file })}
                                             />
@@ -534,8 +533,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
             {/* Fullscreen preview — fills entire viewport */}
             {preview.fullscreenItem?.kind === 'file' && (
-                <FileFullscreen
+                <FilePreview
                     item={preview.fullscreenItem.file}
+                    fullscreen
                     onClose={() => preview.setFullscreenItem(null)}
                 />
             )}

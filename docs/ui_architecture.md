@@ -139,12 +139,12 @@ AgentStateProvider
     │   └── PreviewPanel                         (right column, shared)
     │       ├── [tab bar]
     │       ├── BrowserPreview
-    │       ├── FilePreviewInline → FileContentRenderer
+    │       ├── FilePreview → FileContentRenderer
     │       ├── TerminalPanel
     │       ├── DesktopPreview
     │       └── GenerationPreview
     │
-    ├── FullscreenPreview                        (viewport overlay for files)
+    ├── FilePreview (fullscreen)                 (viewport overlay for files)
     └── SetupWizard                              (shown if setup incomplete)
 ```
 
@@ -170,7 +170,7 @@ usePreviewState.openFile(item)
 PreviewPanel tab appears
     │
     ▼
-FilePreviewInline → FileContentRenderer
+FilePreview → FileContentRenderer
     ├── source code (<pre>)
     ├── markdown (ReactMarkdown)
     ├── HTML (iframe)
