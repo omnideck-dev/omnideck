@@ -56,7 +56,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // it's saved on each turn and handed back on resume, so this only holds
     // the in-view selection, not a cache of every session.
     const [convProfile, setConvProfile] = useState(null);
-    const [defaultProfileId, setDefaultProfileId] = useState('omnideck');
+    // The system default profile comes from settings (`default_agent`), loaded
+    // below. The chat never renders until that fetch resolves (gated on
+    // setupComplete), so this is populated before any profile is read — no
+    // hardcoded fallback to drift out of sync with the actual default.
+    const [defaultProfileId, setDefaultProfileId] = useState(null);
 
     // Setup wizard state
     const [setupComplete, setSetupComplete] = useState(null); // null = loading
