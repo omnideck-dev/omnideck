@@ -40,25 +40,6 @@
     flex: 1;
 }
 
-/* Back button */
-.backBtn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
-
-.backBtn:hover {
-    background: var(--border-strong);
-}
-
 /* Title in center */
 .title {
     font-size: 13px;
@@ -84,15 +65,6 @@
 :global([data-theme="light"]) .header {
     background: var(--surface);
     border-bottom-color: var(--border);
-}
-
-:global([data-theme="light"]) .backBtn {
-    border-color: var(--border);
-    color: var(--text-primary);
-}
-
-:global([data-theme="light"]) .backBtn:hover {
-    background: var(--border);
 }
 
 :global([data-theme="light"]) .content {
