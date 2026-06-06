@@ -1,4 +1,4 @@
-"""Migration tests for ``_006_events_first.synthesize_compaction_events``.
+"""Migration tests for ``_007_events_first.synthesize_compaction_events``.
 
 Focused on the bug we found in real data: migrated compaction events
 were missing the ``stats`` block that drives the UI chip, so chips
@@ -11,7 +11,7 @@ import pytest
 
 from datetime import datetime, timezone
 
-from migrations._006_events_first import (
+from migrations._007_events_first import (
     Event,
     _depth_from_agent_id,
     _fmt_iso,

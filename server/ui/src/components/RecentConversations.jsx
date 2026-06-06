@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import useListPanel from '../hooks/useListPanel.js';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
+import SearchInput from './primitives/SearchInput.jsx';
 import styles from './RecentConversations.module.css';
 
 const BUCKET_ORDER = ['Today', 'Yesterday', 'Earlier'];
@@ -124,28 +125,15 @@ export default function RecentConversations({ onLoadConversation, onNewConversat
 
     return (
         <div className={styles.recent} data-testid="recent-conversations">
-            <div className={styles.search}>
-                <i className="bi bi-search" />
-                <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search conversations…"
-                    aria-label="Search conversations"
-                    data-testid="recent-search"
-                />
-                {query && (
-                    <button
-                        className={styles.clearBtn}
-                        onClick={() => setQuery('')}
-                        title="Clear search"
-                        aria-label="Clear search"
-                        data-testid="recent-search-clear"
-                    >
-                        <i className="bi bi-x-lg" />
-                    </button>
-                )}
-            </div>
+            <SearchInput
+                className={styles.search}
+                value={query}
+                onChange={setQuery}
+                placeholder="Search conversations…"
+                ariaLabel="Search conversations"
+                testId="recent-search"
+                clearTestId="recent-search-clear"
+            />
 
             <div className={styles.list}>
                 {!loading && groups.length === 0 && (

@@ -176,17 +176,6 @@ rebuild-ui:
 stop:
     docker stop {{_ctr}} 2>/dev/null || echo "ℹ️  Not running"
 
-# Stop container and wipe state — nukes conversations, goals, settings
-reset:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    read -rp "⚠️  Wipe ~/.computron_9000/ ? [y/N] " ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "cancelled"; exit 0; }
-    docker stop {{_ctr}} 2>/dev/null || true
-    rm -rf "$HOME/.computron_9000/home" "$HOME/.computron_9000/state"
-    mkdir -p "$HOME/.computron_9000/home" "$HOME/.computron_9000/state"
-    echo "✅ State wiped"
-
 # Open a bash shell in the running dev container
 shell:
     docker exec -it {{_ctr}} bash

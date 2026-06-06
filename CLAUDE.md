@@ -15,7 +15,6 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - `just restart-app` — Sync latest Python source, bounce the app
 - `just rebuild-ui` — Sync latest UI source, rebuild dist/
 - `just stop` — Stop the dev container (state at `~/.computron_9000/` persists)
-- `just reset` — Stop and wipe `~/.computron_9000/`
 - `just shell` — Bash inside the dev container
 - `just logs` — Tail app + inference logs
 

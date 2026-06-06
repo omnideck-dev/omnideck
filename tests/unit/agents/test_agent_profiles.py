@@ -53,6 +53,17 @@ class TestAgentProfileModel:
         assert p.temperature is None
         assert p.think is None
 
+    def test_autonomy_toggles_default_true(self):
+        """allow_spawn/allow_load_skills default True, and legacy JSON without
+        them loads as True — so the cutover doesn't strip spawn/load from any
+        existing profile."""
+        p = AgentProfile(id="x", name="X", model="m")
+        assert p.allow_spawn is True
+        assert p.allow_load_skills is True
+        legacy = AgentProfile.model_validate({"id": "old", "name": "Old", "model": "m"})
+        assert legacy.allow_spawn is True
+        assert legacy.allow_load_skills is True
+
     def test_full_profile(self):
         """Profile with all fields set."""
         p = AgentProfile(

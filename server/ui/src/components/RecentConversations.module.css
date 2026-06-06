@@ -6,49 +6,11 @@
 }
 
 /* ── Search ──────────────────────────────────────────── */
+/* Visuals come from the SearchInput primitive; this only positions it. The
+ * extra top margin separates the conversation search from the nav above. */
 .search {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    height: 32px;
-    /* Extra top margin separates the conversation search from the nav
-     * above — signals that recent conversations are a distinct section.
-     */
     margin: var(--sp-3) var(--sp-2) var(--sp-1);
-    padding: 0 10px;
-    background: var(--elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-tertiary);
-    font-size: 12.5px;
 }
-.search:focus-within { border-color: var(--accent); }
-.search i { font-size: 12px; flex-shrink: 0; }
-.search input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 12.5px;
-    font-family: var(--font-body);
-    outline: none;
-}
-.search input::placeholder { color: var(--text-tertiary); }
-.clearBtn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: var(--radius-sm);
-}
-.clearBtn:hover { color: var(--text-primary); }
-.clearBtn i { font-size: 11px; }
 
 /* ── Scrollable list ─────────────────────────────────── */
 .list {

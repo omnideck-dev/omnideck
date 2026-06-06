@@ -35,7 +35,6 @@ just dev            # Start dev container, sync source, build UI, launch on :808
 just restart-app    # Sync Python source, bounce the app
 just rebuild-ui     # Sync UI source, rebuild dist/
 just stop           # Stop container (state persists in ~/.computron_9000/)
-just reset          # Stop and wipe state
 just shell          # Bash inside the container
 just logs           # Tail app + inference logs
 ```
@@ -141,7 +140,6 @@ Run `just` (no args) to see all available recipes. Key ones:
 | `just restart-app` | Sync latest Python source and bounce the app |
 | `just rebuild-ui` | Sync latest UI source and rebuild dist/ |
 | `just stop` | Stop the dev container (state at `~/.computron_9000/` persists) |
-| `just reset` | Stop and wipe state |
 | `just shell` | Bash shell inside the dev container |
 | `just logs` | Tail app + inference logs |
 | `just publish` | Build + push multi-arch image (amd64 + arm64) to GHCR |

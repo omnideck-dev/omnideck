@@ -1,4 +1,4 @@
-"""Migration 006: events-first persistence.
+"""Migration 007: events-first persistence.
 
 Collapses the per-conversation ``history.json`` / ``events.json`` /
 ``summaries/*.json`` / ``sub_agents/*.json`` files into a single
@@ -7,7 +7,7 @@ is preserved untouched.
 
 After this migration, ``events.jsonl`` is the source of truth for
 conversation state. The old files are archived under
-``{state_dir}/.backups/006_events_first/conversations/{conv_id}/`` and
+``{state_dir}/.backups/007_events_first/conversations/{conv_id}/`` and
 can be deleted at any time.
 
 Entry point: ``migrate(state_dir)`` scans
@@ -908,11 +908,11 @@ def migrate_conversation(
     result.events_written = len(all_events)
 
     # Archive the legacy files so they can be rolled back if needed.
-    # Default archive target is a sibling ``_pre_006`` directory so the
+    # Default archive target is a sibling ``_pre_007`` directory so the
     # function is usable standalone (e.g. one-off scripts) without the
     # state-dir backup helper.
     if archive is None:
-        archive = _local_pre_006_archive(conv_dir)
+        archive = _local_pre_007_archive(conv_dir)
     for name in ("history.json", "events.json"):
         p = conv_dir / name
         if p.exists():
@@ -925,9 +925,9 @@ def migrate_conversation(
     return result
 
 
-def _local_pre_006_archive(conv_dir: Path) -> Callable[[Path], None]:
-    """Default archive: move each file/dir to ``{conv_dir}/_pre_006/``."""
-    pre = conv_dir / "_pre_006"
+def _local_pre_007_archive(conv_dir: Path) -> Callable[[Path], None]:
+    """Default archive: move each file/dir to ``{conv_dir}/_pre_007/``."""
+    pre = conv_dir / "_pre_007"
     pre.mkdir(exist_ok=True)
     def _move(p: Path) -> None:
         p.rename(pre / p.name)
@@ -965,11 +965,11 @@ def _infer_sub_agent_id(stem: str, events_old: list[dict[str, Any]]) -> str | No
 
 def _backup_archive(state_dir: Path) -> Callable[[Path, Path], None]:
     """Archive callback that places each legacy file under
-    ``{state_dir}/.backups/006_events_first/`` preserving its path
+    ``{state_dir}/.backups/007_events_first/`` preserving its path
     relative to ``state_dir``.
     """
     from migrations._backup import _BACKUPS_DIR
-    backups_root = state_dir / _BACKUPS_DIR / "006_events_first"
+    backups_root = state_dir / _BACKUPS_DIR / "007_events_first"
 
     def _archive(conv_dir: Path) -> Callable[[Path], None]:
         rel = conv_dir.relative_to(state_dir)
@@ -994,7 +994,7 @@ def migrate(state_dir: Path) -> None:
 
     Idempotent — conversations that already have ``events.jsonl`` are
     skipped. Legacy files for each migrated conversation are moved
-    under ``{state_dir}/.backups/006_events_first/conversations/{id}/``.
+    under ``{state_dir}/.backups/007_events_first/conversations/{id}/``.
     """
     conv_root = state_dir / "conversations"
     if not conv_root.is_dir():
@@ -1029,6 +1029,6 @@ def migrate(state_dir: Path) -> None:
             logger.exception("Failed to migrate conversation %s", entry.name)
 
     logger.info(
-        "006_events_first complete: migrated=%d skipped=%d failed=%d",
+        "007_events_first complete: migrated=%d skipped=%d failed=%d",
         migrated, skipped, failed,
     )
