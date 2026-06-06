@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './DesktopPreview.module.css';
-import ExpandIcon from './icons/ExpandIcon.jsx';
+import ArrowsAngleExpandIcon from './icons/ArrowsAngleExpandIcon.jsx';
 
 const MouseIcon = ({ size = 14 }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -109,7 +109,7 @@ export default function DesktopPreview({ visible, onClose, overlay }) {
                     aria-label="Open fullscreen"
                     title="Open fullscreen"
                 >
-                    <ExpandIcon size={14} />
+                    <ArrowsAngleExpandIcon size={14} />
                 </button>
             </div>
             <iframe
