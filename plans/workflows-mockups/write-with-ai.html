@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OMNIDECK — "Write with AI" interaction</title>
+<style>
+:root{
+  --canvas:#f8f9fb; --surface:#eef0f5; --elevated:#ffffff;
+  --text-primary:#0f172a; --text-secondary:#475569; --text-tertiary:#94a3b8;
+  --border:#e2e8f0; --border-subtle:#f1f5f9; --border-strong:#cbd5e1;
+  --accent:#2563eb; --accent-hover:#1d4ed8; --accent-muted:rgba(37,99,235,0.08); --accent-glow:rgba(37,99,235,0.15);
+  --success:#16a34a; --success-muted:rgba(22,163,74,0.08);
+  --warning:#d97706; --warning-muted:rgba(217,119,6,0.08);
+  --shadow-sm:0 1px 2px rgba(15,23,42,0.05);
+  --shadow-md:0 2px 8px rgba(15,23,42,0.08),0 1px 2px rgba(15,23,42,0.04);
+  --shadow-lg:0 4px 16px rgba(15,23,42,0.10),0 2px 4px rgba(15,23,42,0.05);
+  --shadow-glow:0 0 0 3px var(--accent-glow);
+  --radius-sm:4px; --radius-md:6px; --radius-lg:8px; --radius-xl:12px; --radius-full:999px;
+  --font-brand:'Roboto Mono','Consolas',monospace;
+  --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-code:'JetBrains Mono','Fira Mono','Consolas',monospace;
+}
+[data-theme="dark"]{
+  --canvas:#0c0e14; --surface:#151821; --elevated:#1e2130;
+  --text-primary:#e8ecf4; --text-secondary:#8892a8; --text-tertiary:#4a5168;
+  --border:#252a3a; --border-subtle:#1a1e2a; --border-strong:#363d52;
+  --accent:#3b82f6; --accent-hover:#60a5fa; --accent-muted:rgba(59,130,246,0.12); --accent-glow:rgba(59,130,246,0.20);
+  --success:#4ade80; --success-muted:rgba(74,222,128,0.12);
+  --warning:#fbbf24; --warning-muted:rgba(251,191,36,0.12);
+  --shadow-lg:0 4px 16px rgba(0,0,0,0.5),0 2px 4px rgba(0,0,0,0.3);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;}
+body{background:var(--canvas);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;
+  background-image:radial-gradient(circle, var(--border) 1px, transparent 1px);background-size:26px 26px;}
+button{font:inherit;cursor:pointer;border:none;background:transparent;color:inherit;}
+.ic{display:inline-block;width:1em;height:1em;vertical-align:-0.125em;}
+i.bi{display:inline-flex;align-items:center;justify-content:center;}
+
+.board{max-width:1500px;margin:0 auto;padding:34px 34px 80px;}
+.boardKicker{font-family:var(--font-brand);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);}
+.boardTitle{font-size:24px;font-weight:700;margin-top:2px;}
+.boardSub{color:var(--text-secondary);font-size:13px;max-width:720px;line-height:1.5;margin-top:4px;}
+.themeToggle{position:fixed;top:20px;right:24px;width:34px;height:34px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);}
+
+.flow{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;margin-top:26px;}
+.step{display:flex;align-items:flex-start;gap:14px;}
+.arrow{align-self:center;color:var(--text-tertiary);font-size:20px;padding-top:60px;}
+
+.frame{width:296px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);overflow:hidden;}
+.cap{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border-subtle);background:var(--surface);}
+.capNum{width:20px;height:20px;border-radius:var(--radius-md);background:var(--accent);color:#fff;font-family:var(--font-brand);font-size:11px;display:flex;align-items:center;justify-content:center;}
+.capTitle{font-size:12px;font-weight:700;}
+.capNote{font-size:10px;color:var(--text-tertiary);margin-top:1px;}
+.body{padding:13px;}
+
+/* inspector field context */
+.miniInsp{font-family:var(--font-brand);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);display:flex;align-items:center;gap:6px;margin-bottom:10px;}
+.tile{width:20px;height:20px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:11px;background:rgba(13,148,136,.12);color:#0d9488;}
+[data-theme="dark"] .tile{background:rgba(45,212,191,.14);color:#2dd4bf;}
+
+.flabel{font-family:var(--font-brand);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+.ai{margin-left:auto;color:var(--accent);font-weight:600;text-transform:none;letter-spacing:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;}
+.fieldVal{display:flex;align-items:center;gap:8px;font-size:12px;}
+.token{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-code);font-size:10.5px;padding:2px 7px;border-radius:var(--radius-sm);background:var(--accent-muted);color:var(--accent);}
+.muted{color:var(--text-tertiary);}
+
+/* composer */
+.composer{border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--accent-muted);overflow:hidden;}
+.compHead{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid rgba(37,99,235,.12);}
+.compHead .t{font-size:11px;font-weight:700;color:var(--accent);}
+.compHead .x{margin-left:auto;color:var(--text-tertiary);font-size:12px;}
+.ctxChips{display:flex;flex-wrap:wrap;gap:5px;padding:8px 10px 4px;}
+.cchip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:9px;padding:2px 7px;border-radius:var(--radius-full);background:var(--elevated);border:1px solid var(--border);color:var(--text-secondary);}
+.cchip i{color:var(--text-tertiary);}
+.compBox{margin:6px 10px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 9px;font-size:12px;min-height:46px;position:relative;}
+.ph{color:var(--text-tertiary);}
+.caret{display:inline-block;width:1px;height:14px;background:var(--accent);vertical-align:-2px;animation:bl 1s steps(1) infinite;}
+@keyframes bl{50%{opacity:0}}
+.starters{display:flex;flex-wrap:wrap;gap:5px;padding:0 10px 6px;}
+.starter{font-size:10.5px;padding:3px 9px;border-radius:var(--radius-full);background:var(--elevated);border:1px dashed var(--border-strong);color:var(--text-secondary);}
+.starter:hover{border-color:var(--accent);color:var(--accent);}
+.compFoot{display:flex;align-items:center;gap:8px;padding:7px 10px;border-top:1px solid rgba(37,99,235,.12);}
+.compFoot .hint{font-size:10px;color:var(--text-tertiary);}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:26px;padding:0 10px;border-radius:var(--radius-md);font-size:11.5px;font-weight:500;border:1px solid transparent;}
+.btn.filled{background:var(--accent);color:#fff;} .btn.outline{border-color:var(--border);color:var(--text-primary);background:var(--elevated);} .btn.ghost{color:var(--text-tertiary);}
+.btn.xs{height:23px;padding:0 8px;font-size:11px;}
+
+/* @ mention popover */
+.atPop{position:absolute;left:9px;top:34px;width:200px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);overflow:hidden;z-index:5;}
+.atHead{font-family:var(--font-brand);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);padding:6px 9px;border-bottom:1px solid var(--border-subtle);}
+.atRow{display:flex;align-items:center;gap:7px;padding:6px 9px;font-family:var(--font-code);font-size:11px;}
+.atRow.on,.atRow:hover{background:var(--accent-muted);color:var(--accent);}
+.atType{margin-left:auto;font-family:var(--font-brand);font-size:9px;color:var(--text-tertiary);}
+
+/* result */
+.result{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.resHead{display:flex;align-items:center;gap:6px;padding:6px 9px;background:var(--success-muted);color:var(--success);font-family:var(--font-brand);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;}
+.resBody{padding:9px;}
+.resActions{display:flex;gap:6px;padding:8px 9px;border-top:1px solid var(--border-subtle);}
+.shimmer{height:13px;border-radius:var(--radius-sm);background:linear-gradient(90deg,var(--surface) 25%,var(--border) 37%,var(--surface) 63%);background-size:400% 100%;animation:sh 1.3s infinite;margin:4px 0;}
+@keyframes sh{0%{background-position:100% 0}100%{background-position:0 0}}
+
+/* thread */
+.thread{display:flex;flex-direction:column;gap:8px;}
+.tPrompt{align-self:flex-end;background:var(--accent);color:#fff;font-size:11.5px;padding:6px 10px;border-radius:var(--radius-lg);border-bottom-right-radius:var(--radius-sm);max-width:90%;}
+.tHist{font-size:10.5px;color:var(--text-tertiary);border-left:2px solid var(--border);padding:2px 0 2px 8px;}
+.userIn{display:flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:6px 9px;font-size:11.5px;}
+</style>
+</head>
+<body>
+<button class="themeToggle" id="themeBtn" title="Toggle theme"><i class="bi bi-sun"></i></button>
+<div class="board">
+  <div class="boardKicker">OMNIDECK · Workflows</div>
+  <div class="boardTitle">"Write with AI" — how you enter a prompt</div>
+  <div class="boardSub">The field already knows its context, so prompts stay tiny. Click the link → an inline composer opens with the data already in scope. Type (or pick a starter, or <b>@mention</b> a data field), generate, then Insert / Test / Tweak — all without leaving the inspector.</div>
+
+  <div class="flow">
+
+    <!-- 1 affordance -->
+    <div class="step">
+      <div class="frame">
+        <div class="cap"><span class="capNum">1</span><div><div class="capTitle">The affordance</div><div class="capNote">on every AI-authorable field</div></div></div>
+        <div class="body">
+          <div class="miniInsp"><span class="tile"><i class="bi bi-wrench-adjustable"></i></span>Tool step · Send reply</div>
+          <div class="flabel">Subject <span class="ai"><i class="bi bi-stars"></i>Write with AI</span></div>
+          <div class="fieldVal"><span class="muted">←</span> <span class="token">trigger.subject</span></div>
+          <div style="margin-top:14px;font-size:11px;color:var(--text-tertiary)"><i class="bi bi-info-circle"></i> Click <b style="color:var(--accent)">Write with AI</b> to describe what this field should be.</div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+
+    <!-- 2 composer open + @ mention -->
+    <div class="step">
+      <div class="frame">
+        <div class="cap"><span class="capNum">2</span><div><div class="capTitle">Enter a prompt</div><div class="capNote">data is already in scope · type @ to insert a field</div></div></div>
+        <div class="body">
+          <div class="flabel">Subject</div>
+          <div class="composer">
+            <div class="compHead"><i class="bi bi-stars" style="color:var(--accent)"></i><span class="t">Write with AI</span><span class="x"><i class="bi bi-x"></i></span></div>
+            <div class="ctxChips">
+              <span class="cchip"><i class="bi bi-bullseye"></i>This field · Subject</span>
+              <span class="cchip"><i class="bi bi-wrench-adjustable"></i>Send email</span>
+              <span class="cchip"><i class="bi bi-diagram-3"></i>Data: trigger, classify, draft</span>
+            </div>
+            <div class="compBox">reply to <span class="token">@</span><span class="caret"></span>
+              <div class="atPop">
+                <div class="atHead">Insert data field</div>
+                <div class="atRow on">trigger.subject <span class="atType">text</span></div>
+                <div class="atRow">trigger.sender <span class="atType">text</span></div>
+                <div class="atRow">classify.topic <span class="atType">text</span></div>
+                <div class="atRow">draft.text <span class="atType">text</span></div>
+              </div>
+            </div>
+            <div class="starters">
+              <span class="starter">Reply to the original</span>
+              <span class="starter">Add the topic</span>
+            </div>
+            <div class="compFoot"><span class="hint">Enter to generate</span><span style="flex:1"></span><button class="btn filled"><i class="bi bi-stars"></i>Generate</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+
+    <!-- 3 generating -->
+    <div class="step">
+      <div class="frame">
+        <div class="cap"><span class="capNum">3</span><div><div class="capTitle">Generating</div><div class="capNote">prompt locked in</div></div></div>
+        <div class="body">
+          <div class="flabel">Subject</div>
+          <div class="composer">
+            <div class="compHead"><i class="bi bi-stars" style="color:var(--accent)"></i><span class="t">Write with AI</span><span class="x"><i class="bi bi-x"></i></span></div>
+            <div class="compBox" style="min-height:auto">reply to <span class="token">trigger.subject</span>, prefix “Re:”</div>
+            <div class="resBody" style="padding:10px">
+              <div style="font-size:10.5px;color:var(--text-tertiary);margin-bottom:6px"><i class="bi bi-stars"></i> writing…</div>
+              <div class="shimmer" style="width:80%"></div>
+              <div class="shimmer" style="width:55%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+
+    <!-- 4 result -->
+    <div class="step">
+      <div class="frame">
+        <div class="cap"><span class="capNum">4</span><div><div class="capTitle">Review the result</div><div class="capNote">shown in the field's own format</div></div></div>
+        <div class="body">
+          <div class="flabel">Subject</div>
+          <div class="result">
+            <div class="resHead"><i class="bi bi-check2"></i>Proposed value</div>
+            <div class="resBody">
+              <div class="fieldVal" style="flex-wrap:wrap"><span class="muted">←</span> <span style="font-family:var(--font-code);font-size:10.5px;color:var(--text-secondary)">"Re: " +</span> <span class="token">trigger.subject</span></div>
+              <div style="font-size:10.5px;color:var(--text-tertiary);margin-top:7px"><i class="bi bi-eye"></i> preview: <span style="color:var(--text-secondary)">"Re: Service outage?"</span></div>
+            </div>
+            <div class="resActions"><button class="btn filled xs"><i class="bi bi-check2"></i>Insert</button><button class="btn outline xs"><i class="bi bi-play-fill"></i>Test</button><button class="btn ghost xs">Tweak</button><button class="btn ghost xs">Discard</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><i class="bi bi-arrow-right"></i></div>
+
+    <!-- 5 tweak thread -->
+    <div class="step">
+      <div class="frame">
+        <div class="cap"><span class="capNum">5</span><div><div class="capTitle">Tweak → short thread</div><div class="capNote">refine in place; or open in side panel</div></div></div>
+        <div class="body">
+          <div class="flabel">Subject <span class="ai" style="font-size:9.5px"><i class="bi bi-box-arrow-up-right"></i>Open in panel</span></div>
+          <div class="composer">
+            <div class="thread" style="padding:10px">
+              <div class="tHist">"Re: " + trigger.subject</div>
+              <div class="tPrompt">drop the “Re:” if it's already a reply</div>
+              <div class="result" style="border-color:var(--success-muted)">
+                <div class="resHead"><i class="bi bi-check2"></i>Updated</div>
+                <div class="resBody"><div style="font-family:var(--font-code);font-size:10.5px;color:var(--text-secondary)">"Re: " + s if not s.startswith("Re:") else s</div></div>
+                <div class="resActions"><button class="btn filled xs"><i class="bi bi-check2"></i>Insert</button><button class="btn ghost xs">Tweak</button></div>
+              </div>
+            </div>
+            <div style="padding:0 10px 10px"><div class="userIn"><i class="bi bi-stars" style="color:var(--accent)"></i><span class="muted">Ask for another change…</span><span style="flex:1"></span><i class="bi bi-send" style="color:var(--text-tertiary)"></i></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const FILL=new Set(['stars','play-fill','bullseye','send']);
+  const ICONS={
+    'sun':'<circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4"/>',
+    'stars':'<path d="M7 1.8l1.05 2.65L10.7 5.5 8.05 6.55 7 9.2 5.95 6.55 3.3 5.5l2.65-1.05z"/><path d="M11.6 9.2l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
+    'wrench-adjustable':'<path d="M10.6 2.2a2.9 2.9 0 0 0-2.8 3.6L2.6 11l1.7 1.7 5.2-5.2a2.9 2.9 0 0 0 3.6-2.8l-1.7 1.7-1.6-.4-.4-1.6z"/>',
+    'diagram-3':'<rect x="6" y="1.5" width="4" height="3" rx="0.5"/><rect x="1.8" y="11" width="4" height="3" rx="0.5"/><rect x="10.2" y="11" width="4" height="3" rx="0.5"/><path d="M8 4.5V8M3.8 11V8h8.4v3"/>',
+    'bullseye':'<circle cx="8" cy="8" r="6.2"/><circle cx="8" cy="8" r="3.2"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/>',
+    'info-circle':'<circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6"/><path d="M8 4.9v.2"/>',
+    'arrow-right':'<path d="M3 8h9M9 4.5L12.5 8 9 11.5"/>',
+    'x':'<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/>',
+    'check2':'<path d="M3 8.4l3.4 3.4L13 4.2"/>',
+    'play-fill':'<path d="M5 3.4v9.2L13 8z"/>',
+    'eye':'<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+    'send':'<path d="M8 13V4M4.5 7.5L8 4l3.5 3.5"/>',
+    'box-arrow-up-right':'<path d="M9 3h4v4M13 3l-6 6"/><path d="M11 9.5V13H3V5h3.5"/>'
+  };
+  function svgFor(name){const inner=ICONS[name];if(inner===undefined)return null;const fill=FILL.has(name);
+    return '<svg class="ic" viewBox="0 0 16 16" '+(fill?'fill="currentColor" stroke="none"':'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"')+'>'+inner+'</svg>';}
+  document.querySelectorAll('i.bi').forEach(el=>{const cls=[...el.classList].find(c=>c.startsWith('bi-'));if(!cls)return;const h=svgFor(cls.slice(3));if(h)el.outerHTML=h;});
+  document.getElementById('themeBtn').addEventListener('click',()=>{const h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');});
+</script>
+</body>
+</html>
