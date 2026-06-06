@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import styles from './BrowserPreview.module.css';
 import LockIcon from './icons/LockIcon.jsx';
-import ArrowsAngleExpandIcon from './icons/ArrowsAngleExpandIcon.jsx';
 import IconButton from './primitives/IconButton.jsx';
 
 /** Extract a short host label from a URL for the thumbnail caption. */
@@ -47,7 +46,7 @@ export default function BrowserPreview({ tabs, onFullscreen }) {
                         aria-label="Open fullscreen"
                         data-testid="browser-fullscreen"
                     >
-                        <ArrowsAngleExpandIcon size={14} />
+                        <i className="bi bi-arrows-angle-expand" style={{ fontSize: 14 }} />
                     </IconButton>
                 )}
             </div>

@@ -3,8 +3,6 @@ import styles from './FilePreview.module.css';
 import FileIcon from './icons/FileIcon.jsx';
 import ImageIcon from './icons/ImageIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon.jsx';
-import ArrowsAngleExpandIcon from './icons/ArrowsAngleExpandIcon.jsx';
-import ArrowsAngleContractIcon from './icons/ArrowsAngleContractIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
@@ -158,7 +156,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             aria-label="Exit fullscreen"
                             data-testid="fullscreen-back"
                         >
-                            <ArrowsAngleContractIcon size={14} />
+                            <i className="bi bi-arrows-angle-contract" style={{ fontSize: 14 }} />
                         </IconButton>
                     ) : onFullscreen && (
                         <IconButton
@@ -168,7 +166,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             aria-label="Open fullscreen"
                             data-testid="file-fullscreen"
                         >
-                            <ArrowsAngleExpandIcon size={14} />
+                            <i className="bi bi-arrows-angle-expand" style={{ fontSize: 14 }} />
                         </IconButton>
                     )}
                 </div>
