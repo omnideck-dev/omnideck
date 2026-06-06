@@ -88,7 +88,10 @@ export default function useFileContent(item) {
         let baseline = null;
 
         const probe = async () => {
-            const r = await fetch(watchKey, { method: 'HEAD' });
+            // no-store: the backend sends no Cache-Control, so without this the
+            // browser serves a cached validator and the change goes unseen until
+            // its heuristic freshness window expires.
+            const r = await fetch(watchKey, { method: 'HEAD', cache: 'no-store' });
             return r.headers.get('ETag') || r.headers.get('Last-Modified');
         };
 

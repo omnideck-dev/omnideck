@@ -57,6 +57,13 @@ describe('useFileContent disk-change watcher', () => {
             await vi.advanceTimersByTimeAsync(4000); // next poll tick detects it
         });
         expect(latest.stale).toBe(true);
+
+        // The probe must bypass the browser cache, or it reads a stale validator.
+        const headOpts = global.fetch.mock.calls
+            .filter(([, opts]) => opts && opts.method === 'HEAD')
+            .map(([, opts]) => opts);
+        expect(headOpts.length).toBeGreaterThan(0);
+        expect(headOpts.every((o) => o.cache === 'no-store')).toBe(true);
     });
 
     it('refresh clears the flag and refetches with a cache-busting marker', async () => {
