@@ -1,6 +1,7 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import useFileContent from '../useFileContent.js';
+import { _reset as resetFileWatch } from '../../utils/fileWatchStore.js';
 
 // Captures the hook's latest return value so assertions can read it between acts.
 let latest;
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    resetFileWatch();
     latest = undefined;
 });
 
@@ -79,6 +81,34 @@ describe('useFileContent disk-change watcher', () => {
             .filter(([, opts]) => !opts || opts.method !== 'HEAD')
             .map(([url]) => url);
         expect(getUrls.some((u) => u.includes('v=1'))).toBe(true);
+    });
+
+    it('shares stale and refresh across previews of the same file', async () => {
+        // Mirrors the inline tab + fullscreen overlay both mounted at once.
+        function TwoViews({ item }) {
+            const a = useFileContent(item);
+            const b = useFileContent(item);
+            latest = { a, b };
+            return null;
+        }
+        await act(async () => {
+            render(<TwoViews item={textItem} />);
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        currentEtag = 'v2';
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(4000);
+        });
+        expect(latest.a.stale).toBe(true);
+        expect(latest.b.stale).toBe(true);
+
+        // Refreshing through one view must clear the other.
+        await act(async () => {
+            latest.a.refresh();
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(latest.a.stale).toBe(false);
+        expect(latest.b.stale).toBe(false);
     });
 
     it('does not watch inline (base64) content with no disk path', async () => {

@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js';
+import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
 
 // How often to re-check a disk-backed file for changes while its preview is open.
@@ -21,17 +22,25 @@ export default function useFileContent(item) {
     const { filename, content_type, content, path } = item || {};
 
     const [fetchedText, setFetchedText] = useState(null);
-    const [stale, setStale] = useState(false);
-    const [reloadNonce, setReloadNonce] = useState(0);
     const [viewMode, setViewMode] = useState(() =>
         hasPreviewToggle(content_type, filename) ? 'preview' : 'source'
+    );
+
+    // Shared across every preview of this file. Inline base64 content has no
+    // disk backing, so there's nothing to watch and no key to share.
+    const watchKey = !content && path ? path : null;
+    const stale = useSyncExternalStore(
+        useCallback((cb) => fileWatch.subscribe(watchKey, cb), [watchKey]),
+        useCallback(() => fileWatch.getSnapshot(watchKey).stale, [watchKey]),
+    );
+    const version = useSyncExternalStore(
+        useCallback((cb) => fileWatch.subscribe(watchKey, cb), [watchKey]),
+        useCallback(() => fileWatch.getSnapshot(watchKey).version, [watchKey]),
     );
 
     const itemKey = path || content;
     useEffect(() => {
         setFetchedText(null);
-        setStale(false);
-        setReloadNonce(0);
         setViewMode(hasPreviewToggle(content_type, filename) ? 'preview' : 'source');
     }, [itemKey, content_type, filename]);
 
@@ -55,7 +64,7 @@ export default function useFileContent(item) {
     useEffect(() => {
         if (isImage || isPdf || content || !path) return;
         let cancelled = false;
-        fetch(_bust(path, reloadNonce)).then(r => {
+        fetch(_bust(path, version)).then(r => {
             if (!r.ok) throw new Error(`Failed to load ${path}: ${r.status}`);
             return r.text();
         }).then(t => {
@@ -64,23 +73,22 @@ export default function useFileContent(item) {
             if (!cancelled) setFetchedText(`Error loading file: ${err.message}`);
         });
         return () => { cancelled = true; };
-    }, [content, path, isImage, isPdf, reloadNonce]);
+    }, [content, path, isImage, isPdf, version]);
 
     // Watch the disk-backed file for changes, independent of how it's rendered.
-    // Inline (base64) content has no disk backing, so there's nothing to watch.
-    // Idles while the tab is hidden; tears down on unmount or file switch.
+    // The stale flag lives in the shared store so every preview of this file
+    // sees it. Idles while the tab is hidden; tears down on unmount/file switch.
     const refresh = useCallback(() => {
-        setStale(false);
-        setReloadNonce(n => n + 1);
-    }, []);
+        if (watchKey) fileWatch.refresh(watchKey);
+    }, [watchKey]);
 
     useEffect(() => {
-        if (content || !path) return;
+        if (!watchKey) return;
         let cancelled = false;
         let baseline = null;
 
         const probe = async () => {
-            const r = await fetch(path, { method: 'HEAD' });
+            const r = await fetch(watchKey, { method: 'HEAD' });
             return r.headers.get('ETag') || r.headers.get('Last-Modified');
         };
 
@@ -90,7 +98,7 @@ export default function useFileContent(item) {
             if (document.hidden || baseline == null) return;
             try {
                 const v = await probe();
-                if (!cancelled && v && v !== baseline) setStale(true);
+                if (!cancelled && v && v !== baseline) fileWatch.markStale(watchKey);
             } catch { /* transient network blip — retry next tick */ }
         };
         const timer = setInterval(check, POLL_INTERVAL_MS);
@@ -103,22 +111,23 @@ export default function useFileContent(item) {
             clearInterval(timer);
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [content, path, reloadNonce]);
+        // Re-baseline after a refresh bumps the shared version.
+    }, [watchKey, version]);
 
     // Blob URL for HTML iframe preview
     const iframeSrc = useMemo(() => {
-        if (isHtml && path) return _bust(path, reloadNonce);
+        if (isHtml && path) return _bust(path, version);
         if (isHtml && text) {
             const blob = new Blob([text], { type: 'text/html' });
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isHtml, path, text, reloadNonce]);
+    }, [isHtml, path, text, version]);
 
     // Blob/path URL for PDF preview
     const pdfSrc = useMemo(() => {
         if (!isPdf) return null;
-        if (path) return _bust(path, reloadNonce);
+        if (path) return _bust(path, version);
         if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
@@ -127,13 +136,13 @@ export default function useFileContent(item) {
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isPdf, path, content, reloadNonce]);
+    }, [isPdf, path, content, version]);
 
     // Path URL for image preview (inline base64 content takes precedence).
     const imageSrc = useMemo(() => {
         if (!isImage || content || !path) return null;
-        return _bust(path, reloadNonce);
-    }, [isImage, content, path, reloadNonce]);
+        return _bust(path, version);
+    }, [isImage, content, path, version]);
 
     useEffect(() => {
         return () => {
