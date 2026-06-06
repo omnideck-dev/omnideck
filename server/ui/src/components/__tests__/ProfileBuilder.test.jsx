@@ -117,21 +117,27 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         expect(screen.getByRole('switch', { name: 'Allow loading skills mid-conversation' })).toBeChecked();
     });
 
-    it('disables Save until a model is chosen', () => {
-        renderBuilder({ profile: _profile({ model: '' }) });
+    it('disables Save on a new profile until a model is chosen', () => {
+        renderBuilder({ profile: _profile({ model: '', _unsaved: true }) });
         expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
         expect(screen.getByTestId('profile-model-required')).toBeInTheDocument();
     });
 
-    it('enables Save once a model is set', () => {
-        renderBuilder({ profile: _profile({ model: 'test-model:7b' }) });
+    it('enables Save on a new profile once a model is set', () => {
+        renderBuilder({ profile: _profile({ model: 'test-model:7b', _unsaved: true }) });
         expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
         expect(screen.queryByTestId('profile-model-required')).not.toBeInTheDocument();
     });
 
-    it('does not call onSave when the profile has no model', async () => {
+    it('lets an existing model-less profile be saved (e.g. to disable or rename it)', () => {
+        renderBuilder({ profile: _profile({ model: '' }) });
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+        expect(screen.queryByTestId('profile-model-required')).not.toBeInTheDocument();
+    });
+
+    it('does not call onSave when a new profile has no model', async () => {
         const user = userEvent.setup();
-        const { onSave } = renderBuilder({ profile: _profile({ model: '' }) });
+        const { onSave } = renderBuilder({ profile: _profile({ model: '', _unsaved: true }) });
         // The button is disabled, but guard the handler too.
         await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(onSave).not.toHaveBeenCalled();

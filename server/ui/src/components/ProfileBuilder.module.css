@@ -245,51 +245,6 @@
     cursor: not-allowed;
 }
 
-/* ---- Skill chips ---- */
-.chipGrid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-}
-
-.chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-family: var(--font-brand);
-    font-size: 0.72rem;
-    font-weight: 500;
-    padding: 0.25rem 0.55rem;
-    border-radius: var(--radius-full);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-primary);
-    cursor: pointer;
-    box-shadow: none;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.chip:hover:not(:disabled) {
-    border-color: var(--success);
-}
-
-.chip:disabled {
-    cursor: not-allowed;
-}
-
-.chipActive {
-    background: var(--success-muted);
-    border-color: var(--success-muted);
-    color: var(--success);
-}
-
-.chipCheck {
-    font-size: 0.7rem;
-    line-height: 1;
-}
-
-
-
 /* ---- Bottom CTA for system profiles ---- */
 .bottomCta {
     display: flex;

@@ -134,7 +134,9 @@ export default function ProfileBuilder({
     }, [profile]);
 
     const handleSave = useCallback(async () => {
-        if (!draft || !onSave || !draft.model) return;
+        // A model is required to create a profile, but editing an existing
+        // model-less one (e.g. to disable or rename it) stays allowed.
+        if (!draft || !onSave || (draft._unsaved && !draft.model)) return;
         setSaveError(null);
         const result = await onSave(draft);
         if (result && result.ok === false && result.error) {
@@ -179,8 +181,8 @@ export default function ProfileBuilder({
                             <Button
                                 variant="filled"
                                 onClick={handleSave}
-                                disabled={!draft.model}
-                                title={!draft.model ? 'Choose a model before saving' : undefined}
+                                disabled={draft._unsaved && !draft.model}
+                                title={draft._unsaved && !draft.model ? 'Choose a model before saving' : undefined}
                             >
                                 Save
                             </Button>
@@ -260,9 +262,9 @@ export default function ProfileBuilder({
                             }}
                             inline
                         />
-                        {!draft.model && (
+                        {draft._unsaved && !draft.model && (
                             <div className={styles.modelRequired} data-testid="profile-model-required">
-                                A model is required before this profile can be saved.
+                                Choose a model to create this profile.
                             </div>
                         )}
                     </section>

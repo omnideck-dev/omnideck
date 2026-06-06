@@ -82,7 +82,11 @@ export default function CategoryCatalog({ categories }) {
                                                         {tools.map((tool) => <span key={tool} className={styles.toolPill}>{tool}</span>)}
                                                     </div>
                                                 ) : (
-                                                    <span className={styles.toolEmpty}>No tools available — connect this integration to enable them.</span>
+                                                    <span className={styles.toolEmpty}>
+                                                        {integration
+                                                            ? 'No tools available — connect this integration to enable them.'
+                                                            : 'No tools available.'}
+                                                    </span>
                                                 )}
                                             </div>
                                         </td>
