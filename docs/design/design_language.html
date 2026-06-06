@@ -2256,6 +2256,60 @@ body {
   opacity: 0.6;
 }
 
+/* ── Library Header (view tabs + scoped search) ──────── */
+.dl-libhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-5);
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border);
+}
+.dl-libhead-views { display: flex; gap: var(--sp-5); }
+.dl-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 12px 0;
+  cursor: pointer;
+  transition: color 150ms var(--ease), border-color 150ms var(--ease);
+  box-shadow: none;
+}
+.dl-view-tab:hover { color: var(--text-primary); }
+.dl-view-tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.dl-view-count {
+  font-family: var(--font-brand);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  color: var(--text-secondary);
+}
+.dl-view-tab.active .dl-view-count { background: var(--accent); color: #fff; }
+.dl-libhead-search { position: relative; display: inline-flex; align-items: center; }
+.dl-libhead-search .bi-search {
+  position: absolute;
+  left: 10px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.dl-libhead-search .input { padding-left: 30px; }
+
 /* ── Modal / Dialog ──────────────────────────────────── */
 .dl-modal-stage {
   position: relative;
@@ -4787,6 +4841,55 @@ body {
     </div>
   </div>
 
+  <!-- ═══ 27. Library Header ═══ -->
+  <div class="section">
+    <div class="section-title">27. Library Header</div>
+    <div class="section-desc">
+      A secondary, in-content view switch for browsing a collection. View tabs sit on the left and
+      <strong>drive the view below</strong>; a scoped search aligns right and re-scopes to whichever view
+      is active. Deliberately distinct from the brand Tabs (§14): body font, mixed-case, with a count
+      badge — so a sub-navigation reads as <em>subordinate</em> to the uppercase Settings tabs above it
+      rather than competing with them as a second row of identical chrome. Pairs with a master-detail or
+      catalog body underneath.
+    </div>
+
+    <div class="subsection">
+      <div class="subsection-label">Anatomy</div>
+      <div style="background:var(--canvas);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;max-width:760px">
+        <div class="dl-libhead">
+          <div class="dl-libhead-views">
+            <button class="dl-view-tab active">My Skills <span class="dl-view-count">5</span></button>
+            <button class="dl-view-tab">Tool Bundles <span class="dl-view-count">13</span></button>
+          </div>
+          <div class="dl-libhead-search">
+            <i class="bi bi-search"></i>
+            <input class="input" type="text" placeholder="Search skills…">
+          </div>
+        </div>
+        <div style="padding:var(--sp-4);font-size:12px;color:var(--text-tertiary);min-height:80px">
+          The active view tab's Signal Line aligns over the column it controls. Switching tabs swaps this
+          body (e.g. a master-detail list + editor, or a read-only catalog) and updates the search
+          placeholder to match.
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;color:var(--text-tertiary);margin-top:8px;max-width:680px;line-height:1.5">
+      <strong style="color:var(--text-secondary)">Layout:</strong> header padding <code>0 --sp-5</code>;
+      view tabs sit flush-left with gap <code>--sp-5</code> and padding <code>12px 0</code>, body font 13px
+      (active 600 weight + 2px accent Signal Line, inactive <code>--text-secondary</code>). The count badge
+      is brand font 10px, pill radius — muted by default, accent-filled when its tab is active. Search
+      aligns right, reusing the standard <code class="inline-code">.input</code> with a leading
+      <code>bi-search</code> glyph.
+      <strong style="color:var(--text-secondary)">Behavior:</strong> the active tab determines the body and
+      search scopes to it (placeholder follows). A read-only view (e.g. an app-defined catalog) omits the
+      <code>+ New</code> affordance its editable sibling carries.
+      <strong style="color:var(--text-secondary)">When to use:</strong> reach for this — not a second
+      §14 brand tab bar — whenever a Settings tab needs to flip between a primary editable collection and
+      a supporting reference.
+    </div>
+  </div>
+
   <!-- ═══════════════════════════════════════════════════════
        PART V — ICONOGRAPHY
        Canonical icon set + sizing rules
@@ -4801,9 +4904,9 @@ body {
     </div>
   </div>
 
-  <!-- ═══ 27. Iconography ═══ -->
+  <!-- ═══ 28. Iconography ═══ -->
   <div class="section">
-    <div class="section-title">27. Iconography</div>
+    <div class="section-title">28. Iconography</div>
     <div class="section-desc">
       <strong>Library:</strong> <a href="https://icons.getbootstrap.com/" style="color:var(--accent)">Bootstrap Icons 1.11.3</a> via CDN (already linked in the mockup head).
       All icons render at <strong>16px</strong> default, inheriting <code>currentColor</code>.

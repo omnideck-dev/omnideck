@@ -6,7 +6,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ._registry import get_skill, list_skills
+from ._resolve import resolve_skill_by_name
+from ._store import list_skill_records
 from .agent_state import get_active_agent_state
 
 logger = logging.getLogger(__name__)
@@ -65,16 +66,23 @@ def _log_skill_error(skill_name: str, error: str) -> None:
     ))
 
 
+def _available_skill_names() -> list[str]:
+    return [r.name for r in list_skill_records()]
+
+
 def list_available_skills() -> str:
-    """List all available skills that can be loaded with load_skill.
+    """List all skills that can be loaded with load_skill.
+
+    A skill whose categories grant no tools right now (e.g. its capability isn't
+    connected, or a feature is off) still appears — it simply loads no tools until then.
 
     Returns:
         A formatted list of skill names and descriptions.
     """
-    entries = list_skills()
-    if not entries:
+    records = list_skill_records()
+    if not records:
         return "No skills available."
-    lines = [f"  - {name}: {desc}" for name, desc in entries]
+    lines = [f"  - {r.name}: {r.description}" for r in records]
     return "Available skills:\n" + "\n".join(lines)
 
 
@@ -94,18 +102,18 @@ async def load_skill(name: str) -> str:
     if agent_state is None:
         return "Error: no active skill scope (internal error)"
 
-    if name in agent_state.loaded_skill_names:
-        _log_skill_already_loaded(name)
-        return f"Skill '{name}' is already loaded."
-
-    skill = get_skill(name)
+    skill = await resolve_skill_by_name(name)
     if skill is None:
-        available = ", ".join(n for n, _ in list_skills())
+        available = ", ".join(_available_skill_names())
         error_msg = f"Unknown skill '{name}'. Available: {available}"
         _log_skill_error(name, error_msg)
         return error_msg
 
-    agent_state.add(skill)
+    if skill.id in agent_state.skill_ids:
+        _log_skill_already_loaded(name)
+        return f"Skill '{name}' is already loaded."
+
+    agent_state.load(skill)
     skill_tools = [getattr(t, "__name__", "?") for t in skill.tools]
     _log_skill_loaded(name, skill.description, skill_tools)
     return f"Loaded skill '{name}' ({len(skill_tools)} tools). Instructions added to system prompt."

@@ -1,0 +1,14 @@
+.tab {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.master {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}

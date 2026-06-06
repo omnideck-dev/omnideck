@@ -16,8 +16,7 @@ from sdk.events import (
     publish_event,
 )
 from sdk.hooks import PersistenceHook, default_hooks
-from sdk.skills import AgentState, get_skill, list_skills
-from sdk.tools._core import get_core_tools
+from sdk.skills import build_agent_state
 from sdk.turn import StopRequestedError, get_conversation_id, run_turn
 
 logger = logging.getLogger(__name__)
@@ -154,19 +153,7 @@ async def spawn_agent(
         _log_spawn_error(agent_name, msg)
         return msg
 
-    agent_state = AgentState(await get_core_tools())
-    for skill_name in agent_profile.skills:
-        skill = get_skill(skill_name)
-        if skill is None:
-            available = [n for n, _ in list_skills()]
-            msg = (
-                f"Profile '{profile}' references skill '{skill_name}', which is "
-                f"not registered. Available skills: {available}."
-            )
-            _log_spawn_error(agent_name, msg)
-            return msg
-        agent_state.add(skill)
-
+    agent_state = await build_agent_state(agent_profile)
     agent = build_agent(agent_profile, tools=agent_state.tools, name=agent_name)
 
     logger.info(

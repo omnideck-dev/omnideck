@@ -20,11 +20,9 @@ from conversations import (
     generate_conversation_title,
     load_agent_events,
     load_conversation_history,
-    load_loaded_skills,
     load_preview_state,
     save_agent_events,
     save_conversation_title,
-    save_loaded_skills,
 )
 from sdk import (
     PersistenceHook,
@@ -40,8 +38,7 @@ from sdk.events import (
     get_current_dispatcher,
 )
 from sdk.hooks._agent_event_buffer import AgentEventBufferHook
-from sdk.skills import AgentState, get_skill
-from sdk.tools._core import get_core_tools
+from sdk.skills import build_agent_state, persist_loaded_skills
 from sdk.turn import is_turn_active, turn_scope
 from sdk.turn._turn import StopRequestedError
 from tools.browser.core import release_agent_browser
@@ -235,11 +232,12 @@ def _augment_message_with_attachments(message: str, data: Sequence[Data]) -> str
 
 
 def _build_agent_from_profile(profile: AgentProfile) -> Agent:
-    """Construct an Agent from an AgentProfile."""
-    from tools.memory import forget, remember
-    from tools.virtual_computer.run_bash_cmd import run_bash_cmd
+    """Construct an Agent from an AgentProfile.
 
-    return build_agent(profile, tools=[run_bash_cmd, remember, forget])
+    Tools are composed per turn from the profile's skills (build_agent_state);
+    the Agent itself carries none.
+    """
+    return build_agent(profile, tools=[])
 
 
 async def _run_turn(
@@ -263,29 +261,9 @@ async def _run_turn(
 
     conv_id = conversation_id
 
-    # Fresh AgentState each turn, restored from persisted skill names.
-    # Pre-load skills from the profile.
-    agent_state = AgentState(await get_core_tools() + active_agent.tools)
-    for skill_name in profile.skills:
-        skill = get_skill(skill_name)
-        if skill is None:
-            logger.warning("Profile skill '%s' not registered; skipping", skill_name)
-            continue
-        agent_state.add(skill)
-        logger.info("Pre-loaded profile skill '%s' for conv=%s", skill_name, conv_id)
-    for skill_name in load_loaded_skills(conv_id):
-        if skill_name in agent_state.loaded_skill_names:
-            continue
-        skill = get_skill(skill_name)
-        if skill is None:
-            logger.warning(
-                "Persisted skill '%s' for conv=%s was not found in the skills registry; skipping",
-                skill_name,
-                conv_id,
-            )
-            continue
-        agent_state.add(skill)
-        logger.info("Restored skill '%s' for conv=%s", skill_name, conv_id)
+    # Fresh AgentState each turn: the profile's skills, plus any loaded mid-
+    # conversation in earlier turns (restored by id from conversation metadata).
+    agent_state = await build_agent_state(profile, conversation_id=conv_id)
 
     ctx_manager = ContextManager(
         history=history,
@@ -309,12 +287,9 @@ async def _run_turn(
             active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
         ):
             history.append({"role": "user", "content": user_content})
-            # Build full system prompt: profile prompt + loaded skill prompts
-            full_prompt = active_agent.instruction
-            skill_prompt = agent_state.build_skill_prompt()
-            if skill_prompt:
-                full_prompt = full_prompt + "\n" + skill_prompt
-            _refresh_system_message(history, full_prompt)
+            # The LoadedSkillHook appends the loaded-skill section before each
+            # model call, so the system message just carries the profile prompt.
+            _refresh_system_message(history, active_agent.instruction)
 
             hooks = default_hooks(
                 active_agent,
@@ -337,9 +312,9 @@ async def _run_turn(
                 )
 
         # Persist loaded skills so they survive across turns and restarts
-        if agent_state.loaded_skill_names:
+        if agent_state.loaded_skill_ids:
             try:
-                save_loaded_skills(conv_id, agent_state.loaded_skill_names)
+                persist_loaded_skills(agent_state, conv_id)
             except Exception:
                 logger.exception("Failed to save loaded skills for '%s'", conv_id)
 
