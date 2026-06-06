@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OMNIDECK — Workflows (mockup)</title>
+<!-- Self-contained: icons are injected as inline SVG (see script at end of body),
+     mirroring the Bootstrap Icons set the real app uses. Brand fonts fall back to
+     the system monospace stack when the web fonts aren't available. -->
+<style>
+/* ── SIGNAL design tokens (copied verbatim from server/ui/src/global.css) ── */
+:root{
+  --canvas:#f8f9fb; --surface:#eef0f5; --elevated:#ffffff;
+  --text-primary:#0f172a; --text-secondary:#475569; --text-tertiary:#94a3b8;
+  --border:#e2e8f0; --border-subtle:#f1f5f9; --border-strong:#cbd5e1;
+  --accent:#2563eb; --accent-hover:#1d4ed8; --accent-muted:rgba(37,99,235,0.08); --accent-glow:rgba(37,99,235,0.15);
+  --success:#16a34a; --success-muted:rgba(22,163,74,0.08);
+  --warning:#d97706; --warning-muted:rgba(217,119,6,0.08);
+  --danger:#dc2626; --danger-muted:rgba(220,38,38,0.08);
+  --scrim:rgba(15,23,42,0.40);
+  --shadow-sm:0 1px 2px rgba(15,23,42,0.05);
+  --shadow-md:0 2px 8px rgba(15,23,42,0.08),0 1px 2px rgba(15,23,42,0.04);
+  --shadow-lg:0 4px 16px rgba(15,23,42,0.10),0 2px 4px rgba(15,23,42,0.05);
+  --shadow-glow:0 0 0 3px var(--accent-glow);
+  --radius-sm:4px; --radius-md:6px; --radius-lg:8px; --radius-xl:12px; --radius-full:999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+  --font-brand:'Roboto Mono','Consolas',monospace;
+  --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-code:'JetBrains Mono','Fira Mono','Consolas',monospace;
+  --ease:cubic-bezier(0.4,0,0.2,1);
+}
+[data-theme="dark"]{
+  --canvas:#0c0e14; --surface:#151821; --elevated:#1e2130;
+  --text-primary:#e8ecf4; --text-secondary:#8892a8; --text-tertiary:#4a5168;
+  --border:#252a3a; --border-subtle:#1a1e2a; --border-strong:#363d52;
+  --accent:#3b82f6; --accent-hover:#60a5fa; --accent-muted:rgba(59,130,246,0.12); --accent-glow:rgba(59,130,246,0.20);
+  --success:#4ade80; --success-muted:rgba(74,222,128,0.12);
+  --warning:#fbbf24; --warning-muted:rgba(251,191,36,0.12);
+  --danger:#f87171; --danger-muted:rgba(248,113,113,0.12);
+  --scrim:rgba(0,0,0,0.60);
+  --shadow-sm:0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md:0 2px 8px rgba(0,0,0,0.4),0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg:0 4px 16px rgba(0,0,0,0.5),0 2px 4px rgba(0,0,0,0.3);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{background:var(--canvas);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+button{font:inherit;cursor:pointer;border:none;background:transparent;color:inherit;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* ── App shell ── */
+.app{display:flex;height:100vh;overflow:hidden;}
+
+/* Sidebar (mirrors Sidebar.module.css) */
+.sidebar{width:264px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+.brand{display:flex;align-items:center;height:44px;padding:0 var(--sp-2);border-bottom:1px solid var(--border);}
+.wordmark{flex:1;font-family:var(--font-brand);font-size:13px;letter-spacing:.06em;}
+.sbIconBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);color:var(--text-tertiary);font-size:14px;}
+.sbIconBtn:hover{background:var(--accent-muted);color:var(--text-primary);}
+.sbIconBtn.themeOn{background:var(--accent-muted);color:var(--accent);}
+.primary{padding:var(--sp-2) var(--sp-2) 0;}
+.newChat{display:flex;align-items:center;gap:var(--sp-2);width:100%;height:32px;padding:0 var(--sp-2);border-radius:var(--radius-md);font-size:12.5px;font-weight:500;}
+.newChat:hover{background:var(--elevated);}
+.newChatIcon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:1px solid var(--border-strong);border-radius:var(--radius-full);color:var(--text-secondary);font-size:11px;}
+.nav{display:flex;flex-direction:column;gap:1px;padding:1px var(--sp-2) var(--sp-2);}
+.navItem{display:flex;align-items:center;gap:11px;height:30px;padding:0 10px;border-radius:var(--radius-md);color:var(--text-secondary);font-size:13px;position:relative;}
+.navItem i{font-size:14px;color:var(--text-tertiary);width:16px;text-align:center;}
+.navItem:hover{background:var(--accent-muted);color:var(--text-primary);}
+.navItem.active{background:var(--accent-muted);color:var(--accent);}
+.navItem.active i{color:var(--accent);}
+.navItem.active::before{content:'';position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:var(--radius-full);}
+.sbSection{font-family:var(--font-brand);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary);padding:10px 12px 4px;}
+.recent{padding:0 var(--sp-2);overflow:auto;flex:1;}
+.recentItem{font-size:12px;color:var(--text-secondary);padding:6px 10px;border-radius:var(--radius-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.recentItem:hover{background:var(--elevated);color:var(--text-primary);}
+.sbFooter{display:flex;align-items:center;gap:var(--sp-1);padding:var(--sp-2);border-top:1px solid var(--border);}
+.sbSpacer{flex:1;}
+
+/* Main content */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--canvas);}
+
+/* Topbar */
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.backBtn{border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-tertiary);font-size:10px;padding:3px 8px;}
+.backBtn:hover{color:var(--text-primary);border-color:var(--border-strong);}
+.wfTitle{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+.statePill{font-family:var(--font-brand);font-size:10px;padding:2px 8px;border-radius:var(--radius-full);background:var(--success-muted);color:var(--success);display:inline-flex;align-items:center;gap:5px;}
+.statePill .dot{width:6px;height:6px;border-radius:50%;background:var(--success);}
+.spacer{flex:1;}
+/* Segmented control */
+.segment{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:2px;gap:2px;}
+.segBtn{font-size:11px;font-weight:600;padding:5px 12px;border-radius:var(--radius-sm);color:var(--text-secondary);display:flex;align-items:center;gap:6px;}
+.segBtn.on{background:var(--elevated);color:var(--accent);box-shadow:var(--shadow-sm);}
+/* Buttons (Button.module.css) */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--radius-md);font-size:13px;font-weight:500;border:1px solid transparent;}
+.btn.outline{border-color:var(--border);color:var(--text-primary);}
+.btn.outline:hover{background:var(--surface);border-color:var(--border-strong);}
+.btn.filled{background:var(--accent);color:#fff;}
+.btn.filled:hover{background:var(--accent-hover);}
+.btn.ghost{color:var(--text-tertiary);}
+.btn.ghost:hover{background:var(--surface);color:var(--text-primary);}
+.btn.sm{height:26px;padding:0 10px;font-size:12px;}
+
+/* View container */
+.view{flex:1;display:flex;overflow:hidden;}
+.view[hidden]{display:none;}
+
+/* ── BUILDER: palette / canvas / inspector ── */
+.palette{width:188px;border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;background:var(--canvas);}
+.paletteHead{font-family:var(--font-brand);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);padding:12px 14px 6px;}
+.palItem{display:flex;align-items:center;gap:10px;padding:9px 14px;font-size:12.5px;color:var(--text-secondary);cursor:grab;border-left:2px solid transparent;}
+.palItem:hover{background:var(--surface);color:var(--text-primary);border-left-color:var(--accent);}
+.palIcon{width:24px;height:24px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.palHint{margin-top:auto;padding:12px 14px;font-size:11px;color:var(--text-tertiary);line-height:1.5;border-top:1px solid var(--border);}
+
+.canvasWrap{flex:1;position:relative;overflow:auto;background:
+  radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size:22px 22px;background-position:-1px -1px;}
+.canvas{position:relative;width:760px;height:760px;margin:8px auto;}
+.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+.edges path{fill:none;stroke:var(--border-strong);stroke-width:2;}
+.edges path.taken{stroke:var(--accent);}
+.edges path.err{stroke:var(--danger);stroke-dasharray:5 4;}
+.edgeLabel{position:absolute;font-family:var(--font-brand);font-size:9px;padding:1px 6px;border-radius:var(--radius-full);background:var(--elevated);border:1px solid var(--border);color:var(--text-secondary);}
+
+/* Step node */
+.node{position:absolute;width:190px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:9px 11px;cursor:pointer;transition:box-shadow .12s,border-color .12s;}
+.node:hover{box-shadow:var(--shadow-md);}
+.node.sel{border-color:var(--accent);box-shadow:var(--shadow-glow);}
+.nodeTop{display:flex;align-items:center;gap:8px;}
+.nodeIcon{width:24px;height:24px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.nodeKind{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary);}
+.nodeName{font-size:12.5px;font-weight:600;line-height:1.2;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nodeMeta{display:flex;align-items:center;gap:6px;margin-top:7px;flex-wrap:wrap;}
+.chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:9px;padding:2px 6px;border-radius:var(--radius-full);background:var(--surface);color:var(--text-secondary);border:1px solid var(--border);}
+.chip.acct{color:var(--accent);background:var(--accent-muted);border-color:transparent;}
+.chip.profile{color:var(--accent);}
+.nodeStatus{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;border:2px solid var(--elevated);}
+.st-ok{background:var(--success);}
+.st-run{background:var(--accent);}
+.st-wait{background:var(--warning);}
+.st-fail{background:var(--danger);}
+.st-skip{background:var(--text-tertiary);}
+
+/* type color helpers */
+.t-trigger{background:var(--warning-muted);color:var(--warning);}
+.t-agent{background:var(--accent-muted);color:var(--accent);}
+.t-tool{background:rgba(13,148,136,.12);color:#0d9488;}
+.t-code{background:rgba(124,58,237,.12);color:#7c3aed;}
+.t-branch{background:rgba(217,119,6,.14);color:var(--warning);}
+.t-loop{background:rgba(8,145,178,.14);color:#0e7490;}
+.t-approval{background:rgba(220,38,38,.10);color:var(--danger);}
+[data-theme="dark"] .t-tool{background:rgba(45,212,191,.14);color:#2dd4bf;}
+[data-theme="dark"] .t-code{background:rgba(199,146,234,.16);color:#c792ea;}
+
+/* Inspector */
+.inspector{width:340px;border-left:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;background:var(--elevated);overflow:hidden;}
+.inspHead{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--border);}
+.inspHead .nodeIcon{width:28px;height:28px;}
+.inspTitle{font-size:13.5px;font-weight:600;}
+.inspSub{font-family:var(--font-brand);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);}
+.inspBody{flex:1;overflow-y:auto;padding:4px 14px 16px;}
+.fsection{padding:13px 0;border-top:1px solid var(--border-subtle);}
+.fsection:first-child{border-top:none;}
+.flabel{font-family:var(--font-brand);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+.flabel .ai{margin-left:auto;color:var(--accent);font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+.input,.select{width:100%;height:32px;font-size:12.5px;padding:0 9px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-primary);}
+.select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath fill='%2394a3b8' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;padding-right:26px;}
+.help{font-size:11px;color:var(--text-tertiary);line-height:1.45;margin-top:6px;}
+
+/* account picker */
+.acctOpt{display:flex;align-items:center;gap:9px;padding:8px 9px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:6px;background:var(--surface);}
+.acctOpt.on{border-color:var(--accent);background:var(--accent-muted);}
+.acctOpt.disabled{opacity:.6;}
+.acctRadio{width:15px;height:15px;border-radius:50%;border:2px solid var(--border-strong);flex-shrink:0;}
+.acctOpt.on .acctRadio{border-color:var(--accent);background:radial-gradient(var(--accent) 38%,transparent 42%);}
+.acctIco{width:22px;height:22px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--elevated);border:1px solid var(--border);}
+.acctMain{flex:1;min-width:0;}
+.acctName{font-size:12px;font-weight:600;}
+.acctSub{font-family:var(--font-brand);font-size:9.5px;color:var(--text-tertiary);}
+.acctReason{font-size:10px;color:var(--warning);margin-top:1px;}
+.toggleRow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11.5px;color:var(--text-secondary);}
+.switch{width:30px;height:17px;border-radius:var(--radius-full);background:var(--border-strong);position:relative;flex-shrink:0;}
+.switch::after{content:'';position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left .15s;}
+.switch.on{background:var(--accent);}
+.switch.on::after{left:15px;}
+
+/* field mapping rows */
+.mapRow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--border-subtle);}
+.mapRow:last-child{border-bottom:none;}
+.mapField{font-size:12px;font-weight:600;width:62px;flex-shrink:0;}
+.mapArrow{color:var(--text-tertiary);font-size:11px;}
+.token{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-code);font-size:10.5px;padding:2px 7px;border-radius:var(--radius-sm);background:var(--accent-muted);color:var(--accent);}
+.token i{font-size:10px;}
+.tokenTxt{font-family:var(--font-code);font-size:10.5px;color:var(--text-secondary);}
+
+/* failure control */
+.inline2{display:flex;align-items:center;gap:8px;}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);}
+.stepper button{width:26px;height:30px;color:var(--text-secondary);}
+.stepper span{width:30px;text-align:center;font-family:var(--font-brand);font-size:12px;}
+
+/* test panel */
+.testPanel{margin-top:13px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
+.testHead{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--surface);border-bottom:1px solid var(--border);}
+.testHead .ttl{font-size:11px;font-weight:600;font-family:var(--font-brand);letter-spacing:.04em;text-transform:uppercase;color:var(--text-secondary);}
+.testBody{padding:11px;}
+.miniTabs{display:inline-flex;gap:4px;margin-bottom:9px;}
+.miniTab{font-size:10.5px;padding:4px 9px;border-radius:var(--radius-full);background:var(--surface);color:var(--text-secondary);border:1px solid var(--border);}
+.miniTab.on{background:var(--accent-muted);color:var(--accent);border-color:transparent;}
+.codebox{font-family:var(--font-code);font-size:11px;line-height:1.55;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:9px 10px;color:var(--text-secondary);white-space:pre;overflow:auto;}
+.k{color:var(--code-keyword,#7c3aed);} .s{color:var(--code-string,#15803d);} .n{color:var(--code-number,#c2410c);} .c{color:var(--text-tertiary);}
+.outBox{margin-top:9px;border:1px solid var(--success-muted);background:var(--success-muted);border-radius:var(--radius-md);padding:9px 10px;font-family:var(--font-code);font-size:11px;color:var(--text-secondary);white-space:pre;}
+.simNote{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11px;color:var(--warning);background:var(--warning-muted);padding:7px 9px;border-radius:var(--radius-md);}
+
+/* AI assist bar */
+.aiBar{display:flex;align-items:center;gap:8px;margin-top:11px;border:1px solid var(--accent-muted);background:var(--accent-muted);border-radius:var(--radius-md);padding:7px 9px;}
+.aiBar i{color:var(--accent);}
+.aiBar input{flex:1;background:transparent;border:none;font-size:12px;color:var(--text-primary);outline:none;}
+.aiBar input::placeholder{color:var(--text-tertiary);}
+
+/* ── TRIGGERS view ── */
+.twoPane{flex:1;display:flex;overflow:hidden;}
+.listPane{width:300px;border-right:1px solid var(--border);display:flex;flex-direction:column;}
+.listHead{display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);}
+.listHead .t{font-family:var(--font-brand);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);flex:1;}
+.trigItem{padding:11px 14px;border-bottom:1px solid var(--border-subtle);cursor:pointer;}
+.trigItem:hover{background:var(--surface);}
+.trigItem.sel{background:var(--accent-muted);border-left:2px solid var(--accent);}
+.trigTop{display:flex;align-items:center;gap:8px;}
+.trigName{font-size:12.5px;font-weight:600;flex:1;}
+.trigSub{font-size:11px;color:var(--text-tertiary);margin-top:4px;margin-left:32px;}
+.detailPane{flex:1;overflow-y:auto;padding:18px 22px;max-width:620px;}
+.dTitle{font-size:16px;font-weight:600;display:flex;align-items:center;gap:9px;margin-bottom:3px;}
+.dSub{font-size:12px;color:var(--text-tertiary);margin-bottom:16px;}
+.fieldGrid{display:flex;flex-direction:column;gap:14px;}
+.field label{display:block;font-family:var(--font-brand);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px;}
+.acctChips{display:flex;flex-wrap:wrap;gap:6px;}
+.acctChip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 10px;border-radius:var(--radius-full);background:var(--accent-muted);color:var(--accent);font-size:11.5px;font-weight:600;}
+.acctChip .x{width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;}
+.acctChip .x:hover{background:rgba(0,0,0,.08);}
+.addChip{height:28px;padding:0 11px;border-radius:var(--radius-full);border:1px dashed var(--border-strong);color:var(--text-secondary);font-size:11.5px;font-weight:600;}
+.addChip:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── RUNS view ── */
+.runItem{padding:11px 14px;border-bottom:1px solid var(--border-subtle);cursor:pointer;display:flex;gap:10px;align-items:center;}
+.runItem:hover{background:var(--surface);}
+.runItem.sel{background:var(--accent-muted);border-left:2px solid var(--accent);}
+.runInfo{flex:1;min-width:0;}
+.runLabel{font-size:12.5px;font-weight:600;}
+.runTime{font-size:10.5px;color:var(--text-tertiary);margin-top:2px;}
+.miniDot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.timeline{display:flex;flex-direction:column;gap:0;}
+.tlStep{display:flex;gap:12px;}
+.tlRail{display:flex;flex-direction:column;align-items:center;width:22px;flex-shrink:0;}
+.tlDot{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;flex-shrink:0;z-index:1;}
+.tlLine{flex:1;width:2px;background:var(--border);min-height:18px;}
+.tlBody{flex:1;padding-bottom:16px;}
+.tlName{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;}
+.tlMeta{font-size:11px;color:var(--text-tertiary);margin-top:3px;}
+.tlCard{margin-top:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:9px 11px;font-size:11.5px;color:var(--text-secondary);}
+.tlIO{font-family:var(--font-code);font-size:10.5px;color:var(--text-secondary);}
+.approveCard{border-color:var(--warning-muted);background:var(--warning-muted);}
+.failCard{border-color:var(--danger-muted);background:var(--danger-muted);color:var(--danger);}
+.rowActions{display:flex;gap:8px;margin-top:9px;}
+.pathTag{font-family:var(--font-brand);font-size:9px;padding:2px 7px;border-radius:var(--radius-full);background:var(--surface);border:1px solid var(--border);color:var(--text-secondary);}
+.skipTxt{color:var(--text-tertiary);font-style:italic;}
+.ic{display:inline-block;width:1em;height:1em;vertical-align:-0.125em;}
+i.bi{display:inline-flex;align-items:center;justify-content:center;}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="wordmark">OMNIDECK</span>
+      <button class="sbIconBtn" title="Collapse"><i class="bi bi-layout-sidebar-inset"></i></button>
+    </div>
+    <div class="primary">
+      <button class="newChat"><span class="newChatIcon"><i class="bi bi-plus-lg"></i></span><span>New chat</span></button>
+    </div>
+    <nav class="nav">
+      <button class="navItem"><i class="bi bi-bullseye"></i><span>Goals</span></button>
+      <button class="navItem active"><i class="bi bi-diagram-3"></i><span>Workflows</span></button>
+    </nav>
+    <div class="sbSection">Recent</div>
+    <div class="recent">
+      <div class="recentItem">Client email triage</div>
+      <div class="recentItem">Morning briefing</div>
+      <div class="recentItem">Invoice intake</div>
+    </div>
+    <div class="sbFooter">
+      <button class="sbIconBtn themeOn" id="themeBtn" title="Toggle theme"><i class="bi bi-sun"></i></button>
+      <div class="sbSpacer"></div>
+      <button class="sbIconBtn" title="Settings"><i class="bi bi-gear"></i></button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <!-- Topbar -->
+    <div class="topbar">
+      <button class="backBtn">← All</button>
+      <div class="wfTitle">
+        <i class="bi bi-diagram-3" style="color:var(--accent)"></i>
+        Client Email Triage
+        <span class="statePill"><span class="dot"></span>Active</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="segment" id="seg">
+        <button class="segBtn on" data-view="build"><i class="bi bi-grid-1x2"></i>Build</button>
+        <button class="segBtn" data-view="triggers"><i class="bi bi-lightning-charge"></i>Triggers</button>
+        <button class="segBtn" data-view="runs"><i class="bi bi-clock-history"></i>Runs</button>
+      </div>
+      <button class="btn outline sm"><i class="bi bi-play"></i>Dry run</button>
+      <button class="btn filled sm"><i class="bi bi-check2"></i>Save</button>
+    </div>
+
+    <!-- ════════ BUILD VIEW ════════ -->
+    <div class="view" id="view-build">
+      <!-- Palette -->
+      <div class="palette">
+        <div class="paletteHead">Add step</div>
+        <div class="palItem"><span class="palIcon t-agent"><i class="bi bi-robot"></i></span>Agent</div>
+        <div class="palItem"><span class="palIcon t-tool"><i class="bi bi-wrench-adjustable"></i></span>Tool</div>
+        <div class="palItem"><span class="palIcon t-code"><i class="bi bi-braces"></i></span>Code</div>
+        <div class="palItem"><span class="palIcon t-branch"><i class="bi bi-signpost-split"></i></span>Branch</div>
+        <div class="palItem"><span class="palIcon t-loop"><i class="bi bi-arrow-repeat"></i></span>Loop</div>
+        <div class="palItem"><span class="palIcon t-approval"><i class="bi bi-person-check"></i></span>Approval</div>
+        <div class="palHint"><i class="bi bi-stars" style="color:var(--accent)"></i> Drag onto the canvas, or ask the assistant to build a step for you.</div>
+      </div>
+
+      <!-- Canvas -->
+      <div class="canvasWrap">
+        <div class="canvas">
+          <svg class="edges" viewBox="0 0 760 760" preserveAspectRatio="none">
+            <!-- trigger -> classify -->
+            <path d="M335 86 C335 100, 335 100, 335 116"/>
+            <!-- classify -> branch -->
+            <path d="M335 182 C335 196, 335 196, 335 212"/>
+            <!-- branch -> draft (left) -->
+            <path d="M300 278 C220 300, 175 300, 175 320"/>
+            <!-- branch -> file&log (right) -->
+            <path d="M370 278 C470 300, 520 300, 520 320"/>
+            <!-- draft -> approval -->
+            <path d="M175 386 C175 400, 175 400, 175 416"/>
+            <!-- approval -> send -->
+            <path d="M175 482 C175 496, 175 496, 175 512"/>
+          </svg>
+
+          <!-- edge labels for the branch -->
+          <div class="edgeLabel" style="left:120px;top:296px;">urgent</div>
+          <div class="edgeLabel" style="left:470px;top:296px;">else</div>
+
+          <!-- Trigger -->
+          <div class="node" style="left:240px;top:22px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-trigger"><i class="bi bi-lightning-charge-fill"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Trigger · Watch</div><div class="nodeName">New client email</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip acct"><i class="bi bi-envelope"></i>2 mailboxes</span><span class="chip">every 5m</span></div>
+          </div>
+
+          <!-- Classify -->
+          <div class="node" style="left:240px;top:118px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-agent"><i class="bi bi-robot"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Agent step</div><div class="nodeName">Classify urgency</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip profile"><i class="bi bi-person-badge"></i>Triage</span><span class="chip"><i class="bi bi-braces"></i>structured</span></div>
+          </div>
+
+          <!-- Branch -->
+          <div class="node" style="left:240px;top:214px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-branch"><i class="bi bi-signpost-split"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Branch</div><div class="nodeName">Urgent?</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip">2 paths</span></div>
+          </div>
+
+          <!-- Draft (urgent) -->
+          <div class="node" style="left:80px;top:322px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-agent"><i class="bi bi-robot"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Agent step</div><div class="nodeName">Draft reply</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip profile"><i class="bi bi-person-badge"></i>Writer</span></div>
+          </div>
+
+          <!-- Approval -->
+          <div class="node" style="left:80px;top:418px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-approval"><i class="bi bi-person-check"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Approval</div><div class="nodeName">Review draft</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip">approve / reject</span></div>
+          </div>
+
+          <!-- Send (selected) -->
+          <div class="node sel" style="left:80px;top:514px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-tool"><i class="bi bi-wrench-adjustable"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Tool step</div><div class="nodeName">Send reply</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip acct"><i class="bi bi-envelope"></i>Gmail · work</span></div>
+          </div>
+
+          <!-- File & log (else) -->
+          <div class="node" style="left:425px;top:322px;">
+            <div class="nodeTop">
+              <span class="nodeIcon t-tool"><i class="bi bi-wrench-adjustable"></i></span>
+              <div style="min-width:0"><div class="nodeKind">Tool step</div><div class="nodeName">File &amp; log</div></div>
+            </div>
+            <div class="nodeMeta"><span class="chip acct"><i class="bi bi-folder"></i>Drive</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inspector: the selected Tool step -->
+      <div class="inspector">
+        <div class="inspHead">
+          <span class="nodeIcon t-tool"><i class="bi bi-wrench-adjustable"></i></span>
+          <div><div class="inspSub">Tool step</div><div class="inspTitle">Send reply</div></div>
+        </div>
+        <div class="inspBody">
+
+          <div class="fsection">
+            <div class="flabel">Tool</div>
+            <select class="select"><option>Send email</option><option>Create draft</option><option>Forward email</option></select>
+          </div>
+
+          <div class="fsection">
+            <div class="flabel">Account</div>
+            <div class="acctOpt on">
+              <span class="acctRadio"></span>
+              <span class="acctIco"><i class="bi bi-envelope"></i></span>
+              <div class="acctMain"><div class="acctName">Gmail — work</div><div class="acctSub">you@work.com · read-write</div></div>
+            </div>
+            <div class="acctOpt disabled">
+              <span class="acctRadio"></span>
+              <span class="acctIco"><i class="bi bi-envelope"></i></span>
+              <div class="acctMain"><div class="acctName">Gmail — personal</div><div class="acctReason"><i class="bi bi-lock"></i> read-only — can't send</div></div>
+            </div>
+            <div class="toggleRow"><span class="switch"></span> Decide account from run data instead</div>
+            <div class="help">Pinned to a specific account. Switch on to reply from whichever mailbox received the message.</div>
+          </div>
+
+          <div class="fsection">
+            <div class="flabel">Inputs <span class="ai"><i class="bi bi-stars"></i>Map with AI</span></div>
+            <div class="mapRow"><span class="mapField">To</span><span class="mapArrow">←</span><span class="token"><i class="bi bi-lightning-charge"></i>trigger.sender</span></div>
+            <div class="mapRow"><span class="mapField">Subject</span><span class="mapArrow">←</span><span class="tokenTxt">"Re: " + </span><span class="token">classify.subject</span></div>
+            <div class="mapRow"><span class="mapField">Body</span><span class="mapArrow">←</span><span class="token"><i class="bi bi-robot"></i>draft.text</span></div>
+          </div>
+
+          <div class="fsection">
+            <div class="flabel">On failure</div>
+            <div class="inline2">
+              Retry
+              <span class="stepper"><button>−</button><span>2</span><button>+</button></span>
+              then
+              <select class="select" style="width:auto;flex:1"><option>Stop the run</option><option>Take error path</option><option>Skip &amp; continue</option></select>
+            </div>
+          </div>
+
+          <!-- Inline test -->
+          <div class="testPanel">
+            <div class="testHead"><i class="bi bi-beaker" style="color:var(--accent)"></i><span class="ttl">Test this step</span><div style="flex:1"></div><button class="btn filled sm"><i class="bi bi-play-fill"></i>Run</button></div>
+            <div class="testBody">
+              <div class="miniTabs"><span class="miniTab on">Replay last run</span><span class="miniTab">Paste JSON</span></div>
+              <div class="codebox"><span class="c"># input ctx (from run · today 09:02)</span>
+{
+  <span class="s">"trigger"</span>: { <span class="s">"sender"</span>: <span class="s">"li@acme.com"</span>, <span class="s">"subject"</span>: <span class="s">"Outage?"</span> },
+  <span class="s">"classify"</span>: { <span class="s">"urgent"</span>: <span class="k">true</span> },
+  <span class="s">"draft"</span>:    { <span class="s">"text"</span>: <span class="s">"Hi Li — looking into it now…"</span> }
+}</div>
+              <div class="outBox"><i class="bi bi-check-circle" style="color:var(--success)"></i> would call <b>send_email</b>(work)
+  to:      ["li@acme.com"]
+  subject: "Re: Outage?"
+  body:    "Hi Li — looking into it now…"</div>
+              <div class="simNote"><i class="bi bi-shield-check"></i> Simulated — no email is actually sent during a test.</div>
+            </div>
+          </div>
+
+          <div class="aiBar"><i class="bi bi-stars"></i><input placeholder="Ask the assistant to change this step…" /><button class="btn ghost sm"><i class="bi bi-arrow-return-left"></i></button></div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ TRIGGERS VIEW ════════ -->
+    <div class="view" id="view-triggers" hidden>
+      <div class="twoPane">
+        <div class="listPane">
+          <div class="listHead"><span class="t">Triggers</span><button class="btn outline sm"><i class="bi bi-plus-lg"></i>New</button></div>
+          <div class="trigItem sel">
+            <div class="trigTop"><span class="nodeIcon t-trigger" style="width:24px;height:24px;font-size:12px"><i class="bi bi-binoculars"></i></span><span class="trigName">New client email</span></div>
+            <div class="trigSub">Watch · 2 mailboxes · every 5m</div>
+          </div>
+          <div class="trigItem">
+            <div class="trigTop"><span class="nodeIcon t-trigger" style="width:24px;height:24px;font-size:12px"><i class="bi bi-clock"></i></span><span class="trigName">Weekday catch-up</span></div>
+            <div class="trigSub">Schedule · Mon–Fri 17:00</div>
+          </div>
+        </div>
+
+        <div class="detailPane">
+          <div class="dTitle"><i class="bi bi-binoculars" style="color:var(--warning)"></i> New client email</div>
+          <div class="dSub">Watch trigger — polls a tool and starts this workflow when something new matches.</div>
+          <div class="fieldGrid">
+            <div class="field">
+              <label>Watch tool</label>
+              <select class="select"><option>List inbox messages</option><option>List calendar events</option><option>Call API (GET)</option></select>
+            </div>
+            <div class="field">
+              <label>Accounts to watch</label>
+              <div class="acctChips">
+                <span class="acctChip"><i class="bi bi-envelope"></i>Gmail · work<span class="x"><i class="bi bi-x"></i></span></span>
+                <span class="acctChip"><i class="bi bi-envelope"></i>Gmail · personal<span class="x"><i class="bi bi-x"></i></span></span>
+                <button class="addChip"><i class="bi bi-plus-lg"></i> Add account</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Check every</label>
+              <select class="select" style="max-width:160px"><option>5 minutes</option><option>15 minutes</option><option>1 hour</option></select>
+            </div>
+            <div class="field">
+              <label>Fire when an item matches <span style="float:right;font-size:10px;color:var(--accent);text-transform:none;letter-spacing:0;cursor:pointer"><i class="bi bi-stars"></i> Write with AI · Test</span></label>
+              <div class="codebox"><span class="k">def</span> matches(item):
+    <span class="c"># sender is one of my known clients</span>
+    <span class="k">return</span> item[<span class="s">"sender"</span>] <span class="k">in</span> ctx[<span class="s">"clients"</span>]</div>
+            </div>
+            <div class="field">
+              <label>When it matches</label>
+              <div class="toggleRow" style="margin-top:0"><span class="switch on"></span> Start one run per new item <span style="color:var(--text-tertiary)">(off = one run with the whole batch)</span></div>
+            </div>
+            <div class="field">
+              <label>Safety cap</label>
+              <div class="inline2">No more than
+                <span class="stepper"><button>−</button><span>20</span><button>+</button></span> runs per check ·
+                <select class="select" style="width:auto"><option>hold overflow for next check</option><option>skip overflow</option></select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ RUNS VIEW ════════ -->
+    <div class="view" id="view-runs" hidden>
+      <div class="twoPane">
+        <div class="listPane">
+          <div class="listHead"><span class="t">Runs</span></div>
+          <div class="runItem sel"><span class="miniDot" style="background:var(--warning)"></span><div class="runInfo"><div class="runLabel">Run #128 · Li @ Acme</div><div class="runTime">Today 09:02 · waiting for approval</div></div></div>
+          <div class="runItem"><span class="miniDot" style="background:var(--success)"></span><div class="runInfo"><div class="runLabel">Run #127 · Dana @ Globex</div><div class="runTime">Today 08:41 · completed · 23s</div></div></div>
+          <div class="runItem"><span class="miniDot" style="background:var(--danger)"></span><div class="runInfo"><div class="runLabel">Run #126 · noreply@…</div><div class="runTime">Today 08:30 · failed</div></div></div>
+          <div class="runItem"><span class="miniDot" style="background:var(--text-tertiary)"></span><div class="runInfo"><div class="runLabel">Run #125 · Sam @ Initech</div><div class="runTime">Yesterday · completed (else path)</div></div></div>
+        </div>
+
+        <div class="detailPane" style="max-width:none">
+          <div class="dTitle">Run #128 — Li @ Acme <span class="statePill" style="background:var(--warning-muted);color:var(--warning)"><span class="dot" style="background:var(--warning)"></span>Waiting</span></div>
+          <div class="dSub">Started by <b>New client email</b> · today 09:02 · urgent path</div>
+
+          <div class="timeline">
+            <!-- trigger -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-ok"><i class="bi bi-check"></i></span><span class="tlLine"></span></div>
+              <div class="tlBody"><div class="tlName">New client email <span class="pathTag">trigger</span></div>
+              <div class="tlMeta">li@acme.com · "Outage?" · via Gmail (work)</div></div></div>
+            <!-- classify -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-ok"><i class="bi bi-check"></i></span><span class="tlLine"></span></div>
+              <div class="tlBody"><div class="tlName">Classify urgency <span class="chip profile" style="border:none;background:var(--accent-muted)"><i class="bi bi-person-badge"></i>Triage</span></div>
+              <div class="tlMeta">2.1s · 1 retry</div>
+              <div class="tlCard"><span class="tlIO">→ { "urgent": true, "topic": "service outage" }</span></div></div></div>
+            <!-- branch -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-ok"><i class="bi bi-check"></i></span><span class="tlLine"></span></div>
+              <div class="tlBody"><div class="tlName">Urgent? <span class="pathTag">took: urgent</span></div>
+              <div class="tlMeta"><span class="skipTxt">else → "File &amp; log" skipped</span></div></div></div>
+            <!-- draft -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-ok"><i class="bi bi-check"></i></span><span class="tlLine"></span></div>
+              <div class="tlBody"><div class="tlName">Draft reply</div>
+              <div class="tlMeta">3.4s</div>
+              <div class="tlCard"><span class="tlIO">→ "Hi Li — we're looking into the outage now and will update you within the hour…"</span></div></div></div>
+            <!-- approval (current) -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-wait"><i class="bi bi-pause"></i></span><span class="tlLine" style="background:var(--border-subtle)"></span></div>
+              <div class="tlBody"><div class="tlName">Review draft <span class="statePill" style="background:var(--warning-muted);color:var(--warning)"><span class="dot" style="background:var(--warning)"></span>Needs you</span></div>
+              <div class="tlMeta">paused 4m ago · notified via Slack</div>
+              <div class="tlCard approveCard">
+                <div style="color:var(--text-primary);font-weight:600;margin-bottom:5px">Send this reply to li@acme.com?</div>
+                <span class="tlIO" style="color:var(--text-secondary)">"Hi Li — we're looking into the outage now and will update you within the hour…"</span>
+                <div class="rowActions"><button class="btn filled sm"><i class="bi bi-check2"></i>Approve &amp; continue</button><button class="btn outline sm">Edit</button><button class="btn sm" style="color:var(--danger)"><i class="bi bi-x"></i>Reject</button></div>
+              </div></div></div>
+            <!-- send (pending) -->
+            <div class="tlStep"><div class="tlRail"><span class="tlDot st-skip" style="background:var(--border-strong)"></span></div>
+              <div class="tlBody"><div class="tlName" style="color:var(--text-tertiary)">Send reply</div>
+              <div class="tlMeta">pending approval · Gmail (work)</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  /* ── Inline SVG icon set (stand-ins for the Bootstrap Icons the app uses) ── */
+  const FILL = new Set(['lightning-charge','lightning-charge-fill','play','play-fill','stars','bullseye']);
+  const ICONS = {
+    'layout-sidebar-inset':'<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/>',
+    'plus-lg':'<line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/>',
+    'bullseye':'<circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor"/><circle cx="8" cy="8" r="1.1"/>',
+    'diagram-3':'<rect x="6" y="1.5" width="4" height="3" rx="0.5"/><rect x="1.8" y="11" width="4" height="3" rx="0.5"/><rect x="10.2" y="11" width="4" height="3" rx="0.5"/><path d="M8 4.5V8M3.8 11V8h8.4v3"/>',
+    'sun':'<circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4"/>',
+    'moon-stars':'<path d="M13 9.6A5.6 5.6 0 1 1 6.4 3 4.6 4.6 0 0 0 13 9.6z"/>',
+    'gear':'<circle cx="8" cy="8" r="2.4"/><path d="M8 1.2v2M8 12.8v2M1.2 8h2M12.8 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4"/>',
+    'grid-1x2':'<rect x="2" y="2" width="12" height="5" rx="1"/><rect x="2" y="9" width="12" height="5" rx="1"/>',
+    'lightning-charge':'<path d="M9 1L3.4 9H7l-1 6 6.6-9H9.1L10 1z"/>',
+    'lightning-charge-fill':'<path d="M9 1L3.4 9H7l-1 6 6.6-9H9.1L10 1z"/>',
+    'clock-history':'<path d="M8 2.5a5.5 5.5 0 1 1-5.2 3.7" fill="none" stroke="currentColor"/><path d="M2.8 2.5v3h3"/><path d="M8 5.2V8l2.2 1.3"/>',
+    'clock':'<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>',
+    'play':'<path d="M5 3.4v9.2L13 8z"/>',
+    'play-fill':'<path d="M5 3.4v9.2L13 8z"/>',
+    'check2':'<path d="M3 8.4l3.4 3.4L13 4.2"/>',
+    'check':'<path d="M3.6 8.4l3 3 5.8-6.4"/>',
+    'check-circle':'<circle cx="8" cy="8" r="6"/><path d="M5.3 8.2l1.8 1.8L11 6"/>',
+    'robot':'<rect x="3.3" y="5" width="9.4" height="7" rx="1.6"/><circle cx="6.3" cy="8.4" r="1"/><circle cx="9.7" cy="8.4" r="1"/><path d="M8 2.4V5"/><circle cx="8" cy="2.1" r="0.9"/>',
+    'wrench-adjustable':'<path d="M10.6 2.2a2.9 2.9 0 0 0-2.8 3.6L2.6 11l1.7 1.7 5.2-5.2a2.9 2.9 0 0 0 3.6-2.8l-1.7 1.7-1.6-.4-.4-1.6z"/>',
+    'braces':'<path d="M6.3 2.5C5 2.5 5 4.5 5 6c0 1.1-1 1.5-1 2s1 .9 1 2c0 1.5 0 3.5 1.3 3.5"/><path d="M9.7 2.5c1.3 0 1.3 2 1.3 3.5 0 1.1 1 1.5 1 2s-1 .9-1 2c0 1.5 0 3.5-1.3 3.5"/>',
+    'signpost-split':'<path d="M8 1.6v12.8M8 4h3.6l1.6 1.5L11.6 7H8M8 8H4.4L2.8 9.5 4.4 11H8"/>',
+    'arrow-repeat':'<path d="M3 8a5 5 0 0 1 8.6-3.4M12 3.4v3.2H8.8"/><path d="M13 8a5 5 0 0 1-8.6 3.4M4 12.6V9.4h3.2"/>',
+    'person-check':'<circle cx="6.4" cy="5" r="2.4"/><path d="M2.3 13c0-2.3 1.9-3.9 4.1-3.9 1 0 1.9.3 2.6.9"/><path d="M9.8 11.6l1.4 1.4L14 10"/>',
+    'stars':'<path d="M7 1.8l1.05 2.65L10.7 5.5 8.05 6.55 7 9.2 5.95 6.55 3.3 5.5l2.65-1.05z"/><path d="M11.6 9.2l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
+    'envelope':'<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.6 4.6L8 8.5l5.4-3.9"/>',
+    'person-badge':'<rect x="3" y="2" width="10" height="12" rx="1.6"/><circle cx="8" cy="6" r="1.9"/><path d="M5 11.2c0-1.5 1.4-2.5 3-2.5s3 1 3 2.5"/>',
+    'folder':'<path d="M2 4.6h4l1.2 1.5H14v6.3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>',
+    'lock':'<rect x="3.4" y="7" width="9.2" height="6.4" rx="1.2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+    'beaker':'<path d="M6 2.2v3.8L3.1 12a1 1 0 0 0 .9 1.5h8a1 1 0 0 0 .9-1.5L10 6V2.2"/><line x1="5" y1="2.2" x2="11" y2="2.2"/>',
+    'arrow-return-left':'<path d="M13 4.2v2.6a2 2 0 0 1-2 2H4"/><path d="M6.4 6.4L3.8 8.8l2.6 2.4"/>',
+    'shield-check':'<path d="M8 2l5 2v3.4c0 3.5-2.4 5.6-5 6.6-2.6-1-5-3.1-5-6.6V4z"/><path d="M5.8 8l1.5 1.5L10.4 6.6"/>',
+    'binoculars':'<path d="M5.6 5.2h4.8M6.2 5.2l-1 6.6a1.5 1.5 0 0 1-3 0l.8-5.3a2 2 0 0 1 3.2-1.3z"/><path d="M9.8 5.2l1 6.6a1.5 1.5 0 0 0 3 0l-.8-5.3a2 2 0 0 0-3.2-1.3z"/>',
+    'x':'<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/>',
+    'pause':'<line x1="6" y1="4" x2="6" y2="12" stroke-width="2"/><line x1="10" y1="4" x2="10" y2="12" stroke-width="2"/>'
+  };
+  function svgFor(name){
+    const inner = ICONS[name]; if(inner===undefined) return null;
+    const fill = FILL.has(name);
+    return '<svg class="ic" viewBox="0 0 16 16" '
+      + (fill ? 'fill="currentColor" stroke="none"' : 'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"')
+      + '>'+inner+'</svg>';
+  }
+  document.querySelectorAll('i.bi').forEach(el=>{
+    const cls=[...el.classList].find(c=>c.startsWith('bi-'));
+    if(!cls) return;
+    const html=svgFor(cls.slice(3));
+    if(html){ el.outerHTML=html; }
+  });
+
+  // view switcher
+  const seg = document.getElementById('seg');
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('.segBtn'); if(!b) return;
+    seg.querySelectorAll('.segBtn').forEach(x=>x.classList.toggle('on', x===b));
+    ['build','triggers','runs'].forEach(v=>{
+      document.getElementById('view-'+v).hidden = (v !== b.dataset.view);
+    });
+  });
+  // theme toggle
+  const themeBtn = document.getElementById('themeBtn');
+  themeBtn.addEventListener('click', ()=>{
+    const html = document.documentElement;
+    const dark = html.getAttribute('data-theme')==='dark';
+    html.setAttribute('data-theme', dark?'light':'dark');
+    themeBtn.classList.toggle('themeOn', dark); // tinted in light mode
+  });
+  // node selection (build view)
+  document.querySelectorAll('#view-build .node').forEach(n=>{
+    n.addEventListener('click', ()=>{
+      document.querySelectorAll('#view-build .node').forEach(x=>x.classList.remove('sel'));
+      n.classList.add('sel');
+    });
+  });
+</script>
+</body>
+</html>
+</content>
