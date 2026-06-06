@@ -1,0 +1,179 @@
+.wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+}
+
+/* SIGNAL §3 .dl-table */
+.table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+
+.table th {
+    font-family: var(--font-brand);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.thNum {
+    text-align: right;
+}
+
+.table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    vertical-align: top;
+}
+
+.row {
+    cursor: pointer;
+}
+
+.row:hover td {
+    background: var(--border-subtle);
+}
+
+.cName {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 500;
+}
+
+.cName i {
+    color: var(--text-secondary);
+    font-size: 14px;
+    width: 16px;
+    text-align: center;
+}
+
+.cDesc {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+/* SIGNAL §3 badge */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-brand);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.badgeNeutral {
+    background: var(--border-subtle);
+    color: var(--text-tertiary);
+    border-color: var(--border);
+}
+
+.badgeInfo {
+    background: var(--accent-muted);
+    color: var(--accent);
+    border-color: var(--accent-muted);
+}
+
+/* SIGNAL §3 status dot */
+.statusCell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.statusNone {
+    color: var(--text-tertiary);
+}
+
+.statusDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+.dotReady {
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success-muted);
+}
+
+.dotIdle {
+    background: var(--text-tertiary);
+}
+
+.colNum {
+    text-align: right;
+    font-family: var(--font-brand);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.colChev {
+    width: 34px;
+    text-align: center;
+}
+
+.chev {
+    display: inline-block;
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    transition: transform 0.15s var(--ease);
+}
+
+.row.open .chev {
+    transform: rotate(90deg);
+}
+
+/* Full-width detail row — pushes rows below down, never stretches a sibling. */
+.toolRow td {
+    padding: 0;
+    background: var(--canvas);
+}
+
+.toolBox {
+    padding: 0.6rem 1rem 0.8rem 2.7rem;
+}
+
+.toolPills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+/* Read-only, muted variant of the §3 .chip; --font-code since tool names are
+   code identifiers (cf. ToolCallBlock). */
+.toolPill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: var(--radius-full);
+    font-family: var(--font-code);
+    font-size: 11px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+}
+
+.toolEmpty {
+    font-size: 0.74rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+}

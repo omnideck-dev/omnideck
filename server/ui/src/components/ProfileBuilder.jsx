@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import styles from './ProfileBuilder.module.css';
 import ModelPicker from './ModelPicker.jsx';
+import ToggleSwitch from './ToggleSwitch.jsx';
 import Button from './primitives/Button.jsx';
 import Callout from './primitives/Callout.jsx';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
+import SearchInput from './primitives/SearchInput.jsx';
+import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
 
 const HELP_SECTIONS = [
@@ -33,12 +36,15 @@ export default function ProfileBuilder({
     onDelete,
     onDuplicate,
     providers,
-    availableSkills,
+    skills,
+    categories,
     deleteConflict,
     onDismissDeleteConflict,
 }) {
     const [draft, setDraft] = useState(null);
     const [saveError, setSaveError] = useState(null);
+    const [showPicker, setShowPicker] = useState(false);
+    const [skillSearch, setSkillSearch] = useState('');
 
     useEffect(() => {
         setSaveError(null);
@@ -57,6 +63,35 @@ export default function ProfileBuilder({
         if (!draft) return null;
         return detectPreset(draft, draftProvider);
     }, [draft, draftProvider]);
+
+    // Skill picker: the library keyed by id, category metadata for chips, and
+    // the search-filtered options.
+    const skillById = useMemo(() => new Map((skills || []).map((s) => [s.id, s])), [skills]);
+    const catById = useMemo(() => new Map((categories || []).map((c) => [c.id, c])), [categories]);
+    const visibleSkills = useMemo(() => {
+        const q = skillSearch.trim().toLowerCase();
+        return q ? (skills || []).filter((s) => s.name.toLowerCase().includes(q)) : (skills || []);
+    }, [skills, skillSearch]);
+    const skillToolCount = useCallback(
+        (skill) => (skill.tool_categories || []).reduce((n, cid) => n + (catById.get(cid)?.tool_count || 0), 0),
+        [catById],
+    );
+
+    // Dismiss the add-skill popover on outside click or Escape.
+    const pickerRef = useRef(null);
+    useEffect(() => {
+        if (!showPicker) return undefined;
+        const onPointerDown = (e) => {
+            if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false);
+        };
+        const onKeyDown = (e) => { if (e.key === 'Escape') setShowPicker(false); };
+        document.addEventListener('mousedown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [showPicker]);
 
     const update = useCallback((field, value) => {
         setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -99,7 +134,9 @@ export default function ProfileBuilder({
     }, [profile]);
 
     const handleSave = useCallback(async () => {
-        if (!draft || !onSave) return;
+        // A model is required to create a profile, but editing an existing
+        // model-less one (e.g. to disable or rename it) stays allowed.
+        if (!draft || !onSave || (draft._unsaved && !draft.model)) return;
         setSaveError(null);
         const result = await onSave(draft);
         if (result && result.ok === false && result.error) {
@@ -141,7 +178,12 @@ export default function ProfileBuilder({
                             <Button onClick={handleRevert}>
                                 Revert
                             </Button>
-                            <Button variant="filled" onClick={handleSave}>
+                            <Button
+                                variant="filled"
+                                onClick={handleSave}
+                                disabled={draft._unsaved && !draft.model}
+                                title={draft._unsaved && !draft.model ? 'Choose a model before saving' : undefined}
+                            >
                                 Save
                             </Button>
                         </div>
@@ -190,9 +232,13 @@ export default function ProfileBuilder({
                             </span>
                         </label>
                         {saveError && saveError.error === 'default_agent_cannot_be_disabled' && (
-                            <div className={styles.errorPanel} data-testid="profile-save-error">
-                                <span className={styles.errorTitle}>Can't disable the default agent</span>
-                                <span>{saveError.message}</span>
+                            <div className={styles.saveErrorSlot} data-testid="profile-save-error">
+                                <Callout
+                                    tone="danger"
+                                    title="Can't disable the default agent"
+                                    description={saveError.message}
+                                    onDismiss={() => setSaveError(null)}
+                                />
                             </div>
                         )}
                     </section>
@@ -216,6 +262,11 @@ export default function ProfileBuilder({
                             }}
                             inline
                         />
+                        {draft._unsaved && !draft.model && (
+                            <div className={styles.modelRequired} data-testid="profile-model-required">
+                                Choose a model to create this profile.
+                            </div>
+                        )}
                     </section>
 
                     {/* 3. System Prompt */}
@@ -231,24 +282,115 @@ export default function ProfileBuilder({
                         />
                     </section>
 
-                    {/* 4. Skills */}
+                    {/* 4. Skills — attached chips + add-from-library picker */}
                     <section className={styles.section}>
                         <div className={styles.sectionLabel}>Skills</div>
-                        <div className={styles.chipGrid}>
-                            {(availableSkills || []).map((skill) => {
-                                const active = (draft.skills || []).includes(skill);
-                                return (
-                                    <button
-                                        key={skill}
-                                        className={`${styles.chip} ${active ? styles.chipActive : ''}`}
-                                        onClick={() => toggleSkill(skill)}
+                        <div className={styles.skillHelp}>Skills this profile loads. Each grants its tool categories to the agent.</div>
+                        <div className={styles.pickWrap} ref={pickerRef}>
+                            <div className={styles.attached}>
+                                {(draft.skills || []).map((id) => {
+                                    const rec = skillById.get(id);
+                                    return (
+                                        <span key={id} className={styles.skChip} data-testid={`profile-skill-${id}`}>
+                                            {rec ? rec.name : id}
+                                            <button
+                                                type="button"
+                                                className={styles.skChipX}
+                                                title="Remove skill"
+                                                aria-label={`Remove ${rec ? rec.name : id}`}
+                                                onClick={() => toggleSkill(id)}
                                             >
-                                        {active && <span className={styles.chipCheck}>&#x2713;</span>}
-                                        {skill}
-                                    </button>
-                                );
-                            })}
+                                                &#x2715;
+                                            </button>
+                                        </span>
+                                    );
+                                })}
+                                <button
+                                    type="button"
+                                    className={styles.addSkillBtn}
+                                    onClick={() => setShowPicker((v) => !v)}
+                                    data-testid="profile-add-skill"
+                                >
+                                    <i className="bi bi-plus-lg" /> Add skill
+                                </button>
+                            </div>
+                            {showPicker && (
+                                <div className={styles.skPopover} data-testid="profile-skill-picker">
+                                    <div className={styles.skPopHead}>
+                                        <SearchInput
+                                            value={skillSearch}
+                                            onChange={setSkillSearch}
+                                            placeholder="Search your skills…"
+                                        />
+                                    </div>
+                                    <div className={styles.skPopList}>
+                                        {visibleSkills.length === 0 && (
+                                            <div className={styles.skPopEmpty}>No skills match.</div>
+                                        )}
+                                        {visibleSkills.map((s) => {
+                                            const on = (draft.skills || []).includes(s.id);
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={s.id}
+                                                    className={`${styles.skPopRow} ${on ? styles.skPopRowOn : ''}`}
+                                                    onClick={() => toggleSkill(s.id)}
+                                                    data-testid={`profile-skill-option-${s.id}`}
+                                                >
+                                                    <span className={styles.skPopAdd}>{on ? '✓' : '+'}</span>
+                                                    <span className={styles.skPopMain}>
+                                                        <span className={styles.skPopName}>{s.name}</span>
+                                                        <span className={styles.skPopCats}>
+                                                            {(s.tool_categories || []).map((cid) => {
+                                                                const cat = catById.get(cid);
+                                                                const integration = cat && cat.connected !== null && cat.connected !== undefined;
+                                                                return (
+                                                                    <span key={cid} className={styles.skPopCat}>
+                                                                        <i className={`bi ${categoryIcon(cid)}`} />
+                                                                        {cat ? cat.label : cid}
+                                                                        {integration && (
+                                                                            <span className={`${styles.skPopDot} ${cat.connected ? styles.on : styles.off}`} />
+                                                                        )}
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </span>
+                                                    </span>
+                                                    <span className={styles.skPopTools}>{skillToolCount(s)} tools</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
+                    </section>
+
+                    {/* 5. Autonomy */}
+                    <section className={styles.section}>
+                        <div className={styles.sectionLabel}>Autonomy</div>
+                        <label className={styles.autoRow}>
+                            <ToggleSwitch
+                                checked={draft.allow_spawn !== false}
+                                onChange={(e) => update('allow_spawn', e.target.checked)}
+                                aria-label="Allow spawning agents"
+                            />
+                            <span className={styles.autoText}>
+                                <span className={styles.autoLabel}>Allow spawning agents</span>
+                                <span className={styles.autoHelp}>The agent can delegate work to sub-agents (spawn_agent).</span>
+                            </span>
+                        </label>
+                        <label className={styles.autoRow}>
+                            <ToggleSwitch
+                                checked={draft.allow_load_skills !== false}
+                                onChange={(e) => update('allow_load_skills', e.target.checked)}
+                                aria-label="Allow loading skills mid-conversation"
+                            />
+                            <span className={styles.autoText}>
+                                <span className={styles.autoLabel}>Allow loading skills mid-conversation</span>
+                                <span className={styles.autoHelp}>The agent can pull in additional skills on demand (load_skill).</span>
+                            </span>
+                        </label>
                     </section>
 
                     {/* 5. Inference (presets + advanced) */}

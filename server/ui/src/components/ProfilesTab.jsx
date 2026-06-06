@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 
 import { useAppData } from '../contexts/AppData.jsx';
+import useSkills from '../hooks/useSkills.js';
 import ProfileList from './ProfileList.jsx';
 import ProfileBuilder from './ProfileBuilder.jsx';
 
 export default function ProfilesTab() {
-    const { profilesHook, features } = useAppData();
+    const { profilesHook } = useAppData();
+    const { skills } = useSkills();
     const [providers, setProviders] = useState([]);
+    const [categories, setCategories] = useState([]);
     const [draftProfile, setDraftProfile] = useState(null);
     const [deleteConflict, setDeleteConflict] = useState(null);
 
@@ -16,17 +19,17 @@ export default function ProfilesTab() {
         }).catch(() => {});
     }, []);
 
+    // Tool-category metadata for the skill picker (tool counts, connection dots).
+    useEffect(() => {
+        fetch('/api/tool-categories').then(r => r.json()).then(data => {
+            setCategories(Array.isArray(data) ? data : []);
+        }).catch(() => {});
+    }, []);
+
     // Drop any stale conflict when the user switches profiles.
     useEffect(() => {
         setDeleteConflict(null);
     }, [profilesHook.selectedProfileId, draftProfile]);
-
-    const availableSkills = [
-        'coder', 'browser', 'goal_planner',
-        ...(features.desktop ? ['desktop'] : []),
-        ...(features.image_generation ? ['image_gen'] : []),
-        ...(features.music_generation ? ['music_gen'] : []),
-    ];
 
     const selectedProfile = draftProfile
         ?? profilesHook.profiles.find(p => p.id === profilesHook.selectedProfileId)
@@ -51,6 +54,8 @@ export default function ProfilesTab() {
                         model: '',
                         system_prompt: '',
                         skills: [],
+                        allow_spawn: true,
+                        allow_load_skills: true,
                         _unsaved: true,
                     });
                 }}
@@ -86,7 +91,8 @@ export default function ProfilesTab() {
                     if (result) profilesHook.setSelectedProfileId(result.id);
                 }}
                 providers={providers}
-                availableSkills={availableSkills}
+                skills={skills}
+                categories={categories}
             />
         </div>
     );

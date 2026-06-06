@@ -2,7 +2,7 @@
 
 import pytest
 
-from sdk.skills._registry import Skill, _SKILL_REGISTRY, register_skill
+from sdk.skills._registry import Skill
 from sdk.skills.agent_state import AgentState
 
 
@@ -14,24 +14,13 @@ def _make_tool(name: str):
     return tool
 
 
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    """Snapshot and restore the registry around each test."""
-    saved = dict(_SKILL_REGISTRY)
-    yield
-    _SKILL_REGISTRY.clear()
-    _SKILL_REGISTRY.update(saved)
-
-
 def _make_skill(name: str, tool_names: list[str], prompt: str = "p") -> Skill:
-    skill = Skill(
+    return Skill(
         name=name,
         description=f"desc_{name}",
         prompt=prompt,
         tools=[_make_tool(n) for n in tool_names],
     )
-    register_skill(skill)
-    return skill
 
 
 @pytest.mark.unit
@@ -51,9 +40,7 @@ class TestAgentState:
         sk = _make_skill("sk", ["b", "c"])
         ls = AgentState([_make_tool("a")])
         ls.add(sk)
-        assert len(ls.tools) == 3
-        assert ls.find("b") is not None
-        assert ls.find("c") is not None
+        assert {t.__name__ for t in ls.tools} == {"a", "b", "c"}
 
     def test_add_deduplicates(self):
         """Tools with the same __name__ are not added twice."""
@@ -62,16 +49,27 @@ class TestAgentState:
         ls.add(sk)
         assert len(ls.tools) == 2  # a (base) + b (skill), not a again
 
-    def test_add_tracks_skill_name(self):
-        """loaded_skill_names reflects which skills have been added."""
+    def test_add_tracks_skill_id(self):
+        """skill_ids reflects every attached skill."""
         browser = _make_skill("browser", ["open_url"])
         coder = _make_skill("coder", ["read_file"])
         ls = AgentState([])
-        assert ls.loaded_skill_names == frozenset()
+        assert ls.skill_ids == frozenset()
         ls.add(browser)
-        assert ls.loaded_skill_names == frozenset({"browser"})
+        assert ls.skill_ids == frozenset({"browser"})
         ls.add(coder)
-        assert ls.loaded_skill_names == frozenset({"browser", "coder"})
+        assert ls.skill_ids == frozenset({"browser", "coder"})
+
+    def test_load_marks_persistable_delta(self):
+        """load() skills count toward loaded_skill_ids; add() baseline skills are
+        attached but not part of the persisted delta."""
+        base = _make_skill("base", ["a"])
+        extra = _make_skill("extra", ["b"])
+        ls = AgentState([])
+        ls.add(base)  # profile baseline
+        ls.load(extra)  # loaded at runtime
+        assert ls.skill_ids == frozenset({"base", "extra"})
+        assert ls.loaded_skill_ids == frozenset({"extra"})
 
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
@@ -80,26 +78,14 @@ class TestAgentState:
         ls.add(sk)
         ls.add(sk)
         assert len(ls.tools) == 1
-        assert ls.loaded_skill_names == frozenset({"sk"})
+        assert ls.skill_ids == frozenset({"sk"})
 
-    def test_find_existing(self):
-        """find() returns the tool with matching __name__."""
-        tool_a = _make_tool("a")
-        ls = AgentState([tool_a])
-        assert ls.find("a") is tool_a
-
-    def test_find_missing(self):
-        """find() returns None for unknown tool names."""
-        ls = AgentState([_make_tool("a")])
-        assert ls.find("nonexistent") is None
-
-    def test_loaded_skill_names_is_frozen(self):
-        """loaded_skill_names returns a frozenset (immutable snapshot)."""
+    def test_skill_ids_is_frozen(self):
+        """skill_ids returns a frozenset (immutable snapshot)."""
         sk = _make_skill("x", [])
         ls = AgentState([])
         ls.add(sk)
-        names = ls.loaded_skill_names
-        assert isinstance(names, frozenset)
+        assert isinstance(ls.skill_ids, frozenset)
 
     def test_build_skill_prompt_empty(self):
         """build_skill_prompt returns empty string with no skills loaded."""

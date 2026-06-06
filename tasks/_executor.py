@@ -6,16 +6,15 @@ import logging
 from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
-from agents.types import Agent
 from sdk import PersistenceHook, default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events._context import agent_span, get_current_dispatcher
 from sdk.events._models import FileOutputPayload
-from sdk.skills import AgentState, get_skill
-from sdk.tools._core import get_core_tools
+from sdk.skills import build_agent_state
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
+    from agents._agent_profiles import AgentProfile
     from sdk.events._models import AgentEvent
     from tasks._models import Goal, Task, TaskResult
     from tasks._store import TaskStore
@@ -44,7 +43,9 @@ class TaskExecutor:
         conversation_id = f"goals/{run.goal_id}/{run.id}/{task_result.id}"
         self._store.set_conversation_id(task_result.id, conversation_id)
 
-        agent = await self._build_agent(task)
+        profile = self._profile_for(task)
+        agent_state = await build_agent_state(profile)
+        agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
 
         history = ConversationHistory(
             [
@@ -64,10 +65,9 @@ class TaskExecutor:
             dispatcher = get_current_dispatcher()
             if dispatcher:
                 dispatcher.subscribe(_capture_file_output)
-            state = AgentState(await get_core_tools() + (agent.tools or []))
             ctx_manager = ContextManager(
                 history=history,
-                agent_state=state,
+                agent_state=agent_state,
                 context_limit=agent.context_window,
                 agent_name=agent.name,
                 strategies=[
@@ -78,13 +78,13 @@ class TaskExecutor:
             hooks.append(
                 PersistenceHook(conversation_id=conversation_id, history=history)
             )
-            async with agent_span(agent.name, instruction=instruction, agent_state=state):
+            async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
                 result = await run_turn(history, agent, hooks=hooks)
 
         return result or "", file_paths
 
-    async def _build_agent(self, task: Task) -> Agent:
-        """Construct an Agent from the task's agent profile."""
+    def _profile_for(self, task: Task) -> AgentProfile:
+        """The agent profile for a task, or raise if it's missing."""
         if not task.agent_profile:
             msg = f"Task {task.id} has no agent_profile set"
             raise RuntimeError(msg)
@@ -92,16 +92,7 @@ class TaskExecutor:
         if profile is None:
             msg = f"Agent profile '{task.agent_profile}' not found for task {task.id}"
             raise RuntimeError(msg)
-
-        agent_state = AgentState(await get_core_tools())
-        for skill_name in profile.skills:
-            skill = get_skill(skill_name)
-            if skill is None:
-                msg = f"Profile '{profile.id}' references unregistered skill '{skill_name}'"
-                raise RuntimeError(msg)
-            agent_state.add(skill)
-
-        return build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
+        return profile
 
     def _build_instruction(
         self, task_result: TaskResult, task: Task, goal: Goal
