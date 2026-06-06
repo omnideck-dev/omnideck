@@ -89,6 +89,7 @@ async def resume_conversation_handler(request: Request) -> Response:
         "messages": data["messages"],
         "events": data["events"],
         "preview_state": data["preview_state"],
+        "profile_id": data["profile_id"],
     })
 
 

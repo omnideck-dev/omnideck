@@ -17,9 +17,11 @@ from conversations._store import (
     list_summary_records,
     load_conversation_history,
     load_conversation_metadata,
+    load_conversation_profile,
     load_summary_record,
     save_conversation_history,
     save_conversation_pinned,
+    save_conversation_profile,
     save_conversation_title,
     save_sub_agent_history,
     save_summary_record,
@@ -170,6 +172,39 @@ class TestConversationPinned:
         save_conversation_pinned("conv-1", True)
         save_conversation_pinned("conv-1", False)
         assert list_conversations()[0].pinned is False
+
+
+@pytest.mark.unit
+def test_no_profile_by_default(_conv_dir: Path) -> None:
+    """Conversations without a saved profile return None."""
+    save_conversation_history("conv-1", [{"role": "user", "content": "hi"}])
+    assert load_conversation_profile("conv-1") is None
+
+
+@pytest.mark.unit
+def test_profile_round_trips(_conv_dir: Path) -> None:
+    """A saved profile id loads back unchanged."""
+    save_conversation_profile("conv-1", "research")
+    assert load_conversation_profile("conv-1") == "research"
+
+
+@pytest.mark.unit
+def test_latest_profile_wins(_conv_dir: Path) -> None:
+    """Switching profiles mid-conversation persists the newest pick."""
+    save_conversation_profile("conv-1", "research")
+    save_conversation_profile("conv-1", "creative")
+    assert load_conversation_profile("conv-1") == "creative"
+
+
+@pytest.mark.unit
+def test_profile_preserves_other_metadata(_conv_dir: Path) -> None:
+    """Saving a profile merges into existing metadata rather than clobbering it."""
+    save_conversation_title("conv-1", "My Title")
+    save_conversation_profile("conv-1", "research")
+
+    meta = load_conversation_metadata("conv-1")
+    assert meta["title"] == "My Title"
+    assert meta["profile_id"] == "research"
 
 
 def _make_summary_record(

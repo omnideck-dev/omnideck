@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from conversations._store import save_conversation_history
+from conversations._store import save_conversation_history, save_conversation_profile
 from sdk.context import ConversationHistory
 from server import message_handler as mh
 
@@ -187,3 +187,26 @@ async def test_resume_conversation_marks_most_recently_used() -> None:
 
     assert result is not None
     assert list(mh._conversations)[-1] == "from-disk"
+
+
+@pytest.mark.unit
+async def test_resume_conversation_returns_saved_profile() -> None:
+    """resume_conversation surfaces the conversation's locked-in profile."""
+    save_conversation_history("c-prof", [{"role": "user", "content": "hi"}])
+    save_conversation_profile("c-prof", "research")
+
+    result = await mh.resume_conversation("c-prof")
+
+    assert result is not None
+    assert result["profile_id"] == "research"
+
+
+@pytest.mark.unit
+async def test_resume_conversation_profile_none_when_unset() -> None:
+    """Conversations saved before per-conversation profiles resume with None."""
+    save_conversation_history("c-old", [{"role": "user", "content": "hi"}])
+
+    result = await mh.resume_conversation("c-old")
+
+    assert result is not None
+    assert result["profile_id"] is None
