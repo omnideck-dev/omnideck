@@ -3,17 +3,20 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 4px;
-    font-size: 11.5px;
+    padding: 4px 10px;
+    font-size: 12px;
     border: none;
     background: transparent;
     box-shadow: none;
+    border-radius: 3px;
     color: var(--accent);
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
 .refreshLink:hover {
     color: var(--accent-hover);
+    background: var(--surface);
 }
 
 /* Source/Preview toggle */
