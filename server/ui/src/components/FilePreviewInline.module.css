@@ -63,6 +63,24 @@
     white-space: nowrap;
 }
 
+/* Refresh link — appears when the previewed file changes on disk */
+.refreshLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    font-size: 11.5px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    color: var(--accent);
+    cursor: pointer;
+}
+
+.refreshLink:hover {
+    color: var(--accent-hover);
+}
+
 /* Source/Preview toggle (center) */
 .toggle {
     display: flex;

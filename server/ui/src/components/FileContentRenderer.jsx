@@ -19,6 +19,7 @@ export default function FileContentRenderer({
     isPdf,
     iframeSrc,
     pdfSrc,
+    imageSrc,
     styles,
 }) {
     const { filename, content_type, content } = item;
@@ -85,8 +86,8 @@ export default function FileContentRenderer({
                             className={styles.image}
                         />
                     )}
-                    {item.path && !content && (
-                        <img src={item.path} alt={filename} className={styles.image} />
+                    {imageSrc && !content && (
+                        <img src={imageSrc} alt={filename} className={styles.image} />
                     )}
                 </div>
             )}

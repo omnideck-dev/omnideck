@@ -399,6 +399,8 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     cfg = load_config()
     container_prefix = cfg.virtual_computer.home_dir
     app.router.add_route("GET", f"{container_prefix}/{{path:.*}}", container_file_handler)
+    # HEAD lets the preview poll a file's Last-Modified/ETag without transferring the body.
+    app.router.add_route("HEAD", f"{container_prefix}/{{path:.*}}", container_file_handler)
 
     # UI routes
     app.router.add_route("GET", "/", index_handler)

@@ -4,6 +4,7 @@ import DownloadIcon from './icons/DownloadIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
+import RefreshIcon from './icons/RefreshIcon.jsx';
 import FileContentRenderer from './FileContentRenderer.jsx';
 import FullscreenPreview from './FullscreenPreview.jsx';
 import IconButton from './primitives/IconButton.jsx';
@@ -21,9 +22,12 @@ export default function FileFullscreen({ item, onClose }) {
         isPdf,
         pdfSrc,
         iframeSrc,
+        imageSrc,
         handleDownload,
         handleCopy,
         canCopy,
+        stale,
+        refresh,
     } = useFileContent(item);
 
     const [copied, setCopied] = useState(false);
@@ -38,6 +42,17 @@ export default function FileFullscreen({ item, onClose }) {
 
     const headerActions = (
         <>
+            {stale && (
+                <button
+                    className={styles.refreshLink}
+                    onClick={refresh}
+                    title="File changed on disk — click to reload"
+                    data-testid="file-refresh"
+                >
+                    <RefreshIcon size={12} />
+                    Refresh
+                </button>
+            )}
             {showToggle && !isPdf && (
                 <div className={styles.toggle}>
                     <button
@@ -93,6 +108,7 @@ export default function FileFullscreen({ item, onClose }) {
                 isPdf={isPdf}
                 iframeSrc={iframeSrc}
                 pdfSrc={pdfSrc}
+                imageSrc={imageSrc}
                 styles={styles}
             />
         </FullscreenPreview>

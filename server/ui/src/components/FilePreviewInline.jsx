@@ -7,6 +7,7 @@ import ExpandIcon from './icons/ExpandIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
+import RefreshIcon from './icons/RefreshIcon.jsx';
 import FileContentRenderer from './FileContentRenderer.jsx';
 import IconButton from './primitives/IconButton.jsx';
 import useFileContent from '../hooks/useFileContent.js';
@@ -33,9 +34,12 @@ export default function FilePreviewInline({ item, onFullscreen }) {
         isPdf,
         pdfSrc,
         iframeSrc,
+        imageSrc,
         handleDownload,
         handleCopy,
         canCopy,
+        stale,
+        refresh,
     } = useFileContent(item);
 
     const [copied, setCopied] = useState(false);
@@ -63,6 +67,17 @@ export default function FilePreviewInline({ item, onFullscreen }) {
                 </div>
 
                 <div className={styles.toolbarCenter}>
+                    {stale && (
+                        <button
+                            className={styles.refreshLink}
+                            onClick={refresh}
+                            title="File changed on disk — click to reload"
+                            data-testid="file-refresh"
+                        >
+                            <RefreshIcon size={12} />
+                            Refresh
+                        </button>
+                    )}
                     {showToggle && !isPdf && (
                         <div className={styles.toggle} data-testid="file-view-toggle">
                             <button
@@ -139,6 +154,7 @@ export default function FilePreviewInline({ item, onFullscreen }) {
                     isPdf={isPdf}
                     iframeSrc={iframeSrc}
                     pdfSrc={pdfSrc}
+                    imageSrc={imageSrc}
                     styles={styles}
                 />
             </div>
