@@ -276,8 +276,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
         setView('chat');
+        // Clicking the already-active conversation (e.g. from a sub-agent's
+        // activity view) is just navigation back to its chat — don't re-resume
+        // it, which would refetch, RESET the agent tree, and clobber any live
+        // turn. Just drop the agent selection and show the chat.
+        if (conversationId === activeConversationId) {
+            agentDispatch({ type: 'SELECT_AGENT', agentId: null });
+            return undefined;
+        }
         return loadConversation(conversationId);
-    }, [loadConversation]);
+    }, [loadConversation, activeConversationId, agentDispatch]);
 
     // Refresh the recent-conversations list when a turn finishes — a new
     // conversation only lands in the sessions list once its first turn is

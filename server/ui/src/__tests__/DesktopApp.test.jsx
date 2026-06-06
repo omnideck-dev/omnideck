@@ -582,6 +582,38 @@ describe('DesktopApp view transitions', () => {
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
+        it('clicking the already-active conversation returns to chat WITHOUT re-resuming', async () => {
+            // Repro: from a sub-agent's activity view, clicking the active
+            // conversation in the list should just navigate back — not refetch
+            // and RESET it. (load-conversation button loads 'conv-1'.)
+            const loadConversation = vi.fn();
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                loadConversation,
+                activeConversationId: 'conv-1',
+            };
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-settings')));
+            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expect(loadConversation).not.toHaveBeenCalled();
+        });
+
+        it('clicking a different conversation does resume it', async () => {
+            const loadConversation = vi.fn();
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                loadConversation,
+                activeConversationId: 'a-different-conversation',
+            };
+            await renderApp();
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+            expect(loadConversation).toHaveBeenCalledWith('conv-1');
+        });
+
         it('toggling the active panel off returns to chat', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
