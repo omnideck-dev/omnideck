@@ -1,0 +1,67 @@
+/* Canonical search field — SIGNAL `.input` + leading glyph + focus glow. */
+
+.search {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 32px;
+    padding: 0 10px;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+}
+
+.search:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-glow);
+}
+
+.icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font-body);
+    outline: none;
+}
+
+.input::placeholder {
+    color: var(--text-tertiary);
+}
+
+/* Suppress the browser's native search clear — the component renders its own. */
+.input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.clear:hover {
+    color: var(--text-primary);
+    background: var(--surface);
+}
+
+.clear i {
+    font-size: 11px;
+}

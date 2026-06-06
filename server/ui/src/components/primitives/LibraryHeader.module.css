@@ -64,31 +64,6 @@
     gap: var(--sp-3);
 }
 
-.search {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-}
-
-.searchIcon {
-    position: absolute;
-    left: 10px;
-    font-size: 13px;
-    color: var(--text-tertiary);
-    pointer-events: none;
-}
-
-.input {
-    padding: 6px 10px 6px 30px;
-    font-family: var(--font-body);
-    font-size: 13px;
-    color: var(--text-primary);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-}
-
-.input:focus {
-    outline: none;
-    border-color: var(--accent);
+.searchBox {
+    width: 260px;
 }

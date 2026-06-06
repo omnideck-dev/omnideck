@@ -1,3 +1,4 @@
+import SearchInput from './SearchInput.jsx';
 import styles from './LibraryHeader.module.css';
 
 /**
@@ -50,16 +51,12 @@ export default function LibraryHeader({
                 })}
             </div>
             <div className={styles.right}>
-                <div className={styles.search}>
-                    <i className={`bi bi-search ${styles.searchIcon}`} aria-hidden="true" />
-                    <input
-                        type="search"
-                        className={styles.input}
-                        value={searchValue}
-                        placeholder={searchPlaceholder}
-                        onChange={(event) => onSearchChange(event.target.value)}
-                    />
-                </div>
+                <SearchInput
+                    className={styles.searchBox}
+                    value={searchValue}
+                    onChange={onSearchChange}
+                    placeholder={searchPlaceholder}
+                />
                 {actions}
             </div>
         </div>
