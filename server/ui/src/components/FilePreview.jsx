@@ -4,7 +4,7 @@ import FileIcon from './icons/FileIcon.jsx';
 import ImageIcon from './icons/ImageIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon.jsx';
 import ExpandIcon from './icons/ExpandIcon.jsx';
-import ArrowLeftIcon from './icons/ArrowLeftIcon.jsx';
+import CollapseIcon from './icons/CollapseIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
@@ -80,18 +80,6 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
         >
             <div className={styles.toolbar}>
                 <div className={styles.toolbarLeft}>
-                    {fullscreen && (
-                        <button
-                            className={styles.backBtn}
-                            onClick={onClose}
-                            title="Back"
-                            aria-label="Back to preview panel"
-                            data-testid="fullscreen-back"
-                        >
-                            <ArrowLeftIcon size={14} />
-                            Back
-                        </button>
-                    )}
                     <div className={styles.filePill}>
                         <span className={styles.fileIcon}>{fileIcon}</span>
                         <span className={styles.fileName} title={filename}>
@@ -162,7 +150,17 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                     >
                         <DownloadIcon size={14} />
                     </IconButton>
-                    {!fullscreen && onFullscreen && (
+                    {fullscreen ? (
+                        <IconButton
+                            size="sm"
+                            onClick={onClose}
+                            title="Exit fullscreen"
+                            aria-label="Exit fullscreen"
+                            data-testid="fullscreen-back"
+                        >
+                            <CollapseIcon size={14} />
+                        </IconButton>
+                    ) : onFullscreen && (
                         <IconButton
                             size="sm"
                             onClick={onFullscreen}

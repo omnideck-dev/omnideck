@@ -31,7 +31,6 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    gap: 8px;
 }
 
 .toolbarCenter {
@@ -46,25 +45,6 @@
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-}
-
-/* Back button (fullscreen only) */
-.backBtn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 10px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
-
-.backBtn:hover {
-    background: var(--border-strong);
 }
 
 /* File pill (left side) */
@@ -280,10 +260,6 @@
 :global([data-theme="light"]) .toolbar {
     background: var(--surface);
     border-bottom-color: var(--border);
-}
-
-:global([data-theme="light"]) .backBtn:hover {
-    background: var(--border);
 }
 
 :global([data-theme="light"]) .filePill {
