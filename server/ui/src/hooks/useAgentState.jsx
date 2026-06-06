@@ -301,7 +301,10 @@ function _agentReducer(state, action) {
             const { agentId, item } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
-            const idx = agent.openFiles.findIndex(f => f.filename === item.filename);
+            // Keyed on path: same path replaces (rewrite), a different path
+            // is a distinct tab even if the basename matches.
+            const itemKey = item.path || item.filename;
+            const idx = agent.openFiles.findIndex(f => (f.path || f.filename) === itemKey);
             const openFiles = idx >= 0
                 ? agent.openFiles.map((f, i) => i === idx ? item : f)
                 : [...agent.openFiles, item];
@@ -312,14 +315,14 @@ function _agentReducer(state, action) {
         }
 
         case 'CLOSE_FILE': {
-            const { agentId, filename } = action;
+            const { agentId, fileKey } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             return {
                 ...state,
                 agents: {
                     ...state.agents,
-                    [agentId]: { ...agent, openFiles: agent.openFiles.filter(f => f.filename !== filename) },
+                    [agentId]: { ...agent, openFiles: agent.openFiles.filter(f => (f.path || f.filename) !== fileKey) },
                 },
             };
         }

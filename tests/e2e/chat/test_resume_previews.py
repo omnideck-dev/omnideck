@@ -178,8 +178,9 @@ def test_resume_restores_open_file_tab(page: Page):
         [{"filename": filename, "content_type": "text/html",
           "content": "<html><body>open me</body></html>"}],
         preview_state={
-            "open_files": [filename],
-            "active_tab": f"file:{filename}",
+            # Open files are saved by full path (the file's identity).
+            "open_files": [f"{VC_HOME}/{filename}"],
+            "active_tab": f"file:{VC_HOME}/{filename}",
             "browser_visible": False,
             "terminal_visible": False,
             "desktop_visible": False,
@@ -216,8 +217,8 @@ def test_resume_restores_active_tab_selection(page: Page):
              "content": "<html><body>b</body></html>"},
         ],
         preview_state={
-            "open_files": [file_a, file_b],
-            "active_tab": f"file:{file_b}",
+            "open_files": [f"{VC_HOME}/{file_a}", f"{VC_HOME}/{file_b}"],
+            "active_tab": f"file:{VC_HOME}/{file_b}",
             "browser_visible": False,
             "terminal_visible": False,
             "desktop_visible": False,
@@ -262,8 +263,8 @@ def test_resume_does_not_reopen_closed_tabs(page: Page):
         ],
         preview_state={
             # User had keep_file open, explicitly closed closed_file.
-            "open_files": [open_file],
-            "active_tab": f"file:{open_file}",
+            "open_files": [f"{VC_HOME}/{open_file}"],
+            "active_tab": f"file:{VC_HOME}/{open_file}",
             "browser_visible": False,
             "terminal_visible": False,
             "desktop_visible": False,

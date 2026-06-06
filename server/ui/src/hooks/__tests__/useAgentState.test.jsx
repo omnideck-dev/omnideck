@@ -360,14 +360,27 @@ describe('useAgentState reducer', () => {
     });
 
     describe('CLOSE_FILE', () => {
-        it('removes a file by filename', () => {
+        it('removes a file by its key (path, falling back to filename)', () => {
             const { getState, dispatch } = renderWithProvider();
 
             dispatch(agentStarted('root-1'));
             dispatch({ type: 'OPEN_FILE', agentId: 'root-1', item: { filename: 'readme.md', content: '# Hello' } });
-            dispatch({ type: 'CLOSE_FILE', agentId: 'root-1', filename: 'readme.md' });
+            dispatch({ type: 'CLOSE_FILE', agentId: 'root-1', fileKey: 'readme.md' });
 
             expect(getState().agents['root-1'].openFiles).toHaveLength(0);
+        });
+
+        it('closes the matching path, leaving a same-basename file open', () => {
+            const { getState, dispatch } = renderWithProvider();
+
+            dispatch(agentStarted('root-1'));
+            dispatch({ type: 'OPEN_FILE', agentId: 'root-1', item: { filename: 'X.md', path: '/a/X.md' } });
+            dispatch({ type: 'OPEN_FILE', agentId: 'root-1', item: { filename: 'X.md', path: '/b/X.md' } });
+            dispatch({ type: 'CLOSE_FILE', agentId: 'root-1', fileKey: '/a/X.md' });
+
+            const open = getState().agents['root-1'].openFiles;
+            expect(open).toHaveLength(1);
+            expect(open[0].path).toBe('/b/X.md');
         });
     });
 

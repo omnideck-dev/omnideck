@@ -25,6 +25,35 @@ function _parseTimestamp(ts) {
  * context_usage) are skipped — chat-side state derives them directly
  * from the events array.
  */
+/**
+ * Resolve the preview tabs to re-open on resume. open_files holds the saved
+ * file PATHS (a file's full path is its identity — two files can share a
+ * basename). Each path is matched to its file_output event to recover the
+ * filename/content_type. Conversations saved before paths were stored hold
+ * bare filenames, which won't match any path and simply don't restore.
+ */
+export function resolveOpenFiles(events, openPaths) {
+    if (!Array.isArray(events) || !Array.isArray(openPaths)) return [];
+    const byPath = new Map();
+    for (const ev of events) {
+        if (ev?.type === 'file_output' && ev.path) byPath.set(ev.path, ev);
+    }
+    const items = [];
+    for (const p of openPaths) {
+        const ev = byPath.get(p);
+        if (ev) {
+            items.push({
+                type: 'file_output',
+                filename: ev.filename,
+                content_type: ev.content_type,
+                path: ev.path,
+                timestamp: ev.timestamp,
+            });
+        }
+    }
+    return items;
+}
+
 export function replayEventsToAgentState(events, dispatch) {
     if (!Array.isArray(events) || !dispatch) return;
     for (const ev of events) {

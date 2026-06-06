@@ -20,7 +20,7 @@ import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
-import { replayEventsToAgentState } from './hooks/_replayEvents.js';
+import { replayEventsToAgentState, resolveOpenFiles } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
 import { AgentStateProvider, useAgentState, useAgentDispatch } from './hooks/useAgentState.jsx';
 import { useToast } from './components/ToastProvider.jsx';
@@ -180,29 +180,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             const openFilenames = Array.isArray(previewState?.open_files)
                 ? previewState.open_files
                 : [];
-            if (openFilenames.length > 0) {
-                const byName = new Map();
-                for (const ev of events) {
-                    if (ev?.type === 'file_output' && ev.filename && !byName.has(ev.filename)) {
-                        byName.set(ev.filename, ev);
-                    }
-                }
-                for (const name of openFilenames) {
-                    const item = byName.get(name);
-                    if (item) {
-                        agentDispatch({
-                            type: 'OPEN_FILE',
-                            agentId: lastRootAgentId,
-                            item: {
-                                type: 'file_output',
-                                filename: item.filename,
-                                content_type: item.content_type,
-                                path: item.path || null,
-                                timestamp: item.timestamp,
-                            },
-                        });
-                    }
-                }
+            for (const item of resolveOpenFiles(events, openFilenames)) {
+                agentDispatch({ type: 'OPEN_FILE', agentId: lastRootAgentId, item });
             }
 
             _pendingActiveTabRef.current = typeof previewState?.active_tab === 'string'
@@ -239,7 +218,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const _previewStateSnapshot = useMemo(() => {
         const hasTab = (id) => preview.tabs.some((t) => t.id === id);
         return {
-            open_files: preview.openFiles.map((f) => f.filename).filter(Boolean),
+            open_files: preview.openFiles.map((f) => f.path || f.filename).filter(Boolean),
             active_tab: preview.activeTab,
             browser_visible: hasTab('browser'),
             terminal_visible: hasTab('terminal'),
@@ -492,8 +471,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                         />
                                     )}
                                     {preview.activeTab?.startsWith('file:') && (() => {
-                                        const filename = preview.activeTab.slice(5);
-                                        const file = preview.openFiles.find(f => f.filename === filename);
+                                        const fileKey = preview.activeTab.slice(5);
+                                        const file = preview.openFiles.find(f => (f.path || f.filename) === fileKey);
                                         return file ? (
                                             <FilePreviewInline
                                                 item={file}
