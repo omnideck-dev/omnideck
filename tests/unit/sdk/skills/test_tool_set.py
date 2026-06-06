@@ -2,7 +2,7 @@
 
 import pytest
 
-from sdk.skills._registry import Skill, _SKILL_REGISTRY, register_skill
+from sdk.skills._registry import Skill
 from sdk.skills.agent_state import AgentState
 
 
@@ -14,24 +14,13 @@ def _make_tool(name: str):
     return tool
 
 
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    """Snapshot and restore the registry around each test."""
-    saved = dict(_SKILL_REGISTRY)
-    yield
-    _SKILL_REGISTRY.clear()
-    _SKILL_REGISTRY.update(saved)
-
-
 def _make_skill(name: str, tool_names: list[str], prompt: str = "p") -> Skill:
-    skill = Skill(
+    return Skill(
         name=name,
         description=f"desc_{name}",
         prompt=prompt,
         tools=[_make_tool(n) for n in tool_names],
     )
-    register_skill(skill)
-    return skill
 
 
 @pytest.mark.unit
