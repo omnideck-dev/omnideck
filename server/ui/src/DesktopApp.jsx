@@ -14,8 +14,7 @@ import Sidebar from './components/Sidebar.jsx';
 import GoalsView from './components/goals/GoalsView.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
-import FilePreviewInline from './components/FilePreviewInline.jsx';
-import FileFullscreen from './components/FileFullscreen.jsx';
+import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
@@ -50,13 +49,19 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const [selectedProfileId, setSelectedProfileId] = useState(() => {
-        return localStorage.getItem('computron_profile_id') || 'omnideck';
-    });
-    const handleProfileChange = useCallback((id) => {
-        setSelectedProfileId(id);
-        localStorage.setItem('computron_profile_id', id);
-    }, []);
+
+    // Agent profile is per chat session, not global. `convProfile` is the
+    // profile chosen for the conversation currently in view; null means "use
+    // the system default", so a new chat never inherits the previously viewed
+    // chat's profile. The conversation's profile is the backend's to own —
+    // it's saved on each turn and handed back on resume, so this only holds
+    // the in-view selection, not a cache of every session.
+    const [convProfile, setConvProfile] = useState(null);
+    // The system default profile comes from settings (`default_agent`), loaded
+    // below. The chat never renders until that fetch resolves (gated on
+    // setupComplete), so this is populated before any profile is read — no
+    // hardcoded fallback to drift out of sync with the actual default.
+    const [defaultProfileId, setDefaultProfileId] = useState(null);
 
     // Setup wizard state
     const [setupComplete, setSetupComplete] = useState(null); // null = loading
@@ -64,6 +69,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     useEffect(() => {
         fetch('/api/settings').then(r => r.json()).then(data => {
             setSetupComplete(data.setup_complete || false);
+            if (data.default_agent) setDefaultProfileId(data.default_agent);
         }).catch(() => setSetupComplete(false));
     }, []);
 
@@ -158,7 +164,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         // view, per-agent activity logs, and preview panels all match
         // what live SSE would have produced. React 18 batches all
         // dispatches within this async callback into one render.
-        onConversationLoaded: ({ events, previewState }) => {
+        onConversationLoaded: ({ events, previewState, profileId }) => {
+            // Restore the profile this conversation was last using so the
+            // selector and outgoing requests reflect it. Null falls back to the
+            // default — covers conversations saved before profiles were tracked.
+            setConvProfile(profileId || null);
             agentDispatch({ type: 'RESET' });
             replayEventsToAgentState(events, agentDispatch);
 
@@ -201,6 +211,10 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         activeConversationId,
         savePreviewState,
     } = useStreamingChat(_callbacks);
+
+    // The profile for the open conversation: its own pick, or the default.
+    const selectedProfileId = convProfile ?? defaultProfileId;
+    const handleProfileChange = useCallback((id) => setConvProfile(id), []);
 
     // After a resume, apply the pending active-tab once the preview hook
     // re-renders with the new root agent and its restored files.
@@ -266,6 +280,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const newConversation = useCallback(async () => {
         await chatNewConversation();
         preview.reset();
+        // A fresh chat starts on the default profile, never the last one viewed.
+        setConvProfile(null);
         // Surface the chat — otherwise a panel/network view stays stacked on
         // top and the new conversation is invisible. RESET clears the agent
         // tree and any selection.
@@ -458,6 +474,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             onProfileChange={handleProfileChange}
                             profileRefreshSignal={profilesHook.revision}
                             onPreview={preview.openFile}
+                            conversationId={activeConversationId}
                         />
                     </div>
 
@@ -482,7 +499,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                         const fileKey = preview.activeTab.slice(5);
                                         const file = preview.openFiles.find(f => (f.path || f.filename) === fileKey);
                                         return file ? (
-                                            <FilePreviewInline
+                                            <FilePreview
                                                 item={file}
                                                 onFullscreen={() => preview.setFullscreenItem({ kind: 'file', file })}
                                             />
@@ -512,8 +529,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
             {/* Fullscreen preview — fills entire viewport */}
             {preview.fullscreenItem?.kind === 'file' && (
-                <FileFullscreen
+                <FilePreview
                     item={preview.fullscreenItem.file}
+                    fullscreen
                     onClose={() => preview.setFullscreenItem(null)}
                 />
             )}

@@ -1,10 +1,21 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js';
+import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
+
+// How often to re-check a disk-backed file for changes while its preview is open.
+const POLL_INTERVAL_MS = 4000;
 
 function _decodeText(b64) {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
+}
+
+// Append a cache-busting marker so the browser refetches an updated file
+// rather than serving the stale bytes it already has for this URL.
+function _bust(url, nonce) {
+    if (!nonce || !url) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}v=${nonce}`;
 }
 
 export default function useFileContent(item) {
@@ -13,6 +24,18 @@ export default function useFileContent(item) {
     const [fetchedText, setFetchedText] = useState(null);
     const [viewMode, setViewMode] = useState(() =>
         hasPreviewToggle(content_type, filename) ? 'preview' : 'source'
+    );
+
+    // Shared across every preview of this file. Inline base64 content has no
+    // disk backing, so there's nothing to watch and no key to share.
+    const watchKey = !content && path ? path : null;
+    const stale = useSyncExternalStore(
+        useCallback((cb) => fileWatch.subscribe(watchKey, cb), [watchKey]),
+        useCallback(() => fileWatch.getSnapshot(watchKey).stale, [watchKey]),
+    );
+    const version = useSyncExternalStore(
+        useCallback((cb) => fileWatch.subscribe(watchKey, cb), [watchKey]),
+        useCallback(() => fileWatch.getSnapshot(watchKey).version, [watchKey]),
     );
 
     const itemKey = path || content;
@@ -37,11 +60,11 @@ export default function useFileContent(item) {
         return fetchedText;
     }, [content, fetchedText, isImage, isPdf]);
 
-    // Fetch remote text content (not for images or PDFs)
+    // Fetch remote text content (not for images or PDFs). Re-runs on refresh.
     useEffect(() => {
         if (isImage || isPdf || content || !path) return;
         let cancelled = false;
-        fetch(path).then(r => {
+        fetch(_bust(path, version)).then(r => {
             if (!r.ok) throw new Error(`Failed to load ${path}: ${r.status}`);
             return r.text();
         }).then(t => {
@@ -50,22 +73,64 @@ export default function useFileContent(item) {
             if (!cancelled) setFetchedText(`Error loading file: ${err.message}`);
         });
         return () => { cancelled = true; };
-    }, [content, path, isImage, isPdf]);
+    }, [content, path, isImage, isPdf, version]);
+
+    // Watch the disk-backed file for changes, independent of how it's rendered.
+    // The stale flag lives in the shared store so every preview of this file
+    // sees it. Idles while the tab is hidden; tears down on unmount/file switch.
+    const refresh = useCallback(() => {
+        if (watchKey) fileWatch.refresh(watchKey);
+    }, [watchKey]);
+
+    useEffect(() => {
+        if (!watchKey) return;
+        let cancelled = false;
+        let baseline = null;
+
+        const probe = async () => {
+            // no-store: the backend sends no Cache-Control, so without this the
+            // browser serves a cached validator and the change goes unseen until
+            // its heuristic freshness window expires.
+            const r = await fetch(watchKey, { method: 'HEAD', cache: 'no-store' });
+            return r.headers.get('ETag') || r.headers.get('Last-Modified');
+        };
+
+        probe().then(v => { if (!cancelled) baseline = v; }).catch(() => {});
+
+        const check = async () => {
+            if (document.hidden || baseline == null) return;
+            try {
+                const v = await probe();
+                if (!cancelled && v && v !== baseline) fileWatch.markStale(watchKey);
+            } catch { /* transient network blip — retry next tick */ }
+        };
+        const timer = setInterval(check, POLL_INTERVAL_MS);
+        // Catch up immediately when the user returns to the tab.
+        const onVisible = () => { if (!document.hidden) check(); };
+        document.addEventListener('visibilitychange', onVisible);
+
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+        // Re-baseline after a refresh bumps the shared version.
+    }, [watchKey, version]);
 
     // Blob URL for HTML iframe preview
     const iframeSrc = useMemo(() => {
-        if (isHtml && path) return path;
+        if (isHtml && path) return _bust(path, version);
         if (isHtml && text) {
             const blob = new Blob([text], { type: 'text/html' });
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isHtml, path, text]);
+    }, [isHtml, path, text, version]);
 
     // Blob/path URL for PDF preview
     const pdfSrc = useMemo(() => {
         if (!isPdf) return null;
-        if (path) return path;
+        if (path) return _bust(path, version);
         if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
@@ -74,7 +139,13 @@ export default function useFileContent(item) {
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isPdf, path, content]);
+    }, [isPdf, path, content, version]);
+
+    // Path URL for image preview (inline base64 content takes precedence).
+    const imageSrc = useMemo(() => {
+        if (!isImage || content || !path) return null;
+        return _bust(path, version);
+    }, [isImage, content, path, version]);
 
     useEffect(() => {
         return () => {
@@ -120,8 +191,11 @@ export default function useFileContent(item) {
         isPdf,
         pdfSrc,
         iframeSrc,
+        imageSrc,
         handleDownload,
         handleCopy,
         canCopy,
+        stale,
+        refresh,
     };
 }

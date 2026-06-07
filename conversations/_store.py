@@ -103,6 +103,37 @@ def save_conversation_pinned(conversation_id: str, pinned: bool) -> None:
     tmp.replace(metadata_path)
 
 
+def save_conversation_profile(conversation_id: str, profile_id: str) -> None:
+    """Save the agent profile selected for a conversation.
+
+    Each conversation locks in its own agent profile so returning to it
+    later restores the same behavioral configuration. The id lives in
+    metadata.json alongside the title and pinned flag.
+    """
+    conv_dir = _get_conv_dir(conversation_id)
+    conv_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata_path = conv_dir / "metadata.json"
+    metadata: dict[str, Any] = {}
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    metadata["profile_id"] = profile_id
+    tmp = metadata_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    tmp.replace(metadata_path)
+
+
+def load_conversation_profile(conversation_id: str) -> str | None:
+    """Load the agent profile id saved for a conversation, or None."""
+    metadata = load_conversation_metadata(conversation_id)
+    profile_id = metadata.get("profile_id")
+    return profile_id if isinstance(profile_id, str) else None
+
+
 def load_conversation_metadata(conversation_id: str) -> dict[str, Any]:
     """Load conversation metadata including title.
 

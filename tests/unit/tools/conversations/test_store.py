@@ -13,7 +13,9 @@ from conversations._store import (
     delete_conversation,
     list_conversations,
     load_conversation_metadata,
+    load_conversation_profile,
     save_conversation_pinned,
+    save_conversation_profile,
     save_conversation_title,
 )
 
@@ -199,3 +201,33 @@ class TestConversationPinned:
         save_conversation_pinned("conv-1", True)
         save_conversation_pinned("conv-1", False)
         assert list_conversations()[0].pinned is False
+
+
+@pytest.mark.unit
+class TestConversationProfile:
+    """Per-conversation agent profile persistence."""
+
+    def test_no_profile_by_default(self, _conv_dir: Path) -> None:
+        """A conversation without a saved profile returns None."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        assert load_conversation_profile("conv-1") is None
+
+    def test_profile_round_trips(self, _conv_dir: Path) -> None:
+        """A saved profile id loads back unchanged."""
+        save_conversation_profile("conv-1", "research")
+        assert load_conversation_profile("conv-1") == "research"
+
+    def test_latest_profile_wins(self, _conv_dir: Path) -> None:
+        """Switching profiles mid-conversation persists the newest pick."""
+        save_conversation_profile("conv-1", "research")
+        save_conversation_profile("conv-1", "creative")
+        assert load_conversation_profile("conv-1") == "creative"
+
+    def test_profile_preserves_other_metadata(self, _conv_dir: Path) -> None:
+        """Saving a profile merges into existing metadata rather than clobbering it."""
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_profile("conv-1", "research")
+
+        meta = load_conversation_metadata("conv-1")
+        assert meta["title"] == "My Title"
+        assert meta["profile_id"] == "research"

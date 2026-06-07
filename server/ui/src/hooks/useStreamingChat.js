@@ -917,6 +917,7 @@ export default function useStreamingChat(callbacks) {
                     conversationId,
                     events,
                     previewState: data.preview_state || {},
+                    profileId: data.profile_id || null,
                 });
             }
             return true;

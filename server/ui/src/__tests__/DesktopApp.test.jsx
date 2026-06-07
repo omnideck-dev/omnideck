@@ -82,12 +82,10 @@ vi.mock('../components/SplitHandle.jsx', () => ({
     default: () => <div data-testid="split-handle" />,
 }));
 
-vi.mock('../components/FilePreviewInline.jsx', () => ({
-    default: ({ item }) => <div data-testid="file-preview-inline">{item?.filename}</div>,
-}));
-
-vi.mock('../components/FileFullscreen.jsx', () => ({
-    default: () => <div data-testid="fullscreen-preview" />,
+vi.mock('../components/FilePreview.jsx', () => ({
+    default: ({ item, fullscreen }) => (fullscreen
+        ? <div data-testid="fullscreen-preview" />
+        : <div data-testid="file-preview-inline">{item?.filename}</div>),
 }));
 
 vi.mock('../components/BrowserFullscreen.jsx', () => ({

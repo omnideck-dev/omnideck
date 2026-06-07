@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from conversations._store import save_conversation_profile
 from sdk.context import ConversationHistory
 from server import message_handler as mh
 
@@ -296,3 +297,30 @@ def test_augment_message_with_attachments_falls_back_to_unnamed(
     assert len(attachments) == 1
     assert attachments[0].filename == "unnamed"
     assert attachments[0].path == "/virt/uploads/synth.png"
+
+
+async def test_resume_conversation_returns_saved_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """resume_conversation surfaces the conversation's locked-in profile."""
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
+    _seed_events_jsonl(tmp_path, "c-prof")
+    save_conversation_profile("c-prof", "research")
+
+    result = await mh.resume_conversation("c-prof")
+
+    assert result is not None
+    assert result["profile_id"] == "research"
+
+
+async def test_resume_conversation_profile_none_when_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A conversation with no saved profile resumes with None."""
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
+    _seed_events_jsonl(tmp_path, "c-old")
+
+    result = await mh.resume_conversation("c-old")
+
+    assert result is not None
+    assert result["profile_id"] is None

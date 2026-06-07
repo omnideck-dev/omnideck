@@ -19,8 +19,10 @@ from agents.types import Agent, Data
 from conversations import (
     EventsLogWriter,
     generate_conversation_title,
+    load_conversation_profile,
     load_events_jsonl,
     load_preview_state,
+    save_conversation_profile,
     save_conversation_title,
 )
 from sdk import (
@@ -201,6 +203,8 @@ async def resume_conversation(conversation_id: str) -> dict | None:
             structural state (agent lifecycle, screenshots, terminal
             output, file outputs).
         preview_state: persisted preview-panel state.
+        profile_id: the agent profile last used in this conversation, or
+            None if it predates per-conversation profiles.
 
     Returns None when no events.jsonl is present — conversations
     created before the events-first cutover have no replay source and
@@ -231,6 +235,7 @@ async def resume_conversation(conversation_id: str) -> dict | None:
         "messages": ui_messages,
         "events": ui_events,
         "preview_state": load_preview_state(conversation_id),
+        "profile_id": load_conversation_profile(conversation_id),
     }
 
 
@@ -434,6 +439,10 @@ async def handle_user_message(
     if not profile.model:
         msg = "No model configured. Complete the setup wizard to select a model."
         raise ValueError(msg)
+
+    # Lock this profile to the conversation so resuming it later restores the
+    # same agent. The latest selection wins if the user switches mid-thread.
+    save_conversation_profile(conversation_id, profile_id)
 
     try:
         # Bridge published events via a queue so we can stream them to the caller.
