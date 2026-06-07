@@ -3,10 +3,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { highlightCode } from '../utils/highlight.js';
 import { PreCodeBlock, InlineCode } from './CodeBlock.jsx';
+import MarkdownLink from './MarkdownLink.jsx';
 
 const _markdownComponents = {
     pre: (props) => <PreCodeBlock {...props} />,
     code: (props) => <InlineCode {...props} />,
+    a: MarkdownLink,
 };
 
 export default function FileContentRenderer({
