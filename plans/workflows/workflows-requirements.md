@@ -74,21 +74,35 @@ out. There are a few kinds:
   user to weigh in before continuing (e.g. "draft this reply, then wait for me to
   approve it before sending"). The user is notified that something needs their
   attention, sees the relevant data, and can **approve** (continue) or **reject**
-  (stop, or take a different path). A run can sit paused at an approval step
-  indefinitely until the user acts — it is not a timeout.
+  (stops the run for now). A run can sit paused at an approval step
+  indefinitely until the user acts — it is not a timeout. The user can respond
+  **two ways, interchangeably**: in the app, or **from outside it** — through the
+  same kind of integration tool used for notifications, so an approval can be
+  granted by replying to the message that announced it (e.g. reply "approve" to
+  the email, or tap a button in a chat message). Whichever channel responds
+  first resolves the pause; the request clears from the others. See "Approvals"
+  under Notifications for how this is configured.
 
 ### Data shaping
-Most steps need the incoming data adjusted to fit. The user does this two ways:
+Most steps need the incoming data adjusted to fit. There is one no-code way to do
+this inline:
 
 - **Visual field mapping (no code, the default)** — point at available data and
   drop it into the fields a step needs. Covers the common cases.
-- **Code (escape hatch)** — for shaping that's too complex to express by mapping,
-  drop into a small piece of logic. The assistant can write it and the user can
-  test it inline.
 
-A *code step* and *code-based shaping* are the same idea — logic over the data.
-The difference is only placement: a code step is its own box on the canvas; field
-mapping and code shaping are attached to the step they feed.
+When shaping is too complex to express by mapping, the user adds a **code step**
+before the step that needs the data — there is no separate "code attached to a
+step." Code lives in exactly one place, its own box on the canvas, where it can be
+seen, tested, and reused. (The assistant can write the code step; the user can
+test it.)
+
+> **Note (asymmetry of mapping).** Visual field mapping points *into* typed
+> fields, so a step's **inputs** map cleanly — tool inputs in particular have a
+> defined schema. But many step **outputs are free text by design** (tool results,
+> and agent results that weren't given a defined shape), so there are no fields to
+> point *at* on the source side. Mapping from a text output can only take it as a
+> whole value; to get structure out of it, either request a **structured result**
+> from an agent step (see below) or add a **code step** to parse it.
 
 ### Structured results (from agent steps)
 Because agent steps produce free-form output and tool/code steps need predictable
@@ -97,16 +111,20 @@ data, an agent step can be told to **return its answer in a defined shape** (e.g
 steps then get reliable, structured data instead of having to scrape it out of
 prose.
 
-### Connections (which account a step or trigger uses)
-Many tools — and watch triggers — act through a **connected account**, and a
-user may have several of the same type (two mailboxes, two calendars). The user
-always controls which one is used, in one of two ways:
+The user just describes the shape they want — with help from the in-line
+assistant — and nothing more. How that shape is enforced is entirely the engine's
+problem and is never exposed to the user. If the chosen agent's model can't
+reliably produce the shape, that shows up as a clear failure during a **dry run**,
+where the user can switch to a more capable model — they are never asked to reason
+about model capabilities up front.
 
-- **Pinned (the default)** — pick a specific account while building ("always send
-  from my work Gmail").
-- **Data-driven** — let the account be decided at runtime from the run's data, so
-  a workflow can "reply from *whichever* mailbox received the message." This is
-  filled by the same no-code field mapping as any other input.
+### Connections (which account a step or trigger uses)
+Many tools — and watch triggers — act through a **integration**, and a
+user may have several of the same type (two mailboxes, two calendars). The user
+**pins** a specific account while building ("always send from my work Gmail").
+For v1 the account is always chosen explicitly; deciding it at runtime from the
+run's data (e.g. "reply from *whichever* mailbox received the message") is out of
+scope (see §9).
 
 The chosen account is **shown on the step itself**, so which account a step uses
 is clear at a glance, not buried in a settings panel.
@@ -129,8 +147,23 @@ content.
 
 The user configures, per workflow, **which events** should notify them — run
 **failed** (on by default), run **finished**, or a run **needs approval** — and
-**which tool** delivers each. An approval notification carries a link back to the
-app, where the user actually approves or rejects.
+**which tool** delivers each.
+
+**Approvals (notify and respond out-of-app).** A *needs approval* notification is
+not just an alert with a link — it is a two-way exchange the user can complete
+without ever opening the app:
+
+- It is **delivered** by an integration tool, like any other notification (send
+  an email, post a chat message), carrying the data under review.
+- It can also be **answered** through an integration tool, so the user approves or
+  rejects **in the same place they were notified** — reply "approve"/"reject" to
+  the email, tap a button in the chat message. The user picks, per approval step,
+  the tool that delivers the request and how the response comes back (the
+  assistant can help wire this).
+- The **app is always a valid response channel too.** Every paused approval shows
+  in the app with the data under review and approve/reject controls, even when an
+  out-of-app channel is also configured. The two are interchangeable: whichever
+  responds first wins, and the request is then withdrawn from the other channels.
 
 ### What data a step can see
 At any step, the user has access to **everything produced so far** in the run:
@@ -161,13 +194,14 @@ run manually too. There are two kinds:
 5. **Take real actions** at the end of (or anywhere in) a workflow via tool
    steps — send an email, file a document, post to an API.
 6. **Choose which connected account** a step or trigger uses — pinned to a
-   specific account, or decided at runtime from the run's data.
-7. **Shape data without code** via visual field mapping, dropping into code only
-   when needed.
+   specific account.
+7. **Shape data without code** via visual field mapping, adding a code step
+   before the consumer when mapping isn't enough.
 8. **Branch** — send the workflow down different paths based on the data.
 9. **Loop** — repeat a section of the workflow once per item in a list.
 10. **Pause for human approval** — stop a run at a checkpoint, get notified, and
-    approve or reject before it continues (e.g. before sending an email).
+    approve or reject before it continues (e.g. before sending an email) — either
+    in the app or out-of-app by responding through an integration tool.
 11. **Handle failures gracefully** — retry a step, then stop the run, take an
     error path, or skip and continue, as configured.
 12. **Reach back** to any earlier step's output (and the starting data) from any
@@ -230,17 +264,21 @@ Three behaviors the user should be able to count on:
 Each step's box exposes what that kind of step needs:
 - Agent step: an instruction, a choice of agent profile, and (optionally) the
   shape of result to return.
-- Tool step: which tool, which connected account to use (pinned or data-driven),
+- Tool step: which tool, which connected account to use (pinned),
   and how its inputs are filled from the available data (by visual mapping).
 - Code step: the logic to run.
 - Branch step: the rule that decides the path.
 - Loop step: which list to iterate over, and what to do per item.
-- Approval step: what to show the user when it pauses, and what approve vs reject
-  each do (continue, stop, or route down a different path).
-- Any step: optional data shaping on the way in or out, how many times to retry on
-  failure, and what to do if it ultimately fails (stop / error path / skip).
+- Approval step: what to show the user when it pauses, what approve vs reject
+  each do (approve continues; reject stops the run for now), and **how the user is
+  asked and responds** — which integration tool delivers the request and which
+  brings the answer back, with the in-app approval always available alongside.
+- Any step: optional visual field mapping to fill its inputs from available data,
+  how many times to retry on failure, and what to do if it ultimately fails
+  (stop / error path / skip). Anything beyond mapping is a code step placed before
+  it.
 
-### Picking a connected account
+### Picking an integration
 - Where a step or trigger acts through an account, an **account picker** lists the
   user's connected accounts that can do that action, labeled clearly (type +
   which account).
@@ -261,10 +299,10 @@ Each step's box exposes what that kind of step needs:
   keeping it.
 
 ### Testing
-- **Single step:** run one step (or just its data shaping) against sample data.
+- **Single step:** run one step (a code step included) against sample data.
 - **Whole workflow:** dry-run the entire workflow end to end.
 - **Sample data** comes from either a **previous real run** (replayed) or **data
-  the user pastes in**.
+  the user pastes in** or **data generated by the in-editor assistant**.
 - **Side effects are held back during tests.** A test won't actually send the
   email or write the file unless the user explicitly opts in; otherwise those
   actions are simulated so the user can see what *would* happen safely.
@@ -280,12 +318,15 @@ Each step's box exposes what that kind of step needs:
   many times it was retried**, and — if an error path was taken — that the run
   continued down it.
 - A run **paused at an approval step** is clearly shown as waiting, with the data
-  under review and approve/reject controls right there.
+  under review and approve/reject controls right there. If the user instead
+  responds out-of-app (e.g. by replying to the notification), the run reflects the
+  decision and which channel it came through.
 
 ## 7. Example scenarios
 
 - **Morning briefing (schedule):** Every weekday at 7am → an agent step gathers
-  news → an agent step (different profile) writes a summary → a tool step emails
+  news → an agent step (different profile) writes a summary → -> an agent step 
+  (different profile) converts the summary to audio -> a tool step emails
   it to the user.
 - **Client email triage (watch + branch):** Check inbox every 5 min → when a new
   email from a known client arrives → a branch step routes "urgent" vs "normal" →
@@ -303,8 +344,10 @@ Each step's box exposes what that kind of step needs:
   them.
 - **Reply with approval (human-in-the-loop):** A new client email arrives → an
   agent step drafts a reply → an **approval step** pauses and shows the draft →
-  on approve, a tool step sends it; on reject, the run stops (or loops back for a
-  revised draft).
+  on approve, a tool step sends it; on reject, the run stops.
+- **Process receipts:** Watch a drive folder for new files -> an agent step processes
+  the image extracting key values from a receipt -> a tool step appends the values
+  to a spreadsheet -> a tool step archives the processed receipt.
 
 ## 8. Relationship to today's Goals
 
@@ -318,18 +361,13 @@ Each step's box exposes what that kind of step needs:
 - Sharing/marketplace of workflows between users.
 - Versioning and rollback of a workflow's definition.
 - Collaborative / multi-user editing of the same workflow.
+- Data-driven account selection (deciding which connected account a step or
+  trigger uses at runtime from the run's data). v1 pins accounts explicitly.
 
 ## 10. Open questions (user-facing)
 
-These need a user-facing answer before or during design:
-
-1. **Naming.** Are *Workflow*, *Trigger*, *Step* the right user-facing words?
-   "Trigger" is still a working title.
-2. **Approval step details.** Does a paused run ever expire, or wait forever
-   (current assumption: waits forever)? On reject, is "stop" or "take another
-   path" the default?
-3. **Editing a live workflow.** If a workflow is scheduled or mid-run when the
-   user edits it, what should happen — to in-flight runs and to the next run?
+All current open questions are resolved (below). New ones may surface during
+design.
 
 ### Resolved
 - **Step failure** — per-step retries, then stop / error path / skip; loops are
@@ -337,6 +375,19 @@ These need a user-facing answer before or during design:
 - **Notifications** — no dedicated system; the user is notified by calling any
   integration tool they've connected, configured per workflow per event
   (failure on by default). Telegram-specific notification is dropped for now.
-- **Connections** — pinned or data-driven account selection, a permission-aware
+- **Connections** — pinned (explicit) account selection, a permission-aware
   picker that shows unusable accounts disabled with a reason, and the chosen
   account shown on the step. Watch triggers can watch multiple accounts at once.
+- **Approval response channels** — an approval can be both delivered and answered
+  through an integration tool, so the user can approve/reject without opening the
+  app; the in-app approval is always available too, and the channels are
+  interchangeable (first response wins, the rest are withdrawn).
+- **Reject behavior** — on reject, the run **stops** for now (taking a different
+  path is deferred).
+- **Naming** — *Workflow*, *Step*, *Trigger* are the user-facing terms.
+- **Approval expiry** — a paused approval **never expires**; the run waits until
+  the user responds.
+- **Editing a live workflow** — **in-flight runs finish on the definition they
+  started with**; **the next run picks up the edits.** (Each run captures the
+  workflow as it was at launch — this is internal pinning, not the user-facing
+  version history that §9 defers.)
