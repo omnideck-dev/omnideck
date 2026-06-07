@@ -10,6 +10,7 @@ import remend from 'remend';
 import 'katex/dist/katex.min.css';
 import styles from './MarkdownContent.module.css';
 import { PreCodeBlock, InlineCode } from './CodeBlock.jsx';
+import MarkdownLink from './MarkdownLink.jsx';
 
 // Extend sanitize schema to allow KaTeX/MathML output and preserve code language classes
 const _sanitizeSchema = (() => {
@@ -77,6 +78,7 @@ function _preprocessContent(md) {
 const _markdownComponents = {
     pre: (props) => <PreCodeBlock {...props} />,
     code: (props) => <InlineCode {...props} />,
+    a: MarkdownLink,
 };
 
 export default function MarkdownContent({ children, streaming }) {
