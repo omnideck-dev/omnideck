@@ -50,11 +50,18 @@ async def _stream_chat_with_retries(
     """Yield ChatDelta tokens, then the final ChatResponse. Retries on failure.
 
     If a stream fails mid-way after emitting deltas, retrying would cause
-    content duplication. On retry, fall back to non-streaming chat() to
-    yield a single complete ChatResponse instead.
+    content duplication in the UI (the frontend has append-only semantics
+    and cannot replace partial content).  Once any content-bearing chunk
+    has been yielded, retries are blocked — the error propagates so the
+    user sees it and can manually re-send.
+
+    If the stream fails *before* any content arrives (e.g. connection
+    refused on the first chunk), retries proceed normally with exponential
+    backoff, falling back to non-streaming chat() on retry.
     """
     attempt = 0
     total_attempts = 1 + max(0, retries)
+    emitted_content = False
     while attempt < total_attempts:
         try:
             if attempt == 0:
@@ -65,6 +72,8 @@ async def _stream_chat_with_retries(
                     tools=tools,
                     think=think,
                 ):
+                    if isinstance(chunk, ChatDelta):
+                        emitted_content = True
                     yield chunk
             else:
                 # Retry with non-streaming to avoid content duplication
@@ -77,6 +86,17 @@ async def _stream_chat_with_retries(
                 )
             return
         except ProviderError as exc:
+            if emitted_content:
+                # Content was already streamed to the user — retrying would
+                # produce garbled output since the frontend can only append,
+                # not replace.  Let the error surface so the user can retry.
+                logger.warning(
+                    "provider.chat_stream failed after emitting content "
+                    "(not retrying to avoid UI duplication): %s | model=%s",
+                    exc,
+                    model,
+                )
+                raise
             attempt += 1
             if not exc.retryable:
                 logger.error(
@@ -283,7 +303,7 @@ async def run_turn(
             except Exception as exc:
                 logger.exception("Unhandled exception in tool loop")
                 error_msg = str(exc) if isinstance(exc, ProviderError) else "An error occurred while processing your message."
-                publish_event(AgentEvent(payload=ContentPayload(type="content", content=error_msg)))
+                publish_event(AgentEvent(payload=ContentPayload(type="content", content=error_msg, error=True)))
                 _publish_turn_end()
                 raise ToolLoopError(error_msg) from exc
     finally:

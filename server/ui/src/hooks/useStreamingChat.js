@@ -404,6 +404,7 @@ export default function useStreamingChat(callbacks) {
                                         agentId: data.agent_id,
                                         content: hasResponse ? contentField : null,
                                         thinking: hasThinking ? payload.thinking : null,
+                                        error: payload.error === true ? true : null,
                                     },
                                 });
                                 scheduleFlush();
@@ -487,7 +488,7 @@ export default function useStreamingChat(callbacks) {
                 );
                 const errorMsg = {
                     id: placeholderId, role: 'assistant',
-                    entries: [{ type: 'content', content: `[Error: ${err.message}]` }],
+                    entries: [{ type: 'content', content: `[Error: ${err.message}]`, error: true }],
                     placeholder: false, streaming: false,
                 };
                 if (pIndex !== -1) {

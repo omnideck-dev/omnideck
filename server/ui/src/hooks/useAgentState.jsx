@@ -133,7 +133,7 @@ function _agentReducer(state, action) {
         // interleaved. If the last log entry is the same type, we just
         // extend it instead of creating a new one.
         case 'APPEND_STREAM_CHUNK': {
-            const { agentId, content, thinking } = action;
+            const { agentId, content, thinking, error } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             let log = [...agent.activityLog];
@@ -148,9 +148,15 @@ function _agentReducer(state, action) {
                 }
             };
 
-            // Thinking first, then content — matches the model's output order
-            mergeOrAppend('thinking', 'thinking', thinking);
-            mergeOrAppend('content', 'content', content);
+            // Error content always starts a new entry — never merged with
+            // preceding content, so the badge renders on its own line.
+            if (error && content) {
+                log.push({ type: 'content', content, error: true, timestamp: Date.now() });
+            } else {
+                // Thinking first, then content — matches the model's output order
+                mergeOrAppend('thinking', 'thinking', thinking);
+                mergeOrAppend('content', 'content', content);
+            }
 
             return {
                 ...state,

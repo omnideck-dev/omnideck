@@ -29,12 +29,16 @@ class ContentPayload(BaseModel):
         thinking: Chain-of-thought or rationale text, if available.
         delta: When True, content/thinking are incremental token deltas to
             append. When None, they are complete chunks.
+        error: When True, this payload carries an error message rather than
+            model output.  The frontend renders it as a distinct error entry
+            instead of merging it with preceding content.
     """
 
     type: Literal["content"]
     content: str | None = None
     thinking: str | None = None
     delta: bool | None = None
+    error: bool = False
 
 
 class TurnEndPayload(BaseModel):

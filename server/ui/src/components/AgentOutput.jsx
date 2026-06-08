@@ -3,6 +3,7 @@ import MarkdownContent from './MarkdownContent.jsx';
 import ToolCallBlock from './ToolCallBlock.jsx';
 import FileOutput from './FileOutput.jsx';
 import SpawnCard from './SpawnCard.jsx';
+import Callout from './primitives/Callout.jsx';
 
 /**
  * Pure renderer for an ordered list of agent entries: thinking blocks,
@@ -33,6 +34,9 @@ export default function AgentOutput({ entries, streaming, showFileOutputs = true
             return <CollapsibleThinking key={i} text={entry.thinking} streaming={streaming && i === entries.length - 1} />;
         }
         if (entry.type === 'content') {
+            if (entry.error) {
+                return <Callout key={i} tone="danger" description={entry.content} />;
+            }
             return <div key={i} data-testid="entry-content"><MarkdownContent streaming={streaming && i === entries.length - 1}>{entry.content}</MarkdownContent></div>;
         }
         if (entry.type === 'spawn_requested') {

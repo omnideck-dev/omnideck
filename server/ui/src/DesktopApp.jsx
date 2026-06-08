@@ -143,12 +143,13 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         },
         // Sub-agent text tokens, batched ~60x/sec. We merge content and
         // thinking in one update so they don't get jumbled together.
-        onAgentContent: ({ agentId, content, thinking }) => {
+        onAgentContent: ({ agentId, content, thinking, error }) => {
             agentDispatch({
                 type: 'APPEND_STREAM_CHUNK',
                 agentId,
                 content: content || null,
                 thinking: thinking || null,
+                error: error || null,
             });
         },
         // Agent context usage (iteration + context window fill)
