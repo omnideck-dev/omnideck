@@ -20,7 +20,6 @@ from sdk.events import (
     AgentStartedPayload,
     AgentEvent,
     ContentPayload,
-    TurnEndPayload,
     publish_event,
     agent_span,
 )
@@ -41,10 +40,6 @@ async def test_message_handler_bridges_events_without_duplicates(monkeypatch: py
         # Nested agent event: passes through with content intact
         async with agent_span("nested"):
             publish_event(AgentEvent(payload=ContentPayload(type="content", content="secret", thinking="hidden")))
-        await asyncio.sleep(0)
-
-        # Turn end
-        publish_event(AgentEvent(payload=TurnEndPayload(type="turn_end")))
         await asyncio.sleep(0)
 
         return "done"
@@ -90,3 +85,12 @@ async def test_message_handler_bridges_events_without_duplicates(monkeypatch: py
     # Lifecycle events: root started, nested started, nested completed, root completed
     agent_names = [name for _, name in lifecycle_events]
     assert "nested" in agent_names
+
+    event_types = [ev.payload.type for ev in seen]
+    assert event_types[-1] == "turn_end"
+    assert event_types.count("turn_end") == 1
+    root_completed_idx = max(
+        i for i, ev in enumerate(seen)
+        if isinstance(ev.payload, AgentCompletedPayload) and ev.payload.agent_name == "TEST"
+    )
+    assert root_completed_idx < len(seen) - 1

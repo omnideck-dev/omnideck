@@ -7,7 +7,7 @@ from typing import Any
 
 from agents.types import Agent
 from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, get_current_agent_name, publish_event
+from sdk.events import AgentEvent, ContentPayload, get_current_agent_name, publish_event
 from sdk.providers import ChatDelta, ChatResponse, ProviderError, get_provider
 from sdk.skills.agent_state import _active_agent_state
 from sdk.tools import _execute_tool_call
@@ -27,14 +27,6 @@ class ToolLoopError(Exception):
 
 
 logger = logging.getLogger(__name__)
-
-
-def _publish_turn_end() -> None:
-    """Emit a TurnEndPayload. Logs but never raises on failure."""
-    try:
-        publish_event(AgentEvent(payload=TurnEndPayload(type="turn_end")))
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to publish turn_end event")
 
 
 async def _stream_chat_with_retries(
@@ -252,7 +244,6 @@ async def run_turn(
                     final_content = content
 
                 if not tool_calls:
-                    _publish_turn_end()
                     return final_content
 
                 tool_names = [tc.function.name for tc in tool_calls]
@@ -278,13 +269,11 @@ async def run_turn(
 
             except StopRequestedError:
                 logger.info("Agent '%s' tool loop stopped by user request", agent.name)
-                _publish_turn_end()
                 raise
             except Exception as exc:
                 logger.exception("Unhandled exception in tool loop")
                 error_msg = str(exc) if isinstance(exc, ProviderError) else "An error occurred while processing your message."
                 publish_event(AgentEvent(payload=ContentPayload(type="content", content=error_msg)))
-                _publish_turn_end()
                 raise ToolLoopError(error_msg) from exc
     finally:
         for hook in hooks:

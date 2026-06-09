@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, publish_event
 from sdk.turn import (
     drain_nudges,
     is_turn_active,
@@ -69,3 +70,19 @@ def test_nudge_queue_cleaned_up_on_unregister() -> None:
 def test_queue_nudge_noop_without_registration() -> None:
     """queue_nudge is a no-op when no queue is registered for that ID."""
     queue_nudge("no-such-agent", "should be dropped")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_turn_scope_emits_one_final_turn_end() -> None:
+    """turn_scope owns the single final turn_end event for a user turn."""
+    captured: list[AgentEvent] = []
+
+    async def _handler(event: AgentEvent) -> None:
+        captured.append(event)
+
+    async with turn_scope(handler=_handler, conversation_id="test-sid"):
+        publish_event(AgentEvent(payload=ContentPayload(type="content", content="during turn")))
+
+    assert [event.payload.type for event in captured] == ["content", "turn_end"]
+    assert isinstance(captured[-1].payload, TurnEndPayload)

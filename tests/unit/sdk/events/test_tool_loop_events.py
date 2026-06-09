@@ -12,7 +12,7 @@ from typing import Any, List
 import pytest
 
 from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, ContentPayload, ToolCallPayload, agent_span
+from sdk.events import AgentEvent, ContentPayload, ToolCallPayload, TurnEndPayload, agent_span, publish_event
 from sdk.skills import AgentState
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
 from sdk.turn import run_turn, turn_scope
@@ -119,5 +119,51 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
         i for i, e in enumerate(captured) if isinstance(e.payload, ToolCallPayload)
     )
     assert first_model_idx <= first_tool_idx
-    # Verify context metadata: tool loop runs in root context (depth 0) when invoked directly
-    assert all(e.depth == 0 for e in captured)
+    # Verify context metadata: tool-loop events run in root agent context
+    # (depth 0). The final turn_end is owned by turn_scope, not agent_span.
+    assert all(e.depth == 0 for e in captured if not isinstance(e.payload, TurnEndPayload))
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_nested_agent_loop_does_not_emit_turn_end_before_root_continues(monkeypatch):
+    """A nested agent loop ending must not signal the whole user turn is over."""
+    import sdk.turn._execution as mod
+
+    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([_make_response(content="sub done")]))
+
+    captured: list[AgentEvent] = []
+
+    async def _handler(evt: AgentEvent) -> None:
+        captured.append(evt)
+
+    agent = Agent(
+        name="Sub Agent",
+        description="desc",
+        instruction="ctx",
+        provider="ollama",
+        model="dummy",
+        options={},
+        tools=[],
+    )
+    history = ConversationHistory([{"role": "system", "content": "ctx"}])
+
+    async with turn_scope(handler=_handler):
+        async with agent_span("root", agent_state=AgentState([])):
+            async with agent_span("sub", agent_state=AgentState(agent.tools)):
+                await run_turn(history, agent=agent)
+            publish_event(AgentEvent(payload=ContentPayload(type="content", content="root continued")))
+
+    event_types = [event.payload.type for event in captured]
+    root_continued_idx = next(
+        i for i, event in enumerate(captured)
+        if isinstance(event.payload, ContentPayload) and event.payload.content == "root continued"
+    )
+    early_turn_end = [
+        i for i, event in enumerate(captured)
+        if isinstance(event.payload, TurnEndPayload) and i < root_continued_idx
+    ]
+
+    assert early_turn_end == []
+    assert event_types[-1] == "turn_end"
+    assert event_types.count("turn_end") == 1
