@@ -242,11 +242,17 @@ export function _mergeFileOutputs(uiMessages, events) {
 export default function useStreamingChat(callbacks) {
     const [messages, setMessages] = useState([]);
     const [isStreaming, _setIsStreaming] = useState(false);
+    const [stopRequested, _setStopRequested] = useState(false);
     // Ref mirror of isStreaming so sendMessage can read it synchronously
     const isStreamingRef = useRef(false);
     const setIsStreaming = useCallback((val) => {
         isStreamingRef.current = val;
         _setIsStreaming(val);
+    }, []);
+    const stopRequestedRef = useRef(false);
+    const setStopRequested = useCallback((val) => {
+        stopRequestedRef.current = val;
+        _setStopRequested(val);
     }, []);
     const abortControllerRef = useRef(null);
     // The open conversation id is this hook's primary key — every request it
@@ -265,6 +271,7 @@ export default function useStreamingChat(callbacks) {
 
     const sendNudge = useCallback(async (message, agentId) => {
         if (!message) return;
+        if (stopRequestedRef.current) return;
         const nudgeBody = {
             message,
             conversation_id: conversationIdRef.current,
@@ -319,6 +326,7 @@ export default function useStreamingChat(callbacks) {
             const controller = new AbortController();
             abortControllerRef.current = controller;
             setIsStreaming(true);
+            setStopRequested(false);
 
             const resp = await fetch('/api/chat', {
                 method: 'POST',
@@ -500,14 +508,16 @@ export default function useStreamingChat(callbacks) {
             if (agentRafId !== null) cancelAnimationFrame(agentRafId);
             abortControllerRef.current = null;
             setIsStreaming(false);
+            setStopRequested(false);
         }
-    }, [callbacks]);
+    }, [callbacks, setStopRequested]);
 
-    /** Ask the backend to stop generation and update local state. */
+    /** Ask the backend to stop generation while leaving the stream open until turn_end. */
     const stopGeneration = useCallback(() => {
+        if (!isStreamingRef.current || stopRequestedRef.current) return;
+        setStopRequested(true);
         fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => {});
-        setIsStreaming(false);
-    }, []);
+    }, [setStopRequested]);
 
     /** Resume a previous conversation by loading its history from the backend. */
     const loadConversation = useCallback(async (conversationId) => {
@@ -516,6 +526,7 @@ export default function useStreamingChat(callbacks) {
             abortControllerRef.current = null;
         }
         setIsStreaming(false);
+        setStopRequested(false);
 
         try {
             const resp = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {
@@ -587,13 +598,15 @@ export default function useStreamingChat(callbacks) {
         const oldConversationId = conversationIdRef.current;
         fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => {});
         setIsStreaming(false);
+        setStopRequested(false);
         setMessages([]);
         setConversationId(_uuid());
-    }, [setConversationId]);
+    }, [setConversationId, setStopRequested]);
 
     return {
         messages,
         isStreaming,
+        stopRequested,
         activeConversationId,
         sendMessage,
         sendNudge,

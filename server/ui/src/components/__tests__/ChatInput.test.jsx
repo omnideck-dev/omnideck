@@ -83,6 +83,14 @@ describe('ChatInput', () => {
         expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
     });
 
+    it('keeps streaming controls visible but disables nudges after stop is requested', () => {
+        render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming={true} stopRequested={true} />);
+
+        expect(screen.getByLabelText('Stop generation')).toBeDisabled();
+        expect(screen.getByPlaceholderText('Stopping…')).toBeDisabled();
+        expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
+    });
+
     it('builds the placeholder from the selected profile name', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
             json: () => Promise.resolve([{ id: 'p1', name: 'Code Expert' }]),

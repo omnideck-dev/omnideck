@@ -12,12 +12,14 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
+function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
 
     const profileName = selectedProfile?.name;
-    const placeholder = isStreaming
+    const placeholder = stopRequested
+        ? 'Stopping…'
+        : isStreaming
         ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
         : `Message ${profileName || 'Omnideck'}…`;
 
@@ -58,6 +60,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (stopRequested) return;
         if (!message.trim() && !fileData) return;
         onSend(message.trim(), fileData);
         setMessage('');
@@ -133,6 +136,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
                     }}
                     onPaste={handlePaste}
                     placeholder={placeholder}
+                    disabled={stopRequested}
                 />
                 <div className={styles.inputAreaButtons}>
                     <ProfileSelector
@@ -170,6 +174,7 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
                             title="Stop generation"
                             aria-label="Stop generation"
                             onClick={onStop}
+                            disabled={stopRequested}
                         >
                             <StopIcon />
                         </button>
