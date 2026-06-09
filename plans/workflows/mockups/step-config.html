@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — step configurators</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--accent-glow:rgba(37,99,235,.15);--success:#16a34a;--success-muted:rgba(22,163,74,.08);--warning:#d97706;--warning-muted:rgba(217,119,6,.08);--danger:#dc2626;--danger-muted:rgba(220,38,38,.08);--shadow-sm:0 1px 2px rgba(15,23,42,.05);--shadow-md:0 2px 8px rgba(15,23,42,.08);--shadow-lg:0 4px 16px rgba(15,23,42,.10);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-xl:12px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--font-brand:'Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-code:'JetBrains Mono','Consolas',monospace;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);--accent-glow:rgba(59,130,246,.2);--success:#4ade80;--success-muted:rgba(74,222,128,.12);--warning:#fbbf24;--warning-muted:rgba(251,191,36,.12);--danger:#f87171;--danger-muted:rgba(248,113,113,.12);--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 2px 8px rgba(0,0,0,.4);--shadow-lg:0 8px 24px rgba(0,0,0,.6);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+::-webkit-scrollbar{width:9px;height:9px;}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+.page{max-width:1320px;margin:0 auto;padding:var(--sp-8) var(--sp-6) 64px;}
+.pageHd{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2);}
+.pageHd h1{font-size:18px;font-weight:600;margin:0;}.pageHd .sub{font-size:12.5px;color:var(--text-secondary);}
+.themeToggle{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);font-size:12px;cursor:pointer;}
+.lead{font-size:12.5px;color:var(--text-secondary);margin:0 0 var(--sp-6);max-width:96ch;line-height:1.6;}
+.lead b{color:var(--text-primary);}
+
+.rows{display:flex;flex-direction:column;gap:var(--sp-8);}
+.rowHd{display:flex;align-items:center;gap:9px;margin-bottom:var(--sp-3);padding-bottom:var(--sp-2);border-bottom:1px solid var(--border);}
+.rIcon{width:26px;height:26px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.rName{font-size:14px;font-weight:600;}.rWhen{font-size:11.5px;color:var(--text-tertiary);}
+.bench{display:flex;gap:var(--sp-4);align-items:flex-start;}
+
+/* full inspector */
+.insp{width:344px;flex-shrink:0;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;}
+.insHd{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
+.insIcon{width:24px;height:24px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+.insType{font-family:var(--font-brand);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.insName{font-size:13px;font-weight:600;cursor:text;border-radius:var(--radius-sm);padding:0 4px;margin:0 -4px;outline:none;display:inline-block;}
+.insName:hover{background:var(--surface);}
+.insName:focus{background:var(--elevated);box-shadow:0 0 0 2px var(--accent-glow);}
+.insName::after{content:'\270E';margin-left:6px;color:var(--text-tertiary);font-size:11px;opacity:0;transition:opacity .12s;}
+.insName:hover::after{opacity:.65;}
+.insBody{padding:var(--sp-4);}
+.insFoot{border-top:1px solid var(--border);padding:var(--sp-3) var(--sp-4);display:flex;gap:var(--sp-2);background:var(--canvas);border-radius:0 0 var(--radius-xl) var(--radius-xl);align-items:center;}
+.spacer{flex:1;}
+
+.field{margin-bottom:var(--sp-4);}.field:last-child{margin-bottom:0;}
+.fieldLabel{font-family:var(--font-brand);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.fieldLabel .help{margin-left:auto;color:var(--accent);cursor:pointer;font-size:10px;text-transform:none;letter-spacing:0;font-family:var(--font-body);}
+.textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;font-size:12px;line-height:1.5;color:var(--text-primary);}
+.select{width:100%;height:34px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 10px;font-size:12.5px;cursor:pointer;position:relative;}
+.select.sm{height:32px;}.select .chev{margin-left:auto;color:var(--text-tertiary);transition:transform .12s;}
+.select.open{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}.select.open .chev{transform:rotate(180deg);}
+.select .pfIcon{width:18px;height:18px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;}
+.miniRow{display:flex;gap:var(--sp-2);}.miniRow .field{flex:1;}
+.hintLine{font-size:11px;color:var(--text-tertiary);margin-top:5px;line-height:1.45;}
+.divider{height:1px;background:var(--border);margin:var(--sp-2) 0 var(--sp-4);}
+.segmented{display:flex;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.seg{flex:1;text-align:center;padding:7px 0;font-size:11.5px;cursor:pointer;color:var(--text-secondary);background:var(--surface);border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:5px;}
+.seg:last-child{border-right:none;}.seg.on{background:var(--accent);color:#fff;font-weight:600;}
+.toggle{width:32px;height:19px;border-radius:var(--radius-full);background:var(--accent);position:relative;flex-shrink:0;cursor:pointer;display:inline-block;vertical-align:middle;}
+.toggle::after{content:'';position:absolute;top:2px;left:15px;width:15px;height:15px;border-radius:var(--radius-full);background:#fff;transition:left .12s;}
+.toggle.off{background:var(--border-strong);}.toggle.off::after{left:2px;}
+.shapeBox{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;}
+.shapeRow{display:flex;gap:6px;font-family:var(--font-code);font-size:11px;color:var(--text-secondary);padding:2px 0;}
+.shapeRow .k{color:var(--text-primary);}.shapeRow .t{color:var(--accent);}
+.linkRow{font-size:11px;color:var(--accent);cursor:pointer;margin-top:6px;display:inline-flex;align-items:center;gap:5px;position:relative;}
+.matchSel{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;}
+.matchSel .mini{height:22px;padding:0 7px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:10px;color:var(--accent);cursor:pointer;}
+.cond{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px;margin-bottom:6px;}
+.cond .r1{display:flex;gap:5px;margin-bottom:5px;}.cond .r1 .select{flex:1;height:28px;font-size:11px;padding:0 7px;background:var(--elevated);}
+.cond .val2{height:28px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--elevated);padding:0 8px;font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;position:relative;}
+.cond .val2.open{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+.cond .val2 .src{display:inline-flex;align-items:center;gap:4px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 5px;font-family:var(--font-code);font-size:10px;}
+.condAdd{font-size:11px;color:var(--accent);cursor:pointer;}
+.pathCard{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px;margin-bottom:7px;}
+.pathHd{display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+.pathHd .lbl{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.04em;color:var(--text-tertiary);}
+.pathName{font-size:11.5px;font-weight:600;border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 8px;background:var(--elevated);cursor:text;outline:none;}
+.pathName:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow);}
+.pathName.up{color:var(--danger);border-color:var(--danger-muted);background:var(--danger-muted);}
+.pathName.norm{color:var(--text-secondary);}
+.pathCard.def{display:flex;align-items:center;gap:7px;background:var(--canvas);font-size:11.5px;color:var(--text-secondary);}
+.pathCard .cond{margin-bottom:6px;}.pathCard .cond:last-child{margin-bottom:0;}
+.incChips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;}
+.incChip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--accent-muted);border-radius:var(--radius-sm);padding:3px 8px;font-family:var(--font-code);font-size:11px;}
+.incChip i{cursor:pointer;opacity:.7;font-size:9px;}
+.mapRow{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.mapRow .ml{width:62px;flex-shrink:0;font-size:11.5px;color:var(--text-secondary);}
+.mapVal{flex:1;display:flex;align-items:center;gap:6px;height:30px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 8px;font-size:11.5px;cursor:pointer;position:relative;}
+.mapVal.open{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+.mapVal .src{display:inline-flex;align-items:center;gap:4px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:1px 5px;font-family:var(--font-code);font-size:10px;}
+.mapVal .src.item{background:rgba(8,145,178,.12);color:#0891b2;}
+.mapVal .lit{color:var(--text-primary);}.mapVal .x{margin-left:auto;color:var(--text-tertiary);font-size:10px;}
+.mapVal .iflds{margin-left:auto;font-family:var(--font-code);font-size:9.5px;color:var(--text-tertiary);}
+.code{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:9px 10px;font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary);white-space:pre;overflow-x:auto;}
+.code .kw{color:#7c3aed;}.code .fn{color:var(--accent);}.code .st{color:var(--success);}.code .cm{color:var(--text-tertiary);}
+.chips{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-code);font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-full);padding:2px 7px;color:var(--text-secondary);}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 var(--sp-3);border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;}
+.btn:hover{border-color:var(--border-strong);color:var(--text-primary);}
+.btn.accentGhost{color:var(--accent);border-color:var(--accent-muted);}
+.runReal{font-size:10.5px;color:var(--text-tertiary);display:inline-flex;align-items:center;gap:5px;}
+
+/* ── anchored dropdown popover (renders over the control) ── */
+.pop{position:absolute;top:calc(100% + 5px);left:0;min-width:100%;width:max-content;max-width:300px;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);z-index:30;padding:6px;display:none;text-align:left;cursor:default;}
+.pop.show{display:block;}
+.pkGroup{font-size:10px;color:var(--text-tertiary);font-weight:600;padding:5px 6px 2px;text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-brand);}
+.pkItem{display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;}
+.pkItem:hover{background:var(--accent-muted);}.pkItem.on{background:var(--accent-muted);color:var(--accent);}
+.pkItem .pi{width:16px;height:16px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;}
+.pkItem .ty{margin-left:auto;font-family:var(--font-code);font-size:9.5px;color:var(--text-tertiary);}
+.pkItem.disabled{opacity:.55;cursor:default;}
+.pkItem.disabled .ty{color:var(--danger);}
+.pkItem .cb{width:14px;height:14px;border-radius:3px;border:2px solid var(--border-strong);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:7px;}
+.pkItem.on .cb{background:var(--accent);border-color:var(--accent);}
+.popNote{font-size:10.5px;color:var(--text-tertiary);padding:6px 7px 2px;line-height:1.4;border-top:1px solid var(--border-subtle);margin-top:4px;}
+
+/* ── data-in-scope picker — same treatment as the data-picker page ── */
+.scopePop{min-width:250px;max-width:300px;}
+.dpSrch{display:flex;align-items:center;gap:7px;padding:6px 8px;margin-bottom:5px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--canvas);color:var(--text-tertiary);}
+.dpSrch i{font-size:11px;}
+.dpSrch input{flex:1;min-width:0;border:none;background:none;outline:none;font:inherit;font-size:12px;color:var(--text-primary);}
+.sGrpHd{display:flex;align-items:center;gap:7px;padding:6px 5px 3px;}
+.sGrpHd .gi{width:17px;height:17px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;}
+.sGrpHd .gn{font-size:12px;font-weight:600;}
+.sGrpHd .gt{font-family:var(--font-brand);font-size:8px;letter-spacing:.03em;text-transform:uppercase;color:var(--text-tertiary);}
+.sItm{display:flex;align-items:center;gap:8px;padding:5px 7px 5px 9px;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;}
+.sItm:hover{background:var(--accent-muted);}
+.sItm.on{background:var(--accent-muted);}
+.sItm .nm{color:var(--text-primary);}
+.sItm.on .nm{color:var(--accent);font-weight:500;}
+.sItm .cb{width:14px;height:14px;border-radius:3px;border:2px solid var(--border-strong);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:7px;}
+.sItm.on .cb{background:var(--accent);border-color:var(--accent);}
+.sItm .ty{margin-left:auto;font-family:var(--font-code);font-size:9px;padding:1px 6px;border-radius:var(--radius-full);}
+.ty.text{background:var(--border-subtle);color:var(--text-secondary);}
+.ty.num{background:var(--warning-muted);color:var(--warning);}
+.ty.date{background:rgba(8,145,178,.12);color:#0891b2;}
+.ty.enum{background:rgba(124,58,237,.12);color:#7c3aed;}
+.ty.list{background:var(--success-muted);color:var(--success);}
+.ty.obj{background:var(--accent-muted);color:var(--accent);}
+.ty.intg{background:var(--accent-muted);color:var(--accent);}
+
+.tagInput{display:flex;flex-wrap:wrap;gap:5px;padding:2px;}
+.tag{display:inline-flex;align-items:center;gap:5px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:2px 7px;font-size:11px;}
+.tag i{cursor:pointer;font-size:9px;}
+.tagInput .ph{font-size:11.5px;color:var(--text-tertiary);padding:2px 4px;}
+.shapeEditRow{display:flex;gap:6px;margin-bottom:6px;}
+.shapeEditRow input{flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);height:28px;padding:0 8px;font-size:11px;font-family:var(--font-code);}
+.shapeEditRow .select{width:84px;flex:none;height:28px;font-size:11px;padding:0 7px;}
+.shapeRow .enumVals{color:#7c3aed;font-family:var(--font-code);font-size:10px;margin-left:2px;}
+.evRow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:-2px 0 8px 26px;}
+.evRow .evLbl{font-family:var(--font-code);font-size:9.5px;color:var(--text-tertiary);margin-right:2px;}
+.evchip{display:inline-flex;align-items:center;gap:5px;background:rgba(124,58,237,.1);color:#7c3aed;border-radius:var(--radius-sm);padding:1px 7px;font-family:var(--font-code);font-size:10px;}
+.evchip i{cursor:pointer;font-size:8px;opacity:.7;}
+.evadd{color:var(--accent);cursor:pointer;font-size:11px;}
+.emptyInc{font-size:11px;color:var(--text-tertiary);border:1px dashed var(--border-strong);border-radius:var(--radius-md);padding:8px 10px;line-height:1.45;}
+.enumBuild{margin:2px 0 8px;padding:7px 9px;border-left:2px solid rgba(124,58,237,.4);background:rgba(124,58,237,.05);border-radius:0 var(--radius-sm) var(--radius-sm) 0;}
+.enumBuild .ebl{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:#7c3aed;margin-bottom:6px;}
+.enumBuild .tagInput{gap:6px;}
+.tag.en{background:rgba(124,58,237,.1);color:#7c3aed;}.tag.en i{color:#7c3aed;}
+.code .dref{display:inline-flex;align-items:center;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 5px;font-family:var(--font-code);font-size:10.5px;}
+.code .dref::before{content:'@';opacity:.55;margin-right:1px;}
+.atCaret{position:relative;background:var(--accent-muted);color:var(--accent);border-radius:2px;padding:0 3px;cursor:pointer;border-left:1.5px solid var(--accent);}
+.atCaret .pop{white-space:normal;}
+
+/* right side: only detached things (test results) + notes */
+.expArea{flex:1;display:flex;flex-direction:column;gap:var(--sp-3);min-width:0;padding-top:2px;}
+.expHint{font-size:11.5px;color:var(--text-tertiary);line-height:1.55;max-width:320px;}
+.note{font-size:11.5px;color:var(--text-secondary);background:var(--accent-muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 10px;display:flex;gap:6px;line-height:1.5;max-width:340px;}
+.note i{color:var(--accent);margin-top:1px;}
+.result{width:340px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;display:none;}
+.result.show{display:block;}
+.resHd{display:flex;align-items:center;gap:6px;padding:8px 11px;border-bottom:1px solid var(--border-subtle);font-size:11px;font-weight:600;}
+.resHd.ok{color:var(--success);}.resHd.pause{color:var(--warning);}.resHd.route{color:var(--warning);}
+.resHd .tagR{margin-left:auto;font-family:var(--font-brand);font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--text-tertiary);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-full);padding:1px 7px;}
+.resHd .x{margin-left:auto;cursor:pointer;color:var(--text-tertiary);font-size:13px;}
+.resBody{padding:var(--sp-3) var(--sp-4);}
+.trSeg{padding:6px 0;border-bottom:1px solid var(--border-subtle);}.trSeg:last-child{border-bottom:none;}
+.trRole{font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:3px;}
+.trBody{font-size:11.5px;line-height:1.5;}
+.trBody b{color:var(--text-primary);}
+.trCode{font-family:var(--font-code);font-size:10.5px;line-height:1.5;color:var(--text-secondary);white-space:pre-wrap;}
+.routeRow{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;}
+.routeRow .pill{font-family:var(--font-code);font-size:10px;border-radius:var(--radius-sm);padding:1px 6px;}
+.routeRow .pill.up{background:var(--danger-muted);color:var(--danger);}
+.routeRow .pill.norm{background:var(--surface);color:var(--text-secondary);border:1px solid var(--border);}
+.routeRow .arr{color:var(--text-tertiary);}
+.modeBody{display:none;}.modeBody.on{display:block;}
+/* trigger test — matched-item cards */
+.resStat{font-size:11.5px;line-height:1.5;margin-bottom:2px;}
+.resStat b{color:var(--text-primary);}
+.resStat code{font-family:var(--font-code);font-size:10.5px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:3px;padding:0 4px;color:var(--text-secondary);}
+.matchCard{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 9px;margin-top:8px;}
+.mcHd{display:flex;align-items:center;gap:7px;}
+.mcTag{width:16px;height:16px;border-radius:var(--radius-sm);font-family:var(--font-brand);font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
+.mcTag.a{background:var(--danger);}.mcTag.b{background:var(--text-tertiary);}
+.mcFrom{font-family:var(--font-code);font-size:11px;color:var(--text-primary);}
+.mcWhen{margin-left:auto;font-size:10px;color:var(--text-tertiary);}
+.mcSub{font-size:11.5px;color:var(--text-secondary);margin:3px 0 6px;}
+.mcUse{font-size:10.5px;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:4px;}
+.mcSkip{font-size:10.5px;color:var(--text-tertiary);margin-top:8px;line-height:1.45;}
+.mcSkip code{font-family:var(--font-code);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="pageHd"><h1>Workflows — step configurators</h1><span class="sub">a reference for every step type and its options — explore all the permutations here</span><button class="themeToggle" id="themeBtn"><i class="bi bi-sun"></i> Theme</button></div>
+  <p class="lead">This page is a <b>catalog of every step type and its options</b> — use it to explore the permutations of each, not a single workflow. The <b>step name is the editable title</b> at the top of each inspector (click it) — it’s the step’s label on the canvas <i>and</i> the prefix in data references (e.g. <code>Triage ▸ priority</code>). Anywhere you pick data, the dropdown is the <b>same data-in-scope picker as the data-picker page</b> — grouped by source, typed, searchable. The space to the right shows that step’s <b>output</b> or a note. The end-to-end example — and the live <b>dry run</b> — live in the step builder; the examples here are just illustrative.</p>
+
+  <div class="rows">
+
+    <!-- ══════════ TRIGGER ══════════ -->
+    <section class="step" data-step="trigger">
+      <div class="rowHd"><span class="rIcon" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="rName">Trigger</span><span class="rWhen">— the start node · one per integration × event</span></div>
+      <div class="note" style="max-width:none;margin-bottom:14px"><i class="bi bi-info-circle"></i> <span>A workflow can have several triggers. <b>New</b> watches a source for items as they arrive. <b>Changed</b> watches a chosen set of items and fires when one is updated. Or run on a <b>schedule</b>.</span></div>
+      <div class="bench" style="flex-wrap:wrap">
+
+        <!-- New email -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><div><div class="insType">Trigger · Email</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">On Client Email</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Source</div><div class="select sm" data-pop><span class="pfIcon" style="background:#ea4335"><i class="bi bi-envelope"></i></span> Email · work Gmail <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#ea4335"><i class="bi bi-google"></i></span> work Gmail</div><div class="pkItem"><span class="pi" style="background:#ea4335"><i class="bi bi-google"></i></span> personal Gmail</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Event</div><div class="select sm" data-pop>New message <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">New message</div><div class="pkItem disabled">Changed</div></div></div><div class="hintLine">Email triggers on new messages only.</div></div>
+            <div class="field"><div class="fieldLabel">Folder</div><div class="select sm" data-pop>Inbox <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Inbox</div><div class="pkItem">Starred</div><div class="pkItem">Clients label</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Check every</div><div class="select sm" data-pop>5 minutes <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">1 minute</div><div class="pkItem on">5 minutes</div><div class="pkItem">15 minutes</div><div class="pkItem">1 hour</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Only when</div>
+              <div class="cond"><div class="r1">
+                <div class="select" data-pop>from <span class="chev"><i class="bi bi-chevron-down"></i></span>
+                  <div class="pop scopePop" style="min-width:190px"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search fields…" /></div><div class="sGrpHd"><span class="gi" style="background:#ea4335"><i class="bi bi-envelope"></i></span><span class="gn">New message</span><span class="gt">fields</span></div><div class="sItm on"><span class="nm">from</span><span class="ty text">text</span></div><div class="sItm"><span class="nm">to</span><span class="ty text">text</span></div><div class="sItm"><span class="nm">subject</span><span class="ty text">text</span></div><div class="sItm"><span class="nm">date</span><span class="ty date">date</span></div></div>
+                </div>
+                <div class="select" data-pop>is one of <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">is</div><div class="pkItem">is not</div><div class="pkItem on">is one of</div><div class="pkItem">contains</div></div></div>
+              </div>
+                <div class="val2" data-pop><span class="src">jane@acme.com</span> <span style="color:var(--text-tertiary)">+2</span> <span style="margin-left:auto;color:var(--text-tertiary)"><i class="bi bi-pencil"></i></span>
+                  <div class="pop" style="min-width:240px"><div class="tagInput"><span class="tag">jane@acme.com <i class="bi bi-x"></i></span><span class="tag">sam@globex.com <i class="bi bi-x"></i></span><span class="tag">li@initech.com <i class="bi bi-x"></i></span><span class="ph">add address…</span></div></div>
+                </div>
+              </div>
+              <div class="condAdd"><i class="bi bi-plus"></i> Add condition</div>
+            </div>
+            <div class="field"><div class="fieldLabel">For each check</div><div class="segmented"><div class="seg on">One run / item</div><div class="seg">Batch</div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- Drive · file changed -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#16a34a"><i class="bi bi-hdd"></i></span><div><div class="insType">Trigger · Drive</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">When contract docs change</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Source</div><div class="select sm" data-pop><span class="pfIcon" style="background:#16a34a"><i class="bi bi-hdd"></i></span> Drive · work Drive <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#16a34a"><i class="bi bi-google"></i></span> work Drive</div><div class="pkItem"><span class="pi" style="background:#16a34a"><i class="bi bi-google"></i></span> personal Drive</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Event</div><div class="select sm" data-pop>File changed <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">New file <span class="ty">in a folder</span></div><div class="pkItem on">File changed <span class="ty">picked files</span></div></div></div></div>
+            <div class="field"><div class="fieldLabel">Watch these files</div>
+              <div class="incChips">
+                <span class="incChip"><i class="bi bi-file-earmark-text" style="opacity:1"></i> SOW.docx <i class="bi bi-x"></i></span>
+                <span class="incChip"><i class="bi bi-file-earmark-text" style="opacity:1"></i> DPA addendum <i class="bi bi-x"></i></span>
+                <span class="incChip"><i class="bi bi-file-earmark-spreadsheet" style="opacity:1"></i> Project timeline <i class="bi bi-x"></i></span>
+              </div>
+              <div class="linkRow" data-pop><i class="bi bi-plus"></i> Choose files
+                <div class="pop" style="min-width:230px"><div class="dpSrch" style="display:flex;align-items:center;gap:7px;padding:6px 8px;margin-bottom:5px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--canvas);color:var(--text-tertiary)"><i class="bi bi-search"></i> Search work Drive…</div><div class="pkGroup">work Drive · recent</div><div class="pkItem on"><span class="pi" style="background:#16a34a"><i class="bi bi-file-earmark-text"></i></span> SOW.docx</div><div class="pkItem on"><span class="pi" style="background:#16a34a"><i class="bi bi-file-earmark-text"></i></span> DPA addendum</div><div class="pkItem on"><span class="pi" style="background:#16a34a"><i class="bi bi-file-earmark-spreadsheet"></i></span> Project timeline</div><div class="pkItem"><span class="pi" style="background:#16a34a"><i class="bi bi-file-earmark-pdf"></i></span> Pricing v3.pdf</div><div class="pkItem"><span class="pi" style="background:#16a34a"><i class="bi bi-folder"></i></span> Contracts /</div></div>
+              </div>
+              <div class="hintLine">Fires when any of these files changes.</div>
+            </div>
+            <div class="field"><div class="fieldLabel">Check every</div><div class="select sm" data-pop>15 minutes <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">5 minutes</div><div class="pkItem on">15 minutes</div><div class="pkItem">1 hour</div></div></div></div>
+            <div class="field"><div class="fieldLabel">For each check</div><div class="segmented"><div class="seg on">One run / item</div><div class="seg">Batch</div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- API · changed item -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span><div><div class="insType">Trigger · API</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">When an order changes</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Connection</div><div class="select sm" data-pop><span class="pfIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span> Orders API <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#475569"><i class="bi bi-hdd-network"></i></span> Orders API</div><div class="pkItem"><span class="pi" style="background:#475569"><i class="bi bi-plus"></i></span> New connection…</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Event</div><div class="select sm" data-pop>Changed item <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">New item</div><div class="pkItem on">Changed item</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Find items</div><div class="miniRow"><div class="select sm" data-pop style="flex:0 0 70px">GET <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">GET</div><div class="pkItem">POST</div></div></div><div class="select sm" style="flex:1;font-family:var(--font-code);font-size:11px">/v1/orders</div></div><div class="field" style="margin:6px 0 0"><div class="mapRow" style="margin:0"><span class="ml" style="width:48px">Items at</span><div class="mapVal" style="font-family:var(--font-code);font-size:10.5px">data.orders</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Watch these items</div>
+              <div class="incChips">
+                <span class="incChip">#1042 · Acme <i class="bi bi-x"></i></span>
+                <span class="incChip">#1051 · Initech <i class="bi bi-x"></i></span>
+              </div>
+              <div class="linkRow" data-pop><i class="bi bi-plus"></i> Choose items
+                <div class="pop" style="min-width:250px"><div class="popNote" style="border:none;margin:0;padding:2px 6px 6px">Loaded <b>24</b> orders from the request — pick which to watch.</div><div class="pkItem on"><span class="cb"><i class="bi bi-check-lg"></i></span> #1042 · Acme <span class="ty">$4,200 · open</span></div><div class="pkItem on"><span class="cb"><i class="bi bi-check-lg"></i></span> #1051 · Initech <span class="ty">$9,800 · open</span></div><div class="pkItem"><span class="cb"></span> #1043 · Globex <span class="ty">$1,150 · paid</span></div><div class="pkItem"><span class="cb"></span> #1044 · Stark <span class="ty">$640 · open</span></div></div>
+              </div>
+            </div>
+            <div class="field"><div class="fieldLabel">Fire when this changes</div><div class="select sm" data-pop><span style="font-family:var(--font-code);font-size:11px">status</span> <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkGroup">order fields</div><div class="pkItem on">status</div><div class="pkItem">total</div><div class="pkItem">updated_at</div><div class="pkItem">Any field</div></div></div><div class="hintLine">An API has no standard “modified” field — pick the one that means an update.</div></div>
+            <div class="field"><div class="fieldLabel">Check every</div><div class="select sm" data-pop>10 minutes <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">5 minutes</div><div class="pkItem on">10 minutes</div><div class="pkItem">1 hour</div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- Schedule -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#7c3aed"><i class="bi bi-clock"></i></span><div><div class="insType">Trigger · Schedule</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Weekly digest</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Repeat</div><div class="select sm" data-pop>Weekly <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">Daily</div><div class="pkItem on">Weekly</div><div class="pkItem">Monthly</div></div></div></div>
+            <div class="field"><div class="fieldLabel">On days</div><div class="segmented multi" style="font-size:10px"><div class="seg on">M</div><div class="seg on">T</div><div class="seg on">W</div><div class="seg on">T</div><div class="seg on">F</div><div class="seg">S</div><div class="seg">S</div></div><div class="hintLine">Pick any days.</div></div>
+            <div class="field"><div class="fieldLabel">At</div><div class="select sm">7:00 AM · local <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+            <div class="field" style="margin-bottom:0"><div class="hintLine">No matched item — it just runs on the schedule.</div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══════════ AGENT ══════════ -->
+    <section class="step" data-step="agent">
+      <div class="rowHd"><span class="rIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="rName">Agent step</span><span class="rWhen">— an AI agent does the work · returns text or a defined shape</span></div>
+      <div class="bench" style="flex-wrap:wrap">
+
+        <!-- Structured output (with enum) -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent · structured</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Triage</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Instruction <span class="help">✦ assistant</span></div><div class="textarea">Read the client’s email. Set priority (urgent if it needs a reply today or names a deadline), a one-line summary, the client name, and any action items with due dates.</div></div>
+            <div class="field"><div class="fieldLabel">Agent profile</div>
+              <div class="select" data-pop><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Triage <span class="chev"><i class="bi bi-chevron-down"></i></span>
+                <div class="pop"><div class="pkItem on"><span class="pi" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Triage</div><div class="pkItem"><span class="pi" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Writer</div><div class="pkItem"><span class="pi" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Researcher</div></div>
+              </div>
+            </div>
+            <div class="field"><div class="fieldLabel">Include as context</div>
+              <div class="incChips">
+                <span class="incChip">On Client Email ▸ subject <i class="bi bi-x"></i></span>
+                <span class="incChip">On Client Email ▸ body <i class="bi bi-x"></i></span>
+                <span class="incChip">On Client Email ▸ from <i class="bi bi-x"></i></span>
+              </div>
+              <div class="linkRow" data-pop><i class="bi bi-plus"></i> Choose data
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search data…" /></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div>
+                  <div class="sItm on"><span class="cb"><i class="bi bi-check-lg"></i></span><span class="nm">subject</span><span class="ty text">text</span></div>
+                  <div class="sItm on"><span class="cb"><i class="bi bi-check-lg"></i></span><span class="nm">body</span><span class="ty text">text</span></div>
+                  <div class="sItm on"><span class="cb"><i class="bi bi-check-lg"></i></span><span class="nm">from</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">to</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">date</span><span class="ty date">date</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#94a3b8"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">now</span><span class="ty date">date</span></div>
+                  <div class="popNote">Same data that’s in scope here. Picked values are given to the agent as context.</div>
+                </div>
+              </div>
+            </div>
+            <div class="field"><div class="fieldLabel">Return a defined shape</div><div style="margin-bottom:8px"><span class="toggle"></span></div>
+              <div class="shapeBox"><div class="shapeRow"><span class="k">priority</span>: <span class="t">enum</span> <span class="enumVals">urgent · normal</span></div><div class="shapeRow"><span class="k">summary</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">client</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">tasks</span>: <span class="t">list of {title, due}</span></div></div>
+              <div class="linkRow" data-pop><i class="bi bi-pencil"></i> Edit shape
+                <div class="pop" style="min-width:264px"><div class="shapeEditRow"><input value="priority" /><div class="select sm">enum <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="enumBuild"><div class="ebl">allowed values</div><div class="tagInput"><span class="tag en">urgent <i class="bi bi-x"></i></span><span class="tag en">normal <i class="bi bi-x"></i></span><span class="ph">add value…</span></div></div><div class="shapeEditRow"><input value="summary" /><div class="select sm">text <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="shapeEditRow"><input value="client" /><div class="select sm">text <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="shapeEditRow"><input value="tasks" /><div class="select sm">list <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="condAdd"><i class="bi bi-plus"></i> Add field</div></div>
+              </div>
+              <div class="hintLine"><b>enum</b> = a fixed set of values; the agent must return one of them.</div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">Retries</div><div class="select sm" data-pop>2 <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">0</div><div class="pkItem">1</div><div class="pkItem on">2</div><div class="pkItem">3</div></div></div></div><div class="field"><div class="fieldLabel">On failure</div><div class="select sm" data-pop>Stop <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div><div class="pkItem">Take error path</div><div class="pkItem">Skip &amp; continue</div></div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- Free-text output -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent · text</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Summarize thread</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Instruction <span class="help">✦ assistant</span></div><div class="textarea">Summarize the thread in 2–3 sentences for the daily digest. Plain, no preamble.</div></div>
+            <div class="field"><div class="fieldLabel">Agent profile</div><div class="select" data-pop><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Writer <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">Triage</div><div class="pkItem on">Writer</div><div class="pkItem">Researcher</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Include as context</div>
+              <div class="incChips"><span class="incChip">On Client Email ▸ body <i class="bi bi-x"></i></span></div>
+              <div class="linkRow"><i class="bi bi-plus"></i> Choose data</div>
+            </div>
+            <div class="field"><div class="fieldLabel">Return a defined shape</div><div style="margin-bottom:8px"><span class="toggle off"></span> <span style="font-size:11px;color:var(--text-secondary)">off</span></div>
+              <div class="hintLine">Returns <b>free text</b> instead of a structured shape.</div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">Retries</div><div class="select sm" data-pop>2 <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">0</div><div class="pkItem">1</div><div class="pkItem on">2</div><div class="pkItem">3</div></div></div></div><div class="field"><div class="fieldLabel">On failure</div><div class="select sm" data-pop>Stop <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div><div class="pkItem">Take error path</div><div class="pkItem">Skip &amp; continue</div></div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- First step: no include, originates data via tools -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent · structured</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Find models</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Instruction <span class="help">✦ assistant</span></div><div class="textarea">Find new and popular models on Hugging Face from the past week. Include downloads and a one-line summary for each.</div></div>
+            <div class="field"><div class="fieldLabel">Agent profile</div><div class="select" data-pop><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Researcher <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">Triage</div><div class="pkItem">Writer</div><div class="pkItem on">Researcher</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Include as context</div>
+              <div class="emptyInc">First step — nothing upstream to include yet.</div>
+              <div class="linkRow" data-pop><i class="bi bi-plus"></i> Choose data
+                <div class="pop scopePop"><div class="sGrpHd"><span class="gi" style="background:#94a3b8"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span></div><div class="sItm"><span class="cb"></span><span class="nm">now</span><span class="ty date">date</span></div><div class="popNote">A scheduled run has no item to include.</div></div>
+              </div>
+            </div>
+            <div class="field"><div class="fieldLabel">Return a defined shape</div><div style="margin-bottom:8px"><span class="toggle"></span></div>
+              <div class="shapeBox"><div class="shapeRow"><span class="k">models</span>: <span class="t">list of {name, downloads, summary, url}</span></div></div>
+              <div class="linkRow" data-pop><i class="bi bi-pencil"></i> Edit shape<div class="pop" style="min-width:230px"><div class="shapeEditRow"><input value="models" /><div class="select sm">list <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="evRow" style="margin-left:0"><span class="evLbl">of</span><span class="evchip" style="background:var(--accent-muted);color:var(--accent)">name</span><span class="evchip" style="background:var(--accent-muted);color:var(--accent)">downloads</span><span class="evchip" style="background:var(--accent-muted);color:var(--accent)">summary</span><span class="evchip" style="background:var(--accent-muted);color:var(--accent)">url</span><span class="evadd"><i class="bi bi-plus"></i></span></div><div class="condAdd"><i class="bi bi-plus"></i> Add field</div></div>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">Retries</div><div class="select sm" data-pop>2 <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">0</div><div class="pkItem">1</div><div class="pkItem on">2</div><div class="pkItem">3</div></div></div></div><div class="field"><div class="fieldLabel">On failure</div><div class="select sm" data-pop>Stop <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div><div class="pkItem">Take error path</div><div class="pkItem">Skip &amp; continue</div></div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══════════ CODE ══════════ -->
+    <section class="step" data-step="code">
+      <div class="rowHd"><span class="rIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><span class="rName">Code step</span><span class="rWhen">— deterministic logic the agent shouldn’t do</span></div>
+      <div class="bench">
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><div><div class="insType">Code step</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — also its label on the canvas and the prefix in data references">Set due dates</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Code <span class="help">✦ assistant</span></div><div class="code" style="overflow:visible"><span class="cm"># keep tasks that have a due date</span>
+tasks = <span class="dref">Triage ▸ tasks</span>
+keep  = [t <span class="kw">for</span> t <span class="kw">in</span> tasks <span class="kw">if</span> <span class="atCaret" data-pop>@<div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search…" /></div><div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div><div class="sItm"><span class="nm">date</span><span class="ty date">date</span></div><div class="sItm"><span class="nm">from</span><span class="ty text">text</span></div><div class="sItm"><span class="nm">subject</span><span class="ty text">text</span></div><div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div><div class="sItm on"><span class="nm">tasks</span><span class="ty list">list</span></div><div class="sItm"><span class="nm">priority</span><span class="ty enum">enum</span></div><div class="sItm"><span class="nm">summary</span><span class="ty text">text</span></div><div class="sGrpHd"><span class="gi" style="background:#94a3b8"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span></div><div class="sItm"><span class="nm">now</span><span class="ty date">date</span></div></div></span>]</div>
+              <div class="hintLine">Type <b>@</b> anywhere in the code — the picker opens right at your cursor.</div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">Retries</div><div class="select sm" data-pop>1 <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">0</div><div class="pkItem on">1</div><div class="pkItem">2</div></div></div></div><div class="field"><div class="fieldLabel">On failure</div><div class="select sm" data-pop>Stop <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div><div class="pkItem">Take error path</div><div class="pkItem">Skip &amp; continue</div></div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+        <div class="expArea">
+          <div class="expHint">Write the logic in the editor. Type <b>@</b> to drop in data from earlier steps — the same in-scope picker used everywhere else.</div>
+                  </div>
+      </div>
+    </section>
+
+    <!-- ══════════ TOOL · per item (write) ══════════ -->
+    <section class="step" data-step="toolitem">
+      <div class="rowHd"><span class="rIcon" style="background:var(--success)"><i class="bi bi-wrench"></i></span><span class="rName">Tool step</span><span class="rWhen">— pick a tool, map inputs; run once or per item</span></div>
+      <div class="bench" style="flex-wrap:wrap">
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span><div><div class="insType">Tool · per item</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — also its label on the canvas and the prefix in data references">Create task</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Tool</div><div class="select" data-pop><span class="pfIcon" style="background:#4285f4"><i class="bi bi-calendar-plus"></i></span> Create calendar event <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Create calendar event</div><div class="pkItem">Append to sheet</div><div class="pkItem">Call API</div><div class="pkItem">Send email</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Integration</div><div class="select" data-pop><span class="pfIcon" style="background:#4285f4"><i class="bi bi-google"></i></span> work Calendar <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#4285f4"><i class="bi bi-google"></i></span> work Calendar</div><div class="pkItem"><span class="pi" style="background:#4285f4"><i class="bi bi-google"></i></span> personal Calendar</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Run mode</div><div class="segmented"><div class="seg">Run once</div><div class="seg on"><i class="bi bi-arrow-repeat"></i> Per item</div></div>
+              <div class="mapRow" style="margin-top:8px"><span class="ml">For each</span><div class="mapVal" data-pop><span class="src"><i class="bi bi-list-ul"></i> Set due dates ▸ result</span><span class="iflds">list</span>
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search lists…" /></div><div class="popNote" style="border:none;margin:0;padding:2px 6px 4px">Only <b>list</b> fields can be looped.</div>
+                  <div class="sGrpHd"><span class="gi" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><span class="gn">Set due dates</span><span class="gt">code</span></div>
+                  <div class="sItm on"><span class="nm">result</span><span class="ty list">list</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div>
+                  <div class="sItm"><span class="nm">tasks</span><span class="ty list">list</span></div>
+                </div>
+              </div></div>
+            </div>
+            <div class="field"><div class="fieldLabel">Inputs</div>
+              <div class="mapRow"><span class="ml">Summary</span><div class="mapVal" data-pop><span class="src item">item ▸ title</span><i class="bi bi-x x"></i>
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search data…" /></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#0891b2"><i class="bi bi-arrow-repeat"></i></span><span class="gn">item</span><span class="gt">this iteration</span></div>
+                  <div class="sItm on"><span class="nm">title</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="nm">due</span><span class="ty date">date</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div>
+                  <div class="sItm"><span class="nm">subject</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="nm">from</span><span class="ty text">text</span></div>
+                  <div class="popNote">Per item runs the tool once for each list element. <b>item</b> is the current element.</div>
+                </div>
+              </div></div>
+              <div class="mapRow"><span class="ml">Date</span><div class="mapVal" data-pop><span class="src item">item ▸ due</span><i class="bi bi-x x"></i>
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search data…" /></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#0891b2"><i class="bi bi-arrow-repeat"></i></span><span class="gn">item</span><span class="gt">this iteration</span></div>
+                  <div class="sItm"><span class="nm">title</span><span class="ty text">text</span></div>
+                  <div class="sItm on"><span class="nm">due</span><span class="ty date">date</span></div>
+                </div>
+              </div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">If an item fails</div><div class="segmented"><div class="seg on">Keep going</div><div class="seg">Stop</div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#16a34a"><i class="bi bi-table"></i></span><div><div class="insType">Tool · run once</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Log tasks</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Tool</div><div class="select" data-pop><span class="pfIcon" style="background:#16a34a"><i class="bi bi-table"></i></span> Append rows to sheet <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Append rows to sheet</div><div class="pkItem">Create calendar event</div><div class="pkItem">Send email</div><div class="pkItem">Call API</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Integration</div><div class="select" data-pop><span class="pfIcon" style="background:#16a34a"><i class="bi bi-google"></i></span> work Drive <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#16a34a"><i class="bi bi-google"></i></span> work Drive</div><div class="pkItem"><span class="pi" style="background:#16a34a"><i class="bi bi-google"></i></span> personal Drive</div></div></div></div>
+            <div class="field"><div class="fieldLabel">Run mode</div><div class="segmented"><div class="seg on">Run once</div><div class="seg"><i class="bi bi-arrow-repeat"></i> Per item</div></div><div class="hintLine">Runs once — a list input is passed whole, in a single call.</div></div>
+            <div class="field"><div class="fieldLabel">Inputs</div>
+              <div class="mapRow"><span class="ml">Sheet</span><div class="mapVal" data-pop><span class="src"><i class="bi bi-file-earmark-spreadsheet"></i> Client tasks</span> <span style="margin-left:auto;color:var(--text-tertiary)"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Client tasks</div><div class="pkItem">Task log 2026</div><div class="pkItem">Pick a sheet…</div></div></div></div>
+              <div class="mapRow"><span class="ml">Rows</span><div class="mapVal" data-pop><span class="src">Set due dates ▸ result</span><span class="iflds">list</span>
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search lists…" /></div><div class="popNote" style="border:none;margin:0;padding:2px 6px 4px">This input takes a <b>list</b> — the whole list goes in one call.</div>
+                  <div class="sGrpHd"><span class="gi" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><span class="gn">Set due dates</span><span class="gt">code</span></div>
+                  <div class="sItm on"><span class="nm">result</span><span class="ty list">list</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div>
+                  <div class="sItm"><span class="nm">tasks</span><span class="ty list">list</span></div>
+                </div>
+              </div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">Retries</div><div class="select sm" data-pop>2 <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem">0</div><div class="pkItem">1</div><div class="pkItem on">2</div><div class="pkItem">3</div></div></div></div><div class="field"><div class="fieldLabel">On failure</div><div class="select sm" data-pop>Stop <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div><div class="pkItem">Take error path</div><div class="pkItem">Skip &amp; continue</div></div></div></div></div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ BRANCH ══════════ -->
+    <section class="step" data-step="branch">
+      <div class="rowHd"><span class="rIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><span class="rName">Branch step</span><span class="rWhen">— sends the run down a named path · 2 or many · rule or expression</span></div>
+      <div class="bench" style="flex-wrap:wrap">
+
+        <!-- Two-path, with rule + expression modes -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><div><div class="insType">Branch step</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Urgent?</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Decide by</div><div class="segmented" data-modeset><div class="seg on" data-mode="rule">No-code rule</div><div class="seg" data-mode="expr">Expression</div></div></div>
+            <div class="modeBody on" data-mode="rule">
+              <div class="fieldLabel" style="margin-bottom:8px">Paths <span style="font-family:var(--font-body);text-transform:none;letter-spacing:0;color:var(--text-tertiary);margin-left:auto">first match wins</span></div>
+              <div class="pathCard">
+                <div class="pathHd"><span class="lbl">PATH</span><span class="pathName up" contenteditable="true" spellcheck="false" title="Path name — the label on this output edge">Urgent</span></div>
+                <div class="cond"><div class="r1"><div class="select" data-pop>Triage ▸ priority <span class="chev"><i class="bi bi-chevron-down"></i></span>
+                  <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search data…" /></div>
+                    <div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div>
+                    <div class="sItm on"><span class="nm">priority</span><span class="ty enum">enum</span></div>
+                    <div class="sItm"><span class="nm">summary</span><span class="ty text">text</span></div>
+                    <div class="sItm"><span class="nm">client</span><span class="ty text">text</span></div>
+                    <div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div>
+                    <div class="sItm"><span class="nm">from</span><span class="ty text">text</span></div>
+                    <div class="sItm"><span class="nm">subject</span><span class="ty text">text</span></div>
+                  </div>
+                </div><div class="select" data-pop>is <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">is</div><div class="pkItem">is not</div><div class="pkItem">is one of</div></div></div></div><div class="val2" data-pop><span class="src">urgent</span> <span style="margin-left:auto;color:var(--text-tertiary)"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">urgent</div><div class="pkItem">normal</div></div></div></div>
+                <div class="condAdd"><i class="bi bi-plus"></i> and / or a condition</div>
+              </div>
+              <div class="pathCard def"><span class="lbl">ELSE</span> Otherwise → <span class="pathName norm" contenteditable="true" spellcheck="false" title="Path name — the label on this output edge">Normal</span> <span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">default</span></div>
+              <div class="condAdd"><i class="bi bi-plus"></i> Add a path</div>
+              <div class="note" style="max-width:none;margin-top:10px"><i class="bi bi-info-circle"></i> Each path is a named <b>output edge</b> you connect on the canvas. Names are editable. The default catches anything no path matched.</div>
+            </div>
+            <div class="modeBody" data-mode="expr">
+              <div class="fieldLabel" style="margin-bottom:8px">Paths <span style="font-family:var(--font-body);text-transform:none;letter-spacing:0;color:var(--text-tertiary);margin-left:auto">first match wins</span></div>
+              <div class="pathCard">
+                <div class="pathHd"><span class="lbl">PATH</span><span class="pathName up" contenteditable="true" spellcheck="false">Urgent</span></div>
+                <div class="code" style="overflow:visible"><span class="dref">Triage ▸ priority</span> == <span class="st">"urgent"</span> <span class="kw">or</span> <span class="st">"asap"</span> <span class="kw">in</span> <span class="atCaret" data-pop>@<div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search…" /></div><div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div><div class="sItm"><span class="nm">priority</span><span class="ty enum">enum</span></div><div class="sItm"><span class="nm">summary</span><span class="ty text">text</span></div><div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div><div class="sItm on"><span class="nm">subject</span><span class="ty text">text</span></div></div></span></div>
+              </div>
+              <div class="pathCard def"><span class="lbl">ELSE</span> Otherwise → <span class="pathName norm" contenteditable="true" spellcheck="false">Normal</span> <span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">default</span></div>
+              <div class="hintLine">Expression mode is free-form — type <b>@</b> to insert data, like a Code step.</div>
+            </div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+        <!-- Many-path (3 + default) -->
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><div><div class="insType">Branch step</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — its label on the canvas and the prefix in data references">Route ticket</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Decide by</div><div class="segmented"><div class="seg on">No-code rule</div><div class="seg">Expression</div></div></div>
+            <div class="fieldLabel" style="margin-bottom:8px">Paths <span style="font-family:var(--font-body);text-transform:none;letter-spacing:0;color:var(--text-tertiary);margin-left:auto">first match wins</span></div>
+            <div class="pathCard">
+              <div class="pathHd"><span class="lbl">PATH</span><span class="pathName" contenteditable="true" spellcheck="false" style="color:#0891b2;border-color:rgba(8,145,178,.3);background:rgba(8,145,178,.08)">Billing</span></div>
+              <div class="cond"><div class="r1"><div class="select">Triage ▸ category <span class="chev"><i class="bi bi-chevron-down"></i></span></div><div class="select">is <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="val2" data-pop><span class="src">billing</span> <span style="margin-left:auto;color:var(--text-tertiary)"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">billing</div><div class="pkItem">bug</div><div class="pkItem">sales</div><div class="pkItem">general</div></div></div></div>
+            </div>
+            <div class="pathCard">
+              <div class="pathHd"><span class="lbl">PATH</span><span class="pathName" contenteditable="true" spellcheck="false" style="color:#db2777;border-color:rgba(219,39,119,.3);background:rgba(219,39,119,.08)">Bug</span></div>
+              <div class="cond"><div class="r1"><div class="select">Triage ▸ category <span class="chev"><i class="bi bi-chevron-down"></i></span></div><div class="select">is <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="val2"><span class="src">bug</span></div></div>
+            </div>
+            <div class="pathCard">
+              <div class="pathHd"><span class="lbl">PATH</span><span class="pathName" contenteditable="true" spellcheck="false" style="color:#16a34a;border-color:rgba(22,163,74,.3);background:rgba(22,163,74,.08)">Sales</span></div>
+              <div class="cond"><div class="r1"><div class="select">Triage ▸ category <span class="chev"><i class="bi bi-chevron-down"></i></span></div><div class="select">is <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="val2"><span class="src">sales</span></div></div>
+            </div>
+            <div class="pathCard def"><span class="lbl">ELSE</span> Otherwise → <span class="pathName norm" contenteditable="true" spellcheck="false">General</span> <span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">default</span></div>
+            <div class="condAdd"><i class="bi bi-plus"></i> Add a path</div>
+            <div class="note" style="max-width:none;margin-top:10px"><i class="bi bi-info-circle"></i> A branch can have as many paths as you need — each is its own output edge, checked top-to-bottom, with one default.</div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══════════ APPROVAL ══════════ -->
+    <section class="step" data-step="approval">
+      <div class="rowHd"><span class="rIcon" style="background:#db2777"><i class="bi bi-person-check"></i></span><span class="rName">Approval step</span><span class="rWhen">— pause for a human decision (urgent path)</span></div>
+      <div class="bench">
+        <div class="insp">
+          <div class="insHd"><span class="insIcon" style="background:#db2777"><i class="bi bi-person-check"></i></span><div><div class="insType">Approval step</div><div class="insName" contenteditable="true" spellcheck="false" title="Step name — also its label on the canvas and the prefix in data references">Review</div></div></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Show me</div><div class="incChips"><span class="incChip">Draft reply ▸ body <i class="bi bi-x"></i></span><span class="incChip">On Client Email ▸ subject <i class="bi bi-x"></i></span></div>
+              <div class="linkRow" data-pop><i class="bi bi-plus"></i> Choose data
+                <div class="pop scopePop"><div class="dpSrch"><i class="bi bi-search"></i><input placeholder="Search data…" /></div>
+                  <div class="sGrpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span></div>
+                  <div class="sItm on"><span class="cb"><i class="bi bi-check-lg"></i></span><span class="nm">subject</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">from</span><span class="ty text">text</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">summary</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">priority</span><span class="ty enum">enum</span></div>
+                  <div class="sGrpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Draft reply</span><span class="gt">agent</span></div>
+                  <div class="sItm on"><span class="cb"><i class="bi bi-check-lg"></i></span><span class="nm">body</span><span class="ty text">text</span></div>
+                  <div class="sItm"><span class="cb"></span><span class="nm">subject</span><span class="ty text">text</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="miniRow"><div class="field"><div class="fieldLabel">On approve</div><div class="select sm">Continue <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">On reject</div><div class="select sm" data-pop>Stop run <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on">Stop the run</div></div></div></div></div>
+            <div class="field"><div class="fieldLabel">Ask me via</div><div class="select" data-pop><span class="pfIcon" style="background:#229ed9"><i class="bi bi-send"></i></span> Telegram · me <span class="chev"><i class="bi bi-chevron-down"></i></span><div class="pop"><div class="pkItem on"><span class="pi" style="background:#229ed9"><i class="bi bi-send"></i></span> Telegram · me</div><div class="pkItem"><span class="pi" style="background:#ea4335"><i class="bi bi-envelope"></i></span> Email · me</div><div class="pkItem"><span class="pi" style="background:#4a154b"><i class="bi bi-slack"></i></span> Slack · DM</div><div class="popNote">Any connected tool can deliver it — reply there to approve.</div></div></div>
+              <div class="hintLine">Approve/reject by reply or in-app. Never times out.</div>
+            </div>
+          </div>
+          <div class="insFoot"><div class="spacer"></div><button class="btn"><i class="bi bi-trash"></i></button></div>
+        </div>
+        <div class="expArea">
+          <div class="expHint">Ask-me-via and Add-data open as dropdowns. In a dry run the notification is held — you decide inline.</div>
+                  </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+<script>
+  function closeAllPops(except){document.querySelectorAll('.pop.show').forEach(p=>{if(p!==except){p.classList.remove('show');p.parentElement.classList.remove('open');}});}
+  document.querySelectorAll('[data-pop]').forEach(ctl=>{
+    const pop=ctl.querySelector(':scope > .pop');
+    ctl.addEventListener('click',e=>{
+      if(e.target.closest('.pop')) return;            // clicks inside the pop don't toggle
+      e.stopPropagation();
+      const open=pop.classList.contains('show'); closeAllPops();
+      pop.classList.toggle('show',!open); ctl.classList.toggle('open',!open);
+    });
+    pop.querySelectorAll('.pkItem:not(.disabled), .sItm').forEach(it=>it.addEventListener('click',e=>{e.stopPropagation();pop.classList.remove('show');ctl.classList.remove('open');}));
+  });
+  document.addEventListener('click',()=>closeAllPops());
+  document.querySelectorAll('.step').forEach(sec=>{
+    sec.querySelectorAll('[data-modeset] .seg').forEach(seg=>seg.addEventListener('click',()=>{const ms=seg.closest('[data-modeset]');ms.querySelectorAll('.seg').forEach(s=>s.classList.remove('on'));seg.classList.add('on');sec.querySelectorAll('.modeBody').forEach(mb=>mb.classList.toggle('on',mb.dataset.mode===seg.dataset.mode));}));
+    sec.querySelectorAll('.segmented:not([data-modeset]):not(.multi) .seg').forEach(seg=>seg.addEventListener('click',()=>{[...seg.parentElement.children].forEach(s=>s.classList.remove('on'));seg.classList.add('on');}));
+    sec.querySelectorAll('.segmented.multi .seg').forEach(seg=>seg.addEventListener('click',()=>seg.classList.toggle('on')));
+    sec.querySelectorAll('.toggle:not([style*="pointer-events"])').forEach(t=>t.addEventListener('click',()=>t.classList.toggle('off')));
+  });
+  const root=document.documentElement,b=document.getElementById('themeBtn');
+  b.onclick=()=>{const d=root.getAttribute('data-theme')==='dark';root.setAttribute('data-theme',d?'light':'dark');b.querySelector('i').className=d?'bi bi-sun':'bi bi-moon-stars';};
+</script>
+</body>
+</html>

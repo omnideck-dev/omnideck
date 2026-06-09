@@ -51,7 +51,7 @@ Two design hooks this implies:
   as of build time. This is the same class of problem as definition versioning /
   engine upgrades — a run pins to the definition it started with; tool-schema
   drift wants compatible handling. Cross-link the versioning/run-pinning design.
-- **(b) Drift needs a user-facing signal.** Same shape as the broken-account
+- **(b) Drift needs a user-facing signal.** Same shape as the broken-integration
   warning: a step shows a clear warning when the tool it maps into no longer
   matches the saved mapping. (Behavior is user-facing; the detection mechanism is
   engine-side and belongs here.)
@@ -81,7 +81,72 @@ tool-schema-contract concern in §2 folds into this.
 `TODO(design)`: unify §2 drift handling with the definition-versioning mechanism
 rather than designing two separate systems.
 
-## 4. Open technical questions
+## 4. Data references between steps (two mechanisms, no inline tokens)
+
+How a step consumes earlier data. There are **two** mechanisms, split by the
+hard/soft input distinction — and deliberately **no inline `{token}`s spliced into
+prose**, which avoids the inline-vs-attach size heuristic entirely.
+
+- **Tool / code step → field mapping (hard).** Each typed input is bound to exactly
+  one value (`To = New email ▸ sender`). The resolved value is passed as a typed
+  argument; types validated. Precise, because a tool argument must be exactly one
+  thing.
+- **Agent step → an "include" list (soft).** The instruction stays **plain prose**.
+  The user **checks which upstream outputs to include**; the engine hands those to
+  the agent as **labeled, quarantined `<data>` context blocks**. The agent reads
+  them; its *use* is non-deterministic (soft input). Hard guarantees on an agent
+  are on the **output** side (the return shape — see
+  `provider-structured-output-spec.md`). Nothing is inlined, so there is **no
+  size/type heuristic** to get right.
+
+Common to both:
+
+- **A reference is structured, not a string** — `{stepId, fieldPath}` (or the
+  trigger as source), shown as a chip / checklist row; survives renames; validated.
+- **Build-time scoping.** Only data **reachable at that point in the graph** is
+  offered (trigger + steps before this one on this path; the loop `item` inside a
+  loop; run context). Field-level references require the upstream step to have a
+  **declared shape**; an un-shaped output is referenceable only as its whole
+  `(text)` value. (Ties to §1 typing, §2 schema-as-contract; full scope rules in
+  the data-picker mockup.)
+- **Validation.** A reference whose target step/field no longer exists is
+  **dangling** → broken-reference / broken-include warning on the step (same family
+  as broken-integration / tool-schema-drift). Referenced fields are a dependency of
+  the saved definition.
+- **Quarantine.** Included/mapped content is often untrusted (email body, web
+  result) → always delivered as delimited `<data>` blocks, treated as data not
+  instructions (prompt-injection safety).
+- **Missing at runtime** (null, skipped branch) → the step's failure policy applies
+  (retry → stop / error-path / skip). Dry-run surfaces missing/broken refs first.
+
+`TODO(design)`: the reference object format and addressing; available-data
+computation from graph topology; the picker's shape introspection (typed vs
+`(text)`); inline-vs-attached threshold; the quarantine/delimiting format for
+injected data; broken-reference detection + remediation (shared with §2/§3).
+
+## 5. Watch-trigger condition evaluation
+
+The "only when" filter on a watch trigger.
+
+- A condition is a **deterministic rule** over the watched item's fields —
+  `field → operator → value`, combined with ALL/ANY (same builder as a Branch
+  step). It is **evaluated per item, per poll, without an LLM** — fuzzy judgement
+  belongs in an agent step inside the workflow, not the trigger filter.
+- **Fields are tool-supplied.** The available fields and their types come from the
+  watched tool's item shape (email: `from/to/subject/folder/date`; drive:
+  `name/mimeType/size/modified/parents`; calendar: `summary/start/end/...`;
+  contacts: `name/emails/organization/title`). Operators are filtered by field
+  type (text / list / date / number / enum).
+- **APIs have no fixed shape** → fall back to an **expression** over the response
+  body (the escape hatch).
+- Evaluation order per poll: poll → dedup (new items only) → condition filter →
+  volume cap/overflow → one run per item (or batch).
+
+`TODO(design)`: the rule representation (shared with Branch); per-tool field/type
+introspection for the builder; the expression evaluator for API/JSON; dedup-key
+selection per tool (uid/id); where the rule engine runs.
+
+## 6. Open technical questions
 
 `TODO(design)`: collect as design proceeds — e.g. snapshot granularity (whole
 definition vs per-referenced-tool-schema), whether tool schemas are versioned
@@ -98,3 +163,13 @@ source (free-text output) during mapping.
 - **Typed mapping makes tool input schemas a contract.** Saved workflows depend
   on them; schema drift is breaking and is handled as part of definition
   versioning, with a broken-step warning as the user-facing surface. (§2, §3)
+- **Two data-reference mechanisms, no inline tokens.** Tool/code use **field
+  mapping** (hard typed binding, one value per input). Agent steps keep a **plain
+  instruction** + an **"include" checklist** of upstream outputs, delivered as
+  labeled quarantined `<data>` context (soft input). This drops the inline-vs-attach
+  size heuristic entirely. Both are structured `{stepId, fieldPath}` refs,
+  graph-scoped and validated; hard agent guarantees are output-side (return shape).
+  (§4)
+- **Watch conditions are deterministic per-item rules** over tool-supplied fields
+  (same builder as Branch), no LLM in the filter; APIs fall back to an expression.
+  Fuzzy judgement goes in an agent step. (§5)

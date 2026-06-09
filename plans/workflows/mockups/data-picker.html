@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — Data picker (scope)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--accent-glow:rgba(37,99,235,.15);--success:#16a34a;--success-muted:rgba(22,163,74,.08);--warning:#d97706;--warning-muted:rgba(217,119,6,.08);--danger:#dc2626;--danger-muted:rgba(220,38,38,.08);--shadow-sm:0 1px 2px rgba(15,23,42,.05);--shadow-md:0 2px 8px rgba(15,23,42,.08);--shadow-lg:0 4px 16px rgba(15,23,42,.10);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-xl:12px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--font-brand:'Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-code:'JetBrains Mono','Consolas',monospace;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);--accent-glow:rgba(59,130,246,.2);--success:#4ade80;--success-muted:rgba(74,222,128,.12);--warning:#fbbf24;--warning-muted:rgba(251,191,36,.12);--danger:#f87171;--danger-muted:rgba(248,113,113,.12);--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 2px 8px rgba(0,0,0,.4);--shadow-lg:0 4px 16px rgba(0,0,0,.5);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+::-webkit-scrollbar{width:8px;height:8px;}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+.page{max-width:1280px;margin:0 auto;padding:var(--sp-8) var(--sp-6) 64px;}
+.pageHd{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2);}
+.pageHd h1{font-size:18px;font-weight:600;margin:0;}.pageHd .sub{font-size:12.5px;color:var(--text-secondary);}
+.themeToggle{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);font-size:12px;cursor:pointer;}
+.lead{font-size:12.5px;color:var(--text-secondary);margin:0 0 var(--sp-6);max-width:98ch;line-height:1.6;}
+.cols{display:flex;gap:var(--sp-6);align-items:flex-start;flex-wrap:wrap;}
+.col{flex:0 0 360px;}
+.colCap{font-size:12.5px;font-weight:600;margin-bottom:var(--sp-1);}
+.colSub{font-size:11.5px;color:var(--text-secondary);margin-bottom:var(--sp-3);line-height:1.5;}
+
+/* the picker */
+.dp{background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
+.dpHd{padding:var(--sp-3) var(--sp-3) var(--sp-2);border-bottom:1px solid var(--border-subtle);}
+.dpTitle{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-secondary);}
+.dpTitle i{color:var(--accent);}
+.dpFor{font-size:10.5px;color:var(--text-tertiary);margin-top:2px;}
+.dpSearch{display:flex;align-items:center;gap:7px;height:30px;margin:8px 0 2px;padding:0 9px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text-tertiary);font-size:11.5px;}
+.dpBody{max-height:560px;overflow-y:auto;padding:var(--sp-2);}
+.grp{margin-bottom:var(--sp-1);}
+.grpHd{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:var(--radius-sm);cursor:pointer;}
+.grpHd:hover{background:var(--surface);}
+.grpHd .gi{width:18px;height:18px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;}
+.grpHd .gn{font-size:12px;font-weight:600;}
+.grpHd .gt{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--text-tertiary);}
+.grpHd .gchev{margin-left:auto;color:var(--text-tertiary);font-size:10px;}
+.itm{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 31px;border-radius:var(--radius-sm);cursor:pointer;font-size:12px;}
+.itm:hover{background:var(--accent-muted);}
+.itm.sub{padding-left:46px;}
+.itm .nm{color:var(--text-primary);}
+.itm .ty{margin-left:auto;font-family:var(--font-code);font-size:9px;padding:1px 6px;border-radius:var(--radius-full);}
+.ty.text{background:var(--border-subtle);color:var(--text-secondary);}
+.ty.num{background:var(--warning-muted);color:var(--warning);}
+.ty.date{background:rgba(8,145,178,.12);color:#0891b2;}
+.ty.enum{background:rgba(124,58,237,.12);color:#7c3aed;}
+.ty.list{background:var(--success-muted);color:var(--success);}
+.ty.obj{background:var(--accent-muted);color:var(--accent);}
+.ty.file{background:rgba(219,39,119,.12);color:#db2777;}
+.itm .ex{margin-left:auto;color:var(--text-tertiary);font-size:10px;}
+.itm.expand .ty{margin-left:0;}
+.oos{margin-top:6px;padding:6px 6px 6px 8px;border-top:1px dashed var(--border);}
+.oos .o{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-tertiary);padding:3px 0;opacity:.7;}
+.oos .o .gi{width:16px;height:16px;border-radius:var(--radius-sm);background:var(--text-tertiary);color:var(--elevated);display:flex;align-items:center;justify-content:center;font-size:9px;}
+.oos .o .why{margin-left:auto;font-size:9.5px;font-style:italic;}
+.scopeNote{font-size:10.5px;color:var(--text-tertiary);padding:8px 10px;border-top:1px solid var(--border-subtle);background:var(--surface);line-height:1.45;}
+
+.legend{margin-top:var(--sp-8);background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-4);max-width:760px;}
+.legend h3{font-size:13px;margin:0 0 var(--sp-3);}
+.legend ul{margin:0;padding-left:18px;font-size:12px;color:var(--text-secondary);line-height:1.7;}
+.legend code{font-family:var(--font-code);font-size:11px;background:var(--surface);padding:0 4px;border-radius:3px;}
+.tychips{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--sp-3);}
+.tychips .ty{font-family:var(--font-code);font-size:9.5px;padding:2px 7px;border-radius:var(--radius-full);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="pageHd"><h1>Workflows — data picker</h1><span class="sub">what’s in scope when you reference data, and how it’s shown</span><button class="themeToggle" id="themeBtn"><i class="bi bi-sun"></i> Theme</button></div>
+  <p class="lead">The picker shows <b>everything produced before this step on the path that reaches it</b>, grouped by source in run order. The trigger group depends on the trigger; branch siblings and downstream steps are out of scope; a step set to run per item also gets the current item.</p>
+
+  <div class="cols">
+
+    <!-- A: email-triggered, on the urgent branch -->
+    <div class="col">
+      <div class="colCap">A · Email-triggered, on the “urgent” branch</div>
+      <div class="colSub">Picking data for <b>Send reply</b>. The trigger contributed the email; Triage and Draft reply ran before this on the urgent path.</div>
+      <div class="dp">
+        <div class="dpHd">
+          <div class="dpTitle"><i class="bi bi-database"></i> Available data</div>
+          <div class="dpFor">for: Send reply ▸ To</div>
+          <div class="dpSearch"><i class="bi bi-search"></i> Search data…</div>
+        </div>
+        <div class="dpBody">
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="gn">On Client Email</span><span class="gt">trigger</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">from</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">to</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">subject</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">body</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">date</span><span class="ty date">date</span></div>
+            <div class="itm"><span class="nm">via</span><span class="ty text">integration</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Triage</span><span class="gt">agent</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">priority</span><span class="ty enum">enum</span></div>
+            <div class="itm"><span class="nm">summary</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">client</span><span class="ty text">text</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Draft reply</span><span class="gt">agent</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">subject</span><span class="ty text">text</span></div>
+            <div class="itm"><span class="nm">body</span><span class="ty text">text</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--text-tertiary)"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span><span class="gchev"><i class="bi bi-chevron-right"></i></span></div></div>
+          <div class="oos">
+            <div class="o"><span class="gi"><i class="bi bi-tag"></i></span> Label “triaged” <span class="why">not on this path</span></div>
+          </div>
+        </div>
+        <div class="scopeNote">“Label triaged” is on the <b>normal</b> branch, so it’s not reachable here — shown disabled, not offered.</div>
+      </div>
+    </div>
+
+    <!-- B: schedule-triggered -->
+    <div class="col">
+      <div class="colCap">B · Schedule-triggered (no item)</div>
+      <div class="colSub">Picking data for <b>Render PDF</b>. A schedule trigger carries no item — just run metadata — so the first agent step originated the data via its tools.</div>
+      <div class="dp">
+        <div class="dpHd">
+          <div class="dpTitle"><i class="bi bi-database"></i> Available data</div>
+          <div class="dpFor">for: Render PDF ▸ input</div>
+          <div class="dpSearch"><i class="bi bi-search"></i> Search data…</div>
+        </div>
+        <div class="dpBody">
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-clock"></i></span><span class="gn">Schedule</span><span class="gt">trigger</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">ran_at</span><span class="ty date">date</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Find models</span><span class="gt">agent</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm expand"><span class="nm"><i class="bi bi-chevron-down" style="font-size:9px;color:var(--text-tertiary);margin-right:4px"></i>models</span><span class="ty list">list</span></div>
+            <div class="itm sub"><span class="nm">name</span><span class="ty text">text</span></div>
+            <div class="itm sub"><span class="nm">downloads</span><span class="ty num">number</span></div>
+            <div class="itm sub"><span class="nm">summary</span><span class="ty text">text</span></div>
+            <div class="itm sub"><span class="nm">url</span><span class="ty text">text</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--text-tertiary)"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">now</span><span class="ty date">date</span></div>
+            <div class="itm"><span class="nm">run_id</span><span class="ty text">text</span></div>
+          </div>
+        </div>
+        <div class="scopeNote">Watch vs Schedule changes the trigger group: an item’s fields vs just <code>ran_at</code>.</div>
+      </div>
+    </div>
+
+    <!-- C: inside a per-item step -->
+    <div class="col">
+      <div class="colCap">C · Inside a per-item step</div>
+      <div class="colSub">Picking data for <b>Create task</b>, set to <b>run per item</b> over the action-items list. You also get the current <code>item</code> and its counters.</div>
+      <div class="dp">
+        <div class="dpHd">
+          <div class="dpTitle"><i class="bi bi-database"></i> Available data</div>
+          <div class="dpFor">for: Create task ▸ title</div>
+          <div class="dpSearch"><i class="bi bi-search"></i> Search data…</div>
+        </div>
+        <div class="dpBody">
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:#7c3aed"><i class="bi bi-hand-index"></i></span><span class="gn">Meeting note</span><span class="gt">trigger · manual</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">text</span><span class="ty text">text</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="gn">Extract items</span><span class="gt">agent</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">action_items</span><span class="ty list">list</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:#0891b2"><i class="bi bi-arrow-repeat"></i></span><span class="gn">item</span><span class="gt">per item</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm expand"><span class="nm"><i class="bi bi-chevron-down" style="font-size:9px;color:var(--text-tertiary);margin-right:4px"></i>item</span><span class="ty obj">object</span></div>
+            <div class="itm sub"><span class="nm">title</span><span class="ty text">text</span></div>
+            <div class="itm sub"><span class="nm">due</span><span class="ty date">date</span></div>
+            <div class="itm"><span class="nm">index</span><span class="ty num">number</span></div>
+            <div class="itm"><span class="nm">total</span><span class="ty num">number</span></div>
+          </div>
+          <div class="grp"><div class="grpHd"><span class="gi" style="background:var(--text-tertiary)"><i class="bi bi-gear"></i></span><span class="gn">Run</span><span class="gt">context</span><span class="gchev"><i class="bi bi-chevron-down"></i></span></div>
+            <div class="itm"><span class="nm">now</span><span class="ty date">date</span></div>
+          </div>
+        </div>
+        <div class="scopeNote">When a step runs per item, the current <code>item</code> is in scope here; the whole list is still reachable from the step that produced it.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h3>Scope rules</h3>
+    <ul>
+      <li><b>In scope:</b> the trigger/start data, every step that runs <i>before</i> this one on the reachable path, the current <code>item</code> (if the step runs per item), and run context (<code>now</code>, <code>run_id</code>).</li>
+      <li><b>Always the same order:</b> trigger → upstream steps in run order → the <code>item</code> → run context (last).</li>
+      <li><b>Out of scope:</b> steps on a different branch, downstream steps, and anything a schedule/manual trigger didn’t carry.</li>
+      <li><b>Trigger-dependent:</b> Watch → the matched item’s fields (+ <code>via</code> integration); Schedule → <code>ran_at</code>; Manual → the inputs you pass.</li>
+      <li><b>Shape-dependent:</b> a step with a declared shape lists its fields; an un-shaped output shows a single <code>(whole text)</code> entry; files show as a <span class="ty file" style="font-family:var(--font-code)">file</span>.</li>
+    </ul>
+    <div class="tychips"><span class="ty text">text</span><span class="ty num">number</span><span class="ty date">date</span><span class="ty enum">enum</span><span class="ty list">list</span><span class="ty obj">object</span><span class="ty file">file</span></div>
+  </div>
+</div>
+<script>const r=document.documentElement,b=document.getElementById('themeBtn');b.onclick=()=>{const d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');b.querySelector('i').className=d?'bi bi-sun':'bi bi-moon-stars';};</script>
+</body>
+</html>

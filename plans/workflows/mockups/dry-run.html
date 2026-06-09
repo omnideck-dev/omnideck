@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — dry run</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--accent-glow:rgba(37,99,235,.15);--success:#16a34a;--success-muted:rgba(22,163,74,.08);--warning:#d97706;--warning-muted:rgba(217,119,6,.08);--danger:#dc2626;--danger-muted:rgba(220,38,38,.08);--shadow-sm:0 1px 2px rgba(15,23,42,.05);--shadow-md:0 2px 8px rgba(15,23,42,.08);--shadow-lg:0 4px 16px rgba(15,23,42,.10);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-xl:12px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--font-brand:'Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-code:'JetBrains Mono','Consolas',monospace;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);--accent-glow:rgba(59,130,246,.2);--success:#4ade80;--success-muted:rgba(74,222,128,.12);--warning:#fbbf24;--warning-muted:rgba(251,191,36,.12);--danger:#f87171;--danger-muted:rgba(248,113,113,.12);--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 2px 8px rgba(0,0,0,.4);--shadow-lg:0 4px 16px rgba(0,0,0,.5);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;height:100%;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+::-webkit-scrollbar{width:8px;height:8px;}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+.topbar{height:48px;flex-shrink:0;display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-3) 0 var(--sp-2);border-bottom:1px solid var(--border);background:var(--canvas);}
+.back{width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:14px;}
+.crumb{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-tertiary);}
+.crumb .mark{font-family:var(--font-brand);font-size:12px;font-weight:600;color:var(--accent);margin-right:4px;}
+.crumb a{color:var(--text-secondary);}.crumb .cur{color:var(--text-primary);font-weight:600;}.crumb i{font-size:10px;}
+.runPill{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-brand);font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:var(--radius-full);background:var(--warning-muted);color:var(--warning);margin-left:var(--sp-2);}
+.spacer{flex:1;}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;}
+.btn:hover{border-color:var(--border-strong);color:var(--text-primary);}
+
+.runbar{min-height:44px;flex-shrink:0;display:flex;align-items:center;gap:var(--sp-3);padding:6px var(--sp-4);border-bottom:1px solid var(--border);background:var(--elevated);flex-wrap:wrap;}
+.runbar .lbl{font-family:var(--font-brand);font-size:10px;letter-spacing:.03em;text-transform:uppercase;color:var(--text-tertiary);}
+.runSel{display:inline-flex;align-items:center;gap:6px;}
+.runSel .rb{width:24px;height:24px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--elevated);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-secondary);font-size:11px;}
+.runSel .rb:hover{border-color:var(--border-strong);color:var(--text-primary);}
+.runSel .rt{font-family:var(--font-brand);font-size:12px;font-weight:600;color:var(--accent);min-width:80px;text-align:center;}
+.sep{width:1px;height:18px;background:var(--border);}
+.stepc{font-family:var(--font-brand);font-size:11px;color:var(--text-secondary);}
+.stepc b{color:var(--text-primary);}
+.progress{display:flex;gap:5px;}
+.pdot{width:9px;height:9px;border-radius:var(--radius-full);background:var(--border-strong);cursor:pointer;}
+.pdot.done{background:var(--success);}.pdot.cur{background:var(--accent);transform:scale(1.25);}
+.runbar .hint{font-size:11px;color:var(--text-tertiary);}
+
+.workspace{flex:1;display:flex;min-height:0;}
+.canvasWrap{flex:1;position:relative;overflow:auto;}
+.canvasWrap::before{content:'';position:absolute;inset:0;background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:20px 20px;opacity:.6;}
+.canvasInner{position:relative;padding:var(--sp-8) var(--sp-6) 64px;min-width:max-content;}
+.flow{display:flex;align-items:flex-start;position:relative;z-index:1;}
+.step{display:flex;flex-direction:column;width:248px;}
+.node{position:relative;display:flex;flex-direction:column;gap:3px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);padding:9px 11px;box-shadow:var(--shadow-sm);cursor:pointer;transition:box-shadow .12s,border-color .12s,opacity .12s;}
+.node:hover{border-color:var(--border-strong);}
+.node .nType{display:flex;align-items:center;gap:5px;font-family:var(--font-code);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.node .nName{font-size:12.5px;font-weight:600;}.node .nMeta{font-size:10px;color:var(--text-tertiary);margin-left:auto;}
+.node .nHd{display:flex;align-items:center;gap:6px;}
+.node .nIcon{width:16px;height:16px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+.node .nStat{position:absolute;top:-8px;right:-8px;width:18px;height:18px;border-radius:var(--radius-full);border:2px solid var(--canvas);display:none;align-items:center;justify-content:center;font-size:9px;color:#fff;}
+.node .perItem{position:absolute;top:-8px;left:9px;display:inline-flex;align-items:center;gap:3px;font-family:var(--font-code);font-size:8px;background:#0891b2;color:#fff;border:2px solid var(--canvas);border-radius:var(--radius-full);padding:0 5px 0 3px;}
+.n-trigger .nIcon{background:#7c3aed;}.n-trigger{border-top:2px solid #7c3aed;}
+.n-agent .nIcon{background:var(--accent);}.n-agent{border-top:2px solid var(--accent);}
+.n-tool .nIcon{background:var(--success);}.n-tool{border-top:2px solid var(--success);}
+.n-branch .nIcon{background:var(--warning);}.n-branch{border-top:2px solid var(--warning);}
+.n-approval .nIcon{background:#db2777;}.n-approval{border-top:2px solid #db2777;}
+.n-code .nIcon{background:#0e7490;}.n-code{border-top:2px solid #0e7490;}
+.step.done .nStat{display:flex;background:var(--success);}
+.step.current .node{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow),var(--shadow-md);}
+.step.current .nStat{display:flex;background:var(--accent);}
+.step.paused .nStat{display:flex;background:var(--warning);}
+.step.pending{opacity:.5;}
+.step.skip{opacity:.45;}.step.skip .node{border-style:dashed;}
+.step.selected .node{outline:2px solid var(--accent);outline-offset:2px;}
+
+.outCard{display:none;margin-top:12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);box-shadow:var(--shadow-sm);overflow:hidden;}
+.step.done .outCard,.step.current .outCard{display:block;}
+.ocHd{display:flex;align-items:center;gap:5px;padding:6px 9px;background:var(--surface);border-bottom:1px solid var(--border-subtle);font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);}
+.ocHd .ty{margin-left:auto;font-family:var(--font-code);font-size:8px;padding:1px 6px;border-radius:var(--radius-full);background:var(--border-subtle);color:var(--text-secondary);text-transform:none;letter-spacing:0;}
+.ocHd.preview{background:var(--warning-muted);color:var(--warning);}.ocHd.preview .ty{background:rgba(217,119,6,.18);color:var(--warning);}
+.ocHd.route{background:var(--warning-muted);color:var(--warning);}
+.ocHd.wait{background:rgba(219,39,119,.1);color:#db2777;}
+.ocHd .edited{margin-left:6px;font-family:var(--font-body);text-transform:none;letter-spacing:0;font-size:8.5px;color:var(--warning);background:var(--warning-muted);border-radius:var(--radius-full);padding:1px 6px;display:inline-flex;align-items:center;gap:3px;}
+.ocBody{padding:8px 9px;font-family:var(--font-code);font-size:10px;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;word-break:break-word;}
+.ocBody.scroll{max-height:128px;overflow:auto;}
+.scrollBox{max-height:112px;overflow:auto;margin-top:4px;border-top:1px dashed var(--border-subtle);padding-top:4px;}
+.scrollBox::-webkit-scrollbar{width:6px;}
+.ocBody .k{color:var(--text-tertiary);}
+.ocBody .s{color:var(--success);}
+.ocBody .n{color:#0891b2;}
+.ocBody .muted{color:var(--text-tertiary);}
+.ev{outline:none;border-radius:2px;cursor:text;border-bottom:1px dashed transparent;padding:0 1px;}
+.ev:hover{border-bottom-color:var(--border-strong);background:var(--surface);}
+.ev:focus{border-bottom-color:var(--accent);background:var(--accent-muted);color:var(--text-primary);}
+.enumSel{position:relative;display:inline-flex;align-items:center;gap:4px;color:#7c3aed;font-weight:600;background:rgba(124,58,237,.1);border-radius:var(--radius-sm);padding:0 6px;cursor:pointer;}
+.enumSel i{font-size:8px;}
+.enumPop{position:absolute;top:calc(100% + 3px);left:0;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);z-index:20;padding:4px;display:none;min-width:94px;}
+.enumSel.open .enumPop{display:block;}
+.enumOpt{padding:4px 8px;border-radius:3px;font-family:var(--font-body);font-size:11px;color:var(--text-secondary);cursor:pointer;font-weight:500;}
+.enumOpt:hover{background:var(--accent-muted);color:var(--accent);}
+.enumOpt.on{color:#7c3aed;background:rgba(124,58,237,.08);}
+.ocRoute{display:flex;align-items:center;gap:7px;padding:9px;}
+.ocRoute .rp{font-family:var(--font-code);font-size:11px;font-weight:600;padding:2px 9px;border-radius:var(--radius-sm);}
+.ocRoute .rp.up{background:var(--danger-muted);color:var(--danger);}
+.ocRoute .rp.norm{background:var(--surface);color:var(--text-secondary);border:1px solid var(--border);}
+.ocRoute .rwhy{font-size:11px;color:var(--text-secondary);}
+.ocAsk{padding:9px;}
+.ocAsk .askq{font-size:10.5px;color:#db2777;display:flex;align-items:center;gap:5px;margin-bottom:8px;}
+.ocAsk .askbtns{display:flex;gap:6px;}
+.askbtns .mb{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--elevated);font-size:11px;font-weight:600;cursor:pointer;color:var(--text-secondary);}
+.askbtns .mb.ok{background:#db2777;border-color:#db2777;color:#fff;flex:1.4;}
+.askbtns .mb.no{border-color:var(--danger-muted);color:var(--danger);}
+.ocStale{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--warning);padding:6px 9px;border-top:1px solid var(--border-subtle);background:var(--warning-muted);}
+.ocStale .rerun{margin-left:auto;color:var(--accent);cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:4px;}
+.ocNav{display:none;align-items:center;gap:6px;padding:7px 9px;border-top:1px solid var(--border-subtle);background:var(--canvas);}
+.step.current .ocNav{display:flex;}
+.ocNav .nb{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:28px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--elevated);font-size:11px;font-weight:600;cursor:pointer;color:var(--text-secondary);}
+.ocNav .nb:hover{border-color:var(--border-strong);color:var(--text-primary);}
+.ocNav .nb.prev{width:36px;}
+.ocNav .nb.adv{flex:1;background:var(--accent);border-color:var(--accent);color:#fff;}
+.ocNav .nb.adv:hover{background:var(--accent-hover);}
+.ocNav .nb.done2{flex:1;background:var(--success);border-color:var(--success);color:#fff;}
+/* trigger dataset */
+.dsHd{display:flex;align-items:center;gap:6px;padding:7px 9px 4px;font-size:11px;color:var(--text-secondary);}
+.dsHd b{color:var(--text-primary);}
+.dsList{display:flex;flex-direction:column;gap:5px;padding:4px 9px 8px;max-height:184px;overflow:auto;}
+.dsRow{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer;}
+.dsRow:hover{border-color:var(--border-strong);}
+.dsRow.active{border-color:var(--accent);background:var(--accent-muted);}
+.dsTag{width:17px;height:17px;flex-shrink:0;border-radius:var(--radius-sm);font-family:var(--font-brand);font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;color:#fff;background:var(--text-tertiary);}
+.dsRow.active .dsTag{background:var(--accent);}
+.dsMain{min-width:0;flex:1;}
+.dsFrom{font-family:var(--font-code);font-size:10px;color:var(--text-primary);}
+.dsSub{font-size:10.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dsWhen{font-size:9.5px;color:var(--text-tertiary);}
+.dsRun{margin-left:auto;font-family:var(--font-brand);font-size:8px;letter-spacing:.03em;text-transform:uppercase;color:var(--accent);background:var(--accent-muted);border-radius:var(--radius-full);padding:2px 8px;display:inline-flex;align-items:center;gap:3px;flex-shrink:0;}
+.dsPick{margin-left:auto;font-size:10px;color:var(--accent);flex-shrink:0;opacity:0;}
+.dsRow:hover .dsPick{opacity:1;}
+.dsSkip{padding:0 9px 8px;font-size:10px;color:var(--text-tertiary);}
+
+/* editor */
+.inspector{width:0;flex-shrink:0;border-left:1px solid var(--border);background:var(--elevated);display:flex;flex-direction:column;min-height:0;overflow:hidden;transition:width .14s;}
+.inspector.open{width:360px;}
+.insp{flex:1;flex-direction:column;min-height:0;display:none;}
+.insp.on{display:flex;}
+.insHd{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);flex-shrink:0;}
+.insHd .insIcon{width:24px;height:24px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;}
+.insType{font-family:var(--font-brand);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.insName{font-size:13px;font-weight:600;cursor:text;border-radius:var(--radius-sm);padding:0 4px;margin:0 -4px;outline:none;}
+.insName:hover{background:var(--surface);}
+.insClose{margin-left:auto;width:26px;height:26px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-tertiary);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.insBody{flex:1;overflow-y:auto;padding:var(--sp-4);}
+.insFoot{flex-shrink:0;border-top:1px solid var(--border);padding:var(--sp-3) var(--sp-4);display:flex;gap:var(--sp-2);align-items:center;background:var(--canvas);}
+.field{margin-bottom:var(--sp-4);}
+.fieldLabel{font-family:var(--font-brand);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.fieldLabel .help{margin-left:auto;color:var(--accent);cursor:pointer;font-size:10px;text-transform:none;letter-spacing:0;font-family:var(--font-body);}
+.textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;font-size:12px;line-height:1.5;color:var(--text-primary);}
+.select{width:100%;height:34px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 10px;font-size:12.5px;cursor:pointer;}
+.select.sm{height:32px;}.select .chev{margin-left:auto;color:var(--text-tertiary);}
+.select .pfIcon{width:18px;height:18px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;}
+.miniRow{display:flex;gap:var(--sp-2);}.miniRow .field{flex:1;}
+.segmented{display:flex;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.segmented .seg{flex:1;text-align:center;padding:7px 0;font-size:11.5px;cursor:pointer;color:var(--text-secondary);background:var(--surface);border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:5px;}
+.segmented .seg:last-child{border-right:none;}.segmented .seg.on{background:var(--accent);color:#fff;font-weight:600;}
+.shapeBox{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;}
+.shapeRow{display:flex;gap:6px;font-family:var(--font-code);font-size:11px;color:var(--text-secondary);padding:2px 0;}
+.shapeRow .k{color:var(--text-primary);}.shapeRow .t{color:var(--accent);}
+.incChips{display:flex;flex-wrap:wrap;gap:6px;}
+.incChip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--accent-muted);border-radius:var(--radius-sm);padding:3px 8px;font-family:var(--font-code);font-size:11px;}
+.incChip i{cursor:pointer;opacity:.7;font-size:9px;}
+.mapRow{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.mapRow .ml{width:60px;flex-shrink:0;font-size:11.5px;color:var(--text-secondary);}
+.mapVal{flex:1;display:flex;align-items:center;gap:6px;height:30px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 8px;font-size:11.5px;}
+.mapVal .src{display:inline-flex;align-items:center;gap:4px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:1px 5px;font-family:var(--font-code);font-size:10px;}
+.mapVal .src.item{background:rgba(8,145,178,.12);color:#0891b2;}
+.mapVal .iflds{margin-left:auto;font-family:var(--font-code);font-size:9.5px;color:var(--text-tertiary);}
+.code{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:9px 10px;font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary);white-space:pre;overflow-x:auto;}
+.code .kw{color:#7c3aed;}.code .fn{color:var(--accent);}.code .st{color:var(--success);}.code .cm{color:var(--text-tertiary);}
+.code .dref{display:inline-flex;align-items:center;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 5px;font-family:var(--font-code);font-size:10.5px;}
+.code .dref::before{content:'@';opacity:.55;margin-right:1px;}
+.chips{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-code);font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-full);padding:2px 7px;color:var(--text-secondary);}
+.idBtn{width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
+.idBtn:hover{border-color:var(--border-strong);color:var(--danger);}
+.foothint{font-size:10.5px;color:var(--text-tertiary);line-height:1.4;}
+.conn{width:30px;height:2px;background:var(--border-strong);flex-shrink:0;margin-top:27px;}
+.conn.taken{background:var(--accent);}
+.branchWrap{display:flex;align-items:flex-start;}
+.branchCol{display:flex;flex-direction:column;gap:var(--sp-6);}
+.branchRow{display:flex;align-items:flex-start;}
+.branchLbl{font-family:var(--font-code);font-size:8.5px;padding:1px 6px;border-radius:var(--radius-full);margin:25px 8px 0 0;}
+.branchLbl.up{background:var(--danger-muted);color:var(--danger);}.branchLbl.norm{background:var(--surface);color:var(--text-secondary);}
+.branchLbl.taken{outline:2px solid var(--accent);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <button class="back"><i class="bi bi-arrow-left"></i></button>
+    <div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div>
+    <span class="runPill"><i class="bi bi-magic"></i> Dry run</span>
+    <div class="spacer"></div>
+    <button class="btn" id="restart"><i class="bi bi-arrow-counterclockwise"></i> Restart</button>
+    <button class="btn"><i class="bi bi-x-lg"></i> Exit dry run</button>
+  </div>
+
+  <div class="workspace">
+    <div class="canvasWrap"><div class="canvasInner"><div class="flow">
+      <div class="step" data-step="trigger"><div class="node n-trigger"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-broadcast"></i></span><span class="nType">Trigger</span><span class="nMeta">Watch</span></div><div class="nName">On Client Email</div></div><div class="outCard"></div></div>
+      <div class="conn"></div>
+      <div class="step" data-step="triage"><div class="node n-agent"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-robot"></i></span><span class="nType">Agent</span><span class="nMeta">Triage</span></div><div class="nName">Triage</div></div><div class="outCard"></div></div>
+      <div class="conn"></div>
+      <div class="step" data-step="code"><div class="node n-code"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-code-slash"></i></span><span class="nType">Code</span><span class="nMeta">Python</span></div><div class="nName">Set due dates</div></div><div class="outCard"></div></div>
+      <div class="conn"></div>
+      <div class="step" data-step="createtask"><div class="node n-tool"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span><span class="nType">Tool</span><span class="nMeta" id="ctMeta">×2</span></div><div class="nName">Create task</div></div><div class="outCard"></div></div>
+      <div class="conn" id="connBranch"></div>
+      <div class="branchWrap">
+        <div class="step" data-step="branch"><div class="node n-branch"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-signpost-split"></i></span><span class="nType">Branch</span><span class="nMeta">rule</span></div><div class="nName">Urgent?</div></div><div class="outCard"></div></div>
+        <div class="conn taken" id="connTail" style="margin-top:27px"></div>
+        <div class="branchCol">
+          <div class="branchRow"><span class="branchLbl up" id="lblUp">URGENT</span>
+            <div class="step" data-step="draft"><div class="node n-agent"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-robot"></i></span><span class="nType">Agent</span><span class="nMeta">Writer</span></div><div class="nName">Draft reply</div></div><div class="outCard"></div></div>
+            <div class="conn"></div>
+            <div class="step" data-step="approval"><div class="node n-approval"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-person-check"></i></span><span class="nType">Approval</span><span class="nMeta">pause</span></div><div class="nName">Review</div></div><div class="outCard"></div></div>
+            <div class="conn"></div>
+            <div class="step" data-step="send"><div class="node n-tool"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-send"></i></span><span class="nType">Tool</span><span class="nMeta">Gmail</span></div><div class="nName">Send reply</div></div><div class="outCard"></div></div>
+          </div>
+          <div class="branchRow"><span class="branchLbl norm" id="lblNorm">NORMAL</span>
+            <div class="step" data-step="label"><div class="node n-tool"><div class="nStat"></div><div class="nHd"><span class="nIcon"><i class="bi bi-tag"></i></span><span class="nType">Tool</span><span class="nMeta">Gmail</span></div><div class="nName">Label “triaged”</div></div><div class="outCard"></div></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="inspector" id="inspector">
+      <div class="insp" data-for="trigger"><div class="insHd"><span class="insIcon" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><div><div class="insType">Trigger</div><div class="insName" contenteditable="true" spellcheck="false">On Client Email</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Trigger type</div><div class="segmented"><div class="seg on"><i class="bi bi-broadcast"></i> Watch</div><div class="seg"><i class="bi bi-clock"></i> Schedule</div></div></div><div class="field"><div class="fieldLabel">Watch for</div><div class="select"><span class="pfIcon" style="background:#ea4335"><i class="bi bi-envelope"></i></span> Email · new message <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="miniRow"><div class="field"><div class="fieldLabel">Integration</div><div class="select sm"><span class="pfIcon" style="background:#ea4335"><i class="bi bi-google"></i></span> work Gmail <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">Folder</div><div class="select sm">Inbox <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Only when</div><div class="chips"><span class="chip">from is one of · 3 addresses</span></div></div></div><div class="insFoot"><span class="foothint">Each matched message runs separately — switch runs in the bar above.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="triage"><div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName" contenteditable="true" spellcheck="false">Triage</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Instruction <span class="help">✦ assistant</span></div><div class="textarea">Read the client’s email. Set priority (urgent if it needs a reply today or names a deadline), a one-line summary, the client name, and any action items with due dates.</div></div><div class="field"><div class="fieldLabel">Agent profile</div><div class="select"><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Triage <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">Include as context</div><div class="incChips"><span class="incChip">On Client Email ▸ subject <i class="bi bi-x"></i></span><span class="incChip">On Client Email ▸ body <i class="bi bi-x"></i></span><span class="incChip">On Client Email ▸ from <i class="bi bi-x"></i></span></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Return a defined shape</div><div class="shapeBox"><div class="shapeRow"><span class="k">priority</span>: <span class="t">enum</span></div><div class="shapeRow"><span class="k">summary</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">client</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">tasks</span>: <span class="t">list of {title, due}</span></div></div></div></div><div class="insFoot"><span class="foothint">Edit the output on its preview, or change config and re-advance.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="code"><div class="insHd"><span class="insIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><div><div class="insType">Code step</div><div class="insName" contenteditable="true" spellcheck="false">Set due dates</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field" style="margin-bottom:0"><div class="fieldLabel">Code <span class="help">✦ assistant</span></div><div class="code"><span class="cm"># fill any task missing a due: +2 business days</span>
+<span class="kw">return</span> [
+  {**t, <span class="st">"due"</span>: t[<span class="st">"due"</span>] <span class="kw">or</span> <span class="fn">plus_days</span>(<span class="dref">On Client Email ▸ date</span>, <span class="st">2</span>)}
+  <span class="kw">for</span> t <span class="kw">in</span> <span class="dref">Triage ▸ tasks</span>
+]</div><div class="hintLine" style="font-size:11px;color:var(--text-tertiary);margin-top:5px">Type <b>@</b> to insert data from a previous step.</div></div></div><div class="insFoot"><span class="foothint">Edit the output on its preview, or change config and re-advance.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="createtask"><div class="insHd"><span class="insIcon" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span><div><div class="insType">Tool · per item</div><div class="insName" contenteditable="true" spellcheck="false">Create task</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Tool</div><div class="select"><span class="pfIcon" style="background:#4285f4"><i class="bi bi-calendar-plus"></i></span> Create calendar event <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">Run mode</div><div class="segmented"><div class="seg">Run once</div><div class="seg on"><i class="bi bi-arrow-repeat"></i> Per item</div></div><div class="mapRow" style="margin-top:8px"><span class="ml">For each</span><div class="mapVal"><span class="src"><i class="bi bi-list-ul"></i> Set due dates ▸ result</span><span class="iflds">list</span></div></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Inputs</div><div class="mapRow"><span class="ml">Summary</span><div class="mapVal"><span class="src item">item ▸ title</span></div></div><div class="mapRow"><span class="ml">Date</span><div class="mapVal"><span class="src item">item ▸ due</span></div></div></div></div><div class="insFoot"><span class="foothint">Write tool — previewed, not fired. One call per list item.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="branch"><div class="insHd"><span class="insIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><div><div class="insType">Branch step</div><div class="insName" contenteditable="true" spellcheck="false">Urgent?</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Decide by</div><div class="segmented"><div class="seg on">No-code rule</div><div class="seg">Expression</div></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Paths <span style="margin-left:auto;font-family:var(--font-body);text-transform:none;letter-spacing:0;color:var(--text-tertiary)">first match wins</span></div><div style="border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px;margin-bottom:6px"><div style="font-family:var(--font-brand);font-size:8.5px;color:var(--text-tertiary);margin-bottom:6px">PATH · Urgent</div><div class="mapRow" style="margin-bottom:0"><div class="mapVal"><span class="src">Triage ▸ priority</span></div><div class="mapVal" style="flex:none;width:46px;justify-content:center">is</div><div class="mapVal" style="flex:none;width:72px;justify-content:center">urgent</div></div></div><div style="border:1px solid var(--border);border-radius:var(--radius-md);background:var(--canvas);padding:8px 10px;display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-secondary)"><i class="bi bi-arrow-return-right" style="color:var(--text-tertiary)"></i> Otherwise → Normal <span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">default</span></div></div></div><div class="insFoot"><span class="foothint">Routes from its input — edit Triage ▸ priority on its preview to redirect.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="draft"><div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName" contenteditable="true" spellcheck="false">Draft reply</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Instruction <span class="help">✦ assistant</span></div><div class="textarea">Draft a reply to the client’s email. Keep it brief and match the thread’s tone.</div></div><div class="field"><div class="fieldLabel">Agent profile</div><div class="select"><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Writer <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Include as context</div><div class="incChips"><span class="incChip">On Client Email ▸ body <i class="bi bi-x"></i></span><span class="incChip">Triage ▸ summary <i class="bi bi-x"></i></span></div></div></div><div class="insFoot"><span class="foothint">Edit the output on its preview, or change config and re-advance.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="approval"><div class="insHd"><span class="insIcon" style="background:#db2777"><i class="bi bi-person-check"></i></span><div><div class="insType">Approval step</div><div class="insName" contenteditable="true" spellcheck="false">Review</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Show me</div><div class="chips"><span class="chip">Draft reply ▸ body</span><span class="chip">On Client Email ▸ subject</span></div></div><div class="miniRow"><div class="field"><div class="fieldLabel">On approve</div><div class="select sm">Continue <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">On reject</div><div class="select sm">Stop run <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Ask me via</div><div class="select sm"><span class="pfIcon" style="background:#229ed9"><i class="bi bi-send"></i></span> Telegram · me <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div></div><div class="insFoot"><span class="foothint">Decide on its preview (Approve / Reject) to continue.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="send"><div class="insHd"><span class="insIcon" style="background:var(--success)"><i class="bi bi-send"></i></span><div><div class="insType">Tool step</div><div class="insName" contenteditable="true" spellcheck="false">Send reply</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Tool</div><div class="select"><span class="pfIcon" style="background:var(--success)"><i class="bi bi-send"></i></span> Send email <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">Integration</div><div class="select"><span class="pfIcon" style="background:#ea4335"><i class="bi bi-google"></i></span> work Gmail <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Inputs</div><div class="mapRow"><span class="ml">To</span><div class="mapVal"><span class="src">On Client Email ▸ from</span></div></div><div class="mapRow"><span class="ml">Subject</span><div class="mapVal"><span class="src">Draft reply ▸ subject</span></div></div><div class="mapRow"><span class="ml">Body</span><div class="mapVal"><span class="src">Draft reply ▸ body</span></div></div></div></div><div class="insFoot"><span class="foothint">Write tool — previewed, not fired.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+      <div class="insp" data-for="label"><div class="insHd"><span class="insIcon" style="background:var(--success)"><i class="bi bi-tag"></i></span><div><div class="insType">Tool step</div><div class="insName" contenteditable="true" spellcheck="false">Label “triaged”</div></div><span class="insClose"><i class="bi bi-x-lg"></i></span></div><div class="insBody"><div class="field"><div class="fieldLabel">Tool</div><div class="select"><span class="pfIcon" style="background:var(--success)"><i class="bi bi-tag"></i></span> Add label <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field" style="margin-bottom:0"><div class="fieldLabel">Inputs</div><div class="mapRow"><span class="ml">Message</span><div class="mapVal"><span class="src">On Client Email ▸ id</span></div></div><div class="mapRow"><span class="ml">Label</span><div class="mapVal">triaged</div></div></div></div><div class="insFoot"><span class="foothint">Write tool — previewed, not fired.</span><div class="spacer"></div><button class="idBtn"><i class="bi bi-trash"></i></button></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  // ── three matched emails, each its own run ─────────────────────────────
+  const RUNS=[
+    {tag:'A',client:'Acme',from:'jane@acme.com',to:'me@myco.com',time:'09:12',
+     subject:'Renewal quote by Friday + a quick call',
+     body:"Hi — can you send over the renewal quote? We need it by this Friday. Also let's set up a 20-min call next week. Thanks, Jane",
+     priority:'urgent',summary:'Acme wants the renewal quote by Friday and a call next week.',
+     tasks:[{t:'Send Acme renewal quote',due:'2026-06-12'},{t:'Schedule 20-min call with Jane',due:null}],
+     draftSubject:'Re: Renewal quote by Friday + a quick call',
+     draftBody:"Hi Jane — I'll have the renewal quote over by Friday. Happy to set up a 20-min call next week; does Tue or Wed afternoon work? Best, …"},
+    {tag:'B',client:'Globex',from:'sam@globex.com',to:'me@myco.com',time:'08:40',
+     subject:'Re: invoice received, thanks',
+     body:"Got the invoice, all good on our end. No action needed — just closing the loop; we'll be in touch next quarter. — Sam",
+     priority:'normal',summary:'Globex acknowledges the invoice; no action needed.',
+     tasks:[]},
+    {tag:'C',client:'Initech',from:'li@initech.com',to:'me@myco.com',time:'08:05',
+     subject:'Kickoff: docs + sign-off needed next week',
+     body:"Excited to kick off! Before next Friday we'll need the SOW, the data-processing addendum, and the security questionnaire back, plus your sign-off on the timeline. — Li",
+     priority:'urgent',summary:'Initech kickoff — needs SOW, DPA addendum, and security questionnaire back, plus timeline sign-off, by next Friday.',
+     tasks:[{t:'Send SOW to Initech',due:'2026-06-12'},{t:'Return DPA addendum',due:'2026-06-12'},{t:'Complete security questionnaire',due:'2026-06-12'},{t:'Counter-sign the MSA',due:'2026-06-11'},{t:'Share the data map',due:'2026-06-12'},{t:'Complete DPIA',due:null},{t:'Submit vendor onboarding form',due:'2026-06-15'},{t:'Sign off on project timeline',due:null}],
+     draftSubject:'Re: Kickoff: docs + sign-off needed next week',
+     draftBody:"Hi Li — great to get started. I'll send the SOW, DPA, and security questionnaire this week and confirm sign-off on the timeline this week. — …"}
+  ];
+  RUNS.forEach(r=>r.edited=new Set());
+  let act=0, cur=4;
+  const E=()=>RUNS[act];
+  const fill=t=>t.map(x=>({t:x.t,due:x.due||'2026-06-10'}));
+  const result=()=>fill(E().tasks);
+  const route=()=>E().priority==='urgent'?'urgent':'normal';
+  const order=()=>['trigger','triage','code','createtask','branch'].concat(route()==='urgent'?['draft','approval','send']:['label']);
+  const names={trigger:'On Client Email',triage:'Triage',code:'Set due dates',createtask:'Create task',branch:'Urgent?',draft:'Draft reply',approval:'Review',send:'Send reply',label:'Label “triaged”'};
+  const steps=[...document.querySelectorAll('.step')];
+  const insps=[...document.querySelectorAll('.insp')];
+  const inspector=document.getElementById('inspector');
+
+  function edBadge(id){return E().edited.has(id)?'<span class="edited"><i class="bi bi-pencil-fill"></i> edited</span>':'';}
+  function staleRow(id){return E().edited.has(id)?'<div class="ocStale"><i class="bi bi-exclamation-triangle-fill"></i> edited — steps after are stale <span class="rerun" data-rerun="'+id+'"><i class="bi bi-arrow-counterclockwise"></i> re-run from here</span></div>':'';}
+  function navRow(id){
+    const idx=order().indexOf(id), first=idx===0, last=idx===order().length-1;
+    if(id==='approval') return '<div class="ocNav"><span class="nb prev" data-nav="back"><i class="bi bi-arrow-left"></i> Back</span></div>';
+    let h='<div class="ocNav">';
+    if(!first) h+='<span class="nb prev" data-nav="back"><i class="bi bi-arrow-left"></i></span>';
+    if(!last) h+='<span class="nb adv" data-nav="next">Run next step <i class="bi bi-arrow-right"></i></span>';
+    else h+='<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">end of run</span>';
+    return h+'</div>';
+  }
+  function card(id){
+    const e=E();
+    if(id==='trigger'){
+      let rows=RUNS.map((r,i)=>`<div class="dsRow${i===act?' active':''}" data-run="${i}"><div class="dsMain"><div class="dsFrom">${r.from} <span class="dsWhen">· ${r.time}</span></div><div class="dsSub">${r.subject}</div></div>${i===act?'<span class="dsRun"><i class="bi bi-caret-right-fill"></i> running</span>':'<span class="dsPick">run this</span>'}</div>`).join('');
+      return `<div class="ocHd"><i class="bi bi-inbox"></i> output · matched messages<span class="ty">3 items</span></div>
+        <div class="dsHd"><b>3</b> matched — each runs separately. <b>Pick one</b> to dry-run.</div>
+        <div class="dsList">${rows}</div>${navRow(id)}`;
+    }
+    if(id==='triage'){
+      const taskLines = e.tasks.map(t=>`{ title: <span class="s">"${t.t}"</span>, due: ${t.due?'<span class="n">'+t.due+'</span>':'<span class="muted">null</span>'} }`).join('\n');
+      return `<div class="ocHd"><i class="bi bi-braces"></i> output · structured${edBadge(id)}<span class="ty">shape</span></div>
+        <div class="ocBody"><span class="k">priority</span> <span class="enumSel" data-val="${e.priority}"><span class="enumTxt">"${e.priority}"</span> <i class="bi bi-chevron-down"></i><div class="enumPop"><div class="enumOpt${e.priority==='urgent'?' on':''}" data-v="urgent">urgent</div><div class="enumOpt${e.priority==='normal'?' on':''}" data-v="normal">normal</div></div></span>
+<span class="k">summary</span>  "<span class="ev" data-f="summary" contenteditable="true">${e.summary}</span>"
+<span class="k">client</span>   "<span class="ev" data-f="client" contenteditable="true">${e.client}</span>"
+<span class="k">tasks</span> <span class="muted">[${e.tasks.length}]</span>${e.tasks.length?`<div class="scrollBox">${taskLines}</div>`:' <span class="muted">none</span>'}</div>${staleRow(id)}${navRow(id)}`;
+    }
+    if(id==='code'){
+      const r=result();
+      const lines=r.length? r.map(t=>`{ title: <span class="s">"${t.t}"</span>, due: <span class="n">${t.due}</span> }`).join('\n') : '';
+      return `<div class="ocHd"><i class="bi bi-braces"></i> return · result<span class="ty">${r.length} items</span></div>
+        <div class="ocBody"><span class="muted">tasks ${E().tasks.length} in → result ${r.length} out · list</span>${r.length?`<div class="scrollBox">${lines}</div>`:' <span class="muted">[]</span>'}</div>${navRow(id)}`;
+    }
+    if(id==='createtask'){
+      const r=result();
+      if(!r.length) return `<div class="ocHd preview"><i class="bi bi-eye"></i> preview · nothing to do<span class="ty">0 calls</span></div><div class="ocBody"><span class="muted">0 items in the list — the tool runs 0 times.</span></div>${navRow(id)}`;
+      const lines=r.map((t,i)=>`<span class="k">${i+1}</span> summary: <span class="s">"${t.t}"</span>  start: <span class="n">${t.due}</span>`).join('\n');
+      return `<div class="ocHd preview"><i class="bi bi-eye"></i> preview · not created<span class="ty">${r.length} calls</span></div>
+        <div class="ocBody"><span class="muted">Create calendar event → work Calendar · would create ${r.length}</span><div class="scrollBox">${lines}</div></div>${navRow(id)}`;
+    }
+    if(id==='branch'){
+      const up=route()==='urgent';
+      return `<div class="ocHd route"><i class="bi bi-signpost-split"></i> routed</div>
+        <div class="ocRoute"><span class="rp ${up?'up':'norm'}">${up?'Urgent':'Normal'}</span><span class="rwhy"><code style="font-family:var(--font-code)">priority is “${e.priority}”</code>${up?' → first match':' → default'}</span></div>${navRow(id)}`;
+    }
+    if(id==='draft'){
+      return `<div class="ocHd"><i class="bi bi-braces"></i> output · structured${edBadge(id)}<span class="ty">shape</span></div>
+        <div class="ocBody"><span class="k">subject</span> "<span class="ev" data-f="draftSubject" contenteditable="true">${e.draftSubject}</span>"
+<span class="k">body</span> "<span class="ev" data-f="draftBody" contenteditable="true">${e.draftBody}</span>"</div>${staleRow(id)}${navRow(id)}`;
+    }
+    if(id==='approval'){
+      return `<div class="ocHd wait"><i class="bi bi-pause-circle"></i> waiting for your decision</div>
+        <div class="ocAsk"><div class="askq"><i class="bi bi-telegram"></i> would notify Telegram · me — <b>held in dry run</b></div><div class="askbtns"><span class="mb no" data-nav="reject"><i class="bi bi-x-lg"></i> Reject</span><span class="mb ok" data-nav="next"><i class="bi bi-check-lg"></i> Approve &amp; continue</span></div><div style="font-size:9.5px;color:var(--text-tertiary);margin-top:7px;line-height:1.4">A real run sends the notification and waits for your reply. <span style="color:var(--accent);cursor:pointer">Send the real ping ↗</span></div></div>${navRow(id)}`;
+    }
+    if(id==='send'){
+      return `<div class="ocHd preview"><i class="bi bi-eye"></i> preview · not sent<span class="ty">1 call</span></div>
+        <div class="ocBody"><span class="muted">Send email → work Gmail</span>
+<span class="k">to</span>      ${e.from}
+<span class="k">subject</span> ${e.draftSubject}
+<span class="k">body</span>    ${e.draftBody.slice(0,60)}…</div>${navRow(id)}`;
+    }
+    if(id==='label'){
+      return `<div class="ocHd preview"><i class="bi bi-eye"></i> preview · not applied<span class="ty">1 call</span></div>
+        <div class="ocBody"><span class="muted">Add label → work Gmail</span>
+<span class="k">message</span> ${e.from} — “${e.subject}”
+<span class="k">label</span>   triaged</div>${navRow(id)}`;
+    }
+    return '';
+  }
+
+  function render(){
+    const ord=order();
+    if(cur>ord.length-1) cur=ord.length-1;
+    steps.forEach(s=>{
+      const id=s.dataset.step; s.classList.remove('done','current','pending','paused','skip');
+      const st=s.querySelector('.nStat');
+      const idx=ord.indexOf(id);
+      if(idx===-1){s.classList.add('skip');st.innerHTML='';s.querySelector('.outCard').innerHTML='';return;}
+      if(idx<cur){s.classList.add('done');st.innerHTML='<i class="bi bi-check-lg"></i>';}
+      else if(idx===cur){ if(id==='approval'){s.classList.add('current','paused');st.innerHTML='<i class="bi bi-pause-fill"></i>';} else {s.classList.add('current');st.innerHTML='<i class="bi bi-caret-right-fill"></i>';} }
+      else {s.classList.add('pending');st.innerHTML='';}
+      // fill the preview for done + current
+      s.querySelector('.outCard').innerHTML = (idx<=cur)? card(id) : '';
+    });
+    document.getElementById('ctMeta').textContent='×'+result().length;
+    // branch edges + labels
+    document.getElementById('connBranch').classList.toggle('taken',cur>ord.indexOf('branch'));
+    const up=route()==='urgent';
+    document.getElementById('lblUp').classList.toggle('taken',up);
+    document.getElementById('lblNorm').classList.toggle('taken',!up);
+    document.getElementById('connTail').style.background=up?'var(--accent)':'var(--border-strong)';
+  }
+
+  function setRun(i){act=(i+RUNS.length)%RUNS.length;cur=Math.min(cur,order().length-1);render();}
+  function select(id){inspector.classList.add('open');insps.forEach(p=>p.classList.toggle('on',p.dataset.for===id));steps.forEach(s=>s.classList.toggle('selected',s.dataset.step===id));}
+  function deselect(){inspector.classList.remove('open');steps.forEach(s=>s.classList.remove('selected'));}
+
+  // node click → editor; run switch; nav; enum; rewind; edits
+  steps.forEach(s=>s.querySelector('.node').addEventListener('click',()=>select(s.dataset.step)));
+  insps.forEach(p=>p.querySelector('.insClose').addEventListener('click',deselect));
+  document.getElementById('restart').addEventListener('click',()=>{cur=0;render();});
+
+  document.querySelector('.canvasInner').addEventListener('click',e=>{
+    const runRow=e.target.closest('[data-run]'); if(runRow){setRun(+runRow.dataset.run);return;}
+    const opt=e.target.closest('.enumOpt'); if(opt){E().priority=opt.dataset.v;E().edited.add('triage');render();return;}
+    const sel=e.target.closest('.enumSel'); if(sel){sel.classList.toggle('open');e.stopPropagation();return;}
+    const nav=e.target.closest('[data-nav]'); if(nav){const a=nav.dataset.nav;if(a==='next')cur=Math.min(order().length-1,cur+1);else if(a==='back')cur=Math.max(0,cur-1);else if(a==='reject'){alert('Run stopped at Review (rejected).');return;}render();return;}
+    const rr=e.target.closest('[data-rerun]'); if(rr){const st=document.querySelector('.step[data-step="'+rr.dataset.rerun+'"]');render();return;}
+    const card=e.target.closest('.outCard'); if(card){const s=card.closest('.step');if(s.classList.contains('done')){cur=order().indexOf(s.dataset.step);render();}return;}
+  });
+  // capture inline edits into the model (no re-render, keeps the caret)
+  document.querySelector('.canvasInner').addEventListener('input',e=>{
+    const ev=e.target.closest('.ev'); if(!ev)return;
+    const f=ev.dataset.f; if(f) E()[f]=ev.textContent;
+    const s=ev.closest('.step'); E().edited.add(s.dataset.step);
+    const oc=ev.closest('.outCard'); if(!oc.querySelector('.edited')){oc.querySelector('.ocHd').insertAdjacentHTML('beforeend','<span class="edited"><i class="bi bi-pencil-fill"></i> edited</span>');}
+    if(!oc.querySelector('.ocStale')){oc.querySelector('.ocBody').insertAdjacentHTML('afterend','<div class="ocStale"><i class="bi bi-exclamation-triangle-fill"></i> edited — steps after are stale <span class="rerun" data-rerun="'+s.dataset.step+'"><i class="bi bi-arrow-counterclockwise"></i> re-run from here</span></div>');}
+  });
+  document.addEventListener('click',e=>{if(!e.target.closest('.enumSel'))document.querySelectorAll('.enumSel.open').forEach(x=>x.classList.remove('open'));});
+  document.querySelectorAll('.segmented').forEach(s=>s.querySelectorAll('.seg').forEach(seg=>seg.addEventListener('click',()=>{s.querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));seg.classList.add('on');})));
+  render();
+</script>
+</body>
+</html>

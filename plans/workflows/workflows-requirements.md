@@ -118,16 +118,16 @@ reliably produce the shape, that shows up as a clear failure during a **dry run*
 where the user can switch to a more capable model — they are never asked to reason
 about model capabilities up front.
 
-### Connections (which account a step or trigger uses)
-Many tools — and watch triggers — act through a **integration**, and a
+### Integrations (which integration a step or trigger uses)
+Many tools — and watch triggers — act through an **integration**, and a
 user may have several of the same type (two mailboxes, two calendars). The user
-**pins** a specific account while building ("always send from my work Gmail").
-For v1 the account is always chosen explicitly; deciding it at runtime from the
+**pins** a specific integration while building ("always send from my work Gmail").
+For v1 the integration is always chosen explicitly; deciding it at runtime from the
 run's data (e.g. "reply from *whichever* mailbox received the message") is out of
 scope (see §9).
 
-The chosen account is **shown on the step itself**, so which account a step uses
-is clear at a glance, not buried in a settings panel.
+The chosen integration is **shown on the step itself**, so which integration a step
+uses is clear at a glance, not buried in a settings panel.
 
 ### Handling failure
 A step can stumble (a flaky API, a timeout). The user controls what happens:
@@ -142,7 +142,7 @@ A step can stumble (a flaky API, a timeout). The user controls what happens:
 There is **no separate notification system** — a notification is simply **one of
 the user's own tools being called** (send an email, post a message, etc.) through
 an integration they've connected. Telling a user something happened reuses the
-exact same tool-step machinery: pick a tool, pick the account, map in the
+exact same tool-step machinery: pick a tool, pick the integration, map in the
 content.
 
 The user configures, per workflow, **which events** should notify them — run
@@ -173,9 +173,18 @@ say, the original email that kicked things off — it doesn't get lost along the
 way.
 
 ### Trigger
-A **Trigger** is what starts a workflow. Triggers are separate from the workflow
-itself, so one workflow can be started in more than one way, and can always be
-run manually too. There are two kinds:
+A **Trigger** is what starts a workflow **on its own, without the user** — on a
+schedule, or in response to something happening in the world. A trigger **belongs
+to the workflow it starts** (defined and managed within that workflow, not a shared
+object attached to others), and a workflow can have **more than one**.
+
+**Manual run is not a trigger.** Every workflow can always be **run by hand**
+("Run now") — that's just the user starting it themselves, available regardless of
+what triggers (if any) are configured. Triggers are reserved for starts that
+happen *without* the user. A workflow can have no triggers at all and simply be
+run manually.
+
+There are two kinds of trigger:
 
 - **Schedule (cron) trigger** — run the workflow on a recurring schedule
   ("every weekday at 9am").
@@ -193,8 +202,8 @@ run manually too. There are two kinds:
 4. **Get structured results from agent steps** so later steps can rely on them.
 5. **Take real actions** at the end of (or anywhere in) a workflow via tool
    steps — send an email, file a document, post to an API.
-6. **Choose which connected account** a step or trigger uses — pinned to a
-   specific account.
+6. **Choose which integration** a step or trigger uses — pinned to a
+   specific integration.
 7. **Shape data without code** via visual field mapping, adding a code step
    before the consumer when mapping isn't enough.
 8. **Branch** — send the workflow down different paths based on the data.
@@ -215,11 +224,11 @@ run manually too. There are two kinds:
     previous real run, or against sample data they paste in.
 17. **Be notified their own way** — get told about failures, completions, or
     approvals through any integration tool they've connected.
-18. **Start workflows three ways** — on a schedule, when something is detected,
-    or manually.
+18. **Start a workflow by trigger or by hand** — automatically via a trigger (on a
+    schedule or when something is detected), or run it manually any time.
 19. **Watch the world and react** — set up a watch trigger that polls a tool and
     fires only on genuinely new, matching items, within a safe volume limit, and
-    can watch several accounts of the same type at once.
+    can watch several integrations of the same type at once.
 20. **Inspect any run** — see which path it took, what each step received and
     produced, and exactly where it succeeded or failed, including runs paused
     waiting for approval.
@@ -231,12 +240,23 @@ The user picks a schedule and a workflow. The workflow runs on that schedule.
 Simple.
 
 ### Watch trigger
-The user picks a tool to watch (e.g. "list inbox messages"), how often to check,
-and a **condition** that decides whether an item is worth acting on. The
-assistant can help write the condition. A single watch trigger can watch
-**several accounts of the same type at once** (e.g. both mailboxes); each item it
-finds carries which account it came from, so downstream steps can act on the
-right one.
+The user picks something to watch — a list/poll tool on an integration (a mailbox
+folder, a Drive folder, a calendar, a contacts list, an API endpoint) — how often
+to check, and a **condition** that decides whether an item is worth acting on.
+
+The condition is a **no-code rule over the watched item's fields** — the same
+field → operator → value builder used by a Branch step, except the available
+fields are **supplied by the chosen tool** (an email has *from / subject / folder*;
+a Drive file has *name / type / modified*; a calendar event has *summary / start*;
+an API has no fixed shape, so it falls back to an expression over the response).
+The assistant can write the rule from a plain-language description. The rule is
+evaluated **deterministically per item on each poll** — it is not an LLM call;
+fuzzy judgement belongs in an agent step inside the workflow, not the trigger
+filter. (See the watchable-tools list and per-tool fields in the design.)
+
+A single watch trigger can watch **several integrations of the same type at once**
+(e.g. both mailboxes); each item it finds carries which integration it came from,
+so downstream steps can act on the right one.
 
 Three behaviors the user should be able to count on:
 
@@ -264,7 +284,7 @@ Three behaviors the user should be able to count on:
 Each step's box exposes what that kind of step needs:
 - Agent step: an instruction, a choice of agent profile, and (optionally) the
   shape of result to return.
-- Tool step: which tool, which connected account to use (pinned),
+- Tool step: which tool, which integration to use (pinned),
   and how its inputs are filled from the available data (by visual mapping).
 - Code step: the logic to run.
 - Branch step: the rule that decides the path.
@@ -279,14 +299,14 @@ Each step's box exposes what that kind of step needs:
   it.
 
 ### Picking an integration
-- Where a step or trigger acts through an account, an **account picker** lists the
-  user's connected accounts that can do that action, labeled clearly (type +
-  which account).
-- The picker is **permission-aware**: accounts that lack the needed access are
+- Where a step or trigger acts through an integration, an **integration picker**
+  lists the user's connected integrations that can do that action, labeled clearly
+  (type + which integration).
+- The picker is **permission-aware**: integrations that lack the needed access are
   shown **disabled with a short reason** ("read-only — can't send"), so the user
   understands why and can go fix it, rather than silently not seeing it.
-- The selected account appears **on the face of the step**. If a chosen account
-  later breaks or loses permission, the step shows a clear warning.
+- The selected integration appears **on the face of the step**. If a chosen
+  integration later breaks or loses permission, the step shows a clear warning.
 
 ### The in-editor assistant
 - Available on any step. The user describes what they want in plain language.
@@ -361,8 +381,8 @@ Each step's box exposes what that kind of step needs:
 - Sharing/marketplace of workflows between users.
 - Versioning and rollback of a workflow's definition.
 - Collaborative / multi-user editing of the same workflow.
-- Data-driven account selection (deciding which connected account a step or
-  trigger uses at runtime from the run's data). v1 pins accounts explicitly.
+- Data-driven integration selection (deciding which integration a step or
+  trigger uses at runtime from the run's data). v1 pins integrations explicitly.
 
 ## 10. Open questions (user-facing)
 
@@ -375,9 +395,10 @@ design.
 - **Notifications** — no dedicated system; the user is notified by calling any
   integration tool they've connected, configured per workflow per event
   (failure on by default). Telegram-specific notification is dropped for now.
-- **Connections** — pinned (explicit) account selection, a permission-aware
-  picker that shows unusable accounts disabled with a reason, and the chosen
-  account shown on the step. Watch triggers can watch multiple accounts at once.
+- **Integrations** — pinned (explicit) integration selection, a permission-aware
+  picker that shows unusable integrations disabled with a reason, and the chosen
+  integration shown on the step. Watch triggers can watch multiple integrations at
+  once.
 - **Approval response channels** — an approval can be both delivered and answered
   through an integration tool, so the user can approve/reject without opening the
   app; the in-app approval is always available too, and the channels are
