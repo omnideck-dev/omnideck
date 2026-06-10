@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 from sdk.events._context import _current_dispatcher
 from sdk.events._dispatcher import EventDispatcher, EventHandler
+from sdk.events._models import AgentEvent, TurnEndPayload
 
 logger = logging.getLogger(__name__)
 
@@ -118,18 +119,19 @@ async def turn_scope(
     dispatcher_token = _current_dispatcher.set(dispatcher)
     stop_token = _stop_event.set(stop_event)
     conversation_token = _conversation_id.set(sid)
+    if handler is not None:
+        dispatcher.subscribe(handler)
     try:
-        if handler is not None:
-            async with dispatcher.subscription(handler):
-                yield None
-        else:
-            yield None
+        yield None
     finally:
         try:
+            dispatcher.publish(AgentEvent(payload=TurnEndPayload(type="turn_end")))
             await dispatcher.drain()
         except Exception:
             logger.exception("Error draining event dispatcher for conversation '%s'", sid)
         finally:
+            if handler is not None:
+                dispatcher.unsubscribe(handler)
             _current_dispatcher.reset(dispatcher_token)
             _stop_event.reset(stop_token)
             _conversation_id.reset(conversation_token)

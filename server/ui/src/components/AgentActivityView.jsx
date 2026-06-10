@@ -31,7 +31,7 @@ function _buildBreadcrumb(agents, agentId) {
  *
  * The nudge bar at the bottom sends to the currently viewed agent.
  */
-export default function AgentActivityView({ onNudge, onPreview }) {
+export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = false }) {
     const { agents, selectedAgentId } = useAgentState();
     const dispatch = useAgentDispatch();
     const agent = selectedAgentId ? agents[selectedAgentId] : null;
@@ -135,8 +135,10 @@ export default function AgentActivityView({ onNudge, onPreview }) {
                 <input
                     className={styles.nudgeInput}
                     type="text"
-                    placeholder={`Send a nudge to ${formatAgentName(agent.name)}...`}
+                    placeholder={nudgeDisabled ? 'Stopping...' : `Send a nudge to ${formatAgentName(agent.name)}...`}
+                    disabled={nudgeDisabled}
                     onKeyDown={(e) => {
+                        if (nudgeDisabled) return;
                         if (e.key === 'Enter' && e.target.value.trim()) {
                             if (onNudge) onNudge(e.target.value.trim(), selectedAgentId);
                             e.target.value = '';

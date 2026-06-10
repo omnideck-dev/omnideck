@@ -288,33 +288,35 @@ async def _run_turn(
         if dispatcher:
             dispatcher.subscribe(event_buffer.handle_event)
 
-        async with agent_span(
-            active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
-        ):
-            history.append({"role": "user", "content": user_content})
-            # The LoadedSkillHook appends the loaded-skill section before each
-            # model call, so the system message just carries the profile prompt.
-            _refresh_system_message(history, active_agent.instruction)
+        try:
+            async with agent_span(
+                active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
+            ):
+                history.append({"role": "user", "content": user_content})
+                # The LoadedSkillHook appends the loaded-skill section before each
+                # model call, so the system message just carries the profile prompt.
+                _refresh_system_message(history, active_agent.instruction)
 
-            hooks = default_hooks(
-                active_agent,
-                max_iterations=active_agent.max_iterations,
-                ctx_manager=ctx_manager,
-            )
-
-            hooks.append(
-                PersistenceHook(
-                    conversation_id=conv_id,
-                    history=history,
+                hooks = default_hooks(
+                    active_agent,
+                    max_iterations=active_agent.max_iterations,
+                    ctx_manager=ctx_manager,
                 )
-            )
 
-            with suppress(StopRequestedError):
+                hooks.append(
+                    PersistenceHook(
+                        conversation_id=conv_id,
+                        history=history,
+                    )
+                )
+
                 await run_turn(
                     history=history,
                     agent=active_agent,
                     hooks=hooks,
                 )
+        except StopRequestedError:
+            pass
 
         # Persist loaded skills so they survive across turns and restarts
         if agent_state.loaded_skill_ids:

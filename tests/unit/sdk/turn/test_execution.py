@@ -262,12 +262,43 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
         result = await run_turn(history, _make_agent())
 
     assert result == "Hello!"
-    # Two delta events + one turn_end event
+    # Two delta events; turn_end belongs to turn_scope, not run_turn.
     delta_calls = [
         c for c in _patch_publish_event.call_args_list
         if hasattr(c.args[0].payload, "delta") and c.args[0].payload.delta is True
     ]
     assert len(delta_calls) == 2
+    turn_end_calls = [
+        c for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "turn_end"
+    ]
+    assert turn_end_calls == []
+
+
+async def test_mid_stream_stop_persists_partial_assistant_message() -> None:
+    """A stop during streaming stores the visible partial answer in history."""
+    streamed_turn: list[ChatDelta | ChatResponse] = [
+        ChatDelta(content="Hel"),
+        ChatDelta(content="lo", thinking="thinking"),
+        _text_response("Hello complete"),
+    ]
+    provider = FakeProvider([streamed_turn])
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+    hook = RecordingHook()
+
+    with patch(f"{_MOD}.get_provider", return_value=provider), \
+         patch(f"{_MOD}.check_stop", side_effect=[None, StopRequestedError()]):
+        with pytest.raises(StopRequestedError):
+            await run_turn(history, _make_agent(), hooks=[hook])
+
+    assert history.messages[-1] == {
+        "role": "assistant",
+        "content": "Hello",
+        "tool_calls": None,
+        "thinking": "thinking",
+        "agent_name": "test-agent",
+    }
+    assert ("on_turn_end", ("Hello", "test-agent")) in hook.calls
 
 
 # ---------------------------------------------------------------------------

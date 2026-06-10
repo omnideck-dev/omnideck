@@ -7,12 +7,12 @@ from typing import Any
 
 from agents.types import Agent
 from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, get_current_agent_name, publish_event
+from sdk.events import AgentEvent, ContentPayload, get_current_agent_name, publish_event
 from sdk.providers import ChatDelta, ChatResponse, ProviderError, get_provider
 from sdk.skills.agent_state import _active_agent_state
 from sdk.tools import _execute_tool_call
 
-from ._turn import StopRequestedError
+from ._turn import StopRequestedError, check_stop
 
 
 def _get_parallel_config():
@@ -27,14 +27,6 @@ class ToolLoopError(Exception):
 
 
 logger = logging.getLogger(__name__)
-
-
-def _publish_turn_end() -> None:
-    """Emit a TurnEndPayload. Logs but never raises on failure."""
-    try:
-        publish_event(AgentEvent(payload=TurnEndPayload(type="turn_end")))
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to publish turn_end event")
 
 
 async def _stream_chat_with_retries(
@@ -178,6 +170,9 @@ async def run_turn(
             fn(agent.name)
 
     parallel_cfg = _get_parallel_config()
+    # Tracks the latest assistant content for the successful run_turn return
+    # value and the on_turn_end hook payload. Persistence reads history, not
+    # this variable.
     final_content: str | None = None
     iteration = 0
     try:
@@ -195,6 +190,8 @@ async def run_turn(
                 # Stream deltas to frontend as tokens arrive
                 response: ChatResponse | None = None
                 streamed_deltas = False
+                streamed_content_parts: list[str] = []
+                streamed_thinking_parts: list[str] = []
                 async for chunk in _stream_chat_with_retries(
                     provider,
                     model=agent.model,
@@ -205,6 +202,10 @@ async def run_turn(
                 ):
                     if isinstance(chunk, ChatDelta):
                         streamed_deltas = True
+                        if chunk.content:
+                            streamed_content_parts.append(chunk.content)
+                        if chunk.thinking:
+                            streamed_thinking_parts.append(chunk.thinking)
                         try:
                             publish_event(AgentEvent(payload=ContentPayload(
                                 type="content",
@@ -214,6 +215,26 @@ async def run_turn(
                             )))
                         except Exception:  # pragma: no cover - defensive
                             logger.exception("Failed to publish delta event")
+                        try:
+                            check_stop()
+                        except StopRequestedError:
+                            partial_content = "".join(streamed_content_parts) or None
+                            partial_thinking = "".join(streamed_thinking_parts) or None
+                            if partial_content is not None or partial_thinking is not None:
+                                history.append({
+                                    "role": "assistant",
+                                    "content": partial_content,
+                                    "tool_calls": None,
+                                    "thinking": partial_thinking,
+                                    "agent_name": get_current_agent_name(),
+                                })
+                                if partial_content is not None:
+                                    # StopRequestedError re-raises below, so no
+                                    # caller receives this as a return value.
+                                    # This only preserves the on_turn_end hook
+                                    # contract for hooks that inspect content.
+                                    final_content = partial_content
+                            raise
                     elif isinstance(chunk, ChatResponse):
                         response = chunk
 
@@ -252,7 +273,6 @@ async def run_turn(
                     final_content = content
 
                 if not tool_calls:
-                    _publish_turn_end()
                     return final_content
 
                 tool_names = [tc.function.name for tc in tool_calls]
@@ -278,13 +298,11 @@ async def run_turn(
 
             except StopRequestedError:
                 logger.info("Agent '%s' tool loop stopped by user request", agent.name)
-                _publish_turn_end()
                 raise
             except Exception as exc:
                 logger.exception("Unhandled exception in tool loop")
                 error_msg = str(exc) if isinstance(exc, ProviderError) else "An error occurred while processing your message."
                 publish_event(AgentEvent(payload=ContentPayload(type="content", content=error_msg)))
-                _publish_turn_end()
                 raise ToolLoopError(error_msg) from exc
     finally:
         for hook in hooks:

@@ -44,6 +44,7 @@ export default function MobileApp({ dark, onToggleTheme }) {
     const {
         messages,
         isStreaming,
+        stopRequested,
         sendMessage,
         stopGeneration,
         loadConversation,
@@ -75,6 +76,7 @@ export default function MobileApp({ dark, onToggleTheme }) {
                     onSend={handleSend}
                     onStop={stopGeneration}
                     isStreaming={isStreaming}
+                    stopRequested={stopRequested}
                     compact
                 />
             </div>

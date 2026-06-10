@@ -69,6 +69,21 @@ The full image is ~9 GB, mostly PyTorch + diffusers + ACE-Step. Users who only w
 - Cap retries at 2-3 to prevent infinite loops on a truly stuck model
 - After exhausting retries, fall back to using the thinking text as the result
 
+## Clarify run_turn result vs hook payload semantics
+
+`run_turn()` uses a local `final_content` variable for two related but distinct things:
+- The successful return value consumed by `TaskExecutor` and `spawn_agent`
+- The `on_turn_end(final_content, agent_name)` hook payload passed from the `finally` block
+
+That name is slightly misleading. During a multi-iteration tool loop, it is overwritten with the latest assistant content each time the model responds. It only becomes truly "final" when the response has no tool calls and the turn returns. On a mid-stream stop, the code may assign partial streamed content to `final_content` before re-raising `StopRequestedError`; callers never receive that value, but `finally` still passes it to hooks. Persistence does not read `final_content`; it persists `ConversationHistory`.
+
+This is not currently buggy, but the semantics are overloaded enough to revisit. A cleaner shape would separate:
+- `latest_assistant_content` for hook/debug metadata
+- an explicit successful `return_content`
+- persisted transcript state exclusively in `ConversationHistory`
+
+Also consider whether `on_turn_end` should receive a richer result object (`status`, `content`, `stopped`, `error`) instead of a nullable string. That would avoid overloading content with lifecycle state.
+
 ## Skip model unload for cloud models
 
 `_unload_model()` in `sdk/context/_strategy.py` runs `ollama stop <model>` after every compaction to free VRAM. This fails silently for cloud models (e.g. `kimi-k2.5:cloud`) since they aren't loaded in Ollama. Check for a `:cloud` suffix (or whatever convention distinguishes remote models) and skip the subprocess call.
