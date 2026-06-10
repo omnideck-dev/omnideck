@@ -84,6 +84,27 @@ This is not currently buggy, but the semantics are overloaded enough to revisit.
 
 Also consider whether `on_turn_end` should receive a richer result object (`status`, `content`, `stopped`, `error`) instead of a nullable string. That would avoid overloading content with lifecycle state.
 
+## Split model-facing history from durable UI transcript
+
+`ConversationHistory` currently serves two purposes:
+- The provider-facing chat history sent to OpenAI/Ollama/Anthropic adapters
+- The persisted transcript used to restore the UI
+
+Mid-stream stops expose the mismatch. If the user stops after visible assistant content has streamed, persisting that partial content as an assistant message is valid: the assistant visibly said those words, and providers can consume the string on the next turn. If the user stops while only thinking/reasoning has streamed, there is no portable provider-facing assistant message:
+- OpenAI-compatible chat requires assistant `content` unless the message contains tool calls; `content: None` can fail validation.
+- Anthropic treats assistant messages as content blocks and empty/final assistant turns have special prefill semantics.
+- Ollama supports a separate `thinking` field, so it can preserve information that other providers cannot represent consistently.
+
+The minimal safe behavior is to persist only stopped partials that include visible `content`. Thinking-only stopped output remains live UI state and the durable lifecycle event is `agent_completed(status="stopped")`. That avoids corrupting provider history, but after reload the thinking-only partial is not visible and the next model call sees consecutive user messages.
+
+A cleaner design would persist a provider-neutral event transcript separately from provider history:
+- Store streamed `content`/`thinking` deltas and lifecycle events as UI events.
+- Restore the chat UI by replaying persisted events, not by overloading LLM messages.
+- Build provider requests from a sanitized model history that excludes UI-only artifacts.
+- Optionally inject a model-safe note such as "Previous assistant turn was stopped before producing visible output" when that continuity is useful.
+
+That would let Omnideck preserve the full user-visible stopped-turn experience without sending empty or thinking-only assistant turns to providers.
+
 ## Skip model unload for cloud models
 
 `_unload_model()` in `sdk/context/_strategy.py` runs `ollama stop <model>` after every compaction to free VRAM. This fails silently for cloud models (e.g. `kimi-k2.5:cloud`) since they aren't loaded in Ollama. Check for a `:cloud` suffix (or whatever convention distinguishes remote models) and skip the subprocess call.

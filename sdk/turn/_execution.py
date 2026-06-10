@@ -220,7 +220,7 @@ async def run_turn(
                         except StopRequestedError:
                             partial_content = "".join(streamed_content_parts) or None
                             partial_thinking = "".join(streamed_thinking_parts) or None
-                            if partial_content is not None or partial_thinking is not None:
+                            if partial_content is not None:
                                 history.append({
                                     "role": "assistant",
                                     "content": partial_content,
@@ -228,12 +228,11 @@ async def run_turn(
                                     "thinking": partial_thinking,
                                     "agent_name": get_current_agent_name(),
                                 })
-                                if partial_content is not None:
-                                    # StopRequestedError re-raises below, so no
-                                    # caller receives this as a return value.
-                                    # This only preserves the on_turn_end hook
-                                    # contract for hooks that inspect content.
-                                    final_content = partial_content
+                                # StopRequestedError re-raises below, so no
+                                # caller receives this as a return value.
+                                # This only preserves the on_turn_end hook
+                                # contract for hooks that inspect content.
+                                final_content = partial_content
                             raise
                     elif isinstance(chunk, ChatResponse):
                         response = chunk
