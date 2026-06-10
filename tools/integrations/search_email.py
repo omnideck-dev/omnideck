@@ -33,7 +33,7 @@ async def search_email(
 
     Returns:
         Plain text — one matched envelope per line, formatted as
-        ``"- [uid] date  sender  —  subject"`` — or a short empty/error notice.
+        ``"- [uid] (integration) date  sender  —  subject"`` — or a short empty/error notice.
     """
     app_sock = load_config().integrations.app_sock_path
     try:
@@ -54,7 +54,7 @@ async def search_email(
     headers = result.get("headers", [])
     if not headers:
         return f"No matches for {query!r} in {folder!r}."
-    lines = [format_envelope(h) for h in headers]
+    lines = [format_envelope(h, integration_id) for h in headers]
     return f"Matches for {query!r} in {folder!r} ({len(lines)}):\n" + "\n".join(lines)
 
 
@@ -84,6 +84,6 @@ def build_search_email_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         "    limit: Maximum matches to return (1-200, default 20).\n\n"
         "Returns:\n"
         "    Plain text — one matched envelope per line, formatted as "
-        '"- [uid] date  sender  —  subject" — or a short empty/error notice.\n'
+        '"- [uid] (integration) date  sender  —  subject" — or a short empty/error notice.\n'
     )
     return _search_email

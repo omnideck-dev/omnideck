@@ -119,8 +119,8 @@ async def test_list_email_messages_formats_envelopes_with_uid_brackets(monkeypat
     out = await list_email_messages("icloud_personal", "INBOX", limit=5)
     assert out == (
         "Recent messages in 'INBOX' (2):\n"
-        "- [100] 2026-04-25T09:00:00+00:00  alice@x  —  hi\n"
-        "- [101] 2026-04-25T10:00:00+00:00  bob@y  —  ping"
+        "- [100] (icloud_personal) 2026-04-25T09:00:00+00:00  alice@x  —  hi\n"
+        "- [101] (icloud_personal) 2026-04-25T10:00:00+00:00  bob@y  —  ping"
     )
 
 
@@ -135,7 +135,7 @@ async def test_list_email_messages_substitutes_placeholders_for_missing_fields(m
     out = await list_email_messages("icloud_personal", "INBOX")
     assert out == (
         "Recent messages in 'INBOX' (1):\n"
-        "- [1]   (no sender)  —  (no subject)"
+        "- [1] (icloud_personal)   (no sender)  —  (no subject)"
     )
 
 
@@ -258,7 +258,7 @@ async def test_search_email_formats_matches_with_query_in_header(monkeypatch: py
     out = await search_email("icloud_personal", "invoice")
     assert out == (
         "Matches for 'invoice' in 'INBOX' (1):\n"
-        "- [7] 2026-04-25T09:00:00+00:00  alice@x  —  invoice"
+        "- [7] (icloud_personal) 2026-04-25T09:00:00+00:00  alice@x  —  invoice"
     )
 
 
