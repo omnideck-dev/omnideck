@@ -301,6 +301,25 @@ async def test_mid_stream_stop_persists_partial_assistant_message() -> None:
     assert ("on_turn_end", ("Hello", "test-agent")) in hook.calls
 
 
+async def test_mid_stream_stop_does_not_persist_thinking_only_message() -> None:
+    """Thinking-only stop output is live UI state, not provider-facing history."""
+    streamed_turn: list[ChatDelta | ChatResponse] = [
+        ChatDelta(thinking="planning"),
+        _text_response("unreachable"),
+    ]
+    provider = FakeProvider([streamed_turn])
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+    hook = RecordingHook()
+
+    with patch(f"{_MOD}.get_provider", return_value=provider), \
+         patch(f"{_MOD}.check_stop", side_effect=StopRequestedError()):
+        with pytest.raises(StopRequestedError):
+            await run_turn(history, _make_agent(), hooks=[hook])
+
+    assert history.messages == [{"role": "user", "content": "Hi"}]
+    assert ("on_turn_end", (None, "test-agent")) in hook.calls
+
+
 # ---------------------------------------------------------------------------
 # Tests: hook invocation
 # ---------------------------------------------------------------------------
