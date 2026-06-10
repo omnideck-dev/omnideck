@@ -24,9 +24,5 @@ class StopHook:
             # Strip tool_calls so the assistant message won't have dangling calls
             if hasattr(response, "message") and hasattr(response.message, "tool_calls"):
                 response.message.tool_calls = None
-            history.append({
-                "role": "user",
-                "content": "The user has requested to stop. Wrap up your response.",
-            })
             raise
         return response
