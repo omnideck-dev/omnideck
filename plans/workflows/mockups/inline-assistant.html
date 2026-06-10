@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — inline step assistant</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--accent-glow:rgba(37,99,235,.15);--success:#16a34a;--success-muted:rgba(22,163,74,.08);--warning:#d97706;--warning-muted:rgba(217,119,6,.08);--danger:#dc2626;--danger-muted:rgba(220,38,38,.08);--assistant:#7c3aed;--assistant-muted:rgba(124,58,237,.08);--assistant-glow:rgba(124,58,237,.15);--code-keyword:#7c3aed;--code-function:#1d4ed8;--code-string:#15803d;--code-comment:#8898b5;--code-number:#c2410c;--shadow-sm:0 1px 2px rgba(15,23,42,.05);--shadow-md:0 2px 8px rgba(15,23,42,.08);--shadow-lg:0 4px 16px rgba(15,23,42,.10);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-xl:12px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--font-brand:'Share Tech Mono','Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-code:'JetBrains Mono','Consolas',monospace;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);--accent-glow:rgba(59,130,246,.2);--success:#4ade80;--success-muted:rgba(74,222,128,.12);--warning:#fbbf24;--warning-muted:rgba(251,191,36,.12);--danger:#f87171;--danger-muted:rgba(248,113,113,.12);--assistant:#a78bfa;--assistant-muted:rgba(167,139,250,.12);--assistant-glow:rgba(167,139,250,.2);--code-keyword:#c792ea;--code-function:#82aaff;--code-string:#c3e88d;--code-comment:#546e7a;--code-number:#f78c6c;--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 2px 8px rgba(0,0,0,.4);--shadow-lg:0 4px 16px rgba(0,0,0,.5);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+.page{max-width:1320px;margin:0 auto;padding:var(--sp-8) var(--sp-6) 64px;}
+.pageHd{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2);}
+.pageHd h1{font-size:18px;font-weight:600;margin:0;}.pageHd .sub{font-size:12.5px;color:var(--text-secondary);}
+.themeToggle{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);font-size:12px;cursor:pointer;}
+.lead{font-size:12.5px;color:var(--text-secondary);margin:0 0 var(--sp-6);max-width:96ch;line-height:1.6;}
+.lead b{color:var(--text-primary);}
+
+.rows{display:flex;flex-direction:column;gap:var(--sp-8);}
+.rowHd{display:flex;align-items:center;gap:9px;margin-bottom:var(--sp-3);padding-bottom:var(--sp-2);border-bottom:1px solid var(--border);}
+.rIcon{width:26px;height:26px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.rName{font-size:14px;font-weight:600;}.rWhen{font-size:11.5px;color:var(--text-tertiary);}
+.bench{display:flex;gap:var(--sp-4);align-items:flex-start;flex-wrap:wrap;}
+.col{width:344px;flex-shrink:0;}
+.cap{font-family:var(--font-brand);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+.cap i{color:var(--assistant);}
+.sideNote{flex:1;min-width:240px;max-width:330px;font-size:11.5px;color:var(--text-secondary);background:var(--accent-muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;line-height:1.55;display:flex;gap:7px;}
+.sideNote i{color:var(--accent);margin-top:1px;}
+.sideNote b{color:var(--text-primary);}
+
+/* inspector */
+.insp{width:344px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;}
+.insHd{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
+.insIcon{width:24px;height:24px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+.insType{font-family:var(--font-brand);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.insName{font-size:13px;font-weight:600;}
+.asstBtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--assistant);font-size:11.5px;font-weight:500;cursor:pointer;flex-shrink:0;}
+.asstBtn:hover{background:var(--assistant-muted);}
+.asstBtn.on{background:var(--assistant);border-color:var(--assistant);color:#fff;}
+.insBody{padding:var(--sp-4);}
+.field{margin-bottom:var(--sp-4);}.field:last-child{margin-bottom:0;}
+.fieldLabel{font-family:var(--font-brand);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.select{width:100%;height:34px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 10px;font-size:12.5px;cursor:pointer;}
+.select.sm{height:32px;}.select .chev{margin-left:auto;color:var(--text-tertiary);}
+.select .pfIcon{width:18px;height:18px;border-radius:var(--radius-sm);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;}
+.miniRow{display:flex;gap:var(--sp-2);}.miniRow .field{flex:1;}
+.hintLine{font-size:11px;color:var(--text-tertiary);margin-top:5px;line-height:1.45;}
+.textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;font-size:12px;line-height:1.5;color:var(--text-primary);}
+.segmented{display:flex;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.segmented .seg{flex:1;text-align:center;padding:7px 0;font-size:11.5px;cursor:pointer;color:var(--text-secondary);background:var(--surface);border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:5px;}
+.segmented .seg:last-child{border-right:none;}.segmented .seg.on{background:var(--accent);color:#fff;font-weight:600;}
+.toggle{width:32px;height:19px;border-radius:var(--radius-full);background:var(--accent);position:relative;flex-shrink:0;cursor:pointer;display:inline-block;vertical-align:middle;}
+.toggle::after{content:'';position:absolute;top:2px;left:15px;width:15px;height:15px;border-radius:var(--radius-full);background:#fff;}
+.shapeBox{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:8px 10px;}
+.shapeRow{display:flex;gap:6px;font-family:var(--font-code);font-size:11px;color:var(--text-secondary);padding:2px 0;}
+.shapeRow .k{color:var(--text-primary);}.shapeRow .t{color:var(--accent);}
+.shapeRow .enumVals{color:var(--code-keyword);font-family:var(--font-code);font-size:10px;}
+.linkRow{font-size:11px;color:var(--accent);cursor:pointer;margin-top:6px;}
+.incChips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;border-radius:var(--radius-md);}
+.incChip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-muted);color:var(--accent);border:1px solid var(--accent-muted);border-radius:var(--radius-sm);padding:3px 8px;font-family:var(--font-code);font-size:11px;}
+.incChip i{cursor:pointer;opacity:.7;font-size:9px;}
+.cond{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px;margin-bottom:6px;}
+.cond .r1{display:flex;gap:5px;margin-bottom:5px;}.cond .r1 .select{flex:1;height:28px;font-size:11px;padding:0 7px;background:var(--elevated);}
+.cond .val2{height:28px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--elevated);padding:0 8px;font-size:11px;display:flex;align-items:center;gap:5px;}
+.cond .val2 .src{display:inline-flex;align-items:center;gap:4px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 5px;font-family:var(--font-code);font-size:10px;}
+.condAdd{font-size:11px;color:var(--accent);cursor:pointer;}
+.matchSel{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;}
+.matchSel .mini{height:22px;padding:0 7px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);display:inline-flex;align-items:center;gap:4px;font-family:var(--font-brand);font-size:10px;color:var(--accent);}
+.pathName{font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 7px;background:var(--elevated);}
+.pathName.up{color:var(--danger);border-color:var(--danger-muted);background:var(--danger-muted);}
+.mapRow{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.mapRow .ml{width:60px;flex-shrink:0;font-size:11.5px;color:var(--text-secondary);}
+.mapVal{flex:1;display:flex;align-items:center;gap:6px;height:30px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:0 8px;font-size:11.5px;}
+.mapVal .src{display:inline-flex;align-items:center;gap:4px;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:1px 5px;font-family:var(--font-code);font-size:10px;}
+.mapVal .src.item{background:rgba(8,145,178,.12);color:#0891b2;}
+.val{width:100%;min-height:32px;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:5px 9px;font-size:11.5px;font-family:var(--font-code);cursor:pointer;position:relative;}
+.val .ph{color:var(--text-tertiary);font-family:var(--font-body);}
+.val .pathv{color:var(--text-primary);font-weight:500;}
+.val .meta{margin-left:auto;color:var(--text-tertiary);font-size:10.5px;}
+.code{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:9px 10px;font-family:var(--font-code);font-size:11px;line-height:1.7;color:var(--text-secondary);white-space:pre;overflow-x:auto;}
+.code .kw{color:var(--code-keyword);}.code .fn{color:var(--code-function);}.code .st{color:var(--code-string);}.code .cm{color:var(--code-comment);}
+.code .phc{color:var(--text-tertiary);font-style:italic;font-family:var(--font-body);white-space:normal;}
+.code .dref{display:inline-flex;align-items:center;background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 5px;font-family:var(--font-code);font-size:10.5px;}
+.code .dref::before{content:'@';opacity:.55;margin-right:1px;}
+.runSample{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);cursor:pointer;}
+.sampleOk{margin-left:auto;font-size:10.5px;color:var(--success);display:inline-flex;align-items:center;gap:4px;font-family:var(--font-body);text-transform:none;letter-spacing:0;}
+
+/* values the assistant just set — pending until kept */
+.pending{border-color:color-mix(in srgb,var(--assistant) 45%,transparent) !important;background:var(--assistant-muted) !important;}
+
+/* the assistant dock — opens under the step header, above the fields.
+   Flat surface + Signal Line in the assistant color. */
+.dock{border-bottom:1px solid var(--border);border-left:2px solid var(--assistant);background:var(--surface);padding:var(--sp-3) var(--sp-4);}
+.dkRow{display:flex;align-items:center;gap:8px;}
+.dkInput{flex:1;display:flex;align-items:center;gap:7px;min-height:32px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);padding:5px 10px;font-size:12px;color:var(--text-primary);}
+.dkInput:focus-within{box-shadow:0 0 0 3px var(--assistant-glow);}
+.dkInput i{color:var(--assistant);font-size:11px;flex-shrink:0;}
+.dkInput .ph{color:var(--text-tertiary);}
+.dkGo{height:32px;width:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);background:var(--assistant);border:1px solid var(--assistant);color:#fff;cursor:pointer;font-size:12px;}
+.dkSummary{font-size:11.5px;line-height:1.55;color:var(--text-secondary);margin-top:9px;}
+.dkSummary b{color:var(--text-primary);}
+.dkSummary code{font-family:var(--font-code);font-size:10.5px;color:var(--assistant);}
+.dkActs{display:flex;align-items:center;gap:8px;margin-top:9px;}
+.dkBtn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:11.5px;font-weight:500;cursor:pointer;}
+.dkBtn.primary{background:var(--assistant);border-color:var(--assistant);color:#fff;}
+.dkActs .tiny{font-size:10.5px;color:var(--text-tertiary);}
+
+/* tree popover — the same field-anchored picker as manual mode */
+.treePop{position:absolute;top:calc(100% + 5px);left:0;width:300px;z-index:30;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);overflow:hidden;cursor:default;}
+.treeHd{display:flex;align-items:center;gap:7px;padding:7px 11px;border-bottom:1px solid var(--border-subtle);font-size:11.5px;color:var(--text-secondary);}
+.treeHd i{color:var(--accent);}
+.tree{padding:8px 11px;font-family:var(--font-code);font-size:10.5px;line-height:1.75;color:var(--text-secondary);}
+.tree .row{display:block;border-radius:var(--radius-sm);padding:0 4px;margin:0 -4px;cursor:pointer;}
+.tree .row:hover{background:var(--accent-muted);}
+.tree .k{color:var(--code-keyword);}.tree .s{color:var(--code-string);}.tree .n{color:var(--code-number);}.tree .muted{color:var(--text-tertiary);font-style:italic;}
+.tree .pick{background:var(--assistant-muted);outline:1px solid color-mix(in srgb,var(--assistant) 40%,transparent);}
+.tree .tag{margin-left:7px;font-family:var(--font-brand);font-size:7.5px;letter-spacing:.03em;text-transform:uppercase;color:#fff;background:var(--assistant);border-radius:var(--radius-full);padding:1px 6px;vertical-align:middle;}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="pageHd"><h1>Workflows — inline step assistant</h1><span class="sub">every step editor, with the assistant where it actually lives</span><button class="themeToggle" id="themeBtn"><i class="bi bi-sun"></i> Theme</button></div>
+  <p class="lead">Every step editor has one <b>✦ Assistant</b> button in its header. Clicking it opens a strip <b>docked under the header, above the fields</b> — you say what you want, and the answer lands in <b>the editor’s own fields</b>, tinted in the assistant color until you <b>Keep</b> (or Undo). There is no separate assistant view: pickers, trees, and @-references stay exactly where manual editing puts them. Below — each step type where the assistant does real work, in the canonical triage workflow (the API trigger uses the Orders example).</p>
+
+  <div class="rows">
+
+    <!-- ============ CODE ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><span class="rName">Code · Set due dates</span><span class="rWhen">— it writes the code, with @-references from what’s in scope</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> ① click ✦ — the assistant opens under the header</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><div><div class="insType">Code step</div><div class="insName">Set due dates</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i><span class="ph">What should this step do?</span></div><button class="dkGo"><i class="bi bi-arrow-up"></i></button></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Code</div>
+                <div class="code"><span class="phc">Write code, or ask the assistant. The result of the last expression is this step’s output.</span></div>
+                <div class="hintLine">Type <b>@</b> to insert data from a previous step.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> ② after asking — the code is in the editor, pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:#0e7490"><i class="bi bi-code-slash"></i></span><div><div class="insType">Code step</div><div class="insName">Set due dates</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“if a task has no due date, set it 2 business days after the email arrived”</div></div>
+              <div class="dkSummary">Done — it reads <code>Triage ▸ tasks</code> and fills any missing <code>due</code> from the email’s date, 2 business days out. The result is the same list, <code>due</code> always set.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button><span class="tiny">or edit the code below directly</span></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Code</div>
+                <div class="code pending"><span class="cm"># fill any task missing a due:</span>
+<span class="cm"># +2 business days</span>
+<span class="kw">return</span> [
+  {**t, <span class="st">"due"</span>: t[<span class="st">"due"</span>]
+    <span class="kw">or</span> <span class="fn">plus_days</span>(<span class="dref">On Client Email ▸ date</span>, <span class="st">2</span>)}
+  <span class="kw">for</span> t <span class="kw">in</span> <span class="dref">Triage ▸ tasks</span>
+]</div>
+                <div class="hintLine">Type <b>@</b> to insert data from a previous step.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>The assistant sees the same scope as <b>@</b> — upstream steps and their shapes. It knows <b>Triage ▸ tasks</b> is a list of {title, due} because Triage’s return shape says so. <b>Keep</b> clears the tint; <b>Undo</b> puts the editor back. Verify on a real email in the <b>Dry run</b>.</span></div>
+      </div>
+    </section>
+
+    <!-- ============ TRIGGER · API ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span><span class="rName">Trigger · API · When an order changes</span><span class="rWhen">— it picks the request, calls the API, and fills the paths from the response</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> ① after asking — it called the API; every path is pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span><div><div class="insType">Trigger · API</div><div class="insName">When an order changes</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“fire when a paid order changes”</div></div>
+              <div class="dkSummary">I called <code>GET /v1/orders</code> and read the response — the items are the <code>data.orders</code> list (24), <code>id</code> identifies an order, and <code>status</code> is what changes. Filtered to paid orders.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button><span class="tiny">click any field to change its pick</span></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Connection</div><div class="select sm"><span class="pfIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span> Orders API <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Event</div><div class="select sm">Changed item <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Request <span class="sampleOk"><i class="bi bi-check-circle"></i> 200 · 24 items</span></div>
+                <div class="miniRow"><div class="val pending" style="flex:0 0 64px;justify-content:center"><span class="pathv">GET</span></div><div class="val pending"><span class="pathv">/v1/orders</span></div></div>
+              </div>
+              <div class="field"><div class="fieldLabel">Items at</div><div class="val pending"><span class="pathv">data.orders</span><span class="meta">list · 24</span></div></div>
+              <div class="miniRow">
+                <div class="field"><div class="fieldLabel">Identify by</div><div class="val pending"><span class="pathv">id</span></div></div>
+                <div class="field"><div class="fieldLabel">Fires on change of</div><div class="val pending"><span class="pathv">status</span></div></div>
+              </div>
+              <div class="field"><div class="fieldLabel">Only when</div><div class="val pending"><span class="pathv">item.status == "paid"</span></div></div>
+              <div class="field"><div class="fieldLabel">Check every</div><div class="select sm">5 minutes <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> ② kept — click a field to override; the tree opens on the field</div>
+          <div class="insp" style="overflow:visible">
+            <div class="insHd"><span class="insIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span><div><div class="insType">Trigger · API</div><div class="insName">When an order changes</div></div><button class="asstBtn"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Connection</div><div class="select sm"><span class="pfIcon" style="background:#475569"><i class="bi bi-hdd-network"></i></span> Orders API <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Event</div><div class="select sm">Changed item <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Request <span class="sampleOk"><i class="bi bi-check-circle"></i> 200 · 24 items</span></div>
+                <div class="miniRow"><div class="val" style="flex:0 0 64px;justify-content:center"><span class="pathv">GET</span></div><div class="val"><span class="pathv">/v1/orders</span></div></div>
+                <div class="hintLine"><span class="runSample"><i class="bi bi-play-circle"></i> Run sample</span> — the response is where you pick the fields below.</div>
+              </div>
+              <div class="field"><div class="fieldLabel">Items at</div>
+                <div class="val" style="border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)"><span class="pathv">data.orders</span><span class="meta">list · 24</span>
+                  <div class="treePop">
+                    <div class="treeHd"><i class="bi bi-diagram-3"></i> Where are the items?</div>
+                    <div class="tree">{
+  <span class="k">"data"</span>: {
+<span class="row pick">    <span class="k">"orders"</span>: [ <span class="muted">24 items</span> ]<span class="tag">items at</span></span>
+  },
+  <span class="row"><span class="k">"meta"</span>: { <span class="k">"page"</span>: <span class="n">1</span>, <span class="k">"count"</span>: <span class="n">24</span> }</span>
+}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="miniRow">
+                <div class="field"><div class="fieldLabel">Identify by</div><div class="val"><span class="pathv">id</span></div></div>
+                <div class="field"><div class="fieldLabel">Fires on change of</div><div class="val"><span class="pathv">status</span></div></div>
+              </div>
+              <div class="field"><div class="fieldLabel">Only when</div><div class="val"><span class="pathv">item.status == "paid"</span></div></div>
+              <div class="field"><div class="fieldLabel">Check every</div><div class="select sm">5 minutes <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>This is the one trigger you can’t configure blind — you learn the shape by calling it. The assistant does what you’d do manually: pick a request, <b>Run sample</b>, point at the tree. After Keep the fields are just fields — clicking one opens the <b>same tree picker</b> manual mode uses, so overriding a pick is one click.</span></div>
+      </div>
+    </section>
+
+    <!-- ============ TRIGGER · EMAIL (conditions) ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><span class="rName">Trigger · On Client Email</span><span class="rWhen">— it builds the “Only when” conditions</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> after asking — conditions pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span><div><div class="insType">Trigger</div><div class="insName">On Client Email</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“only emails from jane@acme.com, sam@globex.com or li@initech.com”</div></div>
+              <div class="dkSummary">One condition — <code>from</code> is one of the 3 addresses you listed.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Watch for</div><div class="select"><span class="pfIcon" style="background:#ea4335"><i class="bi bi-envelope"></i></span> Email · new message <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="miniRow"><div class="field"><div class="fieldLabel">Integration</div><div class="select sm"><span class="pfIcon" style="background:#ea4335"><i class="bi bi-google"></i></span> work Gmail <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="field"><div class="fieldLabel">Folder</div><div class="select sm">Inbox <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div></div>
+              <div class="field"><div class="fieldLabel">Only when</div>
+                <div class="matchSel">Match <span class="mini">ALL <i class="bi bi-chevron-down"></i></span> of these:</div>
+                <div class="cond pending"><div class="r1"><div class="select">from <span class="chev"><i class="bi bi-chevron-down"></i></span></div><div class="select">is one of <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="val2"><span class="src">jane@acme.com</span> +2</div></div>
+                <div class="condAdd"><i class="bi bi-plus"></i> Add condition</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>Same pattern on the simple triggers — the ask becomes <b>no-code conditions</b> you can read and edit, not hidden logic. Useful when the rule is fiddly to click together (“weekdays, from these people, subject mentions an invoice”).</span></div>
+      </div>
+    </section>
+
+    <!-- ============ AGENT ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><span class="rName">Agent · Triage</span><span class="rWhen">— it drafts the instruction, picks the context, and proposes a return shape</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> after asking — instruction, context and shape pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName">Triage</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“read each client email — how urgent is it, what’s it about, and what tasks does it ask for”</div></div>
+              <div class="dkSummary">I wrote the instruction, included the email fields it needs, and set a return shape — <code>priority</code> is an enum so a branch can route on it, <code>tasks</code> is a list so a step can run per item.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button><span class="tiny">everything below is editable</span></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Instruction</div><div class="textarea pending">Read the client’s email. Set priority (urgent if it needs a reply today or names a deadline), a one-line summary, the client name, and any action items with due dates.</div></div>
+              <div class="field"><div class="fieldLabel">Agent profile</div><div class="select"><span class="pfIcon" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Triage <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Include as context</div>
+                <div class="incChips"><span class="incChip pending">On Client Email ▸ subject <i class="bi bi-x"></i></span><span class="incChip pending">On Client Email ▸ body <i class="bi bi-x"></i></span><span class="incChip pending">On Client Email ▸ from <i class="bi bi-x"></i></span></div>
+                <div class="linkRow"><i class="bi bi-plus"></i> Choose data</div>
+              </div>
+              <div class="field"><div class="fieldLabel">Return a defined shape</div><div style="margin-bottom:8px"><span class="toggle"></span></div>
+                <div class="shapeBox pending"><div class="shapeRow"><span class="k">priority</span>: <span class="t">enum</span> <span class="enumVals">urgent · normal</span></div><div class="shapeRow"><span class="k">summary</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">client</span>: <span class="t">text</span></div><div class="shapeRow"><span class="k">tasks</span>: <span class="t">list of {title, due}</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>The agent step has the most surface to fill — instruction, context, shape — and they have to <b>agree with each other</b> and with downstream steps. The assistant proposes them as one coherent set; each lands in its own field, so you can keep the shape and rewrite the instruction.</span></div>
+      </div>
+    </section>
+
+    <!-- ============ TOOL ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span><span class="rName">Tool · Create task</span><span class="rWhen">— it picks the tool, the run mode, and maps the inputs</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> after asking — tool, mode and mappings pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span><div><div class="insType">Tool step</div><div class="insName">Create task</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“put each task on my work calendar”</div></div>
+              <div class="dkSummary"><code>Create calendar event</code>, once per task — it runs <b>per item</b> over <code>Set due dates ▸ result</code> and maps each task’s <code>title</code> and <code>due</code>.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Tool</div><div class="select pending"><span class="pfIcon" style="background:#4285f4"><i class="bi bi-calendar-plus"></i></span> Create calendar event <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Integration</div><div class="select pending"><span class="pfIcon" style="background:#4285f4"><i class="bi bi-google"></i></span> work Calendar <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div>
+              <div class="field"><div class="fieldLabel">Run mode</div><div class="segmented pending"><div class="seg">Run once</div><div class="seg on"><i class="bi bi-arrow-repeat"></i> Per item</div></div>
+                <div class="mapRow" style="margin-top:8px"><span class="ml">For each</span><div class="mapVal pending"><span class="src"><i class="bi bi-list-ul"></i> Set due dates ▸ result</span></div></div>
+              </div>
+              <div class="field"><div class="fieldLabel">Inputs</div>
+                <div class="mapRow"><span class="ml">Summary</span><div class="mapVal pending"><span class="src item">item ▸ title</span></div></div>
+                <div class="mapRow"><span class="ml">Date</span><div class="mapVal pending"><span class="src item">item ▸ due</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>“Each task” in the ask is what flips it to <b>per item</b> — there’s a list upstream that matches. The mappings are ordinary mappings; click one to repoint it with the usual data picker.</span></div>
+      </div>
+    </section>
+
+    <!-- ============ BRANCH ============ -->
+    <section>
+      <div class="rowHd"><span class="rIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><span class="rName">Branch · Urgent?</span><span class="rWhen">— it builds the paths and their rules</span></div>
+      <div class="bench">
+
+        <div class="col">
+          <div class="cap"><i class="bi bi-stars"></i> after asking — paths pending</div>
+          <div class="insp">
+            <div class="insHd"><span class="insIcon" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span><div><div class="insType">Branch step</div><div class="insName">Urgent?</div></div><button class="asstBtn on"><i class="bi bi-stars"></i> Assistant</button></div>
+            <div class="dock">
+              <div class="dkRow"><div class="dkInput"><i class="bi bi-stars"></i>“urgent emails get a reply drafted; everything else just gets labeled”</div></div>
+              <div class="dkSummary">Two paths — <b>Urgent</b> when <code>Triage ▸ priority</code> is <code>urgent</code>; everything else falls through to <b>Normal</b>. Connect each path’s steps on the canvas.</div>
+              <div class="dkActs"><button class="dkBtn primary"><i class="bi bi-check-lg"></i> Keep</button><button class="dkBtn">Undo</button></div>
+            </div>
+            <div class="insBody">
+              <div class="field"><div class="fieldLabel">Decide by</div><div class="segmented"><div class="seg on">No-code rule</div><div class="seg">Expression</div></div></div>
+              <div class="field"><div class="fieldLabel">Paths <span style="margin-left:auto;font-family:var(--font-body);text-transform:none;letter-spacing:0;color:var(--text-tertiary)">first match wins</span></div>
+                <div class="cond pending"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-family:var(--font-brand);font-size:8.5px;color:var(--text-tertiary)">PATH</span><span class="pathName up">Urgent</span></div><div class="r1"><div class="select">Triage ▸ priority <span class="chev"><i class="bi bi-chevron-down"></i></span></div><div class="select">is <span class="chev"><i class="bi bi-chevron-down"></i></span></div></div><div class="val2"><span class="src">urgent</span></div></div>
+                <div class="cond pending" style="display:flex;align-items:center;gap:7px;padding:8px 10px"><i class="bi bi-arrow-return-right" style="color:var(--text-tertiary)"></i> Otherwise → <span class="pathName">Normal</span> <span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">default</span></div>
+                <div class="condAdd"><i class="bi bi-plus"></i> Add a path</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sideNote"><i class="bi bi-info-circle"></i><span>It can only rule on data that’s in scope — here <b>Triage ▸ priority</b>, whose enum says the possible values. The paths it names become the edges on the canvas, same as adding them by hand.</span></div>
+      </div>
+    </section>
+
+  </div>
+</div>
+<script>
+  const root=document.documentElement,b=document.getElementById('themeBtn');
+  b.onclick=()=>{const d=root.getAttribute('data-theme')==='dark';root.setAttribute('data-theme',d?'light':'dark');b.querySelector('i').className=d?'bi bi-sun':'bi bi-moon-stars';};
+</script>
+</body>
+</html>

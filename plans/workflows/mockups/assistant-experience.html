@@ -55,7 +55,7 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 .n-branch .nIcon{background:var(--warning);}.n-branch{border-top:2px solid var(--warning);}
 .n-approval .nIcon{background:#db2777;}.n-approval{border-top:2px solid #db2777;}
 .n-code .nIcon{background:#0e7490;}.n-code{border-top:2px solid #0e7490;}
-.n-loop .nIcon{background:#0891b2;}.n-loop{border-top:2px solid #0891b2;}
+.perItem{position:absolute;top:-8px;left:9px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;font-family:var(--font-code);font-size:8px;background:#0891b2;color:#fff;border:2px solid var(--canvas);border-radius:var(--radius-full);padding:0 5px 0 3px;}
 .newBadge{position:absolute;top:-8px;left:-6px;font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:1px 5px;}
 .conn{width:24px;height:2px;background:var(--border-strong);flex-shrink:0;}
 .conn.dashed{background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 9px);}
@@ -63,18 +63,7 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 .branchRow{display:flex;align-items:center;}
 .branchLbl{font-family:var(--font-code);font-size:8.5px;padding:1px 5px;border-radius:var(--radius-full);margin-right:5px;}
 .branchLbl.up{background:var(--danger-muted);color:var(--danger);}.branchLbl.norm{background:var(--surface);color:var(--text-secondary);}
-.nodeAsk{position:absolute;top:-9px;right:-9px;width:21px;height:21px;border-radius:var(--radius-full);background:var(--accent);color:#fff;border:2px solid var(--canvas);display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;box-shadow:var(--shadow-sm);}
 
-.inspector{flex-shrink:0;width:240px;border-left:1px solid var(--border);background:var(--elevated);display:flex;flex-direction:column;}
-.insHd{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
-.insHd .insIcon{width:22px;height:22px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;}
-.insType{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
-.insName{font-size:12.5px;font-weight:600;}
-.insBody{flex:1;overflow-y:auto;padding:var(--sp-4);}
-.field{margin-bottom:var(--sp-4);}
-.fieldLabel{font-family:var(--font-brand);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:5px;}
-.textarea{width:100%;min-height:54px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px 9px;font-size:12px;line-height:1.5;}
-.token{background:var(--accent-muted);color:var(--accent);border-radius:var(--radius-sm);padding:0 4px;font-family:var(--font-code);font-size:10.5px;}
 
 /* Assistant panel (Option B) */
 .asstPanel{width:330px;flex-shrink:0;border-left:1px solid var(--border);background:var(--canvas);display:flex;flex-direction:column;}
@@ -82,10 +71,6 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 .apHd .ttl{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;}
 .apHd .ttl i{color:var(--accent);}
 .apHd .x{margin-left:auto;color:var(--text-tertiary);cursor:pointer;font-size:14px;}
-.scopeBar{display:flex;align-items:center;gap:6px;padding:7px var(--sp-4);border-bottom:1px solid var(--border-subtle);background:var(--surface);}
-.scopeBar .lbl{font-size:10.5px;color:var(--text-tertiary);}
-.scopeChip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-full);padding:2px 8px;color:var(--text-secondary);cursor:pointer;}
-.scopeChip .sIco{color:var(--accent);}.scopeChip .chev{color:var(--text-tertiary);font-size:9px;}
 .apBody{flex:1;overflow-y:auto;padding:var(--sp-4);display:flex;flex-direction:column;}
 .apFoot{padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border);}
 .msg{font-size:11.5px;line-height:1.5;border-radius:var(--radius-md);padding:7px 10px;margin-bottom:8px;max-width:92%;}
@@ -106,27 +91,33 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 .pvRow.edit .op{color:var(--warning);}
 .pvRow .chip{display:inline-flex;align-items:center;gap:4px;}
 .pvRow .chip .ic{width:14px;height:14px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;}
+/* inline before/after inside a change card */
+.pvDiff{margin:2px 10px 8px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;font-size:11px;line-height:1.5;}
+.pvDiff .row{padding:6px 9px;}
+.pvDiff .old{background:var(--danger-muted);color:var(--text-secondary);}
+.pvDiff .new{background:var(--success-muted);color:var(--text-primary);border-top:1px solid var(--border-subtle);}
+.pvDiff .tag{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.04em;margin-right:6px;opacity:.7;}
 .pvActions{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border-subtle);}
 .pvActions .grow{flex:1;}
 .pvBtn{height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:11.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
 .pvBtn.apply{background:var(--accent);border-color:var(--accent);color:#fff;}
 .pvBtn.ghost{border-color:transparent;color:var(--text-tertiary);}
 
-/* Diff (step edit) */
-.diff{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;font-size:11px;line-height:1.5;margin-bottom:6px;}
-.diff .row{padding:6px 9px;font-family:var(--font-body);}
-.diff .old{background:var(--danger-muted);color:var(--text-secondary);}
-.diff .new{background:var(--success-muted);color:var(--text-primary);border-top:1px solid var(--border-subtle);}
-.diff .tag{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.04em;margin-right:6px;opacity:.7;}
 
-/* Inline one-shot popover */
-.askPop{position:absolute;z-index:20;width:260px;background:var(--elevated);border:1px solid var(--accent);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:10px;}
-.askPop .apTitle{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;margin-bottom:6px;}
-.askPop .apTitle i{color:var(--accent);}
-.askPop .apTitle .scope{margin-left:auto;font-family:var(--font-brand);font-size:8.5px;color:var(--text-tertiary);text-transform:uppercase;}
-.askPop .pvMini{margin-top:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px 9px;font-size:11px;color:var(--text-secondary);}
-.askPop .pvMini b{color:var(--text-primary);}
-.askPop .miniActions{display:flex;gap:6px;margin-top:8px;}
+/* step editor (inspector) — coexists with the panel */
+.inspector{width:280px;flex-shrink:0;border-left:1px solid var(--border);background:var(--elevated);display:flex;flex-direction:column;}
+.insHd{display:flex;align-items:center;gap:8px;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
+.insHd .insIcon{width:22px;height:22px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;}
+.insType{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.insName{font-size:12.5px;font-weight:600;}
+.asstBtn{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--accent);font-size:11px;font-weight:500;cursor:pointer;}
+.insBody{flex:1;overflow-y:auto;padding:var(--sp-4);}
+.field{margin-bottom:var(--sp-4);}
+.fieldLabel{font-family:var(--font-brand);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:5px;}
+.textarea{width:100%;min-height:54px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px 9px;font-size:12px;line-height:1.5;}
+.pending{border-color:rgba(37,99,235,.45) !important;background:var(--accent-muted) !important;}
+.editBadge{position:absolute;top:-8px;left:-6px;font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;background:var(--warning);color:#fff;border-radius:var(--radius-sm);padding:1px 5px;}
+
 .zoom{position:absolute;right:var(--sp-4);bottom:var(--sp-4);display:flex;flex-direction:column;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);z-index:3;}
 .zoom button{width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);border:none;background:none;cursor:pointer;border-bottom:1px solid var(--border-subtle);}
 .zoom button:last-child{border-bottom:none;}
@@ -216,7 +207,7 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
     <div class="device"><div class="app">
       <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Untitled workflow</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
       <div class="workspace">
-        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
         <div class="canvasWrap">
           <div class="drafting">
             <div class="ghostSkel"><div class="gn"></div><div class="gc"></div><div class="gn"></div><div class="gc"></div><div class="gn"></div></div>
@@ -227,7 +218,6 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
         </div>
         <div class="asstPanel">
           <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
-          <div class="scopeBar"><span class="lbl">Scope</span><span class="scopeChip"><i class="bi bi-diagram-3 sIco"></i> Whole workflow <i class="bi bi-chevron-down chev"></i></span></div>
           <div class="apBody">
             <div class="msg user">when a client emails, triage it: create tasks from any action items, and draft a reply for urgent ones to approve before sending</div>
             <div class="msg ai"><span class="thinkRow"><i class="bi bi-stars" style="color:var(--accent)"></i> Drafting a plan <span class="thinkDots"><span></span><span></span><span></span></span></span></div>
@@ -240,45 +230,46 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 
   <!-- ════════ 3 — Build from a prompt (proposed plan preview) ════════ -->
   <div class="screen">
-    <div class="caption"><span class="capNum">3</span><div><div class="capTitle">THE ASSISTANT RETURNS A PLAN — PREVIEW</div><div class="capDesc">The drafted plan lands as a <b>preview</b> — ghosted steps on the canvas + a change list in the chat. Nothing is real until you Apply (and you can Test the dry-run first).</div></div></div>
+    <div class="caption"><span class="capNum">3</span><div><div class="capTitle">THE ASSISTANT RETURNS A PLAN — PREVIEW</div><div class="capDesc">The drafted plan lands as a <b>preview</b> — ghosted steps on the canvas + a change list in the chat. Nothing is real until you Apply; then walk it on a real email with a <b>Dry run</b>.</div></div></div>
     <div class="device"><div class="app">
       <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Untitled workflow</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
       <div class="workspace">
-        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
         <div class="canvasWrap"><div class="canvasInner"><div class="flow">
           <div class="node n-trigger proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch</div></div>
           <div class="conn dashed"></div>
-          <div class="node n-agent proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">Triage</div></div>
+          <div class="node n-agent proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
           <div class="conn dashed"></div>
-          <div class="node n-code proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Clean items</div></div>
+          <div class="node n-code proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
           <div class="conn dashed"></div>
-          <div class="node n-loop proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-arrow-repeat"></i></span> Loop</div><div class="nName">Create tasks</div></div>
+          <div class="node n-tool proposed"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
           <div class="conn dashed"></div>
           <div class="node n-branch proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
           <div class="conn dashed"></div>
           <div class="branchCol">
             <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent proposed"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn dashed"></div><div class="node n-approval proposed"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div><div class="conn dashed"></div><div class="node n-tool proposed"><div class="nType"><span class="nIcon"><i class="bi bi-send"></i></span> Tool</div><div class="nName">Send reply</div></div></div>
-            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool proposed"><div class="nType"><span class="nIcon"><i class="bi bi-folder"></i></span> Tool</div><div class="nName">File &amp; log</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool proposed"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div></div>
           </div>
         </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
         <div class="asstPanel">
           <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
-          <div class="scopeBar"><span class="lbl">Scope</span><span class="scopeChip"><i class="bi bi-diagram-3 sIco"></i> Whole workflow <i class="bi bi-chevron-down chev"></i></span></div>
           <div class="apBody">
-            <div class="msg user">When a client emails, triage it; for urgent ones draft a reply and send after I approve; file the rest.</div>
-            <div class="msg ai">Here’s a plan — review the proposed steps on the canvas, then apply:</div>
+            <div class="msg user">when a client emails, triage it: create tasks from any action items, and draft a reply for urgent ones to approve before sending</div>
+            <div class="msg ai">Here’s a plan — review the proposed steps on the canvas, then apply. Emails that aren’t urgent just get labeled <b>triaged</b>:</div>
             <div class="preview">
-              <div class="pvHd"><i class="bi bi-eye"></i> Proposed workflow <span class="cnt">8 steps</span></div>
+              <div class="pvHd"><i class="bi bi-eye"></i> Proposed workflow <span class="cnt">9 steps</span></div>
               <div class="pvList">
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span> Watch inbox · work Gmail</span></div>
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Triage (Triage)</span></div>
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Clean items</span></div>
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#0891b2"><i class="bi bi-arrow-repeat"></i></span> Create a task per item</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span> On Client Email · work Gmail</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Triage</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code · Set due dates</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span> Tool · Create task — per item · Calendar</span></div>
                 <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch · Urgent?</span></div>
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#db2777"><i class="bi bi-person-check"></i></span> Draft + approval before send</span></div>
-                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-send"></i></span> Send reply · work Gmail</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Draft reply</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval · Review</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-send"></i></span> Tool · Send reply · work Gmail</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-tag"></i></span> Tool · Label “triaged”</span></div>
               </div>
-              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn"><i class="bi bi-magic"></i> Test</button><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
             </div>
           </div>
           <div class="apFoot"><div class="asstInput"><input placeholder="Refine the plan, or ask for changes…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
@@ -289,36 +280,39 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
 
   <!-- ════════ 2 — Add a step (preview a single change) ════════ -->
   <div class="screen">
-    <div class="caption"><span class="capNum">4</span><div><div class="capTitle">GROW AN EXISTING FLOW — PREVIEW A SINGLE CHANGE</div><div class="capDesc">Ask for one change to a built workflow. The assistant shows exactly what it will do — the new step appears ghosted in place, the chat lists the diff — and you Apply or Test it. Existing steps stay solid; only the proposal is dashed.</div></div></div>
+    <div class="caption"><span class="capNum">4</span><div><div class="capTitle">GROW AN EXISTING FLOW — PREVIEW A SINGLE CHANGE</div><div class="capDesc">Ask for one change to a built workflow. The assistant shows exactly what it will do — the new step appears ghosted in place, the chat lists the diff — and you Apply it. Existing steps stay solid; only the proposal is dashed.</div></div></div>
     <div class="device"><div class="app">
       <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
       <div class="workspace">
-        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
         <div class="canvasWrap"><div class="canvasInner"><div class="flow">
           <div class="node n-trigger"><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch · 5m</div></div>
           <div class="conn"></div>
-          <div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">Triage</div></div>
+          <div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
+          <div class="conn"></div>
+          <div class="node n-code"><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
+          <div class="conn"></div>
+          <div class="node n-tool"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
           <div class="conn"></div>
           <div class="node n-branch"><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
           <div class="conn"></div>
           <div class="branchCol">
-            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-approval"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div></div>
-            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-folder"></i></span> Tool</div><div class="nName">File &amp; log</div></div><div class="conn dashed"></div><div class="node n-tool proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-table"></i></span> Tool</div><div class="nName">Append row</div><div class="nMeta">Sheets</div></div></div>
+            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn"></div><div class="node n-approval"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div><div class="conn"></div><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-send"></i></span> Tool</div><div class="nName">Send reply</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div><div class="conn dashed"></div><div class="node n-tool proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-table"></i></span> Tool</div><div class="nName">Append row</div><div class="nMeta">Sheets</div></div></div>
           </div>
         </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
         <div class="asstPanel">
           <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
-          <div class="scopeBar"><span class="lbl">Scope</span><span class="scopeChip"><i class="bi bi-diagram-3 sIco"></i> Whole workflow <i class="bi bi-chevron-down chev"></i></span></div>
           <div class="apBody">
             <div class="msg user">also log the normal ones to a spreadsheet</div>
-            <div class="msg ai">I’ll add a Tool step after “File &amp; log” on the normal path:</div>
+            <div class="msg ai">I’ll add a Tool step on the normal path:</div>
             <div class="preview">
               <div class="pvHd"><i class="bi bi-eye"></i> Proposed change <span class="cnt">1 change</span></div>
               <div class="pvList">
                 <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-table"></i></span> Tool · Append row → Google Sheets</span></div>
-                <div class="pvRow" style="color:var(--text-tertiary);font-size:10.5px;padding-left:21px">on the <b style="color:var(--text-secondary)">normal</b> branch, after “File &amp; log”</div>
+                <div class="pvRow" style="color:var(--text-tertiary);font-size:10.5px;padding-left:21px">on the <b style="color:var(--text-secondary)">normal</b> branch, after Label “triaged”</div>
               </div>
-              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn"><i class="bi bi-magic"></i> Test</button><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
             </div>
             <div class="msg ai">Want me to map which fields go into the row?</div>
           </div>
@@ -328,66 +322,54 @@ body{background:var(--surface);font-family:var(--font-body);color:var(--text-pri
     </div></div>
   </div>
 
-  <!-- ════════ 3 — Select-to-scope step edit (diff) ════════ -->
+  <!-- ════════ 5 — Ask the panel to edit a step ════════ -->
   <div class="screen">
-    <div class="caption"><span class="capNum">5</span><div><div class="capTitle">SELECT A STEP → SCOPE FOLLOWS → EDIT</div><div class="capDesc">Selecting a node auto-narrows the scope chip to it. Now requests act on that step, and edits come back as a before/after diff you Apply or Test — no guessing what changed.</div></div></div>
+    <div class="caption"><span class="capNum">5</span><div><div class="capTitle">ASK THE PANEL TO EDIT A STEP</div><div class="capDesc">Name a step in the panel and the change comes back as a one-change preview <b>with the before/after right in the card</b> — you can read and Apply it without opening anything. The node gets an <b>EDIT</b> badge, and if the step’s editor is open (as here) it shows the pending value in its fields too. Apply in the panel = Keep in the editor (slide 8): one pending state, shown wherever you’re looking.</div></div></div>
     <div class="device"><div class="app">
-      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-play"></i> Test step</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
+      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
       <div class="workspace">
-        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div></div>
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div></div>
         <div class="canvasWrap"><div class="canvasInner"><div class="flow">
           <div class="node n-trigger"><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch · 5m</div></div>
           <div class="conn"></div>
-          <div class="node n-agent selected"><button class="nodeAsk"><i class="bi bi-stars"></i></button><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">Triage</div></div>
+          <div class="node n-agent selected"><span class="editBadge">EDIT</span><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
+          <div class="conn"></div>
+          <div class="node n-code"><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
+          <div class="conn"></div>
+          <div class="node n-tool"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
           <div class="conn"></div>
           <div class="node n-branch"><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
+          <div class="conn"></div>
+          <div class="branchCol">
+            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn"></div><div class="node n-approval"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div></div>
+          </div>
         </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
         <div class="inspector">
-          <div class="insHd"><span class="insIcon"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName">Triage</div></div></div>
-          <div class="insBody"><div class="field"><div class="fieldLabel">Instruction</div><div class="textarea">Decide how urgent the email is, and pull out any action items.</div></div></div>
+          <div class="insHd"><span class="insIcon"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName">Triage</div></div><button class="asstBtn"><i class="bi bi-stars"></i></button></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Instruction</div><div class="textarea pending">Read the client’s email. Mark “urgent” only if the sender asks for a reply today or names a deadline; otherwise “normal.” Set a one-line summary, the client name, and any action items with due dates.</div></div>
+            <div class="field"><div class="fieldLabel">Agent profile</div><div class="textarea" style="min-height:0;padding:7px 9px">Triage</div></div>
+          </div>
         </div>
         <div class="asstPanel">
           <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
-          <div class="scopeBar"><span class="lbl">Scope</span><span class="scopeChip"><i class="bi bi-bullseye sIco"></i> This step: Triage <i class="bi bi-chevron-down chev"></i></span></div>
           <div class="apBody">
-            <div class="msg user">be stricter — only “urgent” if they ask for a reply today or mention a deadline</div>
-            <div class="msg ai">Updated <b>Triage</b>’s instruction:</div>
-            <div class="diff">
-              <div class="row old"><span class="tag">WAS</span>Decide how urgent the email is.</div>
-              <div class="row new"><span class="tag">NOW</span>Mark “urgent” only if the sender asks for a reply today or names a deadline; otherwise “normal.”</div>
+            <div class="msg user">make Triage stricter — only “urgent” if they ask for a reply today or name a deadline</div>
+            <div class="msg ai">I’ll tighten <b>Triage</b>’s instruction:</div>
+            <div class="preview">
+              <div class="pvHd"><i class="bi bi-eye"></i> Proposed change <span class="cnt">1 change</span></div>
+              <div class="pvList">
+                <div class="pvRow edit"><span class="op">~</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Triage — instruction</span></div>
+              </div>
+              <div class="pvDiff">
+                <div class="row old"><span class="tag">WAS</span>Read the client’s email. Set priority (urgent if it needs a reply today or names a deadline)…</div>
+                <div class="row new"><span class="tag">NOW</span>Read the client’s email. Mark “urgent” only if the sender asks for a reply today or names a deadline; otherwise “normal.”…</div>
+              </div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
             </div>
-            <div class="preview" style="border-color:var(--border)"><div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn"><i class="bi bi-play"></i> Test step</button><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div></div>
           </div>
-          <div class="apFoot"><div class="asstInput"><input placeholder="Ask about Triage…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
-        </div>
-      </div>
-    </div></div>
-  </div>
-
-  <!-- ════════ 4 — Inline one-shot ask (Cmd-K) ════════ -->
-  <div class="screen">
-    <div class="caption"><span class="capNum">6</span><div><div class="capTitle">INLINE ONE-SHOT ASK (✦ ON A NODE)</div><div class="capDesc">For a quick local tweak you don’t want a conversation for: the ✦ on a node opens a one-shot prompt scoped to just that step. It returns a small preview to Apply or Test — the panel stays closed.</div></div></div>
-    <div class="device"><div class="app">
-      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-play"></i> Test step</button><button class="btn asstToggle"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
-      <div class="workspace">
-        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div></div>
-        <div class="canvasWrap"><div class="canvasInner"><div class="flow">
-          <div class="node n-trigger"><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch · 5m</div></div>
-          <div class="conn"></div>
-          <div class="node n-agent selected"><button class="nodeAsk"><i class="bi bi-stars"></i></button><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">Triage</div></div>
-          <div class="conn"></div>
-          <div class="node n-branch"><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
-          <!-- one-shot popover anchored near the selected node -->
-          <div class="askPop" style="left:150px;top:150px">
-            <div class="apTitle"><i class="bi bi-stars"></i> Ask <span class="scope">edits Triage only</span></div>
-            <div class="asstInput"><input value="also capture the client’s deadline if they mention one" /><button class="send"><i class="bi bi-arrow-up"></i></button></div>
-            <div class="pvMini">Will add <b>deadline</b> (date) to the returned shape.</div>
-            <div class="miniActions"><button class="pvBtn ghost">Discard</button><div style="flex:1"></div><button class="pvBtn"><i class="bi bi-play"></i> Test</button><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
-          </div>
-        </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
-        <div class="inspector">
-          <div class="insHd"><span class="insIcon"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName">Triage</div></div></div>
-          <div class="insBody"><div class="field"><div class="fieldLabel">Instruction</div><div class="textarea">Decide how urgent the email is, and pull out any action items.</div></div></div>
+          <div class="apFoot"><div class="asstInput"><input placeholder="Ask anything…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
         </div>
       </div>
     </div></div>
