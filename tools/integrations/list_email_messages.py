@@ -46,7 +46,7 @@ async def list_email_messages(integration_id: str, folder: str, limit: int = 20)
     headers = result.get("headers", [])
     if not headers:
         return f"No messages in {folder!r}."
-    lines = [format_envelope(h) for h in headers]
+    lines = [format_envelope(h, integration_id) for h in headers]
     return f"Recent messages in {folder!r} ({len(lines)}):\n" + "\n".join(lines)
 
 
@@ -68,6 +68,6 @@ def build_list_email_messages_tool(integration_ids: Iterable[str]) -> Callable[.
         "    limit: Maximum messages to return (1-200, default 20).\n\n"
         "Returns:\n"
         "    Plain text — one envelope per line, formatted as "
-        '"- [uid] date  sender  —  subject".\n'
+        '"- [uid] (integration) date  sender  —  subject".\n'
     )
     return _list_email_messages
