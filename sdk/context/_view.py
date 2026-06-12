@@ -148,6 +148,13 @@ def build_llm_history(
                 content = _augment_with_attachments(content, e["attachments"])
             messages.append({"role": "user", "content": content})
         elif t == "iteration":
+            # An assistant message with neither content nor tool calls (e.g.
+            # a thinking-only partial captured when the user stopped
+            # mid-stream) is not valid provider-facing history — OpenAI-style
+            # APIs require text or tool calls on assistant messages. The
+            # event stays in the log for the UI; the model never sees it.
+            if not e.get("content") and not (e.get("tool_calls") or []):
+                continue
             msg: dict[str, Any] = {"role": "assistant"}
             if e.get("thinking"):
                 msg["thinking"] = e["thinking"]

@@ -45,6 +45,28 @@ describe('Turn', () => {
         expect(screen.getByTestId('message-assistant')).toHaveTextContent('hello back');
     });
 
+    it('shows a thinking placeholder while streaming before any assistant output', () => {
+        const turn = _turn([_userPrompt('hi')]);
+        render(<Turn turn={turn} streaming />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Thinking');
+    });
+
+    it('shows no placeholder when the turn is not streaming', () => {
+        const turn = _turn([_userPrompt('hi')]);
+        render(<Turn turn={turn} streaming={false} />);
+        expect(screen.queryByTestId('ephemeral-status')).toBeNull();
+    });
+
+    it('renders an error child as a turn-error block with the message', () => {
+        const turn = _turn([
+            _userPrompt('do it'),
+            { kind: 'error', id: 'e1', message: 'usage limit reached', retryable: false },
+        ]);
+        render(<Turn turn={turn} />);
+        const err = screen.getByTestId('turn-error');
+        expect(err).toHaveTextContent('usage limit reached');
+    });
+
     it('merges consecutive iterations into one assistant element', () => {
         const turn = _turn([
             _userPrompt('go'),

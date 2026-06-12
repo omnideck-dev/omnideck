@@ -28,7 +28,11 @@ logger = logging.getLogger(__name__)
 # events: streaming ``content`` deltas (rolled up into ``iteration``),
 # the legacy ``tool_call`` notification (carried inside ``iteration``),
 # turn boundary signals, and UI-only previews (generation_preview,
-# audio_playback, desktop_active).
+# audio_playback, desktop_active). Panel state is also excluded — the UI
+# shows only the latest snapshot per browser tab and the last N terminal
+# commands, so those live in bounded overwrite-in-place sidecars
+# (browser_tabs.json, terminal.json) instead of growing the append-only
+# log forever (real logs were >90% screenshots before the split).
 _PERSISTED_TYPES: frozenset[str] = frozenset({
     "user_message",
     "iteration",
@@ -38,8 +42,6 @@ _PERSISTED_TYPES: frozenset[str] = frozenset({
     "agent_completed",
     "spawn_requested",
     "file_output",
-    "browser_screenshot",
-    "terminal_output",
     "tool_created",
     "context_usage",
 })

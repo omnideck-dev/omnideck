@@ -12,7 +12,7 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
+function ChatInput({ onSend, onStop, isStreaming, stopRequested, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
 
@@ -167,9 +167,11 @@ function ChatInput({ onSend, onStop, isStreaming, attachment, draft, onDraftCons
                         <button
                             type="button"
                             className={`${styles.sendButton} ${styles.stopButton}`}
-                            title="Stop generation"
-                            aria-label="Stop generation"
+                            data-testid="chat-stop-btn"
+                            title={stopRequested ? 'Stopping…' : 'Stop generation'}
+                            aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
                             onClick={onStop}
+                            disabled={stopRequested}
                         >
                             <StopIcon />
                         </button>

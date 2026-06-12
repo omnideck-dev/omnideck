@@ -122,9 +122,8 @@ const _PERSISTED_EVENT_TYPES = new Set([
     'tool_result',
     'compaction',
     'file_output',
-    'browser_screenshot',
-    'terminal_output',
     'spawn_requested',
+    'error',
 ]);
 
 /**
@@ -203,8 +202,8 @@ function _summarizeToolArgs(raw) {
  *
  * One Turn per root `agent_started` event. Each Turn has an ordered
  * `children[]` of UI items (kind ∈ {'user_prompt', 'iteration',
- * 'tool_result', 'file_output', 'compaction', 'terminal_output',
- * 'browser_screenshot'}). Compaction children are repositioned so each
+ * 'tool_result', 'file_output', 'compaction', 'error'}).
+ * Compaction children are repositioned so each
  * sits right before the iteration referenced by its `keptFromId` —
  * matching what the strategy actually drew as the
  * summarized/preserved boundary.
@@ -235,7 +234,22 @@ export function _buildTurns(events) {
         if (t === 'agent_completed') continue;
         if (t === 'context_usage') continue;
 
-        if (!currentTurn) continue;
+        if (!currentTurn) {
+            // A root error with no turn yet means the turn failed before
+            // the agent ever started (setup failure) — synthesize a turn
+            // so the error still shows in the chat instead of being
+            // dropped with the rest of the orphan events.
+            if (t === 'error' && (ev.depth ?? 0) === 0) {
+                currentTurn = {
+                    id: `turn_${turns.length}`,
+                    agentId: ev.agent_id || null,
+                    children: [],
+                };
+                turns.push(currentTurn);
+            } else {
+                continue;
+            }
+        }
 
         // Everything from a sub-agent (depth>0) lives in the agent
         // activity view, not the main chat. Without this filter the
@@ -298,12 +312,11 @@ export function _buildTurns(events) {
                 id: ev.id,
                 correlationId: ev.correlation_id || null,
             });
-        } else if (t === 'terminal_output' || t === 'browser_screenshot') {
+        } else if (t === 'error') {
             currentTurn.children.push({
-                kind: t,
+                kind: 'error',
                 id: ev.id,
-                timestamp: ev.timestamp,
-                raw: ev,
+                message: ev.message || 'An error occurred.',
             });
         }
     }
@@ -546,6 +559,14 @@ export default function useStreamingChat(callbacks) {
     const setIsStreaming = useCallback((val) => {
         isStreamingRef.current = val;
         _setIsStreaming(val);
+    }, []);
+    // A stop was requested but the turn is still finishing — the stream
+    // stays open until turn_end so the backend can flush its partial output.
+    const [stopRequested, _setStopRequested] = useState(false);
+    const stopRequestedRef = useRef(false);
+    const setStopRequested = useCallback((val) => {
+        stopRequestedRef.current = val;
+        _setStopRequested(val);
     }, []);
     const abortControllerRef = useRef(null);
     // The open conversation id is this hook's primary key — every request it
@@ -822,6 +843,25 @@ export default function useStreamingChat(callbacks) {
                             scheduleFlush();
                         }
 
+                        // Error → for a sub-agent (depth>0) it surfaces in
+                        // that agent's activity view; a root error (depth 0)
+                        // renders in the main chat via the events log above.
+                        if (payload?.type === 'error' && (data.depth ?? 0) > 0
+                            && data.agent_id && callbacks.onActivityEntry) {
+                            pending.push({
+                                callback: callbacks.onActivityEntry,
+                                args: {
+                                    agentId: data.agent_id,
+                                    entry: {
+                                        type: 'error',
+                                        message: payload.message || 'An error occurred.',
+                                        timestamp: Date.now(),
+                                    },
+                                },
+                            });
+                            scheduleFlush();
+                        }
+
                         // Turn end — flush and mark done
                         if (payload?.type === 'turn_end') {
                             if (agentRafId !== null) {
@@ -871,6 +911,7 @@ export default function useStreamingChat(callbacks) {
             if (agentRafId !== null) cancelAnimationFrame(agentRafId);
             abortControllerRef.current = null;
             setIsStreaming(false);
+            setStopRequested(false);
             // If the stream ended without a turn_end (abort, network
             // drop), any half-streamed iteration is no longer
             // meaningful. The pending user prompt stays visible:
@@ -880,13 +921,15 @@ export default function useStreamingChat(callbacks) {
             // and the next sendMessage replaces it.
             setInflightIteration(null);
         }
-    }, [callbacks]);
+    }, [callbacks, setStopRequested]);
 
-    /** Ask the backend to stop generation and update local state. */
+    /** Ask the backend to stop generation, leaving the stream open until
+     * turn_end so the backend can flush whatever it streamed so far. */
     const stopGeneration = useCallback(() => {
+        if (!isStreamingRef.current || stopRequestedRef.current) return;
+        setStopRequested(true);
         fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => {});
-        setIsStreaming(false);
-    }, []);
+    }, [setStopRequested]);
 
     /** Resume a previous conversation by loading its history from the backend. */
     const loadConversation = useCallback(async (conversationId) => {
@@ -916,6 +959,8 @@ export default function useStreamingChat(callbacks) {
                 callbacks.onConversationLoaded({
                     conversationId,
                     events,
+                    browserTabs: data.browser_tabs || [],
+                    terminal: data.terminal || {},
                     previewState: data.preview_state || {},
                     profileId: data.profile_id || null,
                 });
@@ -955,12 +1000,13 @@ export default function useStreamingChat(callbacks) {
         const oldConversationId = conversationIdRef.current;
         fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => {});
         setIsStreaming(false);
+        setStopRequested(false);
         setMessages([]);
         setEvents([]);
         setInflightIteration(null);
         setPendingUserPrompt(null);
         setConversationId(_uuid());
-    }, [setConversationId]);
+    }, [setConversationId, setStopRequested]);
 
     // Derive the chat-view turn list from events + the in-flight
     // streaming state. Both resume and live feed `events`; the live
@@ -1001,6 +1047,7 @@ export default function useStreamingChat(callbacks) {
         events,
         turns,
         isStreaming,
+        stopRequested,
         activeConversationId,
         sendMessage,
         sendNudge,

@@ -18,8 +18,17 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
+from sdk.events import (
+    AgentEvent,
+    TurnEndPayload,
+    publish_event,
+    reset_current_conversation,
+    set_current_conversation,
+)
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from sdk.context import ConversationHistory
 
 
 logger = logging.getLogger(__name__)
@@ -87,17 +96,26 @@ def any_turn_active() -> bool:
 
 @asynccontextmanager
 async def turn_scope(
+    conversation: ConversationHistory | None = None,
     conversation_id: str | None = None,
 ) -> AsyncIterator[None]:
     """Set up and tear down per-turn state.
 
     Binds a stop event so ``check_stop`` works from any depth and
-    registers the conversation as active. Event fan-out happens via the
-    bound conversation's observer list — the caller is responsible for
-    subscribing observers and calling ``set_current_conversation`` before
-    publishing.
+    registers the conversation as active. When a ``conversation`` is
+    passed, the scope also binds it as the active event target and emits
+    the single ``turn_end`` for the whole user turn on exit — so the
+    boundary is owned here, not by the tool loop. A sub-agent's tool loop
+    ending therefore can't signal that the user turn is over, and every
+    entry point (chat, tasks, …) gets the boundary for free.
+
+    The caller subscribes observers before entering and unsubscribes after
+    exiting, so the final ``turn_end`` still reaches them.
 
     Args:
+        conversation: The conversation events are published to. When None,
+            no binding or ``turn_end`` happens (callers that drive the loop
+            directly without an event sink, e.g. unit tests).
         conversation_id: Conversation identifier for per-conversation isolation.
 
     Yields:
@@ -109,9 +127,16 @@ async def turn_scope(
     _active_stop_events[sid] = stop_event
     stop_token = _stop_event.set(stop_event)
     conversation_token = _conversation_id.set(sid)
+    conv_token = set_current_conversation(conversation) if conversation is not None else None
     try:
         yield None
     finally:
+        if conversation is not None:
+            try:
+                publish_event(AgentEvent(payload=TurnEndPayload(type="turn_end")))
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Failed to publish turn_end for conversation '%s'", sid)
+            reset_current_conversation(conv_token)
         _stop_event.reset(stop_token)
         _conversation_id.reset(conversation_token)
         _active_conversations.discard(sid)

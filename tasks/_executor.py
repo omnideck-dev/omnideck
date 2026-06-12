@@ -12,8 +12,6 @@ from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrate
 from sdk.events._context import (
     agent_span,
     publish_event,
-    reset_current_conversation,
-    set_current_conversation,
 )
 from sdk.events._models import (
     AgentEvent,
@@ -68,12 +66,13 @@ class TaskExecutor:
             if isinstance(event.payload, FileOutputPayload) and event.payload.path:
                 file_paths.append(event.payload.path)
 
-        async with turn_scope(conversation_id=conversation_id):
-            events_log = EventsLogWriter(conversation_id)
-            history.subscribe(events_log.handle_event)
-            history.subscribe(_capture_file_output)
-            conv_token = set_current_conversation(history)
-            try:
+        events_log = EventsLogWriter(conversation_id)
+        # Observers subscribe around the scope so the turn_scope-owned
+        # turn_end at the end of the turn still reaches them.
+        history.subscribe(events_log.handle_event)
+        history.subscribe(_capture_file_output)
+        try:
+            async with turn_scope(history, conversation_id=conversation_id):
                 ctx_manager = ContextManager(
                     history=history,
                     agent_state=agent_state,
@@ -89,11 +88,14 @@ class TaskExecutor:
                         type="user_message", content=instruction,
                     )))
                     result = await run_turn(history, agent, hooks=hooks)
-            finally:
-                reset_current_conversation(conv_token)
-                history.unsubscribe(events_log.handle_event)
-                history.unsubscribe(_capture_file_output)
-                await history.drain_observers()
+        finally:
+            # Unsubscribe synchronously before the await so a cancellation
+            # mid-drain can't skip the unsubscribes and leak observers onto
+            # the history. Drain still flushes in-flight events: it waits on
+            # already-created observer tasks regardless of the list.
+            history.unsubscribe(events_log.handle_event)
+            history.unsubscribe(_capture_file_output)
+            await history.drain_observers()
 
         return result or "", file_paths
 

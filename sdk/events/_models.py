@@ -280,6 +280,26 @@ class AgentCompletedPayload(BaseModel):
     status: Literal["success", "error", "stopped"]
 
 
+class ErrorPayload(BaseModel):
+    """A turn failed and the failure should be shown to the user.
+
+    Emitted when an agent's turn raises (e.g. a provider error). Carries
+    a human-readable message — the cleaned provider message when available
+    — so the UI can show why the turn ended instead of failing silently.
+
+    Attributes:
+        type: Discriminator; always "error".
+        message: Human-readable failure message for display.
+        retryable: True when the underlying failure is transient (the
+            provider flagged it retryable), so the UI can hint that
+            trying again may succeed.
+    """
+
+    type: Literal["error"]
+    message: str
+    retryable: bool = False
+
+
 class UserAttachment(BaseModel):
     """A single file attachment carried by a user message.
 
@@ -343,6 +363,10 @@ class IterationPayload(BaseModel):
         content: Natural-language content emitted on this iteration.
         tool_calls: Tool calls the model requested. Empty when the
             iteration produced only content.
+        stopped: True when this iteration is partial output captured
+            because the turn was interrupted mid-stream (user stop or a
+            failure) — the content is whatever streamed before the
+            interruption, not a complete iteration.
     """
 
     type: Literal["iteration"]
@@ -350,6 +374,7 @@ class IterationPayload(BaseModel):
     thinking: str | None = None
     content: str | None = None
     tool_calls: list[IterationToolCall] = Field(default_factory=list)
+    stopped: bool = False
 
 
 class ToolResultPayload(BaseModel):
@@ -483,7 +508,8 @@ AgentEventPayload = Annotated[
     | UserMessagePayload
     | IterationPayload
     | ToolResultPayload
-    | CompactionPayload,
+    | CompactionPayload
+    | ErrorPayload,
     Field(discriminator="type"),
 ]
 
@@ -546,6 +572,7 @@ __all__ = [
     "ContentPayload",
     "ContextUsagePayload",
     "DesktopActivePayload",
+    "ErrorPayload",
     "FileOutputPayload",
     "GenerationPreviewPayload",
     "IterationPayload",

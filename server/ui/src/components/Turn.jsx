@@ -1,6 +1,8 @@
 import React from 'react';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
+import Callout from './primitives/Callout.jsx';
+import styles from './Message.module.css';
 
 /**
  * Convert one iteration child from a Turn into the flat `entries` shape
@@ -130,6 +132,9 @@ export default function Turn({
         } else if (child.kind === 'compaction') {
             flushAssistant();
             items.push({ kind: 'compaction', child });
+        } else if (child.kind === 'error') {
+            flushAssistant();
+            items.push({ kind: 'error', child });
         } else if (child.kind === 'iteration') {
             if (entries === null) entries = [];
             entries.push(..._iterationToEntries(child));
@@ -147,6 +152,14 @@ export default function Turn({
         // other parts of the UI (preview panels, activity rail).
     }
     flushAssistant();
+
+    // While the agent is running but hasn't produced any assistant output
+    // yet (the gap between turn start and the first token, including a turn
+    // that fails before streaming anything), show an empty streaming
+    // assistant so the "Thinking…" row gives feedback during the wait.
+    if (streaming && !items.some((it) => it.kind === 'assistant')) {
+        items.push({ kind: 'assistant', entries: [] });
+    }
 
     const currentTool = streaming ? _currentRunningTool(turn.children) : null;
 
@@ -174,6 +187,17 @@ export default function Turn({
                             stats={item.child.stats}
                             timestamp={item.child.timestamp}
                         />
+                    );
+                }
+                if (item.kind === 'error') {
+                    return (
+                        <div key={`e-${item.child.id}`} data-testid="turn-error" className={styles.turnError}>
+                            <Callout
+                                tone="danger"
+                                title="Something went wrong"
+                                description={item.child.message}
+                            />
+                        </div>
                     );
                 }
                 // assistant section

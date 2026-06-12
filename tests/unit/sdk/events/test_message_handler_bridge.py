@@ -20,7 +20,6 @@ from sdk.events import (
     AgentStartedPayload,
     AgentEvent,
     ContentPayload,
-    TurnEndPayload,
     publish_event,
     agent_span,
 )
@@ -43,10 +42,8 @@ async def test_message_handler_bridges_events_without_duplicates(monkeypatch: py
             publish_event(AgentEvent(payload=ContentPayload(type="content", content="secret", thinking="hidden")))
         await asyncio.sleep(0)
 
-        # Turn end
-        publish_event(AgentEvent(payload=TurnEndPayload(type="turn_end")))
-        await asyncio.sleep(0)
-
+        # No turn_end here: it is owned by the per-turn teardown, not the
+        # tool loop, so a sub-agent loop ending can't end the user turn.
         return "done"
 
     import server.message_handler as mh
@@ -90,3 +87,13 @@ async def test_message_handler_bridges_events_without_duplicates(monkeypatch: py
     # Lifecycle events: root started, nested started, nested completed, root completed
     agent_names = [name for _, name in lifecycle_events]
     assert "nested" in agent_names
+
+    # turn_end is emitted exactly once, by the per-turn teardown, and only
+    # after the root agent has completed — never by the tool loop itself.
+    event_types = [ev.payload.type for ev in seen]
+    assert event_types[-1] == "turn_end"
+    assert event_types.count("turn_end") == 1
+    completed_idxs = [
+        i for i, ev in enumerate(seen) if isinstance(ev.payload, AgentCompletedPayload)
+    ]
+    assert completed_idxs and completed_idxs[-1] < len(seen) - 1

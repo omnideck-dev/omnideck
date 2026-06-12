@@ -126,10 +126,12 @@ describe('replayEventsToAgentState', () => {
                     { id: 'tc2', name: 'write_file', arguments: { path: '/a' } },
                 ],
             }),
+            _agentCompleted('root.test.1'),
         ], d);
         const types = d.mock.calls.map(([a]) => a.type);
         expect(types).toEqual([
             'AGENT_STARTED', 'APPEND_STREAM_CHUNK', 'APPEND_ACTIVITY', 'APPEND_ACTIVITY',
+            'AGENT_COMPLETED',
         ]);
         const stream = d.mock.calls[1][0];
         expect(stream).toMatchObject({
@@ -148,9 +150,10 @@ describe('replayEventsToAgentState', () => {
         replayEventsToAgentState([
             _agentStarted('root.test.1'),
             _iter('root.test.1', { toolCalls: [{ id: 't', name: 'shell' }] }),
+            _agentCompleted('root.test.1'),
         ], d);
         const types = d.mock.calls.map(([a]) => a.type);
-        expect(types).toEqual(['AGENT_STARTED', 'APPEND_ACTIVITY']);
+        expect(types).toEqual(['AGENT_STARTED', 'APPEND_ACTIVITY', 'AGENT_COMPLETED']);
     });
 
     it('dispatches spawn_requested as an activity entry on the agent that requested it', () => {
@@ -195,22 +198,20 @@ describe('replayEventsToAgentState', () => {
         expect(c[0].entry.stats.saved_tokens).toBe(12000);
     });
 
-    it('dispatches terminal_output as UPDATE_TERMINAL on the emitting agent', () => {
+    it('ignores terminal_output events — transcripts restore from the sidecar, not replay', () => {
         const d = vi.fn();
-        const ev = {
-            type: 'terminal_output', agent_id: 'root.test.1',
-            cmd_id: 'cmd-1', stdout: 'hello\n', status: 'streaming',
-        };
         replayEventsToAgentState([
-            _agentStarted('root.test.1'), ev,
+            _agentStarted('root.test.1'),
+            {
+                type: 'terminal_output', agent_id: 'root.test.1',
+                cmd_id: 'cmd-1', stdout: 'hello\n', status: 'streaming',
+            },
+            _agentCompleted('root.test.1'),
         ], d);
-        const t = d.mock.calls.find(([a]) => a.type === 'UPDATE_TERMINAL');
-        expect(t[0]).toEqual({
-            type: 'UPDATE_TERMINAL', agentId: 'root.test.1', event: ev,
-        });
+        expect(d.mock.calls.some(([a]) => a.type === 'UPDATE_TERMINAL')).toBe(false);
     });
 
-    it('dispatches browser_screenshot as UPDATE_BROWSER_SNAPSHOT', () => {
+    it('ignores browser_screenshot events — snapshots restore from the sidecar, not replay', () => {
         const d = vi.fn();
         replayEventsToAgentState([
             _agentStarted('root.test.1'),
@@ -219,16 +220,9 @@ describe('replayEventsToAgentState', () => {
                 url: 'https://example.com', title: 'Example',
                 screenshot: 'iVBORw0K...', tab_id: 'tab-1',
             },
+            _agentCompleted('root.test.1'),
         ], d);
-        const snap = d.mock.calls.find(([a]) => a.type === 'UPDATE_BROWSER_SNAPSHOT');
-        expect(snap[0]).toMatchObject({
-            type: 'UPDATE_BROWSER_SNAPSHOT',
-            agentId: 'root.test.1',
-            snapshot: {
-                url: 'https://example.com', title: 'Example',
-                screenshot: 'iVBORw0K...', tabId: 'tab-1',
-            },
-        });
+        expect(d.mock.calls.some(([a]) => a.type === 'UPDATE_BROWSER_SNAPSHOT')).toBe(false);
     });
 
     it('dispatches file_output as an activity entry', () => {
@@ -295,5 +289,30 @@ describe('replayEventsToAgentState', () => {
             'APPEND_STREAM_CHUNK',     // root iter 1 content
             'AGENT_COMPLETED',          // root done
         ]);
+    });
+
+    it('closes out agents with no agent_completed as stopped (hard-killed turn)', () => {
+        const d = vi.fn();
+        replayEventsToAgentState([
+            _agentStarted('root.1'),
+            { ..._iter('root.1', { content: 'half an answ' }), timestamp: '2026-01-01T00:00:05+00:00' },
+            // no agent_completed — the app was killed mid-turn
+        ], d);
+        const completed = d.mock.calls.filter(([a]) => a.type === 'AGENT_COMPLETED');
+        expect(completed).toHaveLength(1);
+        expect(completed[0][0]).toMatchObject({ agentId: 'root.1', status: 'stopped' });
+        // Elapsed time freezes at the agent's last recorded activity.
+        expect(completed[0][0].timestamp).toBe(Date.parse('2026-01-01T00:00:05+00:00'));
+    });
+
+    it('does not synthesize a completion for agents that finished normally', () => {
+        const d = vi.fn();
+        replayEventsToAgentState([
+            _agentStarted('root.1'),
+            _agentCompleted('root.1'),
+        ], d);
+        const completed = d.mock.calls.filter(([a]) => a.type === 'AGENT_COMPLETED');
+        expect(completed).toHaveLength(1);
+        expect(completed[0][0].status).toBe('success');
     });
 });

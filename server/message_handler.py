@@ -17,11 +17,15 @@ from agents import (
 )
 from agents.types import Agent, Data
 from conversations import (
+    BrowserTabsWriter,
     EventsLogWriter,
+    TerminalWriter,
     generate_conversation_title,
+    load_browser_tabs,
     load_conversation_profile,
     load_events_jsonl,
     load_preview_state,
+    load_terminal,
     save_conversation_profile,
     save_conversation_title,
 )
@@ -33,14 +37,12 @@ from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrate
 from sdk.context._view import build_llm_history
 from sdk.events import (
     AgentEvent,
-    ContentPayload,
+    ErrorPayload,
     TurnEndPayload,
     UserAttachment,
     UserMessagePayload,
     agent_span,
     publish_event,
-    reset_current_conversation,
-    set_current_conversation,
 )
 from sdk.skills import build_agent_state, persist_loaded_skills
 from sdk.turn import is_turn_active, turn_scope
@@ -179,14 +181,14 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
+# browser_screenshot / terminal_output are absent: panel state isn't in
+# the event log; it comes back via the browser_tabs / terminal sidecars.
 _UI_REPLAY_EVENT_TYPES: frozenset[str] = frozenset({
     "agent_started",
     "agent_completed",
     "user_message",
     "iteration",
     "tool_result",
-    "browser_screenshot",
-    "terminal_output",
     "file_output",
     "spawn_requested",
     "compaction",
@@ -200,8 +202,11 @@ async def resume_conversation(conversation_id: str) -> dict | None:
         messages: LLM messages derived from the event log via
             ``build_llm_history``.
         events: subset of the event log used by the UI to replay
-            structural state (agent lifecycle, screenshots, terminal
-            output, file outputs).
+            structural state (agent lifecycle, file outputs).
+        browser_tabs: latest browser snapshot per tab from the sidecar,
+            so the preview panel restores without replaying screenshots.
+        terminal: per-agent terminal transcripts from the sidecar (the
+            last N commands, merged), keyed by agent_id.
         preview_state: persisted preview-panel state.
         profile_id: the agent profile last used in this conversation, or
             None if it predates per-conversation profiles.
@@ -234,6 +239,8 @@ async def resume_conversation(conversation_id: str) -> dict | None:
     return {
         "messages": ui_messages,
         "events": ui_events,
+        "browser_tabs": load_browser_tabs(conversation_id),
+        "terminal": load_terminal(conversation_id),
         "preview_state": load_preview_state(conversation_id),
         "profile_id": load_conversation_profile(conversation_id),
     }
@@ -332,16 +339,23 @@ async def _run_turn(
         ],
     )
 
-    async with turn_scope(conversation_id=conversation_id):
-        events_log = EventsLogWriter(conv_id)
-        # Conversation owns the canonical event log. All observers — the
-        # disk writer and the SSE bridge that streams to the response —
-        # subscribe to the conversation directly. publish_event writes
-        # inline, so the model never reads a stale view.
-        history.subscribe(events_log.handle_event)
-        history.subscribe(handler)
-        conv_token = set_current_conversation(history)
-        try:
+    events_log = EventsLogWriter(conv_id)
+    # Panel state is excluded from the event log; these keep the bounded
+    # sidecars (latest browser snapshot per tab, last N terminal commands)
+    # current instead.
+    browser_tabs = BrowserTabsWriter(conv_id)
+    terminal = TerminalWriter(conv_id)
+    # Conversation owns the canonical event log. Observers — the disk writer
+    # and the SSE bridge that streams to the response — subscribe before the
+    # scope and unsubscribe after, so the turn_scope-owned turn_end at the
+    # end of the turn still reaches them. publish_event writes inline, so the
+    # model never reads a stale view.
+    history.subscribe(events_log.handle_event)
+    history.subscribe(browser_tabs.handle_event)
+    history.subscribe(terminal.handle_event)
+    history.subscribe(handler)
+    try:
+        async with turn_scope(history, conversation_id=conversation_id):
             async with agent_span(
                 active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
             ):
@@ -370,24 +384,32 @@ async def _run_turn(
                         agent=active_agent,
                         hooks=hooks,
                     )
-        finally:
-            reset_current_conversation(conv_token)
-            history.unsubscribe(events_log.handle_event)
-            history.unsubscribe(handler)
-            await history.drain_observers()
+    finally:
+        # Unsubscribe synchronously BEFORE the await: if this cleanup is
+        # cancelled mid-drain, an awaited-first order would skip the
+        # unsubscribes and leak observers on the cached history — the next
+        # turn would then double-subscribe a new writer and append every
+        # event to events.jsonl twice. Drain still flushes the final
+        # turn_end: it waits on already-created observer tasks regardless
+        # of the subscription list.
+        history.unsubscribe(events_log.handle_event)
+        history.unsubscribe(browser_tabs.handle_event)
+        history.unsubscribe(terminal.handle_event)
+        history.unsubscribe(handler)
+        await history.drain_observers()
 
-        # Persist loaded skills so they survive across turns and restarts
-        if agent_state.loaded_skill_ids:
-            try:
-                persist_loaded_skills(agent_state, conv_id)
-            except Exception:
-                logger.exception("Failed to save loaded skills for '%s'", conv_id)
+    # Persist loaded skills so they survive across turns and restarts
+    if agent_state.loaded_skill_ids:
+        try:
+            persist_loaded_skills(agent_state, conv_id)
+        except Exception:
+            logger.exception("Failed to save loaded skills for '%s'", conv_id)
 
-        # Generate a title for new conversations after the first successful turn
-        if is_new_conversation and conversation_id:
-            task = asyncio.create_task(_generate_title(conversation_id, user_content))
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+    # Generate a title for new conversations after the first successful turn
+    if is_new_conversation and conversation_id:
+        task = asyncio.create_task(_generate_title(conversation_id, user_content))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
 
 async def _generate_title(conversation_id: str, first_message: str) -> None:
@@ -479,6 +501,12 @@ async def handle_user_message(
                 if item is None:
                     break
                 yield item
+            # The None sentinel arrived (producer's finally ran), but the
+            # producer may have died on the way — e.g. agent setup failed
+            # before any event sink existed. Awaiting here re-raises that
+            # failure into the catch below so it reaches the user instead
+            # of being swallowed by the suppress in the cleanup path.
+            await producer_task
         finally:
             if not producer_task.done():
                 producer_task.cancel()
@@ -488,9 +516,9 @@ async def handle_user_message(
     except Exception:
         logger.exception("Error handling user message")
         yield AgentEvent(
-            payload=ContentPayload(
-                type="content",
-                content="An error occurred while processing your message.",
+            payload=ErrorPayload(
+                type="error",
+                message="An error occurred while processing your message.",
             )
         )
         yield AgentEvent(payload=TurnEndPayload(type="turn_end"))

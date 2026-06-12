@@ -32,6 +32,7 @@ which directive comes next.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
@@ -42,6 +43,7 @@ from ._models import (
     ChatResponse,
     LLMConfig,
     ModelInfo,
+    ProviderError,
     ToolCall,
     ToolCallFunction,
 )
@@ -59,10 +61,14 @@ _FAKE_MODELS: list[ModelInfo] = [
 # SPAWN open marker and the non-SPAWN directives. SPAWN bodies are
 # matched to their *balanced* <<ENDSPAWN>> by _iter_directives so a SPAWN
 # body may itself contain nested SPAWNs (multi-level delegation).
+# Bare marker (no body / <<END>>): when present anywhere in the task, text
+# replies stream with a small delay per chunk — gives UI tests a window to
+# interact mid-stream (e.g. click Stop). Ignored by the directive planner.
+_SLOW_RE = re.compile(r"<<SLOW>>", re.IGNORECASE)
 _SPAWN_OPEN_RE = re.compile(r"<<SPAWN(?P<arg>[^>]*)>>", re.IGNORECASE)
 _ENDSPAWN_RE = re.compile(r"<<ENDSPAWN>>", re.IGNORECASE)
 _NONSPAWN_RE = re.compile(
-    r"<<(?P<name>SAY|BASH|WRITE|SEND|OPEN|FAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
+    r"<<(?P<name>SAY|BASH|WRITE|SEND|OPEN|FAIL|PROVIDERFAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -158,6 +164,8 @@ class FakeProvider:
     ) -> ChatResponse:
         """Return the planned response (used by vision/summarizer call sites)."""
         kind, payload = _plan(messages, tools)
+        if kind == "provider_error":
+            raise ProviderError(payload[1], retryable=False)
         if kind == "tools":
             return ChatResponse(
                 message=ChatMessage(content=None, tool_calls=payload),
@@ -176,6 +184,14 @@ class FakeProvider:
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream content deltas (text replies) then a final ChatResponse."""
         kind, payload = _plan(messages, tools)
+        if kind == "provider_error":
+            where, message = payload
+            if where == "mid":
+                # Stream a little before failing, so the UI has a partial
+                # in-flight iteration when the provider error lands.
+                for chunk in _chunks("Working on it…"):
+                    yield ChatDelta(content=chunk)
+            raise ProviderError(message, retryable=False)
         if kind == "tools":
             yield ChatResponse(
                 message=ChatMessage(content=None, tool_calls=payload),
@@ -184,7 +200,10 @@ class FakeProvider:
             return
 
         text: str = payload
+        slow = bool(_SLOW_RE.search(_latest_task(messages)))
         for chunk in _chunks(text):
+            if slow:
+                await asyncio.sleep(0.06)
             yield ChatDelta(content=chunk)
         yield ChatResponse(message=ChatMessage(content=text), done_reason="stop")
 
@@ -263,6 +282,10 @@ def _plan(
     # the agent span records status="error").
     fail_after: int | None = None
     fail_msg = ""
+    # A PROVIDERFAIL directive makes the provider itself raise — modeling a
+    # real ProviderError (e.g. a 429). arg "mid" fails partway through the
+    # stream (after some deltas); otherwise it fails before any output.
+    provider_fail: tuple[str, str] | None = None
     for name, arg, body in directives:
         if name == "SPAWN":
             # arg is "profile" or "profile|NAME". The optional name sets
@@ -286,9 +309,17 @@ def _plan(
                 fail_after = len(tool_calls)
                 fail_msg = body.strip() or "fake failure"
             continue
+        if name == "PROVIDERFAIL":
+            if provider_fail is None:  # first wins
+                where = "mid" if arg.strip().lower() == "mid" else "before"
+                provider_fail = (where, body.strip() or "provider error")
+            continue
         call = _named_tool_call(name, arg, body)
         if call is not None:
             tool_calls.append(call)
+
+    if provider_fail is not None:
+        return "provider_error", provider_fail
 
     completed = _completed_step_count(messages)
     if fail_after is not None and completed >= fail_after:

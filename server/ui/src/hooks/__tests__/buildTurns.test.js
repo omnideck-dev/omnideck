@@ -306,4 +306,43 @@ describe('_buildTurns with inflight iteration appended (live streaming)', () => 
         expect(iter.toolCalls).toHaveLength(1);
         expect(iter.toolCalls[0].name).toBe('shell');
     });
+
+    it('adds a root error event as an error child', () => {
+        const turns = _buildTurns([
+            _agentStarted(1),
+            _userMsg('do it'),
+            { id: 'evt_err', type: 'error', message: 'usage limit reached', retryable: false },
+        ]);
+        const err = turns[0].children.find((c) => c.kind === 'error');
+        expect(err).toBeTruthy();
+        expect(err.message).toBe('usage limit reached');
+    });
+
+    it('excludes a sub-agent error from the main chat (depth > 0)', () => {
+        const turns = _buildTurns([
+            _agentStarted(1),
+            _userMsg('do it'),
+            { id: 'evt_serr', type: 'error', message: 'sub failed', depth: 1, agent_id: 'root.test.1.sub.1' },
+        ]);
+        expect(turns[0].children.some((c) => c.kind === 'error')).toBe(false);
+    });
+
+    it('synthesizes a turn for a root error with no agent_started (setup failure)', () => {
+        const turns = _buildTurns([
+            { id: 'evt_orphan', type: 'error', message: 'setup exploded', depth: 0 },
+        ]);
+        expect(turns).toHaveLength(1);
+        const err = turns[0].children.find((c) => c.kind === 'error');
+        expect(err.message).toBe('setup exploded');
+    });
+
+    it('renders a truncated (stopped) iteration like any other — partial content shows', () => {
+        const turns = _buildTurns([
+            _agentStarted(1),
+            _userMsg('go'),
+            { id: 'it1', type: 'iteration', iteration_index: 0, content: 'partial', thinking: '', tool_calls: [], stopped: true },
+        ]);
+        const iter = turns[0].children.find((c) => c.kind === 'iteration');
+        expect(iter.content).toBe('partial');
+    });
 });

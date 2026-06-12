@@ -141,6 +141,20 @@ def test_thinking_carries_through():
     assert msgs[1]["thinking"] == "planning"
 
 
+def test_thinking_only_iteration_excluded_from_messages():
+    """A thinking-only iteration (no content, no tool calls — e.g. a partial
+    captured by a mid-stream stop) must not become an assistant message:
+    OpenAI-style providers reject assistant messages without text or tool
+    calls on the next turn."""
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "go"),
+        _iter(ROOT, 0, thinking="planning"),
+    ]
+    msgs = build_llm_history(events, CONV)
+    assert msgs == [{"role": "user", "content": "go"}]
+
+
 def test_attachments_appended_to_first_user_message():
     events = [
         _started(ROOT, "COMPUTRON"),

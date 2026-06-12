@@ -52,6 +52,24 @@ def fail(message: str = "fake failure") -> str:
     return f"<<FAIL>>{message}<<END>>"
 
 
+def slow() -> str:
+    """Marker: the assistant's text reply streams with a small per-chunk
+    delay, opening a window to interact mid-stream (e.g. click Stop).
+    Compose outside other directives: ``slow() + say(long_text)``.
+    """
+    return "<<SLOW>>"
+
+
+def provider_fail(message: str = "provider error", *, mid: bool = False) -> str:
+    """The provider itself raises, modeling a real ProviderError (e.g. a 429).
+
+    With ``mid=False`` (default) it fails before any output streams — the
+    turn never produces content. With ``mid=True`` it streams a little first,
+    then fails partway through, leaving a partial in-flight iteration.
+    """
+    return f"<<PROVIDERFAIL{' mid' if mid else ''}>>{message}<<END>>"
+
+
 def spawn(body: str, profile: str = "", name: str = "") -> str:
     """Agent spawns a sub-agent.
 

@@ -164,13 +164,39 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         // view, per-agent activity logs, and preview panels all match
         // what live SSE would have produced. React 18 batches all
         // dispatches within this async callback into one render.
-        onConversationLoaded: ({ events, previewState, profileId }) => {
+        onConversationLoaded: ({ events, browserTabs, terminal, previewState, profileId }) => {
             // Restore the profile this conversation was last using so the
             // selector and outgoing requests reflect it. Null falls back to the
             // default — covers conversations saved before profiles were tracked.
             setConvProfile(profileId || null);
             agentDispatch({ type: 'RESET' });
             replayEventsToAgentState(events, agentDispatch);
+
+            // Panel state restores from the bounded sidecars — screenshots
+            // and terminal transcripts aren't in the event log.
+            for (const tab of (browserTabs || [])) {
+                if (!tab?.agent_id) continue;
+                agentDispatch({
+                    type: 'UPDATE_BROWSER_SNAPSHOT',
+                    agentId: tab.agent_id,
+                    snapshot: {
+                        url: tab.url,
+                        title: tab.title,
+                        screenshot: tab.screenshot,
+                        tabId: tab.tab_id ?? null,
+                        agentId: tab.agent_id,
+                    },
+                });
+            }
+            for (const [termAgentId, entries] of Object.entries(terminal || {})) {
+                for (const entry of (entries || [])) {
+                    agentDispatch({
+                        type: 'UPDATE_TERMINAL',
+                        agentId: termAgentId,
+                        event: entry,
+                    });
+                }
+            }
 
             // The latest root agent's id is where re-opened preview tabs
             // (saved by the user before the page reload) need to land,
@@ -203,6 +229,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const {
         turns,
         isStreaming,
+        stopRequested,
         sendMessage,
         sendNudge,
         stopGeneration,
@@ -463,6 +490,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             onSend={handleSend}
                             onStop={stopGeneration}
                             isStreaming={isStreaming}
+                            stopRequested={stopRequested}
                             attachment={attachment}
                             rootAgent={preview.rootAgent}
                             networkActivated={agentState.networkActivated}

@@ -29,6 +29,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from migrations._screenshot_prune import latest_tab_snapshots
+from migrations._terminal_collapse import merge_terminal_transcripts
+
 logger = logging.getLogger(__name__)
 
 # Same constants used by the compaction strategy. Kept in sync with
@@ -719,17 +722,22 @@ def synthesize_compaction_events(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Phase 4: merge structural events (file_output, browser_screenshot, terminal_output)
+# Phase 4: merge structural events (file_output)
 # ──────────────────────────────────────────────────────────────────────
 
 
-_STRUCTURAL_TYPES = {"file_output", "browser_screenshot", "terminal_output"}
+# browser_screenshot and terminal_output are intentionally NOT carried into
+# events.jsonl: the UI only shows the latest snapshot per tab and the last N
+# terminal commands, so both would bloat the append-only log forever. They
+# collapse into the bounded browser_tabs.json / terminal.json sidecars
+# instead (see migrate_conversation).
+_STRUCTURAL_TYPES = {"file_output"}
 
 
 def synthesize_structural_events(
     events_old: list[dict[str, Any]], conversation_id: str,
 ) -> list[Event]:
-    """Carry over file/browser/terminal events from the old format. These
+    """Carry over file_output events from the old format. These
     already had timestamps and agent_ids."""
     out: list[Event] = []
     for e in events_old:
@@ -906,6 +914,20 @@ def migrate_conversation(
     tmp.replace(out_path)
 
     result.events_written = len(all_events)
+
+    # Panel state stays out of the log; the final snapshot per tab and the
+    # merged terminal transcripts go to their bounded sidecars so the
+    # preview panels restore on resume.
+    tabs = latest_tab_snapshots(events_old)
+    if tabs:
+        tabs_tmp = (conv_dir / "browser_tabs.json").with_suffix(".tmp")
+        tabs_tmp.write_text(json.dumps(tabs), encoding="utf-8")
+        tabs_tmp.replace(conv_dir / "browser_tabs.json")
+    transcripts = merge_terminal_transcripts(events_old)
+    if transcripts:
+        term_tmp = (conv_dir / "terminal.json").with_suffix(".tmp")
+        term_tmp.write_text(json.dumps(transcripts), encoding="utf-8")
+        term_tmp.replace(conv_dir / "terminal.json")
 
     # Archive the legacy files so they can be rolled back if needed.
     # Default archive target is a sibling ``_pre_007`` directory so the

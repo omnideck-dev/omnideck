@@ -235,3 +235,87 @@ def test_second_compaction_scope_excludes_events_consumed_by_the_first():
     scope2 = out[1].payload["stats"]["scope"]
     assert scope1["user_messages"] == 1  # u1 only
     assert scope2["user_messages"] == 1  # u2 only — u1 already consumed
+
+
+def test_migrate_conversation_routes_screenshots_to_sidecar(tmp_path):
+    """browser_screenshot events from the old format never land in
+    events.jsonl — the final snapshot per tab goes to browser_tabs.json."""
+    import json
+    from migrations._007_events_first import migrate_conversation
+
+    conv = tmp_path / "c1"
+    conv.mkdir()
+    (conv / "history.json").write_text(json.dumps([
+        {"role": "user", "content": "open a page"},
+        {"role": "assistant", "content": "done"},
+    ]), encoding="utf-8")
+    (conv / "events.json").write_text(json.dumps([
+        {"type": "agent_started", "agent_id": "root.computron.1",
+         "agent_name": "COMPUTRON", "parent_agent_id": None,
+         "timestamp": "2026-01-01T00:00:00+00:00"},
+        {"type": "browser_screenshot", "agent_id": "root.computron.1",
+         "url": "https://a.example", "title": "A", "screenshot": "old==",
+         "tab_id": "t1", "timestamp": "2026-01-01T00:00:01+00:00"},
+        {"type": "browser_screenshot", "agent_id": "root.computron.1",
+         "url": "https://b.example", "title": "B", "screenshot": "new==",
+         "tab_id": "t1", "timestamp": "2026-01-01T00:00:02+00:00"},
+    ]), encoding="utf-8")
+
+    result = migrate_conversation(conv, archive=lambda _p: None)
+    assert result.events_written > 0
+
+    log_types = [
+        json.loads(line)["type"]
+        for line in (conv / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "browser_screenshot" not in log_types
+
+    tabs = json.loads((conv / "browser_tabs.json").read_text(encoding="utf-8"))
+    assert set(tabs) == {"t1"}
+    assert tabs["t1"]["screenshot"] == "new=="
+    assert tabs["t1"]["url"] == "https://b.example"
+
+
+def test_migrate_conversation_routes_terminal_to_sidecar(tmp_path):
+    """terminal_output events from the old format never land in events.jsonl —
+    the merged transcript goes to terminal.json."""
+    import json
+    from migrations._007_events_first import migrate_conversation
+
+    conv = tmp_path / "c1"
+    conv.mkdir()
+    (conv / "history.json").write_text(json.dumps([
+        {"role": "user", "content": "run the build"},
+        {"role": "assistant", "content": "done"},
+    ]), encoding="utf-8")
+    (conv / "events.json").write_text(json.dumps([
+        {"type": "agent_started", "agent_id": "root.computron.1",
+         "agent_name": "COMPUTRON", "parent_agent_id": None,
+         "timestamp": "2026-01-01T00:00:00+00:00"},
+        {"type": "terminal_output", "agent_id": "root.computron.1",
+         "cmd_id": "c-1", "cmd": "make", "status": "running",
+         "timestamp": "2026-01-01T00:00:01+00:00"},
+        {"type": "terminal_output", "agent_id": "root.computron.1",
+         "cmd_id": "c-1", "cmd": "make", "status": "streaming",
+         "stdout": "cc -o app\n", "timestamp": "2026-01-01T00:00:02+00:00"},
+        {"type": "terminal_output", "agent_id": "root.computron.1",
+         "cmd_id": "c-1", "cmd": "make", "status": "completed",
+         "stdout": "cc -o app\nok\n", "exit_code": 0,
+         "timestamp": "2026-01-01T00:00:03+00:00"},
+    ]), encoding="utf-8")
+
+    result = migrate_conversation(conv, archive=lambda _p: None)
+    assert result.events_written > 0
+
+    log_types = [
+        json.loads(line)["type"]
+        for line in (conv / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "terminal_output" not in log_types
+
+    transcripts = json.loads((conv / "terminal.json").read_text(encoding="utf-8"))
+    (entry,) = transcripts["root.computron.1"]
+    assert entry["status"] == "completed"
+    assert entry["stdout"] == "cc -o app\nok\n"

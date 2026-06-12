@@ -16,10 +16,11 @@ function _parseTimestamp(ts) {
  *                        APPEND_ACTIVITY for each tool_call
  *   spawn_requested    → APPEND_ACTIVITY {type: 'spawn_requested'}
  *   file_output        → APPEND_ACTIVITY {type: 'file_output', ...}
- *   terminal_output    → UPDATE_TERMINAL
- *   browser_screenshot → UPDATE_BROWSER_SNAPSHOT
- *
  *   compaction         → APPEND_ACTIVITY {type: 'compaction', ...}
+ *
+ * Browser snapshots and terminal transcripts aren't in the event log —
+ * they arrive via the resume payload's browser_tabs / terminal sidecars
+ * and are dispatched by the caller.
  *
  * Events without a matching live dispatch (user_message, tool_result,
  * context_usage) are skipped — chat-side state derives them directly
@@ -56,11 +57,16 @@ export function resolveOpenFiles(events, openPaths) {
 
 export function replayEventsToAgentState(events, dispatch) {
     if (!Array.isArray(events) || !dispatch) return;
+    // Agents whose agent_completed never made it to the log (the app was
+    // hard-killed mid-turn). Left as 'running' they'd show a perpetual
+    // Thinking placeholder, so they're closed out as stopped after replay.
+    const unfinished = new Map();
     for (const ev of events) {
         if (!ev || !ev.type) continue;
         const agentId = ev.agent_id;
         switch (ev.type) {
             case 'agent_started':
+                unfinished.set(ev.agent_id, _parseTimestamp(ev.timestamp));
                 dispatch({
                     type: 'AGENT_STARTED',
                     agentId: ev.agent_id,
@@ -72,6 +78,7 @@ export function replayEventsToAgentState(events, dispatch) {
                 });
                 break;
             case 'agent_completed':
+                unfinished.delete(ev.agent_id);
                 dispatch({
                     type: 'AGENT_COMPLETED',
                     agentId: ev.agent_id,
@@ -143,32 +150,23 @@ export function replayEventsToAgentState(events, dispatch) {
                     },
                 });
                 break;
-            case 'terminal_output':
-                if (!agentId) break;
-                dispatch({
-                    type: 'UPDATE_TERMINAL',
-                    agentId,
-                    event: ev,
-                });
-                break;
-            case 'browser_screenshot':
-                if (!agentId) break;
-                dispatch({
-                    type: 'UPDATE_BROWSER_SNAPSHOT',
-                    agentId,
-                    snapshot: {
-                        url: ev.url,
-                        title: ev.title,
-                        screenshot: ev.screenshot,
-                        tabId: ev.tab_id ?? null,
-                        agentId,
-                    },
-                });
-                break;
             // user_message / tool_result / context_usage: not part of
             // useAgentState — chat derives them from events.
             default:
                 break;
         }
+        // Track the agent's latest activity so the synthetic completion
+        // below freezes elapsed time at the last thing it actually did.
+        if (agentId && unfinished.has(agentId)) {
+            unfinished.set(agentId, _parseTimestamp(ev.timestamp));
+        }
+    }
+    for (const [agentId, lastSeen] of unfinished) {
+        dispatch({
+            type: 'AGENT_COMPLETED',
+            agentId,
+            status: 'stopped',
+            timestamp: lastSeen,
+        });
     }
 }

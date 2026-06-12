@@ -324,3 +324,75 @@ async def test_resume_conversation_profile_none_when_unset(
 
     assert result is not None
     assert result["profile_id"] is None
+
+
+async def test_setup_failure_yields_error_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failure during agent setup (before the turn starts, so before any
+    event sink exists) must reach the user as an error event + turn_end —
+    not be silently swallowed by the producer-task cleanup."""
+    from agents._agent_profiles import AgentProfile
+
+    profile = AgentProfile(
+        id="computron", name="Test", provider="ollama", model="m",
+        system_prompt="t", skills=[],
+    )
+    monkeypatch.setattr(mh, "get_agent_profile", lambda _pid: profile)
+
+    async def _boom(*_a, **_kw):
+        raise RuntimeError("setup exploded")
+
+    monkeypatch.setattr(mh, "build_agent_state", _boom)
+
+    seen = []
+    async for ev in mh.handle_user_message(
+        "hi", data=None, profile_id="computron", conversation_id="setup-fail",
+    ):
+        seen.append(ev)
+
+    types = [ev.payload.type for ev in seen]
+    assert "error" in types
+    assert types[-1] == "turn_end"
+
+
+async def test_resume_returns_browser_tabs_sidecar(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Resume carries the latest-per-tab snapshots from browser_tabs.json —
+    screenshots are not in the event log."""
+    import json
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
+    _seed_events_jsonl(tmp_path, "c-tabs")
+    (tmp_path / "c-tabs" / "browser_tabs.json").write_text(json.dumps({
+        "1": {"tab_id": "1", "url": "https://a.example", "title": "A",
+              "screenshot": "png==", "agent_id": "root.test.1",
+              "timestamp": "2026-01-01T00:00:05+00:00"},
+    }), encoding="utf-8")
+
+    result = await mh.resume_conversation("c-tabs")
+
+    assert result is not None
+    (tab,) = result["browser_tabs"]
+    assert tab["url"] == "https://a.example"
+    assert tab["agent_id"] == "root.test.1"
+
+
+async def test_resume_returns_terminal_sidecar(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Resume carries the per-agent terminal transcripts from terminal.json."""
+    import json
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
+    _seed_events_jsonl(tmp_path, "c-term")
+    (tmp_path / "c-term" / "terminal.json").write_text(json.dumps({
+        "root.test.1": [{"cmd_id": "c-1", "cmd": "ls", "status": "completed",
+                         "stdout": "a.txt\n", "stderr": None, "exit_code": 0,
+                         "agent_id": "root.test.1",
+                         "timestamp": "2026-01-01T00:00:05+00:00"}],
+    }), encoding="utf-8")
+
+    result = await mh.resume_conversation("c-term")
+
+    assert result is not None
+    (entry,) = result["terminal"]["root.test.1"]
+    assert entry["cmd"] == "ls"
+    assert entry["stdout"] == "a.txt\n"

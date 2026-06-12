@@ -276,7 +276,7 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
         result = await run_turn(history, _make_agent())
 
     assert result == "Hello!"
-    # Two delta events + one turn_end event
+    # Two content delta events stream before the final response.
     delta_calls = [
         c for c in _patch_publish_event.call_args_list
         if hasattr(c.args[0].payload, "delta") and c.args[0].payload.delta is True
@@ -665,3 +665,188 @@ async def test_parallel_stop_requested_propagates(_patch_parallel_config: MagicM
                 await run_turn(history, _make_agent())
     finally:
         _active_agent_state.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# Tests: error surfacing
+# ---------------------------------------------------------------------------
+
+async def test_provider_error_publishes_error_event(_patch_publish_event: MagicMock) -> None:
+    """A non-retryable provider error publishes an ErrorPayload before raising.
+
+    Guards the regression where a mid-turn provider failure was swallowed and
+    nothing reached the UI.
+    """
+    class _RaisingProvider:
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            raise ProviderError("usage limit reached", retryable=False)
+            yield  # pragma: no cover - makes this an async generator
+
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+
+    with patch(f"{_MOD}.get_provider", return_value=_RaisingProvider()):
+        with pytest.raises(ToolLoopError):
+            await run_turn(history, _make_agent())
+
+    error_events = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "error"
+    ]
+    assert len(error_events) == 1
+    assert error_events[0].payload.message == "usage limit reached"
+    assert error_events[0].payload.retryable is False
+
+
+async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: MagicMock) -> None:
+    """Stopping mid-stream persists the streamed-so-far text as a stopped iteration."""
+    from sdk.turn import request_stop, turn_scope
+
+    class _StreamThenStop:
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            yield ChatDelta(content="par")
+            request_stop("c-stop")  # arm the stop before the next token arrives
+            yield ChatDelta(content="tial")
+
+        async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
+            return _text_response("unused")
+
+    history = ConversationHistory([{"role": "user", "content": "hi"}])
+    with patch(f"{_MOD}.get_provider", return_value=_StreamThenStop()):
+        async with turn_scope(history, conversation_id="c-stop"):
+            with pytest.raises(StopRequestedError):
+                await run_turn(history, _make_agent())
+
+    stopped = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration"
+        and getattr(c.args[0].payload, "stopped", False)
+    ]
+    assert len(stopped) == 1
+    assert stopped[0].payload.content == "partial"
+
+
+async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publish_event: MagicMock) -> None:
+    """A thinking-only partial captured by a stop is published as a stopped
+    iteration event but never derives into provider-facing history — an
+    assistant message with no content and no tool calls would be rejected
+    by OpenAI-style providers on the next turn."""
+    from sdk.turn import request_stop, turn_scope
+
+    class _ThinkThenStop:
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            yield ChatDelta(thinking="planning")
+            request_stop("c-think-stop")
+            yield ChatDelta(thinking="more planning")
+
+        async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
+            return _text_response("unused")
+
+    history = ConversationHistory([{"role": "user", "content": "hi"}])
+    with patch(f"{_MOD}.get_provider", return_value=_ThinkThenStop()):
+        async with turn_scope(history, conversation_id="c-think-stop"):
+            with pytest.raises(StopRequestedError):
+                await run_turn(history, _make_agent())
+
+    # The event log keeps the partial for the UI...
+    stopped = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration"
+        and getattr(c.args[0].payload, "stopped", False)
+    ]
+    assert len(stopped) == 1
+    assert stopped[0].payload.thinking == "planningmore planning"
+    assert stopped[0].payload.content is None
+
+    # ...but the derived LLM history contains no assistant message.
+    assert history.messages == [{"role": "user", "content": "hi"}]
+
+
+async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event: MagicMock) -> None:
+    """A stop landing between the final delta and the iteration publish (the
+    after_model window) must not lose the fully-streamed answer."""
+    from sdk.hooks import StopHook
+    from sdk.turn import request_stop, turn_scope
+
+    class _StreamAll:
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            yield ChatDelta(content="complete ")
+            yield ChatDelta(content="answer")
+            # Stop arrives after streaming finished, before after_model runs.
+            request_stop("c-late-stop")
+            yield _text_response("complete answer")
+
+        async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
+            return _text_response("unused")
+
+    history = ConversationHistory([{"role": "user", "content": "hi"}])
+    with patch(f"{_MOD}.get_provider", return_value=_StreamAll()):
+        async with turn_scope(history, conversation_id="c-late-stop"):
+            with pytest.raises(StopRequestedError):
+                await run_turn(history, _make_agent(), hooks=[StopHook()])
+
+    stopped = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration"
+        and getattr(c.args[0].payload, "stopped", False)
+    ]
+    assert len(stopped) == 1
+    assert stopped[0].payload.content == "complete answer"
+    assert history.messages[-1]["content"] == "complete answer"
+
+
+async def test_provider_error_mid_stream_persists_partial(_patch_publish_event: MagicMock) -> None:
+    """A provider failure mid-stream keeps what already streamed: a truncated
+    iteration event followed by the error event."""
+    class _StreamThenDie:
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            yield ChatDelta(content="half an ")
+            yield ChatDelta(content="answer")
+            raise ProviderError("connection dropped", retryable=False)
+
+        async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
+            return _text_response("unused")
+
+    history = ConversationHistory([{"role": "user", "content": "hi"}])
+    with patch(f"{_MOD}.get_provider", return_value=_StreamThenDie()):
+        with pytest.raises(ToolLoopError):
+            await run_turn(history, _make_agent())
+
+    payload_types = [
+        getattr(c.args[0].payload, "type", None)
+        for c in _patch_publish_event.call_args_list
+    ]
+    stopped = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration"
+        and getattr(c.args[0].payload, "stopped", False)
+    ]
+    assert len(stopped) == 1
+    assert stopped[0].payload.content == "half an answer"
+    # The partial precedes the error event in the log.
+    assert payload_types.index("iteration") < payload_types.index("error")
+
+
+async def test_tool_failure_does_not_republish_completed_iteration(_patch_publish_event: MagicMock) -> None:
+    """A failure during tool execution must not re-persist the already-published
+    iteration as a partial."""
+    async def _boom_tool(x: str) -> str:  # pragma: no cover - replaced by raise
+        raise RuntimeError("unreachable")
+
+    streamed_turn: list[ChatDelta | ChatResponse] = [
+        ChatDelta(content="calling tool"),
+        _tool_call_response("_dummy_tool", {"x": "ping"}, content="calling tool"),
+    ]
+    provider = FakeProvider([streamed_turn])
+    history = ConversationHistory([{"role": "user", "content": "go"}])
+
+    with patch(f"{_MOD}.get_provider", return_value=provider), \
+         patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")):
+        with pytest.raises(ToolLoopError):
+            await run_turn(history, _make_agent())
+
+    iterations = [
+        c.args[0] for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration"
+    ]
+    assert len(iterations) == 1
+    assert iterations[0].payload.stopped is False
