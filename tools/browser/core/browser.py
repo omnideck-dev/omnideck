@@ -130,51 +130,6 @@ _ANTI_BOT_SCRIPT = (
 // re-injecting it, so it is safe to leave it absent.
 delete Navigator.prototype.webdriver;
 delete navigator.webdriver;
-
-// WebGL renderer spoof — only when running on software GL.
-// GPU-less / headless Chrome falls back to SwiftShader or llvmpipe, whose
-// UNMASKED_RENDERER_WEBGL string is a strong bot signal. When (and only when)
-// the real renderer looks like software, report a common, unremarkable GPU
-// instead. Machines with a real GPU keep their genuine renderer untouched.
-(function() {
-  const VENDOR = 0x9245;    // UNMASKED_VENDOR_WEBGL
-  const RENDERER = 0x9246;  // UNMASKED_RENDERER_WEBGL
-  const SPOOF_VENDOR = 'Google Inc. (Intel)';
-  const SPOOF_RENDERER =
-    'ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)';
-  const SOFTWARE = /swiftshader|llvmpipe|softpipe|software/i;
-
-  let isSoftware = false;
-  try {
-    const gl = document.createElement('canvas').getContext('webgl')
-      || document.createElement('canvas').getContext('experimental-webgl');
-    if (gl) {
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      const real = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
-      isSoftware = SOFTWARE.test(String(real || ''));
-    }
-  } catch (e) { /* no WebGL — nothing to spoof */ }
-
-  if (!isSoftware) return;
-
-  const protos = [
-    window.WebGLRenderingContext && WebGLRenderingContext.prototype,
-    window.WebGL2RenderingContext && WebGL2RenderingContext.prototype,
-  ];
-  for (const proto of protos) {
-    if (!proto) continue;
-    const orig = proto.getParameter;
-    const patched = function(param) {
-      if (param === VENDOR) return SPOOF_VENDOR;
-      if (param === RENDERER) return SPOOF_RENDERER;
-      return orig.call(this, param);
-    };
-    _makeNative(patched, 'getParameter');
-    Object.defineProperty(proto, 'getParameter', {
-      value: patched, configurable: true, writable: true,
-    });
-  }
-})();
 """
 )
 
