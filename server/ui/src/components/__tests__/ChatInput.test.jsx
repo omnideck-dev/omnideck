@@ -83,6 +83,16 @@ describe('ChatInput', () => {
         expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
     });
 
+    it('keeps streaming controls visible but disables nudges after stop is requested', () => {
+        render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming={true} stopRequested={true} />);
+
+        // The button's label flips to 'Stopping' once requested; the
+        // stable handle is its testid.
+        expect(screen.getByTestId('chat-stop-btn')).toBeDisabled();
+        expect(screen.getByPlaceholderText('Stopping…')).toBeDisabled();
+        expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
+    });
+
     it('builds the placeholder from the selected profile name', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
             json: () => Promise.resolve([{ id: 'p1', name: 'Code Expert' }]),

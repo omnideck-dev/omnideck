@@ -11,9 +11,13 @@ from __future__ import annotations
 from typing import Any
 
 
-def format_envelope(header: dict[str, Any]) -> str:
-    """Render one message header as ``- [uid] date  sender  —  subject``.
+def format_envelope(header: dict[str, Any], integration_id: str) -> str:
+    """Render one message header as ``- [uid] (integration) date  sender  —  subject``.
 
+    The bracketed ``integration_id`` makes it visually impossible to copy a
+    UID from one envelope into a tool call against a different integration:
+    Gmail message IDs and IMAP UIDs are not interchangeable, and the
+    latter only round-trips through the same integration it was fetched from.
     Missing sender/subject fall back to placeholders rather than dropping
     columns, so the layout stays uniform and every line remains parseable.
     """
@@ -21,7 +25,7 @@ def format_envelope(header: dict[str, Any]) -> str:
     date = header.get("date") or ""
     sender = header.get("from_") or "(no sender)"
     subject = header.get("subject") or "(no subject)"
-    return f"- [{uid}] {date}  {sender}  —  {subject}"
+    return f"- [{uid}] ({integration_id}) {date}  {sender}  —  {subject}"
 
 
 def format_size(size: int) -> str:

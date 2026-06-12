@@ -13,12 +13,12 @@ vi.mock('../DesktopPreview.jsx', () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function renderView() {
+function renderView(props = {}) {
     let dispatch;
 
     function Harness() {
         dispatch = useAgentDispatch();
-        return <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} />;
+        return <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} {...props} />;
     }
 
     const result = render(
@@ -85,6 +85,15 @@ describe('AgentActivityView', () => {
 
             const activity = container.querySelector('[class*="activity"]');
             expect(activity.className).toMatch(/activityFull/);
+        });
+    });
+
+    describe('nudge bar', () => {
+        it('is disabled after stop is requested', () => {
+            const { dispatch } = renderView({ nudgeDisabled: true });
+            startAgent(dispatch, 'a1');
+
+            expect(screen.getByPlaceholderText('Stopping...')).toBeDisabled();
         });
     });
 

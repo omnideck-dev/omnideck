@@ -276,12 +276,18 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
         result = await run_turn(history, _make_agent())
 
     assert result == "Hello!"
-    # Two content delta events stream before the final response.
+    # Two content delta events stream before the final response;
+    # turn_end belongs to turn_scope, not run_turn.
     delta_calls = [
         c for c in _patch_publish_event.call_args_list
         if hasattr(c.args[0].payload, "delta") and c.args[0].payload.delta is True
     ]
     assert len(delta_calls) == 2
+    turn_end_calls = [
+        c for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "turn_end"
+    ]
+    assert turn_end_calls == []
 
 
 # ---------------------------------------------------------------------------

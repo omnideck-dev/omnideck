@@ -378,12 +378,17 @@ async def _run_turn(
                     ctx_manager=ctx_manager,
                 )
 
-                with suppress(StopRequestedError):
-                    await run_turn(
-                        history=history,
-                        agent=active_agent,
-                        hooks=hooks,
-                    )
+                # The stop is swallowed OUTSIDE turn_scope (below), not
+                # here: it has to propagate through agent_span so the root
+                # records agent_completed(status="stopped"), and through
+                # turn_scope so turn_end still closes the turn.
+                await run_turn(
+                    history=history,
+                    agent=active_agent,
+                    hooks=hooks,
+                )
+    except StopRequestedError:
+        logger.info("Turn for conversation '%s' stopped by user", conv_id)
     finally:
         # Unsubscribe synchronously BEFORE the await: if this cleanup is
         # cancelled mid-drain, an awaited-first order would skip the

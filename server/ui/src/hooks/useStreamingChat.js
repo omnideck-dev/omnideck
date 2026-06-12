@@ -585,6 +585,7 @@ export default function useStreamingChat(callbacks) {
 
     const sendNudge = useCallback(async (message, agentId) => {
         if (!message) return;
+        if (stopRequestedRef.current) return;
         const nudgeBody = {
             message,
             conversation_id: conversationIdRef.current,
@@ -652,6 +653,7 @@ export default function useStreamingChat(callbacks) {
             const controller = new AbortController();
             abortControllerRef.current = controller;
             setIsStreaming(true);
+            setStopRequested(false);
 
             const resp = await fetch('/api/chat', {
                 method: 'POST',
@@ -938,6 +940,7 @@ export default function useStreamingChat(callbacks) {
             abortControllerRef.current = null;
         }
         setIsStreaming(false);
+        setStopRequested(false);
 
         try {
             const resp = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {

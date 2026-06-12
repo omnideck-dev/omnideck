@@ -283,11 +283,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const handleSend = useCallback((message, fileData) => {
         setAttachment(null);
         if (isStreaming) {
-            sendNudge(message);
+            if (!stopRequested) sendNudge(message);
         } else {
             sendMessage(message, fileData, selectedProfileId);
         }
-    }, [sendMessage, sendNudge, isStreaming, selectedProfileId]);
+    }, [sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId]);
 
     const openDesktop = useCallback(async () => {
         if (userDesktopOpen) return;
@@ -478,7 +478,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     {view === 'network' && agentState.selectedAgentId && (
                         <div className={styles.chatColumn}
                              style={{ width: hasPreview ? `${preview.splitPosition}%` : '100%' }}>
-                            <AgentActivityView onNudge={sendNudge} onPreview={preview.openFile} />
+                            <AgentActivityView
+                                onNudge={sendNudge}
+                                onPreview={preview.openFile}
+                                nudgeDisabled={stopRequested}
+                            />
                         </div>
                     )}
 
