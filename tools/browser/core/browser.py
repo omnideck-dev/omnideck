@@ -448,6 +448,13 @@ class Browser:
             "--disable-dev-shm-usage",
             *(["--start-maximized"] if not headless else []),
             "--enable-automation=false",
+            # Re-enable the software (SwiftShader) WebGL fallback that recent
+            # Chrome disables by default. Without it a GPU-less browser has no
+            # WebGL at all (getContext returns null) — a strong bot signal, and
+            # the renderer spoof above can't engage. With it, WebGL works via
+            # SwiftShader and the spoof masks that as a real GPU. Hardware GL is
+            # still preferred when a GPU is present, so this is a no-op there.
+            "--enable-unsafe-swiftshader",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
