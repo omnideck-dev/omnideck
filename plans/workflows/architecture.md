@@ -13,9 +13,13 @@ workflows/                  NEW — top-level package (peer of tasks/, agents/, 
 server/
   _workflow_routes.py       NEW — REST surface, registered like every other feature
 server/ui/src/
-  components/Workflows*     NEW — list/overview, builder, dry run
+  components/workflows/     NEW — all workflow components in their own folder
+                            (list/overview, builder, inspector editors, dry run)
   hooks/useWorkflows.js     NEW
-tools/integrations/         CHANGED — typed results where triggers/steps need fields
+integrations/               EXTENDED — typed operations facade over the broker clients
+                            (the step-facing shim; workflow-agnostic, lives here)
+tools/integrations/         UNCHANGED initially — later refactors into prose adapters
+                            over the facade so each operation has one contract
 sdk/, agents/               REUSED — agent steps run through build_agent + run_turn
 tasks/                      REPLACED eventually — Goals stays until Workflows lands
 ```
@@ -39,7 +43,7 @@ Responsibilities:
 The typed-data backbone (engine spec §1, §4). Every step declares what it produces; references (`Triage ▸ tasks`, `item ▸ due`) resolve against upstream shapes at build time and against actual values at run time.
 
 - Agent steps: optional declared shape (with enums) → structured output via the provider work in `provider-structured-output-spec.md`; shape off → text.
-- Tool steps: input/output schemas as a build-time contract (engine spec §2). Steps do **not** call the LLM-facing tool functions in `tools/integrations/` — those have prose docstrings and flatten results to strings for an agent to read. A **step-facing shim** wraps the same underlying broker operations with typed params and typed result models (the broker RPC layer already passes dicts; the string-flattening happens at the tool layer, so the shim sits below it). The two surfaces stay separate on purpose: the LLM tools keep optimizing for agent legibility, the shim for schema stability. The **schema audit** of `tools/integrations/` is the prerequisite that defines the shim's contracts.
+- Tool steps: input/output schemas as a build-time contract (engine spec §2). Steps do **not** call the LLM-facing tool functions in `tools/integrations/` — those have prose docstrings and flatten results to strings for an agent to read. Instead, a **typed operations facade in `integrations/`** wraps the broker/supervisor clients directly: typed params, typed result models (the broker RPC layer already passes dicts, and broker `types.py` models exist to build on — the string-flattening only happens at the tool layer). It lives in `integrations/`, not `workflows/`, because it's workflow-agnostic — tool steps, watch triggers, and trigger previews all consume it, and `tools/integrations/` later refactors into thin prose adapters over it so each operation has one contract with two presentations (typed for steps, prose for agents). The **schema audit** of `tools/integrations/` is the prerequisite that defines the facade's contracts.
 - Code steps: run in the existing Podman sandbox; references are inputs injected by name, the last expression is the output.
 - Scope rules: what the data picker shows (trigger + upstream + `item` inside per-item + run context) is computed from the definition graph — one function used by the UI picker, the assistant, and validation.
 
@@ -50,7 +54,7 @@ The run executor. Walks the pinned definition version, executes steps, persists 
 - **Run lifecycle**: a Run row (status, current step cursor, per-step results) stored like Goals runs. Every step result persisted before advancing — pause/resume and crash recovery fall out of this.
 - **Step executors**, one per type:
   - *Agent*: `build_agent(profile, tools)` → `run_turn()`; instruction + included context assembled into the turn; structured result parsed against the declared shape.
-  - *Tool*: direct async call through the step-facing shim (2.2) with mapped inputs — never through an LLM, never the prose-returning agent tools. Per-item mode fans out over the list source, one call per element, results collected in order.
+  - *Tool*: direct async call through the typed operations facade (2.2) with mapped inputs — never through an LLM, never the prose-returning agent tools. Per-item mode fans out over the list source, one call per element, results collected in order.
   - *Code*: sandboxed execution with injected references.
   - *Branch*: evaluate path rules (or expression) against resolved references; route to the named edge.
   - *Approval*: persist the run as `waiting`, send the ask via the configured tool (Telegram etc.), resume on approve/reject via API callback. No timeout.
@@ -62,7 +66,7 @@ The run executor. Walks the pinned definition version, executes steps, persists 
 A scheduler loop in the Goals-runner style (poll interval, croniter already a dependency) plus per-trigger watchers.
 
 - **Schedule**: days-of-week + time (no cron in the UI; croniter underneath or plain time math). Manual run = "now".
-- **Watch (new item)**: poll the integration via the same typed tool layer steps use; evaluate field conditions (engine spec §5); dedupe by stable id persisted per trigger.
+- **Watch (new item)**: poll the integration via the same typed operations facade steps use; evaluate field conditions (engine spec §5); dedupe by stable id persisted per trigger.
 - **Watch (changed item)**: scoped to a picked list of items; persist each item's id + watched-field value; fire on change. Email is new-only; calendar/drive support changed; API triggers support both with user-picked paths (items-at / identify-by / watch field) evaluated against the polled response.
 - Trigger state (dedupe sets, changed-item snapshots, last-poll cursors) lives next to the workflow's runs, versioned independently of the definition.
 
@@ -86,7 +90,7 @@ Following the existing `register_*_routes` pattern:
 
 ### 2.7 UI (`server/ui/src`)
 
-New top-level view wired the way every view is: `Sidebar.jsx` entry, `view === 'workflows'` in `DesktopApp.jsx`, `useWorkflows` hook for data. The mockups map to components roughly as: index.html → list + overview; builder/step-builder → full-screen builder (canvas, palette, inspector); step-config → the inspector's per-type editors; data-picker → the shared reference picker; dry-run → the dry-run mode of the builder; assistant-experience / inline-assistant → the panel and the in-editor dock. Builder state (draft definition, selection, pending changes) is a reducer like `useAgentState`. SIGNAL tokens come from the design language; the `--assistant` token from the reskinned inline mockup is the one palette addition.
+New top-level view wired the way every view is: `Sidebar.jsx` entry, `view === 'workflows'` in `DesktopApp.jsx`, `useWorkflows` hook for data. Unlike the existing flat `components/` directory, all workflow components (and their CSS modules) live in `components/workflows/` — the feature is big enough to warrant its own folder. The mockups map to components roughly as: index.html → list + overview; builder/step-builder → full-screen builder (canvas, palette, inspector); step-config → the inspector's per-type editors; data-picker → the shared reference picker; dry-run → the dry-run mode of the builder; assistant-experience / inline-assistant → the panel and the in-editor dock. Builder state (draft definition, selection, pending changes) is a reducer like `useAgentState`. SIGNAL tokens come from the design language; the `--assistant` token from the reskinned inline mockup is the one palette addition.
 
 ## 3. Cross-cutting decisions
 
@@ -98,8 +102,10 @@ New top-level view wired the way every view is: `Sidebar.jsx` entry, `view === '
 
 ## 4. Low-level design docs to produce (one each)
 
+These replace the existing spec skeletons: `workflows-engine-spec.md` folds into designs 1–4 (its sections map to definitions §3, step-io §1/§2/§4, engine §1, triggers §5, plus its resolved-decisions list), and `provider-structured-output-spec.md` folds into design 2. Each spec file is deleted once the design doc that absorbs it lands.
+
 1. `design-definitions.md` — definition schema, versioning, pending changes, validation.
-2. `design-step-io.md` — typed step I/O, reference model, scope computation; the step-facing tool shim and the integration-tool schema audit that defines its contracts. (Provider structured output already has its spec.)
+2. `design-step-io.md` — typed step I/O, reference model, scope computation; the typed operations facade in `integrations/` and the schema audit that defines its contracts; absorbs `provider-structured-output-spec.md`.
 3. `design-engine.md` — run lifecycle/persistence, step executors, failure policy, approval pause/resume, dry-run sessions.
 4. `design-triggers.md` — scheduler, watch pollers, per-kind trigger state, API trigger sampling.
 5. `design-assistant.md` — assistant ops/tools, proposal objects, panel + in-editor flows.
