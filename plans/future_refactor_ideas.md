@@ -149,3 +149,51 @@ This is a duplicated *contract*, not duplicated code — the two can't share a f
 **Why it's non-trivial:** the reducer was built for the live flow. Bulk-replaying a whole conversation pokes at behavior it doesn't expect — multiple historical root agents (each past turn is its own root), `AGENT_STARTED` side effects (preview carryover, `networkActivated`, `selectedAgentId`), synthetic agent ids/timestamps, and tool-call arg shapes. `setMessages` is still needed for user messages and the assistant stubs that carry `agentId`. It needs its own testing pass — medium effort, real edge-case risk. Own commit/PR, not a fold-in.
 
 Until then `_historyToMessages` stays — small, pure, tested.
+
+## Replace the hand-rolled tool type→schema layer in sdk/tools
+
+`sdk/tools` hand-rolls type-driven conversion in three independent places that
+share no code and have already drifted:
+
+- `_coerce_value` in `_helpers.py` — inbound: validate/coerce LLM arg JSON
+  against a tool's signature before the call.
+- `_python_type_to_json_schema` in `_callable_schema.py` — outbound: build the
+  OpenAI/Anthropic tool schema from the signature.
+- `_placeholder_for_type` in `_schema.py` — prompt-facing example JSON for
+  Pydantic models.
+
+Each re-implements "walk a Python annotation, branch on `list` / `Union` /
+Pydantic / scalar." The drift is real: each path handles unions its own way
+(the outbound converter emits `anyOf`, the inbound coercer passes multi-member
+unions through unchanged, the placeholder renderer collapses to the first
+non-None member), and a fix in one doesn't reach the others. Ollama bypasses
+the outbound converter entirely — it does its own pydantic conversion in the
+client library — so the two outbound schemas can diverge for the same tool.
+
+**Goal:** stop maintaining three parallel walkers. Two viable directions:
+
+1. **Shell out to each provider's own schema generator.** The OpenAI and
+   Anthropic SDKs (and Ollama's client) already know how to turn a typed
+   callable / Pydantic model into their respective tool schema. Let each
+   provider adapter own its outbound conversion instead of feeding them all one
+   home-grown OpenAI-style dict. Removes `_callable_schema.py` from the shared
+   path.
+2. **Adopt a library for the type→schema/validation direction.** Pydantic can
+   build a model from a callable's signature (`validate_call` /
+   `TypeAdapter`) and emit JSON Schema from it. Routing both the inbound
+   validation and the outbound schema through one Pydantic-derived model would
+   collapse `_coerce_value` and `_python_type_to_json_schema` into a single
+   source of truth, and the placeholder renderer could derive from the same
+   model instead of re-walking annotations.
+
+Either way the win is one annotation-walking implementation instead of three.
+This is the structural follow-up to the inbound strictness fix (bare string vs.
+`list[str]`); that fix made coercion fail loudly but left the three walkers in
+place.
+
+**Out of scope / watch for:** the placeholder renderer in `_schema.py` is
+deliberately *not* a formal schema (no `$ref`/`anyOf`, Optional collapsed,
+example-shaped). If validation/schema generation moves to a library, keep the
+prompt-facing example output simple — don't replace it with raw
+`model_json_schema()`, which is far noisier for an LLM to read.
+
