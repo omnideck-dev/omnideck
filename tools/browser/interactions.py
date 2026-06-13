@@ -262,6 +262,8 @@ async def press_and_hold(
             Examples: ``"7"``, ``"12"``.
         duration_ms: How long to hold the mouse button in milliseconds.
             Defaults to 3000 (3 seconds). Range: 500-10000.
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string after the hold is released.
@@ -315,6 +317,8 @@ async def drag(
     Args:
         source: Ref number from ``browse_page()`` for the drag start element.
         target: Ref number for the drop destination.
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string.
@@ -383,6 +387,8 @@ async def fill_field(
         selector: Ref number from ``browse_page()`` output.
             Examples: ``"7"``, ``"12"``.
         value: The complete text to type (converted to string).
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string.
@@ -460,6 +466,8 @@ async def press_keys(keys: list[str], *, tab: str) -> str:
     Args:
         keys: List of key names.  Examples: ``["Enter"]``, ``["Escape"]``,
             ``["ArrowDown"]``, ``["Control+Shift+P"]``.
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string.
@@ -505,6 +513,8 @@ async def scroll_page(
             ``"top"``, or ``"bottom"``.
         amount: Optional pixel distance for ``"down"``/``"up"``.  Omit for
             a viewport-sized scroll.
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string with scroll state.

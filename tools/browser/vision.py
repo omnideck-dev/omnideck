@@ -51,6 +51,8 @@ async def inspect_page(
         mode: ``"full_page"`` (default), ``"viewport"``, or ``"selector"``.
         selector: Required when ``mode="selector"`` — ref number of the
             element to capture.
+        tab: Stable tab ID to inspect — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         A text answer from the vision model (never an image).
@@ -136,6 +138,8 @@ async def browser_visual_action(task: str, *, tab: str) -> str:
         task: Natural-language description of what to do, e.g.
             ``"Click the Login button"``, ``"Drag the slider to the right"``,
             or ``"Type hello into the search box"``.
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Updated page snapshot string after executing the action.
