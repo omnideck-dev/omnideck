@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from sdk.tools import callable_to_json_schema
+
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
 logger = logging.getLogger(__name__)
@@ -40,10 +42,20 @@ def _build_ollama_kwargs(
         "think": think,
     }
     if tools:
-        kwargs["tools"] = tools
+        kwargs["tools"] = _convert_tools(tools)
     if options:
         kwargs["options"] = options
     return kwargs
+
+
+def _convert_tools(tools: list[Callable[..., Any]]) -> list[dict[str, Any]]:
+    """Convert Python callables to Ollama's tool format.
+
+    Ollama accepts the OpenAI-style tool dict directly. Building it ourselves
+    (rather than handing Ollama raw callables) keeps every provider on the one
+    schema derived from the tool's Pydantic model.
+    """
+    return [callable_to_json_schema(func) for func in tools]
 
 
 def _convert_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

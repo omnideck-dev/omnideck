@@ -6,60 +6,76 @@ import pytest
 
 from sdk.tools._callable_schema import (
     _CHARS_PER_TOKEN,
-    _parse_arg_descriptions,
-    _python_type_to_json_schema,
     callable_to_json_schema,
     estimate_tool_tokens,
 )
+from sdk.tools._docstrings import parse_arg_descriptions
+from sdk.tools._tool_model import parameters_schema
 
 
-# ── _python_type_to_json_schema ─────────────────────────────────────────
+def _prop(annotation: Any) -> dict:
+    """Schema for a single parameter of the given annotation.
+
+    Exercises the real builder end to end: the parameter schema comes from the
+    tool's Pydantic model, post-processed into provider shape.
+    """
+
+    def tool(x):  # noqa: ANN001 - annotation injected below
+        ...
+
+    tool.__annotations__ = {"x": annotation, "return": str}
+    return parameters_schema(tool)["properties"]["x"]
+
+
+# ── parameter type → JSON schema ────────────────────────────────────────
 
 
 @pytest.mark.unit
-class TestPythonTypeToJsonSchema:
+class TestParametersSchema:
     def test_str(self):
-        assert _python_type_to_json_schema(str) == {"type": "string"}
+        assert _prop(str) == {"type": "string"}
 
     def test_int(self):
-        assert _python_type_to_json_schema(int) == {"type": "integer"}
+        assert _prop(int) == {"type": "integer"}
 
     def test_float(self):
-        assert _python_type_to_json_schema(float) == {"type": "number"}
+        assert _prop(float) == {"type": "number"}
 
     def test_bool(self):
-        assert _python_type_to_json_schema(bool) == {"type": "boolean"}
+        assert _prop(bool) == {"type": "boolean"}
 
     def test_bare_list(self):
-        assert _python_type_to_json_schema(list) == {"type": "array"}
+        assert _prop(list) == {"type": "array", "items": {}}
 
     def test_bare_dict(self):
-        assert _python_type_to_json_schema(dict) == {"type": "object"}
+        assert _prop(dict) == {"type": "object"}
 
     def test_list_of_str(self):
-        assert _python_type_to_json_schema(list[str]) == {
-            "type": "array",
-            "items": {"type": "string"},
-        }
+        assert _prop(list[str]) == {"type": "array", "items": {"type": "string"}}
 
     def test_list_of_int(self):
-        assert _python_type_to_json_schema(list[int]) == {
-            "type": "array",
-            "items": {"type": "integer"},
-        }
+        assert _prop(list[int]) == {"type": "array", "items": {"type": "integer"}}
 
     def test_dict_str_any(self):
-        assert _python_type_to_json_schema(dict[str, Any]) == {"type": "object"}
+        # additionalProperties: true (the JSON-Schema default) is dropped.
+        assert _prop(dict[str, Any]) == {"type": "object"}
 
-    def test_optional_str(self):
-        assert _python_type_to_json_schema(str | None) == {"type": "string"}
+    def test_dict_str_str_keeps_value_type(self):
+        # A typed value is preserved — the old hand-rolled walker dropped it.
+        assert _prop(dict[str, str]) == {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+        }
 
-    def test_optional_int(self):
-        assert _python_type_to_json_schema(int | None) == {"type": "integer"}
+    def test_optional_str_collapses(self):
+        assert _prop(str | None) == {"type": "string"}
+
+    def test_optional_int_collapses(self):
+        assert _prop(int | None) == {"type": "integer"}
 
     def test_multi_member_union_becomes_anyof(self):
         """A list-or-scalar union advertises both shapes via anyOf."""
-        assert _python_type_to_json_schema(list[str] | str) == {
+        assert _prop(list[str] | str) == {
             "anyOf": [
                 {"type": "array", "items": {"type": "string"}},
                 {"type": "string"},
@@ -68,44 +84,51 @@ class TestPythonTypeToJsonSchema:
 
     def test_optional_multi_member_union_drops_none(self):
         """None is dropped from the anyOf; optionality rides on `required`."""
-        assert _python_type_to_json_schema(list[str] | str | None) == {
+        assert _prop(list[str] | str | None) == {
             "anyOf": [
                 {"type": "array", "items": {"type": "string"}},
                 {"type": "string"},
             ],
         }
 
-    def test_unannotated(self):
-        """Missing annotation defaults to string."""
-        import inspect
+    def test_scalar_union_keeps_all_members(self):
+        """The widest real param (fill_field's value) keeps every scalar shape."""
+        assert _prop(str | int | float | bool | None) == {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "integer"},
+                {"type": "number"},
+                {"type": "boolean"},
+            ],
+        }
 
-        assert _python_type_to_json_schema(inspect.Parameter.empty) == {"type": "string"}
+    def test_literal_becomes_enum(self):
+        """A Literal param advertises its allowed values — previously lost."""
+        from typing import Literal
 
-    def test_any_type(self):
-        assert _python_type_to_json_schema(Any) == {"type": "string"}
+        assert _prop(Literal["utf-8", "base64"]) == {
+            "type": "string",
+            "enum": ["utf-8", "base64"],
+        }
 
-    def test_unknown_type_defaults_to_string(self):
-        """An unrecognized type falls back to string."""
-
-        class Custom:
-            pass
-
-        assert _python_type_to_json_schema(Custom) == {"type": "string"}
+    def test_unannotated_is_any(self):
+        """An unannotated/Any param advertises as 'any type', not string."""
+        assert _prop(Any) == {}
 
 
-# ── _parse_arg_descriptions ─────────────────────────────────────────────
+# ── parse_arg_descriptions ──────────────────────────────────────────────
 
 
 @pytest.mark.unit
 class TestParseArgDescriptions:
     def test_none_docstring(self):
-        assert _parse_arg_descriptions(None) == {}
+        assert parse_arg_descriptions(None) == {}
 
     def test_empty_docstring(self):
-        assert _parse_arg_descriptions("") == {}
+        assert parse_arg_descriptions("") == {}
 
     def test_no_args_section(self):
-        assert _parse_arg_descriptions("Just a summary.\n\nSome details.") == {}
+        assert parse_arg_descriptions("Just a summary.\n\nSome details.") == {}
 
     def test_simple_args(self):
         doc = """Do something.
@@ -114,7 +137,7 @@ class TestParseArgDescriptions:
             name: The user's name.
             age: The user's age.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {
             "name": "The user's name.",
             "age": "The user's age.",
@@ -127,7 +150,7 @@ class TestParseArgDescriptions:
             cmd (str): The bash command to execute.
             timeout (float): Max seconds to wait. Default 600.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {
             "cmd": "The bash command to execute.",
             "timeout": "Max seconds to wait. Default 600.",
@@ -141,7 +164,7 @@ class TestParseArgDescriptions:
                 database. Supports wildcards.
             limit: Maximum results.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result["query"] == "The search query to run against the database. Supports wildcards."
         assert result["limit"] == "Maximum results."
 
@@ -154,7 +177,7 @@ class TestParseArgDescriptions:
         Returns:
             The sum.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {"x": "First value."}
         assert "Returns" not in result
 
@@ -167,7 +190,7 @@ class TestParseArgDescriptions:
         Raises:
             ValueError: If x is negative.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {"x": "First value."}
 
     def test_arguments_keyword(self):
@@ -177,7 +200,7 @@ class TestParseArgDescriptions:
         Arguments:
             val: Some value.
         """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {"val": "Some value."}
 
     def test_real_world_run_bash_cmd(self):
@@ -195,7 +218,7 @@ class TestParseArgDescriptions:
     Returns:
         BashCmdResult: ``stdout``, ``stderr``, and ``exit_code``.
     """
-        result = _parse_arg_descriptions(doc)
+        result = parse_arg_descriptions(doc)
         assert result == {
             "cmd": "The bash command to execute.",
             "timeout": "Max seconds to wait. Default 600.",
@@ -301,14 +324,15 @@ class TestCallableToJsonSchema:
             "Fetch a URL. Supports HTTP and HTTPS. Follows redirects automatically."
         )
 
-    def test_unannotated_params_default_to_string(self):
+    def test_unannotated_params_are_any(self):
         def loose(a, b):
             """Loose typing."""
 
         schema = callable_to_json_schema(loose)
         props = schema["function"]["parameters"]["properties"]
-        assert props["a"] == {"type": "string"}
-        assert props["b"] == {"type": "string"}
+        # Unannotated params advertise as "any type" ({}), not a forced string.
+        assert props["a"] == {}
+        assert props["b"] == {}
         assert schema["function"]["parameters"]["required"] == ["a", "b"]
 
     def test_complex_param_types(self):

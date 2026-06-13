@@ -82,7 +82,7 @@ def test_bool_coercion_invalid_string():
 
     def tool(flag: bool) -> str: ...
 
-    with pytest.raises(ValueError, match="Cannot convert"):
+    with pytest.raises(ValueError, match="'flag'"):
         _prepare_tool_arguments(tool, {"flag": "maybe"})
 
 
@@ -254,7 +254,7 @@ def test_list_param_rejects_bare_string():
 
     def tool(tags: list[str]) -> str: ...
 
-    with pytest.raises(ValueError, match="'tags'.*expected a list, got str"):
+    with pytest.raises(ValueError, match="'tags'.*valid list"):
         _prepare_tool_arguments(tool, {"tags": "alpha"})
 
 
