@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from pydantic import BaseModel
 
@@ -177,11 +175,11 @@ def test_pydantic_from_json_string():
 
 @pytest.mark.unit
 def test_pydantic_invalid_json_raises():
-    """Invalid JSON for a Pydantic param raises JSONDecodeError."""
+    """Invalid JSON for a Pydantic param raises with the parameter named."""
 
     def tool(item: _Item) -> str: ...
 
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match="'item'"):
         _prepare_tool_arguments(tool, {"item": "not json"})
 
 
@@ -248,6 +246,26 @@ def test_empty_list_passthrough():
 
     result = _prepare_tool_arguments(tool, {"items": []})
     assert result["items"] == []
+
+
+@pytest.mark.unit
+def test_list_param_rejects_bare_string():
+    """A bare string where list[T] is expected raises, naming the param."""
+
+    def tool(tags: list[str]) -> str: ...
+
+    with pytest.raises(ValueError, match="'tags'.*expected a list, got str"):
+        _prepare_tool_arguments(tool, {"tags": "alpha"})
+
+
+@pytest.mark.unit
+def test_list_or_str_union_passthrough():
+    """A list[str] | str union accepts both shapes unchanged."""
+
+    def tool(to: list[str] | str) -> str: ...
+
+    assert _prepare_tool_arguments(tool, {"to": "a@b.com"})["to"] == "a@b.com"
+    assert _prepare_tool_arguments(tool, {"to": ["a@b.com"]})["to"] == ["a@b.com"]
 
 
 @pytest.mark.unit

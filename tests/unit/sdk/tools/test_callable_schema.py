@@ -57,6 +57,24 @@ class TestPythonTypeToJsonSchema:
     def test_optional_int(self):
         assert _python_type_to_json_schema(int | None) == {"type": "integer"}
 
+    def test_multi_member_union_becomes_anyof(self):
+        """A list-or-scalar union advertises both shapes via anyOf."""
+        assert _python_type_to_json_schema(list[str] | str) == {
+            "anyOf": [
+                {"type": "array", "items": {"type": "string"}},
+                {"type": "string"},
+            ],
+        }
+
+    def test_optional_multi_member_union_drops_none(self):
+        """None is dropped from the anyOf; optionality rides on `required`."""
+        assert _python_type_to_json_schema(list[str] | str | None) == {
+            "anyOf": [
+                {"type": "array", "items": {"type": "string"}},
+                {"type": "string"},
+            ],
+        }
+
     def test_unannotated(self):
         """Missing annotation defaults to string."""
         import inspect
@@ -219,6 +237,21 @@ class TestCallableToJsonSchema:
         assert params["properties"]["verbose"] == {"type": "boolean"}
         # Only query is required (limit and verbose have defaults)
         assert params["required"] == ["query"]
+
+    def test_stringized_annotations_are_resolved(self):
+        """Tools under `from __future__ import annotations` carry string
+        annotations; the converter must evaluate them, not collapse every
+        param to the default string type."""
+        # String-literal annotations mimic what PEP 563 stores at runtime.
+        def tool(items: "list[str]", count: "int", to: "list[str] | str") -> "str":
+            """A tool with stringized annotations."""
+
+        props = callable_to_json_schema(tool)["function"]["parameters"]["properties"]
+        assert props["items"] == {"type": "array", "items": {"type": "string"}}
+        assert props["count"] == {"type": "integer"}
+        assert props["to"] == {
+            "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+        }
 
     def test_no_params(self):
         def noop() -> None:

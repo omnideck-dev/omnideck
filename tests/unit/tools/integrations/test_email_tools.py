@@ -328,6 +328,26 @@ async def test_send_email_confirms_with_message_id(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_send_email_accepts_string_to_as_single_recipient(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A bare string ``to`` is sent as a one-element list, never iterated
+    character by character.
+    """
+    captured: dict[str, Any] = {}
+
+    async def _fake(integration_id: str, verb: str, args: dict, *, app_sock_path: str) -> Any:
+        captured.update(args)
+        return {"sent": True, "message_id": "<x@y>"}
+
+    monkeypatch.setattr(broker_client, "call", _fake)
+    out = await send_email(
+        "icloud_personal", to="a@b.com", subject="hi", body="hello",
+    )
+    assert captured["to"] == ["a@b.com"]
+    assert "to a@b.com" in out
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_send_email_lists_multiple_recipients(monkeypatch: pytest.MonkeyPatch) -> None:
     """Multiple ``to`` addresses are joined with ", " in the confirmation."""
     _patch_call(monkeypatch, result={"sent": True, "message_id": "<x@y>"})
