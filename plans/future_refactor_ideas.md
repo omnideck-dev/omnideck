@@ -161,29 +161,121 @@ share no code and have already drifted:
   OpenAI/Anthropic tool schema from the signature.
 
 Both re-implement "walk a Python annotation, branch on `list` / `Union` /
-Pydantic / scalar." The drift is real: each handles unions its own way (the
-outbound converter emits `anyOf`, the inbound coercer passes multi-member
-unions through unchanged), and a fix in one doesn't reach the other. Ollama
-bypasses the outbound converter entirely — it does its own pydantic conversion
-in the client library — so the two outbound schemas can diverge for the same
-tool.
+Pydantic / scalar." The drift is not hypothetical — measured against the real
+provider SDKs, the hand-rolled outbound converter silently degrades any param
+the `_TYPE_MAP` doesn't cover:
 
-**Goal:** stop maintaining two parallel walkers. Two viable directions:
+- `Literal["a","b"]` → emitted as a bare `{"type": "string"}`; the `enum` is
+  lost, so the model is never told the allowed values.
+- a Pydantic-model parameter → emitted as `{"type": "string"}`; the nested
+  object schema is lost entirely. Inbound, the *same* param is validated as the
+  model — so the model is told "send a string" while the coercer demands a
+  structured object. Guaranteed mismatch.
+- `dict[str, V]` → `{"type": "object"}` with the value type dropped.
 
-1. **Shell out to each provider's own schema generator.** The OpenAI and
-   Anthropic SDKs (and Ollama's client) already know how to turn a typed
-   callable into their respective tool schema. Let each provider adapter own its
-   outbound conversion instead of feeding them all one home-grown OpenAI-style
-   dict. Removes `_callable_schema.py` from the shared path.
-2. **Adopt a library for the type→schema/validation direction.** Pydantic can
-   build a model from a callable's signature (`validate_call` /
-   `TypeAdapter`) and emit JSON Schema from it. Routing both the inbound
-   validation and the outbound schema through one Pydantic-derived model would
-   collapse `_coerce_value` and `_python_type_to_json_schema` into a single
-   source of truth.
+The inbound side mirrors the gaps: `Literal` values aren't validated
+(out-of-enum passes through), `dict` values aren't coerced, multi-member unions
+pass through unchecked, and `int <- 3.9` silently truncates.
 
-Either way the win is one annotation-walking implementation instead of two.
-This is the structural follow-up to the inbound strictness fix (bare string vs.
-`list[str]`); that fix made coercion fail loudly but left both walkers in
-place.
+## Two viable directions
+
+**Direction 1 — shell out to each provider's own generator. Rejected.**
+Investigated against the installed SDKs; it does not hold up:
+
+- The **OpenAI** base SDK has no callable→schema entry point at all. Its
+  `pydantic_function_tool` takes a Pydantic *model*, not a function; raw-callable
+  support lives only in the separate Agents SDK.
+- **Anthropic**'s `@beta_tool` is real and docstring-aware but **beta**, and
+  requires decorating every tool.
+- **Ollama**'s converter is a private `_utils` import and *crashes* on natural
+  signatures: under `from __future__ import annotations` (which the tool modules
+  use), a `Literal[...]` or `Optional[...]` parameter raises
+  `PydanticUserError: not fully defined`, because it builds a synthetic model
+  from the stringized annotations without resolving forward refs (no
+  `eval_str`). Latent today only because every `Literal`/`Optional` currently
+  lives *inside* a Pydantic model, which resolves fine — the first tool that
+  takes `mode: Literal["fast","slow"]` as a direct param breaks Ollama at
+  runtime while the others keep working.
+- Fatal flaw even if those were fixed: three generators produce three
+  *different* schemas for the same tool (titles, `$defs`, `additionalProperties`,
+  `anyOf` shape all differ). That is the opposite of provider-agnostic, and it
+  surrenders control of the exact bytes sent to the weaker OpenRouter models
+  where `anyOf` adherence is already shaky.
+
+**Direction 2 — one Pydantic model per tool, fed to every provider. Chosen.**
+The sharper framing than "share a walker": generate one schema *ourselves* and
+send that same dict to **every** provider, Ollama included. Ollama's
+`chat(tools=...)` accepts pre-built tool dicts, not only callables, so we stop
+handing it raw callables and the hidden third converter disappears.
+
+Both seams are already JSON — a schema dict in, an args dict out (every provider
+normalizes its wire tool-call back to a Python dict before it reaches the turn
+loop). One Pydantic model sits exactly at both:
+
+- Build one model per tool from the signature (`create_model` over the params,
+  `eval_str=True` for PEP 563, docstring `Args:` → `Field(description=...)`).
+- **Outbound:** `model.model_json_schema()` → post-process to the shared
+  OpenAI/Anthropic shape (strip `title`, decide on `$defs` inlining and
+  `additionalProperties: false`). One schema, sent to all four providers.
+- **Inbound:** `model.model_validate(args)` replaces `_coerce_value`. `Literal`,
+  nested models, `dict[str, V]`, and unions all get validated for free, by the
+  same definition that produced the schema.
+
+This deletes `_python_type_to_json_schema`, most of `_coerce_value`, and the
+Ollama raw-callable special-case in one move. It is the structural follow-up to
+the inbound strictness fix (bare string vs. `list[str]`); that fix made coercion
+fail loudly but left both walkers in place.
+
+**Carry-overs that must survive the swap** (these are the regression risks):
+
+- The existing **strict** behavior — a bare string where `list[str]` is
+  annotated must still raise. Pydantic in lax mode is *more* permissive than the
+  current coercer (`"7" -> 7`, `3.9 -> 3`), which would trade loud failures for
+  silent ones — forbidden by the testing conventions. Run the model strict-ish
+  and add back only the LLM-reality coercions that are genuinely wanted (the
+  `"true"/"yes"/"1"` bool strings).
+- The **loud, per-parameter error messages** the turn loop surfaces to the model
+  on a bad call (`Invalid value for parameter 'x' of tool 'y': ...`). Pydantic's
+  `ValidationError` must be reshaped into that, not leaked raw.
+- `estimate_tool_tokens` rides on the outbound schema and must keep working.
+
+## Test strategy
+
+The whole point is collapsing three converters into one *without changing any
+tool's observed behavior*, so this is test-led. Three layers:
+
+1. **`sdk/tools` units (the model builder).** Extend
+   `tests/unit/sdk/tools/test_callable_schema.py` and `test_helpers_prepare.py`.
+   Parametrize one matrix of annotation shapes and assert *both* directions off
+   the single model: scalars, `list[T]`, `dict[str, V]`, `Optional[T]`,
+   `T | None`, multi-member unions (`list[str] | str`), `Literal`, nested
+   Pydantic, list-of-Pydantic, self-referencing models, unannotated, `Any`.
+   Several current cases encode the *old buggy* behavior and must be **flipped**,
+   not kept: `test_unknown_type_defaults_to_string`,
+   `test_list_or_str_union_passthrough`, `test_complex_param_types`, and the
+   `Literal`/`dict`-value cases. Add the strictness regressions explicitly
+   (bare-string-for-list raises; `Literal` out-of-enum raises; named-parameter
+   error message shape).
+
+2. **Per-provider input conversion.** One test per provider asserting the tool
+   *advertised* to the model is correct for that provider's required shape —
+   OpenAI `{"type":"function","function":{...}}`, Anthropic
+   `{"name","description","input_schema"}`, Ollama gets the **same dict** (proving
+   the raw-callable path is gone). Same input tool, three provider-shaped
+   outputs from one schema. Pin a `Literal`/nested-model tool here so the
+   previously-dropped `enum`/object structure is asserted present for every
+   provider.
+
+3. **Per-provider output normalization.** Already partially covered
+   (`test_openai.py::test_tool_call_arguments_serialized_to_json_string`,
+   `test_ollama.py::test_tool_calls`, etc.). Fill the matrix so each provider has
+   a test that its wire tool-call (OpenAI/Responses JSON **string**, Anthropic
+   **dict**, Ollama **dict**) normalizes to the identical
+   `ToolCall(function=ToolCallFunction(name, arguments=dict))`, including the
+   malformed-arguments fallback path.
+
+A useful backstop for layers 2–3: a single round-trip test per provider through
+the `_fake` provider — build schema from a tool, hand a canned tool-call back,
+assert it executes — so the input and output halves are exercised end to end
+against the one model.
 
