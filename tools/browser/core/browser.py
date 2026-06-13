@@ -614,6 +614,18 @@ class Browser:
         page.on("close", _on_close)
         return page
 
+    def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:
+        """Register *callback* to fire for each new page (tab or popup) opened.
+
+        Lets a caller react when the context spawns a tab — e.g. to keep a
+        chosen tab in the foreground — without reaching into the context.
+        """
+        self._context.on("page", callback)
+
+    def remove_new_page_listener(self, callback: Callable[[Page], None]) -> None:
+        """Unregister a callback previously passed to ``add_new_page_listener``."""
+        self._context.remove_listener("page", callback)
+
     def tab_id_of(self, page: Page) -> int | None:
         """Return the stable tab ID for *page*, or ``None`` if untracked.
 
@@ -1168,9 +1180,6 @@ class Browser:
         await action()
         action_ms = (time.monotonic() - t0) * 1000
 
-        from tools.browser.events import flush_progressive_screenshot
-        await flush_progressive_screenshot()
-
         page.remove_listener("response", _on_response)
         self._context.remove_listener("page", _on_new_page)
 
@@ -1330,6 +1339,19 @@ async def get_browser() -> Browser:
         _agent_browsers[key] = ephemeral
         logger.info("Created ephemeral browser context for key '%s'", key)
         return ephemeral
+
+
+async def get_browser_by_conversation_id(conversation_id: str) -> Browser | None:
+    """Return the live root-agent browser context for *conversation_id*.
+
+    This is the depth-0 context the UI mirrors — the same context
+    ``get_browser`` hands to root agents. Returns ``None`` when the
+    conversation has no live browser yet. Sub-agent contexts and the
+    persistent profile template are never returned here, so callers that
+    expose interactive control can only ever reach the root context.
+    """
+    async with _agent_browser_lock:
+        return _agent_browsers.get(f"conv:{conversation_id}")
 
 
 async def release_agent_browser(key: str) -> None:
