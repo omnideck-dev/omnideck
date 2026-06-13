@@ -90,6 +90,9 @@ class BrowserScreenshotPayload(BaseModel):
         screenshot: Base64-encoded PNG screenshot of the viewport.
         tab_id: Stable tab ID this screenshot belongs to.  The UI uses
             it to route screenshots into per-tab thumbnail slots.
+        open_tab_ids: Stable IDs of all currently-open tabs at capture time.
+            The UI reconciles its thumbnail set against this so tabs that have
+            since closed are pruned rather than lingering as stale thumbnails.
     """
 
     type: Literal["browser_screenshot"]
@@ -97,6 +100,7 @@ class BrowserScreenshotPayload(BaseModel):
     title: str
     screenshot: str  # base64 encoded PNG
     tab_id: int | None = None
+    open_tab_ids: list[int] | None = None
 
 
 class FileOutputPayload(BaseModel):

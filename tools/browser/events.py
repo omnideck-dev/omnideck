@@ -4,22 +4,21 @@ This module provides a single ``_emit_screenshot`` function that captures a
 JPEG screenshot from a Playwright page and publishes it as a
 ``BrowserScreenshotPayload`` event for the UI.
 
-All screenshot emission flows funnel through ``_emit_screenshot``:
+Screenshots are emitted at two points:
 
-- **Progressive** — ``request_progressive_screenshot`` queues a throttled,
-  non-blocking capture via ``_ScreenshotEmitter`` during interactions (mouse
-  movement, typing, scrolling).
 - **Post-tool** — ``emit_screenshot_after`` decorator calls
   ``_emit_screenshot`` once after a tool returns a result with a page view.
 - **Ad-hoc** — ``javascript.py`` calls ``emit_screenshot`` directly after
   JS evaluation.
+
+The live, high-frame-rate view of the selected tab is served separately by the
+browser control side channel (CDP screencast), so these screenshots only need
+to cover thumbnails and post-action state.
 """
 
 from __future__ import annotations
 
-import asyncio
 import base64
-import contextlib
 import logging
 import time
 from collections.abc import Callable
@@ -93,6 +92,9 @@ async def _emit_screenshot(page: Page) -> None:
     # to its own thumbnail slot.
     browser = await get_browser()
     tab_id = browser.tab_id_of(page)
+    # Carry the live open-tab id set so the UI can prune thumbnails for tabs
+    # that have since closed (it otherwise keeps stale per-tab snapshots).
+    open_tab_ids = [t for t in (browser.tab_id_of(p) for p in browser.open_tabs()) if t is not None]
 
     publish_event(AgentEvent(payload=BrowserScreenshotPayload(
         type="browser_screenshot",
@@ -100,6 +102,7 @@ async def _emit_screenshot(page: Page) -> None:
         title=title,
         screenshot=screenshot_base64,
         tab_id=tab_id,
+        open_tab_ids=open_tab_ids,
     )))
 
 
@@ -117,137 +120,6 @@ async def emit_screenshot(page: Page) -> None:
             "Screenshot failed (page=%s, closed=%s)", url, closed,
             exc_info=True,
         )
-
-
-# ---------------------------------------------------------------------------
-# Throttled background screenshot emitter
-# ---------------------------------------------------------------------------
-
-# Minimum interval between progressive screenshots (seconds).
-# ~10 fps keeps the UI feeling live without saturating bandwidth.
-_MIN_SCREENSHOT_INTERVAL_S: float = 0.1
-
-
-class _ScreenshotEmitter:
-    """Fire-and-forget, throttled screenshot emitter.
-
-    Interaction helpers call ``request`` to signal that a screenshot would be
-    useful.  The emitter coalesces rapid requests and captures at most once per
-    ``_MIN_SCREENSHOT_INTERVAL_S`` seconds, running the capture in a background
-    ``asyncio.Task`` so the caller never blocks.
-
-    The background task uses a *latest-value-only* drain loop: after each
-    capture it checks whether new requests arrived during the (potentially
-    slow) screenshot and, if so, throttle-waits then captures again.  This
-    guarantees at most **one** task is alive at a time and prevents
-    backpressure from stacking up screenshot calls.
-    """
-
-    def __init__(self) -> None:
-        self._task: asyncio.Task[None] | None = None
-        self._last_emit: float = 0.0
-        # The page to screenshot is stored per-request so the background task
-        # always captures the most recently requested page.
-        self._pending_page: Page | None = None
-        # Monotonically increasing generation counter.  ``request()``
-        # increments it; ``_run()`` compares against the value recorded
-        # before capture to detect new requests that arrived mid-capture.
-        self._generation: int = 0
-
-    def request(self, page: Page) -> None:
-        """Request a progressive screenshot.  Returns immediately.
-
-        If a capture is already in-flight or was emitted recently, the request
-        is coalesced so at most one capture runs per throttle window.
-
-        Args:
-            page: The Playwright page to screenshot.
-        """
-        self._pending_page = page
-        self._generation += 1
-
-        # If a background task is already running it will pick up the latest
-        # pending page on its next loop iteration — no new task needed.
-        if self._task is not None and not self._task.done():
-            return
-
-        self._task = asyncio.get_event_loop().create_task(self._run())
-
-    async def _run(self) -> None:
-        """Background drain loop: capture, then re-check for new requests.
-
-        The loop exits when no new requests arrived during the most recent
-        capture.  This keeps exactly one task alive and avoids stacking
-        screenshot calls when capture latency exceeds the request rate.
-        """
-        try:
-            while True:
-                # Respect throttle — if we emitted very recently, wait out the
-                # remainder of the interval so we don't flood the UI.
-                since = time.monotonic() - self._last_emit
-                if since < _MIN_SCREENSHOT_INTERVAL_S:
-                    await asyncio.sleep(_MIN_SCREENSHOT_INTERVAL_S - since)
-
-                page = self._pending_page
-                if page is None:
-                    return
-
-                # Record the current generation *before* capturing so we can
-                # tell afterwards whether new requests came in.
-                gen_before = self._generation
-
-                logger.debug(
-                    "Progressive screenshot gen=%d (page=%s)",
-                    gen_before, getattr(page, "url", "?"),
-                )
-                await _emit_screenshot(page)
-                self._last_emit = time.monotonic()
-
-                # If no new requests arrived during the capture we're done.
-                if self._generation == gen_before:
-                    return
-                # Otherwise loop to pick up the latest page reference.
-        except Exception as exc:  # noqa: BLE001 - best-effort, never crash interactions
-            url = getattr(self._pending_page, "url", "unknown") if self._pending_page else "no page"
-            logger.warning(
-                "Progressive screenshot failed (page=%s)", url,
-                exc_info=True,
-            )
-
-    async def wait(self) -> None:
-        """Await the in-flight capture task, if any.
-
-        Called at the *end* of an interaction to guarantee the final frame
-        is emitted before the tool returns.
-        """
-        if self._task is not None and not self._task.done():
-            with contextlib.suppress(Exception):
-                await self._task
-
-
-_emitter = _ScreenshotEmitter()
-
-
-def request_progressive_screenshot(page: Page) -> None:
-    """Request a throttled, non-blocking progressive screenshot.
-
-    This is the single entry-point that all interaction helpers (mouse movement,
-    typing, scrolling) should call.
-
-    Args:
-        page: The Playwright page to capture.
-    """
-    _emitter.request(page)
-
-
-async def flush_progressive_screenshot() -> None:
-    """Ensure the in-flight progressive screenshot completes.
-
-    Interaction functions should ``await`` this once at the very end (after
-    the action finishes but before returning) so the final visual state is
-    emitted without blocking the *middle* of the action.
-    """
-    await _emitter.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +177,4 @@ def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
 __all__ = [
     "emit_screenshot",
     "emit_screenshot_after",
-    "flush_progressive_screenshot",
-    "request_progressive_screenshot",
 ]

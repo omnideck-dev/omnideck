@@ -159,7 +159,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -195,7 +194,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -224,7 +222,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -255,7 +252,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -282,7 +278,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -304,7 +299,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", return_value=BrowserInteractionResult()),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
