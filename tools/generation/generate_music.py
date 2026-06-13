@@ -98,7 +98,8 @@ async def generate_music(
 
                 [Genre], [Vocal type], [Emotion], [Instruments], [Tempo], [Key]
 
-            Examples:
+            Examples::
+
                 "pop-rock, powerful female vocal, energetic, driving drums
                  and synth bass, 128 bpm, E major, anthemic chorus"
                 "ambient lo-fi hip-hop, warm Rhodes piano with vinyl crackle,

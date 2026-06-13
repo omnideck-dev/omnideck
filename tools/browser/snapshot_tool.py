@@ -53,6 +53,8 @@ async def browse_page(
         full_page: Show all elements, not just the current viewport.
             Useful for finding elements without scrolling.  Long pages
             may be truncated.
+        tab: Stable tab ID to inspect — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Formatted string with page header, viewport info, and annotated content.

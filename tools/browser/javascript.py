@@ -39,6 +39,8 @@ async def execute_javascript(
     Args:
         code: JavaScript code or function expression to execute.
         timeout_ms: Maximum wait time in milliseconds (default 10000).
+        tab: Stable tab ID to act on — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Formatted string with success/error status, result, and console output.
