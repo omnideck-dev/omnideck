@@ -6,16 +6,13 @@ runtime validation schema and its Google-style docstring is the model-facing
 documentation. There is no decorator and no registration step; a tool is any
 function handed to the turn loop.
 
-The package does three jobs:
+The package does two jobs:
 
 1. **Inbound** — turn a tool-call (name + JSON args) into a real Python call:
    match the function, coerce the arguments to the annotated types, run it,
    normalize the result back to a string. (`_helpers.py`)
 2. **Outbound** — turn a callable into the JSON Schema some providers require
    in order to advertise the tool to the model. (`_callable_schema.py`)
-3. **Placeholders** — render a Pydantic model as a simplified, LLM-friendly
-   JSON example for use inside prompts and docs (not a validation schema).
-   (`_schema.py`)
 
 ## Public surface
 
@@ -29,9 +26,6 @@ Re-exported from `sdk.tools` (`__init__.py` is a pure facade):
 | `_summarize_arguments` | `_helpers` | Stringify + length-cap args for UI display events. |
 | `callable_to_json_schema` | `_callable_schema` | Build an OpenAI-style tool schema from a callable's signature + docstring. The outbound entry point. |
 | `estimate_tool_tokens` | `_callable_schema` | Rough token cost of including a tool's schema in a request. |
-| `model_to_schema` | `_schema` | Render a Pydantic model as an example JSON string (optionally with `//` field comments). |
-| `model_placeholder_shape` | `_schema` | The dict form behind `model_to_schema`, before JSON rendering. |
-| `JSONValue` | `_schema` | Recursive JSON type alias for annotations. |
 
 The leading underscores on the `_helpers` exports are historical; they are
 imported across the package and treated as public-within-`sdk`.
@@ -106,24 +100,13 @@ of all accepted shapes, so the model sees both the array and the scalar form.
 the weaker models behind OpenRouter — keep widened unions to where a tool truly
 accepts more than one shape rather than as a habit.
 
-## Placeholder schemas (`_schema.py`)
-
-Separate concern from the two paths above. `model_to_schema` /
-`model_placeholder_shape` produce *example-shaped* JSON for a Pydantic model —
-deterministic ordering, `Optional[T]` collapsed to `T`, lists of scalars shown
-as `["string", "..."]`, lists of models shown as a single example element, no
-`$ref`/`anyOf`. The output is for putting an example in a prompt or doc, **not**
-for validation — use `BaseModel.model_json_schema()` when you need the formal
-schema.
-
 ## Design notes for future readers
 
 - **Annotations are the source of truth.** Both the validator and the OpenAI
   schema generator read `inspect.signature`. Keep tool signatures precise; the
   docstring carries the human/LLM intent, the types carry the machine contract.
-- **Three independent type→schema implementations exist** in this area:
-  `_coerce_value` (inbound validation), `_python_type_to_json_schema` (outbound
-  OpenAI/Anthropic schema), and `_placeholder_for_type` (prompt examples). They
-  share no code and have drifted in edge cases (union handling differs between
-  them). Consolidating or replacing them with a library is tracked as a future
-  refactor.
+- **Two independent type→schema implementations exist** in this area:
+  `_coerce_value` (inbound validation) and `_python_type_to_json_schema`
+  (outbound OpenAI/Anthropic schema). They share no code and have drifted in
+  edge cases (union handling differs between them). Consolidating or replacing
+  them with a library is tracked as a future refactor.
