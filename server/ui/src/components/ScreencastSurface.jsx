@@ -28,6 +28,7 @@ export default function ScreencastSurface({
     // size, so clicks land regardless of how the image is scaled for display.
     const coords = useCallback((e) => {
         const img = imgRef.current;
+        if (!img) return { x: 0, y: 0 };
         const r = img.getBoundingClientRect();
         return {
             x: Math.round((e.clientX - r.left) * (img.naturalWidth / r.width)),
@@ -134,11 +135,16 @@ export default function ScreencastSurface({
     }, [engaged, active, sendInput, coords]);
 
     const src = frameUrl || fallbackSrc;
-    if (!src) return null;
 
+    // Always render the surface element, even with no frame yet. Unmounting it
+    // on a transient empty src (e.g. mid tab-switch, before the newly selected
+    // tab's frame arrives) drops the input listeners and keyboard focus bound to
+    // it, which breaks interaction until control is toggled off and on.
     return (
         <div ref={surfaceRef} tabIndex={engaged ? 0 : -1} className={className} data-testid="browser-surface">
-            <img ref={imgRef} src={src} alt="Browser" className={imgClassName} draggable={false} data-testid="browser-frame" />
+            {src && (
+                <img ref={imgRef} src={src} alt="Browser" className={imgClassName} draggable={false} data-testid="browser-frame" />
+            )}
         </div>
     );
 }

@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import styles from './BrowserPreview.module.css';
 import ScreencastSurface from './ScreencastSurface.jsx';
 import BrowserChrome from './BrowserChrome.jsx';
@@ -32,6 +32,12 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
     // Own the surface ref so the address bar can refocus it after navigating.
     const surfaceRef = useRef(null);
     const focusSurface = useCallback(() => surfaceRef.current?.focus(), []);
+    // Switching tabs (or opening one) moves focus to the clicked rail / new-tab
+    // button. Return it to the surface so the page stays keyboard-interactive
+    // without having to toggle control off and on.
+    useEffect(() => {
+        if (c.engaged) focusSurface();
+    }, [selectedId, c.engaged, focusSurface]);
     // Prefer the live nav state (updates during takeover / agent nav); fall back
     // to the screenshot snapshot.
     const url = c.navUrl || activeSnapshot.url;
@@ -80,7 +86,7 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
                                     data-testid={`browser-tab-${id}`}
                                     title={tabSnap.title || tabSnap.url}
                                     className={`${styles.thumbCard} ${isActive ? styles.thumbCardActive : ''}`}
-                                    onClick={() => onSelectTab && onSelectTab(id)}
+                                    onClick={() => { if (onSelectTab) onSelectTab(id); if (c.engaged) focusSurface(); }}
                                 >
                                     <div className={styles.thumbFrame}>
                                         {thumbSrc && (

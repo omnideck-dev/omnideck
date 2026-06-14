@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import call_tool
 from tests.e2e.pages import BrowserControl, ChatView
 from tests.e2e.preview._browser_fixture import fixture_url, install_fixture, open_fixture
 
@@ -114,6 +115,23 @@ def test_typing_and_enter_are_forwarded(page: Page):
     bc.type_text("hello")
     bc.press("Enter")
     expect(bc.address).to_have_value(re.compile("got=hello"))
+
+
+def test_surface_keeps_focus_after_switching_tabs(page: Page):
+    """The surface keeps keyboard focus after switching tabs during takeover.
+
+    Clicking a rail thumbnail moves focus to the thumbnail button; the surface's
+    key listener only fires while the surface holds focus, so without restoring
+    it, keystrokes stop reaching the page until control is toggled off and on.
+    Asserting the surface is the active element directly verifies the refocus.
+    """
+    _, bc = _open(page, open_fixture("input") + open_fixture("input"))
+    bc.take_control()  # sticky selection has tab 1 selected
+    bc.tab(2).click()  # switch to a different tab — focus would land on the button
+    surface_focused = page.evaluate(
+        "() => document.activeElement?.getAttribute('data-testid') === 'browser-surface'",
+    )
+    assert surface_focused, "surface lost keyboard focus after switching tabs"
 
 
 def test_scroll_is_forwarded(page: Page):
@@ -220,6 +238,33 @@ def test_close_tab_button_removes_it(page: Page):
     expect(bc.tab(2)).to_be_visible()
     bc.tab_close(2).click()
     expect(bc.tab(2)).not_to_be_visible()
+
+
+def test_agent_closing_previewed_tab_recovers(page: Page):
+    """If the agent closes the tab being previewed, the view falls back to a survivor.
+
+    The agent and the user never drive at once, but the agent can close tabs in
+    a later turn. Closing the streamed tab must re-point the view, not blank it.
+    """
+    chat, bc = _open(page, open_fixture("click") + open_fixture("input"))
+    bc.tab(2).click()  # preview tab 2
+    expect(bc.frame).to_be_visible()
+    chat.send(call_tool("close_tab", tab="2")).wait_streaming(timeout=_OPEN_TIMEOUT)
+    expect(bc.tab(2)).not_to_be_visible()
+    expect(bc.frame).to_be_visible()  # recovered to the surviving tab
+
+
+def test_turn_start_disengages_control(page: Page):
+    """Starting an agent turn while engaged drops control (canControl=!isStreaming).
+
+    The address input is only present while engaged, so it disappearing confirms
+    control was released.
+    """
+    chat, bc = _open(page, open_fixture("idle"))
+    bc.take_control()
+    expect(bc.address).to_be_visible()
+    chat.send(open_fixture("input"))  # start a turn; don't wait for it
+    expect(bc.address).not_to_be_visible(timeout=10_000)
 
 
 def test_clicking_link_opens_new_tab(page: Page):
