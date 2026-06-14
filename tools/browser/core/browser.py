@@ -270,9 +270,9 @@ class Browser:
         self._download_tasks: set[asyncio.Task[None]] = set()
         self._download_event: asyncio.Event = asyncio.Event()
 
-        # Auto-attach download listeners to pages created by popups or
-        # target=_blank links so file downloads in new tabs are captured.
-        self._context.on("page", self._on_context_page)
+        # Track every page the context creates (programmatic, popup, or
+        # target=_blank) the moment it exists: stable tab id + download + close.
+        self._context.on("page", self._track_page)
 
         # Capture the Playwright driver PID so the atexit handler can kill the
         # process tree if the async close path never ran (e.g. SIGKILL, event
@@ -302,13 +302,29 @@ class Browser:
 
         page.on("download", _on_download)
 
-    def _on_context_page(self, page: Page) -> None:
-        """Handle new pages created by popups or ``target=_blank`` links.
+    def _track_page(self, page: Page) -> None:
+        """Assign a stable tab ID and attach download + close handlers.
 
-        Immediately attaches a download listener so file downloads in the
-        new tab are captured by ``_pending_downloads``.
+        Registered as the context ``page`` listener, so it fires for every page
+        — programmatic, popup, or ``target=_blank`` — the moment it's created,
+        before any other ``page`` listener runs. That means popup/link tabs get
+        a stable ID and are visible to anything mirroring the tab set, not only
+        tabs opened via ``new_page``. Guards against double-tracking the same
+        page (re-entry is a no-op).
         """
+        if page in self._tab_id_of:
+            self._attach_download_listener(page)
+            return
+        self._next_tab_id += 1
+        self._tab_id_of[page] = self._next_tab_id
         self._attach_download_listener(page)
+
+        def _on_close(_p: Any) -> None:
+            self._tab_id_of.pop(page, None)
+            self._pages_in_navigation.discard(page)
+            self._dominant_frames.pop(page, None)
+
+        page.on("close", _on_close)
 
     async def _handle_download(self, download: Any) -> None:
         """Process a Playwright download event and record the result."""
@@ -600,18 +616,10 @@ class Browser:
                 f"with goto(url, tab=N).\n{self._tab_listing()}",
                 tool="new_tab",
             )
+        # The context "page" event (handled by _track_page) assigns the tab id
+        # and attaches the download + close handlers as the page is created.
         page = await self._context.new_page()
         await page.set_viewport_size(_viewport())
-        self._attach_download_listener(page)
-        self._next_tab_id += 1
-        self._tab_id_of[page] = self._next_tab_id
-
-        def _on_close(_p: Any) -> None:
-            self._tab_id_of.pop(page, None)
-            self._pages_in_navigation.discard(page)
-            self._dominant_frames.pop(page, None)
-
-        page.on("close", _on_close)
         return page
 
     def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:

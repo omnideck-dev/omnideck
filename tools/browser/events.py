@@ -122,6 +122,30 @@ async def emit_screenshot(page: Page) -> None:
         )
 
 
+async def emit_tab_state() -> None:
+    """Emit a screenshot-less event carrying just the current open-tab set.
+
+    Lets the UI reconcile its per-tab snapshots when no screenshot is produced —
+    notably after a tab closes (which has no page to screenshot), so the closed
+    tab is pruned even when it was the last one open.
+    """
+    from sdk.events import AgentEvent, BrowserScreenshotPayload, publish_event
+
+    try:
+        browser = await get_browser()
+        open_tab_ids = [t for t in (browser.tab_id_of(p) for p in browser.open_tabs()) if t is not None]
+        publish_event(AgentEvent(payload=BrowserScreenshotPayload(
+            type="browser_screenshot",
+            url="",
+            title="",
+            screenshot=None,
+            tab_id=None,
+            open_tab_ids=open_tab_ids,
+        )))
+    except Exception:  # noqa: BLE001 - best-effort reconcile, never fail the tool
+        logger.warning("Failed to emit tab-state reconcile", exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # Post-tool screenshot decorator
 # ---------------------------------------------------------------------------
@@ -177,4 +201,5 @@ def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
 __all__ = [
     "emit_screenshot",
     "emit_screenshot_after",
+    "emit_tab_state",
 ]

@@ -297,15 +297,25 @@ class _ControlSession:
         sel = self._page
         if sel is not None and not sel.is_closed():
             self._spawn(self._reassert_front(sel))
-        self._watch_close(page)
+        self._watch_tab(page)
         self._spawn(self._send_tabs())
 
-    def _watch_close(self, page: Page) -> None:
-        """Refresh the client's tab list when *page* closes.
+    def _watch_tab(self, page: Page) -> None:
+        """Refresh the client's tab list when *page* navigates or closes.
 
-        Tab closes have no context-level event, so each tracked page needs its
-        own close listener (opens are covered by the single on_new_page hook).
+        A tab's url/title in the rail would otherwise freeze at open time (when
+        a fresh tab is still ``about:blank``): the nav push only tracks the
+        streamed tab, and there's no context-level navigate/close event, so each
+        tracked page needs its own listeners.
         """
+        def _on_nav(frame: Frame) -> None:
+            if frame == page.main_frame:
+                self._spawn(self._send_tabs())
+
+        # framenavigated commits the url (fast, and covers same-document nav);
+        # load lands the final title, which isn't parsed yet at commit.
+        page.on("framenavigated", _on_nav)
+        page.on("load", lambda _p: self._spawn(self._send_tabs()))
         page.on("close", lambda _p: self._spawn(self._send_tabs()))
 
     async def _reassert_front(self, page: Page) -> None:
@@ -395,10 +405,10 @@ class _ControlSession:
             await page.goto(url)
 
     async def __aenter__(self) -> _ControlSession:
-        """Start tracking the browser: new-tab guard + watch existing tabs' close."""
+        """Start tracking the browser: new-tab guard + watch existing tabs."""
         self._browser.add_new_page_listener(self.on_new_page)
         for existing in self._browser.open_tabs():
-            self._watch_close(existing)
+            self._watch_tab(existing)
         return self
 
     async def __aexit__(self, *exc: object) -> None:
