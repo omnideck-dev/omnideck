@@ -80,13 +80,15 @@ async function _readFilePayload(file) {
  * a `sendInput` for the surface to forward events.
  */
 export default function useBrowserControl({ conversationId, selectedTabId, canControl, enabled }) {
-    const [frame, setFrame] = useState(null); // { tabId, url } — blob url for the frame
+    // One latest blob frame per tab, so a tab keeps showing its last frame in
+    // the rail after deselection (only the selected tab is streamed live).
+    const [framesByTab, setFramesByTab] = useState({});
     const [nav, setNav] = useState(null); // { tabId, url, title } — live nav state
     const [liveTabs, setLiveTabs] = useState(null); // live open-tab list; null = none received yet, [] = authoritatively zero
     const [engaged, setEngaged] = useState(false);
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
-    const lastUrlRef = useRef(null); // current frame blob url, for revocation
+    const framesRef = useRef({}); // mirror of framesByTab, for blob-url revocation
 
     // One socket per conversation, only while a browser view is open.
     useEffect(() => {
@@ -100,14 +102,16 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         ws.onopen = () => setConnected(true);
         ws.onmessage = (e) => {
             if (typeof e.data !== 'string') {
-                // Binary screencast frame: [int32 tab_id][jpeg bytes].
+                // Binary screencast frame: [int32 tab_id][jpeg bytes]. Cache it
+                // per tab, revoking that tab's previous frame.
                 const buf = e.data;
                 if (!buf || buf.byteLength < 4) return;
                 const tabId = new DataView(buf).getInt32(0, false);
                 const url = URL.createObjectURL(new Blob([buf.slice(4)], { type: 'image/jpeg' }));
-                if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
-                lastUrlRef.current = url;
-                setFrame({ tabId, url });
+                const prev = framesRef.current[tabId];
+                if (prev) URL.revokeObjectURL(prev);
+                framesRef.current = { ...framesRef.current, [tabId]: url };
+                setFramesByTab(framesRef.current);
                 return;
             }
             let m;
@@ -133,8 +137,9 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             try { ws.close(); } catch { /* already closing */ }
             wsRef.current = null;
             setConnected(false);
-            if (lastUrlRef.current) { URL.revokeObjectURL(lastUrlRef.current); lastUrlRef.current = null; }
-            setFrame(null);
+            Object.values(framesRef.current).forEach((u) => URL.revokeObjectURL(u));
+            framesRef.current = {};
+            setFramesByTab({});
             setLiveTabs(null);
         };
     }, [enabled, conversationId]);
@@ -145,11 +150,25 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         const ws = wsRef.current;
         if (connected && ws && ws.readyState === WebSocket.OPEN && selectedTabId != null) {
             ws.send(JSON.stringify({ type: 'select', tab_id: selectedTabId }));
-            if (lastUrlRef.current) { URL.revokeObjectURL(lastUrlRef.current); lastUrlRef.current = null; }
-            setFrame(null); // drop the previous tab's stale frame
-            setNav(null);   // and its nav state, until the new tab's arrives
+            // Keep the previous tab's cached frame (it's that tab's thumbnail);
+            // just drop its nav state until the newly selected tab's arrives.
+            setNav(null);
         }
     }, [connected, selectedTabId]);
+
+    // Drop cached frames for tabs that have closed, freeing their blob urls.
+    useEffect(() => {
+        if (liveTabs == null) return;
+        const open = new Set(liveTabs.map((t) => String(t.id)));
+        const cur = framesRef.current;
+        const next = {};
+        let changed = false;
+        for (const id of Object.keys(cur)) {
+            if (open.has(id)) next[id] = cur[id];
+            else { URL.revokeObjectURL(cur[id]); changed = true; }
+        }
+        if (changed) { framesRef.current = next; setFramesByTab(next); }
+    }, [liveTabs]);
 
     // A turn starting revokes control.
     useEffect(() => { if (!canControl) setEngaged(false); }, [canControl]);
@@ -180,12 +199,14 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         setEngaged((v) => (canControl ? !v : false));
     }, [canControl]);
 
-    // Only surface frame/nav state that belongs to the currently selected tab.
-    const frameUrl = frame && frame.tabId === selectedTabId ? frame.url : null;
+    // The selected tab's cached frame drives the main view; the full per-tab
+    // cache drives the rail thumbnails (so deselected tabs keep their frame).
+    const frameUrl = selectedTabId != null ? (framesByTab[selectedTabId] || null) : null;
     const navState = nav && nav.tabId === selectedTabId ? nav : null;
 
     return {
         frameUrl,
+        framesByTab,
         navUrl: navState?.url ?? null,
         navTitle: navState?.title ?? null,
         liveTabs,

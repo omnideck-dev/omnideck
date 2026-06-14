@@ -25,9 +25,10 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
 
     return (
         <div className={`${styles.chrome} ${fullscreen ? styles.fullscreen : ''}`}>
-            {title && (
-                <div className={styles.pageTitle} title={title}>{title}</div>
-            )}
+            {/* Always render the title row (with a fallback) so its height is
+                constant — an empty row would shift the preview as pages with and
+                without a title alternate. */}
+            <div className={styles.pageTitle} data-testid="browser-page-title" title={title || 'Untitled'}>{title || 'Untitled'}</div>
             <div className={styles.urlBar}>
                 <BrowserNavButtons control={control} />
                 <LockIcon size={12} className={styles.lockIcon} />

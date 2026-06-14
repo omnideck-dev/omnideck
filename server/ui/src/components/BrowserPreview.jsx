@@ -63,12 +63,13 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
                 <div className={styles.thumbRail} role="tablist" aria-label="Open browser tabs" data-testid="browser-tab-rail">
                     {tabs.map(({ id, snapshot: tabSnap }) => {
                         const isActive = id === activeTab.id;
-                        // The streamed tab can't be screenshotted cleanly while
-                        // it's being screencast (captureScreenshot times out), so
-                        // use its live frame — which is guaranteed good — instead.
-                        const thumbSrc = (isActive && c.frameUrl)
-                            ? c.frameUrl
-                            : (tabSnap.screenshot ? `data:image/png;base64,${tabSnap.screenshot}` : null);
+                        // Prefer the tab's live screencast frame (cached per tab,
+                        // so it survives deselection); fall back to the agent's
+                        // screenshot. Tabs opened during takeover have no agent
+                        // screenshot, so the cached frame is all they have.
+                        const liveFrame = c.framesByTab ? c.framesByTab[id] : null;
+                        const thumbSrc = liveFrame
+                            || (tabSnap.screenshot ? `data:image/png;base64,${tabSnap.screenshot}` : null);
                         const host = _hostOf(tabSnap.url);
                         return (
                             <div key={id} className={styles.thumbWrap}>

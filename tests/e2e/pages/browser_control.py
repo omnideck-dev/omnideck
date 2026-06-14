@@ -34,6 +34,10 @@ class BrowserControl:
         return self.root.get_by_test_id("browser-address")
 
     @property
+    def page_title(self) -> Locator:
+        return self.root.get_by_test_id("browser-page-title")
+
+    @property
     def take_control_btn(self) -> Locator:
         return self.root.get_by_test_id("browser-take-control")
 

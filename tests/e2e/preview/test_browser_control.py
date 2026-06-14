@@ -176,6 +176,43 @@ def test_new_tab_button_opens_and_follows(page: Page):
     expect(bc.tab(2)).to_be_visible()
 
 
+def test_takeover_tab_thumbnail_survives_deselection(page: Page):
+    """A tab opened during takeover keeps its thumbnail after being deselected.
+
+    Only the selected tab is streamed live, and a takeover-opened tab has no
+    agent screenshot — so without caching the last frame per tab, the tab blanks
+    out the instant another is selected. Asserting tab 2 has a frame *before*
+    opening tab 3 guarantees it was streamed; it must still have one after.
+    """
+    _, bc = _open(page, open_fixture("idle"))
+    bc.take_control()
+    bc.new_tab_btn.click()  # tab 2 (about:blank) — engaged selection follows it
+    expect(bc.tab(2)).to_be_visible()
+    expect(bc.tab(2).locator("img")).to_have_attribute(
+        "src", re.compile(r"^blob:"), timeout=10_000,
+    )
+    bc.new_tab_btn.click()  # tab 3 — now selected; tab 2 is deselected
+    expect(bc.tab(3)).to_be_visible()
+    # tab 2 is deselected with no agent screenshot — its cached frame must hold.
+    expect(bc.tab(2).locator("img")).to_have_attribute(
+        "src", re.compile(r"^blob:"), timeout=10_000,
+    )
+
+
+def test_page_title_prefers_real_title_else_untitled(page: Page):
+    """The title row shows the page's real title when it has one, else 'Untitled'.
+
+    The row always renders (constant height) so the preview doesn't shift as
+    titled and untitled pages alternate. The fixture sets ``<title>bfix</title>``;
+    a fresh about:blank tab has none.
+    """
+    _, bc = _open(page, open_fixture("idle"))
+    bc.take_control()
+    expect(bc.page_title).to_have_text("bfix")
+    bc.new_tab_btn.click()  # about:blank — no title
+    expect(bc.page_title).to_have_text("Untitled")
+
+
 def test_close_tab_button_removes_it(page: Page):
     """Closing a tab from the rail removes it."""
     _, bc = _open(page, open_fixture("click") + open_fixture("input"))
