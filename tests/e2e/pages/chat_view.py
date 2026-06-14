@@ -21,7 +21,9 @@ class ChatView:
         self.preview = PreviewPanel(page)
 
     def goto(self) -> "ChatView":
-        self.page.goto("/")
+        # The initial SPA bundle load can exceed the 5s default action timeout
+        # when the container is under load late in a run; give it headroom.
+        self.page.goto("/", timeout=15_000)
         return self
 
     def send(self, text: str) -> "ChatView":

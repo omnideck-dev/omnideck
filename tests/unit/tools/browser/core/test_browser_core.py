@@ -1,7 +1,6 @@
 import pytest
 
-from typing import Any
-
+from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
 from config import load_config
 from tools.browser.core.browser import Browser
 from tools.browser.core.exceptions import BrowserToolError
@@ -9,34 +8,29 @@ from tools.browser.core.exceptions import BrowserToolError
 _MAX_OPEN_TABS = load_config().tools.browser.max_open_tabs
 
 
-class FakePage:
+class FakePage(EventEmitterStub):
     def __init__(self, closed: bool = False) -> None:
+        super().__init__()
         self._closed = closed
         self.url = ""
 
     def is_closed(self) -> bool:
         return self._closed
 
-    def on(self, event: str, callback: Any) -> None:
-        pass
-
     async def set_viewport_size(self, size: dict[str, int]) -> None:  # noqa: D401 - stub
         return None
 
 
-class FakeContext:
+class FakeContext(EventEmitterStub):
     def __init__(self, pages: list[FakePage] | None = None) -> None:
+        super().__init__()
         self.pages = pages or []
 
-    def on(self, event: str, callback: Any) -> None:
-        pass
-
-    def remove_listener(self, event: str, callback: Any) -> None:
-        pass
-
     async def new_page(self) -> FakePage:
+        # Real Playwright fires the context "page" event as the page is created.
         page = FakePage()
         self.pages.append(page)
+        self.emit("page", page)
         return page
 
 

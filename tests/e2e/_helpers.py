@@ -31,6 +31,24 @@ def container_exec(script: str) -> str:
     return result.stdout.strip()
 
 
+def push_file_to_container(host_path: str, container_path: str) -> None:
+    """Copy a host file into the running container, owned by the app user.
+
+    For seeding files the app or its sandboxed browser must read (e.g. an HTML
+    fixture served from the container home). ``docker cp`` lands the file as
+    root, so it's chowned to ``computron`` to match the app's uid.
+    """
+    subprocess.run(
+        ["docker", "cp", host_path, f"{CONTAINER_NAME}:{container_path}"],
+        capture_output=True, text=True, check=True,
+    )
+    subprocess.run(
+        ["docker", "exec", "-u", "0", CONTAINER_NAME,
+         "chown", "computron:computron", container_path],
+        capture_output=True, text=True, check=True,
+    )
+
+
 def container_run_root(cmd: str) -> str:
     """Run a shell command inside the container as root.
 

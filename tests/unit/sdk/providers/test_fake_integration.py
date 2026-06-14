@@ -14,6 +14,7 @@ from agents.types import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._fake import FakeProvider
 from sdk.skills.agent_state import AgentState, _active_agent_state
+from tests.e2e._protocol import bash, say
 from sdk.turn._execution import run_turn
 
 _MOD = "sdk.turn._execution"
@@ -45,7 +46,7 @@ async def test_directive_drives_tool_then_reply():
 
     history = ConversationHistory([
         {"role": "system", "content": "sys"},
-        {"role": "user", "content": '<<BASH>>echo "hi"<<END>><<SAY>>finished<<END>>'},
+        {"role": "user", "content": bash('echo "hi"') + say("finished")},
     ])
 
     cfg = MagicMock()

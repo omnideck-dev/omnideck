@@ -10,10 +10,11 @@ Rather than guess intent from natural language, the fake reads an explicit
 of directives, each delimited by ``<<NAME ...>>`` ... ``<<END>>``:
 
     <<SAY>>text<<END>>             reply with this text (verbatim, multiline)
-    <<BASH>>command<<END>>         run_bash_cmd(cmd=command)
-    <<WRITE path>>content<<END>>   write_file(path, content)
-    <<SEND>>path<<END>>            send_file(path)
-    <<OPEN>>url<<END>>             new_tab(url)
+    <<TOOL name>>{json args}<<END>>  call tool *name* with JSON keyword args,
+        e.g. ``<<TOOL run_bash_cmd>>{"cmd": "echo hi"}<<END>>`` or
+        ``<<TOOL close_tab>>{"tab": 2}<<END>>``. Skill-gated tools (coder,
+        browser) are loaded first. The ``tests.e2e._protocol`` helpers
+        (``bash``, ``write_file``, ``open_url``, ``call_tool``, …) emit this.
     <<SPAWN profile>>...<<ENDSPAWN>>
         spawn_agent(profile); the body is itself a directive sequence that
         the sub-agent runs. ``profile`` defaults to the default profile when
@@ -32,6 +33,7 @@ which directive comes next.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
@@ -60,7 +62,7 @@ _FAKE_MODELS: list[ModelInfo] = [
 # its body may contain nested <<END>> directives for the sub-agent to run.
 _DIRECTIVE_RE = re.compile(
     r"<<SPAWN(?P<spawn_arg>[^>]*)>>(?P<spawn_body>.*?)<<ENDSPAWN>>"
-    r"|<<(?P<name>SAY|BASH|WRITE|SEND|OPEN)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
+    r"|<<(?P<name>SAY|TOOL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -72,7 +74,24 @@ _REQUIRED_SKILL: dict[str, str] = {
     "write_file": "coder",
     "read_file": "coder",
     "replace_in_file": "coder",
+    # Browser skill tools (reachable via the generic TOOL directive).
     "new_tab": "browser",
+    "close_tab": "browser",
+    "goto": "browser",
+    "go_back": "browser",
+    "browse_page": "browser",
+    "read_page": "browser",
+    "inspect_page": "browser",
+    "click": "browser",
+    "fill_field": "browser",
+    "drag": "browser",
+    "scroll_page": "browser",
+    "select_option": "browser",
+    "press_keys": "browser",
+    "press_and_hold": "browser",
+    "execute_javascript": "browser",
+    "save_page_content": "browser",
+    "browser_visual_action": "browser",
 }
 
 _COUNTER = {"n": 0}
@@ -179,17 +198,9 @@ def _completed_step_count(messages: list[dict[str, Any]]) -> int:
 
 
 def _named_tool_call(name: str, arg: str, body: str) -> ToolCall | None:
-    """Build the tool call for a single non-SPAWN directive, or None for SAY."""
-    name = name.upper()
-    arg = arg.strip()
-    if name == "BASH":
-        return _tool_call("run_bash_cmd", {"cmd": body})
-    if name == "WRITE":
-        return _tool_call("write_file", {"path": arg, "content": body})
-    if name == "SEND":
-        return _tool_call("send_file", {"path": body.strip() or arg})
-    if name == "OPEN":
-        return _tool_call("new_tab", {"url": body.strip() or arg})
+    """Build the tool call for a single TOOL directive, or None for SAY."""
+    if name.upper() == "TOOL":
+        return _tool_call(arg.strip(), json.loads(body) if body.strip() else {})
     return None  # SAY
 
 
