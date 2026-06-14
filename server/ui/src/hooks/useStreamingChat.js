@@ -50,6 +50,7 @@ function _handleStreamEvent(data, callbacks) {
             title: payload.title,
             screenshot: payload.screenshot,
             tabId: payload.tab_id ?? null,
+            openTabIds: payload.open_tab_ids ?? null,
             agentId,
         });
     }

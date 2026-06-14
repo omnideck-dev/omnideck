@@ -134,8 +134,8 @@ export default function ScreencastSurface({
     if (!src) return null;
 
     return (
-        <div ref={surfaceRef} tabIndex={engaged ? 0 : -1} className={className}>
-            <img ref={imgRef} src={src} alt="Browser" className={imgClassName} draggable={false} />
+        <div ref={surfaceRef} tabIndex={engaged ? 0 : -1} className={className} data-testid="browser-surface">
+            <img ref={imgRef} src={src} alt="Browser" className={imgClassName} draggable={false} data-testid="browser-frame" />
         </div>
     );
 }

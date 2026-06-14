@@ -34,6 +34,7 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
                 {c.engaged ? (
                     <input
                         className={styles.urlInput}
+                        data-testid="browser-address"
                         value={edit ?? url ?? ''}
                         onChange={(e) => setEdit(e.target.value)}
                         onFocus={() => setEdit(url ?? '')}

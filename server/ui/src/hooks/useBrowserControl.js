@@ -82,7 +82,7 @@ async function _readFilePayload(file) {
 export default function useBrowserControl({ conversationId, selectedTabId, canControl, enabled }) {
     const [frame, setFrame] = useState(null); // { tabId, url } — blob url for the frame
     const [nav, setNav] = useState(null); // { tabId, url, title } — live nav state
-    const [liveTabs, setLiveTabs] = useState([]); // live open-tab list
+    const [liveTabs, setLiveTabs] = useState(null); // live open-tab list; null = none received yet, [] = authoritatively zero
     const [engaged, setEngaged] = useState(false);
     const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
@@ -135,7 +135,7 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             setConnected(false);
             if (lastUrlRef.current) { URL.revokeObjectURL(lastUrlRef.current); lastUrlRef.current = null; }
             setFrame(null);
-            setLiveTabs([]);
+            setLiveTabs(null);
         };
     }, [enabled, conversationId]);
 

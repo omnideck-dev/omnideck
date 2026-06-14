@@ -11,13 +11,13 @@ export default function BrowserNavButtons({ control }) {
     const nav = (dir) => c.sendInput({ type: dir });
     return (
         <>
-            <IconButton size="sm" onClick={() => nav('back')} title="Back" aria-label="Back">
+            <IconButton size="sm" onClick={() => nav('back')} title="Back" aria-label="Back" data-testid="browser-nav-back">
                 <i className="bi bi-arrow-left" style={{ fontSize: 14 }} />
             </IconButton>
-            <IconButton size="sm" onClick={() => nav('forward')} title="Forward" aria-label="Forward">
+            <IconButton size="sm" onClick={() => nav('forward')} title="Forward" aria-label="Forward" data-testid="browser-nav-forward">
                 <i className="bi bi-arrow-right" style={{ fontSize: 14 }} />
             </IconButton>
-            <IconButton size="sm" onClick={() => nav('reload')} title="Reload" aria-label="Reload">
+            <IconButton size="sm" onClick={() => nav('reload')} title="Reload" aria-label="Reload" data-testid="browser-nav-reload">
                 <i className="bi bi-arrow-clockwise" style={{ fontSize: 14 }} />
             </IconButton>
         </>
