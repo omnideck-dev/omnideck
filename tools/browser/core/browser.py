@@ -71,20 +71,17 @@ logger = logging.getLogger(__name__)
 
 
 
-# Small jitter so every run isn't pixel-identical
 def _viewport() -> ViewportSize:
-    """Return a slightly jittered viewport size.
+    """Return the viewport size — a fixed, common desktop resolution.
 
-    This introduces small randomness so each run isn't pixel-identical, which
-    can help reduce obvious automation signatures.
+    1920x1080 is the most common desktop resolution, so it blends into the
+    largest cohort of real users rather than standing out as a unique size.
 
     Returns:
         A mapping compatible with Playwright's viewport format, containing
         ``width`` and ``height`` in pixels.
     """
-    w = 1920 + secrets.choice(range(-8, 9))
-    h = 1080 + secrets.choice(range(-6, 7))
-    return {"width": w, "height": h}
+    return {"width": 1920, "height": 1080}
 
 
 # ---------------------------------------------------------------------------
@@ -618,8 +615,10 @@ class Browser:
             )
         # The context "page" event (handled by _track_page) assigns the tab id
         # and attaches the download + close handlers as the page is created.
+        # Viewport is inherited from the context's default (set once at creation)
+        # so every tab — programmatic, popup, or link — is the same size, like
+        # tabs in a real browser window; don't re-roll a per-tab viewport here.
         page = await self._context.new_page()
-        await page.set_viewport_size(_viewport())
         return page
 
     def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:
