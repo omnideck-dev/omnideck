@@ -15,9 +15,12 @@ const modMask = (e) =>
  * drags, and selection itself.
  */
 export default function ScreencastSurface({
-    frameUrl, fallbackSrc, engaged, active = true, sendInput, className, imgClassName,
+    frameUrl, fallbackSrc, engaged, active = true, sendInput, className, imgClassName, surfaceRef: externalRef,
 }) {
-    const surfaceRef = useRef(null);
+    // The parent may own the surface ref (to refocus it, e.g. after an
+    // address-bar navigation); fall back to a local one when it doesn't.
+    const internalRef = useRef(null);
+    const surfaceRef = externalRef || internalRef;
     const imgRef = useRef(null);
     const moveRaf = useRef(0);
 

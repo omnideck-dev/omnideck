@@ -4,11 +4,11 @@ A single CDP session per selected tab carries both directions: screencast
 frames out, and (when the user takes control) Input-domain primitives in.
 
 The screencast follows the user's tab **selection**: a ``select`` message
-brings that tab to the foreground (only a foreground tab composites, so only it
-can be screencast) and starts streaming it. A foreground-ownership guard snaps
-the selected tab back to front whenever a newly opened tab (agent- or
-page-spawned) tries to foreground itself, so new tabs stay in the background and
-the user's chosen view never wanders.
+brings that tab to the foreground and starts streaming it. The stream keeps
+delivering frames even after that tab is backgrounded — a newly opened tab
+(agent- or page-spawned) is free to take the foreground — so the selected view
+stays live without pinning the selected tab in front. Input forwarded during
+takeover likewise reaches the selected tab regardless of which tab is in front.
 
 Scope is enforced by ``get_browser_by_conversation_id``: the channel can only reach
 the depth-0 conversation context. Sub-agent contexts and the persistent profile
@@ -133,8 +133,9 @@ class _ControlSession:
     """Owns the single live screencast for one WebSocket connection.
 
     Exactly one tab is streamed at a time. ``select`` switches it: stop the old
-    screencast, foreground the new tab, start a new one. A page-open guard keeps
-    the selected tab in front when the agent (or a page) opens another tab.
+    screencast, foreground the new tab, start a new one. The stream keeps running
+    if the selected tab is later backgrounded by a newly opened tab, so no
+    foreground guard is needed.
     """
 
     def __init__(self, ws: web.WebSocketResponse, browser: Browser) -> None:
@@ -288,15 +289,15 @@ class _ControlSession:
                 await cdp.detach()
 
     def on_new_page(self, page: Page) -> None:
-        """Handle a newly opened tab: re-assert selection, refresh tabs, watch close.
+        """Handle a newly opened tab: watch it and refresh the client's tab list.
 
-        Re-asserting the selected tab keeps agent-opened tabs from stealing the
-        view. An *engaged* client re-selects the new tab itself (during takeover
-        any new tab is human-initiated), which overrides the re-assert.
+        No foreground guard is needed. The live screencast and input are pinned
+        to the selected page and keep working no matter which tab the window
+        shows, so an agent-opened tab coming to the front can't steal the view.
+        Forcing the selected tab back to the front only stole the new tab's
+        foreground before its first screenshot, stalling the agent on a capture
+        timeout.
         """
-        sel = self._page
-        if sel is not None and not sel.is_closed():
-            self._spawn(self._reassert_front(sel))
         self._watch_tab(page)
         self._spawn(self._send_tabs())
 
@@ -317,11 +318,6 @@ class _ControlSession:
         page.on("framenavigated", _on_nav)
         page.on("load", lambda _p: self._spawn(self._send_tabs()))
         page.on("close", lambda _p: self._spawn(self._send_tabs()))
-
-    async def _reassert_front(self, page: Page) -> None:
-        """Bring *page* back to the foreground (the selection-ownership guard)."""
-        with contextlib.suppress(Exception):
-            await page.bring_to_front()
 
     async def _send_tabs(self) -> None:
         """Push the live open-tab list (ids + url + title) to the client.

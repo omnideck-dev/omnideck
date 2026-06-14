@@ -1,3 +1,4 @@
+import { useRef, useCallback } from 'react';
 import FullscreenPreview from './FullscreenPreview.jsx';
 import ScreencastSurface from './ScreencastSurface.jsx';
 import BrowserChrome from './BrowserChrome.jsx';
@@ -18,6 +19,9 @@ export default function BrowserFullscreen({ snapshot, control, onClose }) {
     const fallbackSrc = snapshot.screenshot
         ? `data:image/png;base64,${snapshot.screenshot}`
         : null;
+    // Own the surface ref so the address bar can refocus it after navigating.
+    const surfaceRef = useRef(null);
+    const focusSurface = useCallback(() => surfaceRef.current?.focus(), []);
 
     return (
         <FullscreenPreview
@@ -29,6 +33,7 @@ export default function BrowserFullscreen({ snapshot, control, onClose }) {
                     control={control}
                     fullscreen
                     onToggleFullscreen={onClose}
+                    focusSurface={focusSurface}
                 />
             }
         >
@@ -40,6 +45,7 @@ export default function BrowserFullscreen({ snapshot, control, onClose }) {
                 sendInput={c.sendInput}
                 className={styles.imageContainer}
                 imgClassName={styles.image}
+                surfaceRef={surfaceRef}
             />
         </FullscreenPreview>
     );

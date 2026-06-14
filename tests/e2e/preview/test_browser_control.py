@@ -67,6 +67,24 @@ def test_selecting_tab_switches_streamed_url(page: Page):
     expect(bc.address).to_have_value(re.compile("mode=click"))
 
 
+def test_agent_tab_opened_while_previewing_captures(page: Page):
+    """A tab the agent opens while the preview is already live still captures.
+
+    Regression of the foreground guard: opening a new tab re-asserted the
+    selected tab to the front, backgrounding the just-opened tab before its
+    first screenshot, so the capture timed out and the thumbnail rendered
+    black. The new tab must open *after* the control session is live for this
+    path to be exercised.
+    """
+    chat, bc = _open(page, open_fixture("idle"))  # one tab, preview live, not engaged
+    chat.send(open_fixture("click")).wait_streaming(timeout=_OPEN_TIMEOUT)
+    expect(bc.tab(2)).to_be_visible(timeout=10_000)
+    bc.tab(1).click()  # keep tab 2 non-selected so its thumb is the agent capture
+    expect(bc.tab(2).locator("img")).to_have_attribute(
+        "src", re.compile(r"^data:image"), timeout=10_000,
+    )
+
+
 # ── take control gating ─────────────────────────────────────────────
 
 
@@ -115,6 +133,24 @@ def test_address_bar_goto(page: Page):
     bc.take_control()
     bc.goto(fixture_url("idle") + "&via=goto")
     expect(bc.address).to_have_value(re.compile("via=goto"))
+
+
+def test_typing_after_address_bar_nav_without_clicking(page: Page):
+    """After an address-bar navigation the page is immediately typeable.
+
+    Regression: committing the address bar blurred focus to the document body,
+    so the surface's key listener (bound to the surface element) stopped
+    receiving keystrokes until the user clicked the surface. The goto must hand
+    focus back to the surface. The input fixture autofocuses its field, so
+    typing here — with no surface click — only lands if the surface holds focus.
+    """
+    _, bc = _open(page, open_fixture("idle"))
+    bc.take_control()
+    bc.goto(fixture_url("input"))
+    expect(bc.address).to_have_value(re.compile("mode=input"))
+    page.keyboard.type("hello")  # no surface click first — relies on the refocus
+    page.keyboard.press("Enter")
+    expect(bc.address).to_have_value(re.compile("got=hello"))
 
 
 def test_back_and_forward(page: Page):

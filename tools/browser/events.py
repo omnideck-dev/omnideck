@@ -59,9 +59,14 @@ async def _emit_screenshot(page: Page) -> None:
         n_pages = -1
 
     t0 = time.monotonic()
+    # Only the foreground tab can be captured; a background tab's compositor is
+    # idle and capture blocks until the timeout. Under concurrent tool calls a
+    # tab can be backgrounded by a sibling action before its shot fires, so keep
+    # the wait short — a miss costs ~1s (logged below) and the thumbnail keeps
+    # its last frame, rather than stalling the agent's path.
     try:
         screenshot_bytes = await page.screenshot(
-            type="jpeg", quality=55, timeout=5000,
+            type="jpeg", quality=55, timeout=1000,
         )
     except Exception as exc:  # noqa: BLE001
         elapsed_ms = (time.monotonic() - t0) * 1000

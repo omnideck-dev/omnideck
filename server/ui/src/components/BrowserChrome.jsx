@@ -11,7 +11,7 @@ import styles from './BrowserChrome.module.css';
  * the inline preview and the fullscreen view so the two stay consistent;
  * `fullscreen` only flips the right-hand button and adds outer padding.
  */
-export default function BrowserChrome({ url, title, control, fullscreen, onToggleFullscreen }) {
+export default function BrowserChrome({ url, title, control, fullscreen, onToggleFullscreen, focusSurface }) {
     const c = control || {};
     // Local edit buffer for the address field: null = show the live url; a string
     // = the user is editing. Avoids live nav updates clobbering what they type.
@@ -40,8 +40,15 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
                         onFocus={() => setEdit(url ?? '')}
                         onBlur={() => setEdit(null)}
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter') { e.preventDefault(); commitGoto(); e.target.blur(); }
-                            if (e.key === 'Escape') { e.preventDefault(); setEdit(null); e.target.blur(); }
+                            // Hand focus back to the surface so the page is
+                            // immediately typeable. Blur is the fallback when no
+                            // surface is wired — otherwise focus sits on the
+                            // document body and the surface's key listener, bound
+                            // to the surface element, receives nothing.
+                            const target = e.target;
+                            const restoreFocus = () => (focusSurface ? focusSurface() : target.blur());
+                            if (e.key === 'Enter') { e.preventDefault(); commitGoto(); restoreFocus(); }
+                            if (e.key === 'Escape') { e.preventDefault(); setEdit(null); restoreFocus(); }
                         }}
                         spellCheck={false}
                         aria-label="Address"

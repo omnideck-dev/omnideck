@@ -1,3 +1,4 @@
+import { useRef, useCallback } from 'react';
 import styles from './BrowserPreview.module.css';
 import ScreencastSurface from './ScreencastSurface.jsx';
 import BrowserChrome from './BrowserChrome.jsx';
@@ -28,6 +29,9 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
         : null;
     const showRail = tabs.length > 1;
     const c = control || {};
+    // Own the surface ref so the address bar can refocus it after navigating.
+    const surfaceRef = useRef(null);
+    const focusSurface = useCallback(() => surfaceRef.current?.focus(), []);
     // Prefer the live nav state (updates during takeover / agent nav); fall back
     // to the screenshot snapshot.
     const url = c.navUrl || activeSnapshot.url;
@@ -41,6 +45,7 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
                 control={control}
                 fullscreen={false}
                 onToggleFullscreen={onFullscreen}
+                focusSurface={focusSurface}
             />
 
             <ScreencastSurface
@@ -51,6 +56,7 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
                 sendInput={c.sendInput}
                 className={styles.screenshotContainer}
                 imgClassName={styles.screenshot}
+                surfaceRef={surfaceRef}
             />
 
             {showRail && (
