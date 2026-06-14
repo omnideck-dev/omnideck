@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e._protocol import call_tool
+from tests.e2e._protocol import call_tool, parallel
 from tests.e2e.pages import BrowserControl, ChatView
 from tests.e2e.preview._browser_fixture import fixture_url, install_fixture, open_fixture
 
@@ -66,6 +66,22 @@ def test_selecting_tab_switches_streamed_url(page: Page):
     expect(bc.address).to_have_value(re.compile("mode=input"))
     bc.tab(1).click()
     expect(bc.address).to_have_value(re.compile("mode=click"))
+
+
+def test_concurrent_new_tabs_all_capture(page: Page):
+    """Tabs opened concurrently each still get a thumbnail image.
+
+    The three new_tab calls land in one response and run at once (parallel tool
+    execution is on), racing for the single foreground slot. A captured tab
+    yields an agent screenshot; this guards the losers against blacking out.
+    """
+    _, bc = _open(page, parallel(
+        open_fixture("click"), open_fixture("input"), open_fixture("scroll"),
+    ))
+    for i in (1, 2, 3):
+        expect(bc.tab(i).locator("img")).to_have_attribute(
+            "src", re.compile(r"^(data|blob):"), timeout=15_000,
+        )
 
 
 def test_agent_tab_opened_while_previewing_captures(page: Page):

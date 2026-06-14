@@ -56,6 +56,16 @@ def open_url(url: str) -> str:
     return call_tool("new_tab", url=url)
 
 
+def parallel(*directives: str) -> str:
+    """Agent issues *directives* (each a TOOL directive) as one concurrent batch.
+
+    The fake emits them in a single response, so with parallel tool execution
+    enabled the loop runs them at once — e.g. ``parallel(open_url(a),
+    open_url(b))`` opens both tabs concurrently, racing as a real model would.
+    """
+    return "<<PARALLEL>>" + "".join(directives) + "<<ENDPARALLEL>>"
+
+
 def spawn(body: str, profile: str = "") -> str:
     """Agent spawns a sub-agent (profile defaults to the default profile).
 
