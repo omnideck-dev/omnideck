@@ -16,6 +16,7 @@ import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
+import useBrowserTabs from './hooks/useBrowserTabs.js';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
@@ -242,6 +243,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         activeConversationId,
         savePreviewState,
     } = useStreamingChat(_callbacks);
+
+    // The browser side channel + tab model, shared by the inline and fullscreen
+    // views. Control (input) is only allowed while no turn is active.
+    const browser = useBrowserTabs({
+        conversationId: activeConversationId,
+        canControl: !isStreaming,
+        enabled: preview.browserTabsList.length > 0
+            && (preview.activeTab === 'browser' || preview.fullscreenItem?.kind === 'browser'),
+        agentTabs: preview.browserTabsList,
+    });
 
     // The profile for the open conversation: its own pick, or the default.
     const selectedProfileId = convProfile ?? defaultProfileId;
@@ -519,8 +530,12 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                 >
                                     {preview.activeTab === 'browser' && preview.browserTabsList.length > 0 && (
                                         <BrowserPreview
-                                            tabs={preview.browserTabsList}
+                                            tabs={browser.tabs}
+                                            selectedId={browser.selectedTabId}
+                                            onSelectTab={browser.setSelectedTabId}
                                             onFullscreen={() => preview.setFullscreenItem({ kind: 'browser' })}
+                                            control={browser.control}
+                                            inputActive={preview.fullscreenItem?.kind !== 'browser'}
                                         />
                                     )}
                                     {preview.activeTab?.startsWith('file:') && (() => {
@@ -563,9 +578,10 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     onClose={() => preview.setFullscreenItem(null)}
                 />
             )}
-            {preview.fullscreenItem?.kind === 'browser' && preview.browserTabsList.length > 0 && (
+            {preview.fullscreenItem?.kind === 'browser' && browser.tabs.length > 0 && (
                 <BrowserFullscreen
-                    snapshot={preview.browserTabsList[0].snapshot}
+                    snapshot={(browser.tabs.find((t) => t.id === browser.selectedTabId) || browser.tabs[0]).snapshot}
+                    control={browser.control}
                     onClose={() => preview.setFullscreenItem(null)}
                 />
             )}

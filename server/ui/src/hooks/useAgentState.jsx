@@ -202,14 +202,28 @@ function _agentReducer(state, action) {
             const agent = state.agents[agentId];
             if (!agent) return state;
             const key = snapshot.tabId;
+            // A screenshot-bearing event adds/refreshes that tab; a screenshot-less
+            // one (e.g. emitted after a tab closes) is reconcile-only — it just
+            // prunes the open-tab set without adding anything.
+            const hasShot = !!snapshot.screenshot;
+            let browserTabs = hasShot ? { ...agent.browserTabs, [key]: snapshot } : agent.browserTabs;
+            // Reconcile against the live open-tab set so snapshots for tabs that
+            // have since closed are pruned instead of lingering.
+            if (Array.isArray(snapshot.openTabIds)) {
+                const keep = new Set(snapshot.openTabIds.map(String));
+                if (hasShot) keep.add(String(key));
+                browserTabs = Object.fromEntries(
+                    Object.entries(browserTabs).filter(([k]) => keep.has(k)),
+                );
+            }
             return {
                 ...state,
                 agents: {
                     ...state.agents,
                     [agentId]: {
                         ...agent,
-                        browserTabs: { ...agent.browserTabs, [key]: snapshot },
-                        lastBrowserTabId: key,
+                        browserTabs,
+                        lastBrowserTabId: hasShot ? key : agent.lastBrowserTabId,
                     },
                 },
             };

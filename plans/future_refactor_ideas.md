@@ -150,6 +150,44 @@ This is a duplicated *contract*, not duplicated code — the two can't share a f
 
 Until then `_historyToMessages` stays — small, pure, tested.
 
+## Persist conversation browser state across eviction
+
+When a conversation is evicted from the in-memory LRU cache (`_evict_lru_conversation` in `server/message_handler.py`), its `conv:{id}` browser context is closed and its state is lost. The conversation record rehydrates from disk on next use, but its browser is recreated fresh — seeded from the *root* profile snapshot, not from whatever the conversation had accumulated. Any logins or cookies the conversation picked up that diverged from the root profile are gone.
+
+**Cheap, well-precedented win:** on eviction, dump `storage_state()` (cookies + localStorage, optionally IndexedDB) to `{conversation_folder}/browser_state.json`, and on recreate seed from that file when present, falling back to the root snapshot when not. The root browser already does exactly this — it writes `storage_state.json` to its profile dir on close. This restores *session/auth continuity*, not the visible page: `storage_state()` does not capture open tabs, current URLs, scroll, sessionStorage, or live DOM/JS, so the takeover view comes back to a blank context with valid cookies, needing re-navigation.
+
+**Harder, only approximate:** also persist the open tab URLs and re-`goto` them on rehydrate to rebuild the visible pages. Loses POST/SPA in-memory state and can be janky, but gets close to "same tabs open."
+
+Things to weigh:
+- **When to dump.** Eviction-only loses everything still cached if the container crashes. Dumping at turn-end (or periodically) is more durable but more I/O.
+- **Secrets at rest.** Cookies are auth tokens written into the conversation folder. The root profile already does this, so it's not a new risk class, but per-conversation multiplies the surface and ties live credentials to conversation records that may be exported or shared — decide whether that folder is encrypted and whether it's wiped on conversation delete.
+- **Seed precedence.** `get_browser()`'s creation path always falls back to the root snapshot today; it would need to prefer the conversation dump when one exists.
+
+## Separate agent vs. user tab limits in takeover
+
+`max_open_tabs` (default 5, `config/__init__.py`) exists to stop the *agent* running away opening tabs. It's enforced in `Browser.new_page()` as `len(self.open_tabs()) >= limit` — a count over the whole shared `conv:{id}` context, with no notion of who opened each tab. Browser takeover now lets a human open tabs too, which exposes the conflation:
+
+- **User tabs eat the agent's budget.** The human and the agent draw from the same 5.
+- **The "new tab" button silently no-ops at the cap.** `_ControlSession.new_tab()` calls `new_page()`, which raises at the limit, but the call is wrapped in `contextlib.suppress(Exception)` — nothing opens and the UI shows no reason.
+- **Link/`window.open` tabs bypass the cap entirely.** Those are created through the context's `"page"` event, not `new_page()`, so a user can click past the limit to 6, 7, 8 — and then, when control returns, the agent's next `new_page()` sees the count over the limit and refuses. User tabs can starve the agent.
+
+The cap should apply to the agent, not the human. Two ways to draw the line:
+
+- **A — unlimited user tabs, provenance-counted.** Tag each tab with whether takeover was *engaged* at open time: engaged → user tab (uncounted), not engaged → agent tab (counts, and this still covers agent-driven `window.open`). `Browser` keeps a `_user_opened: set[Page]` alongside `_tab_id_of`; `_ControlSession.on_new_page` marks new pages user-owned while `self._engaged`. The limit check becomes "open tabs minus user-owned." Gives the human free rein and keeps the agent capped at 5 of its own.
+- **B — explicit separate user limit.** Same provenance tagging, but the human gets their own configurable cap (`max_user_open_tabs`) instead of unlimited, enforced and surfaced explicitly in the takeover UI rather than failing silently. More predictable resource use; the human gets a real "tab limit reached" message instead of a dead button.
+
+Either way the prerequisites are the same: track tab provenance, count the two pools separately, and replace the silent `suppress` on the new-tab button with a surfaced result.
+
+## Extract a PreviewPanel component from DesktopApp
+
+`DesktopApp` renders the entire preview area inline: a multi-mode panel switched on `preview.activeTab` (`browser`, `file:…`, `terminal`, `desktop`, `generation`) plus a generic fullscreen overlay switched on `preview.fullscreenItem.kind`. Because the panel isn't its own component, every mode's state has nowhere to live but the app shell. The browser mode makes this visible — the screencast/control hook (`useBrowserTabs` → `useBrowserControl`) is owned by `DesktopApp` only because the inline view (`BrowserPreview`, in the split pane) and the fullscreen view (`BrowserFullscreen`, in the overlay) render at different tree locations, so their common owner has to sit above both. This isn't browser-specific; terminal/file/desktop/generation previews all live the same inlined way.
+
+Extract a `<PreviewPanel>` that owns the preview area — the mode switch *and* the fullscreen overlay. Then each mode's coordination moves into it (the browser hook into `PreviewPanel`, or a `<BrowserPanel>` child of it), and `DesktopApp` collapses to `<PreviewPanel preview={preview} conversationId={…} canControl={…} />`, knowing nothing about tabs/frames/engage. The only state that must stay at the app level is what the panel genuinely needs as input: the active conversation id and the turn state (`canControl`).
+
+Note the constraint that forces this rather than a simpler fix: a browser-only `<BrowserPanel>` rendering its own fullscreen via a React portal would *work*, but it would make browser fullscreen diverge from the shared `fullscreenItem` overlay that file/terminal/desktop use — trading "the shell knows about browser tabs" for "browser fullscreen is special." The right move keeps the generic fullscreen mechanism and lifts the whole panel, not just the browser slice.
+
+Already done as a partial step: `useBrowserTabs` now owns the tab merge + selection (wrapping `useBrowserControl`), so `DesktopApp` calls one hook instead of ~50 lines. The remaining work is the structural panel extraction above.
+
 ## Replace the hand-rolled tool type→schema layer in sdk/tools
 
 `sdk/tools` hand-rolls type-driven conversion in two independent places that
@@ -186,4 +224,3 @@ Either way the win is one annotation-walking implementation instead of two.
 This is the structural follow-up to the inbound strictness fix (bare string vs.
 `list[str]`); that fix made coercion fail loudly but left both walkers in
 place.
-

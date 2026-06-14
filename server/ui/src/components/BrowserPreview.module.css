@@ -2,41 +2,6 @@
   padding: 10px;
 }
 
-.urlBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  margin-bottom: 10px;
-}
-
-.lockIcon {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.url {
-  flex: 1;
-  font-size: 12px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pageTitle {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .screenshotContainer {
   max-height: calc(100vh - 10rem);
   overflow-y: auto;
@@ -44,7 +9,7 @@
   border-radius: var(--radius-md);
   background: #000;
   position: relative;
-  cursor: zoom-in;
+  cursor: default;
 }
 
 .screenshot {
@@ -54,8 +19,8 @@
 }
 
 /* Thumbnail rail — appears when the agent is driving more than one tab.
-   Each thumb is a mini screenshot + host caption.  Active tab gets the
-   accent border; design tokens only, no raw colors. */
+   Each thumb is a mini screenshot + host caption. Active tab gets the accent
+   border; media frames use a #000 letterbox, matching the other preview panels. */
 .thumbRail {
   display: flex;
   gap: 6px;
@@ -64,8 +29,13 @@
   padding: 4px 0;
 }
 
-.thumbCard {
+.thumbWrap {
+  position: relative;
   flex: 0 0 96px;
+}
+
+.thumbCard {
+  width: 100%;
   cursor: pointer;
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -79,6 +49,29 @@
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
+.thumbClose {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.thumbClose:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
 .thumbCard:hover {
   border-color: var(--border-strong);
 }
@@ -89,15 +82,18 @@
 }
 
 .thumbFrame {
+  position: relative;
   aspect-ratio: 16 / 10;
   background: #000;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
+/* Pinned to the frame so the image can never grow the card: a screenshot's
+   own dimensions must not influence the thumbnail height (the frame's
+   aspect-ratio is the sole authority). */
 .thumbImg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -128,23 +124,6 @@
 }
 
 /* Light theme */
-:global([data-theme="light"]) .urlBar {
-  background: var(--canvas);
-  border-color: var(--border-strong);
-}
-
-:global([data-theme="light"]) .lockIcon {
-  color: var(--text-secondary);
-}
-
-:global([data-theme="light"]) .url {
-  color: var(--text-secondary);
-}
-
-:global([data-theme="light"]) .pageTitle {
-  color: var(--text-primary);
-}
-
 :global([data-theme="light"]) .screenshotContainer {
   border-color: var(--border);
 }

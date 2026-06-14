@@ -10,6 +10,7 @@ from .network_view import NetworkView
 from .agent_activity_view import AgentActivityView
 from .recent_conversations import RecentConversations
 from .preview_panel import PreviewPanel
+from .browser_control import BrowserControl
 from .file_preview import FilePreview
 from .fullscreen_preview import FullscreenPreview
 from .goals_view import GoalsView
@@ -22,6 +23,7 @@ __all__ = [
     "AgentActivityView",
     "RecentConversations",
     "PreviewPanel",
+    "BrowserControl",
     "FilePreview",
     "FullscreenPreview",
     "GoalsView",

@@ -40,7 +40,7 @@ from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core._file_detection import DownloadInfo
 
 if TYPE_CHECKING:  # Imported only for type checking to avoid runtime dependency surface
-    from playwright.async_api import Geolocation, ProxySettings, ViewportSize
+    from playwright.async_api import Geolocation, ProxySettings
 
 # Union type for functions that can operate on either a Page or a Frame.
 # Frame exposes the same DOM-query API as Page (evaluate, locator, get_by_role,
@@ -69,22 +69,6 @@ class ActiveView(NamedTuple):
 
 logger = logging.getLogger(__name__)
 
-
-
-# Small jitter so every run isn't pixel-identical
-def _viewport() -> ViewportSize:
-    """Return a slightly jittered viewport size.
-
-    This introduces small randomness so each run isn't pixel-identical, which
-    can help reduce obvious automation signatures.
-
-    Returns:
-        A mapping compatible with Playwright's viewport format, containing
-        ``width`` and ``height`` in pixels.
-    """
-    w = 1920 + secrets.choice(range(-8, 9))
-    h = 1080 + secrets.choice(range(-6, 7))
-    return {"width": w, "height": h}
 
 
 # ---------------------------------------------------------------------------
@@ -270,9 +254,9 @@ class Browser:
         self._download_tasks: set[asyncio.Task[None]] = set()
         self._download_event: asyncio.Event = asyncio.Event()
 
-        # Auto-attach download listeners to pages created by popups or
-        # target=_blank links so file downloads in new tabs are captured.
-        self._context.on("page", self._on_context_page)
+        # Track every page the context creates (programmatic, popup, or
+        # target=_blank) the moment it exists: stable tab id + download + close.
+        self._context.on("page", self._track_page)
 
         # Capture the Playwright driver PID so the atexit handler can kill the
         # process tree if the async close path never ran (e.g. SIGKILL, event
@@ -302,13 +286,29 @@ class Browser:
 
         page.on("download", _on_download)
 
-    def _on_context_page(self, page: Page) -> None:
-        """Handle new pages created by popups or ``target=_blank`` links.
+    def _track_page(self, page: Page) -> None:
+        """Assign a stable tab ID and attach download + close handlers.
 
-        Immediately attaches a download listener so file downloads in the
-        new tab are captured by ``_pending_downloads``.
+        Registered as the context ``page`` listener, so it fires for every page
+        — programmatic, popup, or ``target=_blank`` — the moment it's created,
+        before any other ``page`` listener runs. That means popup/link tabs get
+        a stable ID and are visible to anything mirroring the tab set, not only
+        tabs opened via ``new_page``. Guards against double-tracking the same
+        page (re-entry is a no-op).
         """
+        if page in self._tab_id_of:
+            self._attach_download_listener(page)
+            return
+        self._next_tab_id += 1
+        self._tab_id_of[page] = self._next_tab_id
         self._attach_download_listener(page)
+
+        def _on_close(_p: Any) -> None:
+            self._tab_id_of.pop(page, None)
+            self._pages_in_navigation.discard(page)
+            self._dominant_frames.pop(page, None)
+
+        page.on("close", _on_close)
 
     async def _handle_download(self, download: Any) -> None:
         """Process a Playwright download event and record the result."""
@@ -401,7 +401,11 @@ class Browser:
             "--disable-features=AutomationControlled",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
-            *(["--start-maximized"] if not headless else []),
+            # Size the real window to a 1080p monitor. With no emulated viewport,
+            # the page viewport is this window minus the browser chrome — the
+            # natural screen >= window >= viewport relationship a real browser
+            # has. (Works without a window manager, unlike --start-maximized.)
+            "--window-size=1920,1080",
             "--enable-automation=false",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
@@ -416,8 +420,6 @@ class Browser:
             dl_path = Path(downloads_path).expanduser().resolve()
             dl_path.mkdir(parents=True, exist_ok=True)
             resolved_downloads_path = str(dl_path)
-
-        viewport = _viewport()
 
         launch_kwargs: dict[str, Any] = dict(
             headless=headless,
@@ -456,7 +458,7 @@ class Browser:
                 logger.warning("Failed to load browser storage state")
 
         context_kwargs: dict[str, Any] = dict(
-            viewport=viewport,
+            no_viewport=True,
             locale=locale,
             timezone_id=timezone_id,
             accept_downloads=accept_downloads,
@@ -527,7 +529,7 @@ class Browser:
         """
         context = await root_browser._pw_browser.new_context(
             storage_state=storage_state,
-            viewport=_viewport(),
+            no_viewport=True,
             locale="en-US",
             timezone_id="America/Chicago",
             accept_downloads=True,
@@ -600,19 +602,25 @@ class Browser:
                 f"with goto(url, tab=N).\n{self._tab_listing()}",
                 tool="new_tab",
             )
+        # The context "page" event (handled by _track_page) assigns the tab id
+        # and attaches the download + close handlers as the page is created.
+        # Viewport is inherited from the context's default (set once at creation)
+        # so every tab — programmatic, popup, or link — is the same size, like
+        # tabs in a real browser window; don't re-roll a per-tab viewport here.
         page = await self._context.new_page()
-        await page.set_viewport_size(_viewport())
-        self._attach_download_listener(page)
-        self._next_tab_id += 1
-        self._tab_id_of[page] = self._next_tab_id
-
-        def _on_close(_p: Any) -> None:
-            self._tab_id_of.pop(page, None)
-            self._pages_in_navigation.discard(page)
-            self._dominant_frames.pop(page, None)
-
-        page.on("close", _on_close)
         return page
+
+    def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:
+        """Register *callback* to fire for each new page (tab or popup) opened.
+
+        Lets a caller react when the context spawns a tab — e.g. to keep a
+        chosen tab in the foreground — without reaching into the context.
+        """
+        self._context.on("page", callback)
+
+    def remove_new_page_listener(self, callback: Callable[[Page], None]) -> None:
+        """Unregister a callback previously passed to ``add_new_page_listener``."""
+        self._context.remove_listener("page", callback)
 
     def tab_id_of(self, page: Page) -> int | None:
         """Return the stable tab ID for *page*, or ``None`` if untracked.
@@ -1168,9 +1176,6 @@ class Browser:
         await action()
         action_ms = (time.monotonic() - t0) * 1000
 
-        from tools.browser.events import flush_progressive_screenshot
-        await flush_progressive_screenshot()
-
         page.remove_listener("response", _on_response)
         self._context.remove_listener("page", _on_new_page)
 
@@ -1330,6 +1335,19 @@ async def get_browser() -> Browser:
         _agent_browsers[key] = ephemeral
         logger.info("Created ephemeral browser context for key '%s'", key)
         return ephemeral
+
+
+async def get_browser_by_conversation_id(conversation_id: str) -> Browser | None:
+    """Return the live root-agent browser context for *conversation_id*.
+
+    This is the depth-0 context the UI mirrors — the same context
+    ``get_browser`` hands to root agents. Returns ``None`` when the
+    conversation has no live browser yet. Sub-agent contexts and the
+    persistent profile template are never returned here, so callers that
+    expose interactive control can only ever reach the root context.
+    """
+    async with _agent_browser_lock:
+        return _agent_browsers.get(f"conv:{conversation_id}")
 
 
 async def release_agent_browser(key: str) -> None:

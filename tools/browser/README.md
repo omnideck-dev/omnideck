@@ -66,7 +66,7 @@ Browser automation tools powered by Playwright. These tools are used by the brow
 | `javascript.py` | `execute_javascript()` — raw JS evaluation |
 | `vision.py` | `inspect_page()`, `ground_elements_by_text()` — visual inspection and element grounding |
 | `save_content.py` | `save_page_content()` — saves page HTML as markdown |
-| `events.py` | Emits progressive browser screenshot events to the UI |
+| `events.py` | Emits post-action browser screenshot events to the UI |
 
 ---
 
@@ -116,14 +116,13 @@ Every interaction tool (click, fill, scroll, etc.) delegates to `perform_interac
 |                                                     |
 |  1. Reset     - Clear __pageChange__ markers        |
 |  2. Execute   - Call action_fn (click, type, etc.)  |
-|  3. Flush     - Await in-flight progressive snap    |
-|  4. Detect    - Read __pageChange__ flags           |
-|  5. Settle    - Wait for network idle + DOM quiet   |
-|  6. Re-check  - Read flags again (async updates)    |
-|  7. Classify  - browser-nav / history-nav /         |
+|  3. Detect    - Read __pageChange__ flags           |
+|  4. Settle    - Wait for network idle + DOM quiet   |
+|  5. Re-check  - Read flags again (async updates)    |
+|  6. Classify  - browser-nav / history-nav /         |
 |                  dom-mutation / no-change            |
-|  8. Frame     - Re-detect dominant iframe           |
-|  9. Delay     - 300-800ms human reading pause       |
+|  7. Frame     - Re-detect dominant iframe           |
+|  8. Delay     - 300-800ms human reading pause       |
 +----------------------------------------------------+
 ```
 
@@ -351,37 +350,28 @@ This provides a fallback path when ref-based selectors can't find an element —
 
 ---
 
-## Events & Progressive Screenshots (`events.py`)
+## Events & Screenshots (`events.py`)
 
-Streams browser screenshots to the UI without blocking tool execution.
+Publishes `BrowserScreenshotPayload` events to the UI for thumbnails and
+post-action state. The live, high-frame-rate view of the *selected* tab is
+served separately by the browser control side channel (CDP screencast), so
+these screenshots only fire at discrete points — they are not a live stream.
 
 ```
 +---------------------------------------------+
-|        Progressive Screenshot Flow           |
+|        Screenshot Emission                   |
 |                                              |
-|  Tool call in progress                       |
-|       |                                      |
-|       +-- request_progressive_screenshot()   |
-|       |   (fire-and-forget)                  |
-|       |        |                             |
-|       |        v                             |
-|       |   _ScreenshotEmitter (background)    |
-|       |   - Coalesces rapid requests         |
-|       |   - Min interval ~250ms (~4 fps)     |
-|       |   - "Latest-value-only" drain        |
-|       |   - Emits BrowserScreenshotPayload   |
-|       |        |                             |
-|       |        v                             |
-|       |   UI receives screenshot event       |
-|       |                                      |
-|       +-- flush_progressive_screenshot()     |
-|       |   (awaits in-flight capture)         |
+|  Tool call runs                              |
 |       |                                      |
 |       +-- Tool returns result                |
 |            |                                 |
 |            v                                 |
 |  @emit_screenshot_after                      |
-|  (decorator captures final screenshot)       |
+|  (decorator captures post-action screenshot, |
+|   tagged with tab id + open-tab id set)      |
+|                                              |
+|  javascript.py also calls emit_screenshot()  |
+|  ad-hoc after JS evaluation.                 |
 +---------------------------------------------+
 ```
 

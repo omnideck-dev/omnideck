@@ -317,13 +317,6 @@ async def _mouse_move_with_fake_cursor(page: Page, *, x: float, y: float) -> Non
         # and lets us control the overlay per-step.
         await page.mouse.move(xi, yi, steps=1)
 
-        # Fire non-blocking progressive snapshot (throttled to ~4 fps).
-        # The emitter coalesces rapid requests so the movement loop is never
-        # blocked waiting for screenshot capture.
-        from tools.browser.events import request_progressive_screenshot
-
-        request_progressive_screenshot(page)
-
         # Small pause to let the browser render the overlay movement. Keep this
         # brief to avoid slowing tests too much while still producing visible motion.
         await asyncio.sleep(0.03)
@@ -481,18 +474,8 @@ async def human_press_and_hold(
     await _sleep_ms(random.randint(cfg.hover_min_ms, cfg.hover_max_ms))
     await mouse.down()
 
-    # Hold for the requested duration, firing progressive snapshots so the
-    # agent (and streaming UI) can observe progress (e.g. a filling progress bar).
-    from tools.browser.events import request_progressive_screenshot
-
-    hold_duration = max(0, duration_ms)
-    snapshot_interval_ms = 250
-    elapsed = 0
-    while elapsed < hold_duration:
-        chunk = min(snapshot_interval_ms, hold_duration - elapsed)
-        await _sleep_ms(chunk)
-        elapsed += chunk
-        request_progressive_screenshot(page)
+    # Hold for the requested duration.
+    await _sleep_ms(max(0, duration_ms))
 
     await mouse.up()
 
@@ -693,11 +676,6 @@ async def human_type(target: Page | Frame, locator: Locator, text: str, *, clear
         if delay > 0:
             await _sleep_ms(delay)
 
-        # Fire non-blocking progressive snapshot (throttled to ~4 fps).
-        from tools.browser.events import request_progressive_screenshot
-
-        request_progressive_screenshot(page)
-
         if cfg.extra_pause_every_chars > 0 and (idx + 1) % cfg.extra_pause_every_chars == 0:
             await _sleep_ms(random.randint(cfg.extra_pause_min_ms, cfg.extra_pause_max_ms))
 
@@ -869,17 +847,8 @@ async def human_press_and_hold_at(
     await _sleep_ms(random.randint(cfg.hover_min_ms, cfg.hover_max_ms))
     await mouse.down()
 
-    # Hold for the requested duration, firing progressive snapshots.
-    from tools.browser.events import request_progressive_screenshot
-
-    hold_duration = max(0, duration_ms)
-    snapshot_interval_ms = 250
-    elapsed = 0
-    while elapsed < hold_duration:
-        chunk = min(snapshot_interval_ms, hold_duration - elapsed)
-        await _sleep_ms(chunk)
-        elapsed += chunk
-        request_progressive_screenshot(page)
+    # Hold for the requested duration.
+    await _sleep_ms(max(0, duration_ms))
 
     await mouse.up()
 
@@ -1145,11 +1114,6 @@ async def human_scroll(target: Page | Frame, direction: str = "down", amount: in
 
                 for _i in range(int(events_count)):
                     await page.mouse.wheel(0, wheel_increment)
-
-                    # Fire non-blocking progressive snapshot (throttled to ~4 fps).
-                    from tools.browser.events import request_progressive_screenshot
-
-                    request_progressive_screenshot(page)
 
                     # Small delay between wheel events (16ms = ~60fps scrolling)
                     await asyncio.sleep(0.016)

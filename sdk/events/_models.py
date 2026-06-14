@@ -87,16 +87,23 @@ class BrowserScreenshotPayload(BaseModel):
         type: Discriminator; always "browser_screenshot".
         url: The current URL of the browser page.
         title: The page title.
-        screenshot: Base64-encoded PNG screenshot of the viewport.
+        screenshot: Base64-encoded PNG screenshot of the viewport, or None for
+            a reconcile-only event (e.g. after a tab closes, which produces no
+            screenshot) that carries just the open-tab set.
         tab_id: Stable tab ID this screenshot belongs to.  The UI uses
-            it to route screenshots into per-tab thumbnail slots.
+            it to route screenshots into per-tab thumbnail slots. None on a
+            reconcile-only event.
+        open_tab_ids: Stable IDs of all currently-open tabs at capture time.
+            The UI reconciles its thumbnail set against this so tabs that have
+            since closed are pruned rather than lingering as stale thumbnails.
     """
 
     type: Literal["browser_screenshot"]
     url: str
     title: str
-    screenshot: str  # base64 encoded PNG
+    screenshot: str | None = None  # base64 PNG; None = reconcile-only event
     tab_id: int | None = None
+    open_tab_ids: list[int] | None = None
 
 
 class FileOutputPayload(BaseModel):

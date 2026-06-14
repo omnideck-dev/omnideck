@@ -4,6 +4,7 @@ import pytest
 
 from sdk.providers._fake import FakeProvider
 from sdk.providers._models import ChatResponse
+from tests.e2e._protocol import bash, open_url, say, send_file, write_file
 
 
 async def _run(provider, messages, tools=None):
@@ -70,14 +71,14 @@ class TestSay:
 class TestBash:
     async def test_loads_coder_skill_when_bash_unavailable(self):
         """With no coder tools loaded, the fake loads the skill first."""
-        final, _ = await _run(FakeProvider(), _user('<<BASH>>echo "hi"<<END>>'))
+        final, _ = await _run(FakeProvider(), _user(bash('echo "hi"')))
         call = final.message.tool_calls[0]
         assert call.function.name == "load_skill"
         assert call.function.arguments == {"name": "coder"}
 
     async def test_emits_bash_once_skill_loaded(self):
         final, _ = await _run(
-            FakeProvider(), _user('<<BASH>>echo "hi"<<END>>'), tools=_CODER
+            FakeProvider(), _user(bash('echo "hi"')), tools=_CODER
         )
         call = final.message.tool_calls[0]
         assert call.function.name == "run_bash_cmd"
@@ -85,14 +86,14 @@ class TestBash:
         assert final.done_reason == "tool_calls"
 
     async def test_after_tool_result_finishes(self):
-        msgs = _tool_result(_user('<<BASH>>echo "hi"<<END>>'), "run_bash_cmd")
+        msgs = _tool_result(_user(bash('echo "hi"')), "run_bash_cmd")
         final, _ = await _run(FakeProvider(), msgs, tools=_CODER)
         assert final.message.tool_calls is None
         assert final.message.content == "done"
 
     async def test_load_skill_result_does_not_advance_directive(self):
         """A load_skill result isn't a logical step — bash still comes next."""
-        msgs = _tool_result(_user('<<BASH>>echo "hi"<<END>>'), "load_skill")
+        msgs = _tool_result(_user(bash('echo "hi"')), "load_skill")
         final, _ = await _run(FakeProvider(), msgs, tools=_CODER)
         assert final.message.tool_calls[0].function.name == "run_bash_cmd"
 
@@ -100,7 +101,7 @@ class TestBash:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestWriteThenSend:
-    PROMPT = "<<WRITE notes.txt>>hello<<END>><<SEND>>notes.txt<<END>><<SAY>>sent<<END>>"
+    PROMPT = write_file("notes.txt", "hello") + send_file("notes.txt") + say("sent")
 
     async def test_step1_write(self):
         final, _ = await _run(FakeProvider(), _user(self.PROMPT), tools=_CODER)
@@ -128,7 +129,7 @@ class TestWriteThenSend:
 class TestOpenAndSpawn:
     async def test_open_url(self):
         final, _ = await _run(
-            FakeProvider(), _user("<<OPEN>>https://example.com<<END>>"), tools=_BROWSER
+            FakeProvider(), _user(open_url("https://example.com")), tools=_BROWSER
         )
         call = final.message.tool_calls[0]
         assert call.function.name == "new_tab"
@@ -136,7 +137,7 @@ class TestOpenAndSpawn:
 
     async def test_open_loads_browser_skill_when_unavailable(self):
         final, _ = await _run(
-            FakeProvider(), _user("<<OPEN>>https://example.com<<END>>")
+            FakeProvider(), _user(open_url("https://example.com"))
         )
         call = final.message.tool_calls[0]
         assert call.function.name == "load_skill"

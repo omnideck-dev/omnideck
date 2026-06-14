@@ -6,7 +6,7 @@ import logging
 
 import tools.browser.core as browser_core
 from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.events import emit_screenshot, emit_screenshot_after
+from tools.browser.events import emit_screenshot, emit_screenshot_after, emit_tab_state
 from tools.browser.interactions import _format_result
 
 logger = logging.getLogger(__name__)
@@ -99,6 +99,9 @@ async def close_tab(*, tab: str) -> str:
             raise BrowserToolError(str(exc), tool="close_tab") from exc
         closed_id = browser.tab_id_of(page)
         await page.close()
+        # close_tab produces no screenshot, so emit the reduced open-tab set
+        # explicitly to prune the closed tab from the UI's record.
+        await emit_tab_state()
         return f"Closed tab={closed_id}."
     except BrowserToolError:
         raise

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
 from tools.browser.core._file_detection import DownloadInfo
 from tools.browser.core.browser import Browser, BrowserInteractionResult
 
@@ -19,28 +19,7 @@ from tools.browser.core.browser import Browser, BrowserInteractionResult
 # ---------------------------------------------------------------------------
 
 
-class _EventMixin:
-    """Minimal event emitter for test stubs."""
-
-    def __init__(self) -> None:
-        self._listeners: dict[str, list[Callable[..., Any]]] = {}
-
-    def on(self, event: str, callback: Callable[..., Any]) -> None:
-        self._listeners.setdefault(event, []).append(callback)
-
-    def remove_listener(self, event: str, callback: Callable[..., Any]) -> None:
-        if event in self._listeners:
-            try:
-                self._listeners[event].remove(callback)
-            except ValueError:
-                pass
-
-    def emit(self, event: str, *args: Any) -> None:
-        for cb in list(self._listeners.get(event, [])):
-            cb(*args)
-
-
-class FakePage(_EventMixin):
+class FakePage(EventEmitterStub):
     """Stub page with event support."""
 
     def __init__(self, url: str = "https://old.example.com", closed: bool = False) -> None:
@@ -59,7 +38,7 @@ class FakePage(_EventMixin):
         return None
 
 
-class FakeContext(_EventMixin):
+class FakeContext(EventEmitterStub):
     """Stub context with event support."""
 
     def __init__(self, pages: list[FakePage] | None = None) -> None:
@@ -93,7 +72,7 @@ def _fake_response(
 
 
 # ---------------------------------------------------------------------------
-# _on_context_page — download listener auto-attachment
+# _track_page — download listener auto-attachment
 # ---------------------------------------------------------------------------
 
 
@@ -159,7 +138,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -195,7 +173,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -224,7 +201,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -255,7 +231,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -282,7 +257,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 
@@ -304,7 +278,6 @@ class TestPerformInteractionPopup:
 
         with (
             patch.object(browser, "_finalize_action", return_value=BrowserInteractionResult()),
-            patch("tools.browser.events.flush_progressive_screenshot", new_callable=AsyncMock),
         ):
             await browser.perform_interaction(fake_click, page=old_page)
 

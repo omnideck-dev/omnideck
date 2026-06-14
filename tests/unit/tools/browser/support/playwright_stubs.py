@@ -10,6 +10,30 @@ except ModuleNotFoundError:  # pragma: no cover - testing fallback
         """Fallback Playwright error stub used when Playwright is unavailable."""
 
 
+class EventEmitterStub:
+    """Minimal ``on``/``remove_listener``/``emit`` surface for stub pages and
+    contexts, so they fire events (notably ``page``) the way real Playwright
+    objects do instead of silently dropping listeners.
+    """
+
+    def __init__(self) -> None:
+        self._listeners: dict[str, list[Callable[..., Any]]] = {}
+
+    def on(self, event: str, callback: Callable[..., Any]) -> None:
+        self._listeners.setdefault(event, []).append(callback)
+
+    def remove_listener(self, event: str, callback: Callable[..., Any]) -> None:
+        if event in self._listeners:
+            try:
+                self._listeners[event].remove(callback)
+            except ValueError:
+                pass
+
+    def emit(self, event: str, *args: Any) -> None:
+        for cb in list(self._listeners.get(event, [])):
+            cb(*args)
+
+
 class StubResponse:
     """Minimal response object mirroring the subset of attributes under test."""
 

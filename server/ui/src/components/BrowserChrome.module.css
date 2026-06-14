@@ -1,0 +1,77 @@
+/* Shared by the inline preview (inside the panel's padding) and the fullscreen
+   view (supplies its own outer padding). The title sits above the control row. */
+.chrome {
+}
+
+.chrome.fullscreen {
+  padding: 10px 12px 0;
+}
+
+.pageTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.urlBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
+}
+
+.lockIcon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.url {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.urlInput {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 4px);
+  padding: 3px 8px;
+  outline: none;
+}
+
+.urlInput:focus {
+  border-color: var(--accent);
+}
+
+:global([data-theme="light"]) .urlBar {
+  background: var(--canvas);
+  border-color: var(--border-strong);
+}
+
+:global([data-theme="light"]) .lockIcon {
+  color: var(--text-secondary);
+}
+
+:global([data-theme="light"]) .url {
+  color: var(--text-secondary);
+}
+
+:global([data-theme="light"]) .pageTitle {
+  color: var(--text-primary);
+}

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
 from tools.browser.core.browser import (
     Browser,
     _agent_browsers,
@@ -31,24 +32,21 @@ class _FakePage:
         self._closed = True
 
 
-class _FakeContext:
+class _FakeContext(EventEmitterStub):
     """Minimal stub for BrowserContext used by Browser."""
 
     def __init__(self, pages: list[_FakePage] | None = None) -> None:
+        super().__init__()
         self.pages = pages or []
         self.browser = MagicMock()
         self._storage = {"cookies": [], "origins": []}
         self._closed = False
 
-    def on(self, event: str, callback: Any) -> None:
-        pass
-
-    def remove_listener(self, event: str, callback: Any) -> None:
-        pass
-
     async def new_page(self) -> _FakePage:
+        # Real Playwright fires the context "page" event as the page is created.
         page = _FakePage()
         self.pages.append(page)
+        self.emit("page", page)
         return page
 
     async def storage_state(self) -> dict[str, Any]:
