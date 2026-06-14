@@ -106,11 +106,16 @@ def _python_type_to_json_schema(annotation: Any) -> dict[str, Any]:
     if origin is dict:
         return {"type": "object"}
 
-    # Handle Optional (Union[X, None])
+    # Unions. Drop None — optionality is carried by `required`, not the type.
+    # A single remaining member collapses to that member (Optional[T] -> T);
+    # genuinely multi-typed params (e.g. list[str] | str) become an anyOf so
+    # the model sees every accepted shape.
     if origin is Union or origin is types.UnionType:
         args = [a for a in get_args(annotation) if a is not type(None)]
         if len(args) == 1:
             return _python_type_to_json_schema(args[0])
+        if args:
+            return {"anyOf": [_python_type_to_json_schema(a) for a in args]}
 
     json_type = _TYPE_MAP.get(annotation, "string")
     return {"type": json_type}
@@ -146,7 +151,10 @@ def callable_to_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
     Returns:
         A dict matching the OpenAI tool schema format.
     """
-    sig = inspect.signature(func)
+    # eval_str resolves string annotations from ``from __future__ import
+    # annotations`` modules to real types; without it every such tool's
+    # params collapse to the default schema type.
+    sig = inspect.signature(func, eval_str=True)
     docstring = inspect.getdoc(func)
     arg_descs = _parse_arg_descriptions(docstring)
     properties: dict[str, Any] = {}

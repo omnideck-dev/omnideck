@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def send_email(
     integration_id: str,
-    to: list[str],
+    to: list[str] | str,
     subject: str,
     body: str,
     attachments: list[str] | None = None,
@@ -27,7 +27,7 @@ async def send_email(
 
     Args:
         integration_id: Identifier of the email integration to send through.
-        to: One or more recipient addresses.
+        to: A recipient address, or a list of them.
         subject: Subject line.
         body: Plain-text message body.
         attachments: Optional list of file paths. Each file is read, the
@@ -39,7 +39,10 @@ async def send_email(
         Plain text — a confirmation line including the assigned
         ``Message-ID``, or a short error notice.
     """
-    args: dict[str, Any] = {"to": list(to), "subject": subject, "body": body}
+    # Accept a bare string for a single recipient — list("a@b") would
+    # otherwise iterate it character by character.
+    recipients = [to] if isinstance(to, str) else list(to)
+    args: dict[str, Any] = {"to": recipients, "subject": subject, "body": body}
     if attachments:
         encoded, error = _encode_attachments(attachments)
         if error is not None:
@@ -67,7 +70,7 @@ async def send_email(
         return f"Failed to send via {integration_id!r}: {exc}"
 
     message_id = result.get("message_id", "")
-    audience = ", ".join(to)
+    audience = ", ".join(recipients)
     if message_id:
         return f"Sent via {integration_id!r} to {audience} (Message-ID: {message_id})."
     return f"Sent via {integration_id!r} to {audience}."
@@ -105,7 +108,7 @@ def build_send_email_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
 
     async def _send_email(
         integration_id: str,
-        to: list[str],
+        to: list[str] | str,
         subject: str,
         body: str,
         attachments: list[str] | None = None,
@@ -120,7 +123,7 @@ def build_send_email_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"
         "    integration_id: Which integration to send through.\n"
-        "    to: One or more recipient addresses.\n"
+        "    to: A recipient address, or a list of them.\n"
         "    subject: Subject line.\n"
         "    body: Plain-text message body.\n"
         "    attachments: Optional list of file paths to attach.\n\n"

@@ -973,8 +973,14 @@ async def human_drag_at(
 
     Args:
         target: Playwright Page or Frame whose mouse will be used.
-        sx1, sy1, sx2, sy2: Source bounding box (CSS pixels).
-        dx1, dy1, dx2, dy2: Destination bounding box (CSS pixels).
+        sx1: Source bounding box left edge (CSS pixels).
+        sy1: Source bounding box top edge (CSS pixels).
+        sx2: Source bounding box right edge (CSS pixels).
+        sy2: Source bounding box bottom edge (CSS pixels).
+        dx1: Destination bounding box left edge (CSS pixels).
+        dy1: Destination bounding box top edge (CSS pixels).
+        dx2: Destination bounding box right edge (CSS pixels).
+        dy2: Destination bounding box bottom edge (CSS pixels).
 
     Raises:
         BrowserToolError: If coordinates are non-finite or the page lacks a mouse.

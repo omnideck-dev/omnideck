@@ -127,6 +127,8 @@ async def read_page(
             Returns matching lines with context, grouped by ``---``.
             Example: ``read_page(query="pricing")`` to find pricing info
             on a long page without reading everything.
+        tab: Stable tab ID to read — the ID shown in the snapshot
+            header (e.g. ``tab="3"``).
 
     Returns:
         Formatted string with page header, viewport info, and markdown content.

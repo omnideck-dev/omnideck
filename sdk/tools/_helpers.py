@@ -97,12 +97,16 @@ def _coerce_value(expected_type: Any, value: Any) -> Any:
 
     origin = get_origin(unwrapped)
 
-    # list[T] — coerce each element when the item type is known.
+    # list[T] — coerce each element when the item type is known. A non-list
+    # here is a model mistake (e.g. a bare string where list[str] is
+    # expected); fail loudly so the model gets a corrective error instead of
+    # the value silently reaching the tool — list("a@b") chars a string.
     if origin is list:
+        if not isinstance(value, list):
+            msg = f"expected a list, got {type(value).__name__}"
+            raise ValueError(msg)
         args = get_args(unwrapped)
         item_type = args[0] if args else None
-        if not isinstance(value, list):
-            return value
         if item_type is None:
             return value
         return [_coerce_value(item_type, item) for item in value]
@@ -143,7 +147,13 @@ def _prepare_tool_arguments(
         if annotation is inspect.Parameter.empty:
             validated[name] = value
         else:
-            validated[name] = _coerce_value(annotation, value)
+            try:
+                validated[name] = _coerce_value(annotation, value)
+            except (ValueError, TypeError) as exc:
+                # Name the offending parameter so the model knows which
+                # argument to fix on retry.
+                msg = f"Invalid value for parameter '{name}' of tool '{func_name}': {exc}"
+                raise ValueError(msg) from exc
 
     return validated
 

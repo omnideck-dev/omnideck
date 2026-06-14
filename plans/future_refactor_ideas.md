@@ -187,3 +187,40 @@ Extract a `<PreviewPanel>` that owns the preview area — the mode switch *and* 
 Note the constraint that forces this rather than a simpler fix: a browser-only `<BrowserPanel>` rendering its own fullscreen via a React portal would *work*, but it would make browser fullscreen diverge from the shared `fullscreenItem` overlay that file/terminal/desktop use — trading "the shell knows about browser tabs" for "browser fullscreen is special." The right move keeps the generic fullscreen mechanism and lifts the whole panel, not just the browser slice.
 
 Already done as a partial step: `useBrowserTabs` now owns the tab merge + selection (wrapping `useBrowserControl`), so `DesktopApp` calls one hook instead of ~50 lines. The remaining work is the structural panel extraction above.
+
+## Replace the hand-rolled tool type→schema layer in sdk/tools
+
+`sdk/tools` hand-rolls type-driven conversion in two independent places that
+share no code and have already drifted:
+
+- `_coerce_value` in `_helpers.py` — inbound: validate/coerce LLM arg JSON
+  against a tool's signature before the call.
+- `_python_type_to_json_schema` in `_callable_schema.py` — outbound: build the
+  OpenAI/Anthropic tool schema from the signature.
+
+Both re-implement "walk a Python annotation, branch on `list` / `Union` /
+Pydantic / scalar." The drift is real: each handles unions its own way (the
+outbound converter emits `anyOf`, the inbound coercer passes multi-member
+unions through unchanged), and a fix in one doesn't reach the other. Ollama
+bypasses the outbound converter entirely — it does its own pydantic conversion
+in the client library — so the two outbound schemas can diverge for the same
+tool.
+
+**Goal:** stop maintaining two parallel walkers. Two viable directions:
+
+1. **Shell out to each provider's own schema generator.** The OpenAI and
+   Anthropic SDKs (and Ollama's client) already know how to turn a typed
+   callable into their respective tool schema. Let each provider adapter own its
+   outbound conversion instead of feeding them all one home-grown OpenAI-style
+   dict. Removes `_callable_schema.py` from the shared path.
+2. **Adopt a library for the type→schema/validation direction.** Pydantic can
+   build a model from a callable's signature (`validate_call` /
+   `TypeAdapter`) and emit JSON Schema from it. Routing both the inbound
+   validation and the outbound schema through one Pydantic-derived model would
+   collapse `_coerce_value` and `_python_type_to_json_schema` into a single
+   source of truth.
+
+Either way the win is one annotation-walking implementation instead of two.
+This is the structural follow-up to the inbound strictness fix (bare string vs.
+`list[str]`); that fix made coercion fail loudly but left both walkers in
+place.
