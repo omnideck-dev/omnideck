@@ -162,10 +162,19 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         }
     }, [engaged, canControl, connected]);
 
+    // Low-level: forward a raw input primitive (mouse/key/wheel/text) over the
+    // channel. The screencast surface streams these; discrete commands below
+    // wrap it so consumers express intent rather than hand-build wire messages.
     const sendInput = useCallback((obj) => {
         const ws = wsRef.current;
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
     }, []);
+
+    // Discrete commands — the wire-protocol shapes live here, not in components.
+    const closeTab = useCallback((tabId) => sendInput({ type: 'close_tab', tab_id: tabId }), [sendInput]);
+    const newTab = useCallback(() => sendInput({ type: 'new_tab' }), [sendInput]);
+    const goto = useCallback((url) => sendInput({ type: 'goto', url }), [sendInput]);
+    const navigate = useCallback((direction) => sendInput({ type: direction }), [sendInput]);
 
     const toggleEngage = useCallback(() => {
         setEngaged((v) => (canControl ? !v : false));
@@ -185,5 +194,9 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         canControl,
         toggleEngage,
         sendInput,
+        closeTab,
+        newTab,
+        goto,
+        navigate,
     };
 }

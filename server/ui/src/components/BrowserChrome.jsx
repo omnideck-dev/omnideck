@@ -20,7 +20,7 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
     const commitGoto = () => {
         const value = (edit ?? '').trim();
         setEdit(null);
-        if (value && c.sendInput) c.sendInput({ type: 'goto', url: value });
+        if (value && c.goto) c.goto(value);
     };
 
     return (
@@ -50,10 +50,10 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
                 ) : (
                     <span className={styles.url} title={url}>{url}</span>
                 )}
-                {c.engaged && c.sendInput && (
+                {c.engaged && c.newTab && (
                     <IconButton
                         size="sm"
-                        onClick={() => c.sendInput({ type: 'new_tab' })}
+                        onClick={c.newTab}
                         title="New tab"
                         aria-label="New tab"
                         data-testid="browser-new-tab"

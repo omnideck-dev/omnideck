@@ -82,15 +82,18 @@
 }
 
 .thumbFrame {
+  position: relative;
   aspect-ratio: 16 / 10;
   background: #000;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
+/* Pinned to the frame so the image can never grow the card: a screenshot's
+   own dimensions must not influence the thumbnail height (the frame's
+   aspect-ratio is the sole authority). */
 .thumbImg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;

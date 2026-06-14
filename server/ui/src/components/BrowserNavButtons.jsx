@@ -7,8 +7,8 @@ import IconButton from './primitives/IconButton.jsx';
  */
 export default function BrowserNavButtons({ control }) {
     const c = control || {};
-    if (!c.engaged || !c.sendInput) return null;
-    const nav = (dir) => c.sendInput({ type: dir });
+    if (!c.engaged || !c.navigate) return null;
+    const nav = (dir) => c.navigate(dir);
     return (
         <>
             <IconButton size="sm" onClick={() => nav('back')} title="Back" aria-label="Back" data-testid="browser-nav-back">
