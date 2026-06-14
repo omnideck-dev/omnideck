@@ -40,7 +40,7 @@ from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core._file_detection import DownloadInfo
 
 if TYPE_CHECKING:  # Imported only for type checking to avoid runtime dependency surface
-    from playwright.async_api import Geolocation, ProxySettings, ViewportSize
+    from playwright.async_api import Geolocation, ProxySettings
 
 # Union type for functions that can operate on either a Page or a Frame.
 # Frame exposes the same DOM-query API as Page (evaluate, locator, get_by_role,
@@ -69,19 +69,6 @@ class ActiveView(NamedTuple):
 
 logger = logging.getLogger(__name__)
 
-
-
-def _viewport() -> ViewportSize:
-    """Return the viewport size — a fixed, common desktop resolution.
-
-    1920x1080 is the most common desktop resolution, so it blends into the
-    largest cohort of real users rather than standing out as a unique size.
-
-    Returns:
-        A mapping compatible with Playwright's viewport format, containing
-        ``width`` and ``height`` in pixels.
-    """
-    return {"width": 1920, "height": 1080}
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +401,11 @@ class Browser:
             "--disable-features=AutomationControlled",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
-            *(["--start-maximized"] if not headless else []),
+            # Size the real window to a 1080p monitor. With no emulated viewport,
+            # the page viewport is this window minus the browser chrome — the
+            # natural screen >= window >= viewport relationship a real browser
+            # has. (Works without a window manager, unlike --start-maximized.)
+            "--window-size=1920,1080",
             "--enable-automation=false",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
@@ -429,8 +420,6 @@ class Browser:
             dl_path = Path(downloads_path).expanduser().resolve()
             dl_path.mkdir(parents=True, exist_ok=True)
             resolved_downloads_path = str(dl_path)
-
-        viewport = _viewport()
 
         launch_kwargs: dict[str, Any] = dict(
             headless=headless,
@@ -469,7 +458,7 @@ class Browser:
                 logger.warning("Failed to load browser storage state")
 
         context_kwargs: dict[str, Any] = dict(
-            viewport=viewport,
+            no_viewport=True,
             locale=locale,
             timezone_id=timezone_id,
             accept_downloads=accept_downloads,
@@ -540,7 +529,7 @@ class Browser:
         """
         context = await root_browser._pw_browser.new_context(
             storage_state=storage_state,
-            viewport=_viewport(),
+            no_viewport=True,
             locale="en-US",
             timezone_id="America/Chicago",
             accept_downloads=True,
