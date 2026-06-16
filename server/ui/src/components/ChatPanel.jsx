@@ -4,6 +4,7 @@ import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
 import { formatAgentName } from './AgentCard.jsx';
 import StatusDot from './StatusDot.jsx';
+import { useAgentState } from '../hooks/useAgentState.jsx';
 import styles from './ChatPanel.module.css';
 
 /**
@@ -14,9 +15,14 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, rootAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
+export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
     const [draft, setDraft] = useState('');
     const clearDraft = useCallback(() => setDraft(''), []);
+
+    // The title bar reflects the root agent; read it straight from the agent
+    // tree rather than receiving it as a prop.
+    const agentState = useAgentState();
+    const rootAgent = agentState.rootId ? agentState.agents[agentState.rootId] : null;
 
     // A turn is one user message and its response. Title falls back to the
     // agent name until the live conversation title is wired up.

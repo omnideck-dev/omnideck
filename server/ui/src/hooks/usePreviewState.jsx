@@ -110,6 +110,5 @@ export default function usePreviewState(agentState, agentDispatch, followSelecte
         generationPreview,
         openFiles,
         previewAgent,
-        rootAgent,
     };
 }

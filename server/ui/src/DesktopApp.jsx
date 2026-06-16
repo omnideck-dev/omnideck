@@ -503,7 +503,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             isStreaming={isStreaming}
                             stopRequested={stopRequested}
                             attachment={attachment}
-                            rootAgent={preview.rootAgent}
                             networkActivated={agentState.networkActivated}
                             networkAgentCount={networkAgentCount}
                             networkRunningCount={networkRunningCount}
