@@ -1,11 +1,17 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPanel from '../ChatPanel.jsx';
 
 // The message list and composer pull in streaming/profile machinery that
 // isn't relevant to the title bar — stub them out.
 vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-messages" /> }));
 vi.mock('../ChatInput.jsx', () => ({ default: () => <div data-testid="chat-input" /> }));
+
+// ChatPanel reads the root agent from the agent-state context; drive it here.
+const { agentState } = vi.hoisted(() => ({ agentState: { value: { rootId: null, agents: {} } } }));
+vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => agentState.value }));
+
+beforeEach(() => { agentState.value = { rootId: null, agents: {} }; });
 
 const userMsg = (id) => ({ id, role: 'user', content: 'hi' });
 const agentMsg = (id) => ({ id, role: 'assistant', content: 'hello' });
@@ -29,7 +35,8 @@ describe('ChatPanel title bar', () => {
     });
 
     it('shows the agent name as the title when a root agent exists', () => {
-        renderPanel({ rootAgent: { name: 'Omnideck' } });
+        agentState.value = { rootId: 'r', agents: { r: { name: 'Omnideck' } } };
+        renderPanel();
         expect(screen.getByTestId('chat-title')).toHaveTextContent('Omnideck');
     });
 
