@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useAgentState, useAgentDispatch } from './useAgentState.jsx';
 import BrowserIcon from '../components/icons/BrowserIcon.jsx';
 import FileIcon from '../components/icons/FileIcon.jsx';
 import TerminalIcon from '../components/icons/TerminalIcon.jsx';
@@ -9,7 +10,9 @@ import SparkleIcon from '../components/icons/SparkleIcon.jsx';
 // actually showing that agent's detail view; otherwise it tracks the root
 // conversation. Without this gate a leftover selection would bleed a
 // sub-agent's previews into the root chat.
-export default function usePreviewState(agentState, agentDispatch, followSelectedAgent = false) {
+export default function usePreviewState(followSelectedAgent = false) {
+    const agentState = useAgentState();
+    const agentDispatch = useAgentDispatch();
     const [activeTab, setActiveTab] = useState(null);
     const [splitPosition, setSplitPosition] = useState(40);
     const [fullscreenItem, setFullscreenItem] = useState(null);

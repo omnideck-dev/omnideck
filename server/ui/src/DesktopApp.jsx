@@ -78,7 +78,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
     // Preview follows the selected agent only while its detail view is up
     // (network view); in chat/settings/goals it tracks the root conversation.
-    const preview = usePreviewState(agentState, agentDispatch, view === 'network');
+    const preview = usePreviewState(view === 'network');
 
     // Holds the active-tab id the resume callback wants to apply once
     // usePreviewState has the new root in scope. Synced in an effect below.
