@@ -69,20 +69,68 @@ flowchart LR
     UBT --> BP["BrowserPreview / BrowserFullscreen"]
 ```
 
-The **reducer** (`useAgentState`) is the source of truth for agent + preview data.
-Per agent it holds: `activityLog[]`, `browserTabs` (per-tab screenshot/url/title,
-reconciled to the open-tab id set), `terminalLines[]` (capped at 50),
-`desktopActive`, `generationPreview`, `openFiles[]`, `status`, `iteration`,
-`contextUsage`; plus top-level `selectedAgentId`. `usePreviewState` *derives* the
-preview tab list from it — it stores no preview content itself.
+### Agent state & context (`hooks/useAgentState.jsx`)
+
+One `useReducer` is the **single source of truth for both agent and preview
+data** — the preview panel is entirely *derived* from it by `usePreviewState`
+(which stores no preview content of its own). It's exposed through **two separate
+contexts** so reads and writes don't couple:
+
+- `AgentStateProvider` (wraps the app inside `DesktopApp`) runs the reducer and
+  provides `AgentStateContext` (the state) and `AgentDispatchContext` (the
+  `dispatch` fn) independently.
+- `useAgentState()` reads state; `useAgentDispatch()` gets dispatch. Both throw
+  if used outside the provider. The split means a component that only dispatches
+  doesn't re-render when the state changes (and vice versa).
+
+Top-level state:
+
+```
+agents: { [id]: AgentNode }   // every agent in the tree, keyed by id
+rootId                        // the latest turn's root agent
+selectedAgentId               // the card drilled into (or null)
+networkActivated              // latches true once any sub-agent appears
+```
+
+Each `AgentNode`:
+
+```
+id, name, parentId, correlationId   // correlationId ties a sub-agent to the
+                                    //   parent's spawn_requested activity entry
+status (running|success|error|stopped), childIds[], startedAt, completedAt
+activityLog[]                       // thinking, content, tool calls, file outputs
+browserTabs { [tabId]: {url,title,screenshot} }, lastBrowserTabId
+terminalLines[] (capped 50), desktopActive, generationPreview, openFiles[]
+activeTool, iteration, maxIterations, contextUsage
+```
+
+Data flows in one direction — backend stream → `useStreamingChat` → `DesktopApp`
+`_callbacks` → `dispatch`. The reducer actions:
+
+| Action | Effect |
+|---|---|
+| `AGENT_STARTED` | create the node and link it under its parent (`childIds`). A parent-less start is a new turn → it becomes `rootId`, clears `selectedAgentId`, and **carries preview state over from the previous root** so panels don't blink between turns |
+| `AGENT_COMPLETED` | set `status` + `completedAt`, clear `activeTool` |
+| `APPEND_STREAM_CHUNK` | merge streamed thinking/content into `activityLog` (extends the last entry when the type matches) |
+| `APPEND_ACTIVITY` | append a one-off entry (tool call, file output, spawn) |
+| `UPDATE_BROWSER_SNAPSHOT` | upsert a per-tab snapshot and reconcile against the open-tab id set (prune closed tabs); a screenshot-less event is reconcile-only |
+| `UPDATE_TERMINAL` · `UPDATE_GENERATION_PREVIEW` · `UPDATE_DESKTOP_ACTIVE` · `UPDATE_ACTIVE_TOOL` · `UPDATE_ITERATION` | per-mode preview + status updates |
+| `OPEN_FILE` / `CLOSE_FILE` | add/remove a file preview tab (dedup by filename) |
+| `SELECT_AGENT` | drill into a card (`selectedAgentId`) |
+| `CLEAR_BROWSER_TABS` / `CLEAR_TERMINAL` | clear a mode |
+| `RESET` | back to empty — new conversation |
+
+Invariants: each turn mints a **fresh root id** (`rootId` follows the latest),
+`networkActivated` clears only on `RESET`, and a new root inherits the previous
+root's preview data.
 
 ### Hooks & contexts
 
 | Hook / context | Kind | Owns |
 |---|---|---|
-| `useAgentState` | context + reducer | the agent tree (source of truth for agent + preview data) |
+| `useAgentState` / `useAgentDispatch` | context + reducer | the agent tree — source of truth for agent + preview data (read vs dispatch split; see above) |
 | `useStreamingChat` | hook | `/api/chat` stream loop, `messages[]`, `isStreaming`, send/stop/load/new/nudge |
-| `usePreviewState` | hook | preview tabs, `activeTab`, `splitPosition`, `fullscreenItem`, `openFile`/`reset`/`rootAgent` |
+| `usePreviewState` | hook | preview tabs, `activeTab`, `splitPosition`, `fullscreenItem`, `openFile`/`reset` |
 | `useBrowserTabs` | hook | merge `liveTabs` + agent screenshots; selection |
 | `useBrowserControl` | hook | the browser-control WebSocket (screencast, input, engage, per-tab frame cache) |
 | `useGoals` | hook | goals + runner polling/CRUD |
@@ -90,8 +138,6 @@ preview tab list from it — it stores no preview content itself.
 | `useAutoScroll` | hook | stick-to-bottom for chat/activity |
 | `useAppData` | context | `{ profilesHook, features }` — profiles store + feature flags, shared once |
 | `useToast` | context | toast queue |
-
-`DesktopApp` bridges the stream to the reducer through a stable `_callbacks` ref.
 
 ---
 
