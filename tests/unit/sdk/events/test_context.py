@@ -1,9 +1,8 @@
 """Unit tests for context-bound event publishing utilities.
 
 These tests validate that:
-- publish_event is a no-op when no dispatcher is set
-- _current_dispatcher can be set/reset via ContextVar directly
-- publish_event delegates to the active dispatcher with the event content
+- publish_event is a no-op when no event sink is bound
+- publish_event forwards the enriched event to the active event sink
 - agent_span forms a hierarchy of context ids
 """
 
@@ -14,62 +13,65 @@ import pytest
 from sdk.events import (
     AgentEvent,
     ContentPayload,
-    EventDispatcher,
+    UserMessagePayload,
     agent_span,
     publish_event,
+    reset_current_event_sink,
+    set_current_event_sink,
 )
-from sdk.events._context import _current_dispatcher
 
 
-class _TrackingDispatcher(EventDispatcher):
+class _RecordingSink:
+    """Minimal EventSink stub: records every event handed to add_event.
+
+    Keeps the events-layer test within the events layer — it depends only on
+    the EventSink protocol, not on a concrete conversation's event-to-message
+    derivation.
+    """
+
     def __init__(self) -> None:
-        super().__init__()
-        self.published: list[AgentEvent] = []
+        self.events: list[AgentEvent] = []
 
-    def publish(self, event: AgentEvent) -> None:
-        self.published.append(event)
-
-
-@pytest.mark.unit
-def test_publish_event_noop_without_dispatcher() -> None:
-    """Calling publish_event without a dispatcher should not raise or mutate state."""
-    token = _current_dispatcher.set(None)
-    try:
-        publish_event(AgentEvent(payload=ContentPayload(type="content", content="hi")))
-    finally:
-        _current_dispatcher.reset(token)
+    def add_event(self, event: AgentEvent) -> None:
+        self.events.append(event)
 
 
 @pytest.mark.unit
-def test_set_and_reset_current_dispatcher() -> None:
-    """_current_dispatcher ContextVar can be set and reset via token."""
-    root_token = _current_dispatcher.set(None)
-    try:
-        assert _current_dispatcher.get() is None
-        d = _TrackingDispatcher()
-        token = _current_dispatcher.set(d)
-        try:
-            assert _current_dispatcher.get() is d
-        finally:
-            _current_dispatcher.reset(token)
-        assert _current_dispatcher.get() is None
-    finally:
-        _current_dispatcher.reset(root_token)
+def test_publish_event_noop_without_event_sink() -> None:
+    """Calling publish_event without a bound sink should not raise."""
+    # No sink bound: should be a silent no-op.
+    publish_event(AgentEvent(payload=ContentPayload(type="content", content="hi")))
 
 
 @pytest.mark.unit
-def test_publish_event_delegates_to_dispatcher() -> None:
-    """publish_event should invoke publish on the bound dispatcher with the event content."""
-    d = _TrackingDispatcher()
-    token = _current_dispatcher.set(d)
+@pytest.mark.asyncio
+async def test_publish_event_forwards_enriched_event_to_sink() -> None:
+    """publish_event forwards the event to the bound sink synchronously,
+    enriched with the active span's agent attribution."""
+    sink = _RecordingSink()
+    token = set_current_event_sink(sink)
     try:
-        publish_event(AgentEvent(payload=ContentPayload(type="content", content="hello")))
-        assert len(d.published) == 1
-        published = d.published[0]
-        assert published.payload.content == "hello"
-        assert published.depth is not None
+        # agent_span pushes its id on the context stack so publish_event can
+        # tag the event with the active agent's id / name / depth.
+        async with agent_span("TEST"):
+            publish_event(AgentEvent(
+                payload=UserMessagePayload(type="user_message", content="hello"),
+            ))
     finally:
-        _current_dispatcher.reset(token)
+        reset_current_event_sink(token)
+
+    # The span itself emits agent_started / agent_completed; pick out the
+    # user_message we published.
+    user_events = [
+        e for e in sink.events
+        if isinstance(e.payload, UserMessagePayload)
+    ]
+    assert len(user_events) == 1
+    event = user_events[0]
+    assert event.payload.content == "hello"
+    assert event.agent_name == "TEST"
+    assert event.depth == 0
+    assert event.agent_id is not None and event.agent_id.startswith("root")
 
 
 @pytest.mark.unit
