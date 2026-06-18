@@ -95,6 +95,12 @@ def _coerce_value(expected_type: Any, value: Any) -> Any:
     if value is None and unwrapped is not expected_type:
         return None
 
+    # Reject None for non-optional types — the LLM passed null for a required
+    # parameter and should get a corrective error instead of a silent conversion.
+    if value is None:
+        msg = f"Cannot convert None to {expected_type}"
+        raise ValueError(msg)
+
     origin = get_origin(unwrapped)
 
     # list[T] — coerce each element when the item type is known. A non-list
@@ -225,7 +231,7 @@ async def _execute_tool_call(
                     elif v.isdigit():
                         arguments[k.strip()] = int(v)
                     else:
-                        arguments[k.strip()] = v.strip("\"'")
+                        arguments[k.strip()] = v.strip("\\"'")
 
     try:
         publish_event(AgentEvent(payload=ToolCallPayload(
