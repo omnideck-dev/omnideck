@@ -1,9 +1,5 @@
 # CLAUDE.md
 
-## Project Overview
-
-Computron 9000 is an AI assistant platform with a Python/aiohttp backend and React frontend. It uses Ollama for LLM inference, Podman for sandboxed code execution, and Playwright for browser automation.
-
 ## Commands
 
 ### Image (rebuild only when container/Dockerfile changes)
@@ -37,17 +33,15 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - Use module-level logger (`logger = logging.getLogger(__name__)`)
 - Write plain-language comments. Keep them short by default — verbose only when the code is genuinely complicated or confusing. If something would make a reader stop and think, add a comment.
 - Tool functions that the LLM invokes must have Google-style docstrings — these are the LLM's documentation for when and how to use the tool.
+- Don't use `dict[str, Any]` for a dict with a known shape. Use a Pydantic model if it crosses a trust boundary (untrusted JSON, LLM args, HTTP bodies) and needs validation, a `TypedDict` if it's a dict you own and don't validate. Plain `dict[str, Any]` only when the shape is genuinely dynamic.
 - Leading-underscore naming follows the **"private module, public-within-package"** split. The underscore on a module filename is the "internal to this project" signal; symbols inside that module use the underscore only when they're *also* module-local:
   - **Modules (files) and packages (directories)** that are internal to their parent package: leading underscore on the name (`_rpc.py`, `_common/`).
   - **Symbols inside an internal module** (functions, classes, constants, type aliases): leading underscore only when they're used solely inside the module that defines them. Symbols imported by other modules in the same package do not carry the underscore — the containing module's underscore is the "internal" signal. Example: `brokers/_common/_env.py` exports `env_required` (no underscore) because `brokers/email_broker/__main__.py` imports it; `brokers/_common/_rpc.py` keeps `_encode_frame` underscored because it's only used inside `_rpc.py`.
   - **Class members** (methods, instance attributes): leading underscore for anything not part of the class's public surface.
   - This matches PEP 8's "weak internal-use indicator" reading and avoids false-positive "unused private name" warnings from Pylance / Pyright on cross-module imports inside a private package.
-- Include new deps in pyproject.toml (managed with `uv`)
 - No backward compatible refactors unless prompted
 - Write python code compatible with Python 3.12.10
 - Never put implementation details in docstrings
-- Add comments to explain non-obvious code
-- **Never name specific paths, callers, or doc files in comments or docstrings.** Cross-file references rot the moment anything moves: a "see ``server/_oauth.py``" line written in `integrations/...` keeps pointing at the old location forever after a rename, because the rename author isn't the one updating the comment. Same with "used by X", "called from Y", or "see plan.md / CLAUDE.md / docs/...". Describe the *concept* the reader needs (the rationale, the invariant, the bug class) — never the location. Same-package siblings are fine; the rule is for cross-package and cross-doc references. Greps to run before submitting: `\bsee \(?[\\\`\"]?[a-zA-Z_]*/[a-zA-Z_]`, `used by`, `called from`, `plan\.md|CLAUDE\.md`.
 - You may ignore Ruff(I001)
 
 ## Module Structure
@@ -69,10 +63,3 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
   - Do not introduce logic changes that bypass failing tests.
   - Do not add "if" guards, mocks, or fallback logic just to quiet tests.
   - Missing stubs or incomplete fakes are testing bugs, not production logic problems.
-
-## Frontend Conventions (server/ui/)
-
-- React 18 with JSX (not TypeScript)
-- Vite for bundling, Vitest for testing
-- CSS Modules for styling (`*.module.css` per component)
-- Function components with hooks (no class components)
