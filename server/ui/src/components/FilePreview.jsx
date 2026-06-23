@@ -42,7 +42,6 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
         handleDownload,
         handleCopy,
         canCopy,
-        stale,
         refresh,
     } = useFileContent(item);
 
@@ -117,17 +116,6 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                 </div>
 
                 <div className={styles.toolbarRight}>
-                    {stale && (
-                        <button
-                            className={styles.refreshLink}
-                            onClick={refresh}
-                            title="File changed on disk — click to reload"
-                            data-testid={t('file-refresh')}
-                        >
-                            <RefreshIcon size={12} />
-                            Refresh
-                        </button>
-                    )}
                     {canCopy && (
                         <IconButton
                             size="sm"
@@ -147,6 +135,15 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                         data-testid={t('file-download')}
                     >
                         <DownloadIcon size={14} />
+                    </IconButton>
+                    <IconButton
+                        size="sm"
+                        onClick={refresh}
+                        title="Reload file"
+                        aria-label="Reload file"
+                        data-testid={t('file-refresh')}
+                    >
+                        <RefreshIcon size={14} />
                     </IconButton>
                     {fullscreen ? (
                         <IconButton
