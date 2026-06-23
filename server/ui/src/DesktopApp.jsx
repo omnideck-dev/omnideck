@@ -119,6 +119,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         // When an agent starts or finishes, add/update it in the tree.
         onAgentEvent: (event) => {
             if (event.type === 'agent_started') {
+                // Root agent starting means a new turn is underway — the
+                // conversation is now persisted, so refresh the sidebar list.
+                if (!event.parent_agent_id) {
+                    setConversationsRefresh((n) => n + 1);
+                }
                 agentDispatch({
                     type: 'AGENT_STARTED',
                     agentId: event.agent_id,

@@ -23,6 +23,7 @@ from conversations import (
     load_conversation_profile,
     load_preview_state,
     save_agent_events,
+    save_conversation_history,
     save_conversation_profile,
     save_conversation_title,
 )
@@ -293,6 +294,10 @@ async def _run_turn(
                 active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
             ):
                 history.append({"role": "user", "content": user_content})
+                # Save the user message immediately for new conversations so the
+                # session appears in the sidebar before the first turn completes.
+                if is_new_conversation:
+                    save_conversation_history(conversation_id, history.non_system_messages)
                 # The LoadedSkillHook appends the loaded-skill section before each
                 # model call, so the system message just carries the profile prompt.
                 _refresh_system_message(history, active_agent.instruction)
