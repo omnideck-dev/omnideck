@@ -179,15 +179,6 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
 
     return (
         <>
-            {/* Single hidden file input shared by both the inline and focus-mode forms. */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                style={{ display: 'none' }}
-                onClick={(e) => { e.target.value = ''; }}
-                onChange={handleFile}
-            />
-
             <div className={styles.inputAreaWrapper}>
                 <form className={styles.inputArea} onSubmit={handleSubmit}>
                     {hasAttachment && (
@@ -237,6 +228,13 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                             >
                                 <PaperclipIcon />
                             </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                style={{ display: 'none' }}
+                                onClick={(e) => { e.target.value = ''; }}
+                                onChange={handleFile}
+                            />
                             {isStreaming ? (
                                 <button
                                     type="button"

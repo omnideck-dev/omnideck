@@ -26,7 +26,9 @@ export default function useListPanel(endpoint, {
     const [collapsed, setCollapsed] = useState(startCollapsed);
     const [deleting, setDeleting] = useState(null);
     const [newItemIds, setNewItemIds] = useState(new Set());
-    const prevIdsRef = useRef(new Set());
+    // null on first load — we only highlight genuinely new items on subsequent
+    // refreshes, not everything visible on initial mount.
+    const prevIdsRef = useRef(null);
     // Pending "clear highlight" timer. Tracked so we can cancel it on unmount
     // (or before scheduling the next one) — otherwise a late fire lands on an
     // unmounted component.
@@ -48,13 +50,17 @@ export default function useListPanel(endpoint, {
                 const fresh = transformRef.current(data);
                 const currentGetId = getIdRef.current;
                 const freshIds = new Set(fresh.map(currentGetId));
-                const added = fresh.filter((item) => !prevIdsRef.current.has(currentGetId(item))).map(currentGetId);
-                prevIdsRef.current = freshIds;
-                if (added.length > 0) {
-                    setNewItemIds(new Set(added));
-                    clearTimeout(highlightTimerRef.current);
-                    highlightTimerRef.current = setTimeout(() => setNewItemIds(new Set()), 700);
+                if (prevIdsRef.current !== null) {
+                    const added = fresh
+                        .filter((item) => !prevIdsRef.current.has(currentGetId(item)))
+                        .map(currentGetId);
+                    if (added.length > 0) {
+                        setNewItemIds(new Set(added));
+                        clearTimeout(highlightTimerRef.current);
+                        highlightTimerRef.current = setTimeout(() => setNewItemIds(new Set()), 700);
+                    }
                 }
+                prevIdsRef.current = freshIds;
                 setItems(fresh);
                 if (onFetchedRef.current) onFetchedRef.current(data);
             }
