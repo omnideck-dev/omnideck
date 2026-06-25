@@ -2,24 +2,31 @@
 
 This package provides:
 - Event models (AgentEvent, ContentPayload, ToolCallPayload, etc.)
-- Context utilities for publishing events without plumbing dispatcher handles
-    through every call site. Low-level helpers like ``publish_event`` and
-    ``agent_span`` are available for emission and attribution inside a turn scope.
+- Context utilities for publishing events without plumbing the active
+    conversation through every call site. Low-level helpers like
+    ``publish_event`` and ``agent_span`` are available for emission and
+    attribution inside a turn scope.
 
 Turn lifecycle management (``turn_scope``, stop signaling, nudge queues) lives
 in ``sdk.turn``.
 """
 
-from ._cleanup import register_agent_span_exit_hook
+from ._cleanup import (
+    register_agent_span_exit_hook,
+    register_conversation_exit_hook,
+    run_conversation_exit_hooks,
+)
 from ._context import (
+    EventSink,
     agent_span,
     get_current_agent_id,
     get_current_agent_name,
+    get_current_conversation,
     get_current_depth,
-    get_current_dispatcher,
     publish_event,
+    reset_current_conversation,
+    set_current_conversation,
 )
-from ._dispatcher import EventDispatcher, EventHandler
 from ._models import (
     AgentCompletedPayload,
     AgentEvent,
@@ -27,42 +34,63 @@ from ._models import (
     AgentStartedPayload,
     AudioPlaybackPayload,
     BrowserScreenshotPayload,
+    CompactionPayload,
+    CompactionScope,
+    CompactionStats,
     ContentPayload,
     ContextUsagePayload,
     DesktopActivePayload,
+    ErrorPayload,
     FileOutputPayload,
     GenerationPreviewPayload,
+    IterationPayload,
+    IterationToolCall,
     SpawnRequestedPayload,
     TerminalOutputPayload,
     ToolCallPayload,
     ToolCreatedPayload,
+    ToolResultPayload,
     TurnEndPayload,
+    UserAttachment,
+    UserMessagePayload,
 )
 
 __all__ = [
     "register_agent_span_exit_hook",
+    "register_conversation_exit_hook",
+    "run_conversation_exit_hooks",
     "AgentCompletedPayload",
     "AgentEvent",
     "AgentEventPayload",
     "AgentStartedPayload",
     "AudioPlaybackPayload",
     "BrowserScreenshotPayload",
+    "CompactionPayload",
+    "CompactionScope",
+    "CompactionStats",
     "ContentPayload",
     "ContextUsagePayload",
     "DesktopActivePayload",
-    "EventDispatcher",
-    "EventHandler",
+    "ErrorPayload",
+    "EventSink",
     "FileOutputPayload",
     "GenerationPreviewPayload",
+    "IterationPayload",
+    "IterationToolCall",
     "SpawnRequestedPayload",
     "TerminalOutputPayload",
     "ToolCallPayload",
     "ToolCreatedPayload",
+    "ToolResultPayload",
     "TurnEndPayload",
+    "UserAttachment",
+    "UserMessagePayload",
     "agent_span",
     "get_current_agent_id",
     "get_current_agent_name",
+    "get_current_conversation",
     "get_current_depth",
-    "get_current_dispatcher",
     "publish_event",
+    "reset_current_conversation",
+    "set_current_conversation",
 ]

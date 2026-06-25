@@ -22,7 +22,7 @@ export default function PreviewPanel({
                                 className={`${styles.tab} ${isActive ? styles.tabActive : ''}`}
                                 onClick={() => onTabChange(tab.id)}
                                 title={tab.label}
-                                data-testid={`preview-tab-${tab.id}`}
+                                data-testid={`preview-tab-${tab.testid || tab.id}`}
                             >
                                 <span className={styles.tabIcon}>{tab.icon}</span>
                                 <span className={styles.tabLabel}>{tab.label}</span>
@@ -34,7 +34,7 @@ export default function PreviewPanel({
                                     }}
                                     title="Close tab"
                                     aria-label={`Close ${tab.label} tab`}
-                                    data-testid={`close-tab-${tab.id}`}
+                                    data-testid={`close-tab-${tab.testid || tab.id}`}
                                 >
                                     ×
                                 </span>

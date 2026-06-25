@@ -9,7 +9,6 @@ from .hooks import (
     ContextHook,
     LoggingHook,
     LoopDetector,
-    PersistenceHook,
     StopHook,
     default_hooks,
 )
@@ -24,7 +23,6 @@ __all__ = [
     "LLMRuntimeStats",
     "LoggingHook",
     "LoopDetector",
-    "PersistenceHook",
     "StopHook",
     "default_hooks",
     "llm_runtime_stats",

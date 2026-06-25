@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from conversations._store import (
-    load_conversation_metadata,
-    save_conversation_history,
-)
+import conversations._store as _store
+from conversations._store import load_conversation_metadata
 from server._conversation_routes import update_conversation_handler
 
 
@@ -34,7 +33,15 @@ def _make_request(conversation_id: str, json_body) -> MagicMock:
 
 
 def _seed(conv_id: str) -> None:
-    save_conversation_history(conv_id, [{"role": "user", "content": "hi"}])
+    """Create a minimal event log so the conversation exists on disk."""
+    d = _store._get_conversations_dir() / conv_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "events.jsonl").write_text(json.dumps({
+        "id": f"evt_{conv_id}", "type": "agent_started",
+        "timestamp": "2026-01-01T00:00:00", "conversation_id": conv_id,
+        "agent_id": "root.test.1", "agent_name": "TEST",
+        "parent_agent_id": None,
+    }) + "\n")
 
 
 @pytest.mark.unit

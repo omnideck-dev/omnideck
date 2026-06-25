@@ -1,15 +1,14 @@
-"""Context-bound event publishing utilities for the events layer.
+"""Context-bound event publishing for the events layer.
 
-This module exposes an asyncio-friendly API to publish AgentEvent events
-without passing dispatcher handles through every call. It relies on a
-contextvars.ContextVar to track the currently active dispatcher for the
-duration of a single conversation turn.
+Exposes an asyncio-friendly API to publish AgentEvent events without threading
+a sink handle through every call. A contextvars.ContextVar holds the event
+sink bound for the current coroutine context (set by turn_scope for the
+duration of a turn); publish_event writes each event into it.
 
 Guidelines:
-- No blocking calls; publishing delegates to the active dispatcher, which is
-  responsible for scheduling subscriber callbacks appropriately.
-- Safe no-op behavior when no dispatcher is set (useful in tests or
-  components that are not running under the message handling flow).
+- The bound target is an EventSink — structurally, anything with add_event.
+  It records the event synchronously and fans out to its own observers.
+- Safe no-op when nothing is bound (tests, or code not running under a turn).
 """
 
 from __future__ import annotations
@@ -20,23 +19,51 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from ._cleanup import run_agent_span_exit_hooks
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
     from collections.abc import AsyncGenerator
 
 from sdk.skills.agent_state import AgentState, _active_agent_state
 
-from ._dispatcher import EventDispatcher
-from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload, ContentPayload
+from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload
 
 logger = logging.getLogger(__name__)
 
 
-# Active dispatcher for the current coroutine context.
-_current_dispatcher: ContextVar[EventDispatcher | None] = ContextVar(
-    "assistant_events_current_dispatcher", default=None
+class EventSink(Protocol):
+    """The write side of a conversation's event log.
+
+    publish_event needs exactly one capability from whatever it is bound to:
+    append an event, which the implementor records and fans out to its own
+    observers. Declaring the dependency structurally lets the events layer stay
+    unaware of the concrete conversation type, which avoids an import cycle.
+    """
+
+    def add_event(self, event: AgentEvent) -> None: ...
+
+
+# Event sink bound for the current coroutine context. Set by turn_scope.
+# publish_event routes through the sink's add_event so the in-memory log is
+# updated synchronously before observers fan out — no race.
+_current_conversation: ContextVar[EventSink | None] = ContextVar(
+    "assistant_events_current_conversation", default=None
 )
+
+
+def get_current_conversation() -> EventSink | None:
+    """Return the event sink bound for this context, or None."""
+    return _current_conversation.get()
+
+
+def set_current_conversation(conv: EventSink | None) -> object:
+    """Bind an event sink as the active write target. Returns the reset token."""
+    return _current_conversation.set(conv)
+
+
+def reset_current_conversation(token: object) -> None:
+    """Restore the previous binding."""
+    _current_conversation.reset(token)  # type: ignore[arg-type]
 
 
 # Stack of (context_id, agent_name) frames for nested agent/tool executions.
@@ -69,9 +96,6 @@ def get_current_agent_id() -> str | None:
     return stack[-1][0] if stack else None
 
 
-def get_current_dispatcher() -> EventDispatcher | None:
-    """Return the active event dispatcher for the current context, or None."""
-    return _current_dispatcher.get()
 
 
 def get_current_depth() -> int:
@@ -176,31 +200,30 @@ async def agent_span(
 
 
 def publish_event(event: AgentEvent) -> None:
-    """Publish an AgentEvent via the dispatcher bound to this context.
+    """Publish an AgentEvent to the active conversation.
 
-    No-op when no dispatcher is set. The event is enriched with the current
-    agent name and depth from the context stack before dispatch.
+    Enriches the event with the current agent name / depth / agent id
+    from the context stack, then writes it to the conversation. The
+    conversation appends synchronously and fans out to its observers
+    (disk writer, SSE stream, etc.). No-op when no conversation is bound.
 
     Args:
         event: The AgentEvent instance to publish.
     """
-    dispatcher = _current_dispatcher.get()
-    if dispatcher is None:
-        # Intentionally a low-level debug message to avoid noisy logs in contexts
-        # where publishing is optional.
-        logger.debug("No active dispatcher; dropping event publish request.")
+    conv = _current_conversation.get()
+    if conv is None:
+        logger.debug("No active conversation; dropping event.")
         return
 
     stack = _context_stack.get()
+    enriched = event.model_copy(
+        update={
+            "agent_name": stack[-1][1] if stack else None,
+            "depth": len(stack) - 1 if stack else 0,
+            "agent_id": stack[-1][0] if stack else None,
+        }
+    )
     try:
-        dispatcher.publish(
-            event.model_copy(
-                update={
-                    "agent_name": stack[-1][1] if stack else None,
-                    "depth": len(stack) - 1 if stack else 0,
-                    "agent_id": stack[-1][0] if stack else None,
-                }
-            )
-        )
-    except Exception:  # pragma: no cover - defensive logging path
-        logger.exception("Failed to publish AgentEvent event")
+        conv.add_event(enriched)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to add event to conversation")

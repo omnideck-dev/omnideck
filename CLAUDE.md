@@ -1,9 +1,5 @@
 # CLAUDE.md
 
-## Project Overview
-
-Computron 9000 is an AI assistant platform with a Python/aiohttp backend and React frontend. It uses Ollama for LLM inference, Podman for sandboxed code execution, and Playwright for browser automation.
-
 ## Commands
 
 ### Image (rebuild only when container/Dockerfile changes)
@@ -37,6 +33,7 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - Use module-level logger (`logger = logging.getLogger(__name__)`)
 - Write plain-language comments. Keep them short by default — verbose only when the code is genuinely complicated or confusing. If something would make a reader stop and think, add a comment.
 - Tool functions that the LLM invokes must have Google-style docstrings — these are the LLM's documentation for when and how to use the tool.
+- Don't use `dict[str, Any]` for a dict with a known shape. Use a Pydantic model if it crosses a trust boundary (untrusted JSON, LLM args, HTTP bodies) and needs validation, a `TypedDict` if it's a dict you own and don't validate. Plain `dict[str, Any]` only when the shape is genuinely dynamic.
 - Leading-underscore naming follows the **"private module, public-within-package"** split. The underscore on a module filename is the "internal to this project" signal; symbols inside that module use the underscore only when they're *also* module-local:
   - **Modules (files) and packages (directories)** that are internal to their parent package: leading underscore on the name (`_rpc.py`, `_common/`).
   - **Symbols inside an internal module** (functions, classes, constants, type aliases): leading underscore only when they're used solely inside the module that defines them. Symbols imported by other modules in the same package do not carry the underscore — the containing module's underscore is the "internal" signal. Example: `brokers/_common/_env.py` exports `env_required` (no underscore) because `brokers/email_broker/__main__.py` imports it; `brokers/_common/_rpc.py` keeps `_encode_frame` underscored because it's only used inside `_rpc.py`.
@@ -69,10 +66,3 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
   - Do not introduce logic changes that bypass failing tests.
   - Do not add "if" guards, mocks, or fallback logic just to quiet tests.
   - Missing stubs or incomplete fakes are testing bugs, not production logic problems.
-
-## Frontend Conventions (server/ui/)
-
-- React 18 with JSX (not TypeScript)
-- Vite for bundling, Vitest for testing
-- CSS Modules for styling (`*.module.css` per component)
-- Function components with hooks (no class components)

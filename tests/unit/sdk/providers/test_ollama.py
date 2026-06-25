@@ -180,10 +180,13 @@ class TestOllamaProviderListModels:
         model3.model = None
         provider._client.list.return_value = MagicMock(models=[model1, model2, model3])
 
-        # show() returns capabilities and model_info with context_length
+        # show() returns capabilities and modelinfo with context_length.
+        # The ollama client names the field ``modelinfo`` (no underscore) —
+        # matching it here is what lets this test catch a regression to
+        # reading ``model_info``.
         show_resp = MagicMock()
         show_resp.capabilities = ["completion", "vision"]
-        show_resp.model_info = {"llama.context_length": 131072}
+        show_resp.modelinfo = {"llama.context_length": 131072}
         provider._client.show = AsyncMock(return_value=show_resp)
 
         result = await provider.list_models()

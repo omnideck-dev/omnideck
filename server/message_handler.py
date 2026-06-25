@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import suppress
 
@@ -17,33 +16,31 @@ from agents import (
 )
 from agents.types import Agent, Data
 from conversations import (
+    BrowserTabsWriter,
+    EventsLogWriter,
+    TerminalWriter,
     generate_conversation_title,
-    load_agent_events,
-    load_conversation_history,
-    load_conversation_profile,
-    load_preview_state,
-    save_agent_events,
     save_conversation_profile,
     save_conversation_title,
 )
 from sdk import (
-    PersistenceHook,
     default_hooks,
     run_turn,
 )
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
-    ContentPayload,
+    ErrorPayload,
     TurnEndPayload,
+    UserAttachment,
+    UserMessagePayload,
     agent_span,
-    get_current_dispatcher,
+    publish_event,
 )
-from sdk.hooks._agent_event_buffer import AgentEventBufferHook
 from sdk.skills import build_agent_state, persist_loaded_skills
-from sdk.turn import is_turn_active, turn_scope
+from sdk.turn import ToolLoopError, turn_scope
 from sdk.turn._turn import StopRequestedError
-from tools.browser.core import release_agent_browser
+from server._conversation_cache import get_or_create_conversation
 from tools.memory import load_memory
 from tools.virtual_computer.receive_file import receive_attachment
 
@@ -101,106 +98,8 @@ def _log_turn_start(profile: AgentProfile) -> None:
     )
 
 
-# In-memory conversation cache. LRU-bounded so a long-lived process
-# doesn't hold every conversation a user has ever opened. The on-disk
-# state is authoritative; an evicted entry is rehydrated from disk on
-# next access.
-_MAX_CACHED_CONVERSATIONS = 25
-_conversations: OrderedDict[str, ConversationHistory] = OrderedDict()
-
 # Track background tasks to avoid garbage collection (RUF006)
 _background_tasks: set[asyncio.Task] = set()
-
-
-async def _get_conversation(conversation_id: str) -> tuple[ConversationHistory, bool]:
-    """Return ``(history, is_new)`` for the given ID, creating it if needed.
-
-    ``is_new`` is True only when the conversation has no in-memory entry
-    AND no on-disk history — a genuine first-time use. On any cache miss
-    we hydrate from disk so turns survive process restarts: the browser
-    preserves a conversation id across server bounces (e.g. ``just
-    restart-app``), and without hydration the next turn would build on an
-    empty history and the persistence hook would overwrite the saved file.
-
-    Cache hits move the entry to the end of the LRU; cache misses insert
-    at the end and may evict the least-recently-used entry whose turn is
-    not currently active.
-    """
-    if not conversation_id:
-        msg = "conversation_id is required"
-        raise ValueError(msg)
-    if conversation_id in _conversations:
-        _conversations.move_to_end(conversation_id)
-        return _conversations[conversation_id], False
-    persisted = load_conversation_history(conversation_id)
-    is_new = persisted is None
-    if is_new:
-        logger.info("Creating new conversation %s", conversation_id)
-    _conversations[conversation_id] = ConversationHistory(persisted, instance_id=conversation_id)
-    await _evict_lru_conversation(exclude=conversation_id)
-    return _conversations[conversation_id], is_new
-
-
-async def _evict_lru_conversation(exclude: str | None = None) -> None:
-    """Drop the oldest non-active entries until we are at or below the cap.
-
-    Conversations whose turn is currently in flight are skipped — popping
-    them from the dict would leave the running turn writing to a referent
-    nobody else can find, and a subsequent chat for the same id would
-    rehydrate from disk, producing two parallel writers.
-
-    ``exclude`` skips the conversation that triggered this eviction. The
-    caller has not yet entered ``turn_scope`` for it, so ``is_turn_active``
-    cannot recognize it as protected — without this guard the just-inserted
-    entry would be evicted by its own insert in the rare case where every
-    other cached entry is mid-turn.
-    """
-    while len(_conversations) > _MAX_CACHED_CONVERSATIONS:
-        for cid in _conversations:
-            if cid == exclude:
-                continue
-            if not is_turn_active(cid):
-                _conversations.pop(cid)
-                await release_agent_browser(f"conv:{cid}")
-                logger.info(
-                    "Evicted LRU conversation %s from in-memory cache", cid,
-                )
-                break
-        else:
-            # Every cached conversation is mid-turn (or is the just-inserted
-            # caller) — accept temporary overflow rather than evict an
-            # active one. The next insert will retry.
-            return
-
-
-async def resume_conversation(conversation_id: str) -> dict | None:
-    """Load a conversation's full-fidelity history, events, and preview state.
-
-    Returns a dict with:
-        messages: LLM messages from history.json.
-        events: persisted agent events (file_output, browser_screenshot, etc.)
-            from events.json. The UI uses these to reconstruct inline file
-            blocks in the chat and the preview tabs on restore.
-        preview_state: persisted preview-panel state (open file list,
-            active tab, per-preview visibility flags).
-        profile_id: the agent profile last used in this conversation, or
-            None if it predates per-conversation profiles.
-
-    None if the conversation isn't found.
-    """
-    messages = load_conversation_history(conversation_id)
-    if messages is None:
-        return None
-
-    _conversations[conversation_id] = ConversationHistory(messages, instance_id=conversation_id)
-    _conversations.move_to_end(conversation_id)
-    await _evict_lru_conversation(exclude=conversation_id)
-    return {
-        "messages": messages,
-        "events": load_agent_events(conversation_id),
-        "preview_state": load_preview_state(conversation_id),
-        "profile_id": load_conversation_profile(conversation_id),
-    }
 
 
 def _refresh_system_message(history: ConversationHistory, system_prompt: str) -> None:
@@ -220,9 +119,16 @@ def _refresh_system_message(history: ConversationHistory, system_prompt: str) ->
     history.set_system_message(instruction)
 
 
-def _augment_message_with_attachments(message: str, data: Sequence[Data]) -> str:
-    """Write attachments to the virtual computer and return an augmented message."""
+def _augment_message_with_attachments(
+    message: str, data: Sequence[Data]
+) -> tuple[str, list[UserAttachment]]:
+    """Write attachments to the virtual computer.
+
+    Returns the LLM-facing augmented message text and the structured
+    attachment metadata for the user_message event.
+    """
     file_lines = []
+    attachments: list[UserAttachment] = []
     for d in data:
         container_path = receive_attachment(
             base64_encoded=d.base64_encoded,
@@ -231,9 +137,15 @@ def _augment_message_with_attachments(message: str, data: Sequence[Data]) -> str
         )
         name = d.filename or "unnamed"
         file_lines.append(f"  - {name} ({d.content_type}) -> {container_path}")
+        attachments.append(UserAttachment(
+            filename=name,
+            content_type=d.content_type,
+            path=container_path,
+        ))
 
     files_block = "\n".join(file_lines)
-    return f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
+    augmented = f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
+    return augmented, attachments
 
 
 def _build_agent_from_profile(profile: AgentProfile) -> Agent:
@@ -251,6 +163,8 @@ async def _run_turn(
     active_agent: Agent,
     profile: AgentProfile,
     user_content: str,
+    user_message_text: str,
+    user_attachments: list[UserAttachment],
     conversation_id: str,
     handler: Callable[[AgentEvent], object],
     is_new_conversation: bool = False,
@@ -281,20 +195,37 @@ async def _run_turn(
         ],
     )
 
-    async with turn_scope(handler=handler, conversation_id=conversation_id):
-        # Subscribe event buffer to capture agent lifecycle/preview events
-        event_buffer = AgentEventBufferHook()
-        dispatcher = get_current_dispatcher()
-        if dispatcher:
-            dispatcher.subscribe(event_buffer.handle_event)
-
-        try:
+    events_log = EventsLogWriter(conv_id)
+    # Panel state is excluded from the event log; these keep the bounded
+    # sidecars (latest browser snapshot per tab, last N terminal commands)
+    # current instead.
+    browser_tabs = BrowserTabsWriter(conv_id)
+    terminal = TerminalWriter(conv_id)
+    # Conversation owns the canonical event log. Observers — the disk writer
+    # and the SSE bridge that streams to the response — subscribe before the
+    # scope and unsubscribe after, so the turn_scope-owned turn_end at the
+    # end of the turn still reaches them. publish_event writes inline, so the
+    # model never reads a stale view.
+    history.subscribe(events_log.handle_event)
+    history.subscribe(browser_tabs.handle_event)
+    history.subscribe(terminal.handle_event)
+    history.subscribe(handler)
+    try:
+        async with turn_scope(history, conversation_id=conversation_id):
             async with agent_span(
                 active_agent.name, instruction=user_content, agent_state=agent_state, profile_name=profile.name
             ):
-                history.append({"role": "user", "content": user_content})
-                # The LoadedSkillHook appends the loaded-skill section before each
-                # model call, so the system message just carries the profile prompt.
+                try:
+                    publish_event(AgentEvent(payload=UserMessagePayload(
+                        type="user_message",
+                        content=user_message_text,
+                        attachments=user_attachments,
+                    )))
+                except Exception:  # pragma: no cover - defensive
+                    logger.exception("Failed to publish user_message event")
+                # The LoadedSkillHook appends the loaded-skill section before
+                # each model call, so the system message just carries the
+                # profile prompt — skill prompts are not baked in here.
                 _refresh_system_message(history, active_agent.instruction)
 
                 hooks = default_hooks(
@@ -303,46 +234,43 @@ async def _run_turn(
                     ctx_manager=ctx_manager,
                 )
 
-                hooks.append(
-                    PersistenceHook(
-                        conversation_id=conv_id,
-                        history=history,
-                    )
-                )
-
+                # The stop is swallowed OUTSIDE turn_scope (below), not
+                # here: it has to propagate through agent_span so the root
+                # records agent_completed(status="stopped"), and through
+                # turn_scope so turn_end still closes the turn.
                 await run_turn(
                     history=history,
                     agent=active_agent,
                     hooks=hooks,
                 )
-        except StopRequestedError:
-            pass
+    except StopRequestedError:
+        logger.info("Turn for conversation '%s' stopped by user", conv_id)
+    finally:
+        # Unsubscribe synchronously BEFORE the await: if this cleanup is
+        # cancelled mid-drain, an awaited-first order would skip the
+        # unsubscribes and leak observers on the cached history — the next
+        # turn would then double-subscribe a new writer and append every
+        # event to events.jsonl twice. Drain still flushes the final
+        # turn_end: it waits on already-created observer tasks regardless
+        # of the subscription list.
+        history.unsubscribe(events_log.handle_event)
+        history.unsubscribe(browser_tabs.handle_event)
+        history.unsubscribe(terminal.handle_event)
+        history.unsubscribe(handler)
+        await history.drain_observers()
 
-        # Persist loaded skills so they survive across turns and restarts
-        if agent_state.loaded_skill_ids:
-            try:
-                persist_loaded_skills(agent_state, conv_id)
-            except Exception:
-                logger.exception("Failed to save loaded skills for '%s'", conv_id)
+    # Persist loaded skills so they survive across turns and restarts
+    if agent_state.loaded_skill_ids:
+        try:
+            persist_loaded_skills(agent_state, conv_id)
+        except Exception:
+            logger.exception("Failed to save loaded skills for '%s'", conv_id)
 
-        # Yield to event loop so call_soon callbacks (sync event handlers)
-        # have a chance to run before we read the buffer
-        await asyncio.sleep(0)
-
-        # Save agent events after the turn (outside agent_span so completion is captured)
-        buffered_events = event_buffer.get_events()
-        if buffered_events:
-            try:
-                save_agent_events(conv_id, buffered_events)
-                logger.info("Saved %d agent events for conv=%s", len(buffered_events), conv_id)
-            except Exception:
-                logger.exception("Failed to save agent events for '%s'", conv_id)
-
-        # Generate a title for new conversations after the first successful turn
-        if is_new_conversation and conversation_id:
-            task = asyncio.create_task(_generate_title(conversation_id, user_content))
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+    # Generate a title for new conversations after the first successful turn
+    if is_new_conversation and conversation_id:
+        task = asyncio.create_task(_generate_title(conversation_id, user_content))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
 
 async def _generate_title(conversation_id: str, first_message: str) -> None:
@@ -376,11 +304,12 @@ async def handle_user_message(
     if not conversation_id:
         msg = "conversation_id is required"
         raise ValueError(msg)
-    history, is_new_conversation = await _get_conversation(conversation_id)
+    history, is_new_conversation = await get_or_create_conversation(conversation_id)
 
     user_content = message
+    user_attachments: list[UserAttachment] = []
     if data:
-        user_content = _augment_message_with_attachments(message, data)
+        user_content, user_attachments = _augment_message_with_attachments(message, data)
 
     if not profile_id:
         msg = "profile_id is required"
@@ -417,6 +346,8 @@ async def handle_user_message(
                     active_agent=active_agent,
                     profile=profile,
                     user_content=user_content,
+                    user_message_text=message,
+                    user_attachments=user_attachments,
                     conversation_id=conversation_id,
                     handler=_queue_handler,
                     is_new_conversation=is_new_conversation,
@@ -431,18 +362,30 @@ async def handle_user_message(
                 if item is None:
                     break
                 yield item
+            # The None sentinel arrived (producer's finally ran), but the
+            # producer may have died on the way — e.g. agent setup failed
+            # before any event sink existed. Awaiting here re-raises that
+            # failure into the catch below so it reaches the user instead
+            # of being swallowed by the suppress in the cleanup path.
+            await producer_task
         finally:
             if not producer_task.done():
                 producer_task.cancel()
             with suppress(Exception):
                 await producer_task
 
+    except ToolLoopError:
+        # The turn itself failed: run_turn already published the error
+        # event and turn_scope closed the turn with turn_end — both
+        # reached the stream. Yielding another error here would render
+        # the failure twice.
+        logger.debug("Turn failed; error already surfaced on the stream")
     except Exception:
         logger.exception("Error handling user message")
         yield AgentEvent(
-            payload=ContentPayload(
-                type="content",
-                content="An error occurred while processing your message.",
+            payload=ErrorPayload(
+                type="error",
+                message="An error occurred while processing your message.",
             )
         )
         yield AgentEvent(payload=TurnEndPayload(type="turn_end"))

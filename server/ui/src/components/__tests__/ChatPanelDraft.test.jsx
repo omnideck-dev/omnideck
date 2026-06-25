@@ -13,7 +13,7 @@ vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => ({ rootId
 function renderPanel(props = {}) {
     return render(
         <ChatPanel
-            messages={[]}
+            turns={[]}
             onSend={vi.fn()}
             onStop={vi.fn()}
             isStreaming={false}
@@ -37,7 +37,7 @@ describe('ChatPanel draft handling', () => {
         expect(textarea.value).toBe('half-written thought');
 
         rerender(
-            <ChatPanel messages={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
 
@@ -50,9 +50,9 @@ describe('ChatPanel draft handling', () => {
 
         await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'still typing');
 
-        // Re-render with the same conversation but a changed prop (a new message).
+        // Re-render with the same conversation but a changed prop (a new turn).
         rerender(
-            <ChatPanel messages={[{ id: 'm', role: 'user', content: 'hi' }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[{ id: 't', agentId: 'root.test.1', children: [] }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-a" />,
         );
 

@@ -1,158 +1,30 @@
 """E2E test for agent network indicator and card basics.
 
-Mocks the /api/chat JSONL stream to control agent spawning precisely,
-then verifies core network indicator behavior, card metadata, and
-navigation.
+Driven by the fake LLM (MOCK_LLM): the root really spawns two
+sub-agents, so the network indicator, card metadata (names, sub-agent
+and tool badges, elapsed time), and navigation all reflect genuine
+agent-lifecycle events.
+
+  - research_agent: no tool work → no tool badge.
+  - code_expert:    runs two bash commands → "2 tools" badge.
 """
 
-import json
-
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import bash, say, spawn
 from tests.e2e.pages import ChatView, NetworkView
-
-
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
-
-
-MOCK_EVENTS = _build_jsonl([
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "parent_agent_id": None,
-            "instruction": "Do some research and write code",
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:00",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "sub1",
-            "agent_name": "research_agent",
-            "parent_agent_id": "root",
-            "instruction": "Research the topic",
-        },
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:01",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_started",
-            "agent_id": "sub2",
-            "agent_name": "code_expert",
-            "parent_agent_id": "root",
-            "instruction": "Write the implementation",
-        },
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:02",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Research complete."},
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:03",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "tool_call", "name": "bash"},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:04",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "tool_call", "name": "write_file"},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:05",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Code written."},
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:06",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "sub1",
-            "agent_name": "research_agent",
-            "status": "success",
-        },
-        "agent_id": "sub1",
-        "agent_name": "research_agent",
-        "timestamp": "2026-05-03T10:00:07",
-        "depth": 1,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "sub2",
-            "agent_name": "code_expert",
-            "status": "success",
-        },
-        "agent_id": "sub2",
-        "agent_name": "code_expert",
-        "timestamp": "2026-05-03T10:00:08",
-        "depth": 1,
-    },
-    {
-        "payload": {"type": "content", "content": "Both tasks done."},
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:09",
-        "depth": 0,
-    },
-    {
-        "payload": {
-            "type": "agent_completed",
-            "agent_id": "root",
-            "agent_name": "computron",
-            "status": "success",
-        },
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:10",
-        "depth": 0,
-    },
-    {
-        "payload": {"type": "turn_end"},
-        "agent_id": "root",
-        "agent_name": "computron",
-        "timestamp": "2026-05-03T10:00:11",
-        "depth": 0,
-    },
-])
-
-
-def _mock_chat(route: Route):
-    route.fulfill(
-        status=200,
-        headers={"Content-Type": "application/json"},
-        body=MOCK_EVENTS,
-    )
 
 
 @pytest.fixture
 def network_after_turn(page: Page):
-    """Send a mocked multi-agent turn and return the NetworkView."""
+    """Spawn a real two-sub-agent tree and return the NetworkView."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat)
-    chat.send("test")
-    chat.wait_streaming()
+    chat.send(
+        spawn(say("done"), profile="research_agent", name="research_agent")
+        + spawn(bash("echo a") + bash("echo b") + say("done"),
+                profile="code_expert", name="code_expert")
+    ).wait_streaming()
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=5000)
     return network
@@ -174,7 +46,6 @@ def test_indicator_complete_status(page: Page, network_after_turn):
 
 def test_indicator_clears_on_new_conversation(page: Page, network_after_turn):
     """Starting a new conversation removes the indicator."""
-    page.unroute("**/api/chat")
     ChatView(page).new_conversation()
     expect(network_after_turn.indicator).not_to_be_visible()
 
@@ -188,7 +59,7 @@ def test_cards_render_with_correct_names(page: Page, network_after_turn):
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
     assert network_after_turn.agent_cards.count() == 3
 
-    network_after_turn.card_by_name("Computron")
+    network_after_turn.card_by_name("Omnideck")
     network_after_turn.card_by_name("Research Agent")
     network_after_turn.card_by_name("Code Expert")
 
@@ -198,7 +69,7 @@ def test_root_card_sub_agent_badge(page: Page, network_after_turn):
     network_after_turn.open()
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
 
-    root = network_after_turn.card_by_name("Computron")
+    root = network_after_turn.card_by_name("Omnideck")
     expect(root.sub_agent_badge).to_contain_text("2 sub-agents")
 
 

@@ -44,15 +44,28 @@ def _event(payload_type, agent_id="root", agent_name="computron",
     }
 
 
-# Root agent: thinking → content → tool_call → thinking → content
+# Root agent: two iterations. Iter 0 = thinking + content + tool_call.
+# Iter 1 = thinking + content. The chat view derives its entries from
+# the per-iteration ``iteration`` events (events-first architecture),
+# while the activity rail still builds incrementally from content / tool
+# deltas — both are emitted here so this stream exercises both paths.
 SINGLE_AGENT_EVENTS = _build_jsonl([
     _event("agent_started", agent_id="root", agent_name="computron",
            parent_agent_id=None),
+    # Iteration 0
     _event("content", thinking="Planning the approach"),
     _event("content", content="Here is my plan."),
     _event("tool_call", name="run_bash_cmd"),
+    _event("iteration", iteration_index=0,
+           thinking="Planning the approach", content="Here is my plan.",
+           tool_calls=[{"id": "tc-1", "name": "run_bash_cmd",
+                        "arguments": None}]),
+    # Iteration 1
     _event("content", thinking="Reviewing the output"),
     _event("content", content="Done."),
+    _event("iteration", iteration_index=1,
+           thinking="Reviewing the output", content="Done.",
+           tool_calls=[]),
     _event("agent_completed", agent_id="root", agent_name="computron",
            status="success"),
     _event("turn_end"),
@@ -65,39 +78,62 @@ SINGLE_AGENT_EVENTS = _build_jsonl([
 SPAWN_ONLY_EVENTS = _build_jsonl([
     _event("agent_started", agent_id="root", agent_name="computron",
            parent_agent_id=None),
+    # Root iteration 0: the spawn_agent tool call
     _event("tool_call", name="spawn_agent",
            arguments={"agent_name": "worker"}),
     _event("spawn_requested", correlation_id="c-1"),
+    _event("iteration", iteration_index=0,
+           thinking=None, content=None,
+           tool_calls=[{"id": "tc-spawn", "name": "spawn_agent",
+                        "arguments": {"agent_name": "worker"}}]),
     _event("agent_started", agent_id="sub1", agent_name="worker",
            parent_agent_id="root", correlation_id="c-1", depth=1,
            instruction="Do the work"),
     _event("agent_completed", agent_id="sub1", agent_name="worker",
            depth=1, status="success"),
+    # Root iteration 1: the wrap-up reply
     _event("content", content="Worker finished."),
+    _event("iteration", iteration_index=1,
+           thinking=None, content="Worker finished.", tool_calls=[]),
     _event("agent_completed", agent_id="root", agent_name="computron",
            status="success"),
     _event("turn_end"),
 ])
 
 
-# Root + sub-agent. Sub-agent: thinking → content → tool_call → content
+# Root + sub-agent. Sub-agent: thinking → content → tool_call → content,
+# split across two iterations to mirror how the backend now emits it.
 MULTI_AGENT_EVENTS = _build_jsonl([
     _event("agent_started", agent_id="root", agent_name="computron",
            parent_agent_id=None),
     _event("content", content="Spawning a helper."),
+    _event("iteration", iteration_index=0,
+           thinking=None, content="Spawning a helper.", tool_calls=[]),
     _event("agent_started", agent_id="sub1", agent_name="helper_agent",
            parent_agent_id="root", depth=1),
+    # Sub iteration 0: thinking + content + tool_call
     _event("content", agent_id="sub1", agent_name="helper_agent",
            depth=1, thinking="Let me figure this out"),
     _event("content", agent_id="sub1", agent_name="helper_agent",
            depth=1, content="Working on it."),
     _event("tool_call", agent_id="sub1", agent_name="helper_agent",
            depth=1, name="write_file"),
+    _event("iteration", agent_id="sub1", agent_name="helper_agent",
+           depth=1, iteration_index=0,
+           thinking="Let me figure this out", content="Working on it.",
+           tool_calls=[{"id": "tc-w", "name": "write_file",
+                        "arguments": None}]),
+    # Sub iteration 1: content only
     _event("content", agent_id="sub1", agent_name="helper_agent",
            depth=1, content="File written."),
+    _event("iteration", agent_id="sub1", agent_name="helper_agent",
+           depth=1, iteration_index=1,
+           thinking=None, content="File written.", tool_calls=[]),
     _event("agent_completed", agent_id="sub1", agent_name="helper_agent",
            depth=1, status="success"),
     _event("content", content="Helper finished."),
+    _event("iteration", iteration_index=1,
+           thinking=None, content="Helper finished.", tool_calls=[]),
     _event("agent_completed", agent_id="root", agent_name="computron",
            status="success"),
     _event("turn_end"),

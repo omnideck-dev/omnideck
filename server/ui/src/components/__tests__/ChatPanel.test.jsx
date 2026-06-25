@@ -13,13 +13,12 @@ vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => agentStat
 
 beforeEach(() => { agentState.value = { rootId: null, agents: {} }; });
 
-const userMsg = (id) => ({ id, role: 'user', content: 'hi' });
-const agentMsg = (id) => ({ id, role: 'assistant', content: 'hello' });
+const _turn = (id) => ({ id, agentId: 'root.test.1', children: [] });
 
 function renderPanel(props = {}) {
     render(
         <ChatPanel
-            messages={[]}
+            turns={[]}
             onSend={vi.fn()}
             onStop={vi.fn()}
             isStreaming={false}
@@ -45,13 +44,13 @@ describe('ChatPanel title bar', () => {
         expect(screen.queryByTestId('chat-turns')).not.toBeInTheDocument();
     });
 
-    it('counts a turn per user message', () => {
-        renderPanel({ messages: [userMsg('a'), agentMsg('b'), userMsg('c'), agentMsg('d')] });
+    it('counts a turn per turn object', () => {
+        renderPanel({ turns: [_turn('t0'), _turn('t1')] });
         expect(screen.getByTestId('chat-turns')).toHaveTextContent('2 turns');
     });
 
     it('uses the singular for a single turn', () => {
-        renderPanel({ messages: [userMsg('a'), agentMsg('b')] });
+        renderPanel({ turns: [_turn('t0')] });
         expect(screen.getByTestId('chat-turns')).toHaveTextContent('1 turn');
     });
 
@@ -59,7 +58,7 @@ describe('ChatPanel title bar', () => {
         renderPanel({ networkActivated: false });
         expect(screen.queryByTestId('network-indicator')).not.toBeInTheDocument();
         render(
-            <ChatPanel messages={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 networkActivated networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
         );
         expect(screen.getByTestId('network-indicator')).toHaveTextContent('3 agents');

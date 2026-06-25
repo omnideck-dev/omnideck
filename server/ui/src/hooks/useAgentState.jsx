@@ -46,7 +46,6 @@ function _makeAgent(id, name, parentId, instruction, startedAt, correlationId = 
         desktopActive: false,
         generationPreview: null,
         openFiles: [],           // file preview tabs
-        activeTool: null,        // what tool is running right now
         completedAt: null,       // when the agent finished (for frozen elapsed time)
         iteration: null,         // current loop iteration
         maxIterations: null,     // budget limit
@@ -116,14 +115,14 @@ function _agentReducer(state, action) {
         }
 
         case 'AGENT_COMPLETED': {
-            const { agentId, status } = action;
+            const { agentId, status, timestamp } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             return {
                 ...state,
                 agents: {
                     ...state.agents,
-                    [agentId]: { ...agent, status, activeTool: null, completedAt: Date.now() },
+                    [agentId]: { ...agent, status, completedAt: timestamp || Date.now() },
                 },
             };
         }
@@ -299,19 +298,6 @@ function _agentReducer(state, action) {
             };
         }
 
-        case 'UPDATE_ACTIVE_TOOL': {
-            const { agentId, toolName } = action;
-            const agent = state.agents[agentId];
-            if (!agent) return state;
-            return {
-                ...state,
-                agents: {
-                    ...state.agents,
-                    [agentId]: { ...agent, activeTool: toolName },
-                },
-            };
-        }
-
         case 'UPDATE_ITERATION': {
             const { agentId, iteration, maxIterations, contextUsage } = action;
             const agent = state.agents[agentId];
@@ -329,7 +315,10 @@ function _agentReducer(state, action) {
             const { agentId, item } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
-            const idx = agent.openFiles.findIndex(f => f.filename === item.filename);
+            // Keyed on path: same path replaces (rewrite), a different path
+            // is a distinct tab even if the basename matches.
+            const itemKey = item.path || item.filename;
+            const idx = agent.openFiles.findIndex(f => (f.path || f.filename) === itemKey);
             const openFiles = idx >= 0
                 ? agent.openFiles.map((f, i) => i === idx ? item : f)
                 : [...agent.openFiles, item];
@@ -340,14 +329,14 @@ function _agentReducer(state, action) {
         }
 
         case 'CLOSE_FILE': {
-            const { agentId, filename } = action;
+            const { agentId, fileKey } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             return {
                 ...state,
                 agents: {
                     ...state.agents,
-                    [agentId]: { ...agent, openFiles: agent.openFiles.filter(f => f.filename !== filename) },
+                    [agentId]: { ...agent, openFiles: agent.openFiles.filter(f => (f.path || f.filename) !== fileKey) },
                 },
             };
         }

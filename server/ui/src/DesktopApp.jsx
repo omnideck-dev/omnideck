@@ -20,6 +20,7 @@ import useBrowserTabs from './hooks/useBrowserTabs.js';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
+import { replayEventsToAgentState, resolveOpenFiles } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
 import { AgentStateProvider, useAgentState, useAgentDispatch } from './hooks/useAgentState.jsx';
 import { useToast } from './components/ToastProvider.jsx';
@@ -137,11 +138,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 });
             }
         },
-        // When an agent uses a tool, update the card badge. Activity log
-        // entries are buffered by useStreamingChat for correct ordering.
-        onAgentToolCall: ({ name, agentId }) => {
-            agentDispatch({ type: 'UPDATE_ACTIVE_TOOL', agentId, toolName: name });
-        },
         // Sub-agent text tokens, batched ~60x/sec. We merge content and
         // thinking in one update so they don't get jumbled together.
         onAgentContent: ({ agentId, content, thinking }) => {
@@ -164,65 +160,65 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         onActivityEntry: ({ agentId, entry }) => {
             agentDispatch({ type: 'APPEND_ACTIVITY', agentId, entry });
         },
-        // A previously-saved conversation just finished loading. Replay each
-        // turn through the same actions a live turn fires (AGENT_STARTED →
-        // APPEND_ACTIVITY × N → AGENT_COMPLETED) so resume and live share one
-        // render path. React 18 batches all dispatches within this async
-        // callback into a single render — no streaming/replay animation.
-        onConversationLoaded: ({ conversationId, turnSpecs, previewState, profileId }) => {
+        // A previously-saved conversation just finished loading. Replay
+        // the persisted events through useAgentState so the network
+        // view, per-agent activity logs, and preview panels all match
+        // what live SSE would have produced. React 18 batches all
+        // dispatches within this async callback into one render.
+        onConversationLoaded: ({ events, browserTabs, terminal, previewState, profileId }) => {
             // Restore the profile this conversation was last using so the
             // selector and outgoing requests reflect it. Null falls back to the
             // default — covers conversations saved before profiles were tracked.
             setConvProfile(profileId || null);
             agentDispatch({ type: 'RESET' });
+            replayEventsToAgentState(events, agentDispatch);
 
-            for (const turn of turnSpecs) {
+            // Panel state restores from the bounded sidecars — screenshots
+            // and terminal transcripts aren't in the event log.
+            for (const tab of (browserTabs || [])) {
+                if (!tab?.agent_id) continue;
                 agentDispatch({
-                    type: 'AGENT_STARTED',
-                    agentId: turn.agentId,
-                    agentName: 'OMNIDECK',
-                    parentAgentId: null,
-                    instruction: '',
-                    correlationId: null,
-                    timestamp: Date.now(),
-                });
-                for (const entry of turn.entries) {
-                    agentDispatch({ type: 'APPEND_ACTIVITY', agentId: turn.agentId, entry });
-                }
-                agentDispatch({
-                    type: 'AGENT_COMPLETED',
-                    agentId: turn.agentId,
-                    status: 'success',
+                    type: 'UPDATE_BROWSER_SNAPSHOT',
+                    agentId: tab.agent_id,
+                    snapshot: {
+                        url: tab.url,
+                        title: tab.title,
+                        screenshot: tab.screenshot,
+                        tabId: tab.tab_id ?? null,
+                        agentId: tab.agent_id,
+                    },
                 });
             }
+            for (const [termAgentId, entries] of Object.entries(terminal || {})) {
+                for (const entry of (entries || [])) {
+                    agentDispatch({
+                        type: 'UPDATE_TERMINAL',
+                        agentId: termAgentId,
+                        event: entry,
+                    });
+                }
+            }
 
-            const lastTurn = turnSpecs[turnSpecs.length - 1];
-            if (!lastTurn) {
+            // The latest root agent's id is where re-opened preview tabs
+            // (saved by the user before the page reload) need to land,
+            // so the per-turn carry-over keeps them visible on the next
+            // live turn.
+            let lastRootAgentId = null;
+            for (const ev of events) {
+                if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+                    lastRootAgentId = ev.agent_id;
+                }
+            }
+            if (!lastRootAgentId) {
                 _pendingActiveTabRef.current = null;
                 return;
             }
 
-            // Preview state hangs on the LAST synthetic agent. When the user
-            // sends a new live message, the reducer's per-turn carry-over
-            // copies the preview state onto the new live root.
             const openFilenames = Array.isArray(previewState?.open_files)
                 ? previewState.open_files
                 : [];
-            if (openFilenames.length > 0) {
-                const byName = new Map();
-                for (const t of turnSpecs) {
-                    for (const e of t.entries) {
-                        if (e?.type === 'file_output' && e.filename && !byName.has(e.filename)) {
-                            byName.set(e.filename, e);
-                        }
-                    }
-                }
-                for (const name of openFilenames) {
-                    const item = byName.get(name);
-                    if (item) {
-                        agentDispatch({ type: 'OPEN_FILE', agentId: lastTurn.agentId, item });
-                    }
-                }
+            for (const item of resolveOpenFiles(events, openFilenames)) {
+                agentDispatch({ type: 'OPEN_FILE', agentId: lastRootAgentId, item });
             }
 
             _pendingActiveTabRef.current = typeof previewState?.active_tab === 'string'
@@ -232,7 +228,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }).current;
 
     const {
-        messages,
+        turns,
         isStreaming,
         stopRequested,
         sendMessage,
@@ -274,7 +270,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const _previewStateSnapshot = useMemo(() => {
         const hasTab = (id) => preview.tabs.some((t) => t.id === id);
         return {
-            open_files: preview.openFiles.map((f) => f.filename).filter(Boolean),
+            open_files: preview.openFiles.map((f) => f.path || f.filename).filter(Boolean),
             active_tab: preview.activeTab,
             browser_visible: hasTab('browser'),
             terminal_visible: hasTab('terminal'),
@@ -284,6 +280,15 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }, [preview.tabs, preview.activeTab, preview.openFiles]);
 
     useEffect(() => {
+        // Only persist the root conversation's preview. A sub-agent's preview
+        // (shown while its detail view is up) is ephemeral: on reopen you land
+        // on the root, so a restored sub-agent file would either reattach to
+        // the wrong agent or stay invisible until you navigate back into that
+        // sub-agent. Skip the save whenever the preview is following a sub-agent.
+        const followingSubAgent = view === 'network'
+            && agentState.selectedAgentId
+            && agentState.selectedAgentId !== agentState.rootId;
+        if (followingSubAgent) return;
         const s = _previewStateSnapshot;
         const empty = !s.open_files.length && !s.active_tab
             && !s.browser_visible && !s.terminal_visible
@@ -293,7 +298,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             savePreviewState(s);
         }, 500);
         return () => clearTimeout(handle);
-    }, [_previewStateSnapshot, savePreviewState]);
+    }, [_previewStateSnapshot, savePreviewState, view, agentState.selectedAgentId, agentState.rootId]);
 
     const handleSend = useCallback((message, fileData) => {
         setAttachment(null);
@@ -334,8 +339,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
         setView('chat');
+        // Clicking the already-active conversation (e.g. from a sub-agent's
+        // activity view) is just navigation back to its chat — don't re-resume
+        // it, which would refetch, RESET the agent tree, and clobber any live
+        // turn. Just drop the agent selection and show the chat.
+        if (conversationId === activeConversationId) {
+            agentDispatch({ type: 'SELECT_AGENT', agentId: null });
+            return undefined;
+        }
         return loadConversation(conversationId);
-    }, [loadConversation]);
+    }, [loadConversation, activeConversationId, agentDispatch]);
 
     // Refresh the recent-conversations list when a turn finishes — a new
     // conversation only lands in the sessions list once its first turn is
@@ -497,7 +510,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     <div className={`${styles.chatColumn} ${view !== 'chat' ? styles.hidden : ''}`}
                          style={{ width: hasPreview && view === 'chat' ? `${preview.splitPosition}%` : '100%' }}>
                         <ChatPanel
-                            messages={messages}
+                            turns={turns}
                             onSend={handleSend}
                             onStop={stopGeneration}
                             isStreaming={isStreaming}
@@ -538,8 +551,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                         />
                                     )}
                                     {preview.activeTab?.startsWith('file:') && (() => {
-                                        const filename = preview.activeTab.slice(5);
-                                        const file = preview.openFiles.find(f => f.filename === filename);
+                                        const fileKey = preview.activeTab.slice(5);
+                                        const file = preview.openFiles.find(f => (f.path || f.filename) === fileKey);
                                         return file ? (
                                             <FilePreview
                                                 item={file}

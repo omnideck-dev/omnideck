@@ -1,9 +1,9 @@
 """Unit tests for context-bound event publishing utilities.
 
 These tests validate that:
-- publish_event is a no-op when no dispatcher is set
-- _current_dispatcher can be set/reset via ContextVar directly
-- publish_event delegates to the active dispatcher with the event content
+- publish_event is a no-op when no conversation is bound
+- _current_conversation can be set/reset via ContextVar directly
+- publish_event writes to the active conversation
 - agent_span forms a hierarchy of context ids
 """
 
@@ -11,65 +11,60 @@ from __future__ import annotations
 
 import pytest
 
+from sdk.context import ConversationHistory
 from sdk.events import (
     AgentEvent,
+    AgentStartedPayload,
     ContentPayload,
-    EventDispatcher,
+    UserMessagePayload,
     agent_span,
     publish_event,
+    reset_current_conversation,
+    set_current_conversation,
 )
-from sdk.events._context import _current_dispatcher
 
 
-class _TrackingDispatcher(EventDispatcher):
-    def __init__(self) -> None:
-        super().__init__()
-        self.published: list[AgentEvent] = []
-
-    def publish(self, event: AgentEvent) -> None:
-        self.published.append(event)
-
-
-@pytest.mark.unit
-def test_publish_event_noop_without_dispatcher() -> None:
-    """Calling publish_event without a dispatcher should not raise or mutate state."""
-    token = _current_dispatcher.set(None)
-    try:
-        publish_event(AgentEvent(payload=ContentPayload(type="content", content="hi")))
-    finally:
-        _current_dispatcher.reset(token)
+def _seed_root_agent(h: ConversationHistory, agent_id: str = "root.test.1") -> str:
+    h.add_event(AgentEvent(
+        payload=AgentStartedPayload(
+            type="agent_started", agent_id=agent_id,
+            agent_name="TEST", parent_agent_id=None,
+        ),
+        agent_id=agent_id, agent_name="TEST", depth=0,
+    ))
+    return agent_id
 
 
 @pytest.mark.unit
-def test_set_and_reset_current_dispatcher() -> None:
-    """_current_dispatcher ContextVar can be set and reset via token."""
-    root_token = _current_dispatcher.set(None)
-    try:
-        assert _current_dispatcher.get() is None
-        d = _TrackingDispatcher()
-        token = _current_dispatcher.set(d)
-        try:
-            assert _current_dispatcher.get() is d
-        finally:
-            _current_dispatcher.reset(token)
-        assert _current_dispatcher.get() is None
-    finally:
-        _current_dispatcher.reset(root_token)
+def test_publish_event_noop_without_conversation() -> None:
+    """Calling publish_event without a conversation should not raise."""
+    # No conversation bound: should be a silent no-op.
+    publish_event(AgentEvent(payload=ContentPayload(type="content", content="hi")))
 
 
 @pytest.mark.unit
-def test_publish_event_delegates_to_dispatcher() -> None:
-    """publish_event should invoke publish on the bound dispatcher with the event content."""
-    d = _TrackingDispatcher()
-    token = _current_dispatcher.set(d)
+@pytest.mark.asyncio
+async def test_publish_event_writes_to_active_conversation() -> None:
+    """publish_event appends the event to the bound conversation's log
+    synchronously — no await/sleep needed before reading messages."""
+    h = ConversationHistory(conversation_id="c1")
+    token = set_current_conversation(h)
     try:
-        publish_event(AgentEvent(payload=ContentPayload(type="content", content="hello")))
-        assert len(d.published) == 1
-        published = d.published[0]
-        assert published.payload.content == "hello"
-        assert published.depth is not None
+        # agent_span emits agent_started and pushes its id on the context
+        # stack so publish_event can tag the user_message with a valid
+        # root agent_id; otherwise the derived view filters it out.
+        async with agent_span("TEST"):
+            publish_event(AgentEvent(
+                payload=UserMessagePayload(type="user_message", content="hello"),
+            ))
+            # No await/sleep between publish and read.
+            msgs = list(h.messages)
     finally:
-        _current_dispatcher.reset(token)
+        reset_current_conversation(token)
+    assert any(
+        m.get("role") == "user" and m.get("content") == "hello"
+        for m in msgs
+    )
 
 
 @pytest.mark.unit

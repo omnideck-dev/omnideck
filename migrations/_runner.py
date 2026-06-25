@@ -13,6 +13,9 @@ from migrations._003_vision_settings import migrate as _003_vision_settings
 from migrations._004_rename_num_ctx import migrate as _004_rename_num_ctx
 from migrations._005_multi_provider import migrate as _005_multi_provider
 from migrations._006_install_default_skills import migrate as _006_install_default_skills
+from migrations._007_events_first import migrate as _007_events_first
+from migrations._008_scrub_browser_screenshots import migrate as _008_scrub_browser_screenshots
+from migrations._009_terminal_sidecar import migrate as _009_terminal_sidecar
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,9 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("004_rename_num_ctx", _004_rename_num_ctx),
     ("005_multi_provider", _005_multi_provider),
     ("006_install_default_skills", _006_install_default_skills),
+    ("007_events_first", _007_events_first),
+    ("008_scrub_browser_screenshots", _008_scrub_browser_screenshots),
+    ("009_terminal_sidecar", _009_terminal_sidecar),
 ]
 
 

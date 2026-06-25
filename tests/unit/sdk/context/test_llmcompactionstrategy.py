@@ -15,6 +15,7 @@ from sdk.context._strategy import (
     _find_first_user,
     _serialize_messages,
 )
+from sdk.events import CompactionPayload
 
 
 def _make_stats(fill_ratio: float = 0.8) -> ContextStats:
@@ -25,13 +26,14 @@ def _build_history(messages: list[dict]) -> ConversationHistory:
     return ConversationHistory(messages)
 
 
-# ── compaction inserts summaries with role=assistant ────────────────────
+# ── compaction publishes a CompactionPayload ────────────────────────────
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_summary_inserted_as_assistant_role():
-    """After compaction, the summary message should have role 'assistant'."""
+async def test_compaction_publishes_payload_and_derived_view_shows_summary():
+    """apply() publishes a CompactionPayload; the derived view picks it up
+    on the next read and shows the summary marker at index 1."""
     messages = [
         {"role": "system", "content": "You are helpful."},
         {"role": "user", "content": "original request"},
@@ -42,24 +44,27 @@ async def test_summary_inserted_as_assistant_role():
     history = _build_history(messages)
     strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
 
+    published_payloads: list = []
+    captured = MagicMock(side_effect=lambda evt: published_payloads.append(evt.payload))
+
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.save_summary_record"), \
+         patch("sdk.context._strategy.publish_event", captured), \
          patch("sdk.context._strategy.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
         mock_summarize.return_value = ("This is the summary.", "test-model")
-
         await strategy.apply(history, _make_stats(0.8))
 
-    non_system = history.non_system_messages
-    summary_msg = non_system[1]
-    assert summary_msg["role"] == "assistant"
-    assert summary_msg["content"].startswith(_SUMMARY_PREFIX)
+    compactions = [p for p in published_payloads if isinstance(p, CompactionPayload)]
+    assert len(compactions) == 1
+    assert compactions[0].summary_text == "This is the summary."
+    assert compactions[0].kept_from_id  # bound to an iteration event id
+    assert compactions[0].kept_to_id
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_tool_pairs_kept_together():
-    """Tool call + tool result should never be split at the boundary."""
+async def test_compaction_does_not_mutate_history_directly():
+    """The strategy never mutates history — it only publishes an event."""
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "first question"},
@@ -79,21 +84,19 @@ async def test_tool_pairs_kept_together():
     history = _build_history(messages)
     strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2, summary_model="test-model")
 
+    events_before = list(history.recorded_events)
+
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.save_summary_record"), \
+         patch("sdk.context._strategy.publish_event"), \
          patch("sdk.context._strategy.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
         mock_summarize.return_value = ("Summary text.", "test-model")
-
         await strategy.apply(history, _make_stats(0.8))
 
-    non_system = history.non_system_messages
-    roles = [m["role"] for m in non_system]
-    assert roles == ["user", "assistant", "assistant", "tool", "assistant"]
-    for i, m in enumerate(non_system):
-        if m.get("role") == "tool":
-            assert i > 0
-            assert non_system[i - 1].get("role") == "assistant"
+    # No mutation: the in-memory event log is unchanged because the
+    # CompactionPayload publish was mocked (in production it would
+    # flow back through handle_event).
+    assert history.recorded_events == events_before
 
 
 # ── _serialize_messages: summary skip is role-agnostic ─────────────────
@@ -190,13 +193,14 @@ def test_find_first_user_finds_normal_first():
     assert idx == 0
 
 
-# ── SummaryRecord metadata ─────────────────────────────────────────────
+# ── CompactionPayload forensic stats ───────────────────────────────────
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_summary_record_includes_metadata():
-    """After compaction, SummaryRecord should have context metadata."""
+async def test_compaction_payload_carries_audit_fields():
+    """The published CompactionPayload's stats carry the forensic fields:
+    model, input_char_count, elapsed_seconds."""
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "original"},
@@ -207,23 +211,22 @@ async def test_summary_record_includes_metadata():
     history = _build_history(messages)
     strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1)
 
-    saved_records = []
+    payloads: list = []
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.save_summary_record", side_effect=saved_records.append), \
+         patch("sdk.context._strategy.publish_event",
+               side_effect=lambda evt: payloads.append(evt.payload)), \
          patch("sdk.context._strategy.load_settings",
-               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {"temperature": 0.3}}), \
-         patch("sdk.context._strategy.get_conversation_id", return_value="conv-123"), \
-         patch("sdk.context._strategy.get_current_agent_name", return_value="BROWSER"):
+               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {"temperature": 0.3}}):
         mock_summarize.return_value = ("Summary.", "test-model")
-
         await strategy.apply(history, _make_stats(0.8))
 
-    assert len(saved_records) == 1
-    record = saved_records[0]
-    assert record.conversation_id == "conv-123"
-    assert record.agent_name == "BROWSER"
-    assert record.options == {"temperature": 0.3}
+    compactions = [p for p in payloads if isinstance(p, CompactionPayload)]
+    assert len(compactions) == 1
+    stats = compactions[0].stats
+    assert stats.model == "test-model"
+    assert stats.input_char_count > 0
+    assert stats.elapsed_seconds >= 0
 
 
 # ── _unload_model (async subprocess) ────────────────────────────────────
@@ -279,3 +282,223 @@ async def test_unload_model_handles_subprocess_error():
                side_effect=OSError("ollama not found")):
         # Should not raise — the exception is caught and logged.
         await _unload_model("test-model")
+
+
+# ── _compute_stats ─────────────────────────────────────────────────────
+
+
+def _evt(type_: str, agent_name: str, evt_id: str, ts: str,
+         **extra) -> dict:
+    return {
+        "id": evt_id,
+        "type": type_,
+        "timestamp": ts,
+        "conversation_id": "c1",
+        "agent_id": "root.x.1",
+        "agent_name": agent_name,
+        "depth": 0,
+        **extra,
+    }
+
+
+def _started(agent_id: str, agent_name: str, evt_id: str,
+             ts: str = "2026-01-01T00:00:00") -> dict:
+    """A depth-0 agent_started event — what marks an agent_id as part of
+    the root thread for scoped_events / build_llm_view membership."""
+    return {
+        **_evt("agent_started", agent_name, evt_id, ts),
+        "agent_id": agent_id,
+        "parent_agent_id": None,
+        "depth": 0,
+    }
+
+
+@pytest.mark.unit
+def test_compute_stats_full_population():
+    """All scope counts, savings math, and spanned_seconds populate
+    when the event log has the right shape."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        _started("root.x.1", "AGENT_A", "as1"),
+        _evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
+        _evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
+        _evt("tool_result", "AGENT_A", "t1", "2026-01-01T00:00:10"),
+        _evt("iteration", "AGENT_A", "i2", "2026-01-01T00:01:00"),
+        _evt("tool_result", "AGENT_A", "t2", "2026-01-01T00:01:05"),
+        _evt("iteration", "AGENT_A", "kept",
+             "2026-01-01T00:01:30"),  # kept_from_id
+    ])
+
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept",
+        context_before=20000,
+        context_limit=30000,
+        input_char_count=40000,  # 40000 // 4 = 10000 tokens replaced
+        summary_text="line one\nline two\nline three",
+        model="m",
+        elapsed_seconds=0.0,
+    )
+
+    assert stats.scope.user_messages == 1
+    assert stats.scope.iterations == 2
+    assert stats.scope.tool_results == 2
+    # spanned: 00:00:00 → 00:01:05 = 65s (kept is excluded from the range)
+    assert stats.spanned_seconds == pytest.approx(65.0, abs=0.01)
+    # "line one\nline two\nline three" = 28 chars, 7 tokens, 3 lines
+    assert stats.summary_chars == 28
+    assert stats.summary_tokens == 7
+    assert stats.summary_lines == 3
+    # context_after = max(0, 20000 - 10000 + 7) = 10007
+    assert stats.context_after == 10007
+    assert stats.saved_tokens == 20000 - 10007
+    assert stats.saved_ratio == pytest.approx(
+        (20000 - 10007) / 20000, rel=1e-3,
+    )
+
+
+@pytest.mark.unit
+def test_compute_stats_cross_turn_agent_id_suffix():
+    """Iterations from earlier turns (agent_id ends in .1) must be
+    counted when compaction fires on a later turn (agent_id ends in .2).
+    Both turns are depth-0 agents, so the root-view scope spans them
+    regardless of the per-turn ``.N`` agent_id suffix."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        _started("root.agent_a.1", "AGENT_A", "as1"),
+        {**_evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
+         "agent_id": "root.agent_a.1"},
+        {**_evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
+         "agent_id": "root.agent_a.1"},
+        _started("root.agent_a.2", "AGENT_A", "as2", "2026-01-01T00:01:00"),
+        {**_evt("user_message", "AGENT_A", "u2", "2026-01-01T00:01:00"),
+         "agent_id": "root.agent_a.2"},
+        {**_evt("iteration", "AGENT_A", "kept", "2026-01-01T00:01:05"),
+         "agent_id": "root.agent_a.2"},
+    ])
+
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept",
+        context_before=10000,
+        context_limit=30000,
+        input_char_count=4000,
+        summary_text="s",
+        model="m",
+        elapsed_seconds=0.0,
+    )
+
+    assert stats.scope.user_messages == 2  # both turns
+    assert stats.scope.iterations == 1     # only the prior turn's iteration
+
+
+@pytest.mark.unit
+def test_resolve_kept_bounds_cross_turn_agent_id_suffix():
+    """Regression: _resolve_kept_bounds must scope by the root thread, not
+    a single agent_id. A fresh agent_id is minted every turn (e.g. ".1",
+    ".2", ".3"); scoping to one id would only count the current turn's
+    iterations and prevent compaction from ever firing in a multi-turn
+    conversation."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        _started("root.agent_a.1", "AGENT_A", "as1"),
+        {**_evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
+         "agent_id": "root.agent_a.1"},
+        {**_evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
+         "agent_id": "root.agent_a.1"},
+        _started("root.agent_a.2", "AGENT_A", "as2", "2026-01-01T00:01:00"),
+        {**_evt("user_message", "AGENT_A", "u2", "2026-01-01T00:01:00"),
+         "agent_id": "root.agent_a.2"},
+        {**_evt("iteration", "AGENT_A", "i2", "2026-01-01T00:01:05"),
+         "agent_id": "root.agent_a.2"},
+        _started("root.agent_a.3", "AGENT_A", "as3", "2026-01-01T00:02:00"),
+        {**_evt("user_message", "AGENT_A", "u3", "2026-01-01T00:02:00"),
+         "agent_id": "root.agent_a.3"},
+        {**_evt("iteration", "AGENT_A", "i3", "2026-01-01T00:02:05"),
+         "agent_id": "root.agent_a.3"},
+    ])
+
+    kept_from_id, kept_to_id = strategy._resolve_kept_bounds(history)
+
+    # keep_recent_groups=2 → anchor is the 2nd-from-last iteration (i2).
+    assert kept_from_id == "i2"
+    # kept_to is the most recent event for the agent (i3 here).
+    assert kept_to_id == "i3"
+
+
+@pytest.mark.unit
+def test_resolve_kept_bounds_spans_mid_conversation_profile_switch():
+    """Regression: switching to a different profile mid-conversation
+    changes the root agent's name AND the profile segment of its
+    agent_id, but every turn is still a depth-0 root agent. The
+    iteration count must span the switch so compaction can fire on the
+    new (e.g. smaller-context) profile instead of resetting to zero."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        # Two turns under the original profile.
+        _started("root.code_expert.1", "CODE EXPERT", "as1"),
+        {**_evt("user_message", "CODE EXPERT", "u1", "2026-01-01T00:00:00"),
+         "agent_id": "root.code_expert.1"},
+        {**_evt("iteration", "CODE EXPERT", "i1", "2026-01-01T00:00:05"),
+         "agent_id": "root.code_expert.1"},
+        _started("root.code_expert.2", "CODE EXPERT", "as2",
+                 "2026-01-01T00:01:00"),
+        {**_evt("user_message", "CODE EXPERT", "u2", "2026-01-01T00:01:00"),
+         "agent_id": "root.code_expert.2"},
+        {**_evt("iteration", "CODE EXPERT", "i2", "2026-01-01T00:01:05"),
+         "agent_id": "root.code_expert.2"},
+        # User switches to a smaller-context profile; new name + agent_id.
+        _started("root.small_window.3", "SMALL WINDOW", "as3",
+                 "2026-01-01T00:02:00"),
+        {**_evt("user_message", "SMALL WINDOW", "u3", "2026-01-01T00:02:00"),
+         "agent_id": "root.small_window.3"},
+        {**_evt("iteration", "SMALL WINDOW", "i3", "2026-01-01T00:02:05"),
+         "agent_id": "root.small_window.3"},
+    ])
+
+    kept_from_id, kept_to_id = strategy._resolve_kept_bounds(history)
+
+    # All three iterations are visible across the profile switch, so the
+    # gate (keep_recent_groups=2) resolves real bounds instead of bailing.
+    assert kept_from_id == "i2"
+    assert kept_to_id == "i3"
+
+
+@pytest.mark.unit
+def test_compute_stats_second_compaction_skips_prior_range():
+    """The range starts after the previous compaction event, not at the
+    log head — earlier-compacted events are not re-counted."""
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+                                 summary_model="m")
+    history = ConversationHistory(conversation_id="c1")
+    history.seed_events([
+        _started("root.x.1", "AGENT_A", "as1"),
+        _evt("user_message", "AGENT_A", "u1", "2026-01-01T00:00:00"),
+        _evt("iteration", "AGENT_A", "i1", "2026-01-01T00:00:05"),
+        _evt("compaction", "AGENT_A", "c1", "2026-01-01T00:00:10"),
+        _evt("iteration", "AGENT_A", "i2", "2026-01-01T00:00:15"),
+        _evt("iteration", "AGENT_A", "kept2", "2026-01-01T00:00:25"),
+    ])
+
+    stats = strategy._compute_stats(
+        history=history,
+        kept_from_id="kept2",
+        context_before=10000,
+        context_limit=30000,
+        input_char_count=4000,
+        summary_text="s",
+        model="m",
+        elapsed_seconds=0.0,
+    )
+
+    # Only i2 is in the range — u1 and i1 were summarized by c1.
+    assert stats.scope.user_messages == 0
+    assert stats.scope.iterations == 1

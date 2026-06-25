@@ -6,16 +6,23 @@ import logging
 from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
-from sdk import PersistenceHook, default_hooks, run_turn
+from conversations import EventsLogWriter
+from sdk import default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events._context import agent_span, get_current_dispatcher
-from sdk.events._models import FileOutputPayload
+from sdk.events._context import (
+    agent_span,
+    publish_event,
+)
+from sdk.events._models import (
+    AgentEvent,
+    FileOutputPayload,
+    UserMessagePayload,
+)
 from sdk.skills import build_agent_state
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
     from agents._agent_profiles import AgentProfile
-    from sdk.events._models import AgentEvent
     from tasks._models import Goal, Task, TaskResult
     from tasks._store import TaskStore
 
@@ -48,11 +55,8 @@ class TaskExecutor:
         agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
 
         history = ConversationHistory(
-            [
-                {"role": "system", "content": agent.instruction},
-                {"role": "user", "content": instruction},
-            ],
-            instance_id=conversation_id,
+            system_message=agent.instruction,
+            conversation_id=conversation_id,
         )
 
         file_paths: list[str] = []
@@ -61,25 +65,36 @@ class TaskExecutor:
             if isinstance(event.payload, FileOutputPayload) and event.payload.path:
                 file_paths.append(event.payload.path)
 
-        async with turn_scope(conversation_id=conversation_id):
-            dispatcher = get_current_dispatcher()
-            if dispatcher:
-                dispatcher.subscribe(_capture_file_output)
-            ctx_manager = ContextManager(
-                history=history,
-                agent_state=agent_state,
-                context_limit=agent.context_window,
-                agent_name=agent.name,
-                strategies=[
-                    LLMCompactionStrategy(threshold=agent.compaction_threshold),
-                ],
-            )
-            hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
-            hooks.append(
-                PersistenceHook(conversation_id=conversation_id, history=history)
-            )
-            async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
-                result = await run_turn(history, agent, hooks=hooks)
+        events_log = EventsLogWriter(conversation_id)
+        # Observers subscribe around the scope so the turn_scope-owned
+        # turn_end at the end of the turn still reaches them.
+        history.subscribe(events_log.handle_event)
+        history.subscribe(_capture_file_output)
+        try:
+            async with turn_scope(history, conversation_id=conversation_id):
+                ctx_manager = ContextManager(
+                    history=history,
+                    agent_state=agent_state,
+                    context_limit=agent.context_window,
+                    agent_name=agent.name,
+                    strategies=[
+                        LLMCompactionStrategy(threshold=agent.compaction_threshold),
+                    ],
+                )
+                hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
+                async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
+                    publish_event(AgentEvent(payload=UserMessagePayload(
+                        type="user_message", content=instruction,
+                    )))
+                    result = await run_turn(history, agent, hooks=hooks)
+        finally:
+            # Unsubscribe synchronously before the await so a cancellation
+            # mid-drain can't skip the unsubscribes and leak observers onto
+            # the history. Drain still flushes in-flight events: it waits on
+            # already-created observer tasks regardless of the list.
+            history.unsubscribe(events_log.handle_event)
+            history.unsubscribe(_capture_file_output)
+            await history.drain_observers()
 
         return result or "", file_paths
 

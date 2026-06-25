@@ -76,12 +76,13 @@ def test_queue_nudge_noop_without_registration() -> None:
 @pytest.mark.asyncio
 async def test_turn_scope_emits_one_final_turn_end() -> None:
     """turn_scope owns the single final turn_end event for a user turn."""
+    from sdk.context import ConversationHistory
+
     captured: list[AgentEvent] = []
+    history = ConversationHistory(conversation_id="test-sid")
+    history.subscribe(captured.append)
 
-    async def _handler(event: AgentEvent) -> None:
-        captured.append(event)
-
-    async with turn_scope(handler=_handler, conversation_id="test-sid"):
+    async with turn_scope(history, conversation_id="test-sid"):
         publish_event(AgentEvent(payload=ContentPayload(type="content", content="during turn")))
 
     assert [event.payload.type for event in captured] == ["content", "turn_end"]

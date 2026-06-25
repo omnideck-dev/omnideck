@@ -86,7 +86,9 @@ describe('ChatInput', () => {
     it('keeps streaming controls visible but disables nudges after stop is requested', () => {
         render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming={true} stopRequested={true} />);
 
-        expect(screen.getByLabelText('Stop generation')).toBeDisabled();
+        // The button's label flips to 'Stopping' once requested; the
+        // stable handle is its testid.
+        expect(screen.getByTestId('chat-stop-btn')).toBeDisabled();
         expect(screen.getByPlaceholderText('Stopping…')).toBeDisabled();
         expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
     });
