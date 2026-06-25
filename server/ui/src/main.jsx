@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { ToastProvider } from './components/ToastProvider.jsx';
 import { AppDataProvider } from './contexts/AppData.jsx';
+import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
 
