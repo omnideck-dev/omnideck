@@ -11,6 +11,8 @@ the backend.
              mid-execution → status "running", then "complete".
 """
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -75,10 +77,8 @@ def test_running_agent_shows_running_dot(page: Page):
     dot_class = dot.get_attribute("class") or ""
     assert "running" in dot_class, f"Expected 'running' in class, got: {dot_class}"
 
-    # Let the sleep finish; the dot transitions to 'complete'. The
-    # deliberate sleep runs past the default turn timeout, so this one
-    # call needs an explicit, longer wait.
-    chat.wait_streaming(timeout=30_000)
-    page.wait_for_timeout(500)
-    dot_class = dot.get_attribute("class") or ""
-    assert "complete" in dot_class, f"Expected 'complete' after finish, got: {dot_class}"
+    # The sub-agent keeps running after the root turn's Stop button hides, so
+    # wait on the dot itself rather than the chat stream (wait_streaming tracks
+    # the root turn and would return before the sub finishes). The sleep is 8s;
+    # give headroom for it to finish and the 'complete' transition to render.
+    expect(dot).to_have_class(re.compile(r"complete"), timeout=15_000)
