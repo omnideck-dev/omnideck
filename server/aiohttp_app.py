@@ -251,12 +251,20 @@ async def container_file_handler(request: Request) -> StreamResponse:
 
 
 async def index_handler(_request: Request) -> StreamResponse:
-    """Serve the main UI index file."""
+    """Serve the main UI index file.
+
+    Sent with ``Cache-Control: no-cache`` so the browser always revalidates
+    the SPA entry point before reusing it. index.html references
+    content-hashed asset bundles, so a heuristically-cached stale copy would
+    keep loading an old bundle after an image update (the classic
+    "I updated but the UI didn't change" bug). no-cache forces an ETag
+    revalidation — cheap (304) when unchanged, correct when not.
+    """
     index_path = UI_DIST_DIR / "index.html"
     if not index_path.is_file():
         logger.warning("UI index not found: %s", index_path)
         return web.Response(text="<h1>File not found</h1>", content_type="text/html", status=404)
-    return web.FileResponse(index_path)
+    return web.FileResponse(index_path, headers={"Cache-Control": "no-cache"})
 
 
 async def stop_handler(request: Request) -> Response:
