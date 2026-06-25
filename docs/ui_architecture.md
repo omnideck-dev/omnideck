@@ -1,202 +1,263 @@
 # UI Architecture
 
-## Conceptual Framework
-
-The UI is built around three core views:
-
-- **Chat View** — A multi-turn conversation between the user and the root agent. Messages accumulate as a scrollable thread. Always mounted (hidden via CSS when other views are active to preserve scroll and input state).
-- **Network View** — A graph of the running agent tree: root agent plus any sub-agents it has spawned. Click an agent to drill into its Activity View.
-- **Activity View** — A real-time log of a single agent's work: thinking, content, tool calls, file outputs. Shown when drilling into an agent from the Network View.
-
-Chat and Activity share a **tabbed preview panel** on the right side for browser screenshots, terminal output, file previews, desktop VNC, and media generation. Network View is full-width — no preview panel.
+React 18 + Vite, CSS Modules, desktop-only (no mobile shell). Grouped by
+subsystem. Source root: `server/ui/src/`.
 
 ---
 
-## Layout
+## 1. Big picture
 
-The UI uses a fixed app shell with a split main area:
+`main.jsx` mounts a small provider stack and the app:
+`ToastProvider → AppDataProvider → App`. `App.jsx` owns only theme state and
+renders `DesktopApp`, which wraps `DesktopAppInner` in `AgentStateProvider`. The
+wrapper exists solely so the inner component can *consume* the agent-state context
+its parent *provides*.
 
-```
-┌──────┬─────────────────────────────┬───┬──────────────────┐
-│      │                             │   │  [tabs]          │
-│ Side │  Main View                  │ ┃ │  Browser         │
-│ bar  │  (Chat / Activity /         │ ┃ │  file.py    x    │
-│      │   Network / Goals /         │ ┃ │  Terminal        │
-│      │   Settings)                 │ ┃ │                  │
-│      │                             │ ┃ │  Preview content │
-│      │                             │   │                  │
-└──────┴─────────────────────────────┴───┴──────────────────┘
-         left side                    ^     right side
-                                  drag handle
-```
+`DesktopAppInner` is the orchestrator for everything below: the shell & views
+(§2), state & streaming (§3), chat (§4), network/activity (§5), preview (§6)
+including browser takeover (§7), and settings/goals (§8).
 
-### App Shell
+Two **independent real-time channels** feed the UI:
 
-- **Header** (36px) — Logo, app title ("COMPUTRON_9000" in monospace), audio indicator, desktop button, theme toggle, new conversation. Fixed top.
-- **Sidebar** (44px) — Vertical icon buttons: Chat, Agents, Goals, Memory | Conversations, Tools | Settings. Active item has a 2px accent bar on the left edge (Signal Line). Fixed left.
-- **Flyout panels** (270px) — Slide out from the sidebar for Memory, Conversations, and Custom Tools. Overlay with scrim.
-
-### Main Area Views
-
-The left side shows one of these (mutually exclusive):
-
-| View | Trigger | Width | Preview panel visible? |
-|------|---------|-------|----------------------|
-| **Chat** | Default / Chat sidebar button | Shares with preview | Yes |
-| **Agent Activity** | Click agent in network graph | Shares with preview | Yes |
-| **Network Graph** | Agents sidebar button | Full width | No |
-| **Goals** | Goals sidebar button | Full width | No |
-| **Settings** | Settings sidebar button | Full width | No |
-
-The preview panel is a shared tabbed panel on the right. It's visible alongside Chat and Activity views, hidden for full-width views (Network, Goals, Settings). A draggable divider between the main view and preview panel allows resizing (20-80% range).
-
-### Mobile
-
-On viewports <= 768px, the app switches to a single-column layout: header, scrollable message area, bottom input bar. No sidebar, no preview panels, no agent views. A drawer provides access to settings and conversations.
+- **Chat / agent / preview** — newline-delimited JSON streamed over
+  `POST fetch('/api/chat')`, read with a `ReadableStream` reader (not SSE),
+  routed by `useStreamingChat`.
+- **Browser takeover** — a **WebSocket** to `/api/browser/control`, owned by
+  `useBrowserControl` (CDP screencast out, input primitives in).
 
 ---
 
-## State Architecture
+## 2. Shell & views
 
-### Agent Reducer (source of truth for agent & preview data)
+The shell is a left **`Sidebar`** (nav, OMNIDECK wordmark, theme toggle, audio,
+new-chat, recent conversations) plus a main area that shows **exactly one** view,
+and an optional preview column on the right.
 
-All agent and preview data lives in a single reducer (`useAgentState`). Each agent node holds its own state:
+`view ∈ {chat, settings, goals, network}`:
 
-```
-agents: {
-  [agentId]: {
-    activityLog[]        // thinking, content, tool calls, file outputs
-    browserSnapshot      // latest screenshot + URL + title
-    terminalLines[]      // command history (append-only)
-    desktopActive        // VNC session flag
-    generationPreview    // image/video/audio generation state
-    openFiles[]          // files opened in preview tabs
-    status               // running | success | error | stopped
-    iteration            // current loop iteration
-    contextUsage         // { context_used, context_limit, fill_ratio }
-  }
-}
-selectedAgentId          // which agent is drilled into (or null)
-```
+- **Chat** (`ChatPanel`) — default; always mounted, hidden via CSS when another
+  view is active so scroll/input state survive.
+- **Network** — `AgentNetwork` (no agent selected) or `AgentActivityView` (an
+  agent is drilled into).
+- **Goals** (`GoalsView`) and **Settings** (`SettingsPage`) — full width.
 
-### Preview State Hook (`usePreviewState`)
-
-Derives all preview panel state from the agent reducer:
-
-- Computes tab list from the active agent's data (browser, terminal, files, etc.)
-- Manages which tab is selected, split position, fullscreen state
-- Determines which agent's previews to show: selected sub-agent if one is drilled in, otherwise the root agent
-
-### Chat State (`useStreamingChat`)
-
-Manages the conversation thread separately:
-
-- `messages[]` — User and assistant messages for the root agent
-- `isStreaming` — Whether a response is in flight
-- `sendMessage()`, `stopGeneration()`, `loadConversation()`, `newConversation()`
-
-### Event Flow
-
-```
-Backend SSE stream (/api/chat)
-    │
-    ├── depth == 0 (root agent tokens)
-    │   └── Buffer → requestAnimationFrame → setMessages()
-    │       → Chat View renders
-    │
-    └── depth > 0 (sub-agent tokens)
-        └── Buffer → requestAnimationFrame → agentDispatch(APPEND_STREAM_CHUNK)
-            → Activity View renders
-```
-
-Preview events (screenshots, terminal output, desktop, generation) dispatch directly to the agent reducer via stable `useRef` callbacks. The preview hook reads from the reducer and computes tabs automatically.
-
-Agent lifecycle events (`agent_started`, `agent_completed`) update the agent tree. New root agents carry over preview state (browser, terminal, desktop, generation) from the previous root.
+The preview column (a `SplitHandle` + `PreviewPanel`) shows only alongside Chat or
+Activity, gated by
+`hasPreview = preview.tabs.length>0 && (view==='chat' || (view==='network' && selectedAgentId))`.
+There is no standalone Header component — per-view title bars carry the chrome;
+`--header-height` / `--sidebar-width` are layout tokens. Fullscreen file/browser
+overlays and the user-desktop overlay float above everything (`position: fixed`).
 
 ---
 
-## Component Tree
+## 3. State & data flow
 
-```
-AgentStateProvider
-└── DesktopAppInner
-    ├── Header
-    ├── Sidebar
-    ├── FlyoutPanel?  (Memory | Conversations | CustomTools)
-    │
-    ├── mainContent
-    │   ├── SettingsPage                         (full-width)
-    │   ├── GoalsView                            (full-width, split-panel)
-    │   ├── AgentNetwork                         (full-width)
-    │   ├── AgentActivityView                    (left column)
-    │   │   └── AgentOutput → FileOutput
-    │   ├── ChatPanel                            (left column, always mounted)
-    │   │   ├── ChatMessages → Message → AgentOutput → FileOutput
-    │   │   ├── StarterPrompts                   (shown when empty)
-    │   │   └── ChatInput
-    │   │
-    │   ├── SplitHandle                          (draggable divider)
-    │   └── PreviewPanel                         (right column, shared)
-    │       ├── [tab bar]
-    │       ├── BrowserPreview
-    │       ├── FilePreview → FileContentRenderer
-    │       ├── TerminalPanel
-    │       ├── DesktopPreview
-    │       └── GenerationPreview
-    │
-    ├── FilePreview (fullscreen)                 (viewport overlay for files)
-    └── SetupWizard                              (shown if setup incomplete)
+State is one reducer plus a few focused hooks. The diagram earns its place here
+because two inbound channels converge into shared state:
+
+```mermaid
+flowchart LR
+    chatAPI["POST /api/chat (JSON lines)"] --> USC["useStreamingChat"]
+    wsAPI["WS /api/browser/control"] --> UBC["useBrowserControl"]
+    USC -->|"depth 0 tokens"| MSG["messages[] → ChatPanel"]
+    USC -->|"lifecycle / preview / sub-agent"| CB["DesktopApp _callbacks ref"]
+    CB --> RED["useAgentState reducer (source of truth)"]
+    RED --> UPS["usePreviewState (derives tabs)"]
+    RED --> Views["Chat / Activity / Network render"]
+    UPS --> PP["PreviewPanel"]
+    UBC --> UBT["useBrowserTabs (merge + selection)"]
+    UBT --> BP["BrowserPreview / BrowserFullscreen"]
 ```
 
-### Key Shared Components
+### Agent state & context (`hooks/useAgentState.jsx`)
 
-| Component | Where used | Notes |
+One `useReducer` is the **single source of truth for both agent and preview
+data** — the preview panel is entirely *derived* from it by `usePreviewState`
+(which stores no preview content of its own). It's exposed through **two separate
+contexts** so reads and writes don't couple:
+
+- `AgentStateProvider` (wraps the app inside `DesktopApp`) runs the reducer and
+  provides `AgentStateContext` (the state) and `AgentDispatchContext` (the
+  `dispatch` fn) independently.
+- `useAgentState()` reads state; `useAgentDispatch()` gets dispatch. Both throw
+  if used outside the provider. The split means a component that only dispatches
+  doesn't re-render when the state changes (and vice versa).
+
+Top-level state:
+
+```
+agents: { [id]: AgentNode }   // every agent in the tree, keyed by id
+rootId                        // the latest turn's root agent
+selectedAgentId               // the card drilled into (or null)
+networkActivated              // latches true once any sub-agent appears
+```
+
+Each `AgentNode`:
+
+```
+id, name, parentId, correlationId   // correlationId ties a sub-agent to the
+                                    //   parent's spawn_requested activity entry
+status (running|success|error|stopped), childIds[], startedAt, completedAt
+activityLog[]                       // thinking, content, tool calls, file outputs
+browserTabs { [tabId]: {url,title,screenshot} }, lastBrowserTabId
+terminalLines[] (capped 50), desktopActive, generationPreview, openFiles[]
+activeTool, iteration, maxIterations, contextUsage
+```
+
+Data flows in one direction — backend stream → `useStreamingChat` → `DesktopApp`
+`_callbacks` → `dispatch`. The reducer actions:
+
+| Action | Effect |
+|---|---|
+| `AGENT_STARTED` | create the node and link it under its parent (`childIds`). A parent-less start is a new turn → it becomes `rootId`, clears `selectedAgentId`, and **carries preview state over from the previous root** so panels don't blink between turns |
+| `AGENT_COMPLETED` | set `status` + `completedAt`, clear `activeTool` |
+| `APPEND_STREAM_CHUNK` | merge streamed thinking/content into `activityLog` (extends the last entry when the type matches) |
+| `APPEND_ACTIVITY` | append a one-off entry (tool call, file output, spawn) |
+| `UPDATE_BROWSER_SNAPSHOT` | upsert a per-tab snapshot and reconcile against the open-tab id set (prune closed tabs); a screenshot-less event is reconcile-only |
+| `UPDATE_TERMINAL` · `UPDATE_GENERATION_PREVIEW` · `UPDATE_DESKTOP_ACTIVE` · `UPDATE_ACTIVE_TOOL` · `UPDATE_ITERATION` | per-mode preview + status updates |
+| `OPEN_FILE` / `CLOSE_FILE` | add/remove a file preview tab (dedup by filename) |
+| `SELECT_AGENT` | drill into a card (`selectedAgentId`) |
+| `CLEAR_BROWSER_TABS` / `CLEAR_TERMINAL` | clear a mode |
+| `RESET` | back to empty — new conversation |
+
+Invariants: each turn mints a **fresh root id** (`rootId` follows the latest),
+`networkActivated` clears only on `RESET`, and a new root inherits the previous
+root's preview data.
+
+### Hooks & contexts
+
+| Hook / context | Kind | Owns |
 |---|---|---|
-| **AgentOutput** | Chat messages + Activity view | Ordered list of entries (thinking, content, tool calls, files) |
-| **CollapsibleThinking** | Both views | `compact` prop for smaller text in activity view |
-| **FileOutput** | Both views | Click "Preview" opens file in the shared preview panel |
-| **ContextUsageBadge** | Chat header + Agent header | SVG donut showing context fill percentage |
-| **PreviewShell** | All preview panels | Wraps content with title bar, collapse/expand/close buttons |
-
-### File Preview Flow
-
-```
-FileOutput (in chat/activity stream)
-    │ click "Preview"
-    ▼
-usePreviewState.openFile(item)
-    │ dispatches OPEN_FILE to reducer
-    ▼
-PreviewPanel tab appears
-    │
-    ▼
-FilePreview → FileContentRenderer
-    ├── source code (<pre>)
-    ├── markdown (ReactMarkdown)
-    ├── HTML (iframe)
-    ├── PDF (iframe)
-    └── images (<img>) → click → FullscreenPreview
-```
+| `useAgentState` / `useAgentDispatch` | context + reducer | the agent tree — source of truth for agent + preview data (read vs dispatch split; see above) |
+| `useStreamingChat` | hook | `/api/chat` stream loop, `messages[]`, `isStreaming`, send/stop/load/new/nudge |
+| `usePreviewState` | hook | preview tabs, `activeTab`, `splitPosition`, `fullscreenItem`, `openFile`/`reset` |
+| `useBrowserTabs` | hook | merge `liveTabs` + agent screenshots; selection |
+| `useBrowserControl` | hook | the browser-control WebSocket (screencast, input, engage, per-tab frame cache) |
+| `useGoals` | hook | goals + runner polling/CRUD |
+| `useFileContent` | hook | decode/watch a previewed file; source/preview toggle |
+| `useAutoScroll` | hook | stick-to-bottom for chat/activity |
+| `useAppData` | context | `{ profilesHook, features }` — profiles store + feature flags, shared once |
+| `useToast` | context | toast queue |
 
 ---
 
-## Design System
+## 4. Chat subsystem
 
-The UI follows the **SIGNAL** design language (see `design/DESIGN_LANGUAGE.md`). Key architectural choices:
+- **`ChatPanel`** — title bar (title, context meter, network pill); holds:
+  - **`ChatMessages`** (auto-scroll) — renders **`StarterPrompts`** when empty,
+    else a list of **`Message`**.
+    - **`Message`** filters entries (inline: content / file / spawn; hidden:
+      thinking / tool calls) and renders **`AgentOutput`**.
+      - **`AgentOutput`** — ordered entry renderer: `CollapsibleThinking`,
+        `MarkdownContent`/`CodeBlock`, `ToolCallBlock`, `FileOutput` (opens a
+        preview tab), `SpawnCard`.
+  - **`ChatInput`** — textarea, `ProfileSelector`, send/nudge/stop, attachment.
 
-- **CSS Modules** — Per-component styles (`*.module.css`), no global class collisions
-- **Semantic tokens** — All colors reference `--canvas`, `--surface`, `--accent`, etc., never raw values
-- **Theme switching** — `data-theme="light|dark"` attribute on `<html>` swaps all token values
-- **Terminal tokens** — Code blocks and terminal output use a separate set of theme-aware tokens (`--terminal-bg`, `--terminal-text`, etc.) that adapt per theme
-- **Share Tech Mono** — Structural UI elements (headers, agent names, status labels) use monospace to reinforce the COMPUTRON identity
+`AgentOutput` is shared with the Activity view, which renders it **unfiltered**
+(thinking + tool calls included).
 
 ---
 
-## Known Technical Debt
+## 5. Agent network / activity
 
-1. **Global button CSS bleeds** — The `button` rule in `global.css` applies opinionated styles to all buttons. Every utility button must override. Should scope to a `.btn` class.
+- **`AgentNetwork`** — visualizes the tree of agents that have children; each
+  node is an **`AgentCard`** (status, elapsed, active tool, context fill,
+  thumbnail). Selecting a card sets `selectedAgentId`.
+- **`AgentActivityView`** — one agent's detail: breadcrumb + meta bar, an
+  **`ActivityRail`** (the unfiltered `AgentOutput` stream), and a nudge bar to
+  message a still-running agent.
 
-2. **JSONL event schema is ad-hoc** — The SSE stream lacks a uniform envelope. Fields live at different nesting levels, forcing ~350 lines of conditional routing in `useStreamingChat.js`. Should normalize to a consistent envelope with `type`, `agent_id`, `depth` at the top level.
+When an agent is selected the preview column follows it (`usePreviewState`).
 
-3. **Terminal lines are unbounded** — Terminal output is append-only with no max-line limit. Long-running agents could accumulate large arrays.
+---
 
+## 6. Preview subsystem
+
+**`PreviewPanel`** is today only a tab strip + a content slot; `DesktopApp`
+renders the mode content (passed as children) and the fullscreen overlay. The
+five modes:
+
+- **`BrowserPreview`** — browser takeover (§7).
+- **`FilePreview` → `FileContentRenderer`** — code / markdown / HTML / PDF /
+  image; `useFileContent` decodes and watches for changes.
+- **`TerminalPanel`** — command output (the 50-line-capped `terminalLines`).
+- **`DesktopPreview`** — a noVNC iframe (also reused as the user-desktop overlay).
+- **`GenerationPreview`** — media-generation progress + output.
+
+Fullscreen is the same components in a viewport-filling overlay
+(`FilePreview fullscreen`, `BrowserFullscreen`), all `position: fixed; inset: 0`,
+so they're DOM-ancestor-independent and can move into a child without CSS
+breakage.
+
+---
+
+## 7. Browser preview & takeover
+
+The trickiest seam. Tab state has **two sources** covering complementary windows,
+reconciled in `useBrowserTabs` — a diagram helps because two planes converge:
+
+```mermaid
+graph TD
+    subgraph Data["Data plane (agent, always)"]
+      shot["agent screenshots over /api/chat"] --> at["agentTabs (reducer)"]
+    end
+    subgraph Control["Control plane (WS, only while preview open)"]
+      ws["screencast frames + live tab list"] --> lt["liveTabs + per-tab frame cache"]
+    end
+    at --> merge["useBrowserTabs: liveTabs authoritative when present; agent screenshots as thumbnails"]
+    lt --> merge
+    merge --> sel["selectedTabId (sticky + follow-newest while engaged)"]
+    sel --> BP["BrowserPreview → BrowserChrome + ScreencastSurface + thumbnail rail"]
+    sel --> BF["BrowserFullscreen (same control session)"]
+```
+
+The planes barely overlap by design (agent-silent-during-takeover → control;
+preview-closed → data) and carry different payloads (PNG screenshots vs live JPEG
+frames). Invariants worth knowing before editing:
+
+- Only the **foreground** tab can be `captureScreenshot`'d (headed Chromium); an
+  agent action foregrounds the tab it touches, so the shot-after-action lands.
+- The **screencast and input both survive backgrounding** — pinned to the
+  selected page — so the live view/takeover work regardless of foreground.
+- `engaged` is gated by `canControl = !isStreaming`: a starting turn
+  force-disengages, so the agent and human never drive at the same instant.
+- `ScreencastSurface` renders unconditionally (the `<img>` is the conditional
+  child) so a momentary empty frame can't unmount it and drop input/focus.
+
+---
+
+## 8. Settings, Goals, Integrations
+
+- **`SettingsPage`** — a flat tab bar: Profiles, Skills, Providers, Integrations,
+  Memory, Custom Tools, System. Each tab owns its data via a dedicated hook
+  (`useAgentProfiles`, `useSkills`, …) and is feature-gated via
+  `useAppData().features`.
+- **`GoalsView`** — split screen: `GoalsListPanel` (left) and a drill-down on the
+  right (`GoalView → RunDetail → TaskDetail → TaskOutputModal`).
+
+---
+
+## 9. Design system
+
+SIGNAL design language. **Note:** the spec lives at
+`docs/design/design_language.html` (HTML, not `.md`) and is still titled
+"COMPUTRON 9000" — stale vs the current "OMNIDECK" identity.
+
+- **CSS Modules** — ~70 `*.module.css`, one per component; the only global sheets
+  are `global.css` (tokens + a minimal reset) and `hljs-tokens.css`.
+- **Tokens** — defined in `global.css` `:root` (light = "Blueprint") and
+  overridden under `[data-theme="dark"]` (dark = "Terminal"). Families: surfaces
+  (`--canvas/--surface/--elevated`), text, borders, `--accent*`, status, shadows,
+  a separate **terminal/code** token set (`--terminal-*`, `--code-*`), and
+  layout/radius/spacing/z-index/easing scales. Components reference `var(--…)`,
+  not raw colors (a handful of `#000`/`#fff` remain for media letterboxing and
+  text-on-accent — candidates for a `--text-on-accent` token).
+- **Theme switching** — `App.jsx` seeds from `prefers-color-scheme` and sets
+  `data-theme` on `<html>`; the CSS cascade recomputes every token, so no
+  component re-renders for a theme change.
+- **Typography (diverged from the spec)** — `--font-brand` is **`Roboto Mono`**
+  (labels, agent names, breadcrumbs, status), `--font-body` is `system-ui`
+  (prose), `--font-code` is `JetBrains Mono` (code/terminal). `Share Tech Mono`
+  is **imported in `global.css` but unused** — the design doc calls for it but
+  production uses Roboto Mono.
+</content>

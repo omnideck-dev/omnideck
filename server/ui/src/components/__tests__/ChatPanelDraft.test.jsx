@@ -6,11 +6,14 @@ import ChatPanel from '../ChatPanel.jsx';
 // Use the real ChatInput here (the sibling ChatPanel suite stubs it) so we can
 // exercise the draft-clearing behavior. The message list is irrelevant.
 vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-messages" /> }));
+// ChatPanel reads the root agent from the agent-state context; the title bar is
+// irrelevant to these draft tests, so a no-root stub suffices.
+vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
 
 function renderPanel(props = {}) {
     return render(
         <ChatPanel
-            messages={[]}
+            turns={[]}
             onSend={vi.fn()}
             onStop={vi.fn()}
             isStreaming={false}
@@ -34,7 +37,7 @@ describe('ChatPanel draft handling', () => {
         expect(textarea.value).toBe('half-written thought');
 
         rerender(
-            <ChatPanel messages={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
 
@@ -47,10 +50,10 @@ describe('ChatPanel draft handling', () => {
 
         await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'still typing');
 
-        // Re-render with the same conversation but other props changing.
+        // Re-render with the same conversation but a changed prop (a new turn).
         rerender(
-            <ChatPanel messages={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
-                conversationId="conv-a" rootAgent={{ name: 'Omnideck' }} />,
+            <ChatPanel turns={[{ id: 't', agentId: 'root.test.1', children: [] }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-a" />,
         );
 
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('still typing');

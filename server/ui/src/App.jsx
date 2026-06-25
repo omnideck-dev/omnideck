@@ -1,26 +1,19 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 
-const DesktopApp = React.lazy(() => import('./DesktopApp.jsx'));
+import DesktopApp from './DesktopApp.jsx';
 
 function App() {
     const [dark, setDark] = useState(false);
 
     useEffect(() => {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        setDark(prefersDark);
+        setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
     }, []);
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     }, [dark]);
 
-    const toggleTheme = () => setDark((d) => !d);
-
-    return (
-        <Suspense fallback={null}>
-            <DesktopApp dark={dark} onToggleTheme={toggleTheme} />
-        </Suspense>
-    );
+    return <DesktopApp dark={dark} onToggleTheme={() => setDark((d) => !d)} />;
 }
 
 export default App;
