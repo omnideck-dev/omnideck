@@ -171,8 +171,9 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                         <button
                             type="button"
                             className={`${styles.sendButton} ${styles.stopButton}`}
-                            title="Stop generation"
-                            aria-label="Stop generation"
+                            data-testid="chat-stop-btn"
+                            title={stopRequested ? 'Stopping…' : 'Stop generation'}
+                            aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
                             onClick={onStop}
                             disabled={stopRequested}
                         >

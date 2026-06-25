@@ -173,7 +173,7 @@ async def test_build_restores_conversation_loaded_skills(monkeypatch):
     """With a conversation id, skills loaded in earlier turns are restored on
     top of the profile's skills — read from conversation metadata."""
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    monkeypatch.setattr("sdk.skills._resolve.load_loaded_skills", lambda cid: {"coder"})
+    monkeypatch.setattr("conversations.load_loaded_skills", lambda cid: {"coder"})
     state = await build_agent_state(_profile(skills=[]), conversation_id="c1")
     assert "coder" in state.loaded_skill_ids
     assert "read_file" in _names(state.tools)
@@ -189,7 +189,7 @@ async def test_build_without_conversation_id_skips_restore(monkeypatch):
         called = True
         return {"coder"}
 
-    monkeypatch.setattr("sdk.skills._resolve.load_loaded_skills", _spy)
+    monkeypatch.setattr("conversations.load_loaded_skills", _spy)
     state = await build_agent_state(_profile(skills=[]))
     assert called is False
     assert state.loaded_skill_ids == frozenset()
@@ -200,7 +200,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
     """persist_loaded_skills hands the state's loaded ids to the conversation store."""
     saved = {}
     monkeypatch.setattr(
-        "sdk.skills._resolve.save_loaded_skills",
+        "conversations.save_loaded_skills",
         lambda cid, ids: saved.update(cid=cid, ids=ids),
     )
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))

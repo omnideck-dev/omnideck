@@ -14,13 +14,13 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, rootAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
+export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, rootAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
     const [draft, setDraft] = useState('');
     const clearDraft = useCallback(() => setDraft(''), []);
 
     // A turn is one user message and its response. Title falls back to the
     // agent name until the live conversation title is wired up.
-    const turnCount = messages.filter((m) => m.role === 'user').length;
+    const turnCount = Array.isArray(turns) ? turns.length : 0;
     const title = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat';
 
     return (
@@ -41,7 +41,7 @@ export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopR
                     </button>
                 )}
             </div>
-            <ChatMessages messages={messages} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={setDraft} />
+            <ChatMessages turns={turns} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={setDraft} />
             {/* Keyed by conversation so switching chats remounts the input,
                 discarding any unsent text instead of carrying it over. */}
             <ChatInput

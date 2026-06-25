@@ -1,212 +1,112 @@
-"""Unit tests for ``server.message_handler`` cache + persistence behavior."""
+"""Unit tests for ``server.message_handler`` turn + attachment behavior."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from conversations._store import save_conversation_history, save_conversation_profile
-from sdk.context import ConversationHistory
 from server import message_handler as mh
 
 
-@pytest.fixture(autouse=True)
-async def _clear_in_memory_conversations() -> AsyncIterator[None]:
-    """Reset the module-global conversation cache between tests."""
-    mh._conversations.clear()
-    yield
-    mh._conversations.clear()
+def test_augment_message_with_attachments_returns_text_and_structured_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The augment helper returns both the LLM-facing text and the structured
+    attachments needed to populate a UserMessagePayload."""
+    from agents.types import Data
+
+    paths = iter(["/virt/uploads/a.png", "/virt/uploads/b.csv"])
+    monkeypatch.setattr(mh, "receive_attachment", lambda **_: next(paths))
+
+    data = [
+        Data(base64_encoded="aaaa", content_type="image/png", filename="a.png"),
+        Data(base64_encoded="bbbb", content_type="text/csv", filename="b.csv"),
+    ]
+    text, attachments = mh._augment_message_with_attachments("describe these", data)
+
+    assert "describe these" in text
+    assert "/virt/uploads/a.png" in text
+    assert "/virt/uploads/b.csv" in text
+
+    assert len(attachments) == 2
+    a, b = attachments
+    assert (a.filename, a.content_type, a.path) == ("a.png", "image/png", "/virt/uploads/a.png")
+    assert (b.filename, b.content_type, b.path) == ("b.csv", "text/csv", "/virt/uploads/b.csv")
 
 
-@pytest.fixture(autouse=True)
-def _stub_browser_release():
-    """Stub out release_agent_browser so eviction doesn't touch Playwright."""
-    with patch.object(mh, "release_agent_browser", new_callable=AsyncMock):
-        yield
+def test_augment_message_with_attachments_falls_back_to_unnamed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When an attachment has no filename, the attachment record still gets a name."""
+    from agents.types import Data
+
+    monkeypatch.setattr(mh, "receive_attachment", lambda **_: "/virt/uploads/synth.png")
+
+    data = [Data(base64_encoded="aaaa", content_type="image/png", filename=None)]
+    _text, attachments = mh._augment_message_with_attachments("look", data)
+
+    assert len(attachments) == 1
+    assert attachments[0].filename == "unnamed"
+    assert attachments[0].path == "/virt/uploads/synth.png"
 
 
-async def test_get_conversation_cold_cache_no_disk_creates_empty_and_marks_new() -> None:
-    """No in-memory entry, no on-disk history -> empty + is_new=True."""
-    conv, is_new = await mh._get_conversation("brand-new-id")
-    assert len(conv) == 0
-    assert conv.instance_id == "brand-new-id"
-    assert is_new is True
+async def test_setup_failure_yields_error_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failure during agent setup (before the turn starts, so before any
+    event sink exists) must reach the user as an error event + turn_end —
+    not be silently swallowed by the producer-task cleanup."""
+    from agents._agent_profiles import AgentProfile
 
-
-async def test_get_conversation_cold_cache_with_disk_hydrates_and_marks_not_new() -> None:
-    """No in-memory entry, on-disk history present -> hydrated + is_new=False."""
-    save_conversation_history("existing", [
-        {"role": "user", "content": "hello"},
-        {"role": "assistant", "content": "hi"},
-    ])
-
-    conv, is_new = await mh._get_conversation("existing")
-
-    assert len(conv) == 2
-    loaded = conv.messages
-    assert loaded[0]["content"] == "hello"
-    assert loaded[1]["content"] == "hi"
-    assert is_new is False
-
-
-async def test_get_conversation_warm_cache_does_not_reread_disk() -> None:
-    """An in-memory entry wins over whatever is on disk and is_new=False."""
-    cached = ConversationHistory(
-        [{"role": "user", "content": "from-memory"}],
-        instance_id="cid",
+    profile = AgentProfile(
+        id="computron", name="Test", provider="ollama", model="m",
+        system_prompt="t", skills=[],
     )
-    mh._conversations["cid"] = cached
-    save_conversation_history("cid", [{"role": "user", "content": "from-disk"}])
+    monkeypatch.setattr(mh, "get_agent_profile", lambda _pid: profile)
 
-    conv, is_new = await mh._get_conversation("cid")
+    async def _boom(*_a, **_kw):
+        raise RuntimeError("setup exploded")
 
-    assert conv is cached
-    assert conv.messages[0]["content"] == "from-memory"
-    assert is_new is False
+    monkeypatch.setattr(mh, "build_agent_state", _boom)
 
+    seen = []
+    async for ev in mh.handle_user_message(
+        "hi", data=None, profile_id="computron", conversation_id="setup-fail",
+    ):
+        seen.append(ev)
 
-async def test_get_conversation_subsequent_call_returns_same_instance() -> None:
-    """Two calls for the same id return the same ConversationHistory object."""
-    first, first_new = await mh._get_conversation("same-id")
-    second, second_new = await mh._get_conversation("same-id")
-    assert first is second
-    assert first_new is True
-    assert second_new is False
-
-
-async def test_get_conversation_empty_id_raises() -> None:
-    """Empty string is rejected."""
-    with pytest.raises(ValueError, match="conversation_id is required"):
-        await mh._get_conversation("")
+    types = [ev.payload.type for ev in seen]
+    assert "error" in types
+    assert types[-1] == "turn_end"
 
 
-async def test_get_conversation_corrupted_history_falls_back_to_empty(tmp_path: Path) -> None:
-    """A malformed history.json is treated as no on-disk history."""
-    from conversations._store import _get_conversations_dir
+async def test_failed_turn_yields_single_error_and_turn_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A turn failure surfaces exactly once: run_turn publishes the error
+    event and turn_scope closes the turn — the generator's catch-all must
+    not append a second, generic error on top."""
+    from agents._agent_profiles import AgentProfile
+    from sdk.events import AgentEvent, ErrorPayload, publish_event
+    from sdk.turn import ToolLoopError
 
-    cid = "corrupted"
-    conv_dir = _get_conversations_dir() / cid
-    conv_dir.mkdir(parents=True)
-    (conv_dir / "history.json").write_text("{not valid json", encoding="utf-8")
+    profile = AgentProfile(
+        id="computron", name="Test", provider="ollama", model="m",
+        system_prompt="t", skills=[],
+    )
+    monkeypatch.setattr(mh, "get_agent_profile", lambda _pid: profile)
 
-    conv, is_new = await mh._get_conversation(cid)
+    async def _failing_run_turn(**_kw):
+        publish_event(AgentEvent(payload=ErrorPayload(
+            type="error", message="usage limit reached",
+        )))
+        raise ToolLoopError("usage limit reached")
 
-    assert len(conv) == 0
-    assert is_new is True
+    monkeypatch.setattr(mh, "run_turn", _failing_run_turn)
 
+    seen = []
+    async for ev in mh.handle_user_message(
+        "hi", data=None, profile_id="computron", conversation_id="turn-fail",
+    ):
+        seen.append(ev)
 
-async def test_lru_evicts_oldest_when_cap_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inserting beyond the cap evicts the least-recently-used entry."""
-    monkeypatch.setattr(mh, "_MAX_CACHED_CONVERSATIONS", 3)
-
-    await mh._get_conversation("a")
-    await mh._get_conversation("b")
-    await mh._get_conversation("c")
-    assert list(mh._conversations) == ["a", "b", "c"]
-
-    await mh._get_conversation("d")
-
-    assert "a" not in mh._conversations
-    assert list(mh._conversations) == ["b", "c", "d"]
-
-
-async def test_lru_access_promotes_to_most_recently_used(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A cache hit moves the entry to the end so it survives the next eviction."""
-    monkeypatch.setattr(mh, "_MAX_CACHED_CONVERSATIONS", 3)
-
-    await mh._get_conversation("a")
-    await mh._get_conversation("b")
-    await mh._get_conversation("c")
-
-    # Touch 'a' — should become most-recently-used.
-    await mh._get_conversation("a")
-    assert list(mh._conversations) == ["b", "c", "a"]
-
-    # Inserting a fourth should now evict 'b', not 'a'.
-    await mh._get_conversation("d")
-    assert "b" not in mh._conversations
-    assert "a" in mh._conversations
-
-
-async def test_lru_skips_active_turn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Conversations whose turn is in flight are not evicted."""
-    monkeypatch.setattr(mh, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(mh, "is_turn_active", lambda cid: cid == "a")
-
-    await mh._get_conversation("a")
-    await mh._get_conversation("b")
-    assert list(mh._conversations) == ["a", "b"]
-
-    # Inserting 'c' would normally evict 'a' (oldest). Pinning skips
-    # over 'a' and evicts 'b' instead.
-    await mh._get_conversation("c")
-    assert "a" in mh._conversations
-    assert "b" not in mh._conversations
-    assert "c" in mh._conversations
-
-
-async def test_lru_overflow_when_all_active(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When every cached conv is mid-turn, the cache temporarily overflows."""
-    monkeypatch.setattr(mh, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(mh, "is_turn_active", lambda _cid: True)
-
-    await mh._get_conversation("a")
-    await mh._get_conversation("b")
-    await mh._get_conversation("c")
-
-    assert len(mh._conversations) == 3
-    assert set(mh._conversations) == {"a", "b", "c"}
-
-
-async def test_lru_does_not_evict_just_inserted_when_others_active(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Just-inserted conv survives even when every existing entry is mid-turn."""
-    monkeypatch.setattr(mh, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(mh, "is_turn_active", lambda cid: cid in {"a", "b"})
-
-    await mh._get_conversation("a")
-    await mh._get_conversation("b")
-    await mh._get_conversation("c")
-
-    assert "c" in mh._conversations
-    assert set(mh._conversations) == {"a", "b", "c"}
-
-
-async def test_resume_conversation_marks_most_recently_used() -> None:
-    """resume_conversation places the resumed entry at the LRU tail."""
-    await mh._get_conversation("a")
-    save_conversation_history("from-disk", [{"role": "user", "content": "hi"}])
-
-    result = await mh.resume_conversation("from-disk")
-
-    assert result is not None
-    assert list(mh._conversations)[-1] == "from-disk"
-
-
-@pytest.mark.unit
-async def test_resume_conversation_returns_saved_profile() -> None:
-    """resume_conversation surfaces the conversation's locked-in profile."""
-    save_conversation_history("c-prof", [{"role": "user", "content": "hi"}])
-    save_conversation_profile("c-prof", "research")
-
-    result = await mh.resume_conversation("c-prof")
-
-    assert result is not None
-    assert result["profile_id"] == "research"
-
-
-@pytest.mark.unit
-async def test_resume_conversation_profile_none_when_unset() -> None:
-    """Conversations saved before per-conversation profiles resume with None."""
-    save_conversation_history("c-old", [{"role": "user", "content": "hi"}])
-
-    result = await mh.resume_conversation("c-old")
-
-    assert result is not None
-    assert result["profile_id"] is None
+    types = [ev.payload.type for ev in seen]
+    assert types.count("error") == 1
+    assert types.count("turn_end") == 1
+    errors = [ev for ev in seen if ev.payload.type == "error"]
+    assert errors[0].payload.message == "usage limit reached"

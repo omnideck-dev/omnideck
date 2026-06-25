@@ -7,6 +7,7 @@ pins are asserted to survive a reload, proving they persist server-side.
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Page, expect
 
@@ -23,13 +24,41 @@ def _seed_conversation(
     title: str = "",
     pinned: bool = False,
 ) -> str:
-    """Create a conversation on disk inside the container."""
-    msgs_json = json.dumps(messages)
+    """Create a conversation on disk inside the container.
+
+    Writes an events.jsonl (the store's source of truth) — an agent_started
+    anchor plus a user_message per user message — so the conversation is
+    recognized and reports the right first message / started_at.
+    """
+    # started_at = first event timestamp, which the sidebar sorts on. Use a
+    # current time so the seeded conversation lands at the top of the list
+    # (the tests operate on item(0)); a fixed past date would sink it below
+    # other conversations the shared e2e container has accumulated.
+    base = datetime.now(UTC)
+    events: list[dict] = [{
+        "id": f"evt_{conv_id}_started", "type": "agent_started",
+        "timestamp": base.isoformat(), "conversation_id": conv_id,
+        "agent_id": "root.test.1", "agent_name": "TEST",
+        "parent_agent_id": None, "depth": 0,
+    }]
+    n = 0
+    for m in messages:
+        if m.get("role") != "user":
+            continue
+        n += 1
+        events.append({
+            "id": f"evt_{conv_id}_{n}", "type": "user_message",
+            "timestamp": (base + timedelta(seconds=n)).isoformat(),
+            "conversation_id": conv_id, "agent_id": "root.test.1",
+            "agent_name": "TEST", "depth": 0,
+            "content": m.get("content", ""), "attachments": [],
+        })
+    events_jsonl = "\n".join(json.dumps(e) for e in events) + "\n"
     script = (
-        "import json, pathlib\n"
+        "import pathlib\n"
         f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
         "d.mkdir(parents=True, exist_ok=True)\n"
-        f"(d / 'history.json').write_text({msgs_json!r})\n"
+        f"(d / 'events.jsonl').write_text({events_jsonl!r})\n"
     )
     meta: dict = {}
     if title:

@@ -33,14 +33,24 @@ class ChatView:
         return self
 
     def wait_streaming(self, timeout: int = _DEFAULT_TURN_TIMEOUT) -> "ChatView":
-        """Wait until the assistant finishes streaming (Stop button disappears)."""
-        stop_btn = self.page.locator("button[title='Stop generation']")
+        """Wait until the assistant finishes streaming (Stop button disappears).
+
+        Keyed on the button's testid, not its title — the title flips to
+        'Stopping…' once a stop is requested, while the testid is stable
+        for the button's whole lifetime.
+        """
+        stop_btn = self.page.get_by_test_id("chat-stop-btn")
         try:
             stop_btn.wait_for(state="visible", timeout=10_000)
         except Exception:
             pass
         stop_btn.wait_for(state="hidden", timeout=timeout)
         return self
+
+    @property
+    def stop_button(self):
+        """The stop-generation button (visible only while streaming)."""
+        return self.page.get_by_test_id("chat-stop-btn")
 
     def new_conversation(self) -> "ChatView":
         self.page.get_by_test_id("sidebar-new-chat").click()

@@ -30,7 +30,12 @@ from playwright.async_api import (
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from sdk.events import get_current_agent_id, get_current_depth, register_agent_span_exit_hook
+from sdk.events import (
+    get_current_agent_id,
+    get_current_depth,
+    register_agent_span_exit_hook,
+    register_conversation_exit_hook,
+)
 from sdk.turn._turn import get_conversation_id
 from pydantic import BaseModel, ConfigDict
 
@@ -1362,7 +1367,16 @@ async def release_agent_browser(key: str) -> None:
             logger.warning("Failed to release browser context for '%s'", key)
 
 
+async def release_conversation_browser(conversation_id: str) -> None:
+    """Release the root-agent context bound to a conversation.
+
+    Owns the conv-scoped key format so callers don't reconstruct it.
+    """
+    await release_agent_browser(f"conv:{conversation_id}")
+
+
 register_agent_span_exit_hook(release_agent_browser)
+register_conversation_exit_hook(release_conversation_browser)
 
 
 async def close_browser() -> None:

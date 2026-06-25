@@ -12,7 +12,18 @@ from typing import Any, List
 import pytest
 
 from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, ContentPayload, ToolCallPayload, TurnEndPayload, agent_span, publish_event
+from sdk.events import (
+    AgentEvent,
+    ContentPayload,
+    IterationPayload,
+    ToolCallPayload,
+    ToolResultPayload,
+    UserMessagePayload,
+    agent_span,
+    publish_event,
+    reset_current_conversation,
+    set_current_conversation,
+)
 from sdk.skills import AgentState
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
 from sdk.turn import run_turn, turn_scope
@@ -77,7 +88,12 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
     async def _handler(evt: AgentEvent) -> None:
         captured.append(evt)
 
-    history = ConversationHistory([{"role": "system", "content": "ctx"}])
+    # Pass conversation_id so the autouse conftest bridge skips this
+    # history — we're driving the new conversation-owned path directly.
+    history = ConversationHistory(
+        [{"role": "system", "content": "ctx"}],
+        conversation_id="conv-tool-loop",
+    )
 
     # Act: run the tool loop inside a turn scope; drain is automatic on exit
     agent = Agent(
@@ -90,12 +106,18 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
         tools=[echo_tool],
     )
 
-    async with turn_scope(handler=_handler):
-        async with agent_span("Test", agent_state=AgentState(agent.tools)):
-            await run_turn(
-                history,
-                agent=agent,
-            )
+    history.subscribe(_handler)
+    async with turn_scope():
+        conv_token = set_current_conversation(history)
+        try:
+            async with agent_span("Test", agent_state=AgentState(agent.tools)):
+                await run_turn(
+                    history,
+                    agent=agent,
+                )
+        finally:
+            reset_current_conversation(conv_token)
+            await history.drain_observers()
 
     # Assert: at least two events: one model output and one tool_call
     assert any(
@@ -119,51 +141,153 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
         i for i, e in enumerate(captured) if isinstance(e.payload, ToolCallPayload)
     )
     assert first_model_idx <= first_tool_idx
-    # Verify context metadata: tool-loop events run in root agent context
-    # (depth 0). The final turn_end is owned by turn_scope, not agent_span.
-    assert all(e.depth == 0 for e in captured if not isinstance(e.payload, TurnEndPayload))
+    # Verify context metadata: tool loop runs in root context (depth 0) when invoked directly
+    assert all(e.depth == 0 for e in captured)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_nested_agent_loop_does_not_emit_turn_end_before_root_continues(monkeypatch):
-    """A nested agent loop ending must not signal the whole user turn is over."""
+async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
+    """run_turn should emit one IterationPayload per iteration (bundling thinking,
+    content, tool_calls) and one ToolResultPayload per tool that runs."""
+    resp1 = _make_response(
+        content="picking a tool",
+        thinking="reasoning",
+        tool_calls=[{"name": "echo_tool", "arguments": {"x": 1}}],
+    )
+    resp2 = _make_response(content="done")
+
     import sdk.turn._execution as mod
+    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([_make_response(content="sub done")]))
+    def echo_tool(x: int) -> dict[str, int]:
+        return {"x": x}
 
-    captured: list[AgentEvent] = []
+    captured: List[AgentEvent] = []
 
     async def _handler(evt: AgentEvent) -> None:
         captured.append(evt)
 
+    history = ConversationHistory(
+        [{"role": "system", "content": "ctx"}],
+        conversation_id="conv-iter-tool-results",
+    )
     agent = Agent(
-        name="Sub Agent",
+        name="Test Agent",
         description="desc",
         instruction="ctx",
         provider="ollama",
         model="dummy",
         options={},
-        tools=[],
+        tools=[echo_tool],
     )
-    history = ConversationHistory([{"role": "system", "content": "ctx"}])
 
-    async with turn_scope(handler=_handler):
-        async with agent_span("root", agent_state=AgentState([])):
-            async with agent_span("sub", agent_state=AgentState(agent.tools)):
+    history.subscribe(_handler)
+    async with turn_scope():
+        conv_token = set_current_conversation(history)
+        try:
+            async with agent_span("Test", agent_state=AgentState(agent.tools)):
                 await run_turn(history, agent=agent)
-            publish_event(AgentEvent(payload=ContentPayload(type="content", content="root continued")))
+        finally:
+            reset_current_conversation(conv_token)
+            await history.drain_observers()
 
-    event_types = [event.payload.type for event in captured]
-    root_continued_idx = next(
-        i for i, event in enumerate(captured)
-        if isinstance(event.payload, ContentPayload) and event.payload.content == "root continued"
+    iterations = [e.payload for e in captured if isinstance(e.payload, IterationPayload)]
+    tool_results = [e.payload for e in captured if isinstance(e.payload, ToolResultPayload)]
+
+    # Two model calls -> two iteration events with monotonic indices.
+    assert [it.iteration_index for it in iterations] == [0, 1]
+
+    first, second = iterations
+    assert first.content == "picking a tool"
+    assert first.thinking == "reasoning"
+    assert len(first.tool_calls) == 1
+    tc = first.tool_calls[0]
+    assert tc.name == "echo_tool"
+    assert tc.arguments == {"x": 1}
+
+    assert second.content == "done"
+    assert second.tool_calls == []
+
+    # One tool ran -> one tool_result event tying back to the iteration's tool call.
+    assert len(tool_results) == 1
+    tr = tool_results[0]
+    assert tr.tool_name == "echo_tool"
+    assert tr.tool_call_id == tc.id
+    assert "x" in tr.content  # str() of {"x": 1}
+
+    # Order: first iteration → tool_result → second iteration.
+    iter_idx = [i for i, e in enumerate(captured) if isinstance(e.payload, IterationPayload)]
+    tr_idx = next(i for i, e in enumerate(captured) if isinstance(e.payload, ToolResultPayload))
+    assert iter_idx[0] < tr_idx < iter_idx[1]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_history_derived_view_matches_appended_messages(monkeypatch):
+    """Phase-4a parity check: after a turn runs, the events-derived view
+    matches the append-driven message list (modulo agent_name on the first
+    user message, which today's appender doesn't stamp)."""
+    import sdk.turn._execution as mod
+
+    resp1 = _make_response(
+        content="thinking out loud",
+        tool_calls=[{"name": "echo_tool", "arguments": {"x": 1}}],
     )
-    early_turn_end = [
-        i for i, event in enumerate(captured)
-        if isinstance(event.payload, TurnEndPayload) and i < root_continued_idx
-    ]
+    resp2 = _make_response(content="all done")
+    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
 
-    assert early_turn_end == []
-    assert event_types[-1] == "turn_end"
-    assert event_types.count("turn_end") == 1
+    def echo_tool(x: int) -> dict[str, int]:
+        return {"x": x}
+
+    history = ConversationHistory(
+        [{"role": "system", "content": "ctx"},
+         {"role": "user", "content": "do it"}],
+        conversation_id="conv-parity",
+    )
+    # The first user message normally fires from server/message_handler.py,
+    # which the unit test bypasses — fire one directly so the derived view
+    # has an anchor.
+    from sdk.events import UserMessagePayload, publish_event
+
+    agent = Agent(
+        name="Test Agent",
+        description="desc",
+        instruction="ctx",
+        provider="ollama",
+        model="dummy",
+        options={},
+        tools=[echo_tool],
+    )
+
+    from sdk.events import reset_current_conversation, set_current_conversation
+
+    async with turn_scope(conversation_id="conv-parity"):
+        conv_token = set_current_conversation(history)
+        try:
+            async with agent_span("Test", agent_state=AgentState(agent.tools)) as agent_id:
+                # Stamp the history with the bound agent id so per-agent filtering works.
+                history._agent_id = agent_id
+                publish_event(AgentEvent(payload=UserMessagePayload(
+                    type="user_message", content="do it",
+                )))
+                await run_turn(history, agent=agent)
+        finally:
+            reset_current_conversation(conv_token)
+            await history.drain_observers()
+
+    derived = history.derived_messages
+    actual_non_system = history.non_system_messages
+
+    # The derived view doesn't carry the system message — compare against
+    # actual.non_system_messages.
+    assert len(derived) == len(actual_non_system), (
+        f"derived={len(derived)} actual={len(actual_non_system)}\n"
+        f"derived: {derived}\n"
+        f"actual:  {actual_non_system}"
+    )
+    for i, (d, a) in enumerate(zip(derived, actual_non_system)):
+        assert d["role"] == a["role"], f"msg[{i}] role: {d['role']} vs {a['role']}"
+        assert (d.get("content") or "") == (a.get("content") or ""), (
+            f"msg[{i}] content mismatch"
+        )

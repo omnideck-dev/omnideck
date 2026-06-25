@@ -92,7 +92,7 @@ def load_events_jsonl(conversation_id: str) -> list[dict[str, Any]]:
     """Read events.jsonl for a conversation, return an empty list if missing.
 
     Each line is parsed as a flat event dict (the same shape produced
-    by EventsLogWriter / build_llm_history). Malformed lines are
+    by EventsLogWriter / build_llm_view). Malformed lines are
     skipped with a logged warning so a single corrupted record can't
     break resume.
     """

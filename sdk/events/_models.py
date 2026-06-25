@@ -118,8 +118,6 @@ class FileOutputPayload(BaseModel):
         content_type: The MIME type of the file (e.g., "text/csv", "image/png").
         content: Base64-encoded file content (legacy, prefer ``path``).
         path: Absolute container path served by the file route.
-        tool_call_id: Id of the tool call that produced this file, when the
-            output originated from a tool invocation. None otherwise.
     """
 
     type: Literal["file_output"]
@@ -159,19 +157,16 @@ class AudioPlaybackPayload(BaseModel):
 class TerminalOutputPayload(BaseModel):
     """Emitted when a bash command starts or completes in the virtual computer.
 
-    A command publishes a ``status="running"`` event before execution begins
-    (carrying only the command text), then a ``status="streaming"`` event for
-    each output chunk as it arrives, and finally a ``status="completed"`` event
-    after execution finishes (carrying the full output and exit code).  All
-    events for one command share the same ``cmd_id`` so the frontend can
-    correlate them.
+    Two events are published per command: one with ``status="running"`` before
+    execution begins (carrying only the command text), and one with
+    ``status="completed"`` after execution finishes (carrying output and exit
+    code).  Both share the same ``cmd_id`` so the frontend can correlate them.
 
     Attributes:
         type: Discriminator; always "terminal_output".
         cmd_id: Unique identifier linking the running/completed pair.
         cmd: The command that was executed.
-        status: "running" before execution, "streaming" while output
-            arrives incrementally, or "completed" when the command finishes.
+        status: Either "running" or "completed".
         stdout: Standard output text, if any.
         stderr: Standard error text, if any.
         exit_code: Exit code of the command, if available.
@@ -209,9 +204,6 @@ class ContextUsagePayload(BaseModel):
         compaction_threshold: Fill ratio at which compaction fires for the
             agent active on this call. Per-profile and configurable, so it
             is emitted with every event rather than assumed constant.
-        iteration: 0-based index of the current iteration within the turn,
-            if tracked.
-        max_iterations: The turn's iteration cap, if one is set.
     """
 
     type: Literal["context_usage"]
@@ -242,8 +234,6 @@ class GenerationPreviewPayload(BaseModel):
         message: Human-readable status text.
         output: Base64-encoded final file on completion.
         output_content_type: MIME type of the final output.
-        output_path: Absolute container path to the final output file,
-            when written to disk instead of (or alongside) ``output``.
     """
 
     type: Literal["generation_preview"]
@@ -335,10 +325,8 @@ class UserAttachment(BaseModel):
 
 
 class UserMessagePayload(BaseModel):
-    """User-authored input to an agent.
-
-    Either the prompt that opens a turn, or a nudge injected mid-turn into a
-    running agent (root or sub-agent).
+    """User-authored input to an agent — the prompt that opens a turn,
+    or a nudge injected mid-turn into a running agent (root or sub-agent).
 
     Attributes:
         type: Discriminator; always "user_message".
@@ -374,10 +362,8 @@ class IterationToolCall(BaseModel):
 
 
 class IterationPayload(BaseModel):
-    """One LLM iteration within a turn.
-
-    Thinking, content, and any tool calls the model requested, bundled into
-    a single event.
+    """One LLM iteration within a turn — thinking, content, and any
+    tool calls the model requested, bundled into a single event.
 
     Attributes:
         type: Discriminator; always "iteration".
@@ -425,9 +411,8 @@ class CompactionScope(BaseModel):
 
 
 class CompactionStats(BaseModel):
-    """Presentation stats for the compaction chip UI.
-
-    Computed at compaction time so consumers don't have to walk the event log.
+    """Presentation stats for the compaction chip UI, computed at
+    compaction time so consumers don't have to walk the event log.
 
     All fields are optional — strategies may omit them on platforms or
     code paths where the measurements aren't available.
@@ -469,11 +454,9 @@ class CompactionStats(BaseModel):
 
 
 class CompactionPayload(BaseModel):
-    """Marks a context compaction.
-
-    The latest compaction in an agent's event log defines its LLM view: the
-    first user message (optionally overridden) + summary marker + events from
-    kept_from_id onward.
+    """Marks a context compaction. The latest compaction in an agent's
+    event log defines its LLM view: pin (optionally overridden) +
+    summary marker + events from kept_from_id onward.
 
     Older compactions remain in the log for audit but do not affect
     history reconstruction.

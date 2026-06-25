@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 class EventSink(Protocol):
-    """The write side of an event log.
+    """The write side of a conversation's event log.
 
-    A sink exposes one capability: append an event, which the implementor
-    records synchronously and fans out to its own observers. Declaring the
-    dependency structurally lets the events layer stay unaware of the concrete
-    sink type, which avoids an import cycle.
+    publish_event needs exactly one capability from whatever it is bound to:
+    append an event, which the implementor records and fans out to its own
+    observers. Declaring the dependency structurally lets the events layer stay
+    unaware of the concrete conversation type, which avoids an import cycle.
     """
 
     def add_event(self, event: AgentEvent) -> None: ...
@@ -46,24 +46,24 @@ class EventSink(Protocol):
 # Event sink bound for the current coroutine context. Set by turn_scope.
 # publish_event routes through the sink's add_event so the in-memory log is
 # updated synchronously before observers fan out — no race.
-_current_event_sink: ContextVar[EventSink | None] = ContextVar(
-    "assistant_events_current_event_sink", default=None
+_current_conversation: ContextVar[EventSink | None] = ContextVar(
+    "assistant_events_current_conversation", default=None
 )
 
 
-def get_current_event_sink() -> EventSink | None:
+def get_current_conversation() -> EventSink | None:
     """Return the event sink bound for this context, or None."""
-    return _current_event_sink.get()
+    return _current_conversation.get()
 
 
-def set_current_event_sink(sink: EventSink | None) -> object:
+def set_current_conversation(conv: EventSink | None) -> object:
     """Bind an event sink as the active write target. Returns the reset token."""
-    return _current_event_sink.set(sink)
+    return _current_conversation.set(conv)
 
 
-def reset_current_event_sink(token: object) -> None:
+def reset_current_conversation(token: object) -> None:
     """Restore the previous binding."""
-    _current_event_sink.reset(token)  # type: ignore[arg-type]
+    _current_conversation.reset(token)  # type: ignore[arg-type]
 
 
 # Stack of (context_id, agent_name) frames for nested agent/tool executions.
@@ -200,19 +200,19 @@ async def agent_span(
 
 
 def publish_event(event: AgentEvent) -> None:
-    """Publish an AgentEvent to the active event sink.
+    """Publish an AgentEvent to the active conversation.
 
     Enriches the event with the current agent name / depth / agent id
-    from the context stack, then writes it to the bound sink. The sink
-    appends synchronously and fans out to its observers (disk writer, SSE
-    stream, etc.). No-op when no sink is bound.
+    from the context stack, then writes it to the conversation. The
+    conversation appends synchronously and fans out to its observers
+    (disk writer, SSE stream, etc.). No-op when no conversation is bound.
 
     Args:
         event: The AgentEvent instance to publish.
     """
-    sink = _current_event_sink.get()
-    if sink is None:
-        logger.debug("No active event sink; dropping event.")
+    conv = _current_conversation.get()
+    if conv is None:
+        logger.debug("No active conversation; dropping event.")
         return
 
     stack = _context_stack.get()
@@ -224,6 +224,6 @@ def publish_event(event: AgentEvent) -> None:
         }
     )
     try:
-        sink.add_event(enriched)
+        conv.add_event(enriched)
     except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to add event to the event sink")
+        logger.exception("Failed to add event to conversation")

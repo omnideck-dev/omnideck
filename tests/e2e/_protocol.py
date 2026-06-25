@@ -66,9 +66,39 @@ def parallel(*directives: str) -> str:
     return "<<PARALLEL>>" + "".join(directives) + "<<ENDPARALLEL>>"
 
 
-def spawn(body: str, profile: str = "") -> str:
-    """Agent spawns a sub-agent (profile defaults to the default profile).
-
-    *body* is itself a directive sequence the sub-agent runs.
+def fail(message: str = "fake failure") -> str:
+    """Agent raises after any preceding tool directives, ending with an
+    ``error`` status. Use inside a ``spawn`` body to make a sub-agent
+    fail, or at the top level to fail the root turn.
     """
-    return f"<<SPAWN {profile}>>{body}<<ENDSPAWN>>"
+    return f"<<FAIL>>{message}<<END>>"
+
+
+def slow() -> str:
+    """Marker: the assistant's text reply streams with a small per-chunk
+    delay, opening a window to interact mid-stream (e.g. click Stop).
+    Compose outside other directives: ``slow() + say(long_text)``.
+    """
+    return "<<SLOW>>"
+
+
+def provider_fail(message: str = "provider error", *, mid: bool = False) -> str:
+    """The provider itself raises, modeling a real ProviderError (e.g. a 429).
+
+    With ``mid=False`` (default) it fails before any output streams — the
+    turn never produces content. With ``mid=True`` it streams a little first,
+    then fails partway through, leaving a partial in-flight iteration.
+    """
+    return f"<<PROVIDERFAIL{' mid' if mid else ''}>>{message}<<END>>"
+
+
+def spawn(body: str, profile: str = "", name: str = "") -> str:
+    """Agent spawns a sub-agent.
+
+    *body* is itself a directive sequence the sub-agent runs. *profile*
+    defaults to the default profile. *name* sets the sub-agent's display
+    name in the UI (defaults to ``SUBAGENT``) — pass it when a test
+    needs to tell sibling sub-agents apart in the network view.
+    """
+    arg = f"{profile}|{name}" if name else profile
+    return f"<<SPAWN {arg}>>{body}<<ENDSPAWN>>"

@@ -21,7 +21,7 @@ from conversations import (
     save_conversation_title,
     save_preview_state,
 )
-from server.message_handler import resume_conversation
+from server._conversation_cache import resume_conversation
 
 # The sidebar rename input caps at this many characters; the server enforces
 # the same bound so a crafted request can't store an oversized title.

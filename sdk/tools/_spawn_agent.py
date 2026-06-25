@@ -12,10 +12,13 @@ from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrate
 from sdk.events import (
     AgentEvent,
     SpawnRequestedPayload,
+    UserMessagePayload,
     agent_span,
+    get_current_agent_id,
+    get_current_conversation,
     publish_event,
 )
-from sdk.hooks import PersistenceHook, default_hooks
+from sdk.hooks import default_hooks
 from sdk.skills import build_agent_state
 from sdk.turn import StopRequestedError, get_conversation_id, run_turn
 
@@ -180,15 +183,25 @@ async def spawn_agent(
         correlation_id=correlation_id,
     ):
         conv_id = get_conversation_id() or "default"
-        short_id = _uuid.uuid4().hex[:8]
-        instance_id = f"{conv_id}/{agent_name}_{short_id}"
         history = ConversationHistory(
-            [
-                {"role": "system", "content": agent.instruction},
-                {"role": "user", "content": instructions},
-            ],
-            instance_id=instance_id,
+            system_message=agent.instruction,
+            conversation_id=conv_id,
+            agent_id=get_current_agent_id(),
         )
+        # Sub-agents share the parent conversation. Events keep flowing
+        # through the bound parent conversation (so they reach disk + UI),
+        # but the sub-agent's own history also receives them as an observer
+        # so its derived view (filtered by agent_id) is correct for the
+        # sub-agent's LLM calls.
+        parent_conv = get_current_conversation()
+        if parent_conv is not None:
+            parent_conv.subscribe(history.handle_event)
+        try:
+            publish_event(AgentEvent(payload=UserMessagePayload(
+                type="user_message", content=instructions,
+            )))
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to publish sub-agent user_message event")
 
         ctx_manager = ContextManager(
             history=history,
@@ -205,13 +218,6 @@ async def spawn_agent(
             max_iterations=agent.max_iterations,
             ctx_manager=ctx_manager,
         )
-        hooks.append(PersistenceHook(
-            conversation_id=conv_id,
-            history=history,
-            sub_agent_name=agent_name,
-            sub_agent_id=short_id,
-        ))
-
         try:
             result_text = await run_turn(
                 history=history,
@@ -225,6 +231,9 @@ async def spawn_agent(
             _log_spawn_error(agent_name, str(exc))
             logger.exception("Unexpected error in spawned agent '%s'", agent_name)
             raise
+        finally:
+            if parent_conv is not None:
+                parent_conv.unsubscribe(history.handle_event)
 
     result = (result_text or "").strip()
     _log_spawn_complete(agent_name, result)

@@ -153,6 +153,81 @@ class TestOpenAndSpawn:
         assert call.function.arguments["profile"] == "coder"
         # Body passed through verbatim so the sub-agent runs it.
         assert call.function.arguments["instructions"] == "<<SAY>>be brief<<END>>"
+        # No explicit name → defaults to SUBAGENT.
+        assert call.function.arguments["agent_name"] == "SUBAGENT"
+
+    async def test_nested_spawn_body_matches_balanced_endspawn(self):
+        # A SPAWN whose body itself contains two sibling SPAWNs: the outer
+        # body must capture the full nested block (balanced ENDSPAWN), and
+        # the root must issue exactly one spawn_agent (the planner).
+        inner = (
+            "<<SPAWN code_expert|EXECUTOR>><<SAY>>x<<END>><<ENDSPAWN>>"
+            "<<SPAWN code_expert|REVIEWER>><<SAY>>y<<END>><<ENDSPAWN>>"
+            "<<SAY>>planned<<END>>"
+        )
+        prompt = f"<<SPAWN research_agent|PLANNER>>{inner}<<ENDSPAWN>>"
+        final, _ = await _run(FakeProvider(), _user(prompt))
+        assert len(final.message.tool_calls) == 1
+        call = final.message.tool_calls[0]
+        assert call.function.name == "spawn_agent"
+        assert call.function.arguments["agent_name"] == "PLANNER"
+        # The planner's instructions are the full inner block, so when the
+        # planner runs it spawns EXECUTOR and REVIEWER itself.
+        assert call.function.arguments["instructions"] == inner
+
+    async def test_spawn_arg_carries_optional_display_name(self):
+        # "profile|NAME" sets the sub-agent's UI name so sibling
+        # sub-agents can be distinguished in the network view.
+        prompt = (
+            "<<SPAWN research_agent|ALPHA>><<SAY>>ok<<END>><<ENDSPAWN>>"
+        )
+        final, _ = await _run(FakeProvider(), _user(prompt))
+        call = final.message.tool_calls[0]
+        assert call.function.arguments["profile"] == "research_agent"
+        assert call.function.arguments["agent_name"] == "ALPHA"
+
+    async def test_fail_directive_raises_for_error_status(self):
+        # FAIL makes the agent raise, which run_turn turns into an error
+        # status via the agent span. Here we just assert the provider
+        # raises with the message.
+        import pytest
+        with pytest.raises(RuntimeError, match="boom"):
+            await _run(FakeProvider(), _user("<<FAIL>>boom<<END>>"))
+
+    async def test_fail_only_raises_after_preceding_tool_completes(self):
+        # With a BASH before the FAIL, the raise must wait until the bash
+        # step has completed. Before that result exists the agent has work
+        # to do (here, load the coder skill) and does not raise yet; once
+        # the bash result is in history, the FAIL fires.
+        import pytest
+
+        def run_bash_cmd():  # named so the planner sees the skill available
+            return "ok"
+
+        prompt = bash("echo hi") + "<<FAIL>>then boom<<END>>"
+        # No bash result yet → not failing; issues the skill load.
+        first, _ = await _run(FakeProvider(), _user(prompt))
+        assert first.message.tool_calls[0].function.name == "load_skill"
+        # bash result recorded → now it raises.
+        msgs = _tool_result(_user(prompt), "run_bash_cmd")
+        with pytest.raises(RuntimeError, match="then boom"):
+            await _run(FakeProvider(), msgs, tools=[run_bash_cmd])
+
+    async def test_consecutive_spawns_emit_in_parallel(self):
+        # Two back-to-back SPAWN directives go out as one response with
+        # both spawn_agent calls, mirroring a model that delegates to
+        # several agents at once (the UI groups them into one card).
+        prompt = (
+            "<<SPAWN research_agent|ALPHA>><<SAY>>a<<END>><<ENDSPAWN>>"
+            "<<SPAWN code_expert|BRAVO>><<SAY>>b<<END>><<ENDSPAWN>>"
+            "<<SAY>>done<<END>>"
+        )
+        final, _ = await _run(FakeProvider(), _user(prompt))
+        names = [c.function.name for c in final.message.tool_calls]
+        assert names == ["spawn_agent", "spawn_agent"]
+        agent_names = [c.function.arguments["agent_name"]
+                       for c in final.message.tool_calls]
+        assert agent_names == ["ALPHA", "BRAVO"]
 
     async def test_spawn_after_completion_returns_final_say(self):
         prompt = (

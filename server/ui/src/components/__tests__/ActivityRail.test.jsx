@@ -167,6 +167,44 @@ describe('ActivityRail', () => {
         expect(screen.queryByTestId('activity-tool-call')).not.toBeInTheDocument();
     });
 
+    it('renders a compaction entry as its own collapsed row', () => {
+        const entries = [{
+            type: 'compaction',
+            stats: { context_before: 20000, context_after: 8000,
+                saved_tokens: 12000, saved_ratio: 0.6,
+                scope: { user_messages: 1, iterations: 2, tool_results: 1 } },
+            summaryText: 'summarized the early turns',
+            userIntentSummary: 'user is iterating on the design',
+        }];
+        render(<ActivityRail entries={entries} />);
+        const row = screen.getByTestId('activity-row-compaction');
+        expect(row).toBeInTheDocument();
+        expect(row).toHaveTextContent('compacted');
+        expect(row).toHaveTextContent('saved 12.0k (60%)');
+        // Collapsed: the summary text isn't shown yet.
+        expect(screen.queryByTestId('activity-compaction-panel')).not.toBeVisible();
+    });
+
+    it('expands a compaction row to show stats and the summary blocks', async () => {
+        const user = userEvent.setup();
+        const entries = [{
+            type: 'compaction',
+            stats: { context_before: 20000, context_after: 8000,
+                saved_tokens: 12000, saved_ratio: 0.6, summary_tokens: 259,
+                scope: { user_messages: 1, iterations: 2, tool_results: 1 } },
+            summaryText: 'summarized the early turns',
+            userIntentSummary: 'user is iterating on the design',
+        }];
+        render(<ActivityRail entries={entries} />);
+        await user.click(screen.getByTestId('activity-compaction-summary'));
+        const panel = screen.getByTestId('activity-compaction-panel');
+        expect(panel).toHaveTextContent('20.0k');
+        expect(panel).toHaveTextContent('8.0k');
+        expect(panel).toHaveTextContent('1 tool calls');
+        expect(panel).toHaveTextContent('summarized the early turns');
+        expect(panel).toHaveTextContent('user is iterating on the design');
+    });
+
     it('groups non-spawn tool calls separately when a spawn_agent sits between', () => {
         const entries = [
             { type: 'tool_call', name: 'read_file', arguments: { path: 'a.py' } },

@@ -37,13 +37,16 @@ export default function usePreviewState(agentState, agentDispatch, followSelecte
 
     const tabs = useMemo(() => {
         const t = [];
-        if (hasBrowser) t.push({ id: 'browser', label: 'Browser', icon: <BrowserIcon size={14} /> });
+        if (hasBrowser) t.push({ id: 'browser', testid: 'browser', label: 'Browser', icon: <BrowserIcon size={14} /> });
         for (const f of openFiles) {
-            t.push({ id: `file:${f.filename}`, label: f.filename || 'File', icon: <FileIcon size={14} /> });
+            // Identity is the full path (two files can share a basename);
+            // the testid stays on the basename so e2e selectors don't churn.
+            const key = f.path || f.filename;
+            t.push({ id: `file:${key}`, testid: `file:${f.filename}`, label: f.filename || 'File', icon: <FileIcon size={14} /> });
         }
-        if (terminalLines.length > 0) t.push({ id: 'terminal', label: 'Terminal', icon: <TerminalIcon size={14} /> });
-        if (desktopActive) t.push({ id: 'desktop', label: 'Desktop', icon: <DesktopIcon size={14} /> });
-        if (generationPreview) t.push({ id: 'generation', label: 'Generation', icon: <SparkleIcon size={14} /> });
+        if (terminalLines.length > 0) t.push({ id: 'terminal', testid: 'terminal', label: 'Terminal', icon: <TerminalIcon size={14} /> });
+        if (desktopActive) t.push({ id: 'desktop', testid: 'desktop', label: 'Desktop', icon: <DesktopIcon size={14} /> });
+        if (generationPreview) t.push({ id: 'generation', testid: 'generation', label: 'Generation', icon: <SparkleIcon size={14} /> });
         return t;
     }, [hasBrowser, openFiles, terminalLines, desktopActive, generationPreview]);
 
@@ -56,14 +59,14 @@ export default function usePreviewState(agentState, agentDispatch, followSelecte
     }, [tabs, activeTab]);
 
     const activeFile = activeTab?.startsWith('file:')
-        ? openFiles.find(f => f.filename === activeTab.slice(5))
+        ? openFiles.find(f => (f.path || f.filename) === activeTab.slice(5))
         : null;
 
     const openFile = useCallback((item) => {
         const agentId = previewAgent?.id;
         if (!agentId) return;
         agentDispatch({ type: 'OPEN_FILE', agentId, item });
-        setActiveTab(`file:${item.filename}`);
+        setActiveTab(`file:${item.path || item.filename}`);
     }, [previewAgent?.id, agentDispatch]);
 
     const closeTab = useCallback((id) => {
@@ -74,7 +77,7 @@ export default function usePreviewState(agentState, agentDispatch, followSelecte
             // The preview-panel close, not the agent's close_tab tool.
             agentDispatch({ type: 'CLEAR_BROWSER_TABS', agentId });
         } else if (id.startsWith('file:')) {
-            agentDispatch({ type: 'CLOSE_FILE', agentId, filename: id.slice(5) });
+            agentDispatch({ type: 'CLOSE_FILE', agentId, fileKey: id.slice(5) });
         } else if (id === 'terminal') {
             agentDispatch({ type: 'CLEAR_TERMINAL', agentId });
         } else if (id === 'desktop') {

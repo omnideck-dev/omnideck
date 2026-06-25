@@ -224,3 +224,99 @@ Either way the win is one annotation-walking implementation instead of two.
 This is the structural follow-up to the inbound strictness fix (bare string vs.
 `list[str]`); that fix made coercion fail loudly but left both walkers in
 place.
+
+## Split iteration progress off ContextUsagePayload
+
+`ContextUsagePayload` (`sdk/events/_models.py`) carries `iteration` and
+`max_iterations`, which are turn-loop progress, not context measurements. They
+live there only because `ContextManager.after_model()` fires once per iteration
+and had both values in scope, so it piggybacked them onto the context-usage
+event.
+
+The frontend already treats them as unrelated: `useStreamingChat.js` splits the
+event the moment it arrives, pulling `iteration`/`maxIterations` out as
+top-level siblings and bundling only the real window-fill fields into a nested
+`contextUsage` object. From there they feed separate components — iteration
+badges in `SpawnCard.jsx` / `AgentActivityView.jsx`, the fill meter in
+`ContextMeter.jsx`, which never reads iteration.
+
+**Goal:** give iteration progress its own payload (e.g. `IterationProgressPayload`
+with agent_id + iteration + max_iterations), emitted from the same
+`after_model()` call, so the context-usage event only carries context fields.
+Touches: the new payload type + union member, the emit site in
+`sdk/context/_manager.py`, the `useStreamingChat` handler and its dispatch
+path through `useAgentState`, plus tests.
+
+## Drop turn_count from ConversationSummary
+
+`list_conversations` (`conversations/_store.py`) reads every conversation's
+`events.jsonl` to EOF for one reason: counting root `user_message` events into
+`ConversationSummary.turn_count`. Nothing consumes that field. It's serialized
+over `/api/conversations/sessions`, but no frontend code reads `.turn_count` —
+the only "N turns" display (the title-bar chip in `ChatPanel.jsx`) computes its
+own count locally from the loaded messages and never looks at the API value.
+Only the unit tests assert on it.
+
+So the field forces an O(all events) scan per conversation on every sidebar
+list, to populate a value nobody reads. `first_message` and `started_at` both
+come from the first event, so dropping `turn_count` lets the scan early-exit on
+line one — listing becomes O(1) lines per conversation.
+
+**Goal:** remove `turn_count` from `ConversationSummary` and stop counting it in
+`list_conversations`; early-exit the per-conversation read after the first
+event. Update the listing tests accordingly. If a turns number is ever wanted in
+the sidebar, derive it on the frontend the way the title bar already does.
+
+## Validate preview-panel state at the route with a Pydantic model
+
+`save_preview_state_handler` (`server/_conversation_routes.py`) accepts the
+preview-panel state as an untrusted HTTP body and stores it after only an
+`isinstance(body, dict)` check. `save_preview_state` / `load_preview_state`
+(`conversations/_store.py`) then pass it through as `dict[str, Any]`. The shape
+is one we fully own — the frontend builds it in `_previewStateSnapshot`
+(`DesktopApp.jsx`): `open_files: list[str]`, `active_tab: str | None`, and four
+`*_visible: bool` flags.
+
+A `TypedDict` would only document the shape; it validates nothing, and the one
+Python caller is the HTTP handler, so the param can't take a `TypedDict` without
+a cast at the boundary anyway. The correct treatment for a value arriving over
+HTTP is a Pydantic model validated at ingress: define `PreviewState(BaseModel)`,
+`PreviewState.model_validate(body)` in the route (400 on failure), and have
+`save_preview_state` take the model. This rejects malformed client input instead
+of persisting whatever arrives.
+
+**Why it's a refactor, not a fold-in:** it's a behavior change (the endpoint
+starts returning 400 for bad bodies) spanning the route handler, the
+`conversations` facade, `_store.py`, and the load/response path — and the route
+lives in a different replay chunk, so it would smear across chunk boundaries.
+Own commit.
+
+## Reconsider the name (and shape) of `ConversationHistory`
+
+After the events-first inversion, `ConversationHistory` is misnamed: "History"
+now names the *derived* thing — `build_llm_history()` (`sdk/context/_view.py`)
+computes the provider message list *from* this object. The object itself is the
+append-only event log / source of truth that you publish into and that fans out
+to observers. Naming the source after its own output is the confusion.
+
+Leading candidate: `EventLog` — literal, pairs with the `EventSink` protocol
+(an `EventLog` is an `EventSink`), and sidesteps the "is a sub-agent / task run
+really a *conversation*?" awkwardness (every agent execution unambiguously *has
+an event log*). Runner-up: `Conversation` (reads well at the binding sites like
+`get_current_conversation`, but inherits that awkwardness).
+
+But it's NOT just a rename — there are design questions to settle first:
+- **Two hats.** The class is both the canonical log-of-record (root agent) and a
+  per-agent *filtered context view* (sub-agents subscribe to the parent's log
+  for their own derived LLM view). `EventLog` fits the first squarely; the
+  second is "each execution gets its own log that can observe a parent." If
+  those roles fight, that's a split-the-class question, not a rename.
+- **It's not a pure passive log.** A system message is pushed into it at each
+  turn start, so it also carries injected turn-scaffolding/setup state, not just
+  recorded events. Decide whether that belongs in the log object at all, or
+  whether the system message should be derived/re-injected at `build_llm_history`
+  time rather than stored — which changes what the object fundamentally is, and
+  therefore what to name it.
+
+Do this as a standalone change AFTER the replay stack lands — not smeared across
+replay chunks.

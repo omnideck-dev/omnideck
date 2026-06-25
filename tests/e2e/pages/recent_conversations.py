@@ -91,3 +91,13 @@ class RecentConversations:
         """Load the most recent conversation."""
         self.items.first.click()
         return self
+
+    def open_by_title(self, query: str) -> "RecentConversations":
+        """Search by title fragment, then click the first match.
+
+        Using search keeps tests robust to recency ordering — seeded
+        conversations don't have to sort to the top.
+        """
+        self.search.fill(query)
+        self.items.first.click()
+        return self

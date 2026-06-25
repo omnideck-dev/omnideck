@@ -19,7 +19,6 @@ from ._loaded_skill_hook import LoadedSkillHook
 from ._logging_hook import LoggingHook
 from ._loop_detector import LoopDetector
 from ._nudge_hook import NudgeHook
-from ._persistence import PersistenceHook
 from ._result_cap import ToolResultCapHook
 from ._scratchpad_hook import ScratchpadHook
 from ._stop_hook import StopHook
@@ -31,7 +30,6 @@ __all__ = [
     "LoggingHook",
     "LoopDetector",
     "NudgeHook",
-    "PersistenceHook",
     "ScratchpadHook",
     "StopHook",
     "ToolResultCapHook",

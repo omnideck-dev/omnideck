@@ -1,60 +1,64 @@
-import Message from './Message.jsx';
+import Turn from './Turn.jsx';
 import StarterPrompts from './StarterPrompts.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
 import { useAgentState } from '../hooks/useAgentState.jsx';
 import styles from './ChatMessages.module.css';
 
 /**
- * Scrollable message list. Sticks to the bottom as new text arrives,
- * but stops auto-scrolling if the user scrolls up.
- *
- * Every assistant message renders from `agent.activityLog`. Live turns
- * get an agentId from the streaming agent_started event; resumed turns
- * get a synthetic agentId per turn from the loadConversation path. One
- * render path either way.
+ * Scrollable chat view. Renders a list of ``<Turn>`` components — one
+ * per turn — driven by ``turns`` computed inside ``useStreamingChat``
+ * from a unified events array (resume + live SSE) plus the in-flight
+ * iteration buffer and the optimistic user prompt.
  */
-export default function ChatMessages({ messages, onPreview, onStarterSelect, onSelectAgent }) {
+export default function ChatMessages({
+    turns,
+    onPreview,
+    onStarterSelect,
+    onSelectAgent,
+}) {
     const { agents, rootId } = useAgentState();
-    // Scroll when messages change OR when the root agent's content grows.
-    // We track the last entry's text length so scroll fires as tokens
-    // stream in, not just when new entries are added.
+
+    // Scroll triggers: turns array length + the root agent's
+    // activityLog growth (so tokens streaming in scroll the view).
     const rootLog = rootId ? agents[rootId]?.activityLog : null;
     const lastEntry = rootLog?.length ? rootLog[rootLog.length - 1] : null;
-    const scrollKey = lastEntry ? (lastEntry.content?.length || lastEntry.thinking?.length || 0) : 0;
-    const { ref, onScroll } = useAutoScroll([messages, rootLog?.length, scrollKey]);
+    const scrollKey = lastEntry
+        ? (lastEntry.content?.length || lastEntry.thinking?.length || 0)
+        : 0;
+    const { ref, onScroll } = useAutoScroll(
+        [turns, rootLog?.length, scrollKey],
+    );
 
-    const isEmpty = messages.length === 0;
+    const turnList = Array.isArray(turns) ? turns : [];
+    const isEmpty = turnList.length === 0;
 
     return (
         <div className={styles.chatMessages} id="chatMessages" ref={ref} onScroll={onScroll}>
             <div className={`${styles.inner}${isEmpty ? ` ${styles.empty}` : ''}`}>
-            {isEmpty ? (
-                <StarterPrompts onSelect={onStarterSelect} />
-            ) : (
-                <>
-                    {messages.map((msg, idx) => {
-                        if (msg.role === 'assistant') {
-                            const agent = agents[msg.agentId];
+                {isEmpty ? (
+                    <StarterPrompts onSelect={onStarterSelect} />
+                ) : (
+                    <>
+                        {turnList.map((turn) => {
+                            const agent = turn.agentId ? agents[turn.agentId] : null;
                             const spawnedAgents = (agent?.childIds || [])
                                 .map((id) => agents[id])
                                 .filter(Boolean);
+                            const streaming = agent?.status === 'running';
                             return (
-                                <Message
-                                    key={msg.id || idx}
-                                    {...msg}
-                                    entries={agent?.activityLog}
-                                    streaming={agent?.status === 'running'}
+                                <Turn
+                                    key={turn.id}
+                                    turn={turn}
+                                    onPreview={onPreview}
                                     spawnedAgents={spawnedAgents}
                                     onSelectAgent={onSelectAgent}
-                                    onPreview={onPreview}
+                                    streaming={streaming}
                                 />
                             );
-                        }
-                        return <Message key={msg.id || idx} {...msg} onPreview={onPreview} />;
-                    })}
-                    <div />
-                </>
-            )}
+                        })}
+                        <div />
+                    </>
+                )}
             </div>
         </div>
     );

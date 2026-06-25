@@ -18,7 +18,6 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
-from conversations import load_loaded_skills, save_loaded_skills
 from sdk.skills._registry import Skill
 from sdk.skills._store import get_skill_record, list_skill_records
 from sdk.skills._tool_categories import tool_categories
@@ -113,6 +112,9 @@ async def build_agent_state(profile: AgentProfile, *, conversation_id: str | Non
             continue
         state.add(skill)
     if conversation_id is not None:
+        # Function-local to break an import cycle: importing conversations
+        # pulls in the event log → sdk.events → sdk.skills, back to here.
+        from conversations import load_loaded_skills
         await _restore_persisted_loaded_skills(state, load_loaded_skills(conversation_id))
     return state
 
@@ -140,6 +142,8 @@ def persist_loaded_skills(agent_state: AgentState, conversation_id: str) -> None
     The mirror of the restore that ``build_agent_state`` does for a conversation:
     the ids re-resolve into the next turn's state.
     """
+    # Function-local to break the conversations ↔ sdk.skills import cycle.
+    from conversations import save_loaded_skills
     save_loaded_skills(conversation_id, agent_state.loaded_skill_ids)
 
 

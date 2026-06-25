@@ -8,6 +8,8 @@ import json
 import logging
 from typing import Any
 
+from sdk.events import AgentEvent, UserMessagePayload, publish_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,13 +53,14 @@ class LoopDetector:
                     self._threshold,
                 )
                 self._recent.clear()
-                history.append(
-                    {
-                        "role": "user",
-                        "content": (
+                try:
+                    publish_event(AgentEvent(payload=UserMessagePayload(
+                        type="user_message",
+                        content=(
                             "You are repeating the same tool call without making progress. "
                             "Try a different approach, use a different tool, or change your arguments. "
                             "If the current approach isn't working, move on to the next step."
                         ),
-                    }
-                )
+                    )))
+                except Exception:  # pragma: no cover - defensive
+                    logger.exception("Failed to publish loop-detector event")

@@ -1,8 +1,9 @@
 """Unit tests for context-bound event publishing utilities.
 
 These tests validate that:
-- publish_event is a no-op when no event sink is bound
-- publish_event forwards the enriched event to the active event sink
+- publish_event is a no-op when no conversation is bound
+- _current_conversation can be set/reset via ContextVar directly
+- publish_event writes to the active conversation
 - agent_span forms a hierarchy of context ids
 """
 
@@ -10,68 +11,60 @@ from __future__ import annotations
 
 import pytest
 
+from sdk.context import ConversationHistory
 from sdk.events import (
     AgentEvent,
+    AgentStartedPayload,
     ContentPayload,
     UserMessagePayload,
     agent_span,
     publish_event,
-    reset_current_event_sink,
-    set_current_event_sink,
+    reset_current_conversation,
+    set_current_conversation,
 )
 
 
-class _RecordingSink:
-    """Minimal EventSink stub: records every event handed to add_event.
-
-    Keeps the events-layer test within the events layer — it depends only on
-    the EventSink protocol, not on a concrete conversation's event-to-message
-    derivation.
-    """
-
-    def __init__(self) -> None:
-        self.events: list[AgentEvent] = []
-
-    def add_event(self, event: AgentEvent) -> None:
-        self.events.append(event)
+def _seed_root_agent(h: ConversationHistory, agent_id: str = "root.test.1") -> str:
+    h.add_event(AgentEvent(
+        payload=AgentStartedPayload(
+            type="agent_started", agent_id=agent_id,
+            agent_name="TEST", parent_agent_id=None,
+        ),
+        agent_id=agent_id, agent_name="TEST", depth=0,
+    ))
+    return agent_id
 
 
 @pytest.mark.unit
-def test_publish_event_noop_without_event_sink() -> None:
-    """Calling publish_event without a bound sink should not raise."""
-    # No sink bound: should be a silent no-op.
+def test_publish_event_noop_without_conversation() -> None:
+    """Calling publish_event without a conversation should not raise."""
+    # No conversation bound: should be a silent no-op.
     publish_event(AgentEvent(payload=ContentPayload(type="content", content="hi")))
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_publish_event_forwards_enriched_event_to_sink() -> None:
-    """publish_event forwards the event to the bound sink synchronously,
-    enriched with the active span's agent attribution."""
-    sink = _RecordingSink()
-    token = set_current_event_sink(sink)
+async def test_publish_event_writes_to_active_conversation() -> None:
+    """publish_event appends the event to the bound conversation's log
+    synchronously — no await/sleep needed before reading messages."""
+    h = ConversationHistory(conversation_id="c1")
+    token = set_current_conversation(h)
     try:
-        # agent_span pushes its id on the context stack so publish_event can
-        # tag the event with the active agent's id / name / depth.
+        # agent_span emits agent_started and pushes its id on the context
+        # stack so publish_event can tag the user_message with a valid
+        # root agent_id; otherwise the derived view filters it out.
         async with agent_span("TEST"):
             publish_event(AgentEvent(
                 payload=UserMessagePayload(type="user_message", content="hello"),
             ))
+            # No await/sleep between publish and read.
+            msgs = list(h.messages)
     finally:
-        reset_current_event_sink(token)
-
-    # The span itself emits agent_started / agent_completed; pick out the
-    # user_message we published.
-    user_events = [
-        e for e in sink.events
-        if isinstance(e.payload, UserMessagePayload)
-    ]
-    assert len(user_events) == 1
-    event = user_events[0]
-    assert event.payload.content == "hello"
-    assert event.agent_name == "TEST"
-    assert event.depth == 0
-    assert event.agent_id is not None and event.agent_id.startswith("root")
+        reset_current_conversation(token)
+    assert any(
+        m.get("role") == "user" and m.get("content") == "hello"
+        for m in msgs
+    )
 
 
 @pytest.mark.unit
