@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from server.aiohttp_app import chat_handler, stop_handler
+from server.aiohttp_app import chat_handler, index_handler, stop_handler
 
 
 def _make_request(*, raw_body: str | None = None, query: dict | None = None) -> MagicMock:
@@ -98,4 +98,19 @@ async def test_stop_empty_conversation_id_returns_400() -> None:
     resp = await stop_handler(req)
     assert resp.status == 400
 
+
+# -- index_handler ----------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_index_handler_sets_no_cache_header(monkeypatch, tmp_path) -> None:
+    """The SPA entry point must revalidate so deploys pick up new hashed assets."""
+    ui_dist = tmp_path / "dist"
+    ui_dist.mkdir()
+    (ui_dist / "index.html").write_text("<html></html>")
+    monkeypatch.setattr("server.aiohttp_app.UI_DIST_DIR", ui_dist)
+
+    resp = await index_handler(_make_request())
+
+    assert resp.headers["Cache-Control"] == "no-cache"
 
