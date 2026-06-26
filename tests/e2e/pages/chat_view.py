@@ -40,8 +40,16 @@ class ChatView:
         for the button's whole lifetime.
         """
         stop_btn = self.page.get_by_test_id("chat-stop-btn")
+        # Best-effort: catch the button while streaming is in flight so the
+        # hidden-wait below can't pass prematurely (button hidden only because
+        # the request hasn't started yet). Streaming starts near-instantly with
+        # MOCK_LLM and route mocks, so a short budget is enough — and when a
+        # test mocks /api/chat to return the whole stream in one shot, the
+        # button cycles faster than Playwright can observe "visible", so this
+        # wait will miss. A short timeout keeps that miss cheap (~1s) instead of
+        # stalling the full 10s before falling through to the hidden-wait.
         try:
-            stop_btn.wait_for(state="visible", timeout=10_000)
+            stop_btn.wait_for(state="visible", timeout=2_000)
         except Exception:
             pass
         stop_btn.wait_for(state="hidden", timeout=timeout)
