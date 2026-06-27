@@ -1,10 +1,11 @@
 .panel {
+    --titlebar-height: 44px;
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
     /* Positioning context for the expand-in-place composer, which fills the
-       chat area below the title bar. */
+       chat area below the title bar (offset by --titlebar-height). */
     position: relative;
 }
 
@@ -13,7 +14,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    height: 44px;
+    height: var(--titlebar-height);
     padding: 0 var(--sp-4);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;

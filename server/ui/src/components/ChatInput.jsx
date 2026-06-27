@@ -23,10 +23,8 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
-    const [expandedTop, setExpandedTop] = useState(0);
 
     const textareaRef = useRef(null);
-    const wrapperRef = useRef(null);
     const fileInputRef = useRef(null);
 
     const profileName = selectedProfile?.name;
@@ -61,28 +59,15 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         resizeInline();
     }, [message, isGrown, expanded, resizeInline]);
 
-    // The expanded composer fills the chat area below the title bar. Measure the
-    // title-bar height from the panel so it isn't hard-coded.
-    const measureExpandedTop = useCallback(() => {
-        const wrap = wrapperRef.current;
-        const panel = wrap?.parentElement;
-        const header = panel?.firstElementChild;
-        setExpandedTop(header && header !== wrap ? header.offsetHeight : 0);
-    }, []);
-
-    // On expand: measure the fill offset, focus the textarea (cursor at end),
-    // and keep the offset correct across window resizes.
+    // Focus the textarea (cursor at end) when expanding. The expanded composer's
+    // fill offset is handled in CSS via --titlebar-height, no measurement needed.
     useEffect(() => {
         if (!expanded) return;
-        measureExpandedTop();
         const el = textareaRef.current;
-        if (el) {
-            el.focus();
-            el.selectionStart = el.selectionEnd = el.value.length;
-        }
-        window.addEventListener('resize', measureExpandedTop);
-        return () => window.removeEventListener('resize', measureExpandedTop);
-    }, [expanded, measureExpandedTop]);
+        if (!el) return;
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+    }, [expanded]);
 
     // ESC collapses the expanded composer without discarding text.
     useEffect(() => {
@@ -200,11 +185,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
     const showCornerBtn = isGrown || expanded;
 
     return (
-        <div
-            ref={wrapperRef}
-            className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}
-            style={expanded ? { top: expandedTop } : undefined}
-        >
+        <div className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}>
             <form className={styles.inputArea} onSubmit={handleSubmit}>
                 {hasAttachment && (
                     <div className={styles.tray}>

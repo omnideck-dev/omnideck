@@ -170,10 +170,11 @@
 
 /* ── Expand in place ─────────────────────────────────────
    The composer grows to fill the chat area below the title bar (no modal).
-   `top` is set inline to the measured title-bar height; the wrapper is
-   absolutely positioned within the chat panel and reverts on collapse. */
+   It is absolutely positioned within the chat panel, offset from the top by
+   --titlebar-height (inherited from .panel), and reverts on collapse. */
 .expandedWrapper {
   position: absolute;
+  top: var(--titlebar-height);
   left: 0;
   right: 0;
   bottom: 0;
