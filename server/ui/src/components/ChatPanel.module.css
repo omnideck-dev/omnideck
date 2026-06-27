@@ -3,6 +3,9 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    /* Positioning context for the expand-in-place composer, which fills the
+       chat area below the title bar. */
+    position: relative;
 }
 
 /* ── Title bar ───────────────────────────────────────── */

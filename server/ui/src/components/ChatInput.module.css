@@ -39,32 +39,39 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 13.5px;
+  /* Pinned to match LINE_HEIGHT_PX in JS (13.5 * 1.48 ≈ 20px per row). */
+  line-height: 1.48;
   outline: none;
   resize: none;
 }
 
-/* Expand-to-fullscreen button — visible only when the textarea has grown. */
+/* Extra right padding clears space for the corner expand/collapse button. */
+.customInput.grown {
+  padding-right: 30px;
+}
+
+/* Expand / collapse — a subtle ghost affordance in the corner, matching the
+   other icon buttons. Shown only once the textarea has grown or expanded. */
 .expandButton {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 20px;
-  height: 20px;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
   padding: 0;
+  font-size: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-tertiary);
   cursor: pointer;
-  opacity: 0.65;
-  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .expandButton:hover {
-  opacity: 1;
   background: var(--accent-muted);
   color: var(--text-primary);
 }
@@ -161,86 +168,31 @@
   padding: 8px 8px 2px 0;
 }
 
-/* ── Focus mode overlay ──────────────────────────────── */
-.focusOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.focusCard {
-  width: 100%;
-  max-width: 760px;
-  height: 80vh;
+/* ── Expand in place ─────────────────────────────────────
+   The composer grows to fill the chat area below the title bar (no modal).
+   `top` is set inline to the measured title-bar height; the wrapper is
+   absolutely positioned within the chat panel and reverts on collapse. */
+.expandedWrapper {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
   background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-md), 0 20px 60px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
-.focusHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 10px 8px 14px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+/* In expanded mode the card and textarea stretch to fill the wrapper. */
+.expandedWrapper .inputArea {
+  height: 100%;
 }
 
-.focusTitle {
-  font-size: 12px;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-}
-
-.focusForm {
+.expandedWrapper .textareaWrapper {
   flex: 1;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  padding: 6px 6px 6px 14px;
-  overflow: hidden;
-  gap: var(--sp-1);
 }
 
-.focusTextarea {
+.customInput.expandedInput {
   flex: 1;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 4px 4px 0;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  line-height: 1.55;
-  outline: none;
-  resize: none;
   overflow-y: auto;
-}
-
-.focusTextarea::placeholder {
-  color: var(--text-tertiary);
-}
-
-.focusTextarea:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.focusFooter {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-1);
-  padding-right: var(--sp-1);
-  padding-bottom: 2px;
-  flex-shrink: 0;
 }

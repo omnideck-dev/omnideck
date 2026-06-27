@@ -21,11 +21,12 @@ function _base64Bytes(b64) {
 function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
-    const [focusMode, setFocusMode] = useState(false);
+    const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
+    const [expandedTop, setExpandedTop] = useState(0);
 
     const textareaRef = useRef(null);
-    const focusTextareaRef = useRef(null);
+    const wrapperRef = useRef(null);
     const fileInputRef = useRef(null);
 
     const profileName = selectedProfile?.name;
@@ -38,41 +39,58 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
     const resizeInline = useCallback(() => {
         const el = textareaRef.current;
         if (!el) return;
+        if (expanded) {
+            // Expanded mode stretches the textarea to fill the chat area via
+            // flexbox — clear any height left from auto-sizing so it doesn't
+            // snap back to its content height.
+            el.style.height = '';
+            el.style.overflowY = 'auto';
+            return;
+        }
         el.style.height = 'auto';
         const h = Math.max(MIN_HEIGHT_PX, Math.min(el.scrollHeight, MAX_AUTO_HEIGHT_PX));
         el.style.height = h + 'px';
         el.style.overflowY = el.scrollHeight > MAX_AUTO_HEIGHT_PX ? 'auto' : 'hidden';
         setIsGrown(h > MIN_HEIGHT_PX);
-    }, []);
+    }, [expanded]);
 
     // Re-size whenever message content changes. Also re-run when isGrown flips
-    // because changing paddingRight (to clear space for the expand button) can
-    // alter line-wrapping and therefore scrollHeight.
+    // (toggling paddingRight for the corner button changes wrapping, hence
+    // scrollHeight) and when expanding/collapsing.
     useEffect(() => {
         resizeInline();
-    }, [message, isGrown, resizeInline]);
+    }, [message, isGrown, expanded, resizeInline]);
 
-    // Re-measure after returning from focus mode — the textarea was covered.
-    useEffect(() => {
-        if (!focusMode) resizeInline();
-    }, [focusMode, resizeInline]);
+    // The expanded composer fills the chat area below the title bar. Measure the
+    // title-bar height from the panel so it isn't hard-coded.
+    const measureExpandedTop = useCallback(() => {
+        const wrap = wrapperRef.current;
+        const panel = wrap?.parentElement;
+        const header = panel?.firstElementChild;
+        setExpandedTop(header && header !== wrap ? header.offsetHeight : 0);
+    }, []);
 
-    // Move focus to the overlay textarea and place cursor at end.
+    // On expand: measure the fill offset, focus the textarea (cursor at end),
+    // and keep the offset correct across window resizes.
     useEffect(() => {
-        if (!focusMode) return;
-        const el = focusTextareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.selectionStart = el.selectionEnd = el.value.length;
-    }, [focusMode]);
+        if (!expanded) return;
+        measureExpandedTop();
+        const el = textareaRef.current;
+        if (el) {
+            el.focus();
+            el.selectionStart = el.selectionEnd = el.value.length;
+        }
+        window.addEventListener('resize', measureExpandedTop);
+        return () => window.removeEventListener('resize', measureExpandedTop);
+    }, [expanded, measureExpandedTop]);
 
-    // ESC collapses focus mode without discarding text.
+    // ESC collapses the expanded composer without discarding text.
     useEffect(() => {
-        if (!focusMode) return;
-        const onKey = (e) => { if (e.key === 'Escape') setFocusMode(false); };
+        if (!expanded) return;
+        const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [focusMode]);
+    }, [expanded]);
 
     useEffect(() => {
         if (draft) {
@@ -116,7 +134,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         onSend(message.trim(), fileData);
         setMessage('');
         clearAttachment();
-        setFocusMode(false);
+        setExpanded(false);
     };
 
     const handleFile = (e) => {
@@ -163,7 +181,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
 
     const hasAttachment = filePreview || fileName;
 
-    const sharedTextareaProps = {
+    const textareaProps = {
         value: message,
         onChange: (e) => setMessage(e.target.value),
         onKeyDown: (e) => {
@@ -177,165 +195,103 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         disabled: stopRequested,
     };
 
+    // The corner expand/collapse control appears once the textarea has grown
+    // past one row, or whenever the composer is expanded.
+    const showCornerBtn = isGrown || expanded;
+
     return (
-        <>
-            <div className={styles.inputAreaWrapper}>
-                <form className={styles.inputArea} onSubmit={handleSubmit}>
-                    {hasAttachment && (
-                        <div className={styles.tray}>
-                            <AttachmentChip
-                                src={filePreview || undefined}
-                                filename={fileName}
-                                sizeBytes={fileData?.base64 ? _base64Bytes(fileData.base64) : undefined}
-                                onRemove={clearAttachment}
-                            />
-                        </div>
-                    )}
-                    <div className={styles.textareaWrapper}>
-                        <textarea
-                            ref={textareaRef}
-                            {...sharedTextareaProps}
-                            className={styles.customInput}
-                            style={isGrown ? { paddingRight: '28px' } : undefined}
+        <div
+            ref={wrapperRef}
+            className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}
+            style={expanded ? { top: expandedTop } : undefined}
+        >
+            <form className={styles.inputArea} onSubmit={handleSubmit}>
+                {hasAttachment && (
+                    <div className={styles.tray}>
+                        <AttachmentChip
+                            src={filePreview || undefined}
+                            filename={fileName}
+                            sizeBytes={fileData?.base64 ? _base64Bytes(fileData.base64) : undefined}
+                            onRemove={clearAttachment}
                         />
-                        {isGrown && (
+                    </div>
+                )}
+                <div className={styles.textareaWrapper}>
+                    <textarea
+                        ref={textareaRef}
+                        {...textareaProps}
+                        className={[
+                            styles.customInput,
+                            showCornerBtn && styles.grown,
+                            expanded && styles.expandedInput,
+                        ].filter(Boolean).join(' ')}
+                    />
+                    {showCornerBtn && (
+                        <button
+                            type="button"
+                            className={styles.expandButton}
+                            onClick={() => setExpanded((v) => !v)}
+                            title={expanded ? 'Collapse' : 'Expand'}
+                            aria-label={expanded ? 'Collapse input' : 'Expand input'}
+                        >
+                            <i className={expanded ? 'bi bi-arrows-angle-contract' : 'bi bi-arrows-angle-expand'} />
+                        </button>
+                    )}
+                </div>
+                <div className={styles.inputAreaButtons}>
+                    <ProfileSelector
+                        selectedId={selectedProfileId}
+                        onChange={onProfileChange}
+                        disabled={isStreaming}
+                        refreshSignal={profileRefreshSignal}
+                        onSelectedProfile={setSelectedProfile}
+                    />
+                    <div className={styles.actionButtons}>
+                        <button
+                            type="button"
+                            id="fileButton"
+                            className={styles.iconButton}
+                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                            title="Attach file"
+                            aria-label="Attach file"
+                        >
+                            <PaperclipIcon />
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            id="fileInput"
+                            style={{ display: 'none' }}
+                            onClick={(e) => { e.target.value = ''; }}
+                            onChange={handleFile}
+                        />
+                        {isStreaming ? (
                             <button
                                 type="button"
-                                className={styles.expandButton}
-                                onClick={() => setFocusMode(true)}
-                                title="Expand to full window"
-                                aria-label="Expand to full window"
+                                className={`${styles.sendButton} ${styles.stopButton}`}
+                                data-testid="chat-stop-btn"
+                                title={stopRequested ? 'Stopping…' : 'Stop generation'}
+                                aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
+                                onClick={onStop}
+                                disabled={stopRequested}
                             >
-                                <i className="bi bi-arrows-angle-expand" style={{ fontSize: 11 }} />
+                                <StopIcon />
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                className={styles.sendButton}
+                                title="Send message"
+                                aria-label="Send message"
+                                disabled={!message.trim() && !fileData}
+                            >
+                                <SendIcon />
                             </button>
                         )}
                     </div>
-                    <div className={styles.inputAreaButtons}>
-                        <ProfileSelector
-                            selectedId={selectedProfileId}
-                            onChange={onProfileChange}
-                            disabled={isStreaming}
-                            refreshSignal={profileRefreshSignal}
-                            onSelectedProfile={setSelectedProfile}
-                        />
-                        <div className={styles.actionButtons}>
-                            <button
-                                type="button"
-                                className={styles.iconButton}
-                                onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                                title="Attach file"
-                                aria-label="Attach file"
-                            >
-                                <PaperclipIcon />
-                            </button>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                style={{ display: 'none' }}
-                                onClick={(e) => { e.target.value = ''; }}
-                                onChange={handleFile}
-                            />
-                            {isStreaming ? (
-                                <button
-                                    type="button"
-                                    className={`${styles.sendButton} ${styles.stopButton}`}
-                                    title="Stop generation"
-                                    aria-label="Stop generation"
-                                    onClick={onStop}
-                                    disabled={stopRequested}
-                                >
-                                    <StopIcon />
-                                </button>
-                            ) : (
-                                <button
-                                    type="submit"
-                                    className={styles.sendButton}
-                                    title="Send message"
-                                    aria-label="Send message"
-                                    disabled={!message.trim() && !fileData}
-                                >
-                                    <SendIcon />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </form>
-            </div>
-
-            {focusMode && (
-                <div
-                    className={styles.focusOverlay}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Compose message"
-                >
-                    <div className={styles.focusCard}>
-                        <div className={styles.focusHeader}>
-                            <span className={styles.focusTitle}>Compose message</span>
-                            <button
-                                type="button"
-                                className={styles.iconButton}
-                                onClick={() => setFocusMode(false)}
-                                title="Collapse view"
-                                aria-label="Collapse view"
-                            >
-                                <i className="bi bi-arrows-angle-contract" style={{ fontSize: 13 }} />
-                            </button>
-                        </div>
-                        <form className={styles.focusForm} onSubmit={handleSubmit}>
-                            {hasAttachment && (
-                                <div className={styles.tray}>
-                                    <AttachmentChip
-                                        src={filePreview || undefined}
-                                        filename={fileName}
-                                        sizeBytes={fileData?.base64 ? _base64Bytes(fileData.base64) : undefined}
-                                        onRemove={clearAttachment}
-                                    />
-                                </div>
-                            )}
-                            <textarea
-                                ref={focusTextareaRef}
-                                {...sharedTextareaProps}
-                                className={styles.focusTextarea}
-                            />
-                            <div className={styles.focusFooter}>
-                                <button
-                                    type="button"
-                                    className={styles.iconButton}
-                                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                                    title="Attach file"
-                                    aria-label="Attach file"
-                                >
-                                    <PaperclipIcon />
-                                </button>
-                                {isStreaming ? (
-                                    <button
-                                        type="button"
-                                        className={`${styles.sendButton} ${styles.stopButton}`}
-                                        title="Stop generation"
-                                        aria-label="Stop generation"
-                                        onClick={onStop}
-                                        disabled={stopRequested}
-                                    >
-                                        <StopIcon />
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="submit"
-                                        className={styles.sendButton}
-                                        title="Send message"
-                                        aria-label="Send message"
-                                        disabled={!message.trim() && !fileData}
-                                    >
-                                        <SendIcon />
-                                    </button>
-                                )}
-                            </div>
-                        </form>
-                    </div>
                 </div>
-            )}
-        </>
+            </form>
+        </div>
     );
 }
 
