@@ -28,26 +28,6 @@ import { useToast } from './components/ToastProvider.jsx';
 import styles from './App.module.css';
 
 /**
- * Ask the backend to generate and persist a title for a conversation from its
- * first message. Returns the title, or null on any failure — title generation
- * is best-effort, so the sidebar keeps the first-message fallback if it fails.
- */
-async function _generateTitle(conversationId, firstMessage) {
-    try {
-        const resp = await fetch(`/api/conversations/sessions/${conversationId}/title`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ first_message: firstMessage }),
-        });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        return data.title || null;
-    } catch (_) {
-        return null;
-    }
-}
-
-/**
  * Main app shell. Preview data (browser screenshots, terminal output, etc.)
  * lives in the agent reducer — one source of truth for all views. The
  * simple chat preview column reads from the root agent's node, same as
@@ -70,7 +50,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const { insertConversation, patchConversationTitle } = useConversations();
+    const { startConversation } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -246,22 +226,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 ? previewState.active_tab
                 : null;
         },
-        // A brand-new conversation just started its first turn. The events-first
-        // backend persists it immediately, so add the sidebar row now and
-        // generate its title concurrently, patching it in when it returns.
-        onConversationStarted: ({ conversationId, firstMessage }) => {
-            insertConversation({
-                conversation_id: conversationId,
-                first_message: firstMessage,
-                title: '',
-                started_at: new Date().toISOString(),
-                turn_count: 1,
-                pinned: false,
-            });
-            _generateTitle(conversationId, firstMessage).then((title) => {
-                if (title) patchConversationTitle(conversationId, title);
-            });
-        },
+        // A brand-new conversation just started its first turn — let the
+        // conversations store add the row and generate its title.
+        onConversationStarted: startConversation,
     }).current;
 
     const {
