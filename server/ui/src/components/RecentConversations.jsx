@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import useListPanel from '../hooks/useListPanel.js';
+import { useConversations } from '../contexts/Conversations.jsx';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import styles from './RecentConversations.module.css';
@@ -38,11 +38,8 @@ function _renameSeed(convo) {
  * own section at the top. Clicking a row loads that conversation; a per-row
  * 3-dot menu pins, renames, or deletes it.
  */
-export default function RecentConversations({ onLoadConversation, onNewConversation, activeConversationId, refreshSignal = 0 }) {
-    const { items, setItems, loading, deleting, handleDelete } = useListPanel(
-        '/api/conversations/sessions',
-        { getId: (s) => s.conversation_id, refreshSignal },
-    );
+export default function RecentConversations({ onLoadConversation, onNewConversation, activeConversationId }) {
+    const { items, setItems, loading, deleting, handleDelete } = useConversations();
     const [query, setQuery] = useState('');
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null

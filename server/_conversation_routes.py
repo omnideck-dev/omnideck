@@ -3,12 +3,14 @@
 Endpoints:
     GET    /api/conversations/sessions                        — list summaries
     POST   /api/conversations/sessions/{id}/resume            — load history + preview state
+    POST   /api/conversations/sessions/{id}/title             — generate + persist a title
     PATCH  /api/conversations/sessions/{id}                   — rename / pin a conversation
     PUT    /api/conversations/sessions/{id}/preview-state     — persist preview tabs
     DELETE /api/conversations/sessions/{id}                   — delete a conversation
 """
 
 import json
+import logging
 
 from aiohttp import web
 from aiohttp.web import Request, Response
@@ -16,12 +18,16 @@ from aiohttp.web import Request, Response
 from conversations import (
     conversation_exists,
     delete_conversation,
+    generate_conversation_title,
     list_conversations,
+    load_conversation_metadata,
     save_conversation_pinned,
     save_conversation_title,
     save_preview_state,
 )
 from server._conversation_cache import resume_conversation
+
+logger = logging.getLogger(__name__)
 
 # The sidebar rename input caps at this many characters; the server enforces
 # the same bound so a crafted request can't store an oversized title.
@@ -78,6 +84,46 @@ async def update_conversation_handler(request: Request) -> Response:
     return web.Response(status=204)
 
 
+async def generate_title_handler(request: Request) -> Response:
+    """Generate and persist a title for a conversation from its first message.
+
+    The frontend calls this when a new conversation starts, concurrently with
+    the first turn, so the generated title lands in the sidebar without waiting
+    for the turn to finish. The first message is supplied in the body rather
+    than read from disk, so this doesn't depend on the event log having been
+    written yet.
+
+    Idempotent: if a title already exists (a prior call, or a manual rename),
+    the existing one is returned without regenerating — re-fires are cheap and
+    a user rename is never clobbered.
+    """
+    conversation_id = request.match_info["conversation_id"]
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return web.json_response({"error": "Invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"error": "Body must be a JSON object"}, status=400)
+    first_message = body.get("first_message")
+    if not isinstance(first_message, str) or not first_message.strip():
+        return web.json_response(
+            {"error": "first_message must be a non-empty string"}, status=400,
+        )
+
+    existing = load_conversation_metadata(conversation_id).get("title")
+    if isinstance(existing, str) and existing.strip():
+        return web.json_response({"title": existing})
+
+    try:
+        title = await generate_conversation_title(first_message)
+    except Exception:
+        logger.exception("Failed to generate title for conversation %s", conversation_id)
+        return web.json_response({"error": "Title generation failed"}, status=502)
+
+    save_conversation_title(conversation_id, title)
+    return web.json_response({"title": title})
+
+
 async def resume_conversation_handler(request: Request) -> Response:
     """Resume a past conversation by loading its full-fidelity history."""
     conversation_id = request.match_info["conversation_id"]
@@ -117,6 +163,7 @@ def register_conversation_routes(app: web.Application) -> None:
     """
     app.router.add_route("GET", "/api/conversations/sessions", list_conversations_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/resume", resume_conversation_handler)
+    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/title", generate_title_handler)
     app.router.add_route("PUT", "/api/conversations/sessions/{conversation_id}/preview-state", save_preview_state_handler)
     app.router.add_route("PATCH", "/api/conversations/sessions/{conversation_id}", update_conversation_handler)
     app.router.add_route("DELETE", "/api/conversations/sessions/{conversation_id}", delete_conversation_handler)

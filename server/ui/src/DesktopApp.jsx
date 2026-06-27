@@ -6,6 +6,7 @@ import DesktopPreview from './components/DesktopPreview.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
 import SetupWizard from './components/SetupWizard.jsx';
 import { useAppData } from './contexts/AppData.jsx';
+import { ConversationsProvider, useConversations } from './contexts/Conversations.jsx';
 import TerminalPanel from './components/TerminalOutput.jsx';
 import GenerationPreview from './components/GenerationPreview.jsx';
 import AgentNetwork from './components/AgentNetwork.jsx';
@@ -45,11 +46,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'goals' | 'network'
     const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
-    const [conversationsRefresh, setConversationsRefresh] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
+    const { addStartedConversation } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -225,6 +226,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 ? previewState.active_tab
                 : null;
         },
+        // A brand-new conversation just started its first turn — let the
+        // conversations store add the row and generate its title.
+        onConversationStarted: addStartedConversation,
     }).current;
 
     const {
@@ -305,6 +309,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         if (isStreaming) {
             if (!stopRequested) sendNudge(message);
         } else {
+            // The new-conversation case (optimistic sidebar insert + title
+            // generation) is handled by the onConversationStarted callback,
+            // which sendMessage fires when it starts a fresh conversation.
             sendMessage(message, fileData, selectedProfileId);
         }
     }, [sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId]);
@@ -349,13 +356,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         }
         return loadConversation(conversationId);
     }, [loadConversation, activeConversationId, agentDispatch]);
-
-    // Refresh the recent-conversations list when a turn finishes — a new
-    // conversation only lands in the sessions list once its first turn is
-    // saved, and titles are generated shortly after.
-    useEffect(() => {
-        if (!isStreaming) setConversationsRefresh((n) => n + 1);
-    }, [isStreaming]);
 
     // ── Which layout to show ───────────────────────────────────────────
     // `view` picks exactly one of: chat, settings, goals, network. Each is a
@@ -455,7 +455,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     onOpenDesktop={openDesktop}
                     onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
-                    conversationsRefresh={conversationsRefresh}
                     onPanelToggle={handlePanelToggle}
                 />
 
@@ -606,7 +605,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 export default function DesktopApp(props) {
     return (
         <AgentStateProvider>
-            <DesktopAppInner {...props} />
+            <ConversationsProvider>
+                <DesktopAppInner {...props} />
+            </ConversationsProvider>
         </AgentStateProvider>
     );
 }

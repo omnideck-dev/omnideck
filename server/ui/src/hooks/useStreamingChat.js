@@ -583,6 +583,12 @@ export default function useStreamingChat(callbacks) {
         _setActiveConversationId(id);
     }, []);
     const rootAgentIdRef = useRef(null);
+    // True until the current conversation has had a turn started. Set when a
+    // fresh conversation is opened (mount / New chat), cleared once its first
+    // message is sent or when an existing conversation is resumed. Lets
+    // sendMessage tell consumers a brand-new conversation just began without
+    // them having to infer it from list membership.
+    const isFreshConversationRef = useRef(true);
 
     const sendNudge = useCallback(async (message, agentId) => {
         if (!message) return;
@@ -611,6 +617,18 @@ export default function useStreamingChat(callbacks) {
 
     const sendMessage = useCallback(async (message, fileData, profileId) => {
         if (!message && !fileData) return;
+
+        // First message of a brand-new conversation: the events-first backend
+        // persists it as soon as the turn starts, so tell consumers now (the
+        // sidebar inserts the row + kicks off title generation). Cleared so a
+        // second message in the same conversation isn't treated as new.
+        if (isFreshConversationRef.current) {
+            isFreshConversationRef.current = false;
+            callbacks.onConversationStarted?.({
+                conversationId: conversationIdRef.current,
+                firstMessage: message || '',
+            });
+        }
 
         // Build user message with optional attachment preview
         const userMsg = {
@@ -950,6 +968,8 @@ export default function useStreamingChat(callbacks) {
             if (!resp.ok) return false;
             const data = await resp.json();
             setConversationId(conversationId);
+            // A resumed conversation already exists; its next message is not new.
+            isFreshConversationRef.current = false;
 
             const events = Array.isArray(data.events) ? data.events : [];
             // Seed the chat-side state first so a buggy callback can't
@@ -1010,6 +1030,8 @@ export default function useStreamingChat(callbacks) {
         setInflightIteration(null);
         setPendingUserPrompt(null);
         setConversationId(_uuid());
+        // A fresh conversation: its first message starts it anew.
+        isFreshConversationRef.current = true;
     }, [setConversationId, setStopRequested]);
 
     // Derive the chat-view turn list from events + the in-flight

@@ -9,8 +9,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import conversations._store as _store
-from conversations._store import load_conversation_metadata
-from server._conversation_routes import update_conversation_handler
+from conversations._store import load_conversation_metadata, save_conversation_title
+from server._conversation_routes import (
+    generate_title_handler,
+    update_conversation_handler,
+)
 
 
 @pytest.fixture()
@@ -110,3 +113,69 @@ class TestUpdateConversation:
         _seed("c1")
         resp = await update_conversation_handler(_make_request("c1", {"title": 123}))
         assert resp.status == 400
+
+
+@pytest.mark.unit
+class TestGenerateTitle:
+    """POST /api/conversations/sessions/{id}/title."""
+
+    async def test_generates_and_saves(self, _conv_dir: Path, monkeypatch) -> None:
+        """The first message is turned into a title, persisted, and returned."""
+        gen = AsyncMock(return_value="A Snappy Title")
+        monkeypatch.setattr(
+            "server._conversation_routes.generate_conversation_title", gen,
+        )
+        resp = await generate_title_handler(
+            _make_request("c1", {"first_message": "how do I flush the muxer"}),
+        )
+        assert resp.status == 200
+        assert json.loads(resp.body)["title"] == "A Snappy Title"
+        assert load_conversation_metadata("c1")["title"] == "A Snappy Title"
+        gen.assert_awaited_once_with("how do I flush the muxer")
+
+    async def test_idempotent_keeps_existing_title(self, _conv_dir: Path, monkeypatch) -> None:
+        """An existing title (e.g. a manual rename) is returned, not regenerated."""
+        save_conversation_title("c1", "User Named This")
+        gen = AsyncMock(return_value="Generated Instead")
+        monkeypatch.setattr(
+            "server._conversation_routes.generate_conversation_title", gen,
+        )
+        resp = await generate_title_handler(
+            _make_request("c1", {"first_message": "hello"}),
+        )
+        assert resp.status == 200
+        assert json.loads(resp.body)["title"] == "User Named This"
+        assert load_conversation_metadata("c1")["title"] == "User Named This"
+        gen.assert_not_awaited()
+
+    async def test_blank_first_message_400(self, _conv_dir: Path, monkeypatch) -> None:
+        """A blank first message is rejected and no generation runs."""
+        gen = AsyncMock(return_value="x")
+        monkeypatch.setattr(
+            "server._conversation_routes.generate_conversation_title", gen,
+        )
+        resp = await generate_title_handler(_make_request("c1", {"first_message": "   "}))
+        assert resp.status == 400
+        gen.assert_not_awaited()
+
+    async def test_missing_first_message_400(self, _conv_dir: Path) -> None:
+        """A body without first_message is rejected."""
+        resp = await generate_title_handler(_make_request("c1", {}))
+        assert resp.status == 400
+
+    async def test_non_dict_body_400(self, _conv_dir: Path) -> None:
+        """A non-object JSON body is rejected."""
+        resp = await generate_title_handler(_make_request("c1", ["nope"]))
+        assert resp.status == 400
+
+    async def test_generation_failure_502_writes_nothing(self, _conv_dir: Path, monkeypatch) -> None:
+        """If generation raises, the endpoint reports 502 and saves no title."""
+        gen = AsyncMock(side_effect=RuntimeError("model unavailable"))
+        monkeypatch.setattr(
+            "server._conversation_routes.generate_conversation_title", gen,
+        )
+        resp = await generate_title_handler(
+            _make_request("c1", {"first_message": "hello"}),
+        )
+        assert resp.status == 502
+        assert load_conversation_metadata("c1") == {}
