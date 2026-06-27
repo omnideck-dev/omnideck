@@ -23,7 +23,7 @@ const SESSIONS = [
 ];
 
 // The list endpoint returns SESSIONS; the title endpoint returns a generated
-// title so startConversation's patch can be observed.
+// title so addStartedConversation's patch can be observed.
 function mockFetch() {
     global.fetch = vi.fn((url) => {
         if (typeof url === 'string' && url.endsWith('/title')) {
@@ -47,11 +47,11 @@ describe('ConversationsProvider', () => {
         expect(listCalls).toHaveLength(1);
     });
 
-    it('startConversation shows the row immediately, then fills in the generated title', async () => {
+    it('addStartedConversation shows the row immediately, then fills in the generated title', async () => {
         render(<ConversationsProvider><Probe /></ConversationsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
 
-        act(() => api.startConversation({ conversationId: 'c2', firstMessage: 'hi there' }));
+        act(() => api.addStartedConversation({ conversationId: 'c2', firstMessage: 'hi there' }));
         // Appears at the top immediately with the first-message fallback...
         expect(screen.getAllByTestId('row')[0]).toHaveTextContent('c2:hi there');
         // ...then the generated title lands without a refetch.
@@ -60,12 +60,12 @@ describe('ConversationsProvider', () => {
         expect(listCalls).toHaveLength(1);
     });
 
-    it('startConversation is deduped by id', async () => {
+    it('addStartedConversation is deduped by id', async () => {
         render(<ConversationsProvider><Probe /></ConversationsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
 
-        act(() => api.startConversation({ conversationId: 'c2', firstMessage: 'hi' }));
-        act(() => api.startConversation({ conversationId: 'c2', firstMessage: 'dup' }));
+        act(() => api.addStartedConversation({ conversationId: 'c2', firstMessage: 'hi' }));
+        act(() => api.addStartedConversation({ conversationId: 'c2', firstMessage: 'dup' }));
         await waitFor(() => expect(screen.getByText('c2:Generated Title')).toBeInTheDocument());
         expect(screen.getAllByTestId('row')).toHaveLength(2);
     });

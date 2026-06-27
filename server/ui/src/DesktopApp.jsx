@@ -50,7 +50,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const { startConversation } = useConversations();
+    const { addStartedConversation } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -228,7 +228,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         },
         // A brand-new conversation just started its first turn — let the
         // conversations store add the row and generate its title.
-        onConversationStarted: startConversation,
+        onConversationStarted: addStartedConversation,
     }).current;
 
     const {

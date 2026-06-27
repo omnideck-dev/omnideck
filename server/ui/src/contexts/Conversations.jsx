@@ -39,11 +39,12 @@ export function ConversationsProvider({ children }) {
     });
     const { setItems } = panel;
 
-    // A brand-new conversation just started its first turn. The events-first
-    // backend has already persisted it, so mirror it into the list now (so it
-    // appears without a refetch) and fill in its title once generation returns.
-    // Deduped by id so a double-send or a later resume can't insert it twice.
-    const startConversation = useCallback(({ conversationId, firstMessage }) => {
+    // Add a conversation that just started its first turn to the list. The
+    // events-first backend has already persisted it, so this only mirrors it
+    // into the in-memory list (so it appears without a refetch) and fills in
+    // its title once generation returns. Deduped by id so a double-send or a
+    // later resume can't insert it twice.
+    const addStartedConversation = useCallback(({ conversationId, firstMessage }) => {
         setItems((prev) => (
             prev.some((c) => c.conversation_id === conversationId)
                 ? prev
@@ -64,7 +65,7 @@ export function ConversationsProvider({ children }) {
         });
     }, [setItems]);
 
-    const value = { ...panel, startConversation };
+    const value = { ...panel, addStartedConversation };
     return (
         <ConversationsContext.Provider value={value}>
             {children}
