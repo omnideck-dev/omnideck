@@ -32,6 +32,16 @@ class ChatView:
         textarea.press("Enter")
         return self
 
+    @property
+    def composer(self) -> Locator:
+        """The message composer textarea."""
+        return self.page.locator("textarea").first
+
+    @property
+    def expand_button(self) -> Locator:
+        """Corner expand/collapse control — present once the textarea grows."""
+        return self.page.get_by_test_id("composer-expand-btn")
+
     def wait_streaming(self, timeout: int = _DEFAULT_TURN_TIMEOUT) -> "ChatView":
         """Wait until the assistant finishes streaming (Stop button disappears).
 

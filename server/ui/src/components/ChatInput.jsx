@@ -230,6 +230,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                         <button
                             type="button"
                             className={styles.expandButton}
+                            data-testid="composer-expand-btn"
                             onClick={() => setExpanded((v) => !v)}
                             title={expanded ? 'Collapse' : 'Expand'}
                             aria-label={expanded ? 'Collapse input' : 'Expand input'}
