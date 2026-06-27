@@ -22,10 +22,15 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
+/* Textarea wrapper — needed to position the expand button absolutely. */
+.textareaWrapper {
+  position: relative;
+}
+
 .customInput {
   min-height: 44px;
-  max-height: 200px;
-  overflow-y: auto;
+  /* max-height is enforced in JS (MAX_AUTO_HEIGHT_PX = 172px / 8 rows). */
+  overflow-y: hidden;
   width: 100%;
   box-sizing: border-box;
   padding: 8px 4px 4px 0;
@@ -34,8 +39,46 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 13.5px;
+  /* Pinned to match LINE_HEIGHT_PX in JS (13.5 * 1.48 ≈ 20px per row). */
+  line-height: 1.48;
   outline: none;
   resize: none;
+}
+
+/* Extra right padding clears space for the corner expand/collapse button. */
+.customInput.grown {
+  padding-right: 30px;
+}
+
+/* Expand / collapse — a subtle ghost affordance in the corner, matching the
+   other icon buttons. Shown only once the textarea has grown or expanded. */
+.expandButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.expandButton:hover {
+  background: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+.expandButton:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .customInput::placeholder {
@@ -123,4 +166,34 @@
   flex-wrap: wrap;
   gap: var(--sp-2);
   padding: 8px 8px 2px 0;
+}
+
+/* ── Expand in place ─────────────────────────────────────
+   The composer grows to fill the chat area below the title bar (no modal).
+   It is absolutely positioned within the chat panel, offset from the top by
+   --titlebar-height (inherited from .panel), and reverts on collapse. */
+.expandedWrapper {
+  position: absolute;
+  top: var(--titlebar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  background: var(--canvas);
+}
+
+/* In expanded mode the card and textarea stretch to fill the wrapper. */
+.expandedWrapper .inputArea {
+  height: 100%;
+}
+
+.expandedWrapper .textareaWrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.customInput.expandedInput {
+  flex: 1;
+  overflow-y: auto;
 }

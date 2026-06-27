@@ -21,12 +21,18 @@ describe('useListPanel highlight timer', () => {
     };
 
     it('highlights newly-added items, then clears them after 700ms', async () => {
+        // First load only establishes the baseline — nothing is highlighted on
+        // initial mount, only genuinely new items on later refreshes.
         _fetchOnce([{ id: 'a' }]);
         const { result } = renderHook(() => useListPanel('/api/x'));
-
-        // Let the fetch promise resolve (microtasks) without firing the timer.
         await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-        expect(result.current.newItemIds.has('a')).toBe(true);
+        expect(result.current.newItemIds.size).toBe(0);
+
+        // A refresh that brings a new item highlights only that item.
+        _fetchOnce([{ id: 'a' }, { id: 'b' }]);
+        await act(async () => { await result.current.refetch(); await vi.advanceTimersByTimeAsync(0); });
+        expect(result.current.newItemIds.has('b')).toBe(true);
+        expect(result.current.newItemIds.has('a')).toBe(false);
 
         await act(async () => { await vi.advanceTimersByTimeAsync(700); });
         expect(result.current.newItemIds.size).toBe(0);
@@ -36,7 +42,11 @@ describe('useListPanel highlight timer', () => {
         _fetchOnce([{ id: 'a' }]);
         const { result, unmount } = renderHook(() => useListPanel('/api/x'));
         await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-        expect(result.current.newItemIds.has('a')).toBe(true);
+
+        // A refresh adds a new item, leaving a highlight timer pending.
+        _fetchOnce([{ id: 'a' }, { id: 'b' }]);
+        await act(async () => { await result.current.refetch(); await vi.advanceTimersByTimeAsync(0); });
+        expect(result.current.newItemIds.has('b')).toBe(true);
 
         // A timer is pending; unmount must cancel it.
         const clearSpy = vi.spyOn(global, 'clearTimeout');

@@ -1,10 +1,16 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import styles from './ChatInput.module.css';
 import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
 import StopIcon from './icons/StopIcon.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+
+// 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
+const LINE_HEIGHT_PX = 20;
+const PADDING_V_PX = 12;
+const MIN_HEIGHT_PX = 44;
+const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
 
 /** Approximate decoded byte size of a base64 string. */
 function _base64Bytes(b64) {
@@ -15,6 +21,11 @@ function _base64Bytes(b64) {
 function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
+    const [expanded, setExpanded] = useState(false);
+    const [isGrown, setIsGrown] = useState(false);
+
+    const textareaRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -23,16 +34,59 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
         : `Message ${profileName || 'Omnideck'}…`;
 
+    const resizeInline = useCallback(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        if (expanded) {
+            // Expanded mode stretches the textarea to fill the chat area via
+            // flexbox — clear any height left from auto-sizing so it doesn't
+            // snap back to its content height.
+            el.style.height = '';
+            el.style.overflowY = 'auto';
+            return;
+        }
+        el.style.height = 'auto';
+        const h = Math.max(MIN_HEIGHT_PX, Math.min(el.scrollHeight, MAX_AUTO_HEIGHT_PX));
+        el.style.height = h + 'px';
+        el.style.overflowY = el.scrollHeight > MAX_AUTO_HEIGHT_PX ? 'auto' : 'hidden';
+        setIsGrown(h > MIN_HEIGHT_PX);
+    }, [expanded]);
+
+    // Re-size whenever message content changes. Also re-run when isGrown flips
+    // (toggling paddingRight for the corner button changes wrapping, hence
+    // scrollHeight) and when expanding/collapsing.
+    useEffect(() => {
+        resizeInline();
+    }, [message, isGrown, expanded, resizeInline]);
+
+    // Focus the textarea (cursor at end) when expanding. The expanded composer's
+    // fill offset is handled in CSS via --titlebar-height, no measurement needed.
+    useEffect(() => {
+        if (!expanded) return;
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+    }, [expanded]);
+
+    // ESC collapses the expanded composer without discarding text.
+    useEffect(() => {
+        if (!expanded) return;
+        const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [expanded]);
+
     useEffect(() => {
         if (draft) {
             setMessage(draft);
             onDraftConsumed();
         }
     }, [draft, onDraftConsumed]);
+
     const [fileData, setFileData] = useState(null);
     const [filePreview, setFilePreview] = useState(null);
     const [fileName, setFileName] = useState(null);
-    const fileInputRef = useRef(null);
 
     useEffect(() => {
         if (attachment) {
@@ -65,6 +119,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         onSend(message.trim(), fileData);
         setMessage('');
         clearAttachment();
+        setExpanded(false);
     };
 
     const handleFile = (e) => {
@@ -111,8 +166,26 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
 
     const hasAttachment = filePreview || fileName;
 
+    const textareaProps = {
+        value: message,
+        onChange: (e) => setMessage(e.target.value),
+        onKeyDown: (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+            }
+        },
+        onPaste: handlePaste,
+        placeholder,
+        disabled: stopRequested,
+    };
+
+    // The corner expand/collapse control appears once the textarea has grown
+    // past one row, or whenever the composer is expanded.
+    const showCornerBtn = isGrown || expanded;
+
     return (
-        <div className={styles.inputAreaWrapper}>
+        <div className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}>
             <form className={styles.inputArea} onSubmit={handleSubmit}>
                 {hasAttachment && (
                     <div className={styles.tray}>
@@ -124,20 +197,29 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                         />
                     </div>
                 )}
-                <textarea
-                    className={styles.customInput}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSubmit(e);
-                        }
-                    }}
-                    onPaste={handlePaste}
-                    placeholder={placeholder}
-                    disabled={stopRequested}
-                />
+                <div className={styles.textareaWrapper}>
+                    <textarea
+                        ref={textareaRef}
+                        {...textareaProps}
+                        className={[
+                            styles.customInput,
+                            showCornerBtn && styles.grown,
+                            expanded && styles.expandedInput,
+                        ].filter(Boolean).join(' ')}
+                    />
+                    {showCornerBtn && (
+                        <button
+                            type="button"
+                            className={styles.expandButton}
+                            data-testid="composer-expand-btn"
+                            onClick={() => setExpanded((v) => !v)}
+                            title={expanded ? 'Collapse' : 'Expand'}
+                            aria-label={expanded ? 'Collapse input' : 'Expand input'}
+                        >
+                            <i className={expanded ? 'bi bi-arrows-angle-contract' : 'bi bi-arrows-angle-expand'} />
+                        </button>
+                    )}
+                </div>
                 <div className={styles.inputAreaButtons}>
                     <ProfileSelector
                         selectedId={selectedProfileId}
@@ -147,49 +229,47 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                         onSelectedProfile={setSelectedProfile}
                     />
                     <div className={styles.actionButtons}>
-                    <button
-                        type="button"
-                        id="fileButton"
-                        className={styles.iconButton}
-                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                        title="Attach file"
-                        aria-label="Attach file"
-                    >
-                        <PaperclipIcon />
-                    </button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        id="fileInput"
-                        style={{ display: 'none' }}
-                        onClick={(e) => {
-                            e.target.value = '';
-                        }}
-                        onChange={handleFile}
-                    />
-                    {isStreaming ? (
                         <button
                             type="button"
-                            className={`${styles.sendButton} ${styles.stopButton}`}
-                            data-testid="chat-stop-btn"
-                            title={stopRequested ? 'Stopping…' : 'Stop generation'}
-                            aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
-                            onClick={onStop}
-                            disabled={stopRequested}
+                            id="fileButton"
+                            className={styles.iconButton}
+                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                            title="Attach file"
+                            aria-label="Attach file"
                         >
-                            <StopIcon />
+                            <PaperclipIcon />
                         </button>
-                    ) : (
-                        <button
-                            type="submit"
-                            className={styles.sendButton}
-                            title="Send message"
-                            aria-label="Send message"
-                            disabled={!message.trim() && !fileData}
-                        >
-                            <SendIcon />
-                        </button>
-                    )}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            id="fileInput"
+                            style={{ display: 'none' }}
+                            onClick={(e) => { e.target.value = ''; }}
+                            onChange={handleFile}
+                        />
+                        {isStreaming ? (
+                            <button
+                                type="button"
+                                className={`${styles.sendButton} ${styles.stopButton}`}
+                                data-testid="chat-stop-btn"
+                                title={stopRequested ? 'Stopping…' : 'Stop generation'}
+                                aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
+                                onClick={onStop}
+                                disabled={stopRequested}
+                            >
+                                <StopIcon />
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                className={styles.sendButton}
+                                title="Send message"
+                                aria-label="Send message"
+                                disabled={!message.trim() && !fileData}
+                            >
+                                <SendIcon />
+                            </button>
+                        )}
                     </div>
                 </div>
             </form>
