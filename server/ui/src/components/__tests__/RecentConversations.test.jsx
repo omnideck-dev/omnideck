@@ -1,7 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render as _render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RecentConversations from '../RecentConversations.jsx';
+import { ConversationsProvider } from '../../contexts/Conversations.jsx';
+
+// RecentConversations now reads its list from the conversations context, so
+// every render goes through the provider (which fetches the list on mount).
+const render = (ui, options) => _render(ui, { wrapper: ConversationsProvider, ...options });
 
 // A fixed mid-day instant. Both the session timestamps and the component's
 // own `new Date()` are pinned to this, so the day-bucket assignments don't

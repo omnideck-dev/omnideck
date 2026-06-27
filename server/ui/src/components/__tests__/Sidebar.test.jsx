@@ -1,7 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render as _render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
+import { ConversationsProvider } from '../../contexts/Conversations.jsx';
+
+// The expanded sidebar renders RecentConversations, which reads the
+// conversations context — so every render is wrapped in the provider.
+const render = (ui, options) => _render(ui, { wrapper: ConversationsProvider, ...options });
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 

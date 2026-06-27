@@ -19,9 +19,7 @@ from conversations import (
     BrowserTabsWriter,
     EventsLogWriter,
     TerminalWriter,
-    generate_conversation_title,
     save_conversation_profile,
-    save_conversation_title,
 )
 from sdk import (
     default_hooks,
@@ -98,10 +96,6 @@ def _log_turn_start(profile: AgentProfile) -> None:
     )
 
 
-# Track background tasks to avoid garbage collection (RUF006)
-_background_tasks: set[asyncio.Task] = set()
-
-
 def _refresh_system_message(history: ConversationHistory, system_prompt: str) -> None:
     """Re-inserts the system message at the start of history with up-to-date memory.
 
@@ -167,7 +161,6 @@ async def _run_turn(
     user_attachments: list[UserAttachment],
     conversation_id: str,
     handler: Callable[[AgentEvent], object],
-    is_new_conversation: bool = False,
 ) -> None:
     """Execute a single conversation turn: model calls, tool execution, persistence."""
     logger.info(
@@ -266,22 +259,6 @@ async def _run_turn(
         except Exception:
             logger.exception("Failed to save loaded skills for '%s'", conv_id)
 
-    # Generate a title for new conversations after the first successful turn
-    if is_new_conversation and conversation_id:
-        task = asyncio.create_task(_generate_title(conversation_id, user_content))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
-
-
-async def _generate_title(conversation_id: str, first_message: str) -> None:
-    """Generate and save a title for a new conversation."""
-    try:
-        title = await generate_conversation_title(first_message)
-        save_conversation_title(conversation_id, title)
-        logger.info("Generated title for conversation %s: %r", conversation_id, title)
-    except Exception:
-        logger.exception("Failed to generate title for conversation %s", conversation_id)
-
 
 async def handle_user_message(
     message: str,
@@ -304,7 +281,7 @@ async def handle_user_message(
     if not conversation_id:
         msg = "conversation_id is required"
         raise ValueError(msg)
-    history, is_new_conversation = await get_or_create_conversation(conversation_id)
+    history, _is_new = await get_or_create_conversation(conversation_id)
 
     user_content = message
     user_attachments: list[UserAttachment] = []
@@ -350,7 +327,6 @@ async def handle_user_message(
                     user_attachments=user_attachments,
                     conversation_id=conversation_id,
                     handler=_queue_handler,
-                    is_new_conversation=is_new_conversation,
                 )
             finally:
                 await queue.put(None)

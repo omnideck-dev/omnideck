@@ -6,6 +6,7 @@ import DesktopPreview from './components/DesktopPreview.jsx';
 import SettingsPage from './components/SettingsPage.jsx';
 import SetupWizard from './components/SetupWizard.jsx';
 import { useAppData } from './contexts/AppData.jsx';
+import { ConversationsProvider, useConversations } from './contexts/Conversations.jsx';
 import TerminalPanel from './components/TerminalOutput.jsx';
 import GenerationPreview from './components/GenerationPreview.jsx';
 import AgentNetwork from './components/AgentNetwork.jsx';
@@ -27,6 +28,26 @@ import { useToast } from './components/ToastProvider.jsx';
 import styles from './App.module.css';
 
 /**
+ * Ask the backend to generate and persist a title for a conversation from its
+ * first message. Returns the title, or null on any failure — title generation
+ * is best-effort, so the sidebar keeps the first-message fallback if it fails.
+ */
+async function _generateTitle(conversationId, firstMessage) {
+    try {
+        const resp = await fetch(`/api/conversations/sessions/${conversationId}/title`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ first_message: firstMessage }),
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        return data.title || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
  * Main app shell. Preview data (browser screenshots, terminal output, etc.)
  * lives in the agent reducer — one source of truth for all views. The
  * simple chat preview column reads from the root agent's node, same as
@@ -45,11 +66,15 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'goals' | 'network'
     const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
-    const [conversationsRefresh, setConversationsRefresh] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
+    const {
+        items: conversationItems,
+        insertConversation,
+        patchConversationTitle,
+    } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -304,10 +329,32 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         setAttachment(null);
         if (isStreaming) {
             if (!stopRequested) sendNudge(message);
-        } else {
-            sendMessage(message, fileData, selectedProfileId);
+            return;
         }
-    }, [sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId]);
+        // A conversation not yet in the sidebar list is brand new: this is its
+        // first message. The events-first backend persists it as soon as the
+        // turn starts, so we can show it immediately — push the row in
+        // optimistically and generate its title concurrently with the turn.
+        const convId = activeConversationId;
+        const isNew = !conversationItems.some((c) => c.conversation_id === convId);
+        sendMessage(message, fileData, selectedProfileId);
+        if (isNew) {
+            insertConversation({
+                conversation_id: convId,
+                first_message: message,
+                title: '',
+                started_at: new Date().toISOString(),
+                turn_count: 1,
+                pinned: false,
+            });
+            _generateTitle(convId, message).then((title) => {
+                if (title) patchConversationTitle(convId, title);
+            });
+        }
+    }, [
+        sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId,
+        activeConversationId, conversationItems, insertConversation, patchConversationTitle,
+    ]);
 
     const openDesktop = useCallback(async () => {
         if (userDesktopOpen) return;
@@ -349,13 +396,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         }
         return loadConversation(conversationId);
     }, [loadConversation, activeConversationId, agentDispatch]);
-
-    // Refresh the recent-conversations list when a turn finishes — a new
-    // conversation only lands in the sessions list once its first turn is
-    // saved, and titles are generated shortly after.
-    useEffect(() => {
-        if (!isStreaming) setConversationsRefresh((n) => n + 1);
-    }, [isStreaming]);
 
     // ── Which layout to show ───────────────────────────────────────────
     // `view` picks exactly one of: chat, settings, goals, network. Each is a
@@ -455,7 +495,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                     onOpenDesktop={openDesktop}
                     onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
-                    conversationsRefresh={conversationsRefresh}
                     onPanelToggle={handlePanelToggle}
                 />
 
@@ -606,7 +645,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 export default function DesktopApp(props) {
     return (
         <AgentStateProvider>
-            <DesktopAppInner {...props} />
+            <ConversationsProvider>
+                <DesktopAppInner {...props} />
+            </ConversationsProvider>
         </AgentStateProvider>
     );
 }

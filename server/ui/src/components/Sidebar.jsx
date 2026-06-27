@@ -40,7 +40,6 @@ export default function Sidebar({
     onOpenDesktop,
     onLoadConversation,
     activeConversationId,
-    conversationsRefresh = 0,
 }) {
     const [collapsed, setCollapsed] = useState(_readCollapsed);
 
@@ -118,7 +117,6 @@ export default function Sidebar({
                     onLoadConversation={onLoadConversation}
                     onNewConversation={onNewConversation}
                     activeConversationId={activeConversationId}
-                    refreshSignal={conversationsRefresh}
                 />
             )}
 
