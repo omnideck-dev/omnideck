@@ -70,11 +70,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const {
-        items: conversationItems,
-        insertConversation,
-        patchConversationTitle,
-    } = useConversations();
+    const { insertConversation, patchConversationTitle } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -250,6 +246,22 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 ? previewState.active_tab
                 : null;
         },
+        // A brand-new conversation just started its first turn. The events-first
+        // backend persists it immediately, so add the sidebar row now and
+        // generate its title concurrently, patching it in when it returns.
+        onConversationStarted: ({ conversationId, firstMessage }) => {
+            insertConversation({
+                conversation_id: conversationId,
+                first_message: firstMessage,
+                title: '',
+                started_at: new Date().toISOString(),
+                turn_count: 1,
+                pinned: false,
+            });
+            _generateTitle(conversationId, firstMessage).then((title) => {
+                if (title) patchConversationTitle(conversationId, title);
+            });
+        },
     }).current;
 
     const {
@@ -329,32 +341,13 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         setAttachment(null);
         if (isStreaming) {
             if (!stopRequested) sendNudge(message);
-            return;
+        } else {
+            // The new-conversation case (optimistic sidebar insert + title
+            // generation) is handled by the onConversationStarted callback,
+            // which sendMessage fires when it starts a fresh conversation.
+            sendMessage(message, fileData, selectedProfileId);
         }
-        // A conversation not yet in the sidebar list is brand new: this is its
-        // first message. The events-first backend persists it as soon as the
-        // turn starts, so we can show it immediately — push the row in
-        // optimistically and generate its title concurrently with the turn.
-        const convId = activeConversationId;
-        const isNew = !conversationItems.some((c) => c.conversation_id === convId);
-        sendMessage(message, fileData, selectedProfileId);
-        if (isNew) {
-            insertConversation({
-                conversation_id: convId,
-                first_message: message,
-                title: '',
-                started_at: new Date().toISOString(),
-                turn_count: 1,
-                pinned: false,
-            });
-            _generateTitle(convId, message).then((title) => {
-                if (title) patchConversationTitle(convId, title);
-            });
-        }
-    }, [
-        sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId,
-        activeConversationId, conversationItems, insertConversation, patchConversationTitle,
-    ]);
+    }, [sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId]);
 
     const openDesktop = useCallback(async () => {
         if (userDesktopOpen) return;
