@@ -28,6 +28,7 @@ import asyncio
 from agents.types import Data
 from config import load_config
 from sdk.turn import is_turn_active, queue_nudge, request_stop
+from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
 from server._conversation_routes import register_conversation_routes
 from server._feature_routes import register_feature_routes
@@ -406,6 +407,9 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
 
     # Conversation sessions API
     register_conversation_routes(app)
+
+    # Artifacts hub API
+    register_artifacts_routes(app)
 
     # Task engine routes
     register_task_routes(app)
