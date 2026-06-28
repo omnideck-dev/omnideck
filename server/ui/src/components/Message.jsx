@@ -17,12 +17,24 @@ function _isHidden(entry) {
     return entry?.type === 'thinking' || entry?.type === 'tool_call';
 }
 
-/** Caption for the ephemeral activity row. ``currentTool`` is set when
- * an iteration's tool_call is awaiting its tool_result; otherwise the
- * model is either streaming text (which renders inline, so this row is
- * hidden) or thinking between iterations. */
-function _ephemeralText(currentTool) {
-    if (currentTool?.name) return `Calling ${currentTool.name}…`;
+/** Caption for the ephemeral activity row, based on the last entry.
+ *
+ * Using ``lastEntry`` (rather than matching tool_call ids against
+ * tool_result events) makes the indicator immune to React batching:
+ * when a tool executes quickly, the iteration event and its tool_result
+ * arrive in the same TCP chunk and are processed in the same render.
+ * A ``currentTool`` computed from tool_result matching would already be
+ * null by then, so "Calling X…" would never render.  ``lastEntry`` is
+ * derived from the entries list alone — if the most recent entry is a
+ * tool_call, the agent is (or was just) executing tools, and "Calling
+ * X…" is the right message regardless of whether the result has landed. */
+function _ephemeralText(entry) {
+    if (!entry) return 'Thinking…';
+    // spawn_agent runs the whole sub-agent lifecycle (can be minutes);
+    // the SpawnCard owns that visual, so don't say "Calling spawn_agent…".
+    if (entry.type === 'tool_call' && entry.name !== 'spawn_agent') {
+        return `Calling ${entry.name || 'tool'}…`;
+    }
     return 'Thinking…';
 }
 
@@ -44,7 +56,7 @@ function _summary(hidden) {
  * full chronological activity on click. Content, spawn cards, and file
  * outputs stay inline as they always have.
  */
-function AssistantMessage({ entries, onPreview, streaming, currentTool,
+function AssistantMessage({ entries, onPreview, streaming,
                             spawnedAgents, onSelectAgent }) {
     const [activityOpen, setActivityOpen] = useState(false);
     const list = Array.isArray(entries) ? entries : [];
@@ -75,7 +87,7 @@ function AssistantMessage({ entries, onPreview, streaming, currentTool,
                 {showEphemeral && (
                     <div className={styles.ephemeral} data-testid="ephemeral-status">
                         <span className={styles.pulse} aria-hidden="true" />
-                        <span className={styles.ephemeralText}>{_ephemeralText(currentTool)}</span>
+                        <span className={styles.ephemeralText}>{_ephemeralText(lastEntry)}</span>
                     </div>
                 )}
                 {!streaming && summary && (

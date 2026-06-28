@@ -136,18 +136,18 @@ describe('Turn', () => {
 });
 
 
-describe('Turn currentTool (streaming "Calling X…" indicator)', () => {
-    const _toolResult = (id, toolCallId) => ({
-        kind: 'tool_result', id, toolCallId, toolName: '', content: '',
-    });
-
-    it('shows the first pending tool while it executes', () => {
+describe('Turn ephemeral status (streaming "Calling X…" indicator)', () => {
+    it('shows "Calling X…" when the last entry is a tool_call', () => {
+        // The indicator is driven by the last entry in the entries list,
+        // not by matching tool_call ids against tool_result events. This
+        // makes it immune to React batching: when a tool executes quickly,
+        // the iteration event and its tool_result arrive in the same
+        // render, but the last entry is still the tool_call.
         const turn = _turn([
             _userPrompt('run a thing'),
             _iteration('i1', {
                 content: 'sure', toolCalls: [
                     { id: 'tc1', name: 'run_bash_cmd' },
-                    { id: 'tc2', name: 'write_file' },
                 ],
             }),
         ]);
@@ -157,7 +157,7 @@ describe('Turn currentTool (streaming "Calling X…" indicator)', () => {
         );
     });
 
-    it('advances to the next pending tool when the first one returns', () => {
+    it('shows the last tool call when multiple tools are in one iteration', () => {
         const turn = _turn([
             _userPrompt('run a thing'),
             _iteration('i1', {
@@ -166,7 +166,6 @@ describe('Turn currentTool (streaming "Calling X…" indicator)', () => {
                     { id: 'tc2', name: 'write_file' },
                 ],
             }),
-            _toolResult('tr1', 'tc1'),
         ]);
         render(<Turn turn={turn} streaming />);
         expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
@@ -174,14 +173,30 @@ describe('Turn currentTool (streaming "Calling X…" indicator)', () => {
         );
     });
 
-    it('falls back to "Thinking…" when every tool has a result', () => {
-        // All tools finished → model is mid-generating the next iteration.
+    it('keeps showing "Calling X…" even after the tool_result arrives', () => {
+        // This is the key fix: the old approach matched tool_call ids
+        // against tool_result events and fell back to "Thinking…" as soon
+        // as the result landed. When the result arrived in the same React
+        // batch as the iteration event, "Calling X…" never rendered at all.
+        // The lastEntry approach shows "Calling X…" until the next
+        // iteration starts streaming thinking/content.
         const turn = _turn([
             _userPrompt('run a thing'),
             _iteration('i1', {
                 content: 'sure', toolCalls: [{ id: 'tc1', name: 'run_bash_cmd' }],
             }),
-            _toolResult('tr1', 'tc1'),
+            { kind: 'tool_result', id: 'tr1', toolCallId: 'tc1', toolName: '', content: '' },
+        ]);
+        render(<Turn turn={turn} streaming />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
+            'Calling run_bash_cmd…',
+        );
+    });
+
+    it('shows "Thinking…" when the last entry is thinking', () => {
+        const turn = _turn([
+            _userPrompt('run a thing'),
+            _iteration('i1', { thinking: 'planning' }),
         ]);
         render(<Turn turn={turn} streaming />);
         expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
