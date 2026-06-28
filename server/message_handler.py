@@ -15,6 +15,7 @@ from agents import (
     get_agent_profile,
 )
 from agents.types import Agent, Data
+from artifacts import ArtifactsIndexWriter
 from conversations import (
     BrowserTabsWriter,
     EventsLogWriter,
@@ -194,6 +195,8 @@ async def _run_turn(
     # current instead.
     browser_tabs = BrowserTabsWriter(conv_id)
     terminal = TerminalWriter(conv_id)
+    # Indexes file_output events into the global artifacts catalog.
+    artifacts_index = ArtifactsIndexWriter(conv_id)
     # Conversation owns the canonical event log. Observers — the disk writer
     # and the SSE bridge that streams to the response — subscribe before the
     # scope and unsubscribe after, so the turn_scope-owned turn_end at the
@@ -202,6 +205,7 @@ async def _run_turn(
     history.subscribe(events_log.handle_event)
     history.subscribe(browser_tabs.handle_event)
     history.subscribe(terminal.handle_event)
+    history.subscribe(artifacts_index.handle_event)
     history.subscribe(handler)
     try:
         async with turn_scope(history, conversation_id=conversation_id):
@@ -249,6 +253,7 @@ async def _run_turn(
         history.unsubscribe(events_log.handle_event)
         history.unsubscribe(browser_tabs.handle_event)
         history.unsubscribe(terminal.handle_event)
+        history.unsubscribe(artifacts_index.handle_event)
         history.unsubscribe(handler)
         await history.drain_observers()
 
