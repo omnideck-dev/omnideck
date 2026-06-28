@@ -64,6 +64,8 @@ def _resolve_under_home(path: str) -> Path | None:
 
 
 def _file_exists(path: str) -> bool:
+    # Servable is the bar: a path that escapes the home dir resolves to None and
+    # counts as not existing, since the UI couldn't serve it anyway.
     resolved = _resolve_under_home(path)
     return bool(resolved and resolved.is_file())
 
