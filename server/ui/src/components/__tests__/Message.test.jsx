@@ -157,39 +157,38 @@ describe('Message ephemeral status and activity footer', () => {
         expect(eph).toHaveTextContent('Thinking…');
     });
 
-    it('shows ephemeral with tool name when currentTool is set', () => {
-        // The "Calling X…" indicator is driven by the currentTool prop
-        // (Turn computes it by walking iteration.tool_calls against
-        // arriving tool_results), not by inspecting entries.
+    it('shows "Calling X…" when the last entry is a tool_call', () => {
+        // The "Calling X…" indicator is driven by the last entry in the
+        // entries list, not by matching tool_call ids against tool_result
+        // events. This makes it immune to React batching.
         const entries = [
             { type: 'thinking', thinking: 'planning', timestamp: 1 },
             { type: 'tool_call', name: 'run_bash_cmd',
               arguments: { cmd: 'ls' }, timestamp: 2 },
         ];
         render(
-            <Message role="assistant" entries={entries} streaming
-                currentTool={{ id: 'tc1', name: 'run_bash_cmd' }} />,
+            <Message role="assistant" entries={entries} streaming />,
         );
         expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
             'Calling run_bash_cmd…',
         );
     });
 
-    it('shows Thinking… ephemeral once the tool has returned (currentTool null)', () => {
-        // Tool finished; the iteration is still in entries but the
-        // tool_result removed the tool from the running queue, so the
-        // ephemeral falls back to "Thinking…" while the model generates
-        // the next iteration.
+    it('keeps "Calling X…" after the tool result arrives (no batching skip)', () => {
+        // The lastEntry approach shows "Calling X…" as long as the most
+        // recent entry is a tool_call, even if the tool_result has already
+        // landed. This is intentional: the old approach (matching against
+        // tool_results) caused "Calling X…" to never render when the
+        // result arrived in the same React batch as the iteration event.
         const entries = [
             { type: 'thinking', thinking: 'planning', timestamp: 1 },
             { type: 'tool_call', name: 'run_bash_cmd', timestamp: 2 },
         ];
         render(
-            <Message role="assistant" entries={entries} streaming
-                currentTool={null} />,
+            <Message role="assistant" entries={entries} streaming />,
         );
         expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
-            'Thinking…',
+            'Calling run_bash_cmd…',
         );
     });
 

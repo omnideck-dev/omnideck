@@ -63,38 +63,6 @@ function _fileOutputToEntry(fo) {
 }
 
 /**
- * Walk the turn's children and return the tool_call the agent is
- * currently waiting on — the first one from any iteration whose
- * matching tool_result has not yet arrived. ``spawn_agent`` is skipped
- * because its execution is conveyed by the SpawnCard, not the
- * "Calling X…" ephemeral.
- *
- * Returns ``null`` once every tool has its result (model is back to
- * thinking) or when no iteration has tool_calls at all.
- */
-function _currentRunningTool(children) {
-    const completedIds = new Set();
-    const calls = [];
-    for (const child of children) {
-        if (child.kind === 'iteration') {
-            for (const tc of (child.toolCalls || [])) {
-                if (tc?.name === 'spawn_agent') continue;
-                calls.push(tc);
-            }
-        } else if (child.kind === 'tool_result') {
-            if (child.toolCallId) completedIds.add(child.toolCallId);
-        }
-    }
-    for (const tc of calls) {
-        if (!tc.id || !completedIds.has(tc.id)) {
-            return { name: tc.name, id: tc.id };
-        }
-    }
-    return null;
-}
-
-
-/**
  * Render one Turn. Walks the turn's children in order, groups
  * consecutive iterations (and any file_outputs between them) into a
  * single assistant Message element to preserve today's visual look,
@@ -161,8 +129,6 @@ export default function Turn({
         items.push({ kind: 'assistant', entries: [] });
     }
 
-    const currentTool = streaming ? _currentRunningTool(turn.children) : null;
-
     return (
         <div data-testid="turn" data-turn-id={turn.id}>
             {items.map((item, i) => {
@@ -208,7 +174,6 @@ export default function Turn({
                         role="assistant"
                         entries={item.entries}
                         streaming={!!streaming && isLast}
-                        currentTool={isLast ? currentTool : null}
                         onPreview={onPreview}
                         spawnedAgents={spawnedAgents}
                         onSelectAgent={onSelectAgent}
