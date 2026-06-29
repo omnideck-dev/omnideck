@@ -13,6 +13,7 @@ import AgentNetwork from './components/AgentNetwork.jsx';
 import AgentActivityView from './components/AgentActivityView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import GoalsView from './components/goals/GoalsView.jsx';
+import ArtifactsHubView from './components/artifacts/ArtifactsHubView.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
@@ -443,7 +444,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={view === 'settings' || view === 'goals' ? view : null}
+                    activePanel={['settings', 'goals', 'artifacts'].includes(view) ? view : null}
                     dark={dark}
                     onToggleTheme={onToggleTheme}
                     onNewConversation={newConversation}
@@ -487,6 +488,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             fetchDetail={goalsState.fetchGoalDetail}
                         />
                     )}
+                    {/* Global artifacts hub — full view from the sidebar */}
+                    {view === 'artifacts' && <ArtifactsHubView />}
+
                     {view === 'network' && !agentState.selectedAgentId && (
                         <div className={styles.networkArea}>
                             <AgentNetwork onClose={handleCloseNetwork} agentCount={networkAgentCount} />

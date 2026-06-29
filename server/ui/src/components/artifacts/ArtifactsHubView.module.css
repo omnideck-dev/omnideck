@@ -1,0 +1,407 @@
+.view {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--canvas);
+}
+
+/* ── view title — lives at the head of the list toolbar, not a separate band ── */
+.title {
+    flex: 0 0 auto;
+    font-size: 15px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
+.title .bi {
+    color: var(--accent);
+}
+
+.count {
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+/* grid / table toggle */
+.seg {
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+}
+
+.seg button {
+    padding: 5px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.seg button:hover {
+    color: var(--text-primary);
+}
+
+.segOn {
+    background: var(--elevated) !important;
+    color: var(--text-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* sort control (drives both grid + table) */
+.sortCtl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+/* canonical SIGNAL .select (design language §Select) */
+.select {
+    height: 32px;
+    padding: 0 28px 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+[data-theme="dark"] .select {
+    background-color: var(--surface);
+}
+
+.select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable:hover {
+    color: var(--text-secondary);
+}
+
+.caret {
+    font-size: 9px;
+    margin-left: 2px;
+}
+
+/* ── content: list pane + preview ── */
+.content {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+/* left pane owns the list and its controls; the preview pane stays clean */
+.listPane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.listToolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.search {
+    flex: 1;
+    min-width: 120px;
+}
+
+.scroll {
+    flex: 1;
+    overflow: auto;
+}
+
+/* grid */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+}
+
+.card {
+    position: relative;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .15s var(--ease), box-shadow .15s var(--ease), transform .1s var(--ease);
+}
+
+.card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+
+.card.sel {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.card.missing {
+    opacity: .55;
+}
+
+.del {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    opacity: 0;
+}
+
+.card:hover .del {
+    opacity: 1;
+}
+
+.cardTop {
+    position: relative;
+    height: 128px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+    background: var(--canvas);
+}
+
+.cardIcon {
+    font-size: 32px;
+    color: var(--accent);
+}
+
+/* per-card thumbnails (real content previews) */
+.thumbImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.thumbFrame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200%;
+    height: 200%;
+    border: 0;
+    transform: scale(0.5);
+    transform-origin: top left;
+    background: #fff;
+    pointer-events: none;
+}
+
+.thumbText {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: var(--sp-3);
+    font-family: var(--font-code);
+    font-size: 9px;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.cardMeta {
+    padding: var(--sp-3);
+}
+
+.cardName {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+}
+
+.when {
+    color: var(--text-tertiary);
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.cardPath {
+    margin-top: 8px;
+    font-family: var(--font-code);
+    font-size: 10.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ext {
+    font-family: var(--font-code);
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.missingBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--warning);
+}
+
+/* table */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--canvas);
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.table tbody td {
+    padding: 10px var(--sp-4);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+}
+
+.table tbody tr {
+    cursor: pointer;
+}
+
+.table tbody tr:hover {
+    background: var(--accent-muted);
+}
+
+.table tbody tr.sel {
+    background: var(--accent-muted);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.table tbody tr.missing {
+    opacity: .55;
+}
+
+.tname {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 500;
+}
+
+.acts {
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.acts button {
+    opacity: 0;
+}
+
+.table tbody tr:hover .acts button {
+    opacity: 1;
+}
+
+/* preview pane */
+.preview {
+    width: 42%;
+    min-width: 360px;
+    border-left: 1px solid var(--border);
+    background: var(--elevated);
+    display: flex;
+    flex-direction: column;
+}
+
+.previewHead {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+}
+
+.previewLabel {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+
+.previewBody {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* empty / no-results */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 240px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--sp-8);
+}
+
+.empty .bi {
+    font-size: 34px;
+    opacity: .5;
+}
