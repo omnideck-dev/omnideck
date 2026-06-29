@@ -8,6 +8,7 @@ Chat, Network View, and Agent Activity View. Shared sub-panels
 from .chat_view import ChatView
 from .network_view import NetworkView
 from .agent_activity_view import AgentActivityView
+from .artifacts_hub import ArtifactsHub
 from .recent_conversations import RecentConversations
 from .preview_panel import PreviewPanel
 from .browser_control import BrowserControl
@@ -21,6 +22,7 @@ __all__ = [
     "ChatView",
     "NetworkView",
     "AgentActivityView",
+    "ArtifactsHub",
     "RecentConversations",
     "PreviewPanel",
     "BrowserControl",

@@ -1,0 +1,157 @@
+"""E2E tests for the global Artifacts Hub.
+
+Every artifact here is produced through the real pipeline: the FakeProvider
+drives the actual ``write_file`` + ``send_file`` tools, which emit a
+``file_output`` event that the subscribed index writer records — exactly what
+happens when a model sends a file. The hub then reads those entries back over
+``/api/artifacts`` (reconciled against disk on each read). No state is seeded
+directly, so these exercise the feature end to end.
+
+Filenames carry a per-run nonce so each test finds only its own artifacts even
+though the hub shows everything across all conversations.
+"""
+
+import time
+
+import pytest
+from playwright.sync_api import Page, expect
+
+from tests.e2e._helpers import container_exec
+from tests.e2e._protocol import send_file, write_file
+from tests.e2e.pages import ArtifactsHub, ChatView
+
+VC_HOME = "/home/computron"
+
+
+def _produce(page: Page, *files: tuple[str, str]) -> None:
+    """Send each (path, content) file via a single agent turn through send_file."""
+    directives = ""
+    for path, content in files:
+        directives += write_file(path, content) + send_file(path)
+    ChatView(page).goto().new_conversation().send(directives).wait_streaming()
+
+
+def _delete_file(filename: str) -> None:
+    container_exec(
+        "import pathlib\n"
+        f"p = pathlib.Path('{VC_HOME}/{filename}')\n"
+        "if p.exists(): p.unlink()\n"
+    )
+
+
+def _file_exists(filename: str) -> bool:
+    out = container_exec(
+        f"import pathlib; print(pathlib.Path('{VC_HOME}/{filename}').exists())"
+    )
+    return out == "True"
+
+
+def _purge(page: Page, *filenames: str) -> None:
+    """Remove the named artifacts from the index (and disk) via the real API."""
+    resp = page.request.get("/api/artifacts")
+    for a in resp.json().get("artifacts", []):
+        if a["filename"] in filenames:
+            page.request.delete(
+                f"/api/artifacts/{a['id']}?delete_file=true",
+                fail_on_status_code=False,
+            )
+
+
+# ── read-only group: one shared pair of produced artifacts ──────────────
+
+
+@pytest.fixture(scope="module")
+def produced(browser, browser_context_args):
+    """Produce a markdown + html artifact through send_file; clean up after."""
+    nonce = time.time_ns()
+    md = f"hub_{nonce}.md"
+    html = f"hub_{nonce}.html"
+    context = browser.new_context(**browser_context_args)
+    page = context.new_page()
+    _produce(
+        page,
+        (f"{VC_HOME}/{md}", "# Hub artifact\n\nproduced via send_file"),
+        (f"{VC_HOME}/{html}", "<html><body><h1>hub html</h1></body></html>"),
+    )
+    yield {"md": md, "html": html}
+    _purge(page, md, html)
+    page.close()
+    context.close()
+
+
+def test_sent_file_appears_in_grid(page: Page, produced):
+    """A file the agent sends shows up as a card in the hub."""
+    hub = ArtifactsHub(page).goto()
+    expect(hub.card(produced["md"])).to_be_visible(timeout=5_000)
+    expect(hub.card(produced["html"])).to_be_visible()
+
+
+def test_selecting_artifact_renders_preview(page: Page, produced):
+    """Selecting a card opens the reused FilePreview with the file's content."""
+    hub = ArtifactsHub(page).goto()
+    hub.select(produced["md"])
+    expect(hub.preview).to_be_visible(timeout=5_000)
+    expect(hub.preview).to_contain_text(produced["md"])
+    expect(hub.preview).to_contain_text("Hub artifact")
+
+
+def test_table_view_lists_artifact(page: Page, produced):
+    """Toggling to the table view lists the same artifact as a row."""
+    hub = ArtifactsHub(page).goto().show_table()
+    expect(hub.row(produced["md"])).to_be_visible(timeout=5_000)
+
+
+def test_search_filters_to_matching_artifact(page: Page, produced):
+    """Searching narrows the list to the matching filename."""
+    hub = ArtifactsHub(page).goto()
+    hub.search(produced["md"])
+    expect(hub.card(produced["md"])).to_be_visible()
+    expect(hub.card(produced["html"])).to_have_count(0)
+
+
+# ── delete: present file, opting into disk deletion ─────────────────────
+
+
+def test_delete_present_artifact_removes_entry_and_file(page: Page):
+    """Deleting a present artifact with the checkbox unlinks the file too."""
+    nonce = time.time_ns()
+    name = f"hubdel_{nonce}.md"
+    _produce(page, (f"{VC_HOME}/{name}", "delete me"))
+    try:
+        hub = ArtifactsHub(page).goto()
+        expect(hub.card(name)).to_be_visible(timeout=5_000)
+
+        hub.request_delete(name)
+        expect(hub.delete_dialog).to_be_visible()
+        hub.confirm_delete(delete_file=True)
+
+        expect(hub.card(name)).to_have_count(0)
+        assert not _file_exists(name), "file should be unlinked from disk"
+        arts = page.request.get("/api/artifacts").json()["artifacts"]
+        assert not any(a["filename"] == name for a in arts)
+    finally:
+        _purge(page, name)
+        _delete_file(name)
+
+
+# ── missing: file removed behind the hub's back, then pruned ────────────
+
+
+def test_missing_artifact_can_be_pruned(page: Page):
+    """A file deleted on disk reconciles to 'missing' and prunes away."""
+    nonce = time.time_ns()
+    name = f"hubmiss_{nonce}.md"
+    _produce(page, (f"{VC_HOME}/{name}", "transient"))
+    try:
+        # Remove the file out-of-band; the next read reconciles it to missing.
+        _delete_file(name)
+
+        hub = ArtifactsHub(page).goto()
+        card = hub.card(name)
+        expect(card).to_be_visible(timeout=5_000)
+        expect(card).to_contain_text("missing")
+
+        hub.prune_missing()
+        expect(hub.card(name)).to_have_count(0)
+    finally:
+        _purge(page, name)
