@@ -6,6 +6,8 @@ Endpoints:
     POST   /api/conversations/sessions/{id}/title             — generate + persist a title
     PATCH  /api/conversations/sessions/{id}                   — rename / pin a conversation
     PUT    /api/conversations/sessions/{id}/preview-state     — persist preview tabs
+    POST   /api/conversations/sessions/{id}/preview-state/focus-file
+                                                              — focus a file on next open
     DELETE /api/conversations/sessions/{id}                   — delete a conversation
 """
 
@@ -21,6 +23,7 @@ from conversations import (
     generate_conversation_title,
     list_conversations,
     load_conversation_metadata,
+    mark_file_focused,
     save_conversation_pinned,
     save_conversation_title,
     save_preview_state,
@@ -155,6 +158,27 @@ async def save_preview_state_handler(request: Request) -> Response:
     return web.Response(status=204)
 
 
+async def focus_file_handler(request: Request) -> Response:
+    """Mark a file as the open, active tab so reopening the conversation focuses it.
+
+    Body: ``{"path": "<absolute file path>"}``. Merges into the existing preview
+    state without clobbering the other panel flags; the file is then served and
+    restored by the normal resume path.
+    """
+    conversation_id = request.match_info["conversation_id"]
+    if not conversation_exists(conversation_id):
+        return web.json_response({"error": "Conversation not found"}, status=404)
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return web.json_response({"error": "Invalid JSON body"}, status=400)
+    path = body.get("path") if isinstance(body, dict) else None
+    if not isinstance(path, str) or not path:
+        return web.json_response({"error": "Body must include a 'path' string"}, status=400)
+    mark_file_focused(conversation_id, path)
+    return web.Response(status=204)
+
+
 def register_conversation_routes(app: web.Application) -> None:
     """Register conversation session routes on the application.
 
@@ -165,6 +189,7 @@ def register_conversation_routes(app: web.Application) -> None:
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/resume", resume_conversation_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/title", generate_title_handler)
     app.router.add_route("PUT", "/api/conversations/sessions/{conversation_id}/preview-state", save_preview_state_handler)
+    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/preview-state/focus-file", focus_file_handler)
     app.router.add_route("PATCH", "/api/conversations/sessions/{conversation_id}", update_conversation_handler)
     app.router.add_route("DELETE", "/api/conversations/sessions/{conversation_id}", delete_conversation_handler)
 
