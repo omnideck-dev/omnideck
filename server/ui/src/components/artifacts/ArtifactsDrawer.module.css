@@ -1,0 +1,188 @@
+.scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    z-index: var(--z-modal);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.panel {
+    width: 420px;
+    max-width: 92vw;
+    height: 100%;
+    background: var(--elevated);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    animation: slideIn 0.18s var(--ease-out);
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* ── header ── */
+.header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.title .bi {
+    color: var(--accent);
+}
+
+/* this/all toggle — replicates the hub's segmented control */
+.seg {
+    margin-left: auto;
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+}
+
+.seg button {
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.seg button:hover {
+    color: var(--text-primary);
+}
+
+.segOn {
+    background: var(--elevated) !important;
+    color: var(--text-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* ── toolbar ── */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.search {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ── list ── */
+.list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--sp-2);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.row:hover {
+    background: var(--accent-muted);
+}
+
+.row.missing {
+    opacity: 0.55;
+}
+
+.rowIcon {
+    flex: 0 0 auto;
+    font-size: 18px;
+    color: var(--accent);
+}
+
+.rowMain {
+    flex: 1;
+    min-width: 0;
+}
+
+.rowName {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rowSub {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: 2px;
+}
+
+.rowConv {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 200px;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.when {
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.rowDel {
+    flex: 0 0 auto;
+    opacity: 0;
+}
+
+.row:hover .rowDel {
+    opacity: 1;
+}
+
+/* ── empty ── */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 200px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--sp-8);
+}
+
+.empty .bi {
+    font-size: 30px;
+    opacity: 0.5;
+}

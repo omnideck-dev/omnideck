@@ -46,7 +46,9 @@ export default function useFileContent(item) {
 
     const isImage = isImageFile(content_type, filename);
     const isPdf = isPdfFile(content_type, filename);
-    const isHtml = content_type === 'text/html';
+    // Fall back to the extension like every other type check, so a file
+    // restored from its path alone (no content_type) still renders as HTML.
+    const isHtml = content_type === 'text/html' || (!!filename && /\.html?$/i.test(filename));
     const isMarkdown =
         content_type === 'text/markdown' ||
         content_type === 'text/x-markdown' ||

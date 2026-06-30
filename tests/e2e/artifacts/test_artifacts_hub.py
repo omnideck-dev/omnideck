@@ -16,45 +16,8 @@ import time
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e._helpers import container_exec
-from tests.e2e._protocol import send_file, write_file
+from tests.e2e.artifacts._helpers import VC_HOME, delete_file, file_exists, produce, purge
 from tests.e2e.pages import ArtifactsHub, ChatView, PreviewPanel
-
-VC_HOME = "/home/computron"
-
-
-def _produce(page: Page, *files: tuple[str, str]) -> None:
-    """Send each (path, content) file via a single agent turn through send_file."""
-    directives = ""
-    for path, content in files:
-        directives += write_file(path, content) + send_file(path)
-    ChatView(page).goto().new_conversation().send(directives).wait_streaming()
-
-
-def _delete_file(filename: str) -> None:
-    container_exec(
-        "import pathlib\n"
-        f"p = pathlib.Path('{VC_HOME}/{filename}')\n"
-        "if p.exists(): p.unlink()\n"
-    )
-
-
-def _file_exists(filename: str) -> bool:
-    out = container_exec(
-        f"import pathlib; print(pathlib.Path('{VC_HOME}/{filename}').exists())"
-    )
-    return out == "True"
-
-
-def _purge(page: Page, *filenames: str) -> None:
-    """Remove the named artifacts from the index (and disk) via the real API."""
-    resp = page.request.get("/api/artifacts")
-    for a in resp.json().get("artifacts", []):
-        if a["filename"] in filenames:
-            page.request.delete(
-                f"/api/artifacts/{a['id']}?delete_file=true",
-                fail_on_status_code=False,
-            )
 
 
 # ── read-only group: one shared pair of produced artifacts ──────────────
@@ -68,13 +31,13 @@ def produced(browser, browser_context_args):
     html = f"hub_{nonce}.html"
     context = browser.new_context(**browser_context_args)
     page = context.new_page()
-    _produce(
+    produce(
         page,
         (f"{VC_HOME}/{md}", "# Hub artifact\n\nproduced via send_file"),
         (f"{VC_HOME}/{html}", "<html><body><h1>hub html</h1></body></html>"),
     )
     yield {"md": md, "html": html}
-    _purge(page, md, html)
+    purge(page, md, html)
     page.close()
     context.close()
 
@@ -116,7 +79,7 @@ def test_delete_present_artifact_removes_entry_and_file(page: Page):
     """Deleting a present artifact with the checkbox unlinks the file too."""
     nonce = time.time_ns()
     name = f"hubdel_{nonce}.md"
-    _produce(page, (f"{VC_HOME}/{name}", "delete me"))
+    produce(page, (f"{VC_HOME}/{name}", "delete me"))
     try:
         hub = ArtifactsHub(page).goto()
         expect(hub.card(name)).to_be_visible(timeout=5_000)
@@ -126,12 +89,12 @@ def test_delete_present_artifact_removes_entry_and_file(page: Page):
         hub.confirm_delete(delete_file=True)
 
         expect(hub.card(name)).to_have_count(0)
-        assert not _file_exists(name), "file should be unlinked from disk"
+        assert not file_exists(name), "file should be unlinked from disk"
         arts = page.request.get("/api/artifacts").json()["artifacts"]
         assert not any(a["filename"] == name for a in arts)
     finally:
-        _purge(page, name)
-        _delete_file(name)
+        purge(page, name)
+        delete_file(name)
 
 
 # ── missing: file removed behind the hub's back, then pruned ────────────
@@ -141,10 +104,10 @@ def test_missing_artifact_can_be_pruned(page: Page):
     """A file deleted on disk reconciles to 'missing' and prunes away."""
     nonce = time.time_ns()
     name = f"hubmiss_{nonce}.md"
-    _produce(page, (f"{VC_HOME}/{name}", "transient"))
+    produce(page, (f"{VC_HOME}/{name}", "transient"))
     try:
         # Remove the file out-of-band; the next read reconciles it to missing.
-        _delete_file(name)
+        delete_file(name)
 
         hub = ArtifactsHub(page).goto()
         card = hub.card(name)
@@ -154,32 +117,23 @@ def test_missing_artifact_can_be_pruned(page: Page):
         hub.prune_missing()
         expect(hub.card(name)).to_have_count(0)
     finally:
-        _purge(page, name)
+        purge(page, name)
 
 
 # ── open in conversation: focus-write + resume restores the file ────────
 
 
-@pytest.mark.xfail(
-    reason=(
-        "open-in-conversation file restore needs the warm-resume timeline fix: "
-        "a conversation still cached from its live turn drops file_output from "
-        "its in-memory log, so resume can't reconstruct the focused file"
-    ),
-    strict=True,
-)
 def test_open_in_conversation_restores_focused_file(page: Page):
     """Opening an artifact from the hub loads its conversation with the file restored.
 
-    This asserts the full feature: the open action focuses the file, navigates to
-    the source conversation, and the resumed conversation shows the file as a
-    preview tab. It currently fails on the warm-resume path (see xfail reason);
-    when the timeline fix lands this will pass, and strict xfail will flag it so
-    we remove the marker.
+    The open action focuses the file, navigates to the source conversation, and the
+    resumed conversation shows it as a preview tab — rebuilt from the saved
+    preview_state path alone, so it restores even on a warm-resumed conversation
+    whose in-memory log dropped the file_output event.
     """
     nonce = time.time_ns()
     name = f"hubopen_{nonce}.md"
-    _produce(page, (f"{VC_HOME}/{name}", "# open me\n\nfrom the hub"))
+    produce(page, (f"{VC_HOME}/{name}", "# open me\n\nfrom the hub"))
     try:
         # Switch to a new conversation so the artifact's conversation is no
         # longer active — exercises the focus-write + resume path.
@@ -192,5 +146,5 @@ def test_open_in_conversation_restores_focused_file(page: Page):
         # The source conversation resumes with the file restored as a preview tab.
         expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
     finally:
-        _purge(page, name)
-        _delete_file(name)
+        purge(page, name)
+        delete_file(name)

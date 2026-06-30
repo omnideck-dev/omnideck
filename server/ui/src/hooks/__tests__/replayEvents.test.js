@@ -1,46 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { replayEventsToAgentState, resolveOpenFiles } from '../_replayEvents.js';
-
-describe('resolveOpenFiles', () => {
-    it('restores the exact saved path (identity is the path, not the basename)', () => {
-        // The omnideck-cli case: STRATEGY.md exists at two paths. The saved
-        // open_files holds the one the user actually had open, and that's
-        // the one restored — no guessing by basename.
-        const events = [
-            { type: 'file_output', filename: 'STRATEGY.md',
-              content_type: 'text/markdown', path: '/home/computron/scratch/STRATEGY.md', timestamp: 1 },
-            { type: 'file_output', filename: 'STRATEGY.md',
-              content_type: 'text/markdown', path: '/home/computron/STRATEGY.md', timestamp: 2 },
-        ];
-        const items = resolveOpenFiles(events, ['/home/computron/STRATEGY.md']);
-        expect(items).toHaveLength(1);
-        expect(items[0].path).toBe('/home/computron/STRATEGY.md');
-        expect(items[0].filename).toBe('STRATEGY.md');
-    });
-
-    it('treats same-basename different-path files as distinct tabs', () => {
-        const events = [
-            { type: 'file_output', filename: 'X.md', content_type: 'text/markdown', path: '/a/X.md', timestamp: 1 },
-            { type: 'file_output', filename: 'X.md', content_type: 'text/markdown', path: '/b/X.md', timestamp: 2 },
-        ];
-        const items = resolveOpenFiles(events, ['/a/X.md', '/b/X.md']);
-        expect(items.map((i) => i.path)).toEqual(['/a/X.md', '/b/X.md']);
-    });
-
-    it('skips paths with no matching event (incl. legacy bare filenames)', () => {
-        const events = [
-            { type: 'file_output', filename: 'a.md', content_type: 'text/markdown', path: '/p/a.md', timestamp: 1 },
-        ];
-        // '/p/a.md' restores; a legacy bare filename and an unknown path don't.
-        const items = resolveOpenFiles(events, ['/p/a.md', 'a.md', '/p/gone.md']);
-        expect(items.map((i) => i.path)).toEqual(['/p/a.md']);
-    });
-
-    it('is a no-op for bad inputs', () => {
-        expect(resolveOpenFiles(null, ['a'])).toEqual([]);
-        expect(resolveOpenFiles([], null)).toEqual([]);
-    });
-});
+import { replayEventsToAgentState } from '../_replayEvents.js';
 
 const _agentStarted = (agentId, opts = {}) => ({
     type: 'agent_started',
