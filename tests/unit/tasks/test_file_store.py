@@ -307,15 +307,17 @@ class TestReadyTaskResults:
         assert len(ready) == 1
         assert ready[0][1].description == "t2"
 
-    def test_paused_goal_excluded(self, store):
-        """Paused goals are not included."""
+    def test_paused_goal_manual_run_included(self, store):
+        """A run queued on a paused goal still surfaces — pause only stops the
+        cron schedule, not execution of a manually-triggered (or in-flight) run."""
         goal = store.create_goal("goal")
         store.create_task(goal.id, "t1", "p", agent_profile="code_expert")
         store.queue_run(goal.id)
         store.set_goal_status(goal.id, "paused")
 
         ready = store.get_ready_task_results()
-        assert len(ready) == 0
+        assert len(ready) == 1
+        assert ready[0][1].description == "t1"
 
     def test_completed_run_excluded(self, store):
         """Completed runs don't contribute ready results."""

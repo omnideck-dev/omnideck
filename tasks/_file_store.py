@@ -292,9 +292,14 @@ class FileTaskStore:
         return [TaskResult(**tr) for tr in run_data.get("task_results", [])]
 
     def get_ready_task_results(self) -> list[tuple[TaskResult, Task]]:
-        """Scan all active goals' in-progress runs for pending results with deps met."""
+        """Pending results (deps met) in any goal's in-progress runs.
+
+        Not limited to active goals: pausing a goal only stops its cron
+        scheduling (see get_due_recurring_goals), not the execution of a run
+        that was manually triggered or already in flight when it was paused.
+        """
         ready: list[tuple[TaskResult, Task]] = []
-        for goal in self.list_goals(status="active"):
+        for goal in self.list_goals():
             tasks = {t.id: t for t in self.list_tasks(goal.id)}
             for run in self.get_goal_runs(goal.id):
                 if run.status not in ("pending", "running"):
