@@ -1,6 +1,6 @@
 import styles from './StarterPrompts.module.css';
 
-const PROMPTS = [
+const DEFAULT_PROMPTS = [
     {
         icon: 'bi-search',
         title: 'Research a topic',
@@ -23,16 +23,30 @@ const PROMPTS = [
     },
 ];
 
-export default function StarterPrompts({ onSelect }) {
+/**
+ * Grid of clickable suggestion cards. Each card hands its prompt text to
+ * onSelect — used both by the empty chat (default prompts) and the empty
+ * goals view (goal-shaped prompts), so the two empty states look the same.
+ */
+export default function StarterPrompts({
+    onSelect,
+    prompts = DEFAULT_PROMPTS,
+    heading = 'What can I help you with?',
+    subheading,
+}) {
     return (
         <div className={styles.container}>
-            <h2 className={styles.heading}>What can I help you with?</h2>
+            <div className={styles.intro}>
+                <h2 className={styles.heading}>{heading}</h2>
+                {subheading && <p className={styles.subheading}>{subheading}</p>}
+            </div>
             <div className={styles.grid}>
-                {PROMPTS.map((prompt) => (
+                {prompts.map((prompt) => (
                     <button
                         key={prompt.title}
                         className={styles.card}
                         onClick={() => onSelect(prompt.text)}
+                        data-testid="starter-prompt"
                     >
                         <span className={styles.icon}><i className={prompt.icon} /></span>
                         <span className={styles.title}>{prompt.title}</span>

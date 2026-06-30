@@ -246,6 +246,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         loadConversation,
         newConversation: chatNewConversation,
         activeConversationId,
+        draft,
+        setDraft,
         savePreviewState,
     } = useStreamingChat(_callbacks);
 
@@ -336,8 +338,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         }
     }, [userDesktopOpen, addToast]);
 
-    const newConversation = useCallback(async () => {
-        await chatNewConversation();
+    const newConversation = useCallback(async (opts) => {
+        await chatNewConversation(opts);
         preview.reset();
         // A fresh chat starts on the default profile, never the last one viewed.
         setConvProfile(null);
@@ -347,6 +349,11 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         setView('chat');
         agentDispatch({ type: 'RESET' });
     }, [chatNewConversation, preview.reset, agentDispatch]);
+
+    // Open a fresh chat with the composer pre-seeded (e.g. composing a goal
+    // from the goals view). The chat state seeds the draft in the same batch
+    // as the new conversation id.
+    const composeInNewChat = useCallback((text) => newConversation({ draft: text }), [newConversation]);
 
     // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
@@ -499,7 +506,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                      * open. */}
 
                     {/* Goals view — self-contained, owns its own goals state */}
-                    {view === 'goals' && <GoalsView />}
+                    {view === 'goals' && <GoalsView onComposeInChat={composeInNewChat} />}
                     {/* Global artifacts hub — full view from the sidebar */}
                     {view === 'artifacts' && (
                         <ArtifactsHubView onOpenConversation={openArtifactInConversation} />
@@ -543,6 +550,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                             profileRefreshSignal={profilesHook.revision}
                             onPreview={preview.openFile}
                             conversationId={activeConversationId}
+                            draft={draft}
+                            onDraftChange={setDraft}
                         />
                     </div>
 

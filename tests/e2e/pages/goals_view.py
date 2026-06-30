@@ -15,6 +15,17 @@ class GoalsView:
         self.page.get_by_test_id("goals-list").wait_for(state="visible")
         return self
 
+    def goto_empty(self) -> "GoalsView":
+        """Navigate to Goals when no goals exist (the full-screen empty state)."""
+        self.page.goto("/")
+        self.page.get_by_role("button", name="Goals", exact=True).click()
+        self.page.get_by_test_id("goals-empty").wait_for(state="visible")
+        return self
+
+    def empty_example(self) -> Locator:
+        """First suggestion card in the empty state."""
+        return self.page.get_by_test_id("starter-prompt").first
+
     def select_by_name(self, description: str) -> None:
         self.page.get_by_test_id("goals-list").get_by_text(description, exact=True).first.click()
 

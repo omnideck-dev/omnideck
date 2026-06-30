@@ -554,6 +554,10 @@ export default function useStreamingChat(callbacks) {
     const [events, setEvents] = useState([]);
     const [inflightIteration, setInflightIteration] = useState(null);
     const [pendingUserPrompt, setPendingUserPrompt] = useState(null);
+    // The composer draft for the open conversation. Lives here (not in the
+    // chat component) so opening/seeding a conversation and its draft are one
+    // concern — newConversation can seed it, switching conversations clears it.
+    const [draft, setDraft] = useState('');
     const [isStreaming, _setIsStreaming] = useState(false);
     // Ref mirror of isStreaming so sendMessage can read it synchronously
     const isStreamingRef = useRef(false);
@@ -960,6 +964,7 @@ export default function useStreamingChat(callbacks) {
         }
         setIsStreaming(false);
         setStopRequested(false);
+        setDraft('');
 
         try {
             const resp = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {
@@ -1016,7 +1021,7 @@ export default function useStreamingChat(callbacks) {
      * keeps an LRU cache of recent conversations and rehydrates from disk
      * on demand, so no explicit cache-eviction call is needed.
      */
-    const newConversation = useCallback(() => {
+    const newConversation = useCallback(({ draft: seedDraft = '' } = {}) => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
@@ -1029,6 +1034,9 @@ export default function useStreamingChat(callbacks) {
         setEvents([]);
         setInflightIteration(null);
         setPendingUserPrompt(null);
+        // Seed the composer in the same batch as the new id, so the fresh
+        // conversation's input gets the text (e.g. composing a goal).
+        setDraft(seedDraft);
         setConversationId(_uuid());
         // A fresh conversation: its first message starts it anew.
         isFreshConversationRef.current = true;
@@ -1075,6 +1083,8 @@ export default function useStreamingChat(callbacks) {
         isStreaming,
         stopRequested,
         activeConversationId,
+        draft,
+        setDraft,
         sendMessage,
         sendNudge,
         stopGeneration,

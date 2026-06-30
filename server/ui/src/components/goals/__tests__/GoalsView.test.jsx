@@ -65,3 +65,22 @@ test('clicking a goal opens its detail full-width; back returns to the list', as
     fireEvent.click(screen.getByTestId('goal-detail-back'));
     await waitFor(() => expect(screen.getByTestId('goals-list')).toBeInTheDocument());
 });
+
+test('with no goals, shows an empty state whose example opens a pre-seeded chat', async () => {
+    global.fetch = vi.fn((url) => {
+        const u = String(url);
+        if (u === '/api/goals') return Promise.resolve({ ok: true, json: async () => ({ goals: [] }) });
+        if (u === '/api/runner/status') return Promise.resolve({ ok: true, json: async () => ({ running_goal_ids: [] }) });
+        return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    const onComposeInChat = vi.fn();
+    render(<GoalsView onComposeInChat={onComposeInChat} />);
+
+    const cards = await screen.findAllByTestId('starter-prompt');
+    expect(cards).toHaveLength(4);
+    expect(screen.getByText('No goals yet')).toBeInTheDocument();
+
+    fireEvent.click(cards[0]);
+    // Seeded text must instruct the agent to *create a goal*, not run the task once.
+    expect(onComposeInChat).toHaveBeenCalledWith(expect.stringContaining('Create a goal'));
+});
