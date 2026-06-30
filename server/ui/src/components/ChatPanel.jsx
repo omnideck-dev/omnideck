@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
@@ -16,10 +16,8 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
-    const [draft, setDraft] = useState('');
+export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const clearDraft = useCallback(() => setDraft(''), []);
 
     // The title bar reflects the root agent; read it straight from the agent
     // tree rather than receiving it as a prop.
@@ -59,7 +57,7 @@ export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequ
                     </button>
                 )}
             </div>
-            <ChatMessages turns={turns} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={setDraft} />
+            <ChatMessages turns={turns} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input,
                 discarding any unsent text instead of carrying it over. */}
             <ChatInput
@@ -70,7 +68,7 @@ export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequ
                 stopRequested={stopRequested}
                 attachment={attachment}
                 draft={draft}
-                onDraftConsumed={clearDraft}
+                onDraftConsumed={() => onDraftChange('')}
                 selectedProfileId={selectedProfileId}
                 onProfileChange={onProfileChange}
                 profileRefreshSignal={profileRefreshSignal}

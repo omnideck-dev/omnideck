@@ -75,6 +75,15 @@
     opacity: 0.5;
 }
 
+/* full-screen empty state (no goals at all) — hosts the StarterPrompts grid */
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: 100%;
+    min-height: 320px;
+}
+
 /* sort control (toolbar) — canonical SIGNAL .select */
 .sortCtl {
     display: inline-flex;
