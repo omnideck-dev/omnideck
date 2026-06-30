@@ -268,16 +268,32 @@ def test_publish_event_no_op_without_conversation(caplog):
 
 
 @pytest.mark.unit
-def test_add_event_filters_non_derived_types_from_in_memory_log():
-    """terminal_output / file_output / browser_screenshot are observer-only
-    — persisted to disk via observers, but never affect the LLM view.
-    The in-memory _events list (which feeds derived_messages) excludes them."""
-    from sdk.events import FileOutputPayload
+def test_add_event_filters_transient_types_from_in_memory_log():
+    """Streaming content deltas are observer-only — fanned out to the SSE
+    stream but never retained in the in-memory log (the final iteration
+    event carries the assistant message). They feed neither the LLM view
+    nor a warm resume."""
+    from sdk.events import ContentPayload
+    h = ConversationHistory(conversation_id="c1")
+    h.add_event(AgentEvent(payload=ContentPayload(type="content", content="streaming")))
+    assert h.recorded_events == []
+
+
+@pytest.mark.unit
+def test_add_event_retains_warm_resume_types():
+    """file_output (inline file blocks) and spawn_requested (sub-agent cards)
+    must be retained in the in-memory log. A warm-cache resume replays this
+    log, so dropping them loses previews/spawn cards that a cold disk resume
+    keeps. Regression guard for the warm-resume bug."""
+    from sdk.events import FileOutputPayload, SpawnRequestedPayload
     h = ConversationHistory(conversation_id="c1")
     h.add_event(AgentEvent(payload=FileOutputPayload(
         type="file_output", filename="x.txt", content_type="text/plain", path="/tmp/x.txt",
     )))
-    assert h.recorded_events == []
+    h.add_event(AgentEvent(payload=SpawnRequestedPayload(
+        type="spawn_requested", correlation_id="corr-1",
+    )))
+    assert [e["type"] for e in h.recorded_events] == ["file_output", "spawn_requested"]
 
 
 # ── observer fan-out edge cases ───────────────────────────────────────
@@ -332,21 +348,18 @@ def test_unsubscribe_during_publish_does_not_break_fanout():
 
 
 @pytest.mark.unit
-def test_add_event_notifies_observers_for_non_derived_types():
-    """file_output / terminal_output / browser_screenshot are skipped
-    from the in-memory LLM view but observers still see them — disk
-    persistence and SSE streaming need the full event stream."""
-    from sdk.events import FileOutputPayload
+def test_add_event_notifies_observers_for_transient_types():
+    """Transient streaming content deltas are skipped from the in-memory
+    log but observers still see them — SSE streaming needs the full event
+    stream even for types the log doesn't retain."""
+    from sdk.events import ContentPayload
     h = ConversationHistory(conversation_id="c1")
     received: list[AgentEvent] = []
     h.subscribe(received.append)
-    h.add_event(AgentEvent(payload=FileOutputPayload(
-        type="file_output", filename="x.txt",
-        content_type="text/plain", path="/tmp/x.txt",
-    )))
-    assert h.recorded_events == []  # not in LLM view
+    h.add_event(AgentEvent(payload=ContentPayload(type="content", content="streaming")))
+    assert h.recorded_events == []  # not in the in-memory log
     assert len(received) == 1       # but observers got it
-    assert received[0].payload.type == "file_output"
+    assert received[0].payload.type == "content"
 
 
 @pytest.mark.unit

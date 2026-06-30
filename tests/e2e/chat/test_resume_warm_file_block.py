@@ -2,16 +2,17 @@
 
 Produces a file through the real pipeline (the fake provider drives write_file +
 send_file), then reopens the still-warm conversation from the recent list. The
-inline file block in the transcript is rebuilt from file_output events, which a
-warm in-memory log drops — so this is a tracked strict-xfail until the
-conversation timeline keeps the in-memory log complete. (The preview *tab*, by
-contrast, restores from the saved preview_state path and is covered as a passing
-test in the artifacts suite.)
+inline file block in the transcript is rebuilt from file_output events; the
+in-memory log retains those events, so the warm resume restores the block the
+same way a cold disk resume does. (The preview *tab*, by contrast, restores from
+the saved preview_state path and is covered in the artifacts suite.)
+
+Regression guard for the warm-resume bug where the in-memory log dropped
+file_output and previews vanished when a conversation was served from cache.
 """
 
 import time
 
-import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
@@ -21,14 +22,6 @@ from tests.e2e.pages import ChatView, RecentConversations
 VC_HOME = "/home/computron"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "warm-resume drops file_output from the in-memory log, so the inline file "
-        "block in the transcript doesn't restore until the timeline work keeps the "
-        "in-memory log complete"
-    ),
-    strict=True,
-)
 def test_warm_resume_restores_inline_file_block(page: Page):
     """Reopening a still-cached conversation should show its sent file inline."""
     nonce = time.time_ns()
