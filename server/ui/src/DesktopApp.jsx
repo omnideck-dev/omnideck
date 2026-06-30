@@ -51,7 +51,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
     const { profilesHook, features } = useAppData();
-    const { addStartedConversation } = useConversations();
+    const { addStartedConversation, focusFileInConversation } = useConversations();
 
     // Agent profile is per chat session, not global. `convProfile` is the
     // profile chosen for the conversation currently in view; null means "use
@@ -358,6 +358,27 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         return loadConversation(conversationId);
     }, [loadConversation, activeConversationId, agentDispatch]);
 
+    // Open an artifact's source conversation with that file focused. Persist the
+    // focus into preview_state first, then either open the file immediately (if
+    // the conversation is already active) or load it normally — the resume path
+    // restores the focused file. Reuses the single conversation opener; adds no
+    // second open path.
+    const openArtifactInConversation = useCallback(async (artifact) => {
+        const { conversation_id: conversationId, path, filename, content_type: contentType } = artifact;
+        try {
+            await focusFileInConversation(conversationId, path);
+        } catch (_) {
+            // Best-effort: navigate even if the focus write fails; the file
+            // just won't be pre-opened.
+        }
+        if (conversationId === activeConversationId) {
+            setView('chat');
+            preview.openFile({ filename, content_type: contentType, path });
+            return;
+        }
+        handleLoadConversation(conversationId);
+    }, [activeConversationId, handleLoadConversation, preview, focusFileInConversation]);
+
     // ── Which layout to show ───────────────────────────────────────────
     // `view` picks exactly one of: chat, settings, goals, network. Each is a
     // full replacement of the main column, so they're mutually exclusive by
@@ -489,7 +510,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                         />
                     )}
                     {/* Global artifacts hub — full view from the sidebar */}
-                    {view === 'artifacts' && <ArtifactsHubView />}
+                    {view === 'artifacts' && (
+                        <ArtifactsHubView onOpenConversation={openArtifactInConversation} />
+                    )}
 
                     {view === 'network' && !agentState.selectedAgentId && (
                         <div className={styles.networkArea}>

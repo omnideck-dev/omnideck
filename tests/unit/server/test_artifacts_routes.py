@@ -24,6 +24,10 @@ def vc_home(tmp_path: Path, monkeypatch) -> Path:
     home.mkdir()
     monkeypatch.setattr("artifacts._store._index_path", lambda: index_path)
     monkeypatch.setattr("artifacts._store._vc_home", lambda: home.resolve())
+    # The list handler joins conversation titles; keep that lookup hermetic.
+    monkeypatch.setattr(
+        "conversations._store._get_conversations_dir", lambda: tmp_path / "conversations",
+    )
     return home
 
 
@@ -70,6 +74,23 @@ async def test_list_scoped_by_conversation(vc_home: Path) -> None:
     resp = await list_artifacts_handler(_request(query={"conversation_id": "c1"}))
     artifacts = _body(resp)["artifacts"]
     assert [a["conversation_id"] for a in artifacts] == ["c1"]
+
+
+async def test_list_joins_conversation_titles(vc_home: Path, monkeypatch) -> None:
+    """Each artifact carries its conversation's title, 'Untitled' if untitled, None if gone."""
+    _seed(vc_home, "c1", "a.md")
+    _seed(vc_home, "c2", "b.md")
+    _seed(vc_home, "gone", "c.md")
+    existing = {"c1": {"title": "My Chat"}, "c2": {}}  # c2 exists but has no title
+    monkeypatch.setattr(
+        "server._artifacts_routes.conversation_exists", lambda cid: cid in existing,
+    )
+    monkeypatch.setattr(
+        "server._artifacts_routes.load_conversation_metadata", lambda cid: existing.get(cid, {}),
+    )
+    resp = await list_artifacts_handler(_request())
+    titles = {a["filename"]: a["conversation_title"] for a in _body(resp)["artifacts"]}
+    assert titles == {"a.md": "My Chat", "b.md": "Untitled", "c.md": None}
 
 
 async def test_reconcile_marks_missing(vc_home: Path) -> None:

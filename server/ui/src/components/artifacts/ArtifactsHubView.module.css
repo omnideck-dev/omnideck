@@ -271,6 +271,37 @@
     text-overflow: ellipsis;
 }
 
+.cardConv {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardConv .bi {
+    flex: 0 0 auto;
+    font-size: 11px;
+}
+
+/* table: conversation column + deleted placeholder */
+.tconv {
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-secondary);
+}
+
+.muted {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
 .ext {
     font-family: var(--font-code);
     font-size: 11px;
