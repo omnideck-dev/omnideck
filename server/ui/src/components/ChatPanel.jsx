@@ -4,6 +4,7 @@ import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
 import { formatAgentName } from './AgentCard.jsx';
 import StatusDot from './StatusDot.jsx';
+import ArtifactsDrawer from './artifacts/ArtifactsDrawer.jsx';
 import { useAgentState } from '../hooks/useAgentState.jsx';
 import styles from './ChatPanel.module.css';
 
@@ -17,6 +18,7 @@ import styles from './ChatPanel.module.css';
  */
 export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
     const [draft, setDraft] = useState('');
+    const [drawerOpen, setDrawerOpen] = useState(false);
     const clearDraft = useCallback(() => setDraft(''), []);
 
     // The title bar reflects the root agent; read it straight from the agent
@@ -32,14 +34,24 @@ export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequ
     return (
         <div className={styles.panel}>
             <div className={styles.titleBar} data-testid="chat-title-bar">
-                <span className={styles.title} data-testid="chat-title">{title}</span>
-                {turnCount > 0 && (
-                    <span className={styles.turns} data-testid="chat-turns">
-                        {turnCount} turn{turnCount !== 1 ? 's' : ''}
-                    </span>
-                )}
-                <ContextMeter contextUsage={rootAgent?.contextUsage} />
-                <span className={styles.spacer} />
+                <div className={styles.left}>
+                    <span className={styles.title} data-testid="chat-title">{title}</span>
+                    {turnCount > 0 && (
+                        <span className={styles.turns} data-testid="chat-turns">
+                            {turnCount} turn{turnCount !== 1 ? 's' : ''}
+                        </span>
+                    )}
+                    <ContextMeter contextUsage={rootAgent?.contextUsage} />
+                </div>
+                <button
+                    className={styles.artifactsBtn}
+                    onClick={() => setDrawerOpen(true)}
+                    title="Files produced in this conversation"
+                    data-testid="artifacts-drawer-trigger"
+                >
+                    <i className="bi bi-collection" />
+                    <span>Artifacts</span>
+                </button>
                 {networkActivated && (
                     <button className={styles.networkBtn} onClick={onOpenNetwork} title="Open agent network view" data-testid="network-indicator">
                         <StatusDot status={networkRunningCount > 0 ? 'running' : 'complete'} />
@@ -63,6 +75,13 @@ export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequ
                 onProfileChange={onProfileChange}
                 profileRefreshSignal={profileRefreshSignal}
             />
+            {drawerOpen && (
+                <ArtifactsDrawer
+                    conversationId={conversationId}
+                    onPreview={onPreview}
+                    onClose={() => setDrawerOpen(false)}
+                />
+            )}
         </div>
     );
 }

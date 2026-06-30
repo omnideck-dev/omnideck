@@ -22,7 +22,7 @@ import useBrowserTabs from './hooks/useBrowserTabs.js';
 import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
-import { replayEventsToAgentState, resolveOpenFiles } from './hooks/_replayEvents.js';
+import { replayEventsToAgentState } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
 import { AgentStateProvider, useAgentState, useAgentDispatch } from './hooks/useAgentState.jsx';
 import { useToast } from './components/ToastProvider.jsx';
@@ -216,10 +216,16 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 return;
             }
 
-            const openFilenames = Array.isArray(previewState?.open_files)
+            // Restore the open tabs straight from the saved paths — independent
+            // of the event log, so a file opened from another conversation (or
+            // one whose file_output isn't in this conversation's replay) still
+            // reopens. Rendering keys off the filename extension downstream.
+            const openPaths = Array.isArray(previewState?.open_files)
                 ? previewState.open_files
                 : [];
-            for (const item of resolveOpenFiles(events, openFilenames)) {
+            for (const path of openPaths) {
+                if (typeof path !== 'string' || !path) continue;
+                const item = { type: 'file_output', filename: path.split('/').pop() || path, path };
                 agentDispatch({ type: 'OPEN_FILE', agentId: lastRootAgentId, item });
             }
 
