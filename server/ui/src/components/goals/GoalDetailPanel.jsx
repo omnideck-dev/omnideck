@@ -238,13 +238,16 @@ function RunRow({ run, taskMap, isExpanded, onToggle, onViewOutput, onDelete }) 
                     </span>
                 </div>
                 <span className={`${styles.rowBadge} ${badgeClass}`}>{badgeLabel}</span>
-                <button
-                    className={styles.rowDeleteBtn}
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    title="Delete run"
-                >
-                    <i className="bi bi-trash3" />
-                </button>
+                {/* Stop the row's expand/collapse from firing on either confirm click. */}
+                <span onClick={(e) => e.stopPropagation()}>
+                    <ConfirmButton
+                        icon="bi-trash3"
+                        confirmLabel="Confirm?"
+                        title="Delete run"
+                        className={styles.rowDeleteBtn}
+                        onConfirm={onDelete}
+                    />
+                </span>
             </div>
 
             {isExpanded && run.task_results && (

@@ -12,7 +12,7 @@ class GoalsView:
     def goto(self) -> "GoalsView":
         self.page.goto("/")
         self.page.get_by_role("button", name="Goals", exact=True).click()
-        self.page.locator("[class*='goalsList'], [class*='empty']").first.wait_for(state="visible")
+        self.page.get_by_test_id("goals-list").wait_for(state="visible")
         return self
 
     def select_by_name(self, description: str) -> None:

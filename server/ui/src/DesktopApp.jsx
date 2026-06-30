@@ -19,7 +19,6 @@ import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useBrowserTabs from './hooks/useBrowserTabs.js';
-import useGoals from './hooks/useGoals.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
 import { replayEventsToAgentState } from './hooks/_replayEvents.js';
@@ -76,7 +75,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         }).catch(() => setSetupComplete(false));
     }, []);
 
-    const goalsState = useGoals(view === 'goals');
     const { addToast } = useToast();
 
     // Preview follows the selected agent only while its detail view is up
@@ -500,21 +498,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                      * so the corresponding Settings tabs refetch on next
                      * open. */}
 
-                    {/* Goals split-screen view */}
-                    {view === 'goals' && (
-                        <GoalsView
-                            goals={goalsState.goals}
-                            runnerStatus={goalsState.runnerStatus}
-                            selectedGoalId={goalsState.selectedGoalId}
-                            setSelectedGoalId={goalsState.setSelectedGoalId}
-                            deleteGoal={goalsState.deleteGoal}
-                            deleteRun={goalsState.deleteRun}
-                            pauseGoal={goalsState.pauseGoal}
-                            resumeGoal={goalsState.resumeGoal}
-                            triggerGoal={goalsState.triggerGoal}
-                            fetchDetail={goalsState.fetchGoalDetail}
-                        />
-                    )}
+                    {/* Goals view — self-contained, owns its own goals state */}
+                    {view === 'goals' && <GoalsView />}
                     {/* Global artifacts hub — full view from the sidebar */}
                     {view === 'artifacts' && (
                         <ArtifactsHubView onOpenConversation={openArtifactInConversation} />
