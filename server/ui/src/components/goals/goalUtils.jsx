@@ -76,22 +76,79 @@ export function formatTimeUntil(timestamp) {
     return `in ${diffDay}d`;
 }
 
-// Format cron expression for display (simplified)
+const _DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function _isNum(s) {
+    return /^\d+$/.test(s);
+}
+
+function _time12(hour, minute) {
+    const h = parseInt(hour, 10);
+    const m = parseInt(minute, 10);
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 || 12;
+    return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function _ordinal(n) {
+    const v = parseInt(n, 10);
+    const s = ['th', 'st', 'nd', 'rd'];
+    const k = v % 100;
+    return `${v}${s[(k - 20) % 10] || s[k] || s[0]}`;
+}
+
+/**
+ * Turn a cron expression into a human-friendly schedule for end users —
+ * they should never see raw cron. Covers the common shapes; anything more
+ * exotic falls back to "Custom schedule" (the raw cron stays available as a
+ * tooltip at the call site).
+ */
 export function formatCron(cron) {
     if (!cron) return '-';
-    
-    // Very basic cron formatter - shows the raw cron in a readable way
-    // For a full app, you'd want a proper cron-parser library
-    const parts = cron.split(' ');
-    if (parts.length !== 5) return cron;
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length !== 5) return 'Custom schedule';
+    const [min, hour, dom, mon, dow] = parts;
 
-    // Common patterns
-    if (cron === '0 * * * *') return 'Every hour';
-    if (cron === '0 0 * * *') return 'Daily at midnight';
-    if (cron === '0 */6 * * *') return 'Every 6 hours';
-    if (cron === '*/15 * * * *') return 'Every 15 minutes';
-    if (cron === '0 9 * * 1-5') return 'Weekdays at 9 AM';
-    
-    // Default: show the cron
-    return cron;
+    const everyN = (field) => {
+        const m = /^\*\/(\d+)$/.exec(field);
+        return m ? parseInt(m[1], 10) : null;
+    };
+
+    // Sub-hour cadences.
+    if (min === '*' && hour === '*') return 'Every minute';
+    const everyMin = everyN(min);
+    if (everyMin && hour === '*') return `Every ${everyMin} minutes`;
+    const everyHour = everyN(hour);
+    if (_isNum(min) && everyHour) return `Every ${everyHour} hours`;
+    if (_isNum(min) && hour === '*') {
+        return min === '0' ? 'Every hour' : `Hourly at :${String(min).padStart(2, '0')}`;
+    }
+
+    // From here we need a concrete time of day.
+    if (!_isNum(min) || !_isNum(hour)) return 'Custom schedule';
+    const at = _time12(hour, min);
+
+    // Day-of-week schedules — only when not also constrained by a specific
+    // day-of-month or month (those combos aren't worth modeling).
+    if (dow !== '*') {
+        if (dom !== '*' || mon !== '*') return 'Custom schedule';
+        if (dow === '1-5') return `Weekdays at ${at}`;
+        if (dow === '0,6' || dow === '6,0' || dow === '0,7') return `Weekends at ${at}`;
+        const days = dow.split(',');
+        if (days.every((d) => _isNum(d) && +d <= 7)) {
+            const names = days.map((d) => _DAYS[+d % 7]);
+            return `${names.join('/')} at ${at}`;
+        }
+        return 'Custom schedule';
+    }
+
+    // Day-of-month (monthly).
+    if (dom !== '*' && _isNum(dom) && mon === '*') {
+        return `Monthly on the ${_ordinal(dom)} at ${at}`;
+    }
+
+    // Plain daily.
+    if (dom === '*' && mon === '*') return `Daily at ${at}`;
+
+    return 'Custom schedule';
 }

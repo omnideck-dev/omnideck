@@ -1,0 +1,62 @@
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--canvas);
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable:hover {
+    color: var(--text-secondary);
+}
+
+.caret {
+    font-size: 9px;
+    margin-left: 2px;
+}
+
+.table tbody td {
+    padding: 10px var(--sp-4);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+}
+
+.table tbody tr {
+    cursor: pointer;
+}
+
+.table tbody tr:hover {
+    background: var(--accent-muted);
+}
+
+.table tbody tr.sel {
+    background: var(--accent-muted);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* opt-in: a cell's content stays hidden until its row is hovered */
+.onHover {
+    opacity: 0;
+    transition: opacity 0.1s var(--ease);
+}
+
+.table tbody tr:hover .onHover {
+    opacity: 1;
+}

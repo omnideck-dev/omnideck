@@ -92,19 +92,6 @@
     outline-offset: 2px;
 }
 
-.sortable {
-    cursor: pointer;
-    user-select: none;
-}
-
-.sortable:hover {
-    color: var(--text-secondary);
-}
-
-.caret {
-    font-size: 9px;
-    margin-left: 2px;
-}
 
 /* ── content: list pane + preview ── */
 .content {
@@ -321,47 +308,8 @@
     color: var(--warning);
 }
 
-/* table */
-.table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.table thead th {
-    position: sticky;
-    top: 0;
-    background: var(--canvas);
-    text-align: left;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    color: var(--text-tertiary);
-    font-weight: 600;
-    padding: var(--sp-3) var(--sp-4);
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-}
-
-.table tbody td {
-    padding: 10px var(--sp-4);
-    border-bottom: 1px solid var(--border-subtle);
-    font-size: 13px;
-}
-
-.table tbody tr {
-    cursor: pointer;
-}
-
-.table tbody tr:hover {
-    background: var(--accent-muted);
-}
-
-.table tbody tr.sel {
-    background: var(--accent-muted);
-    box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.table tbody tr.missing {
+/* table cell classes — the table chrome lives in the SortableTable primitive */
+.missing {
     opacity: .55;
 }
 
@@ -376,14 +324,6 @@
     width: 1px;
     white-space: nowrap;
     text-align: right;
-}
-
-.acts button {
-    opacity: 0;
-}
-
-.table tbody tr:hover .acts button {
-    opacity: 1;
 }
 
 /* preview pane */

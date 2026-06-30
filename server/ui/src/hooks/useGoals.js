@@ -8,10 +8,8 @@ const POLL_INTERVAL = 5000;
  */
 export default function useGoals(panelOpen) {
     const [goals, setGoals] = useState([]);
-    const [runnerStatus, setRunnerStatus] = useState(null);
     const [selectedGoalId, setSelectedGoalId] = useState(null);
     const _lastGoalsJson = useRef('');
-    const _lastRunnerJson = useRef('');
 
     // Reset selection each time the panel opens fresh.
     const prevOpen = useRef(false);
@@ -43,13 +41,6 @@ export default function useGoals(panelOpen) {
                 if (json !== _lastGoalsJson.current) {
                     _lastGoalsJson.current = json;
                     setGoals(enriched);
-                }
-            }
-            if (runnerRes) {
-                const json = JSON.stringify(runnerRes);
-                if (json !== _lastRunnerJson.current) {
-                    _lastRunnerJson.current = json;
-                    setRunnerStatus(runnerRes);
                 }
             }
         };
@@ -90,7 +81,6 @@ export default function useGoals(panelOpen) {
 
     return {
         goals,
-        runnerStatus,
         selectedGoalId,
         setSelectedGoalId,
         fetchGoalDetail,
