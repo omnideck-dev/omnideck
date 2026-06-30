@@ -7,6 +7,7 @@ import FilePreview from '../FilePreview.jsx';
 import Button from '../primitives/Button.jsx';
 import IconButton from '../primitives/IconButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
+import SortableTable from '../primitives/SortableTable.jsx';
 import { fileExt, timeAgo, typeIcon } from './_artifactUtils.js';
 import styles from './ArtifactsHubView.module.css';
 
@@ -116,10 +117,6 @@ export default function ArtifactsHubView({ onOpenConversation }) {
         if (selected?.id === pendingDelete.id) setSelected(null);
         setPendingDelete(null);
     }
-
-    const sortCaret = (key) => (sort.key === key
-        ? <i className={`bi ${sort.dir === 'asc' ? 'bi-caret-up-fill' : 'bi-caret-down-fill'} ${styles.caret}`} />
-        : null);
 
     return (
         <div className={styles.view} data-testid="artifacts-hub">
@@ -235,50 +232,45 @@ export default function ArtifactsHubView({ onOpenConversation }) {
                     )}
 
                     {layout === 'table' && visible.length > 0 && (
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th className={styles.sortable} onClick={() => sortBy('name')}>Name {sortCaret('name')}</th>
-                                    <th className={styles.sortable} onClick={() => sortBy('type')}>Type {sortCaret('type')}</th>
-                                    <th>Conversation</th>
-                                    <th className={styles.sortable} onClick={() => sortBy('created')}>Created {sortCaret('created')}</th>
-                                    <th />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {visible.map((a) => (
-                                    <tr
-                                        key={a.id}
-                                        className={`${a.status === 'missing' ? styles.missing : ''} ${activeSelected?.id === a.id ? styles.sel : ''}`}
-                                        onClick={() => setSelected(a)}
-                                        data-testid="artifact-row"
+                        <SortableTable
+                            rows={visible}
+                            rowKey={(a) => a.id}
+                            sort={sort}
+                            onSort={sortBy}
+                            onRowClick={(a) => setSelected(a)}
+                            rowClassName={(a) => (a.status === 'missing' ? styles.missing : '')}
+                            activeRowKey={activeSelected?.id}
+                            rowTestId="artifact-row"
+                            testId="artifacts-table"
+                            columns={[
+                                { key: 'name', header: 'Name', sortable: true, render: (a) => (
+                                    <span className={styles.tname}>
+                                        <i className={`bi ${typeIcon(a.content_type, a.filename)}`} />
+                                        {a.filename}
+                                        {a.status === 'missing' && <Badge variant="warning">missing</Badge>}
+                                    </span>
+                                ) },
+                                { key: 'type', header: 'Type', sortable: true, render: (a) => <Badge>{fileExt(a.filename) || 'file'}</Badge> },
+                                { key: 'conversation', header: 'Conversation', cellClassName: styles.tconv, render: (a) => (
+                                    <span title={a.conversation_title || 'Conversation deleted'}>
+                                        {a.conversation_title || <span className={styles.muted}>deleted</span>}
+                                    </span>
+                                ) },
+                                { key: 'created', header: 'Created', sortable: true, cellClassName: styles.when, render: (a) => (
+                                    <span title={a.created_at}>{timeAgo(a.created_at)}</span>
+                                ) },
+                                { key: 'actions', header: '', cellClassName: styles.acts, revealOnHover: true, render: (a) => (
+                                    <IconButton
+                                        title="Delete artifact"
+                                        aria-label="Delete artifact"
+                                        onClick={(e) => { e.stopPropagation(); requestDelete(a); }}
+                                        data-testid="artifact-delete"
                                     >
-                                        <td>
-                                            <span className={styles.tname}>
-                                                <i className={`bi ${typeIcon(a.content_type, a.filename)}`} />
-                                                {a.filename}
-                                                {a.status === 'missing' && <Badge variant="warning">missing</Badge>}
-                                            </span>
-                                        </td>
-                                        <td><Badge>{fileExt(a.filename) || 'file'}</Badge></td>
-                                        <td className={styles.tconv} title={a.conversation_title || 'Conversation deleted'}>
-                                            {a.conversation_title || <span className={styles.muted}>deleted</span>}
-                                        </td>
-                                        <td className={styles.when} title={a.created_at}>{timeAgo(a.created_at)}</td>
-                                        <td className={styles.acts}>
-                                            <IconButton
-                                                title="Delete artifact"
-                                                aria-label="Delete artifact"
-                                                onClick={(e) => { e.stopPropagation(); requestDelete(a); }}
-                                                data-testid="artifact-delete"
-                                            >
-                                                <i className="bi bi-trash" />
-                                            </IconButton>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                        <i className="bi bi-trash" />
+                                    </IconButton>
+                                ) },
+                            ]}
+                        />
                     )}
                     </div>
                 </div>

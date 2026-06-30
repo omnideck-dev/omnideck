@@ -38,6 +38,7 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 | Master-detail layout | `SplitPanel` | `components/SplitPanel.jsx` | `SplitPanel` + `.List` + `.Detail`. List is 35% (min 280/max 420), detail fills. **List-on-left/detail-on-right only** |
 | Draggable split resizer | `SplitHandle` | `components/SplitHandle.jsx` | `onDrag(position)` — for resizable splits (e.g. chat + preview) |
 | Tabbed preview shell | `PreviewPanel` | `components/PreviewPanel.jsx` | `tabs`, `activeTab`, `onTabChange`, `onCloseTab`, `children` |
+| Sortable data table | `SortableTable` | `primitives/SortableTable.jsx` | sticky header with click-to-sort columns (caret) + hover/active rows. Presentational — caller sorts the rows + owns `sort`. `columns=[{key,header,sortable,render,cellClassName,headerClassName,revealOnHover}]`, `rows`, `rowKey`, `onSort`, `onRowClick`, `rowClassName`, `activeRowKey`, `rowTestId`, `testId`. Used by the artifacts hub + goals |
 | Render any file | `FilePreview` | `components/FilePreview.jsx` | `item={{filename, content_type, path}}`, optional `fullscreen`/`onFullscreen`/`onClose`. Self-contained (fetches + renders md/html/img/pdf/text) |
 | On/off switch | `ToggleSwitch` | `components/ToggleSwitch.jsx` | boolean setting (34×20 pill, accent when on) |
 | Status dot | `StatusDot` | `components/StatusDot.jsx` | running/complete/error indicator |
@@ -53,7 +54,7 @@ pattern; consider extracting a primitive when 3 or more copies exist.
 | **Select / dropdown** | `Select` | native `<select className={styles.select}>` + a module `.select` (32px, `appearance:none` + chevron SVG, `[data-theme="dark"] .select{background:var(--surface)}`, focus ring). Used by SystemSettings, ProfileSelector, ArtifactsHubView. **No `Select` primitive exists.** |
 | Text input | `Inputs` | `.input` spec (or use `SearchInput` if it's a search) |
 | Modal / dialog | `Modal / Dialog` | prefer the new `Modal` primitive for new modals. The older ones still roll their own scrim+panel (`var(--scrim)` + `var(--z-modal)` panel, `--elevated`/`--border`/`--shadow-lg`/`--radius-lg`) — see AddProviderModal; not yet retrofitted |
-| Data table | `Tables` | bespoke `<table>` (sticky `--canvas` header, `--border-subtle` row separators). **No Table primitive** |
+| Data table | `Tables` | use the **`SortableTable` primitive** (sticky `--canvas` header, click-to-sort columns, `--border-subtle` row separators). Caller sorts the rows + owns the sort state |
 | Card | `Cards` / `Display Card` / `File Output Card` | `--elevated` + `--border` + `--radius-lg`; hover lift + `--shadow-lg` |
 | Empty state | `Empty State` | centered icon + message, `--text-tertiary` |
 | Chip / tag | `Chip / Tag` | small pill (prefer `Badge` for status/tags) |
