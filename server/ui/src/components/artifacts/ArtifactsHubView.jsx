@@ -94,9 +94,14 @@ function ArtifactThumb({ item }) {
 /**
  * Global artifacts hub: every artifact across all conversations, in a grid or
  * table, with search, sort (name/created/type), an in-place preview pane
- * (reusing FilePreview), delete, and a prune-missing action. Self-contained.
+ * (reusing FilePreview), delete, and a prune-missing action.
+ *
+ * Each artifact carries its source conversation's title from the API
+ * (`conversation_title`, null when that conversation is gone). When an
+ * `onOpenConversation(artifact)` handler is supplied, the preview also offers an
+ * "open in conversation" action; without it the hub still works (no open action).
  */
-export default function ArtifactsHubView() {
+export default function ArtifactsHubView({ onOpenConversation }) {
     const { items, loading, removeArtifact, pruneMissing } = useArtifacts();
     const [layout, setLayout] = useState('grid'); // 'grid' | 'table'
     const [query, setQuery] = useState('');
@@ -254,6 +259,10 @@ export default function ArtifactsHubView() {
                                                 ? <Badge variant="warning">missing</Badge>
                                                 : <span className={styles.when}>{timeAgo(a.created_at)}</span>}
                                         </div>
+                                        <div className={styles.cardConv} title={a.conversation_title || 'Conversation deleted'}>
+                                            <i className="bi bi-chat-left-text" />
+                                            {a.conversation_title || 'Conversation deleted'}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -266,6 +275,7 @@ export default function ArtifactsHubView() {
                                 <tr>
                                     <th className={styles.sortable} onClick={() => sortBy('name')}>Name {sortCaret('name')}</th>
                                     <th className={styles.sortable} onClick={() => sortBy('type')}>Type {sortCaret('type')}</th>
+                                    <th>Conversation</th>
                                     <th className={styles.sortable} onClick={() => sortBy('created')}>Created {sortCaret('created')}</th>
                                     <th />
                                 </tr>
@@ -286,6 +296,9 @@ export default function ArtifactsHubView() {
                                             </span>
                                         </td>
                                         <td><Badge>{fileExt(a.filename) || 'file'}</Badge></td>
+                                        <td className={styles.tconv} title={a.conversation_title || 'Conversation deleted'}>
+                                            {a.conversation_title || <span className={styles.muted}>deleted</span>}
+                                        </td>
                                         <td className={styles.when} title={a.created_at}>{timeAgo(a.created_at)}</td>
                                         <td className={styles.acts}>
                                             <IconButton
@@ -309,6 +322,19 @@ export default function ArtifactsHubView() {
                     <aside className={styles.preview} data-testid="artifact-preview">
                         <div className={styles.previewHead}>
                             <span className={styles.previewLabel}>Preview</span>
+                            {onOpenConversation && (
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => onOpenConversation(activeSelected)}
+                                    disabled={!activeSelected.conversation_title}
+                                    title={activeSelected.conversation_title
+                                        ? 'Open the conversation that produced this file'
+                                        : 'That conversation no longer exists'}
+                                    data-testid="artifact-open-conversation"
+                                >
+                                    <i className="bi bi-box-arrow-up-right" /> Open in conversation
+                                </Button>
+                            )}
                             <IconButton
                                 title="Close preview"
                                 aria-label="Close preview"

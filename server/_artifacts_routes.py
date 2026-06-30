@@ -18,6 +18,7 @@ from aiohttp import web
 from aiohttp.web import Request, Response
 
 from artifacts import delete_artifact, list_artifacts, prune_missing, reconcile
+from conversations import conversation_exists, load_conversation_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +28,40 @@ def _is_truthy(value: str | None) -> bool:
     return value is not None and value.lower() in ("1", "true", "yes")
 
 
+def _title_resolver():
+    """Return a function mapping a conversation id to its display title.
+
+    Caches per id so a list spanning many artifacts in one conversation reads
+    that conversation's metadata once. Returns None when the conversation no
+    longer exists, so the UI can show it as deleted and disable "open".
+    """
+    cache: dict[str, str | None] = {}
+
+    def title_for(conversation_id: str) -> str | None:
+        if conversation_id not in cache:
+            if conversation_exists(conversation_id):
+                title = (load_conversation_metadata(conversation_id).get("title") or "").strip()
+                cache[conversation_id] = title or "Untitled"
+            else:
+                cache[conversation_id] = None
+        return cache[conversation_id]
+
+    return title_for
+
+
 async def list_artifacts_handler(request: Request) -> Response:
     """List artifacts, newest first, each tagged with its live on-disk status.
 
     With ?conversation_id=<id> the list is scoped to that conversation; without
-    it, every artifact across all conversations is returned.
+    it, every artifact across all conversations is returned. Each entry also
+    carries its source conversation's title (or null if that conversation is
+    gone), joined in here from the conversation store.
     """
     conversation_id = request.query.get("conversation_id")
     views = reconcile(list_artifacts(conversation_id))
+    title_for = _title_resolver()
+    for view in views:
+        view.conversation_title = title_for(view.conversation_id)
     return web.json_response({"artifacts": [v.model_dump() for v in views]})
 
 

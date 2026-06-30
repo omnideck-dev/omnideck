@@ -65,7 +65,18 @@ export function ConversationsProvider({ children }) {
         });
     }, [setItems]);
 
-    const value = { ...panel, addStartedConversation };
+    // Persist a file as the open + active tab in a conversation's preview state
+    // so reopening that conversation restores it. Conversation-scoped; doesn't
+    // touch the in-memory list.
+    const focusFileInConversation = useCallback(async (conversationId, path) => {
+        await fetch(`/api/conversations/sessions/${conversationId}/preview-state/focus-file`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path }),
+        });
+    }, []);
+
+    const value = { ...panel, addStartedConversation, focusFileInConversation };
     return (
         <ConversationsContext.Provider value={value}>
             {children}

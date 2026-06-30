@@ -6,12 +6,12 @@ import ArtifactsHubView from '../ArtifactsHubView.jsx';
 const ARTIFACTS = [
     {
         id: 'a1', conversation_id: 'c1', path: '/home/computron/a.md', filename: 'a.md',
-        content_type: 'text/markdown', agent_name: 'Claude',
+        content_type: 'text/markdown', agent_name: 'Claude', conversation_title: 'Conv One',
         created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', status: 'present',
     },
     {
         id: 'a2', conversation_id: 'c2', path: '/home/computron/b.html', filename: 'b.html',
-        content_type: 'text/html', agent_name: 'Claude',
+        content_type: 'text/html', agent_name: 'Claude', conversation_title: 'Conv Two',
         created_at: '2026-01-02T00:00:00Z', updated_at: '2026-01-02T00:00:00Z', status: 'present',
     },
 ];

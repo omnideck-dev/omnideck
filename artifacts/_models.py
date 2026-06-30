@@ -37,13 +37,16 @@ class ArtifactEntry(BaseModel):
 
 
 class ArtifactView(ArtifactEntry):
-    """An index entry plus its live on-disk status, computed fresh on each read.
+    """An index entry plus read-time overlays, computed fresh on each read.
 
-    ``status`` is never persisted — it is a read-time overlay so a file that
-    has since vanished from disk shows as ``missing`` without mutating the index.
+    Neither field is persisted. ``status`` reflects whether the file is still on
+    disk (a vanished file shows as ``missing`` without mutating the index).
+    ``conversation_title`` is the display name of the source conversation, joined
+    in at read time, or ``None`` when that conversation no longer exists.
     """
 
     status: Literal["present", "missing"]
+    conversation_title: str | None = None
 
 
 class ArtifactsIndex(BaseModel):

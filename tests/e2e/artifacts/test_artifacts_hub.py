@@ -18,7 +18,7 @@ from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
 from tests.e2e._protocol import send_file, write_file
-from tests.e2e.pages import ArtifactsHub, ChatView
+from tests.e2e.pages import ArtifactsHub, ChatView, PreviewPanel
 
 VC_HOME = "/home/computron"
 
@@ -155,3 +155,42 @@ def test_missing_artifact_can_be_pruned(page: Page):
         expect(hub.card(name)).to_have_count(0)
     finally:
         _purge(page, name)
+
+
+# ── open in conversation: focus-write + resume restores the file ────────
+
+
+@pytest.mark.xfail(
+    reason=(
+        "open-in-conversation file restore needs the warm-resume timeline fix: "
+        "a conversation still cached from its live turn drops file_output from "
+        "its in-memory log, so resume can't reconstruct the focused file"
+    ),
+    strict=True,
+)
+def test_open_in_conversation_restores_focused_file(page: Page):
+    """Opening an artifact from the hub loads its conversation with the file restored.
+
+    This asserts the full feature: the open action focuses the file, navigates to
+    the source conversation, and the resumed conversation shows the file as a
+    preview tab. It currently fails on the warm-resume path (see xfail reason);
+    when the timeline fix lands this will pass, and strict xfail will flag it so
+    we remove the marker.
+    """
+    nonce = time.time_ns()
+    name = f"hubopen_{nonce}.md"
+    _produce(page, (f"{VC_HOME}/{name}", "# open me\n\nfrom the hub"))
+    try:
+        # Switch to a new conversation so the artifact's conversation is no
+        # longer active — exercises the focus-write + resume path.
+        ChatView(page).goto().new_conversation()
+
+        hub = ArtifactsHub(page).goto()
+        hub.select(name)
+        page.get_by_test_id("artifact-open-conversation").click()
+
+        # The source conversation resumes with the file restored as a preview tab.
+        expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
+    finally:
+        _purge(page, name)
+        _delete_file(name)
