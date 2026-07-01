@@ -16,7 +16,7 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
+export default function ChatPanel({ turns, stalled = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
     const [drawerOpen, setDrawerOpen] = useState(false);
 
     // The title bar reflects the root agent; read it straight from the agent
@@ -57,7 +57,7 @@ export default function ChatPanel({ turns, onSend, onStop, isStreaming, stopRequ
                     </button>
                 )}
             </div>
-            <ChatMessages turns={turns} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
+            <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input,
                 discarding any unsent text instead of carrying it over. */}
             <ChatInput

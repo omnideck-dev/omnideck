@@ -238,6 +238,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
     const {
         turns,
+        stalled,
         isStreaming,
         stopRequested,
         sendMessage,
@@ -535,6 +536,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                          style={{ width: hasPreview && view === 'chat' ? `${preview.splitPosition}%` : '100%' }}>
                         <ChatPanel
                             turns={turns}
+                            stalled={stalled}
                             onSend={handleSend}
                             onStop={stopGeneration}
                             isStreaming={isStreaming}

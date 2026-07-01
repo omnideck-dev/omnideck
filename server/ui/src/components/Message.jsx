@@ -28,13 +28,18 @@ function _isHidden(entry) {
  * derived from the entries list alone — if the most recent entry is a
  * tool_call, the agent is (or was just) executing tools, and "Calling
  * X…" is the right message regardless of whether the result has landed. */
-function _ephemeralText(entry) {
-    if (!entry) return 'Thinking…';
+function _ephemeralText(entry, stalled) {
     // spawn_agent runs the whole sub-agent lifecycle (can be minutes);
     // the SpawnCard owns that visual, so don't say "Calling spawn_agent…".
-    if (entry.type === 'tool_call' && entry.name !== 'spawn_agent') {
+    if (entry?.type === 'tool_call' && entry.name !== 'spawn_agent') {
         return `Calling ${entry.name || 'tool'}…`;
     }
+    // Content is done but the turn is still streaming and has gone quiet —
+    // the model is producing something that emits no content tokens (usually
+    // a large tool call whose arguments stream silently). "Working…" keeps the
+    // indicator honest without claiming it's thinking or naming a tool we
+    // don't know yet.
+    if (stalled && entry?.type === 'content') return 'Working…';
     return 'Thinking…';
 }
 
@@ -55,8 +60,14 @@ function _summary(hidden) {
  * the agent's current activity; once finished, a faint footer reveals the
  * full chronological activity on click. Content, spawn cards, and file
  * outputs stay inline as they always have.
+ *
+ * ``stalled`` marks that the stream has gone silent mid-turn (see
+ * useStreamStall). When it does, a finished content entry stops counting as
+ * "streaming inline" so the ephemeral row reappears — otherwise the bubble
+ * would sit frozen with no indicator while the model streams, say, a large
+ * tool call that emits no content tokens.
  */
-function AssistantMessage({ entries, onPreview, streaming,
+function AssistantMessage({ entries, onPreview, streaming, stalled = false,
                             spawnedAgents, onSelectAgent }) {
     const [activityOpen, setActivityOpen] = useState(false);
     const list = Array.isArray(entries) ? entries : [];
@@ -67,8 +78,10 @@ function AssistantMessage({ entries, onPreview, streaming,
 
     // Stream-animate the inline content when the most recent entry is a
     // visible one (content / spawn_requested / file_output). Otherwise
-    // the ephemeral row owns the "what is the agent doing" indicator.
-    const streamInline = streaming && _isVisibleInline(lastEntry);
+    // the ephemeral row owns the "what is the agent doing" indicator. A
+    // stalled stream drops out of inline streaming so the ephemeral row
+    // takes over from the static content.
+    const streamInline = streaming && _isVisibleInline(lastEntry) && !stalled;
     const showEphemeral = streaming && !streamInline;
     const summary = _summary(hiddenEntries);
 
@@ -87,7 +100,7 @@ function AssistantMessage({ entries, onPreview, streaming,
                 {showEphemeral && (
                     <div className={styles.ephemeral} data-testid="ephemeral-status">
                         <span className={styles.pulse} aria-hidden="true" />
-                        <span className={styles.ephemeralText}>{_ephemeralText(lastEntry)}</span>
+                        <span className={styles.ephemeralText}>{_ephemeralText(lastEntry, stalled)}</span>
                     </div>
                 )}
                 {!streaming && summary && (
