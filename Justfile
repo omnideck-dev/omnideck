@@ -198,6 +198,10 @@ logs:
 unit:
     PYTHONPATH=. uv run pytest tests/unit/
 
+# Run browser-tools tests (real headless Chrome against local fixture pages)
+browser-tools *args:
+    PYTHONPATH=. uv run pytest tests/browser_tools/ {{args}}
+
 # Run tests matching a specific file or path
 test-file file:
     PYTHONPATH=. uv run pytest {{file}}
