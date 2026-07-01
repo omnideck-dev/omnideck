@@ -740,10 +740,19 @@ class Browser:
         Returns:
             The dominant ``Frame``, or ``None`` if no qualifying frame exists.
         """
-        viewport = page.viewport_size
-        if not viewport:
+        # Measure the real window, not page.viewport_size. The browser runs
+        # with no emulated viewport, so Playwright reports viewport_size as None
+        # even though the page fills the actual window; innerWidth/innerHeight
+        # give the true visible size (and match viewport_size when one is set).
+        try:
+            window_size = await page.evaluate(
+                "() => ({ width: window.innerWidth, height: window.innerHeight })"
+            )
+        except PlaywrightError:
             return None
-        vw, vh = viewport["width"], viewport["height"]
+        vw, vh = window_size.get("width", 0), window_size.get("height", 0)
+        if not vw or not vh:
+            return None
         min_area = vw * vh * self._DOMINANT_FRAME_THRESHOLD
 
         best_frame: Frame | None = None

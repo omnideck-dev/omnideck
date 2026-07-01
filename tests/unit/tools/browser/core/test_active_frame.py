@@ -58,20 +58,27 @@ class _FakeFrame:
 
 
 class _FakePage:
-    """Minimal Page stub exposing frames and viewport_size."""
+    """Minimal Page stub exposing frames and a measurable window size."""
 
     def __init__(
         self,
         *,
         frames: list[Any] | None = None,
-        viewport: dict[str, int] | None = None,
+        window: dict[str, int] | None = None,
     ) -> None:
         self.frames = frames or []
-        self.viewport_size = viewport or {"width": 1280, "height": 800}
+        # Production runs with no emulated viewport, so viewport_size is None;
+        # detection measures the real window via evaluate() instead.
+        self.viewport_size = None
+        self._window = window or {"width": 1280, "height": 800}
         self.main_frame = object()
         # Prepend main_frame to the frames list so page.frames includes it
         self.frames.insert(0, self.main_frame)
         self.url = "https://example.test"
+
+    async def evaluate(self, script: str) -> Any:
+        # The only page-level evaluate() is the window-size measurement.
+        return dict(self._window)
 
     def is_closed(self) -> bool:
         return False
@@ -249,12 +256,10 @@ async def test_invalidate_dominant_frame() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_no_viewport_returns_none() -> None:
-    """When page has no viewport_size, detection returns None."""
-    page = _FakePage()
-    page.viewport_size = None  # type: ignore[assignment]
+async def test_unmeasurable_window_returns_none() -> None:
+    """When the window size can't be measured (zero-sized), detection returns None."""
     frame = _FakeFrame(box={"x": 0, "y": 0, "width": 1200, "height": 700})
-    page.frames.append(frame)
+    page = _FakePage(frames=[frame], window={"width": 0, "height": 0})
     browser = _make_browser(page)
     result = await browser._detect_dominant_frame(page)  # type: ignore[arg-type]
     assert result is None
