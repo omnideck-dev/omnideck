@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
+import useStreamStall from './useStreamStall.js';
 
 function _uuid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -1076,10 +1077,20 @@ export default function useStreamingChat(callbacks) {
         return baseTurns;
     }, [events, inflightIteration, pendingUserPrompt]);
 
+    // Stall detection. While a turn streams, the SSE feed can go silent for
+    // many seconds — some providers stream a large tool call's arguments as
+    // tokens that carry no content, so nothing arrives to render. Key off the
+    // hook's own event-derived state: the persisted event count plus the
+    // in-flight iteration's content/thinking length. Any advance means output
+    // arrived and resets the stall clock; a plateau while streaming is a stall.
+    const streamActivityKey = `${events.length}:${inflightIteration?.content?.length || 0}:${inflightIteration?.thinking?.length || 0}`;
+    const stalled = useStreamStall(streamActivityKey, isStreaming);
+
     return {
         messages,
         events,
         turns,
+        stalled,
         isStreaming,
         stopRequested,
         activeConversationId,

@@ -12,6 +12,7 @@ import styles from './ChatMessages.module.css';
  */
 export default function ChatMessages({
     turns,
+    stalled = false,
     onPreview,
     onStarterSelect,
     onSelectAgent,
@@ -53,6 +54,7 @@ export default function ChatMessages({
                                     spawnedAgents={spawnedAgents}
                                     onSelectAgent={onSelectAgent}
                                     streaming={streaming}
+                                    stalled={stalled}
                                 />
                             );
                         })}

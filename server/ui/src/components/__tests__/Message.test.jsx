@@ -215,6 +215,34 @@ describe('Message ephemeral status and activity footer', () => {
         expect(screen.queryByTestId('ephemeral-status')).not.toBeInTheDocument();
     });
 
+    it('shows "Working…" when a streaming turn stalls on finished content', () => {
+        // Content is done but the turn keeps streaming silently — e.g. the
+        // model is streaming a large tool call whose arguments emit no content
+        // tokens. The ephemeral row reappears so the bubble isn't left frozen.
+        const entries = [
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'content', content: 'Now let me write the file:', timestamp: 2 },
+        ];
+        render(<Message role="assistant" entries={entries} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Working…');
+    });
+
+    it('says "Thinking…" (not "Working…") when a stall has no content yet', () => {
+        // A stall reported before any content streamed is still the initial
+        // wait, so the label stays "Thinking…".
+        render(<Message role="assistant" entries={[]} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Thinking…');
+    });
+
+    it('prefers "Calling X…" over "Working…" when a tool_call is the last entry', () => {
+        const entries = [
+            { type: 'content', content: 'let me check', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd', timestamp: 2 },
+        ];
+        render(<Message role="assistant" entries={entries} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Calling run_bash_cmd…');
+    });
+
     it('hides thinking and raw tool_call entries from the inline body', () => {
         const entries = [
             { type: 'thinking', thinking: 'private thoughts', timestamp: 1 },

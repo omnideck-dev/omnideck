@@ -80,6 +80,7 @@ export default function Turn({
     spawnedAgents,
     onSelectAgent,
     streaming,
+    stalled = false,
 }) {
     if (!turn || !Array.isArray(turn.children)) return null;
 
@@ -174,6 +175,7 @@ export default function Turn({
                         role="assistant"
                         entries={item.entries}
                         streaming={!!streaming && isLast}
+                        stalled={stalled}
                         onPreview={onPreview}
                         spawnedAgents={spawnedAgents}
                         onSelectAgent={onSelectAgent}
