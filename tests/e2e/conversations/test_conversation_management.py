@@ -93,7 +93,7 @@ def test_row_menu_exposes_pin_rename_delete(page: Page):
         recent = RecentConversations(page)
         expect(recent.items.first).to_be_visible(timeout=5000)
 
-        recent.item(0).open_menu()
+        recent.item_by_id(conv_id).open_menu()
         expect(page.get_by_test_id("recent-menu-pin")).to_have_text("Pin")
         expect(page.get_by_test_id("recent-menu-rename")).to_be_visible()
         expect(page.get_by_test_id("recent-menu-delete")).to_be_visible()
@@ -120,7 +120,7 @@ def test_rename_conversation_persists(page: Page):
         recent = RecentConversations(page)
         expect(page.get_by_text(old_title)).to_be_visible(timeout=5000)
 
-        recent.item(0).rename(new_title)
+        recent.item_by_id(conv_id).rename(new_title)
         expect(page.get_by_text(new_title)).to_be_visible()
         expect(page.get_by_text(old_title)).not_to_be_visible()
 
@@ -146,7 +146,7 @@ def test_rename_blank_reverts_to_first_message(page: Page):
         recent = RecentConversations(page)
         expect(page.get_by_text(f"Titled {nonce}")).to_be_visible(timeout=5000)
 
-        recent.item(0).open_menu()
+        recent.item_by_id(conv_id).open_menu()
         page.get_by_test_id("recent-menu-rename").click()
         field = page.get_by_test_id("recent-rename-input")
         field.fill("")
@@ -158,8 +158,13 @@ def test_rename_blank_reverts_to_first_message(page: Page):
         _delete_conversation(conv_id)
 
 
-def test_pin_conversation_moves_to_pinned_section(page: Page):
-    """Pinning surfaces a Pinned section and survives a reload."""
+def test_pin_conversation_marks_row_pinned(page: Page):
+    """Pinning marks the row pinned and survives a reload.
+
+    Asserts the pinned state of this conversation's own row (via data-pinned)
+    rather than the global Pinned section, so it's unaffected by any other
+    pinned conversation that may already exist.
+    """
     nonce = time.time_ns()
     conv_id = f"e2e_pin_{nonce}"
     title = f"PinMe {nonce}"
@@ -170,21 +175,20 @@ def test_pin_conversation_moves_to_pinned_section(page: Page):
     try:
         ChatView(page).goto()
         recent = RecentConversations(page)
-        expect(page.get_by_text(title)).to_be_visible(timeout=5000)
-        expect(recent.pinned_label).not_to_be_visible()
+        expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "false", timeout=5000)
 
-        recent.item(0).toggle_pin()
-        expect(recent.pinned_label).to_be_visible()
+        recent.item_by_id(conv_id).toggle_pin()
+        expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "true")
 
         # Reload: the pin was persisted server-side.
         page.reload()
-        expect(recent.pinned_label).to_be_visible(timeout=5000)
+        expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "true", timeout=5000)
     finally:
         _delete_conversation(conv_id)
 
 
-def test_unpin_conversation_hides_pinned_section(page: Page):
-    """Unpinning the only pinned chat removes the Pinned section."""
+def test_unpin_conversation_clears_row_pin(page: Page):
+    """Unpinning a pinned chat clears its row's pinned state."""
     nonce = time.time_ns()
     conv_id = f"e2e_unpin_{nonce}"
     title = f"UnpinMe {nonce}"
@@ -195,13 +199,13 @@ def test_unpin_conversation_hides_pinned_section(page: Page):
     try:
         ChatView(page).goto()
         recent = RecentConversations(page)
-        expect(recent.pinned_label).to_be_visible(timeout=5000)
+        expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "true", timeout=5000)
 
         # The menu reads "Unpin" for an already-pinned chat.
-        recent.item(0).open_menu()
+        recent.item_by_id(conv_id).open_menu()
         expect(page.get_by_test_id("recent-menu-pin")).to_have_text("Unpin")
         page.get_by_test_id("recent-menu-pin").click()
 
-        expect(recent.pinned_label).not_to_be_visible()
+        expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "false")
     finally:
         _delete_conversation(conv_id)

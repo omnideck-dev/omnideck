@@ -43,6 +43,11 @@ def resumed(browser, browser_context_args):
     )
     assert page.get_by_text(cw2).count() >= 1, "cw2 missing before switch"
 
+    # Capture this conversation's id (the newest summary) so we can resume it
+    # by identity rather than by list position — a pinned conversation could
+    # otherwise sit above it in the sidebar.
+    conv_id = page.request.get("/api/conversations/sessions").json()[0]["conversation_id"]
+
     # Switch to a fresh conversation; message bubbles should be cleared.
     # Codeword text may persist in the sidebar's recent-conversations label,
     # so scope the "gone" assertions to the message containers.
@@ -51,9 +56,8 @@ def resumed(browser, browser_context_args):
     expect(page.get_by_test_id("message-assistant")).to_have_count(0)
     expect(page.get_by_test_id("activity-toggle")).to_have_count(0)
 
-    # Resume the prior conversation. Topmost row = most recent
-    # (sorted by started_at in conversations/_store.py).
-    RecentConversations(page).open_top()
+    # Resume the prior conversation by id, regardless of its row position.
+    RecentConversations(page).open_by_id(conv_id)
 
     # Wait until the first restored user message bubble is visible
     # before yielding. Scoped to message-user so we don't false-match

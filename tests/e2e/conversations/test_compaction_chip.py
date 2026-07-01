@@ -23,9 +23,9 @@ def _build_events_jsonl(conv_id: str) -> str:
     """Synthesize an events.jsonl with a compaction event whose ``stats``
     are pre-computed so the chip renders without any post-hoc derivation.
 
-    Wall-clock timestamps so the seeded conversation sorts above any
-    live-created ones from earlier in the session and the
-    ``RecentConversations.open_top()`` click lands here.
+    Wall-clock timestamps keep the seeded turns in chronological order; the
+    tests open the conversation by title, so its position in the list — and any
+    other conversations alongside it — doesn't matter.
 
     Layout: two root turns separated by a compaction. Two ``agent_started``
     events anchor the per-turn message list so the chip's insertion

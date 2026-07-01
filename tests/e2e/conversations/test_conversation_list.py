@@ -193,12 +193,12 @@ def test_deleting_active_conversation_opens_a_new_one(page: Page):
         expect(recent.items.first).to_be_visible(timeout=5000)
 
         # Open it so it becomes the active conversation.
-        recent.item(0).open()
+        recent.open_by_id(conv_id)
         user_msgs = page.get_by_test_id("message-user")
         expect(user_msgs.first).to_contain_text(f"OPEN_MARKER_{nonce}", timeout=10_000)
 
         # Deleting the active conversation starts a fresh, empty one.
-        recent.item(0).delete()
+        recent.item_by_id(conv_id).delete()
         expect(page.get_by_text(title)).not_to_be_visible()
         expect(page.get_by_test_id("message-user")).to_have_count(0)
     finally:
@@ -222,13 +222,13 @@ def test_multiple_conversations_listed_in_recency_order(page: Page):
         ChatView(page).goto()
         recent = RecentConversations(page)
         expect(recent.items.first).to_be_visible(timeout=5000)
-        assert recent.items.count() >= 3
 
-        # Most recent (last seeded) should be first in the list.
-        top_three = [recent.item(i).title for i in range(3)]
-        assert titles[2] in top_three[0], f"Most recent first, got: {top_three}"
-        assert titles[1] in top_three[1], f"Middle conv second, got: {top_three}"
-        assert titles[0] in top_three[2], f"Oldest conv third, got: {top_three}"
+        # Restrict the list order to our own seeds — other rows (e.g. a pinned
+        # welcome conversation) may sit among them — and assert those appear
+        # most-recent-first, i.e. the reverse of seed order.
+        seeded = set(ids)
+        mine = [cid for cid in recent.order() if cid in seeded]
+        assert mine == ids[::-1], f"expected newest-first {ids[::-1]}, got {mine}"
     finally:
         for cid in ids:
             _delete_conversation(cid)
@@ -257,8 +257,8 @@ def test_switch_between_conversations(page: Page):
         recent = RecentConversations(page)
         expect(recent.items.first).to_be_visible(timeout=5000)
 
-        # Load the newer conversation (item 0).
-        recent.item(0).open()
+        # Load the newer conversation by id.
+        recent.open_by_id(newer_id)
 
         user_msgs = page.get_by_test_id("message-user")
         expect(user_msgs.first).to_contain_text(
@@ -267,8 +267,8 @@ def test_switch_between_conversations(page: Page):
         assistant_msgs = page.get_by_test_id("message-assistant")
         expect(assistant_msgs.first).to_contain_text("I see beta.")
 
-        # Switch to the older conversation (item 1).
-        recent.item(1).open()
+        # Switch to the older conversation by id.
+        recent.open_by_id(older_id)
         expect(user_msgs.first).to_contain_text(
             f"ALPHA_MARKER_{nonce}", timeout=10_000
         )
@@ -306,8 +306,8 @@ def test_delete_conversation(page: Page):
         expect(page.get_by_text(delete_title)).to_be_visible()
         expect(page.get_by_text(keep_title)).to_be_visible()
 
-        # Delete the most recent one (item 0 = delete_title).
-        recent.item(0).delete()
+        # Delete one of them by id, not by position.
+        recent.item_by_id(delete_id).delete()
         page.wait_for_timeout(1000)
 
         expect(page.get_by_text(delete_title)).not_to_be_visible()
