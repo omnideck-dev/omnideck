@@ -325,3 +325,23 @@ async def test_resume_returns_terminal_sidecar(
     (entry,) = result["terminal"]["root.test.1"]
     assert entry["cmd"] == "ls"
     assert entry["stdout"] == "a.txt\n"
+
+
+@pytest.mark.unit
+def test_warm_resume_retains_every_replayed_event_type() -> None:
+    """Drift guard tying the resume contract to the in-memory log.
+
+    A warm-cache resume replays the same in-memory log a live turn wrote, so
+    every event type the resume payload replays must be one the in-memory log
+    retains. If the two diverge, a warm resume silently drops those events
+    while a cold disk resume keeps them — exactly the file_output /
+    spawn_requested warm-resume bug. Adding a new replayed type without
+    retaining it in-memory fails here.
+    """
+    from sdk.context._history import _RETAINED_EVENT_TYPES
+
+    missing = cc._REPLAY_EVENT_TYPES - _RETAINED_EVENT_TYPES
+    assert not missing, (
+        f"resume replays {sorted(missing)} but the warm in-memory log drops "
+        "them; add them to the retained-event set so warm resume matches cold"
+    )

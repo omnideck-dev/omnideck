@@ -32,14 +32,21 @@ from ._view import build_llm_view, events_for_agent
 
 logger = logging.getLogger(__name__)
 
-# Event types whose payloads contribute to the derived LLM view.
-_DERIVED_EVENT_TYPES: frozenset[str] = frozenset({
+# Event types the in-memory log retains. This serves two readers: the
+# derived LLM/transcript view (which only reads message-shaped types) and
+# the warm-resume path, which replays this same in-memory log to restore the
+# UI. So it must hold every type resume replays — file_output (inline file
+# blocks) and spawn_requested (sub-agent cards) included — or a conversation
+# resumed from the warm cache loses them while a cold disk resume keeps them.
+_RETAINED_EVENT_TYPES: frozenset[str] = frozenset({
     "user_message",
     "iteration",
     "tool_result",
     "compaction",
     "agent_started",
     "agent_completed",
+    "file_output",
+    "spawn_requested",
 })
 
 
@@ -131,13 +138,13 @@ class ConversationHistory:
     def add_event(self, event: AgentEvent) -> None:
         """Canonical write: append + fan out to observers.
 
-        Synchronously updates the in-memory event log for derived event
-        types (so the next read of ``messages`` reflects this event), then
-        notifies every observer. Observers receive every event regardless
-        of type — persistence and the UI stream care about file_output,
-        terminal_output, etc. even though the LLM view ignores them.
+        Synchronously updates the in-memory event log for retained event
+        types (so the next read of ``messages`` — and a warm resume — reflects
+        this event), then notifies every observer. Observers receive every
+        event regardless of type; persistence and the UI stream also handle
+        types the in-memory log doesn't retain.
         """
-        if self._conversation_id is not None and event.payload.type in _DERIVED_EVENT_TYPES:
+        if self._conversation_id is not None and event.payload.type in _RETAINED_EVENT_TYPES:
             self._events.append(event.to_flat_dict(self._conversation_id))
         for obs in tuple(self._observers):
             try:
