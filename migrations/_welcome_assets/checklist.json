@@ -1,0 +1,8 @@
+[
+  {"label": "Have me build a webpage or interactive tool", "done": false},
+  {"label": "Ask me to run a Python script", "done": false},
+  {"label": "Send me a file — PDF, CSV, or image — to work with", "done": false},
+  {"label": "Connect Gmail, Calendar, or Drive", "done": false},
+  {"label": "Spawn a sub-agent to tackle a big task", "done": false},
+  {"label": "Set up an autonomous goal that runs on a schedule", "done": false}
+]

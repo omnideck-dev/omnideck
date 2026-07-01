@@ -17,6 +17,7 @@ from migrations._007_events_first import migrate as _007_events_first
 from migrations._008_scrub_browser_screenshots import migrate as _008_scrub_browser_screenshots
 from migrations._009_terminal_sidecar import migrate as _009_terminal_sidecar
 from migrations._010_backfill_artifacts_index import migrate as _010_backfill_artifacts_index
+from migrations._011_seed_welcome_conversation import migrate as _011_seed_welcome_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("008_scrub_browser_screenshots", _008_scrub_browser_screenshots),
     ("009_terminal_sidecar", _009_terminal_sidecar),
     ("010_backfill_artifacts_index", _010_backfill_artifacts_index),
+    ("011_seed_welcome_conversation", _011_seed_welcome_conversation),
 ]
 
 
