@@ -76,14 +76,17 @@ fi
 eval $(dbus-launch --sh-syntax)
 export DBUS_SESSION_BUS_ADDRESS
 
-# Enable accessibility for AT-SPI element detection
-export GTK_MODULES=gail:atk-bridge
-export ACCESSIBILITY_ENABLED=1
-
 # ── Desktop (optional, gated by ENABLE_DESKTOP) ─────────────────────────────
 # Xfce + x11vnc + noVNC only run when the desktop feature is enabled. Xvfb
 # above always runs because Playwright browsers need an X display regardless.
+# The AT-SPI accessibility stack is only installed alongside the desktop
+# packages, so its env vars are exported here rather than unconditionally —
+# otherwise the browser logs "failed to load module atk-bridge".
 if [ "${_DESKTOP}" = "true" ]; then
+    # Enable accessibility for AT-SPI element detection
+    export GTK_MODULES=gail:atk-bridge
+    export ACCESSIBILITY_ENABLED=1
+
     # Xfce desktop (as computron). Pass D-Bus address so child inherits it.
     gosu computron bash -c "export DBUS_SESSION_BUS_ADDRESS='$DBUS_SESSION_BUS_ADDRESS' GTK_MODULES=gail:atk-bridge ACCESSIBILITY_ENABLED=1; startxfce4" &
     # Give startxfce4 a moment to spawn xfwm4 before the pgrep check below; without this

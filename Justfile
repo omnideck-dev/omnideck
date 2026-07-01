@@ -259,7 +259,7 @@ manual-test:
         "$image"
 
     just _sync-src "$name"
-    docker exec "$name" bash -c "cd /opt/computron/{{UI_DIR}} && npm run build"
+    just _ui-build "$name"
     docker restart "$name" >/dev/null
 
     ready=false
@@ -435,25 +435,24 @@ _sync-src ctr:
         -cf - . | docker exec -i {{ctr}} tar -xf - -C /opt/computron
     @echo "📦 Source synced into {{ctr}}"
 
-# Install UI deps if package-lock.json has drifted, then build dist/.
-# Cheap on steady state (skips install when the lockfile hash matches the
-# stamp file inside node_modules). _sync-src excludes node_modules, so
-# the image's baked deps persist across syncs — we only reinstall when
-# the lockfile actually changed.
+# Build the UI on the host, then copy dist/ into the container. The container
+# image ships no Node, so the build happens here and only the static assets are
+# pushed in. Reinstalls host deps only when the lockfile drifts from the stamp.
 _ui-build ctr:
     #!/usr/bin/env bash
     set -euo pipefail
-    docker exec {{ctr}} bash -euc '
-        cd /opt/computron/{{UI_DIR}}
-        lock_hash=$(sha256sum package-lock.json 2>/dev/null | cut -d" " -f1 || echo none)
-        stamp=node_modules/.deps-hash
-        if [ ! -f "$stamp" ] || [ "$(cat "$stamp" 2>/dev/null)" != "$lock_hash" ]; then
-            echo "📦 Syncing UI deps (lockfile changed)..."
-            if [ -f package-lock.json ]; then npm ci; else npm install; fi
-            echo "$lock_hash" > "$stamp"
-        fi
-        npm run build
-    '
+    command -v npm >/dev/null || { echo "❌ Node.js/npm required on host to build the UI"; exit 1; }
+    cd {{UI_DIR}}
+    lock_hash=$(sha256sum package-lock.json 2>/dev/null | cut -d" " -f1 || echo none)
+    stamp=node_modules/.deps-hash
+    if [ ! -f "$stamp" ] || [ "$(cat "$stamp" 2>/dev/null)" != "$lock_hash" ]; then
+        echo "📦 Installing UI deps (lockfile changed)..."
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        echo "$lock_hash" > "$stamp"
+    fi
+    npm run build
+    echo "📦 Copying dist/ into {{ctr}}..."
+    tar -cf - dist | docker exec -i {{ctr}} tar -xf - -C /opt/computron/{{UI_DIR}}
 
 # Bounce supervisor + app inside the dev container. The DEV_MODE entrypoint
 # runs each in a respawn loop, so killing the inner Python lets the loop
