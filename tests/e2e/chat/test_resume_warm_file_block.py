@@ -31,10 +31,14 @@ def test_warm_resume_restores_inline_file_block(page: Page):
         write_file(path, "# warm block") + send_file(path) + say("done"),
     ).wait_streaming()
     try:
+        # Capture this conversation's id so we can reopen it by identity, not by
+        # list position (a pinned conversation could sit above it).
+        conv_id = page.request.get("/api/conversations/sessions").json()[0]["conversation_id"]
+
         # Leave the conversation (it stays warm in the backend cache), then reopen
-        # the most-recent one — a real warm resume.
+        # it by id — a real warm resume.
         ChatView(page).new_conversation()
-        RecentConversations(page).open_top()
+        RecentConversations(page).open_by_id(conv_id)
 
         # The transcript should carry the inline file block (the chat Preview button).
         assistant = page.get_by_test_id("message-assistant").last

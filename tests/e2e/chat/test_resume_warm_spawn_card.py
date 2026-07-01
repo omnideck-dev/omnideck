@@ -25,10 +25,14 @@ def test_warm_resume_restores_spawn_card(page: Page):
     ).wait_streaming()
     expect(page.get_by_test_id("spawn-card")).to_be_visible(timeout=8_000)
 
+    # Capture this conversation's id so we can reopen it by identity, not by
+    # list position (a pinned conversation could sit above it).
+    conv_id = page.request.get("/api/conversations/sessions").json()[0]["conversation_id"]
+
     # Leave the conversation (it stays warm in the backend cache), then reopen
-    # the most-recent one — a real warm resume.
+    # it by id — a real warm resume.
     ChatView(page).new_conversation()
-    RecentConversations(page).open_top()
+    RecentConversations(page).open_by_id(conv_id)
 
     # The transcript should rebuild the inline spawn card from spawn_requested.
     card = page.get_by_test_id("spawn-card")

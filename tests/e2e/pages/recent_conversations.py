@@ -18,6 +18,11 @@ class RecentConversationItem:
         self._page = page
 
     @property
+    def root(self) -> Locator:
+        """The row element locator (for attribute / visibility assertions)."""
+        return self._loc
+
+    @property
     def title(self) -> str:
         return self._loc.locator("[class*='itemTitle']").text_content() or ""
 
@@ -101,3 +106,25 @@ class RecentConversations:
         self.search.fill(query)
         self.items.first.click()
         return self
+
+    def item_by_id(self, conversation_id: str) -> RecentConversationItem:
+        """Return a row by its conversation id — independent of list position.
+
+        Each row carries a ``data-conversation-id`` attribute, so tests can
+        target the conversation they created without assuming it sorts to a
+        particular spot (a pinned conversation, for instance, sits above the
+        recency-ordered rows).
+        """
+        loc = self.page.locator(f'[data-conversation-id="{conversation_id}"]')
+        return RecentConversationItem(loc, self.page)
+
+    def open_by_id(self, conversation_id: str) -> "RecentConversations":
+        """Load a conversation by id, regardless of its position in the list."""
+        self.item_by_id(conversation_id).open()
+        return self
+
+    def order(self) -> list[str]:
+        """Return the conversation ids in the order they appear in the list."""
+        return self.items.evaluate_all(
+            "els => els.map(e => e.getAttribute('data-conversation-id'))"
+        )

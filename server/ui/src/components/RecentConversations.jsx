@@ -178,6 +178,7 @@ export default function RecentConversations({ onLoadConversation, onNewConversat
                                     title={_label(convo)}
                                     data-testid="recent-item"
                                     data-conversation-id={id}
+                                    data-pinned={convo.pinned ? 'true' : 'false'}
                                 >
                                     <span className={styles.itemTitle}>{_label(convo)}</span>
                                     <button
