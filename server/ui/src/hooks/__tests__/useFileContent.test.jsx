@@ -45,20 +45,25 @@ const textItem = {
 };
 
 describe('useFileContent disk-change watcher', () => {
-    it('flags stale when the file changes on disk', async () => {
+    it('auto-refreshes content when the file changes on disk', async () => {
         await act(async () => {
             render(<Harness item={textItem} />);
-            await vi.advanceTimersByTimeAsync(0); // seed baseline + initial text fetch
+            await vi.advanceTimersByTimeAsync(0); // seed baseline + initial fetch
         });
+        expect(latest.text).toBe('body@v1');
         expect(latest.stale).toBe(false);
 
         currentEtag = 'v2'; // someone rewrote the file
         await act(async () => {
-            await vi.advanceTimersByTimeAsync(4000); // next poll tick detects it
+            await vi.advanceTimersByTimeAsync(4000); // poll tick detects change → auto-refresh
+            await vi.advanceTimersByTimeAsync(0);    // let refetch promise resolve
         });
-        expect(latest.stale).toBe(true);
+        // stale is immediately cleared by the auto-refresh
+        expect(latest.stale).toBe(false);
+        // content is updated without any manual refresh call
+        expect(latest.text).toBe('body@v2');
 
-        // The probe must bypass the browser cache, or it reads a stale validator.
+        // Probes must bypass the browser cache or stale bytes go unseen.
         const headOpts = global.fetch.mock.calls
             .filter(([, opts]) => opts && opts.method === 'HEAD')
             .map(([, opts]) => opts);
@@ -66,32 +71,27 @@ describe('useFileContent disk-change watcher', () => {
         expect(headOpts.every((o) => o.cache === 'no-store')).toBe(true);
     });
 
-    it('refresh clears the flag and refetches with a cache-busting marker', async () => {
+    it('auto-refresh fetches with a cache-busting version marker', async () => {
         await act(async () => {
             render(<Harness item={textItem} />);
             await vi.advanceTimersByTimeAsync(0);
         });
+
         currentEtag = 'v2';
         await act(async () => {
             await vi.advanceTimersByTimeAsync(4000);
-        });
-        expect(latest.stale).toBe(true);
-
-        await act(async () => {
-            latest.refresh();
             await vi.advanceTimersByTimeAsync(0);
         });
         expect(latest.stale).toBe(false);
 
-        // The refetch must dodge the browser cache for the updated bytes.
+        // The auto-refresh must use a version bump to dodge the browser cache.
         const getUrls = global.fetch.mock.calls
             .filter(([, opts]) => !opts || opts.method !== 'HEAD')
             .map(([url]) => url);
         expect(getUrls.some((u) => u.includes('v=1'))).toBe(true);
     });
 
-    it('shares stale and refresh across previews of the same file', async () => {
-        // Mirrors the inline tab + fullscreen overlay both mounted at once.
+    it('auto-refresh propagates to all previews of the same file', async () => {
         function TwoViews({ item }) {
             const a = useFileContent(item);
             const b = useFileContent(item);
@@ -102,20 +102,19 @@ describe('useFileContent disk-change watcher', () => {
             render(<TwoViews item={textItem} />);
             await vi.advanceTimersByTimeAsync(0);
         });
+        expect(latest.a.text).toBe('body@v1');
+        expect(latest.b.text).toBe('body@v1');
+
         currentEtag = 'v2';
         await act(async () => {
             await vi.advanceTimersByTimeAsync(4000);
-        });
-        expect(latest.a.stale).toBe(true);
-        expect(latest.b.stale).toBe(true);
-
-        // Refreshing through one view must clear the other.
-        await act(async () => {
-            latest.a.refresh();
             await vi.advanceTimersByTimeAsync(0);
         });
+        // Both views update without any explicit refresh call.
         expect(latest.a.stale).toBe(false);
         expect(latest.b.stale).toBe(false);
+        expect(latest.a.text).toBe('body@v2');
+        expect(latest.b.text).toBe('body@v2');
     });
 
     it('does not watch inline (base64) content with no disk path', async () => {
