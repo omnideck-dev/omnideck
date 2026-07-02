@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -23,6 +24,27 @@ _console = Console(stderr=True)
 
 _CODE_PREVIEW_LEN = 120
 
+# Code that Playwright's evaluate() accepts as-is: a function
+# (``() => ...`` / ``function`` / ``async``) or a parenthesized expression.
+# Anything else that uses a top-level ``return`` must be wrapped in a function.
+_FUNCTION_OR_PAREN_START = re.compile(r"^\s*(async\s+)?(function\b|\(|[A-Za-z_$][\w$]*\s*=>)")
+
+
+def _as_evaluatable(code: str) -> str:
+    """Make agent-supplied JS runnable by Playwright's ``evaluate``.
+
+    ``evaluate`` accepts a function or a bare expression but rejects a top-level
+    ``return`` ("Illegal return statement"). Wrap statement-style code that uses
+    ``return`` in an arrow function so the documented ``return`` form works;
+    pass functions and plain expressions through unchanged.
+    """
+    stripped = code.strip()
+    if _FUNCTION_OR_PAREN_START.match(stripped):
+        return code
+    if re.search(r"\breturn\b", stripped):
+        return f"() => {{ {code} }}"
+    return code
+
 
 async def execute_javascript(
     code: str, timeout_ms: int = 10000, *, tab: str,
@@ -34,10 +56,13 @@ async def execute_javascript(
     structures, or checking page state.
 
     ``console.log()`` output is captured in the ``console_output`` field.
-    Use ``return`` for structured data — return values must be JSON-serializable.
+    Return a JSON-serializable value for structured data — a bare
+    ``return expr;``, a plain expression (``document.title``), or a function
+    (``() => {...}``) all work.
 
     Args:
-        code: JavaScript code or function expression to execute.
+        code: JavaScript to run — an expression, statements using ``return``,
+            or a ``() => {...}`` function.
         timeout_ms: Maximum wait time in milliseconds (default 10000).
         tab: Stable tab ID to act on — the ID shown in the snapshot
             header (e.g. ``tab="3"``).
@@ -68,7 +93,7 @@ async def execute_javascript(
     t0 = time.perf_counter()
     try:
         result_value = await asyncio.wait_for(
-            view.frame.evaluate(code),
+            view.frame.evaluate(_as_evaluatable(code)),
             timeout=timeout_ms / 1000,
         )
         elapsed_ms = (time.perf_counter() - t0) * 1000
