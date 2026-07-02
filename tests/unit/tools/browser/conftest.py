@@ -70,6 +70,7 @@ class _SimpleBrowser:
         action: Callable[[], Awaitable[Any]],
         *,
         page: Any = None,
+        wait_for_navigation: bool = True,
     ) -> BrowserInteractionResult:
         """Mimic Browser.perform for tests without requiring Playwright."""
         if page is None:

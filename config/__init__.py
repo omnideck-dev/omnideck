@@ -72,6 +72,13 @@ class BrowserWaitConfig(BaseModel):
     dom_mutation_timeout_ms: int = 1500
     dom_quiet_window_ms: int = 150
     animation_timeout_ms: int = 1000
+    # How long to wait after a nav-capable action for a navigation to start.
+    # Some sites dispatch a click's navigation request a beat after the click
+    # returns — e.g. a JS click handler that runs before setting location
+    # (measured ~500ms on nasa.gov, same-origin and cross-origin alike).
+    # Without this, the settle can snapshot the old page. Only paid by
+    # nav-capable actions that don't end up navigating.
+    post_action_nav_grace_ms: int = 800
 
 
 # Note: BrowserWaitConfig is referenced as a forward-ref above to avoid

@@ -1145,8 +1145,17 @@ class Browser:
         action: Callable[[], Awaitable[Any]],
         *,
         page: Page,
+        wait_for_navigation: bool = True,
     ) -> BrowserInteractionResult:
-        """Perform an interaction on *page* and run the shared post-action pipeline."""
+        """Perform an interaction on *page* and run the shared post-action pipeline.
+
+        When *wait_for_navigation* is True (the default), briefly wait for a
+        navigation the action may start a beat late — some sites dispatch a
+        click's navigation request only after the click returns (e.g. via a JS
+        click handler) — so the post-action snapshot reflects the new page
+        rather than the old one. Pass False for actions that never navigate
+        (scroll, drag, fill) to skip the wait.
+        """
         initial_url = getattr(page, "url", "")
 
         self._pending_downloads.clear()
@@ -1183,14 +1192,48 @@ class Browser:
             new_page.on("response", _on_np_response)
             _np_listeners.append((new_page, _on_np_response))
 
+        nav_started = asyncio.Event()
+
+        def _on_request(req: Any) -> None:
+            # A main-frame navigation request means the action started a
+            # navigation — even if it dispatched a beat after the action
+            # returned (some sites defer navigation in a JS click handler).
+            try:
+                if req.is_navigation_request() and req.frame == page.main_frame:
+                    nav_started.set()
+            except Exception:  # noqa: BLE001
+                pass
+
         page.on("response", _on_response)
+        page.on("request", _on_request)
         self._context.on("page", _on_new_page)
 
         t0 = time.monotonic()
         await action()
         action_ms = (time.monotonic() - t0) * 1000
 
+        # Bridge the gap between the action returning and a navigation starting.
+        # wait_for_load_state("networkidle") in the settle below returns
+        # immediately on the already-idle old page if no navigation has begun
+        # yet, producing a stale snapshot. Wait briefly for a navigation to
+        # start, then for it to commit, so the settle runs against the new
+        # document. Only nav-capable actions that don't navigate pay the wait.
+        if wait_for_navigation:
+            if not nav_started.is_set():
+                grace_ms = load_config().tools.browser.waits.post_action_nav_grace_ms
+                if grace_ms > 0:
+                    try:
+                        await asyncio.wait_for(nav_started.wait(), timeout=grace_ms / 1000)
+                    except asyncio.TimeoutError:
+                        pass
+            if nav_started.is_set():
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                except PlaywrightError:
+                    pass
+
         page.remove_listener("response", _on_response)
+        page.remove_listener("request", _on_request)
         self._context.remove_listener("page", _on_new_page)
 
         response = captured_responses[-1] if captured_responses else None
