@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Link page</title>
+</head>
+<body>
+  <h1>Link page</h1>
+  <a id="go">Go to target</a>
+  <script>
+    // The link target is supplied at runtime via ?href= (the fixture ports are
+    // ephemeral). ?delay=<ms> defers the navigation to *after* the click
+    // handler returns — reproducing sites that start their navigation late
+    // (e.g. a JS click handler that runs before navigating), which the
+    // post-click settle can race.
+    var q = new URLSearchParams(location.search);
+    var href = q.get('href');
+    var delay = parseInt(q.get('delay') || '0', 10);
+    var a = document.getElementById('go');
+    if (href) {
+      a.href = href;
+      if (delay > 0) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          setTimeout(function () { location.href = href; }, delay);
+        });
+      }
+    }
+  </script>
+</body>
+</html>

@@ -292,6 +292,7 @@ async def press_and_hold(
         result = await browser.perform_interaction(
             lambda: human_press_and_hold(view.frame, resolution.locator, duration_ms=clamped_duration),
             page=page,
+            wait_for_navigation=False,
         )
         return await _format_result(result, page, tool_name="press_and_hold", resolution=resolution)
     except BrowserToolError:
@@ -360,7 +361,9 @@ async def drag(
         )
 
     try:
-        browser_result = await browser.perform_interaction(_perform_drag, page=page)
+        browser_result = await browser.perform_interaction(
+            _perform_drag, page=page, wait_for_navigation=False,
+        )
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
@@ -446,7 +449,9 @@ async def fill_field(
         await human_type(view.frame, locator, text_value, clear_existing=True)
 
     try:
-        result = await browser.perform_interaction(_perform_fill, page=page)
+        result = await browser.perform_interaction(
+            _perform_fill, page=page, wait_for_navigation=False,
+        )
         return await _format_result(result, page, tool_name="fill_field", resolution=resolution)
     except BrowserToolError:
         raise
@@ -556,6 +561,7 @@ async def scroll_page(
         interaction_result = await browser.perform_interaction(
             lambda: human_scroll(view.frame, direction=direction, amount=amount),
             page=page,
+            wait_for_navigation=False,
         )
     except BrowserToolError:
         raise
