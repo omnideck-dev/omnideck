@@ -11,7 +11,7 @@ from __future__ import annotations
 from tools.browser.interactions import fill_field
 from tools.browser.snapshot_tool import browse_page
 
-from ._helpers import find_ref
+from .._helpers import find_ref
 
 
 async def test_combobox_container_exposes_inner_input(browser_session, servers):

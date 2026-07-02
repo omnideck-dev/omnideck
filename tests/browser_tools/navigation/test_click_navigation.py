@@ -14,14 +14,14 @@ from urllib.parse import urlencode
 from tools.browser.interactions import click
 from tools.browser.snapshot_tool import browse_page
 
-from ._helpers import find_ref
+from .._helpers import find_ref
 
 
 async def _click_link(browser_session, servers, *, delay_ms: int) -> str:
     # Target is same-origin as the link page — origin is irrelevant to the bug.
-    target = f"{servers.primary}/navigation/target.html"
+    target = f"{servers.primary}/click-nav/target.html"
     params = {"href": target, "delay": str(delay_ms)}
-    url = f"{servers.primary}/navigation/link.html?{urlencode(params)}"
+    url = f"{servers.primary}/click-nav/start.html?{urlencode(params)}"
     tab = await browser_session.open(url)
 
     view = await browse_page(tab=tab)

@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from tools.browser.snapshot_tool import browse_page
 
-from ._helpers import find_ref
+from .._helpers import find_ref
 
 
 async def test_dominant_same_origin_iframe_becomes_the_page_view(browser_session, servers):
     # The widget fills the viewport, so the tools operate inside it: its
     # controls are the page view and the host page is not.
-    url = servers.embed(f"{servers.primary}/iframe/widget.html")
+    url = servers.embed(f"{servers.primary}/iframe-widget/widget.html")
     tab = await browser_session.open(url)
     view = await browse_page(tab=tab)
 
@@ -31,7 +31,7 @@ async def test_dominant_cross_origin_iframe_becomes_the_page_view(browser_sessio
     # Same as above but the widget is served from the secondary origin.
     # Playwright drives frames of any origin, so a dominant cross-origin iframe
     # is entered just like a same-origin one.
-    url = servers.embed(f"{servers.secondary}/iframe/widget.html")
+    url = servers.embed(f"{servers.secondary}/iframe-widget/widget.html")
     tab = await browser_session.open(url)
     view = await browse_page(tab=tab)
 

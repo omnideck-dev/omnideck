@@ -13,11 +13,11 @@ from tools.browser.interactions import click, fill_field
 from tools.browser.select import select_option
 from tools.browser.snapshot_tool import browse_page
 
-from ._helpers import find_ref
+from .._helpers import find_ref
 
 
 async def test_browse_page_lists_every_form_control(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/forms/signup.html")
+    tab = await browser_session.open(f"{servers.primary}/signup-form/form.html")
     view = await browse_page(tab=tab)
 
     assert find_ref(view, role="textbox", name="Full name") is not None
@@ -30,7 +30,7 @@ async def test_browse_page_lists_every_form_control(browser_session, servers):
 
 
 async def test_complete_and_submit_signup(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/forms/signup.html")
+    tab = await browser_session.open(f"{servers.primary}/signup-form/form.html")
     view = await browse_page(tab=tab)
 
     # Refs stay stable while the form structure is unchanged, so resolve them
