@@ -46,8 +46,22 @@ def _free_port() -> int:
 
 
 async def _serve(port: int) -> web.AppRunner:
-    """Start a static file server for the fixtures dir on *port*."""
+    """Start a static file server (plus a download endpoint) for *port*."""
     app = web.Application()
+
+    async def _attachment(request: web.Request) -> web.Response:
+        # Force a browser download via Content-Disposition, regardless of type.
+        name = request.query.get("name", "report.bin")
+        size = int(request.query.get("size", "2048"))
+        return web.Response(
+            body=b"x" * size,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": f'attachment; filename="{name}"',
+            },
+        )
+
+    app.router.add_get("/dl/attachment", _attachment)
     app.router.add_static("/", str(FIXTURES_DIR))
     runner = web.AppRunner(app)
     await runner.setup()
@@ -87,7 +101,7 @@ class Servers:
             params["width"] = width
         if height is not None:
             params["height"] = height
-        return f"{host}/iframe/embed_host.html?{urlencode(params)}"
+        return f"{host}/iframe-widget/host.html?{urlencode(params)}"
 
 
 @pytest.fixture
