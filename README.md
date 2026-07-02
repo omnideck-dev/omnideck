@@ -1,6 +1,6 @@
 # Omnideck
 
-A self-hosted agentic workbench in a single container. Bring your own LLMs — securely-brokered cloud providers (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint) or local Ollama models — and connect the integrations your agents need (Gmail, Calendar, Drive, custom MCP servers). Agents browse the web, write and run code, and work on goals in the background. Everything runs on your hardware.
+A self-hosted agentic workbench in a single container. Bring your own LLMs — securely-brokered cloud providers (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint) or local Ollama models — and connect the integrations your agents need (Gmail, Calendar, Drive, custom MCP servers (coming soon)). Agents browse the web, write and run code, and work on goals in the background. Everything runs on your hardware.
 
 ![Omnideck](image.png)
 
@@ -95,7 +95,7 @@ Cloud variants skip your local GPU but still need to be pulled so Ollama exposes
 - **Code execution** — writes and runs Python, installs packages, builds projects
 - **Autonomous tasks** — schedule recurring goals that run in the background
 - **Memory** — persistent memory across conversations
-- **Integrations** — connect Gmail, Calendar, Drive, and custom MCP servers
+- **Integrations** — connect Gmail, Calendar, Drive, and custom MCP servers (coming soon)
 
 ## Troubleshooting
 
