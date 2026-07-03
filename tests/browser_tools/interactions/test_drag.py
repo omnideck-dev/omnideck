@@ -1,4 +1,10 @@
-"""drag moves the pointer from a source ref to a target ref."""
+"""drag moves the pointer from a source ref to a target ref.
+
+drag is mouse-based (a real mousedown on the source, mousemove, then mouseup on
+the target) — not HTML5 drag-and-drop — so the fixture records the "drop" from
+those raw mouse events. Source and target are buttons so the walker gives them
+refs to pass to drag().
+"""
 
 from __future__ import annotations
 

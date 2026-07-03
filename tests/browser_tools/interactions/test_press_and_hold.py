@@ -15,5 +15,7 @@ async def test_press_and_hold_button(browser_session, servers):
     ref = find_ref(view, role="button", name="Hold me")
     assert ref is not None
 
+    # The fixture only reveals "Held long enough" after a >=500ms hold; the tool
+    # also clamps duration to [500, 10000]ms, so 800ms comfortably qualifies.
     result = await press_and_hold(ref, duration_ms=800, tab=tab)
     assert "Held long enough" in result

@@ -15,6 +15,8 @@ async def test_target_blank_opens_new_tab(browser_session, servers):
     view = await browse_page(tab=tab)
     ref = find_ref(view, role="link", name="Open in new tab")
     assert ref is not None
+    # target=_blank opens a *separate* tab; the click stays on the opener, so we
+    # check the tab set grew rather than the click result.
     await click(ref, tab=tab)
 
     tabs = browser_session.browser.open_tabs()
