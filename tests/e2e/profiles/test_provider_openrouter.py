@@ -4,7 +4,7 @@ import re
 
 from playwright.sync_api import expect
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "think")
@@ -15,34 +15,34 @@ def test_openrouter_field_visibility(page, provider_profile):
     """OpenRouter shows think toggle but hides Ollama-only fields."""
     provider_profile("test_prov_or_vis", "openrouter")
 
-    settings = SettingsPage(page).goto()
-    settings.profiles.select("test_prov_or_vis")
-    settings.builder.open_advanced()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select("test_prov_or_vis")
+    agents.builder.open_advanced()
 
     for name in VISIBLE_FIELDS:
-        expect(settings.builder.field(name)).to_be_visible()
+        expect(agents.builder.field(name)).to_be_visible()
     for name in HIDDEN_FIELDS:
-        expect(settings.builder.field(name)).not_to_be_attached()
+        expect(agents.builder.field(name)).not_to_be_attached()
 
 
 def test_openrouter_code_preset(page, provider_profile):
     """Code preset on OpenRouter sets temperature=0.3 and think=true."""
     provider_profile("test_prov_or_code", "openrouter", temperature=0.3, think=True)
 
-    settings = SettingsPage(page).goto()
-    settings.profiles.select("test_prov_or_code")
+    agents = AgentsPage(page).goto()
+    agents.profiles.select("test_prov_or_code")
 
-    expect(settings.builder.preset("Code")).to_have_class(re.compile(r"presetActive"))
+    expect(agents.builder.preset("Code")).to_have_class(re.compile(r"presetActive"))
 
 
 def test_openrouter_reasoning_fields_with_think(page, provider_profile):
     """OpenRouter shows reasoning_effort when think is enabled."""
     provider_profile("test_prov_or_reason", "openrouter", think=True)
 
-    settings = SettingsPage(page).goto()
-    settings.profiles.select("test_prov_or_reason")
-    settings.builder.open_advanced()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select("test_prov_or_reason")
+    agents.builder.open_advanced()
 
-    expect(settings.builder.field("reasoning_effort")).to_be_visible()
-    expect(settings.builder.field("reasoning_summary")).not_to_be_attached()
-    expect(settings.builder.field("thinking_budget")).not_to_be_attached()
+    expect(agents.builder.field("reasoning_effort")).to_be_visible()
+    expect(agents.builder.field("reasoning_summary")).not_to_be_attached()
+    expect(agents.builder.field("thinking_budget")).not_to_be_attached()

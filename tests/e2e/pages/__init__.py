@@ -15,6 +15,7 @@ from .browser_control import BrowserControl
 from .file_preview import FilePreview
 from .fullscreen_preview import FullscreenPreview
 from .goals_view import GoalsView
+from .agents_page import AgentsPage
 from .settings_page import SettingsPage
 from .sidebar import Sidebar
 
@@ -29,6 +30,7 @@ __all__ = [
     "FilePreview",
     "FullscreenPreview",
     "GoalsView",
+    "AgentsPage",
     "SettingsPage",
     "Sidebar",
 ]

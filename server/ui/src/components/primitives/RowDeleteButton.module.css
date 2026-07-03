@@ -1,0 +1,24 @@
+/* Compact row-delete: overrides ConfirmButton's resting pill to a quiet ghost
+ * icon (SortableTable's revealOnHover handles show/hide). The armed
+ * "Confirm?" state keeps ConfirmButton's solid-danger fill. Mirrors the
+ * goal-run row delete. */
+.wrap {
+    display: inline-flex;
+}
+
+.btn {
+    height: 26px;
+    padding: 0 var(--sp-2);
+    gap: var(--sp-1);
+    background: transparent;
+    border-color: transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.btn:hover:not(:disabled) {
+    background: var(--danger-muted);
+    border-color: transparent;
+    color: var(--danger);
+}

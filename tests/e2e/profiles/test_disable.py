@@ -5,13 +5,13 @@ Covers:
      dropdown and /api/profiles (but stays in /api/profiles?include_disabled=true).
   2. Trying to disable the currently-set default_agent shows an inline
      error and leaves the server-side state unchanged.
-  3. Disabled profiles render a 'disabled' badge in the profile list.
+  3. Disabled profiles render a DISABLED status badge in the agent list.
   4. Re-enabling a disabled profile restores it everywhere.
 """
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def _create_profile_via_api(page: Page, profile_id: str, name: str) -> None:
@@ -36,15 +36,15 @@ def test_disable_profile_hides_from_chat_dropdown(page: Page):
     _create_profile_via_api(page, profile_id, "Disable Me")
 
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
 
         # Flip the enabled toggle off
-        toggle = settings.builder.enabled_toggle
+        toggle = agents.builder.enabled_toggle
         expect(toggle).to_be_checked()
         toggle.uncheck()
 
-        settings.builder.save()
+        agents.builder.save()
         page.wait_for_timeout(500)
 
         # API: enabled-only list should NOT include it
@@ -60,7 +60,7 @@ def test_disable_profile_hides_from_chat_dropdown(page: Page):
         assert match["enabled"] is False
 
         # Chat panel dropdown: the option should not be present
-        settings.close()
+        agents.close()
         chat_selector = page.get_by_label("Agent profile")
         expect(chat_selector).to_be_visible()
         option = chat_selector.locator("option", has_text="Disable Me")
@@ -75,17 +75,17 @@ def test_disable_default_profile_shows_inline_error(page: Page):
     settings_data = page.request.get("/api/settings").json()
     default_id = settings_data.get("default_agent", "omnideck")
 
-    settings = SettingsPage(page).goto()
-    settings.profiles.select(default_id)
+    agents = AgentsPage(page).goto()
+    agents.profiles.select(default_id)
 
-    toggle = settings.builder.enabled_toggle
+    toggle = agents.builder.enabled_toggle
     expect(toggle).to_be_checked()
     toggle.uncheck()
-    settings.builder.save()
+    agents.builder.save()
 
     # Inline error appears
-    expect(settings.builder.save_error).to_be_visible()
-    expect(settings.builder.save_error).to_contain_text("default")
+    expect(agents.builder.save_error).to_be_visible()
+    expect(agents.builder.save_error).to_contain_text("default")
 
     # Toggle should revert to checked
     expect(toggle).to_be_checked()
@@ -109,13 +109,12 @@ def test_disabled_badge_visible_in_profile_list(page: Page):
     })
 
     try:
-        settings = SettingsPage(page).goto()
-        item = settings.profiles.item(profile_id)
+        agents = AgentsPage(page).goto()
+        item = agents.profiles.item(profile_id)
         expect(item).to_be_visible()
-        # The disabled badge is a child span with the badgeDisabled class
-        badge = item.locator("span[class*='badgeDisabled']")
-        expect(badge).to_be_visible()
-        expect(badge).to_contain_text("disabled")
+        # A disabled agent is marked with a DISABLED status badge in its row.
+        row = item.locator("xpath=ancestor::tr")
+        expect(row).to_contain_text("DISABLED")
     finally:
         _delete_profile_via_api(page, profile_id)
 
@@ -133,13 +132,13 @@ def test_reenable_profile_restores_it(page: Page):
     })
 
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
 
-        toggle = settings.builder.enabled_toggle
+        toggle = agents.builder.enabled_toggle
         expect(toggle).not_to_be_checked()
         toggle.check()
-        settings.builder.save()
+        agents.builder.save()
         page.wait_for_timeout(500)
 
         # Enabled-only list now includes it

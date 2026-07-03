@@ -35,6 +35,7 @@ export default function ProfileBuilder({
     onSave,
     onDelete,
     onDuplicate,
+    onDirtyChange,
     providers,
     skills,
     categories,
@@ -54,6 +55,16 @@ export default function ProfileBuilder({
             setDraft(null);
         }
     }, [profile]);
+
+    // Unsaved-changes signal for the parent's navigation guard. There's no
+    // Revert button, so the parent warns before discarding edits on leave.
+    const isDirty = useMemo(() => (
+        !!draft && !!profile && JSON.stringify(draft) !== JSON.stringify(profile)
+    ), [draft, profile]);
+    useEffect(() => {
+        onDirtyChange?.(isDirty);
+        return () => onDirtyChange?.(false);
+    }, [isDirty, onDirtyChange]);
 
     // Inference-option support (think, top_k, num_ctx, etc.) depends on which
     // provider this profile points at, not on any global default.
@@ -127,12 +138,6 @@ export default function ProfileBuilder({
         });
     }, []);
 
-    const handleRevert = useCallback(() => {
-        if (profile) {
-            setDraft(_cloneProfile(profile));
-        }
-    }, [profile]);
-
     const handleSave = useCallback(async () => {
         // A model is required to create a profile, but editing an existing
         // model-less one (e.g. to disable or rename it) stays allowed.
@@ -174,9 +179,6 @@ export default function ProfileBuilder({
                         <div className={styles.actionsRight}>
                             <Button onClick={() => onDuplicate?.(profile.id)}>
                                 Duplicate
-                            </Button>
-                            <Button onClick={handleRevert}>
-                                Revert
                             </Button>
                             <Button
                                 variant="filled"
