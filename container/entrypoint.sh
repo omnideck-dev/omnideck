@@ -22,43 +22,43 @@ _DESKTOP="${ENABLE_DESKTOP:-false}"
 # Default LLM_HOST to host Ollama if not explicitly set
 export LLM_HOST="${LLM_HOST:-http://localhost:11434}"
 
-# ── Set up /home/computron ───────────────────────────────────────────────────
+# ── Set up /home/omnideck ───────────────────────────────────────────────────
 # Bind-mounted host dirs may arrive owned by the host UID, so we chown to
-# computron AFTER creating any subdirectories below. Chowning first leaves
+# omnideck AFTER creating any subdirectories below. Chowning first leaves
 # anything mkdir'd later (e.g. .config) root-owned, which silently breaks
 # Chrome: its crashpad handler can't write to ~/.config/google-chrome and the
 # launcher pipe closes with "recvmsg: Connection reset by peer".
-mkdir -p /home/computron/Desktop /home/computron/downloads /home/computron/uploads
+mkdir -p /home/omnideck/Desktop /home/omnideck/downloads /home/omnideck/uploads
 
 # Copy default Xfce config on first run (named volume starts empty)
-if [ ! -d /home/computron/.config/xfce4/panel ]; then
-    mkdir -p /home/computron/.config/xfce4
-    cp -rn /etc/xdg/xfce4/* /home/computron/.config/xfce4/ 2>/dev/null
+if [ ! -d /home/omnideck/.config/xfce4/panel ]; then
+    mkdir -p /home/omnideck/.config/xfce4
+    cp -rn /etc/xdg/xfce4/* /home/omnideck/.config/xfce4/ 2>/dev/null
 fi
 
-chown -R computron:computron /home/computron /var/lib/computron
-chmod 755 /home/computron /var/lib/computron
+chown -R omnideck:omnideck /home/omnideck /var/lib/omnideck
+chmod 755 /home/omnideck /var/lib/omnideck
 
-# ── Shared downloads dir (computron + broker) ────────────────────────────────
-# /home/computron/downloads is the landing place for files the agent
-# retrieves from external sources: browser saves (written by computron via
+# ── Shared downloads dir (omnideck + broker) ────────────────────────────────
+# /home/omnideck/downloads is the landing place for files the agent
+# retrieves from external sources: browser saves (written by omnideck via
 # the browser tool) and email attachments (written by broker). Both UIDs
-# need to drop files here, but only computron should have full control of
+# need to drop files here, but only omnideck should have full control of
 # the directory.
 #
 # Mode 3770 = setgid (2) + sticky (1) + 770:
 #  - 770: owner rwx, group rwx, others none
-#  - setgid (2): new files inherit group=broker so a file computron writes
+#  - setgid (2): new files inherit group=broker so a file omnideck writes
 #    is still readable by broker via group membership and vice-versa
 #  - sticky (1): a process can only delete/rename files it owns. Broker
 #    creates email attachments and can clean those up; broker CANNOT delete
-#    or rename a file computron wrote. computron, as the directory owner,
+#    or rename a file omnideck wrote. omnideck, as the directory owner,
 #    can still do anything to anything (sticky exempts the dir owner).
 #
 # Net: broker gets enough access to drop attachments and tidy its own GC;
-# computron retains full authority over the folder.
-chown computron:broker /home/computron/downloads
-chmod 3770 /home/computron/downloads
+# omnideck retains full authority over the folder.
+chown omnideck:broker /home/omnideck/downloads
+chmod 3770 /home/omnideck/downloads
 
 # ── Virtual framebuffer ──────────────────────────────────────────────────────
 # Clean stale lock/socket from a previous run — docker restart preserves
@@ -87,8 +87,8 @@ if [ "${_DESKTOP}" = "true" ]; then
     export GTK_MODULES=gail:atk-bridge
     export ACCESSIBILITY_ENABLED=1
 
-    # Xfce desktop (as computron). Pass D-Bus address so child inherits it.
-    gosu computron bash -c "export DBUS_SESSION_BUS_ADDRESS='$DBUS_SESSION_BUS_ADDRESS' GTK_MODULES=gail:atk-bridge ACCESSIBILITY_ENABLED=1; startxfce4" &
+    # Xfce desktop (as omnideck). Pass D-Bus address so child inherits it.
+    gosu omnideck bash -c "export DBUS_SESSION_BUS_ADDRESS='$DBUS_SESSION_BUS_ADDRESS' GTK_MODULES=gail:atk-bridge ACCESSIBILITY_ENABLED=1; startxfce4" &
     # Give startxfce4 a moment to spawn xfwm4 before the pgrep check below; without this
     # the check races and we launch a duplicate window manager.
     sleep 2
@@ -99,11 +99,11 @@ if [ "${_DESKTOP}" = "true" ]; then
 
     # Ensure window manager is running (startxfce4 sometimes fails to launch it)
     if ! pgrep -x xfwm4 > /dev/null; then
-        gosu computron bash -c "DISPLAY=${DISPLAY} xfwm4 &"
+        gosu omnideck bash -c "DISPLAY=${DISPLAY} xfwm4 &"
     fi
 
     # VNC + noVNC bridge so the user can view the desktop in a browser
-    gosu computron x11vnc -display "${DISPLAY}" -forever -nopw -noshm -listen 0.0.0.0 -rfbport 5900 -shared -cursor arrow -bg
+    gosu omnideck x11vnc -display "${DISPLAY}" -forever -nopw -noshm -listen 0.0.0.0 -rfbport 5900 -shared -cursor arrow -bg
     websockify --web /usr/share/novnc 0.0.0.0:6080 localhost:5900 &
     echo "Desktop ready on ${DISPLAY}, VNC on 5900, noVNC on 6080"
 else
@@ -113,16 +113,16 @@ fi
 # ── Integrations supervisor ──────────────────────────────────────────────────
 # Persistent vault dir (master key + encrypted creds) lives under the state
 # volume; runtime sockets live on tmpfs so stale files vanish on container
-# restart. Both are owned by `broker` so the agent (running as `computron`)
-# can't read decrypted credentials. `computron` is in the `broker` group, so
+# restart. Both are owned by `broker` so the agent (running as `omnideck`)
+# can't read decrypted credentials. `omnideck` is in the `broker` group, so
 # the runtime dir is traversable and app.sock is connectable.
 #
 # Modes here MUST stay in sync with integrations/_perms.py — that module is
 # the canonical reference and the in-process chmod calls reference it.
-mkdir -p /var/lib/computron/vault /run/cvault
-chown -R broker:broker /var/lib/computron/vault
+mkdir -p /var/lib/omnideck/vault /run/cvault
+chown -R broker:broker /var/lib/omnideck/vault
 chown broker:broker /run/cvault
-chmod 0700 /var/lib/computron/vault   # VAULT_DIR_MODE
+chmod 0700 /var/lib/omnideck/vault   # VAULT_DIR_MODE
 chmod 0750 /run/cvault                # RUNTIME_DIR_MODE
 
 # ── Long-lived services ──────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ chmod 0750 /run/cvault                # RUNTIME_DIR_MODE
 #    back up — fast in-container iteration without a container restart.
 #  - Prod (default): fail-fast. Whichever child exits first brings the
 #    container down; Docker's restart policy handles recovery.
-cd /opt/computron
+cd /opt/omnideck
 
 if [ "${DEV_MODE:-false}" = "true" ]; then
     # Kill all background loops on shutdown so the container exits cleanly.
@@ -146,7 +146,7 @@ if [ "${DEV_MODE:-false}" = "true" ]; then
 
     (while true; do
         echo "Starting app server..."
-        gosu computron python3.12 main.py || true
+        gosu omnideck python3.12 main.py || true
         sleep 1
     done) &
 
@@ -159,7 +159,7 @@ else
     SUPERVISOR_PID=$!
 
     echo "Starting app server..."
-    gosu computron python3.12 main.py &
+    gosu omnideck python3.12 main.py &
     APP_PID=$!
 
     wait -n "$SUPERVISOR_PID" "$APP_PID"

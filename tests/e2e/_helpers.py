@@ -8,23 +8,23 @@ conftest.py or a registered plugin module.
 import os
 import subprocess
 
-CONTAINER_NAME = os.environ.get("COMPUTRON_CONTAINER", "computron_e2e")
+CONTAINER_NAME = os.environ.get("OMNIDECK_CONTAINER", "omnideck_e2e")
 
 
 def container_exec(script: str) -> str:
-    """Run a Python snippet inside the running computron container.
+    """Run a Python snippet inside the running omnideck container.
 
     Used for seeding state that has no HTTP API (goals, runs, etc.). The
     snippet executes in the same Python environment as the running app —
     `from tasks import get_store` works, file writes land in the volume
     the app reads from.
 
-    Runs as `computron` (the user the app runs as) so any files written
+    Runs as `omnideck` (the user the app runs as) so any files written
     are owned by the same uid as the app process. Otherwise the app's
     later cleanup hits a PermissionError.
     """
     result = subprocess.run(
-        ["docker", "exec", "-u", "computron", "-w", "/opt/computron",
+        ["docker", "exec", "-u", "omnideck", "-w", "/opt/omnideck",
          CONTAINER_NAME, "python3.12", "-c", script],
         capture_output=True, text=True, check=True,
     )
@@ -36,7 +36,7 @@ def push_file_to_container(host_path: str, container_path: str) -> None:
 
     For seeding files the app or its sandboxed browser must read (e.g. an HTML
     fixture served from the container home). ``docker cp`` lands the file as
-    root, so it's chowned to ``computron`` to match the app's uid.
+    root, so it's chowned to ``omnideck`` to match the app's uid.
     """
     subprocess.run(
         ["docker", "cp", host_path, f"{CONTAINER_NAME}:{container_path}"],
@@ -44,7 +44,7 @@ def push_file_to_container(host_path: str, container_path: str) -> None:
     )
     subprocess.run(
         ["docker", "exec", "-u", "0", CONTAINER_NAME,
-         "chown", "computron:computron", container_path],
+         "chown", "omnideck:omnideck", container_path],
         capture_output=True, text=True, check=True,
     )
 

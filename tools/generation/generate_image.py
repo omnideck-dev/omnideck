@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 _STREAM_TIMEOUT: float = 900.0  # 15 minutes max for generation
 
+# The inference client lives in container/ at the repo root — derived so the
+# install prefix doesn't matter.
+_CONTAINER_DIR = str(Path(__file__).resolve().parents[2] / "container")
+
 
 async def generate_image(
     description: str,
@@ -47,7 +51,7 @@ async def generate_image(
 
     params_json = json.dumps({"model": model, "size": size})
     script = (
-        "import sys; sys.path.insert(0, '/opt/computron/container'); "
+        f"import sys; sys.path.insert(0, {_CONTAINER_DIR!r}); "
         "import json; "
         "from inference_client import generate_stream; "
         "[print(json.dumps(e), flush=True) for e in generate_stream(%r, %r, **%s)]"
@@ -125,7 +129,7 @@ async def generate_image(
                              message="No output path received from generator")
             return {"status": "error", "message": "No output path received"}
 
-        # The inference server writes directly to /home/computron/.
+        # The inference server writes directly to its user's home dir.
         host_path = Path(final_path)
         ui_path = final_path
 

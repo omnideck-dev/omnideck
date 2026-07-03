@@ -3,14 +3,14 @@
 ## Commands
 
 ### Image (rebuild only when container/Dockerfile changes)
-- `just build` — Build the container image `computron_9000:latest`
+- `just build` — Build the container image `omnideck:latest`
 - `just publish` — Tag and push to GHCR
 
 ### Dev loop (the container owns the runtime; source is synced in at each step)
 - `just dev` — Start dev container (if needed), sync source, build UI, launch app on :8080
 - `just restart-app` — Sync latest Python source, bounce the app
 - `just rebuild-ui` — Sync latest UI source, rebuild dist/
-- `just stop` — Stop the dev container (state at `~/.computron_9000/` persists)
+- `just stop` — Stop the dev container (state at `~/.omnideck/` persists)
 - `just shell` — Bash inside the dev container
 - `just logs` — Tail app + inference logs
 

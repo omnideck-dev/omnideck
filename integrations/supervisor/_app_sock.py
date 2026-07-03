@@ -1,6 +1,6 @@
 """``app.sock`` RPC handler.
 
-The app server (UID ``computron``) is the only legitimate client. Requests
+The app server (UID ``omnideck``) is the only legitimate client. Requests
 and responses use the shared length-prefixed JSON framing.
 
 Verbs

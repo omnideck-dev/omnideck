@@ -150,7 +150,7 @@ async def _run() -> int:
     await site.start()
     # chmod AFTER bind — aiohttp creates the socket with the process umask
     # (0o077) which blocks all group/other access. We need 0o660 so the
-    # computron UID (in the broker group) can connect.
+    # omnideck UID (in the broker group) can connect.
     socket_path.chmod(SOCKET_MODE)
 
     log.info("listening on %s (provider=%s, upstream=%s)", socket_path, provider, upstream_base)

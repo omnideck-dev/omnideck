@@ -38,7 +38,7 @@ def test_three_level_tree_renders_all_cards(page: Page, deep_tree):
     expect(network.agent_cards.first).to_be_visible(timeout=5000)
     assert network.agent_cards.count() == 4
 
-    network.card_by_name("Omnideck")
+    network.card_by_name("General")
     network.card_by_name("Planner Agent")
     network.card_by_name("Executor Agent")
     network.card_by_name("Reviewer Agent")
@@ -53,7 +53,7 @@ def test_mid_level_agent_shows_sub_agent_badge(page: Page, deep_tree):
     planner = network.card_by_name("Planner Agent")
     expect(planner.sub_agent_badge).to_contain_text("2 sub-agents")
 
-    root = network.card_by_name("Omnideck")
+    root = network.card_by_name("General")
     expect(root.sub_agent_badge).to_contain_text("1 sub-agent")
 
 

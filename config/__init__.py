@@ -137,7 +137,7 @@ class GoalsConfig(BaseModel):
     """Configuration for the autonomous task engine."""
 
     enabled: bool = True
-    goals_dir: str = ""  # empty = ~/.computron_9000/goals/
+    goals_dir: str = ""
     poll_interval: int = 5
     max_concurrent: int = 2
     shutdown_timeout: int = 60
@@ -181,8 +181,14 @@ load_dotenv()
 
 
 _YAML_BOOLEANS = {
-    "true": True, "yes": True, "on": True, "1": True,
-    "false": False, "no": False, "off": False, "0": False,
+    "true": True,
+    "yes": True,
+    "on": True,
+    "1": True,
+    "false": False,
+    "no": False,
+    "off": False,
+    "0": False,
 }
 
 

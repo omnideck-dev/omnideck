@@ -2,10 +2,10 @@
 
 ## Architecture
 
-Computron 9000 runs as a single container. The app server (aiohttp + React), desktop environment (Xfce + VNC), browser (Chrome), and inference models all live inside one image. Ollama runs on the host and is accessed via `--network=host`.
+Omnideck runs as a single container. The app server (aiohttp + React), desktop environment (Xfce + VNC), browser (Chrome), and inference models all live inside one image. Ollama runs on the host and is accessed via `--network=host`.
 
 ```
-Container (everything runs as computron)
+Container (everything runs as omnideck)
   App server (aiohttp :8080)
     agents/ — LLM agent implementations
     tools/  — tool modules the agent invokes
@@ -23,9 +23,9 @@ Host
 
 | Path | Owner | Purpose |
 |------|-------|---------|
-| `/opt/computron` | root | App source (baked into image; overwritten by tar-pipe on `just dev`/`restart-app`/`rebuild-ui`) |
-| `/home/computron` | computron | Agent workspace, downloads, generated files |
-| `/var/lib/computron` | computron | Conversations, memory, custom tools, goals |
+| `/opt/omnideck` | root | App source (baked into image; overwritten by tar-pipe on `just dev`/`restart-app`/`rebuild-ui`) |
+| `/home/omnideck` | omnideck | Agent workspace, downloads, generated files |
+| `/var/lib/omnideck` | omnideck | Conversations, memory, custom tools, goals |
 
 ## Dev Workflow
 
@@ -34,7 +34,7 @@ just build          # Build image (only when Dockerfile changes)
 just dev            # Start dev container, sync source, build UI, launch on :8080
 just restart-app    # Sync Python source, bounce the app
 just rebuild-ui     # Sync UI source, rebuild dist/
-just stop           # Stop container (state persists in ~/.computron_9000/)
+just stop           # Stop container (state persists in ~/.omnideck/)
 just shell          # Bash inside the container
 just logs           # Tail app + inference logs
 ```
@@ -70,7 +70,7 @@ tests/
 ```sh
 just unit           # Unit tests
 just e2e            # E2E in a throwaway container on :9090
-just integration    # Integration tests (needs COMPUTRON_URL)
+just integration    # Integration tests (needs OMNIDECK_URL)
 just test-file <p>  # Specific file
 just test-ui        # Vitest UI tests
 ```
@@ -118,8 +118,8 @@ Docker Desktop (macOS/Windows) bundles QEMU — no setup needed.
 ### Build & Publish
 
 ```sh
-just build     # Build computron_9000:latest locally (single-arch, for dev)
-just publish   # Build + push multi-arch to ghcr.io/lefoulkrod/computron_9000
+just build     # Build omnideck:latest locally (single-arch, for dev)
+just publish   # Build + push multi-arch to ghcr.io/omnideck-dev/omnideck
 ```
 
 `just publish` tags:
@@ -139,12 +139,12 @@ Run `just` (no args) to see all available recipes. Key ones:
 | `just dev` | Start dev container, sync source, build UI, launch app on :8080 |
 | `just restart-app` | Sync latest Python source and bounce the app |
 | `just rebuild-ui` | Sync latest UI source and rebuild dist/ |
-| `just stop` | Stop the dev container (state at `~/.computron_9000/` persists) |
+| `just stop` | Stop the dev container (state at `~/.omnideck/` persists) |
 | `just shell` | Bash shell inside the dev container |
 | `just logs` | Tail app + inference logs |
 | `just publish` | Build + push multi-arch image (amd64 + arm64) to GHCR |
-| `just test` | Run all unit tests |
-| `just test-unit` | Run unit tests only |
+| `just unit` | Run unit tests |
+| `just integration` | Run integration tests (needs a running container) |
 | `just test-file <path>` | Run tests for a specific file |
 | `just e2e` | Run e2e tests in a throwaway container on :9090 |
 | `just lint` | Lint with ruff |

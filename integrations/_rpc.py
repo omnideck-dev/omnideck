@@ -8,7 +8,7 @@ Wire format::
 
 All brokers use this. Access control lives at the filesystem level. The socket
 is created with Unix mode ``0660`` (owner rw, group rw, other nothing) and its
-group is set to ``computron`` so the app server — which runs under that group
+group is set to ``omnideck`` so the app server — which runs under that group
 — can connect while any other UID sees ``EACCES`` at the kernel.
 """
 
@@ -196,7 +196,7 @@ async def serve_rpc(
             becomes an ``INTERNAL`` error frame.
         socket_mode: chmod applied to the socket file after bind. Default
             comes from :data:`integrations._perms.SOCKET_MODE` (``0o660``)
-            so the ``broker`` group — including ``computron`` via group
+            so the ``broker`` group — including ``omnideck`` via group
             membership — can connect; other UIDs hit ``EACCES`` at the
             kernel before reaching our code.
 

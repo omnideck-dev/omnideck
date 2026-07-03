@@ -22,6 +22,10 @@ _REQUEST_TIMEOUT = 1860.0  # 31 minutes — covers first-time download + startup
 # Subdirectory on the shared volume used for screenshot transfer.
 _VISION_DIR = ".vision"
 
+# The client modules for the local inference servers live in container/,
+# a sibling of this package — derived so the install prefix doesn't matter.
+_CONTAINER_DIR = str(Path(__file__).resolve().parent.parent / "container")
+
 
 @dataclass(frozen=True, slots=True)
 class GroundingResponse:
@@ -77,7 +81,7 @@ async def run_grounding(
     screenshot_path.write_bytes(screenshot_bytes)
 
     script = (
-        "import sys; sys.path.insert(0, '/opt/computron/container'); "
+        f"import sys; sys.path.insert(0, {_CONTAINER_DIR!r}); "
         "import json; "
         "from grounding_client import ground_from_path; "
         "result = ground_from_path(%s, %s); "

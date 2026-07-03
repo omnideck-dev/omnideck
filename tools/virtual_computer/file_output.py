@@ -16,7 +16,7 @@ async def send_file(path: str) -> dict[str, str]:
     """Send a file to the user. Use this whenever the user should receive a file.
 
     The file MUST live under the virtual computer's home directory
-    (``/home/computron`` by default) — only paths under that directory are
+    (``/home/omnideck`` by default) — only paths under that directory are
     served to the UI. Files in ``/tmp`` or other locations cannot be sent;
     write or copy them into the home directory first.
 

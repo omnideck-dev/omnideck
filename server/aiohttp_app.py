@@ -425,6 +425,12 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     app.router.add_route("GET", f"{container_prefix}/{{path:.*}}", container_file_handler)
     # HEAD lets the preview poll a file's Last-Modified/ETag without transferring the body.
     app.router.add_route("HEAD", f"{container_prefix}/{{path:.*}}", container_file_handler)
+    # Alias for the pre-rename home path so stale references (old conversation
+    # history, agent-authored HTML) keep resolving. The handler only uses the
+    # wildcard tail, so both prefixes serve the same files. Remove once no
+    # stored content references the old path.
+    app.router.add_route("GET", "/home/computron/{path:.*}", container_file_handler)
+    app.router.add_route("HEAD", "/home/computron/{path:.*}", container_file_handler)
 
     # UI routes
     app.router.add_route("GET", "/", index_handler)

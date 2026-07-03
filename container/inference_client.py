@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 
 SERVER_URL = "http://127.0.0.1:18901"
-SERVER_SCRIPT = "/opt/computron/container/inference_server.py"
+SERVER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inference_server.py")
 
 _PID_FILE = "/tmp/inference_server.pid"
 STARTUP_TIMEOUT = 120  # max seconds to wait for server to come up
@@ -75,7 +75,7 @@ _LOG_FILE = "/tmp/inference_server.log"
 def _start_server():
     """Launch the inference server as a background process.
 
-    Runs as ``computron`` so generated files are written to /home/computron/
+    Runs as the app user so generated files land in its home directory
     with the correct ownership.
     """
     log_fh = open(_LOG_FILE, "a")  # noqa: SIM115
@@ -164,7 +164,7 @@ def generate_stream(gen_type, description, **params):
     Each yielded dict has at least a "status" key. Example sequence:
         {"status": "loading", "message": "Loading klein-4b..."}
         {"status": "generating", "step": 1, "total_steps": 4, "preview": "base64..."}
-        {"status": "complete", "path": "/home/computron/generated_images/xxx.png"}
+        {"status": "complete", "path": "/home/omnideck/generated_images/xxx.png"}
 
     If the server needs to restart for a different model, this function
     handles the restart transparently and re-yields from the new server.

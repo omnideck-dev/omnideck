@@ -5,7 +5,7 @@ which card was at which position in a match game, or saving key findings from
 tool results before they get cleared from context).
 
 Backed by a JSON file per conversation at
-``~/.computron_9000/conversations/{conv_id}/scratchpad.json``, with an
+``<settings.home_dir>/conversations/{conv_id}/scratchpad.json``, with an
 in-memory cache for fast reads. Each write flushes to disk so the scratchpad
 can be inspected externally.
 """
