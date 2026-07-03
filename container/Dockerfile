@@ -118,32 +118,38 @@ RUN case "${TARGETARCH}" in \
 
 # ── Users & permissions ──────────────────────────────────────────────────────
 # Two-user trust split for credential isolation:
-#   computron (UID 1000) — runs the app server, agent tools, and desktop.
-#   broker    (UID 1001) — runs the integrations supervisor and the broker
-#                          subprocesses it spawns. Owns the credential vault
-#                          (mode 0700) so computron can't read decrypted creds.
-# computron is in the broker group ONLY so it can connect to /run/cvault/app.sock
+#   omnideck (UID 1000) — runs the app server, agent tools, and desktop.
+#   broker   (UID 1001) — runs the integrations supervisor and the broker
+#                         subprocesses it spawns. Owns the credential vault
+#                         (mode 0700) so omnideck can't read decrypted creds.
+# omnideck is in the broker group ONLY so it can connect to /run/cvault/app.sock
 # (mode 0660 broker:broker) — the entry point that admin RPCs ride.
 RUN groupadd --gid 1001 broker && \
     useradd --uid 1001 --gid 1001 --no-create-home --shell /usr/sbin/nologin broker && \
-    useradd --create-home --shell /bin/bash --uid 1000 computron && \
-    usermod -aG broker computron && \
-    passwd -d computron && \
-    mkdir -p /var/lib/computron && \
-    chown computron:computron /var/lib/computron && \
-    chmod 755 /var/lib/computron && \
-    chown -R computron:computron /home/computron && \
-    mkdir -p /home/computron/Desktop && \
-    mkdir -p /home/computron/downloads && \
-    # Sudoers: computron can install packages as root
-    echo "computron ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/local/bin/pip, /usr/local/bin/npm" \
-      > /etc/sudoers.d/computron && \
-    chmod 440 /etc/sudoers.d/computron
+    useradd --create-home --shell /bin/bash --uid 1000 omnideck && \
+    usermod -aG broker omnideck && \
+    passwd -d omnideck && \
+    mkdir -p /var/lib/omnideck && \
+    chown omnideck:omnideck /var/lib/omnideck && \
+    chmod 755 /var/lib/omnideck && \
+    chown -R omnideck:omnideck /home/omnideck && \
+    mkdir -p /home/omnideck/Desktop && \
+    mkdir -p /home/omnideck/downloads && \
+    # Sudoers: omnideck can install packages as root
+    echo "omnideck ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/local/bin/pip, /usr/local/bin/npm" \
+      > /etc/sudoers.d/omnideck && \
+    chmod 440 /etc/sudoers.d/omnideck && \
+    # Safety shims: anything still referencing the old computron paths
+    # resolves to the renamed locations. /opt/omnideck is created later in
+    # the build; a briefly dangling symlink is fine.
+    ln -s /home/omnideck /home/computron && \
+    ln -s /var/lib/omnideck /var/lib/computron && \
+    ln -s /opt/omnideck /opt/computron
 
 # ── Xfce config ──────────────────────────────────────────────────────────────
 # Written ahead of time so the viewable desktop works immediately if its
 # packages are installed on demand. Harmless when the desktop is disabled.
-RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
+RUN mkdir -p /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xsettings" version="1.0">\n\
   <property name="Net" type="empty">\n\
@@ -153,14 +159,14 @@ RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
     <property name="CursorSize" type="int" value="24"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xfwm4" version="1.0">\n\
   <property name="general" type="empty">\n\
     <property name="theme" type="string" value="Greybird"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xfce4-power-manager" version="1.0">\n\
   <property name="xfce4-power-manager" type="empty">\n\
@@ -170,8 +176,8 @@ RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
     <property name="dpms-on-ac-off" type="uint" value="0"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml && \
-    chown -R computron:computron /home/computron/.config && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml && \
+    chown -R omnideck:omnideck /home/omnideck/.config && \
     printf 'export DISPLAY=:99\n' > /etc/profile.d/display.sh && \
     chmod 644 /etc/profile.d/display.sh
 
@@ -181,16 +187,16 @@ RUN chmod 755 /opt/desktop/a11y_tree.py && \
     mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # ── App dependencies (cached unless manifests change) ────────────────────────
-WORKDIR /opt/computron
+WORKDIR /opt/omnideck
 COPY pyproject.toml uv.lock ./
 RUN uv pip install --system --no-cache -e . 2>/dev/null || true
 
 # ── App source ───────────────────────────────────────────────────────────────
-COPY --chmod=755 . /opt/computron/
+COPY --chmod=755 . /opt/omnideck/
 RUN uv pip install --system --no-cache -e .
 
 # Prebuilt UI assets from the ui-builder stage (no node_modules in this image).
-COPY --from=ui-builder /ui/dist /opt/computron/server/ui/dist
+COPY --from=ui-builder /ui/dist /opt/omnideck/server/ui/dist
 
 # ── Entrypoint (late COPY so edits don't bust app/UI cache) ─────────────────
 COPY container/entrypoint.sh /opt/entrypoint.sh

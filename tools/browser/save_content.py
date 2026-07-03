@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def save_page_content(filename: str, *, tab: str) -> str:
-    """Save the current page as markdown to /home/computron/<filename>.
+    """Save the current page as markdown to /home/omnideck/<filename>.
 
     Use when ``read_page()`` output is truncated and you need the full page
     for processing with ``run_bash_cmd()`` (e.g. grep, cat).

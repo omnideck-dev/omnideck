@@ -110,7 +110,7 @@ def format_save_result(
         size_bytes: File size in bytes.
 
     Returns:
-        Formatted string like ``[Saved: page.md | /home/computron/page.md | 12345 bytes]``.
+        Formatted string like ``[Saved: page.md | /home/omnideck/page.md | 12345 bytes]``.
     """
     return f"[Saved: {filename} | {path} | {size_bytes} bytes]"
 

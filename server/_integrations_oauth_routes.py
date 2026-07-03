@@ -275,7 +275,7 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         return web.Response(
             text=_oauth_popup_html(
                 "Something went wrong",
-                "Try again from Computron.",
+                "Try again from Omnideck.",
             ),
             content_type="text/html",
             status=502,
@@ -312,13 +312,13 @@ async def handle_oauth_status(request: web.Request) -> web.Response:
     if not state:
         return error_response(
             "BAD_REQUEST",
-            "Sign-in session is missing. Try again from Computron.",
+            "Sign-in session is missing. Try again from Omnideck.",
         )
     pending = _oauth.status(state)
     if pending is None:
         return error_response(
             "NOT_FOUND",
-            "Sign-in session expired. Try again from Computron.",
+            "Sign-in session expired. Try again from Omnideck.",
         )
     out: dict[str, Any] = {"status": pending.status}
     if pending.integration_id is not None:

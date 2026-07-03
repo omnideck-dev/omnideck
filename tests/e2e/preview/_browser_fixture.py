@@ -15,7 +15,7 @@ from pathlib import Path
 from tests.e2e._helpers import push_file_to_container
 from tests.e2e._protocol import open_url
 
-HOME = "/home/computron"
+HOME = "/home/omnideck"
 FIXTURE_NAME = "bfix.html"
 FIXTURE_CONTAINER_PATH = f"{HOME}/{FIXTURE_NAME}"
 _FIXTURE_HOST_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "browser_fixture.html"
@@ -27,7 +27,7 @@ def install_fixture() -> None:
 
 
 def base_url() -> str:
-    return os.environ.get("COMPUTRON_URL", "http://localhost:8080")
+    return os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
 
 def fixture_url(mode: str = "idle") -> str:

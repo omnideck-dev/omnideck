@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-BASE_URL = os.environ.get("COMPUTRON_URL", "http://localhost:8080")
+BASE_URL = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
 
 @pytest.fixture(scope="session")

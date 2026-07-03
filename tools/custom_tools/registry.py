@@ -50,7 +50,7 @@ def _get_registry_path() -> Path:
 
 def _get_scripts_dir() -> Path:
     # Scripts must live inside virtual_computer.home_dir, which is the directory
-    # volume-mounted into the container at /home/computron.
+    # volume-mounted into the container at /home/omnideck.
     cfg = load_config()
     return Path(cfg.virtual_computer.home_dir) / "custom_tools" / "scripts"
 

@@ -1,7 +1,7 @@
 settings:
-  home_dir: /var/lib/computron
+  home_dir: /var/lib/omnideck
 virtual_computer:
-  home_dir: /home/computron
+  home_dir: /home/omnideck
 
 features:
   image_generation: ${ENABLE_IMAGE_GEN:-false}

@@ -1,12 +1,12 @@
-# Justfile for computron_9000
+# Justfile for omnideck
 #
 # Dev model:
 #   - `just build` builds the container image from the current source.
 #     Rebuild only when container/Dockerfile or baked-in deps change.
 #   - `just dev` starts a long-running dev container, syncs source into it,
-#     builds the UI, and launches the app. State lives at ~/.computron_9000/.
+#     builds the UI, and launches the app. State lives at ~/.omnideck/.
 #   - `just restart-app` / `just rebuild-ui` sync the latest source and
-#     bounce the relevant bit. No bind mount on /opt/computron — the
+#     bounce the relevant bit. No bind mount on /opt/omnideck — the
 #     container can't write into your repo.
 #   - `just e2e` spawns a throwaway container on :9090 with ephemeral state,
 #     syncs source, builds UI, runs playwright, tears down.
@@ -14,8 +14,8 @@
 set dotenv-load
 
 UI_DIR  := "server/ui"
-_ctr    := "computron_virtual_computer"
-_image  := "computron_9000:latest"
+_ctr    := "omnideck_virtual_computer"
+_image  := "omnideck:latest"
 
 # Default — show available commands
 default:
@@ -27,10 +27,10 @@ default:
 # =============================================================================
 
 # One-command setup for new developers (host-side deps only).
-setup home_dir=`echo "$HOME/.computron_9000"`:
+setup home_dir=`echo "$HOME/.omnideck"`:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "🤖 Setting up COMPUTRON_9000..."
+    echo "🤖 Setting up OMNIDECK..."
 
     command -v uv >/dev/null || { echo "❌ Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
     command -v node >/dev/null || echo "⚠️  Node.js not installed — UI work will not work locally"
@@ -84,7 +84,7 @@ build:
 # Publish multi-arch image to GitHub Container Registry.
 # Requires: docker buildx (comes with Docker Desktop; on Linux, install QEMU first:
 #   docker run --privileged --rm tonistiigi/binfmt --install all)
-publish registry="ghcr.io/lefoulkrod/computron_9000":
+publish registry="ghcr.io/omnideck-dev/omnideck":
     #!/usr/bin/env bash
     set -euo pipefail
     sha=$(git rev-parse --short HEAD)
@@ -130,7 +130,7 @@ dev:
     #!/usr/bin/env bash
     set -euo pipefail
     just _require-image
-    state="$HOME/.computron_9000"
+    state="$HOME/.omnideck"
     mkdir -p "$state/home" "$state/state"
     if ! docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q .; then
         docker rm -f {{_ctr}} 2>/dev/null || true
@@ -140,8 +140,8 @@ dev:
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e DEV_MODE=true \
             $env_args \
-            -v "$state/home:/home/computron:rw" \
-            -v "$state/state:/var/lib/computron:rw" \
+            -v "$state/home:/home/omnideck:rw" \
+            -v "$state/state:/var/lib/omnideck:rw" \
             {{_image}}
         echo "🚀 Container started"
     else
@@ -172,7 +172,7 @@ rebuild-ui:
     just _ui-build {{_ctr}}
     echo "✅ UI rebuilt — refresh browser"
 
-# Stop the dev container (keeps state in ~/.computron_9000/)
+# Stop the dev container (keeps state in ~/.omnideck/)
 stop:
     docker stop {{_ctr}} 2>/dev/null || echo "ℹ️  Not running"
 
@@ -199,7 +199,7 @@ unit:
     PYTHONPATH=. uv run pytest tests/unit/
 
 # Run browser-tools tests (real headless Chrome against local fixture pages)
-browser-tools *args:
+test-browser-tools *args:
     PYTHONPATH=. uv run pytest tests/browser_tools/ {{args}}
 
 # Run tests matching a specific file or path
@@ -208,7 +208,7 @@ test-file file:
 
 # Run integration tests (needs a running container with Ollama)
 integration:
-    COMPUTRON_URL="${COMPUTRON_URL:-http://localhost:8080}" PYTHONPATH=. uv run pytest tests/integration/
+    OMNIDECK_URL="${OMNIDECK_URL:-http://localhost:8080}" PYTHONPATH=. uv run pytest tests/integration/
 
 # Coverage report
 test-cov:
@@ -234,16 +234,16 @@ manual-test:
     # Per-branch image so concurrent worktrees don't clobber each other.
     # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
-    image="computron_9000:e2e-${branch_tag}"
+    image="omnideck:e2e-${branch_tag}"
     echo "🏗️  Building ${image}"
     docker build -f container/Dockerfile -t "$image" .
-    name="computron_manual_test"
+    name="omnideck_manual_test"
     port=9091
     state=$(mktemp -d)
     mkdir -p "$state/home" "$state/state"
     cleanup() {
         docker exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
-            /home/computron /var/lib/computron 2>/dev/null || true
+            /home/omnideck /var/lib/omnideck 2>/dev/null || true
         docker stop "$name" 2>/dev/null || true
         rm -rf "$state" 2>/dev/null || true
     }
@@ -258,8 +258,8 @@ manual-test:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         $env_args \
-        -v "$state/home:/home/computron:rw" \
-        -v "$state/state:/var/lib/computron:rw" \
+        -v "$state/home:/home/omnideck:rw" \
+        -v "$state/state:/var/lib/omnideck:rw" \
         "$image"
 
     just _sync-src "$name"
@@ -294,22 +294,22 @@ e2e *args:
     # built image already carries the code under test — we run it as-is, no
     # source overlay. E2E_IMAGE + E2E_SKIP_BUILD let CI skip the build and run a
     # prebuilt image (e.g. the published main image) directly instead.
-    image="${E2E_IMAGE:-computron_9000:e2e-${branch_tag}}"
+    image="${E2E_IMAGE:-omnideck:e2e-${branch_tag}}"
     if [ "${E2E_SKIP_BUILD:-0}" = "1" ]; then
         echo "⏭️  Reusing image ${image} (E2E_SKIP_BUILD=1)"
     else
         echo "🏗️  Building ${image}"
         docker build -f container/Dockerfile -t "$image" .
     fi
-    name="computron_e2e"
+    name="omnideck_e2e"
     port=9090
     state=$(mktemp -d)
     mkdir -p "$state/home" "$state/state"
     cleanup() {
         # Chown state files to host uid so we can rm -rf them.
-        # Container writes them as computron (uid 1000) or root.
+        # Container writes them as omnideck (uid 1000) or root.
         docker exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
-            /home/computron /var/lib/computron 2>/dev/null || true
+            /home/omnideck /var/lib/omnideck 2>/dev/null || true
         docker stop "$name" 2>/dev/null || true
         rm -rf "$state" 2>/dev/null || true
     }
@@ -335,8 +335,8 @@ e2e *args:
         -e ENABLE_CUSTOM_TOOLS=true \
         -e MOCK_LLM=1 \
         $env_args \
-        -v "$state/home:/home/computron:rw" \
-        -v "$state/state:/var/lib/computron:rw" \
+        -v "$state/home:/home/omnideck:rw" \
+        -v "$state/state:/var/lib/omnideck:rw" \
         "$image"
 
     # Wait for the app to come up on the e2e port
@@ -354,7 +354,7 @@ e2e *args:
     fi
 
     targets="{{args}}"
-    COMPUTRON_URL="http://localhost:$port" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
+    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
 
 
 # =============================================================================
@@ -418,7 +418,7 @@ _require-image:
 _require-running:
     @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
 
-# Tar-pipe working tree into container at /opt/computron.
+# Tar-pipe working tree into container at /opt/omnideck.
 # Excludes heavy/generated dirs so the stream stays small.
 _sync-src ctr:
     @tar \
@@ -436,7 +436,7 @@ _sync-src ctr:
         --exclude='.coverage*' \
         --exclude='playwright-report' \
         --exclude='test-results' \
-        -cf - . | docker exec -i {{ctr}} tar -xf - -C /opt/computron
+        -cf - . | docker exec -i {{ctr}} tar -xf - -C /opt/omnideck
     @echo "📦 Source synced into {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container
@@ -456,7 +456,7 @@ _ui-build ctr:
     fi
     npm run build
     echo "📦 Copying dist/ into {{ctr}}..."
-    tar -cf - dist | docker exec -i {{ctr}} tar -xf - -C /opt/computron/{{UI_DIR}}
+    tar -cf - dist | docker exec -i {{ctr}} tar -xf - -C /opt/omnideck/{{UI_DIR}}
 
 # Bounce supervisor + app inside the dev container. The DEV_MODE entrypoint
 # runs each in a respawn loop, so killing the inner Python lets the loop

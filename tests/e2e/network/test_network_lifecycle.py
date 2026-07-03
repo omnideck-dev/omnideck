@@ -59,7 +59,7 @@ def test_cards_render_with_correct_names(page: Page, network_after_turn):
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
     assert network_after_turn.agent_cards.count() == 3
 
-    network_after_turn.card_by_name("Omnideck")
+    network_after_turn.card_by_name("General")
     network_after_turn.card_by_name("Research Agent")
     network_after_turn.card_by_name("Code Expert")
 
@@ -69,7 +69,7 @@ def test_root_card_sub_agent_badge(page: Page, network_after_turn):
     network_after_turn.open()
     expect(network_after_turn.agent_cards.first).to_be_visible(timeout=5000)
 
-    root = network_after_turn.card_by_name("Omnideck")
+    root = network_after_turn.card_by_name("General")
     expect(root.sub_agent_badge).to_contain_text("2 sub-agents")
 
 

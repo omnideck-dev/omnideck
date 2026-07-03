@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-BASE_URL = os.environ.get("COMPUTRON_URL", "http://localhost:8080")
+BASE_URL = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
 # Auto-completes the setup wizard before any test runs. Lives in a
 # sibling module so the autouse fixture's implementation isn't crammed
