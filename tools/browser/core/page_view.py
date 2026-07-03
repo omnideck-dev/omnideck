@@ -127,6 +127,10 @@ _STRUCTURED_SNAPSHOT_JS = """
       case 'IMG': return 'img';
       case 'NAV': return 'navigation';
       case 'MAIN': return 'main';
+      // A <summary> is the native toggle for its <details> disclosure; expose it
+      // as a button so it gets a ref and click() can open the collapsed body.
+      case 'SUMMARY':
+        return (el.parentElement && el.parentElement.tagName === 'DETAILS') ? 'button' : null;
       default: return null;
     }
   }
@@ -174,7 +178,18 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (tag === 'SELECT') return '';
     if (tag === 'IMG') return (el.getAttribute('alt') || '').trim();
     const t = el.innerText;
-    return t ? t.trim() : '';
+    if (t && t.trim()) return t.trim();
+    // Fall back to the title attribute — a valid low-priority accessible-name
+    // source (the tooltip), used only when nothing else names the element. This
+    // is what names icon-only controls with no text/aria-label, e.g.
+    // <button title="Search"><svg>…</svg></button>.
+    const title = el.getAttribute('title');
+    if (title && title.trim()) return title.trim();
+    // SVG icons often carry their label in a nested <title> instead.
+    const svgTitle = el.querySelector('svg title');
+    if (svgTitle && svgTitle.textContent && svgTitle.textContent.trim())
+      return svgTitle.textContent.trim();
+    return '';
   }
 
   // ---- Inline text containers ----
@@ -416,6 +431,11 @@ _STRUCTURED_SNAPSHOT_JS = """
       else if (expanded === 'false') node.expanded = false;
       const selected = el.getAttribute('aria-selected');
       if (selected === 'true') node.selected = true;
+      // A <summary>'s open/closed state lives on its parent <details>, not on an
+      // aria-expanded attribute — surface it so the agent knows whether to click.
+      if (el.tagName === 'SUMMARY' && el.parentElement && el.parentElement.tagName === 'DETAILS') {
+        node.expanded = el.parentElement.open;
+      }
 
       emit(node);
       return;

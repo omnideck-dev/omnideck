@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Nested clickable</title></head>
+<body>
+  <h1>Nested clickable</h1>
+  <!-- cursor:pointer wrapper around a real button: the wrapper must NOT be
+       promoted (that would double-emit); only the inner button is surfaced. -->
+  <div style="cursor:pointer"><button type="button">Inner real button</button></div>
+  <!-- cursor:pointer element with only an image: promoted, named from alt. -->
+  <div style="cursor:pointer">
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+         alt="Image button" width="20" height="20">
+  </div>
+</body>
+</html>
