@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Modal dialog</title>
+</head>
+<body>
+  <!-- When a modal opens, the app marks the rest of the page aria-hidden and
+       renders the dialog as a sibling. The walker must drop the hidden
+       background but keep the dialog. -->
+  <div id="background" aria-hidden="true">
+    <h1>Background content</h1>
+    <button type="button">Background button</button>
+  </div>
+  <div role="dialog" aria-label="Confirm dialog">
+    <h2>Confirm</h2>
+    <button type="button">Modal button</button>
+  </div>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kitchen sink</title>
+</head>
+<body>
+  <h1>Kitchen sink</h1>
+  <h2>Controls</h2>
+
+  <a href="#somewhere">A link</a>
+  <button type="button">A button</button>
+  <button type="button" aria-pressed="true">A pressed button</button>
+  <button type="button" aria-expanded="true">An expanded button</button>
+
+  <input type="text" aria-label="Text input">
+  <input type="search" aria-label="Search input">
+  <input type="email" aria-label="Email input">
+  <input type="password" aria-label="Password input">
+  <input type="number" aria-label="Number input">
+  <input type="range" aria-label="Range input" min="0" max="10">
+  <textarea aria-label="Text area"></textarea>
+
+  <input type="checkbox" id="cb" checked><label for="cb">A checkbox</label>
+  <input type="radio" id="rb" name="r"><label for="rb">A radio</label>
+  <select aria-label="A select"><option>One</option><option>Two</option></select>
+
+  <div contenteditable="true" aria-label="Editable note">edit me</div>
+  <div role="switch" aria-checked="true" tabindex="0">A switch</div>
+  <div role="tab" tabindex="0">A tab</div>
+
+  <h2>Content</h2>
+  <img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+       alt="A diagram" width="120" height="60">
+  <table>
+    <tr><td>Cell A</td><td>Cell B</td></tr>
+  </table>
+  <ul>
+    <li>Item one</li>
+    <li>Item two</li>
+  </ul>
+
+  <h2>Hidden</h2>
+  <button type="button" style="display:none">Hidden by display</button>
+  <button type="button" style="visibility:hidden">Hidden by visibility</button>
+  <button type="button" style="opacity:0">Hidden by opacity</button>
+  <div aria-hidden="true">
+    <button type="button">Hidden by aria</button>
+  </div>
+</body>
+</html>

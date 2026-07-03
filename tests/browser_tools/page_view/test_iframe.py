@@ -1,8 +1,9 @@
 """Iframe content in the page view.
 
-A dominant iframe — one covering most of the viewport, same OR cross origin —
-is detected and the tools operate inside it, so its controls become the page
-view. Playwright drives frames of either origin, so both are covered.
+A dominant iframe — one covering more than ~25% of the viewport, same OR cross
+origin — is detected and the tools switch to operating *inside* it, so its
+controls become the page view and the host page drops out. Playwright drives
+frames of either origin, so both are covered.
 
 Small / non-dominant and multiple iframes are not surfaced yet; that's a
 separate refactor (plans/iframe_per_frame_page_view.md).
