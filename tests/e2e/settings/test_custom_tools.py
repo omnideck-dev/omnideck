@@ -57,7 +57,7 @@ def _tool(name: str, *, description: str = '', tool_type: str = 'program', langu
 def _open_custom_tools(page: Page) -> SettingsPage:
     """Navigate to Settings → Custom Tools."""
     settings = SettingsPage(page).goto()
-    page.get_by_role("button", name="Custom Tools").click()
+    page.get_by_test_id("settings-tab-tools").click()
     page.get_by_test_id("custom-tools-tab").wait_for(state="visible")
     return settings
 

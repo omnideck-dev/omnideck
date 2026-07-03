@@ -100,45 +100,45 @@ class SettingsPage:
     def goto(self) -> "SettingsPage":
         """Open Settings (lands on the Skills tab, the default)."""
         self.page.goto("/")
-        self.page.get_by_role("button", name="Settings", exact=True).click()
-        self.page.get_by_role("button", name="Skills", exact=True).wait_for(state="visible")
+        self.page.get_by_test_id("sidebar-settings").click()
+        self.page.get_by_test_id("settings-tab-skills").wait_for(state="visible")
         return self
 
     def goto_system(self) -> "SettingsPage":
         """Open Settings and switch to the System tab."""
         self.goto()
-        self.page.get_by_role("button", name="System").click()
+        self.page.get_by_test_id("settings-tab-system").click()
         self.page.locator("[class*='settingRow']").first.wait_for(state="visible")
         return self
 
     def goto_integrations(self) -> "SettingsPage":
         """Open Settings and switch to the Integrations tab."""
         self.goto()
-        self.page.get_by_role("button", name="Integrations").click()
+        self.page.get_by_test_id("settings-tab-integrations").click()
         return self
 
     def goto_providers(self) -> "SettingsPage":
         """Open Settings and switch to the Providers tab."""
         self.goto()
-        self.page.get_by_role("button", name="Providers").click()
+        self.page.get_by_test_id("settings-tab-providers").click()
         self.page.get_by_test_id("providers-tab").wait_for(state="visible")
         return self
 
     def goto_memory(self) -> "SettingsPage":
         """Open Settings and switch to the Memory tab."""
         self.goto()
-        self.page.get_by_role("button", name="Memory").click()
+        self.page.get_by_test_id("settings-tab-memory").click()
         self.page.get_by_test_id("memory-tab").wait_for(state="visible")
         return self
 
     def goto_skills(self) -> "SettingsPage":
         """Open Settings and switch to the Skills tab."""
         self.goto()
-        self.page.get_by_role("button", name="Skills", exact=True).click()
+        self.page.get_by_test_id("settings-tab-skills").click()
         self.page.get_by_test_id("skills-tab").wait_for(state="visible")
         return self
 
     def close(self) -> "SettingsPage":
         """Toggle the Settings sidebar entry to leave the Settings view."""
-        self.page.get_by_role("button", name="Settings", exact=True).click()
+        self.page.get_by_test_id("sidebar-settings").click()
         return self

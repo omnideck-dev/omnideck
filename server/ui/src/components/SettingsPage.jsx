@@ -50,6 +50,7 @@ export default function SettingsPage({
                         key={tab.id}
                         className={`${styles.tab} ${active.id === tab.id ? styles.tabActive : ''}`}
                         onClick={() => setActiveTab(tab.id)}
+                        data-testid={`settings-tab-${tab.id}`}
                     >
                         {tab.label}
                     </button>
