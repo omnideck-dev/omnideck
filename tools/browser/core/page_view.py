@@ -94,10 +94,18 @@ _STRUCTURED_SNAPSHOT_JS = """
 
   // ---- Role mapping ----
   function getRole(el) {
-    const explicit = el.getAttribute('role');
-    if (explicit) return explicit;
-    if (el.isContentEditable) return 'textbox';
     const tag = el.tagName;
+    const explicitRole = el.getAttribute('role');
+    if (explicitRole) {
+      // A native form control (<input>/<textarea>/<select>) is always
+      // interactive, so a non-interactive explicit role on it (e.g. role="form"
+      // on an <input>) is bogus: ignore it and fall through to the implicit
+      // role below so the field isn't hidden. Any other explicit role is kept.
+      const isFormControl = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      const ignoreExplicitRole = isFormControl && !INTERACTIVE.has(explicitRole);
+      if (!ignoreExplicitRole) return explicitRole;
+    }
+    if (el.isContentEditable) return 'textbox';
     switch (tag) {
       case 'A': return el.hasAttribute('href') ? 'link' : null;
       case 'BUTTON': return 'button';
