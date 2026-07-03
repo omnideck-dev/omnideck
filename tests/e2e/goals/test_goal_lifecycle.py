@@ -72,3 +72,16 @@ def test_delete_goal(page: Page, test_goal):
     resp = page.request.get("/api/goals")
     all_goals = resp.json().get("goals", [])
     assert not any(g["id"] == test_goal for g in all_goals)
+
+
+def test_delete_goal_inline_from_list(page: Page, test_goal):
+    """Delete a goal from its list row (two-click) without opening the detail."""
+    goals = GoalsView(page).goto()
+    expect(page.get_by_text(GOAL_DESCRIPTION, exact=True)).to_be_visible(timeout=5000)
+
+    goals.delete_from_list(GOAL_DESCRIPTION)
+    page.wait_for_timeout(500)
+
+    resp = page.request.get("/api/goals")
+    all_goals = resp.json().get("goals", [])
+    assert not any(g["id"] == test_goal for g in all_goals)

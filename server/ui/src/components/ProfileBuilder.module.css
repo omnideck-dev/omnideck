@@ -90,8 +90,8 @@
     margin-left: auto;
 }
 
-/* Action-bar buttons: Delete / Duplicate / Revert / Save now render
- * via the Button primitive — see ./primitives/Button.jsx. */
+/* Action-bar buttons: Delete / Duplicate / Save render via the Button
+ * and ConfirmButton primitives. */
 
 /* ---- Form body ---- */
 .formBody {

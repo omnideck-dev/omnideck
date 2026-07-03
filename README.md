@@ -90,7 +90,7 @@ Cloud variants skip your local GPU but still need to be pulled so Ollama exposes
 ## Features
 
 - **Chat** — talk to the agent, ask it to do things
-- **Agent Profiles** — reusable configurations bundling model, system prompt, skills, and inference parameters. Ship with defaults, or create your own in Settings.
+- **Agents** — reusable profiles bundling model, system prompt, skills, and inference parameters. Ship with defaults, or create your own from the Agents panel in the left nav.
 - **Browser automation** — controls Chrome with human-like clicking, typing, and scrolling
 - **Code execution** — writes and runs Python, installs packages, builds projects
 - **Autonomous tasks** — schedule recurring goals that run in the background

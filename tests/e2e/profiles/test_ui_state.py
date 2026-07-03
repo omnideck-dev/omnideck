@@ -4,7 +4,7 @@ import re
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def test_profile_ui_reflects_saved_state(page: Page):
@@ -33,9 +33,9 @@ def test_profile_ui_reflects_saved_state(page: Page):
     })
 
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
-        builder = settings.builder
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
+        builder = agents.builder
 
         # --- Identity ---
         expect(builder.name_input).to_have_value("UI State Test")

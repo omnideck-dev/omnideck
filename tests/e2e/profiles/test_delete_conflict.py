@@ -4,7 +4,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 @pytest.fixture
@@ -50,36 +50,39 @@ def blocking_goal(page: Page):
 def test_delete_blocked_shows_conflict_callout(page: Page, blocking_goal):
     """Clicking Delete on a profile pinned by a goal shows the Callout
     listing the blocking goal and leaves the profile in the list."""
-    settings = SettingsPage(page).goto()
-    settings.profiles.select(blocking_goal["profile_id"])
-    settings.builder.delete()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select(blocking_goal["profile_id"])
+    agents.builder.delete()
 
-    expect(settings.builder.delete_conflict).to_be_visible()
-    expect(settings.builder.delete_conflict).to_contain_text("Can't delete")
-    expect(settings.builder.delete_conflict).to_contain_text(blocking_goal["goal_description"])
+    expect(agents.builder.delete_conflict).to_be_visible()
+    expect(agents.builder.delete_conflict).to_contain_text("Can't delete")
+    expect(agents.builder.delete_conflict).to_contain_text(blocking_goal["goal_description"])
 
     # Profile must still be in the list — the delete was rejected
-    expect(settings.profiles.item(blocking_goal["profile_id"])).to_be_visible()
+    agents.back()
+    expect(agents.profiles.item(blocking_goal["profile_id"])).to_be_visible()
 
 
 def test_dismiss_conflict_callout(page: Page, blocking_goal):
     """Clicking the × on the Callout removes it without affecting state."""
-    settings = SettingsPage(page).goto()
-    settings.profiles.select(blocking_goal["profile_id"])
-    settings.builder.delete()
-    expect(settings.builder.delete_conflict).to_be_visible()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select(blocking_goal["profile_id"])
+    agents.builder.delete()
+    expect(agents.builder.delete_conflict).to_be_visible()
 
-    settings.builder.dismiss_delete_conflict()
-    expect(settings.builder.delete_conflict).to_be_hidden()
+    agents.builder.dismiss_delete_conflict()
+    expect(agents.builder.delete_conflict).to_be_hidden()
 
 
 def test_switching_profiles_clears_conflict(page: Page, blocking_goal):
     """Picking a different profile clears any stale conflict Callout."""
-    settings = SettingsPage(page).goto()
-    settings.profiles.select(blocking_goal["profile_id"])
-    settings.builder.delete()
-    expect(settings.builder.delete_conflict).to_be_visible()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select(blocking_goal["profile_id"])
+    agents.builder.delete()
+    expect(agents.builder.delete_conflict).to_be_visible()
 
-    # Switch to Omnideck (always present — it's the default)
-    settings.profiles.select("omnideck")
-    expect(settings.builder.delete_conflict).to_be_hidden()
+    # Switch to Omnideck (always present — it's the default). In the list →
+    # detail model you return to the list first, then open the other agent.
+    agents.back()
+    agents.profiles.select("omnideck")
+    expect(agents.builder.delete_conflict).to_be_hidden()

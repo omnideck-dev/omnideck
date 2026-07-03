@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Badge from '../Badge.jsx';
 import Button from '../primitives/Button.jsx';
 import IconButton from '../primitives/IconButton.jsx';
+import RowDeleteButton from '../primitives/RowDeleteButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
 import StarterPrompts from '../StarterPrompts.jsx';
@@ -148,6 +149,19 @@ export default function GoalsView({ onComposeInChat }) {
             render: (g) => (g.last_run_at
                 ? formatTime(g.last_run_at)
                 : <span className={styles.muted}>—</span>),
+        },
+        {
+            key: 'actions',
+            header: '',
+            cellClassName: styles.acts,
+            revealOnHover: true,
+            render: (g) => (
+                <RowDeleteButton
+                    title="Delete goal"
+                    data-testid="goal-delete"
+                    onConfirm={() => handleDelete(g.id)}
+                />
+            ),
         },
     ];
 

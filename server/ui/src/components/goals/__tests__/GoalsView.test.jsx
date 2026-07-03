@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import GoalsView from '../GoalsView.jsx';
@@ -64,6 +64,21 @@ test('clicking a goal opens its detail full-width; back returns to the list', as
 
     fireEvent.click(screen.getByTestId('goal-detail-back'));
     await waitFor(() => expect(screen.getByTestId('goals-list')).toBeInTheDocument());
+});
+
+test('inline row delete removes the goal after a two-click confirm', async () => {
+    render(<GoalsView />);
+    await waitFor(() => expect(screen.getByText('Daily digest')).toBeInTheDocument());
+
+    const row = screen.getByText('Daily digest').closest('tr');
+    const btn = within(row).getByTestId('goal-delete');
+
+    fireEvent.click(btn); // arm — must not delete or open the detail
+    expect(screen.queryByTestId('goal-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Daily digest')).toBeInTheDocument();
+
+    fireEvent.click(btn); // confirm — optimistically removes the row
+    await waitFor(() => expect(screen.queryByText('Daily digest')).not.toBeInTheDocument());
 });
 
 test('with no goals, shows an empty state whose example opens a pre-seeded chat', async () => {
