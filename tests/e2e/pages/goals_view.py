@@ -29,6 +29,15 @@ class GoalsView:
     def select_by_name(self, description: str) -> None:
         self.page.get_by_test_id("goals-list").get_by_text(description, exact=True).first.click()
 
+    def delete_from_list(self, description: str) -> None:
+        """Inline two-click delete from the list row (no navigation)."""
+        row = (self.page.get_by_test_id("goals-list")
+               .get_by_text(description, exact=True).first
+               .locator("xpath=ancestor::tr"))
+        btn = row.get_by_test_id("goal-delete")
+        btn.click()  # arm
+        btn.click()  # confirm
+
     def pause_button(self) -> Locator:
         return self.page.get_by_role("button", name="Pause")
 

@@ -67,6 +67,7 @@ vi.mock('../components/Sidebar.jsx', () => ({
             Sidebar
             <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
             <button data-testid="open-goals" onClick={() => onPanelToggle('goals')}>Goals</button>
+            <button data-testid="open-agents" onClick={() => onPanelToggle('agents')}>Agents</button>
             <button data-testid="close-panel" onClick={() => onPanelToggle(null)}>Close panel</button>
             <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
             <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
@@ -119,8 +120,8 @@ vi.mock('../components/SystemSettings.jsx', () => ({
     default: () => <div>SystemSettings</div>,
 }));
 
-vi.mock('../components/ProfilesTab.jsx', () => ({
-    default: () => <div>ProfilesTab</div>,
+vi.mock('../components/agents/AgentsView.jsx', () => ({
+    default: () => <div data-testid="agents-view">Agents</div>,
 }));
 
 vi.mock('../components/SetupWizard.jsx', () => ({
@@ -557,6 +558,16 @@ describe('DesktopApp view transitions', () => {
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('opens the agents view from the nav and escapes it on new chat', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-agents')));
+            expect(screen.getByTestId('agents-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.queryByTestId('agents-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 

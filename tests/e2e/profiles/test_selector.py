@@ -2,28 +2,28 @@
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def test_new_profile_appears_in_chat_dropdown(page: Page):
     """Create a profile via settings, verify it shows up in the chat selector."""
-    settings = SettingsPage(page).goto()
-    settings.profiles.new()
+    agents = AgentsPage(page).goto()
+    agents.profiles.new()
 
-    settings.builder.name_input.fill("")
-    settings.builder.name_input.fill("Dropdown Test Agent")
+    agents.builder.name_input.fill("")
+    agents.builder.name_input.fill("Dropdown Test Agent")
 
     # A model is required before the profile can be saved.
-    picker = settings.builder.model_picker
+    picker = agents.builder.model_picker
     picker.open()
     picker.items().first.wait_for(state="visible", timeout=10_000)
     picker.items().first.click()
 
-    settings.builder.save()
+    agents.builder.save()
     page.wait_for_timeout(500)
 
-    # Close settings and check the chat panel's profile dropdown
-    settings.close()
+    # Leave the Agents view and check the chat panel's profile dropdown
+    agents.close()
     chat_selector = page.get_by_label("Agent profile")
     expect(chat_selector).to_be_visible()
     option = chat_selector.locator("option", has_text="Dropdown Test Agent")

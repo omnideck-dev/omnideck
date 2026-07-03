@@ -1,4 +1,7 @@
-"""POM for the Settings page — Agent Profiles tab + Integrations tab + System tab."""
+"""POM for the Settings page — Skills / Providers / Integrations / Memory / System tabs.
+
+Agent profiles moved out of Settings into their own left-nav view.
+"""
 
 from __future__ import annotations
 
@@ -54,117 +57,6 @@ class ModelPickerLocator:
         raise AssertionError("No alternative model found")
 
 
-class ProfileList:
-    """Left-hand pane of the Agent Profiles tab — the list of profiles."""
-
-    def __init__(self, page: Page):
-        self.page = page
-
-    def item(self, profile_id: str) -> Locator:
-        """The clickable list row for a profile."""
-        return self.page.locator(f"[data-testid='profile-item-{profile_id}']")
-
-    def select(self, profile_id: str) -> None:
-        """Click a profile and wait for the builder pane to populate."""
-        self.item(profile_id).click()
-        self.page.locator("input[placeholder='Profile name']").wait_for(state="visible")
-
-    def new(self) -> None:
-        """Click '+ New' and wait for the empty builder to render."""
-        self.page.get_by_role("button", name="+ New").click()
-        self.page.locator("input[placeholder='Profile name']").wait_for(state="visible")
-
-
-class ProfileBuilder:
-    """Right-hand pane of the Agent Profiles tab — edit/save/delete the
-    selected profile."""
-
-    def __init__(self, page: Page):
-        self.page = page
-
-    # ── Inputs ────────────────────────────────────────────────────
-    @property
-    def name_input(self) -> Locator:
-        return self.page.locator("input[placeholder='Profile name']")
-
-    @property
-    def description_input(self) -> Locator:
-        return self.page.locator("input[placeholder='Short description']")
-
-    @property
-    def system_prompt(self) -> Locator:
-        return self.page.locator("textarea[placeholder='System prompt...']")
-
-    @property
-    def model_picker(self) -> ModelPickerLocator:
-        return ModelPickerLocator(self.page.get_by_test_id("profile-model-picker"))
-
-    @property
-    def enabled_toggle(self) -> Locator:
-        return self.page.locator("[data-testid='profile-enabled-toggle'] input[type='checkbox']")
-
-    @property
-    def skill_chips(self) -> Locator:
-        return self.page.locator("button[class*='chip']")
-
-    def preset(self, label: str) -> Locator:
-        return self.page.locator("[class*='presetBtn']", has_text=label)
-
-    # ── Advanced section ──────────────────────────────────────────
-    def open_advanced(self) -> "ProfileBuilder":
-        self.page.get_by_text("Advanced Settings").click()
-        return self
-
-    def field(self, name: str) -> Locator:
-        """Advanced inference field by name (e.g. 'temperature', 'top_k')."""
-        return self.page.get_by_test_id(f"field-{name}")
-
-    def auto_field(self, idx: int) -> Locator:
-        """Inference fields with placeholder='auto' (temperature, top_k, top_p,
-        repeat_penalty, context_window — in that source order)."""
-        return self.page.locator("input[placeholder='auto']").nth(idx)
-
-    def unlimited_field(self, idx: int) -> Locator:
-        """Fields with placeholder='unlimited' (num_predict, max_iterations)."""
-        return self.page.locator("input[placeholder='unlimited']").nth(idx)
-
-    @property
-    def thinking_switch(self) -> Locator:
-        return self.page.get_by_role("switch", name="Thinking")
-
-    # ── Action bar ────────────────────────────────────────────────
-    def save(self) -> "ProfileBuilder":
-        self.page.get_by_role("button", name="Save").click()
-        return self
-
-    def revert(self) -> "ProfileBuilder":
-        self.page.get_by_role("button", name="Revert").click()
-        return self
-
-    def duplicate(self) -> "ProfileBuilder":
-        self.page.get_by_role("button", name="Duplicate").click()
-        return self
-
-    def delete(self) -> "ProfileBuilder":
-        # ConfirmButton: first click arms ("Confirm?"), second click fires.
-        self.page.get_by_role("button", name="Delete", exact=True).click()
-        self.page.get_by_role("button", name="Confirm?").click()
-        return self
-
-    # ── Inline feedback ───────────────────────────────────────────
-    @property
-    def save_error(self) -> Locator:
-        return self.page.locator("[data-testid='profile-save-error']")
-
-    @property
-    def delete_conflict(self) -> Locator:
-        return self.page.locator("[data-testid='profile-delete-conflict']")
-
-    def dismiss_delete_conflict(self) -> "ProfileBuilder":
-        self.delete_conflict.get_by_role("button", name="Dismiss").click()
-        return self
-
-
 class SystemTab:
     """The System tab inside Settings."""
 
@@ -197,58 +89,56 @@ class SystemTab:
 
 
 class SettingsPage:
-    """Settings page — sidebar entry + Agent Profiles / System tabs."""
+    """Settings page — sidebar entry + Skills / Providers / System / … tabs."""
 
     def __init__(self, page: Page):
         self.page = page
-        self.profiles = ProfileList(page)
-        self.builder = ProfileBuilder(page)
         self.system = SystemTab(page)
         self.integrations = IntegrationsTab(page)
         self.skills = SkillsTab(page)
 
     def goto(self) -> "SettingsPage":
-        """Open Settings on the Agent Profiles tab (default)."""
+        """Open Settings (lands on the Skills tab, the default)."""
         self.page.goto("/")
-        self.page.get_by_role("button", name="Settings", exact=True).click()
-        self.page.get_by_role("button", name="Agent Profiles").wait_for(state="visible")
+        self.page.get_by_test_id("sidebar-settings").click()
+        self.page.get_by_test_id("settings-tab-skills").wait_for(state="visible")
         return self
 
     def goto_system(self) -> "SettingsPage":
         """Open Settings and switch to the System tab."""
         self.goto()
-        self.page.get_by_role("button", name="System").click()
+        self.page.get_by_test_id("settings-tab-system").click()
         self.page.locator("[class*='settingRow']").first.wait_for(state="visible")
         return self
 
     def goto_integrations(self) -> "SettingsPage":
         """Open Settings and switch to the Integrations tab."""
         self.goto()
-        self.page.get_by_role("button", name="Integrations").click()
+        self.page.get_by_test_id("settings-tab-integrations").click()
         return self
 
     def goto_providers(self) -> "SettingsPage":
         """Open Settings and switch to the Providers tab."""
         self.goto()
-        self.page.get_by_role("button", name="Providers").click()
+        self.page.get_by_test_id("settings-tab-providers").click()
         self.page.get_by_test_id("providers-tab").wait_for(state="visible")
         return self
 
     def goto_memory(self) -> "SettingsPage":
         """Open Settings and switch to the Memory tab."""
         self.goto()
-        self.page.get_by_role("button", name="Memory").click()
+        self.page.get_by_test_id("settings-tab-memory").click()
         self.page.get_by_test_id("memory-tab").wait_for(state="visible")
         return self
 
     def goto_skills(self) -> "SettingsPage":
         """Open Settings and switch to the Skills tab."""
         self.goto()
-        self.page.get_by_role("button", name="Skills", exact=True).click()
+        self.page.get_by_test_id("settings-tab-skills").click()
         self.page.get_by_test_id("skills-tab").wait_for(state="visible")
         return self
 
     def close(self) -> "SettingsPage":
         """Toggle the Settings sidebar entry to leave the Settings view."""
-        self.page.get_by_role("button", name="Settings", exact=True).click()
+        self.page.get_by_test_id("sidebar-settings").click()
         return self

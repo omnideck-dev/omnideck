@@ -4,7 +4,6 @@ import { useAppData } from '../contexts/AppData.jsx';
 import CustomToolsTab from './CustomToolsTab.jsx';
 import IntegrationsTab from './integrations/IntegrationsTab.jsx';
 import MemoryTab from './MemoryTab.jsx';
-import ProfilesTab from './ProfilesTab.jsx';
 import ProvidersTab from './providers/ProvidersTab.jsx';
 import SkillsTab from './skills/SkillsTab.jsx';
 import SystemSettings from './SystemSettings.jsx';
@@ -14,7 +13,6 @@ import styles from './SettingsPage.module.css';
 // hooks), so adding a new tab is just a row here plus the component.
 // `feature` gates visibility on a features.* flag.
 const ALL_TABS = [
-    { id: 'profiles', label: 'Agent Profiles', Component: ProfilesTab },
     { id: 'skills', label: 'Skills', Component: SkillsTab },
     { id: 'providers', label: 'Providers', Component: ProvidersTab },
     { id: 'integrations', label: 'Integrations', Component: IntegrationsTab },
@@ -24,7 +22,7 @@ const ALL_TABS = [
 ];
 
 export default function SettingsPage({
-    initialTab = 'profiles',
+    initialTab = 'skills',
     memoryRefreshSignal = 0,
     toolsRefreshSignal = 0,
 }) {
@@ -52,6 +50,7 @@ export default function SettingsPage({
                         key={tab.id}
                         className={`${styles.tab} ${active.id === tab.id ? styles.tabActive : ''}`}
                         onClick={() => setActiveTab(tab.id)}
+                        data-testid={`settings-tab-${tab.id}`}
                     >
                         {tab.label}
                     </button>

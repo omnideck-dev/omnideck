@@ -13,6 +13,7 @@ import AgentNetwork from './components/AgentNetwork.jsx';
 import AgentActivityView from './components/AgentActivityView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import GoalsView from './components/goals/GoalsView.jsx';
+import AgentsView from './components/agents/AgentsView.jsx';
 import ArtifactsHubView from './components/artifacts/ArtifactsHubView.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
@@ -477,7 +478,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={['settings', 'goals', 'artifacts'].includes(view) ? view : null}
+                    activePanel={['settings', 'goals', 'artifacts', 'agents'].includes(view) ? view : null}
                     dark={dark}
                     onToggleTheme={onToggleTheme}
                     onNewConversation={newConversation}
@@ -508,6 +509,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
 
                     {/* Goals view — self-contained, owns its own goals state */}
                     {view === 'goals' && <GoalsView onComposeInChat={composeInNewChat} />}
+                    {/* Agents view — agent profiles, list → detail like Goals */}
+                    {view === 'agents' && <AgentsView />}
                     {/* Global artifacts hub — full view from the sidebar */}
                     {view === 'artifacts' && (
                         <ArtifactsHubView onOpenConversation={openArtifactInConversation} />

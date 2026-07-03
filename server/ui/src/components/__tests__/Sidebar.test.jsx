@@ -92,6 +92,14 @@ describe('Sidebar', () => {
         expect(onPanelToggle).toHaveBeenCalledWith(null);
     });
 
+    it('opens the Agents panel from its nav item', async () => {
+        const user = userEvent.setup();
+        const { onPanelToggle } = setup();
+        expect(screen.getByText('Agents')).toBeInTheDocument();
+        await user.click(screen.getByTestId('sidebar-nav-agents'));
+        expect(onPanelToggle).toHaveBeenCalledWith('agents');
+    });
+
     it('opens settings from the footer', async () => {
         const user = userEvent.setup();
         const { onPanelToggle } = setup();
