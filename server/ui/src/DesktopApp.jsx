@@ -12,7 +12,7 @@ import GenerationPreview from './components/GenerationPreview.jsx';
 import AgentNetwork from './components/AgentNetwork.jsx';
 import AgentActivityView from './components/AgentActivityView.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import GoalsView from './components/goals/GoalsView.jsx';
+import RoutinesView from './components/routines/RoutinesView.jsx';
 import AgentsView from './components/agents/AgentsView.jsx';
 import ArtifactsHubView from './components/artifacts/ArtifactsHubView.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
@@ -44,7 +44,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     // chat or panel switch can't leave a stale view stacked underneath. Agent
     // detail is a sub-state of 'network', keyed off selectedAgentId in the
     // agent reducer — not a separate value here.
-    const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'goals' | 'network'
+    const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'routines' | 'network'
     const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
@@ -79,7 +79,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     const { addToast } = useToast();
 
     // Preview follows the selected agent only while its detail view is up
-    // (network view); in chat/settings/goals it tracks the root conversation.
+    // (network view); in chat/settings/routines it tracks the root conversation.
     const preview = usePreviewState(view === 'network');
 
     // Holds the active-tab id the resume callback wants to apply once
@@ -352,8 +352,8 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         agentDispatch({ type: 'RESET' });
     }, [chatNewConversation, preview.reset, agentDispatch]);
 
-    // Open a fresh chat with the composer pre-seeded (e.g. composing a goal
-    // from the goals view). The chat state seeds the draft in the same batch
+    // Open a fresh chat with the composer pre-seeded (e.g. composing a routine
+    // from the routines view). The chat state seeds the draft in the same batch
     // as the new conversation id.
     const composeInNewChat = useCallback((text) => newConversation({ draft: text }), [newConversation]);
 
@@ -393,14 +393,14 @@ function DesktopAppInner({ dark, onToggleTheme }) {
     }, [activeConversationId, handleLoadConversation, preview, focusFileInConversation]);
 
     // ── Which layout to show ───────────────────────────────────────────
-    // `view` picks exactly one of: chat, settings, goals, network. Each is a
+    // `view` picks exactly one of: chat, settings, routines, network. Each is a
     // full replacement of the main column, so they're mutually exclusive by
     // construction — no view can stay stacked under another.
     //
     //   chat (default) — chat + preview panels. Always shows the root agent's
     //     conversation. When sub-agents spawn, a network indicator appears so
     //     the user can navigate to the network.
-    //   settings / goals — full-screen panels opened from the sidebar.
+    //   settings / routines — full-screen panels opened from the sidebar.
     //   network — full-screen agent graph. Click a card to drill into an
     //     agent's detail view (network + selectedAgentId); close to return
     //     to chat.
@@ -449,7 +449,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         agentDispatch({ type: 'SELECT_AGENT', agentId });
     }, [agentDispatch]);
 
-    // Sidebar nav (settings/goals). A null panel means toggle back to chat.
+    // Sidebar nav (settings/routines). A null panel means toggle back to chat.
     const handlePanelToggle = useCallback((panel) => {
         setView(panel || 'chat');
     }, []);
@@ -478,7 +478,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={['settings', 'goals', 'artifacts', 'agents'].includes(view) ? view : null}
+                    activePanel={['settings', 'routines', 'artifacts', 'agents'].includes(view) ? view : null}
                     dark={dark}
                     onToggleTheme={onToggleTheme}
                     onNewConversation={newConversation}
@@ -507,9 +507,9 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                      * so the corresponding Settings tabs refetch on next
                      * open. */}
 
-                    {/* Goals view — self-contained, owns its own goals state */}
-                    {view === 'goals' && <GoalsView onComposeInChat={composeInNewChat} />}
-                    {/* Agents view — agent profiles, list → detail like Goals */}
+                    {/* Routines view — self-contained, owns its own routines state */}
+                    {view === 'routines' && <RoutinesView onComposeInChat={composeInNewChat} />}
+                    {/* Agents view — agent profiles, list → detail like Routines */}
                     {view === 'agents' && <AgentsView />}
                     {/* Global artifacts hub — full view from the sidebar */}
                     {view === 'artifacts' && (

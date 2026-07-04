@@ -1,4 +1,4 @@
-"""Cron evaluation for recurring goals."""
+"""Cron evaluation for recurring routines."""
 
 from __future__ import annotations
 

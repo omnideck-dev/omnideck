@@ -1,4 +1,4 @@
-"""Telegram push notifications for goal run completion/failure."""
+"""Telegram push notifications for routine run completion/failure."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class TelegramNotifier:
 
 
 def format_run_completed(
-    goal_description: str,
+    routine_description: str,
     run_number: int,
     duration: str,
     total_tasks: int,
@@ -115,7 +115,7 @@ def format_run_completed(
 ) -> str:
     """Format a success notification message."""
     lines = [
-        f"\u2705 Goal completed: {goal_description}",
+        f"\u2705 Routine completed: {routine_description}",
         f"Run #{run_number} \u00b7 {duration} \u00b7 {completed_tasks}/{total_tasks} tasks",
         "",
     ]
@@ -130,7 +130,7 @@ def format_run_completed(
 
 
 def format_run_failed(
-    goal_description: str,
+    routine_description: str,
     run_number: int,
     duration: str,
     total_tasks: int,
@@ -140,7 +140,7 @@ def format_run_failed(
 ) -> str:
     """Format a failure notification message."""
     lines = [
-        f"\u274c Goal failed: {goal_description}",
+        f"\u274c Routine failed: {routine_description}",
         f"Run #{run_number} \u00b7 {duration} \u00b7 {completed_tasks}/{total_tasks} tasks completed",
         "",
         f"Error (task: {failed_task_description}):",

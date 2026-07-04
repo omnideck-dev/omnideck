@@ -19,7 +19,7 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class Goal(BaseModel):
+class Routine(BaseModel):
     """An immutable template that defines what to accomplish."""
 
     id: str = Field(default_factory=_new_id)
@@ -32,10 +32,10 @@ class Goal(BaseModel):
 
 
 class Task(BaseModel):
-    """An immutable definition of a unit of work belonging to a goal."""
+    """An immutable definition of a unit of work belonging to a routine."""
 
     id: str = Field(default_factory=_new_id)
-    goal_id: str
+    routine_id: str
     description: str
     instruction: str
     agent_profile: str | None = None
@@ -44,10 +44,10 @@ class Task(BaseModel):
 
 
 class Run(BaseModel):
-    """A single execution of a goal."""
+    """A single execution of a routine."""
 
     id: str = Field(default_factory=_new_id)
-    goal_id: str
+    routine_id: str
     run_number: int = 1
     status: Literal["pending", "running", "completed", "failed"] = "pending"
     created_at: str = Field(default_factory=_utcnow)
@@ -71,4 +71,4 @@ class TaskResult(BaseModel):
     file_outputs: list[str] = Field(default_factory=list)
 
 
-__all__ = ["Goal", "Run", "Task", "TaskResult"]
+__all__ = ["Routine", "Run", "Task", "TaskResult"]

@@ -14,7 +14,7 @@ CONTAINER_NAME = os.environ.get("OMNIDECK_CONTAINER", "omnideck_e2e")
 def container_exec(script: str) -> str:
     """Run a Python snippet inside the running omnideck container.
 
-    Used for seeding state that has no HTTP API (goals, runs, etc.). The
+    Used for seeding state that has no HTTP API. The
     snippet executes in the same Python environment as the running app —
     `from tasks import get_store` works, file writes land in the volume
     the app reads from.

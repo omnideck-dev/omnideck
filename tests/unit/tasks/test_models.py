@@ -2,29 +2,29 @@
 
 import pytest
 
-from tasks._models import Goal, Run, Task, TaskResult, _new_id, _utcnow
+from tasks._models import Routine, Run, Task, TaskResult, _new_id, _utcnow
 
 
 @pytest.mark.unit
 class TestModels:
     """Pydantic model validation and serialization."""
 
-    def test_goal_defaults(self):
-        """Goal gets an ID and created_at automatically."""
-        g = Goal(description="test goal")
+    def test_routine_defaults(self):
+        """Routine gets an ID and created_at automatically."""
+        g = Routine(description="test routine")
         assert g.id
         assert g.created_at
         assert g.status == "active"
         assert g.cron is None
 
-    def test_goal_with_cron(self):
-        """Goal with cron expression."""
-        g = Goal(description="recurring", cron="0 */2 * * *")
+    def test_routine_with_cron(self):
+        """Routine with cron expression."""
+        g = Routine(description="recurring", cron="0 */2 * * *")
         assert g.cron == "0 */2 * * *"
 
     def test_task_defaults(self):
         """Task gets sensible defaults."""
-        t = Task(goal_id="g1", description="do thing", instruction="prompt")
+        t = Task(routine_id="g1", description="do thing", instruction="prompt")
         assert t.agent_profile is None
         assert t.depends_on == []
         assert t.max_retries == 3
@@ -32,14 +32,14 @@ class TestModels:
     def test_task_with_deps(self):
         """Task with dependencies."""
         t = Task(
-            goal_id="g1", description="step 2", instruction="prompt",
+            routine_id="g1", description="step 2", instruction="prompt",
             depends_on=["t1", "t2"],
         )
         assert t.depends_on == ["t1", "t2"]
 
     def test_run_defaults(self):
         """Run starts as pending."""
-        r = Run(goal_id="g1")
+        r = Run(routine_id="g1")
         assert r.status == "pending"
         assert r.started_at is None
         assert r.completed_at is None
@@ -53,9 +53,9 @@ class TestModels:
 
     def test_model_dump_roundtrip(self):
         """Models can be serialized and deserialized."""
-        g = Goal(description="test")
+        g = Routine(description="test")
         data = g.model_dump()
-        g2 = Goal(**data)
+        g2 = Routine(**data)
         assert g2.id == g.id
         assert g2.description == g.description
 

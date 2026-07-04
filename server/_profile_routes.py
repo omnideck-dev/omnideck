@@ -139,7 +139,7 @@ async def handle_duplicate_profile(request: web.Request) -> web.Response:
 
 
 async def handle_profile_usage(request: web.Request) -> web.Response:
-    """Return goals/tasks that reference this profile."""
+    """Return routines/tasks that reference this profile."""
     profile_id = request.match_info["id"]
     if get_agent_profile(profile_id) is None:
         return web.json_response({"error": f"Profile '{profile_id}' not found"}, status=404)
@@ -148,20 +148,20 @@ async def handle_profile_usage(request: web.Request) -> web.Response:
 
 
 def _get_profile_usage(profile_id: str) -> list[dict]:
-    """Find goals/tasks referencing a profile."""
+    """Find routines/tasks referencing a profile."""
     try:
         from tasks import get_store
         store = get_store()
     except RuntimeError:
         return []
     usage: list[dict] = []
-    for goal in store.list_goals():
-        tasks = store.list_tasks(goal.id)
+    for routine in store.list_routines():
+        tasks = store.list_tasks(routine.id)
         for task in tasks:
             if getattr(task, "agent_profile", None) == profile_id:
                 usage.append({
-                    "goal_id": goal.id,
-                    "goal_description": goal.description,
+                    "routine_id": routine.id,
+                    "routine_description": routine.description,
                     "task_id": task.id,
                     "task_description": task.description,
                 })

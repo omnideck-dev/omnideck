@@ -66,7 +66,7 @@ vi.mock('../components/Sidebar.jsx', () => ({
         <div data-testid="sidebar">
             Sidebar
             <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
-            <button data-testid="open-goals" onClick={() => onPanelToggle('goals')}>Goals</button>
+            <button data-testid="open-routines" onClick={() => onPanelToggle('routines')}>Routines</button>
             <button data-testid="open-agents" onClick={() => onPanelToggle('agents')}>Agents</button>
             <button data-testid="close-panel" onClick={() => onPanelToggle(null)}>Close panel</button>
             <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
@@ -97,22 +97,22 @@ vi.mock('../components/SettingsPage.jsx', () => ({
     default: () => <div data-testid="settings-page">Settings</div>,
 }));
 
-vi.mock('../components/goals/GoalsView.jsx', () => ({
-    default: () => <div data-testid="goals-view">Goals</div>,
+vi.mock('../components/routines/RoutinesView.jsx', () => ({
+    default: () => <div data-testid="routines-view">Routines</div>,
 }));
 
-vi.mock('../hooks/useGoals.js', () => ({
+vi.mock('../hooks/useRoutines.js', () => ({
     default: () => ({
-        goals: [],
+        routines: [],
         runnerStatus: null,
-        selectedGoalId: null,
-        setSelectedGoalId: vi.fn(),
-        deleteGoal: vi.fn(),
+        selectedRoutineId: null,
+        setSelectedRoutineId: vi.fn(),
+        deleteRoutine: vi.fn(),
         deleteRun: vi.fn(),
-        pauseGoal: vi.fn(),
-        resumeGoal: vi.fn(),
-        triggerGoal: vi.fn(),
-        fetchGoalDetail: vi.fn(),
+        pauseRoutine: vi.fn(),
+        resumeRoutine: vi.fn(),
+        triggerRoutine: vi.fn(),
+        fetchRoutineDetail: vi.fn(),
     }),
 }));
 
@@ -535,12 +535,12 @@ describe('DesktopApp view transitions', () => {
         });
     });
 
-    // ── Escaping full-view panels (settings / goals) ────────────────
+    // ── Escaping full-view panels (settings / routines) ────────────────
     // Regression: starting or loading a conversation from a full-view
     // panel left the user stuck because the chat column stayed hidden
-    // behind settings/goals.
+    // behind settings/routines.
 
-    describe('escaping settings / goals via conversation actions', () => {
+    describe('escaping settings / routines via conversation actions', () => {
         it('new chat closes the settings page and returns to chat', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
@@ -551,13 +551,13 @@ describe('DesktopApp view transitions', () => {
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
-        it('new chat closes the goals view and returns to chat', async () => {
+        it('new chat closes the routines view and returns to chat', async () => {
             await renderApp();
-            act(() => fireEvent.click(screen.getByTestId('open-goals')));
-            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+            act(() => fireEvent.click(screen.getByTestId('open-routines')));
+            expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('routines-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
@@ -581,13 +581,13 @@ describe('DesktopApp view transitions', () => {
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
-        it('loading a conversation closes the goals view and returns to chat', async () => {
+        it('loading a conversation closes the routines view and returns to chat', async () => {
             await renderApp();
-            act(() => fireEvent.click(screen.getByTestId('open-goals')));
-            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+            act(() => fireEvent.click(screen.getByTestId('open-routines')));
+            expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expect(screen.queryByTestId('goals-view')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('routines-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
@@ -633,13 +633,13 @@ describe('DesktopApp view transitions', () => {
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
-        it('switching from settings to goals shows only goals, never both', async () => {
+        it('switching from settings to routines shows only routines, never both', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
-            act(() => fireEvent.click(screen.getByTestId('open-goals')));
-            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+            act(() => fireEvent.click(screen.getByTestId('open-routines')));
+            expect(screen.getByTestId('routines-view')).toBeInTheDocument();
             expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
         });
 
@@ -655,7 +655,7 @@ describe('DesktopApp view transitions', () => {
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
         });
 
-        it('keeps a running conversation alive when switching to goals', async () => {
+        it('keeps a running conversation alive when switching to routines', async () => {
             const stopGeneration = vi.fn();
             streamMock.value = {
                 ...streamMock.makeDefault(),
@@ -671,9 +671,9 @@ describe('DesktopApp view transitions', () => {
             expect(screen.getByTestId('chat-messages')).toHaveTextContent('2 messages');
             expect(screen.getByTestId('chat-streaming')).toHaveTextContent('streaming');
 
-            // Switch to goals mid-stream.
-            act(() => fireEvent.click(screen.getByTestId('open-goals')));
-            expect(screen.getByTestId('goals-view')).toBeInTheDocument();
+            // Switch to routines mid-stream.
+            act(() => fireEvent.click(screen.getByTestId('open-routines')));
+            expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             // The stream was never told to stop, and the chat stays mounted
             // (hidden, not destroyed) so it keeps running in the background.

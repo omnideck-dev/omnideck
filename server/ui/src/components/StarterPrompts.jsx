@@ -18,15 +18,15 @@ const DEFAULT_PROMPTS = [
     },
     {
         icon: 'bi-bullseye',
-        title: 'Create a goal',
-        text: 'Help me create a goal and break it down into actionable steps',
+        title: 'Create a routine',
+        text: 'Help me create a routine and break it down into actionable steps',
     },
 ];
 
 /**
  * Grid of clickable suggestion cards. Each card hands its prompt text to
  * onSelect — used both by the empty chat (default prompts) and the empty
- * goals view (goal-shaped prompts), so the two empty states look the same.
+ * routines view (routine-shaped prompts), so the two empty states look the same.
  */
 export default function StarterPrompts({
     onSelect,

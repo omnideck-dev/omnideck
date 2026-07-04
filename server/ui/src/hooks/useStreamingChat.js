@@ -954,7 +954,7 @@ export default function useStreamingChat(callbacks) {
     const stopGeneration = useCallback(() => {
         if (!isStreamingRef.current || stopRequestedRef.current) return;
         setStopRequested(true);
-        fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => {});
+        fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => { });
     }, [setStopRequested]);
 
     /** Resume a previous conversation by loading its history from the backend. */
@@ -1028,7 +1028,7 @@ export default function useStreamingChat(callbacks) {
             abortControllerRef.current = null;
         }
         const oldConversationId = conversationIdRef.current;
-        fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => {});
+        fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
         setIsStreaming(false);
         setStopRequested(false);
         setMessages([]);
@@ -1036,7 +1036,7 @@ export default function useStreamingChat(callbacks) {
         setInflightIteration(null);
         setPendingUserPrompt(null);
         // Seed the composer in the same batch as the new id, so the fresh
-        // conversation's input gets the text (e.g. composing a goal).
+        // conversation's input gets the text.
         setDraft(seedDraft);
         setConversationId(_uuid());
         // A fresh conversation: its first message starts it anew.

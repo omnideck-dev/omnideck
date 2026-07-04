@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { formatCron, formatTime, formatTimeUntil, formatDuration } from './goalUtils.jsx';
+import { formatCron, formatTime, formatTimeUntil, formatDuration } from './routineUtils.jsx';
 import TaskOutputModal from './TaskOutputModal.jsx';
 import Button from '../primitives/Button.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
 import StatusDot from '../StatusDot.jsx';
-import styles from './GoalDetailPanel.module.css';
+import styles from './RoutineDetailPanel.module.css';
 
 /**
  * Helper function to calculate next run from cron expression.
@@ -32,7 +32,7 @@ function getNextRun(cron) {
     return null;
 }
 
-function goalDotStatus(status, isRunning) {
+function routineDotStatus(status, isRunning) {
     if (isRunning || status === 'running') return 'running';
     if (status === 'active') return 'ready';
     if (status === 'completed') return 'complete';
@@ -45,43 +45,43 @@ function statusLabel(status, isRunning) {
     if (status === 'paused') return 'PAUSED';
     if (status === 'failed') return 'ERROR';
     if (status === 'completed') return 'COMPLETE';
-    if (status === 'active') return 'ACTIVE GOAL';
+    if (status === 'active') return 'ACTIVE ROUTINE';
     return String(status || '').toUpperCase();
 }
 
 /**
- * Right panel showing goal detail.
+ * Right panel showing routine detail.
  * Layout: actions bar + sticky heading (title + schedule) + tabs (RECENT RUNS / TASKS) + tab content.
  */
-export default function GoalDetailPanel({
-    goal,
+export default function RoutineDetailPanel({
+    routine,
     detail,
     isLoading,
-    onDeleteGoal,
+    onDeleteRoutine,
     onDeleteRun,
-    onPauseGoal,
-    onResumeGoal,
-    onTriggerGoal,
+    onPauseRoutine,
+    onResumeRoutine,
+    onTriggerRoutine,
 }) {
     const [activeTab, setActiveTab] = useState('runs');
     const [selectedOutput, setSelectedOutput] = useState(null);
 
-    if (!goal) {
+    if (!routine) {
         return (
             <div className={styles.empty}>
-                <div className={styles.emptyText}>Select a goal to view details</div>
+                <div className={styles.emptyText}>Select a routine to view details</div>
             </div>
         );
     }
 
-    const isPaused = goal.status === 'paused';
-    const nextRun = getNextRun(goal.cron);
+    const isPaused = routine.status === 'paused';
+    const nextRun = getNextRun(routine.cron);
 
-    const handleRunNow = () => onTriggerGoal(goal.id);
+    const handleRunNow = () => onTriggerRoutine(routine.id);
 
     const handlePauseResume = () => {
-        if (isPaused) onResumeGoal(goal.id);
-        else onPauseGoal(goal.id);
+        if (isPaused) onResumeRoutine(routine.id);
+        else onPauseRoutine(routine.id);
     };
 
     const runs = detail?.runs || [];
@@ -92,8 +92,8 @@ export default function GoalDetailPanel({
             {/* Actions bar */}
             <div className={styles.actionsBar}>
                 <span className={styles.activeLabel}>
-                    <StatusDot status={goalDotStatus(goal.status, goal.is_running)} />
-                    {statusLabel(goal.status, goal.is_running)}
+                    <StatusDot status={routineDotStatus(routine.status, routine.is_running)} />
+                    {statusLabel(routine.status, routine.is_running)}
                 </span>
                 <div className={styles.actionsRight}>
                     <Button
@@ -117,8 +117,8 @@ export default function GoalDetailPanel({
                         confirmLabel="Confirm?"
                         busyLabel="Deleting…"
                         icon="bi-trash3"
-                        title="Delete this goal"
-                        onConfirm={() => onDeleteGoal(goal.id)}
+                        title="Delete this routine"
+                        onConfirm={() => onDeleteRoutine(routine.id)}
                         disabled={isLoading}
                     />
                 </div>
@@ -126,11 +126,11 @@ export default function GoalDetailPanel({
 
             {/* Heading block */}
             <div className={styles.headingBlock}>
-                <h2 className={styles.title}>{goal.description}</h2>
-                {goal.cron && (
+                <h2 className={styles.title}>{routine.description}</h2>
+                {routine.cron && (
                     <div className={styles.schedule}>
-                        <span className={styles.cronChip}>{formatCron(goal.cron)}</span>
-                        {goal.timezone && <span className={styles.timezone}>{goal.timezone}</span>}
+                        <span className={styles.cronChip}>{formatCron(routine.cron)}</span>
+                        {routine.timezone && <span className={styles.timezone}>{routine.timezone}</span>}
                         {nextRun && <span className={styles.nextRun}>Next: {formatTimeUntil(nextRun)}</span>}
                     </div>
                 )}
@@ -160,7 +160,7 @@ export default function GoalDetailPanel({
                     <RunsTab
                         runs={runs}
                         tasks={tasks}
-                        goalId={goal.id}
+                        routineId={routine.id}
                         onViewOutput={setSelectedOutput}
                         onDeleteRun={onDeleteRun}
                     />
@@ -183,7 +183,7 @@ export default function GoalDetailPanel({
     );
 }
 
-function RunsTab({ runs, tasks, goalId, onViewOutput, onDeleteRun }) {
+function RunsTab({ runs, tasks, routineId, onViewOutput, onDeleteRun }) {
     const [expandedRunId, setExpandedRunId] = useState(null);
     const taskMap = Object.fromEntries(tasks.map(t => [t.id, t]));
 
@@ -201,7 +201,7 @@ function RunsTab({ runs, tasks, goalId, onViewOutput, onDeleteRun }) {
                     isExpanded={run.id === expandedRunId}
                     onToggle={() => setExpandedRunId(run.id === expandedRunId ? null : run.id)}
                     onViewOutput={onViewOutput}
-                    onDelete={() => onDeleteRun(goalId, run.id)}
+                    onDelete={() => onDeleteRun(routineId, run.id)}
                 />
             ))}
         </div>

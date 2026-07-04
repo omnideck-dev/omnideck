@@ -14,7 +14,7 @@ from .preview_panel import PreviewPanel
 from .browser_control import BrowserControl
 from .file_preview import FilePreview
 from .fullscreen_preview import FullscreenPreview
-from .goals_view import GoalsView
+from .routines_view import RoutinesView
 from .agents_page import AgentsPage
 from .settings_page import SettingsPage
 from .sidebar import Sidebar
@@ -29,7 +29,7 @@ __all__ = [
     "BrowserControl",
     "FilePreview",
     "FullscreenPreview",
-    "GoalsView",
+    "RoutinesView",
     "AgentsPage",
     "SettingsPage",
     "Sidebar",
