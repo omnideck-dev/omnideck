@@ -59,10 +59,21 @@ _KEY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer ***"),
 ]
 
+# A wrong URL often lands on a reverse proxy or captive portal that answers
+# with an HTML error page, and the client hands that page back as the error
+# string. Detect the markup so we can collapse it instead of dumping it.
+_HTML_RE = re.compile(r"<\s*(?:!doctype|html|head|body|title|center|h1)\b", re.IGNORECASE)
+_STATUS_CODE_RE = re.compile(r"\(status code:\s*(\d{3})\)")
+
 
 def _sanitize(msg: str) -> str:
     for pattern, replacement in _KEY_PATTERNS:
         msg = pattern.sub(replacement, msg)
+    # Collapse a raw HTML page to one line, keeping the HTTP status if present.
+    if _HTML_RE.search(msg):
+        status = _STATUS_CODE_RE.search(msg)
+        suffix = f" (HTTP {status.group(1)})" if status else ""
+        return f"The server returned an unexpected response{suffix}."
     return msg
 
 
