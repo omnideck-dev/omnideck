@@ -12,15 +12,26 @@ from agents import (
 from tasks._models import _new_id
 from tasks._singleton import get_store
 
+# ---------------------------------------------------------------------------
+# Server-side draft store
+#
+# Drafts are ephemeral: the agent calls begin_routine → add_task* →
+# commit_routine within a single conversation turn.  Storing them server-side
+# (keyed by a short opaque token) avoids serialising a complex nested dict
+# to the LLM and back, which was fragile because str(dict) produces Python
+# repr (single quotes) and _coerce_value had no dict handler to reverse it.
+# ---------------------------------------------------------------------------
+_drafts: dict[str, dict[str, Any]] = {}
+
 
 async def begin_routine(
     description: str,
     cron: str | None = None,
     timezone: str | None = None,
-) -> dict[str, Any] | str:
+) -> str:
     """Begin building a new routine draft.
 
-    Returns a draft dict to pass to add_task and commit_routine.
+    Returns a draft_id token to pass to add_task and commit_routine.
 
     Args:
         description: What this routine accomplishes.
@@ -44,24 +55,26 @@ async def begin_routine(
         draft["cron"] = cron
     if timezone:
         draft["timezone"] = timezone
-    return draft
+    draft_id = _new_id()
+    _drafts[draft_id] = draft
+    return draft_id
 
 
 async def add_task(
-    draft: dict[str, Any],
+    draft_id: str,
     key: str,
     description: str,
     instruction: str,
     agent_profile: str,
     depends_on: list[str] | None = None,
-) -> dict[str, Any] | str:
-    """Add a task to a routine draft and return the updated draft.
+) -> str:
+    """Add a task to a routine draft and return the draft_id for chaining.
 
     Omit depends_on to automatically depend on the previous task (sequential).
     Pass depends_on=[] to run immediately with no dependencies (parallel).
 
     Args:
-        draft: Current routine draft from begin_routine or a previous add_task.
+        draft_id: Token returned by begin_routine (or a previous add_task call).
         key: Unique short identifier for this task (e.g. 'fetch_data').
         description: Short human-readable description.
         instruction: Full self-contained agent prompt.
@@ -70,8 +83,9 @@ async def add_task(
         depends_on: Keys of tasks this task depends on. Omit to depend on the
             previous task. Pass [] for no dependencies (parallel execution).
     """
-    if not isinstance(draft, dict) or "tasks" not in draft:
-        return "Error: invalid draft. Start with begin_routine."
+    draft = _drafts.get(draft_id)
+    if draft is None or "tasks" not in draft:
+        return "Error: invalid draft_id. Start with begin_routine."
     if not key or not key.strip():
         return "Error: key is required."
     key = key.strip()
@@ -111,17 +125,19 @@ async def add_task(
         "depends_on": resolved_deps,
         "agent_profile": agent_profile,
     }
-    return {**draft, "tasks": [*draft["tasks"], task]}
+    draft["tasks"] = [*draft["tasks"], task]
+    return draft_id
 
 
-async def commit_routine(draft: dict[str, Any]) -> str:
+async def commit_routine(draft_id: str) -> str:
     """Validate and save a completed routine draft to disk.
 
     Args:
-        draft: The routine draft built with begin_routine and add_task.
+        draft_id: Token returned by begin_routine (or the last add_task call).
     """
-    if not isinstance(draft, dict):
-        return "Error: invalid draft."
+    draft = _drafts.pop(draft_id, None)
+    if draft is None:
+        return "Error: invalid or expired draft_id. Start with begin_routine."
     description = draft.get("description", "")
     tasks = draft.get("tasks", [])
     cron = draft.get("cron")

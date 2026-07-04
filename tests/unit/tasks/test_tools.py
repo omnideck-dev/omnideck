@@ -7,7 +7,7 @@ import pytest
 
 import tasks
 from tasks import _singleton
-from tasks._tools import commit_routine, list_routines, list_tasks
+from tasks._tools import add_task, begin_routine, commit_routine, list_routines, list_tasks
 
 _TASK = {"key": "t1", "description": "task 1", "instruction": "do the thing", "agent_profile": "computron"}
 
@@ -18,13 +18,27 @@ async def create_routine(
     cron: str | None = None,
     timezone: str | None = None,
 ) -> str:
-    """Build a draft dict and commit it, matching the old create_routine signature."""
-    draft: dict[str, Any] = {"description": description, "tasks": tasks}
-    if cron is not None:
-        draft["cron"] = cron
-    if timezone is not None:
-        draft["timezone"] = timezone
-    return await commit_routine(draft)
+    """Build a routine via the token-based begin/add/commit flow.
+
+    Mirrors how an agent would call the tools: begin_routine → add_task per
+    task → commit_routine.  Returns the commit_routine result string.
+    """
+    draft_id = await begin_routine(description, cron=cron, timezone=timezone)
+    # begin_routine can return an error string instead of a token
+    if draft_id.startswith("Error:"):
+        return draft_id
+    for task_def in tasks:
+        draft_id = await add_task(
+            draft_id=draft_id,
+            key=task_def.get("key", ""),
+            description=task_def.get("description", ""),
+            instruction=task_def.get("instruction", ""),
+            agent_profile=task_def.get("agent_profile", ""),
+            depends_on=task_def.get("depends_on"),
+        )
+        if isinstance(draft_id, str) and draft_id.startswith("Error:"):
+            return draft_id
+    return await commit_routine(draft_id)
 
 
 @pytest.fixture(autouse=True)
@@ -182,8 +196,8 @@ class TestCreateRoutine:
     async def test_duplicate_key_returns_error(self):
         """Duplicate task keys return an error without writing anything."""
         tasks_input = [
-            {"key": "dup", "description": "A", "instruction": "inst"},
-            {"key": "dup", "description": "B", "instruction": "inst"},
+            {"key": "dup", "description": "A", "instruction": "inst", "agent_profile": "computron"},
+            {"key": "dup", "description": "B", "instruction": "inst", "agent_profile": "computron"},
         ]
         result = await create_routine("routine", tasks=tasks_input)
         assert "Error" in result
@@ -191,7 +205,7 @@ class TestCreateRoutine:
     async def test_unknown_dep_returns_error(self):
         """A depends_on key not in the task list returns an error."""
         tasks_input = [
-            {"key": "a", "description": "A", "instruction": "inst", "depends_on": ["nonexistent"]},
+            {"key": "a", "description": "A", "instruction": "inst", "depends_on": ["nonexistent"], "agent_profile": "computron"},
         ]
         result = await create_routine("routine", tasks=tasks_input)
         assert "Error" in result
@@ -199,20 +213,20 @@ class TestCreateRoutine:
     async def test_forward_dep_returns_error(self):
         """A task may not depend on a key that appears later in the list."""
         tasks_input = [
-            {"key": "a", "description": "A", "instruction": "inst", "depends_on": ["b"]},
-            {"key": "b", "description": "B", "instruction": "inst"},
+            {"key": "a", "description": "A", "instruction": "inst", "depends_on": ["b"], "agent_profile": "computron"},
+            {"key": "b", "description": "B", "instruction": "inst", "agent_profile": "computron"},
         ]
         result = await create_routine("routine", tasks=tasks_input)
         assert "Error" in result
 
     async def test_missing_task_key_returns_error(self):
         """A task without a key returns an error."""
-        result = await create_routine("routine", tasks=[{"description": "A", "instruction": "inst"}])
+        result = await create_routine("routine", tasks=[{"description": "A", "instruction": "inst", "agent_profile": "computron"}])
         assert "Error" in result
 
     async def test_missing_task_instruction_returns_error(self):
         """A task without instruction returns an error."""
-        result = await create_routine("routine", tasks=[{"key": "a", "description": "A"}])
+        result = await create_routine("routine", tasks=[{"key": "a", "description": "A", "agent_profile": "computron"}])
         assert "Error" in result
 
     async def test_one_shot_run_includes_task_results(self):
@@ -267,3 +281,59 @@ class TestListTools:
         result = await create_routine("routine with tz", tasks=[_TASK], cron="0 * * * *", timezone="America/Chicago")
         assert "timezone=America/Chicago" in result
 
+
+@pytest.mark.unit
+class TestDraftStore:
+    """Test the server-side draft store token-based flow."""
+
+    async def test_begin_routine_returns_token(self):
+        """begin_routine returns a non-error string token."""
+        result = await begin_routine("test routine")
+        assert not result.startswith("Error:")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_add_task_returns_same_token(self):
+        """add_task returns the same draft_id for chaining."""
+        draft_id = await begin_routine("test routine")
+        result = await add_task(
+            draft_id=draft_id,
+            key="t1",
+            description="task 1",
+            instruction="do it",
+            agent_profile="computron",
+        )
+        assert result == draft_id
+
+    async def test_invalid_draft_id_returns_error(self):
+        """Passing a bogus draft_id returns an error."""
+        result = await add_task(
+            draft_id="bogus-id",
+            key="t1",
+            description="task 1",
+            instruction="do it",
+            agent_profile="computron",
+        )
+        assert "Error" in result
+        assert "draft_id" in result
+
+    async def test_commit_invalid_draft_id_returns_error(self):
+        """Committing a bogus draft_id returns an error."""
+        result = await commit_routine("bogus-id")
+        assert "Error" in result
+        assert "draft_id" in result
+
+    async def test_commit_consumes_draft(self):
+        """commit_routine removes the draft from the store."""
+        draft_id = await begin_routine("test routine")
+        await add_task(
+            draft_id=draft_id,
+            key="t1",
+            description="task 1",
+            instruction="do it",
+            agent_profile="computron",
+        )
+        await commit_routine(draft_id)
+        # Second commit should fail — draft was consumed
+        result = await commit_routine(draft_id)
+        assert "Error" in result
