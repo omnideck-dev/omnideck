@@ -1,6 +1,6 @@
 # Omnideck
 
-A self-hosted agentic workbench in a single container. Bring your own LLMs — securely-brokered cloud providers (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint) or local Ollama models — and connect the integrations your agents need (Gmail, Calendar, Drive, custom MCP servers (coming soon)). Agents browse the web, write and run code, and work on goals in the background. Everything runs on your hardware.
+A self-hosted agentic workbench in a single container. Bring your own LLMs — securely-brokered cloud providers (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint) or local Ollama models — and connect the integrations your agents need (Gmail, Calendar, Drive, custom MCP servers (coming soon)). Agents browse the web, write and run code, and work on routines in the background. Everything runs on your hardware.
 
 ![Omnideck](image.png)
 
@@ -61,7 +61,7 @@ omnideck doctor      # run health checks and print a pass/warn/fail report
 omnideck uninstall   # remove the container (optionally back up and delete data)
 ```
 
-Your data lives in `~/Omnideck` and survives restarts and upgrades. Conversations, memory, agent profiles, goals, and generated files are all preserved when you `update`.
+Your data lives in `~/Omnideck` and survives restarts and upgrades. Conversations, memory, agent profiles, routines, and generated files are all preserved when you `update`.
 
 Run `omnideck --help` (or `omnideck <command> --help`) for the full list of commands and flags.
 
@@ -93,7 +93,7 @@ Cloud variants skip your local GPU but still need to be pulled so Ollama exposes
 - **Agents** — reusable profiles bundling model, system prompt, skills, and inference parameters. Ship with defaults, or create your own from the Agents panel in the left nav.
 - **Browser automation** — controls Chrome with human-like clicking, typing, and scrolling
 - **Code execution** — writes and runs Python, installs packages, builds projects
-- **Autonomous tasks** — schedule recurring goals that run in the background
+- **Autonomous tasks** — schedule recurring routines that run in the background
 - **Memory** — persistent memory across conversations
 - **Integrations** — connect Gmail, Calendar, Drive, and custom MCP servers (coming soon)
 

@@ -595,7 +595,7 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
 async def _init_task_runner(app: web.Application) -> None:
     """Initialize and start the task runner."""
     config = load_config()
-    if not config.goals.enabled:
+    if not config.routines.enabled:
         return
 
     from tasks import TaskExecutor, TaskRunner, TelegramNotifier, get_store
@@ -604,12 +604,12 @@ async def _init_task_runner(app: web.Application) -> None:
     executor = TaskExecutor(store)
 
     notifier = None
-    if config.goals.notifications.enabled:
-        notifier = TelegramNotifier(config.goals.notifications)
+    if config.routines.notifications.enabled:
+        notifier = TelegramNotifier(config.routines.notifications)
         if not notifier.enabled:
             notifier = None
 
-    runner = TaskRunner(store, executor, config.goals, notifier=notifier)
+    runner = TaskRunner(store, executor, config.routines, notifier=notifier)
     app["task_runner"] = runner
     await runner.start()
 

@@ -36,7 +36,7 @@ describe('Sidebar', () => {
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
         expect(screen.getByText('OMNIDECK')).toBeInTheDocument();
         expect(screen.getByText('New chat')).toBeInTheDocument();
-        expect(screen.getByText('Goals')).toBeInTheDocument();
+        expect(screen.getByText('Routines')).toBeInTheDocument();
     });
 
     it('collapses on toggle and hides labels', async () => {
@@ -46,7 +46,7 @@ describe('Sidebar', () => {
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
         expect(screen.queryByText('OMNIDECK')).not.toBeInTheDocument();
         expect(screen.queryByText('New chat')).not.toBeInTheDocument();
-        expect(screen.queryByText('Goals')).not.toBeInTheDocument();
+        expect(screen.queryByText('Routines')).not.toBeInTheDocument();
     });
 
     it('persists the collapsed state to localStorage', async () => {
@@ -81,14 +81,14 @@ describe('Sidebar', () => {
     it('opens a panel from a nav item', async () => {
         const user = userEvent.setup();
         const { onPanelToggle } = setup();
-        await user.click(screen.getByTestId('sidebar-nav-goals'));
-        expect(onPanelToggle).toHaveBeenCalledWith('goals');
+        await user.click(screen.getByTestId('sidebar-nav-routines'));
+        expect(onPanelToggle).toHaveBeenCalledWith('routines');
     });
 
     it('toggles an already-active panel closed', async () => {
         const user = userEvent.setup();
-        const { onPanelToggle } = setup({ activePanel: 'goals' });
-        await user.click(screen.getByTestId('sidebar-nav-goals'));
+        const { onPanelToggle } = setup({ activePanel: 'routines' });
+        await user.click(screen.getByTestId('sidebar-nav-routines'));
         expect(onPanelToggle).toHaveBeenCalledWith(null);
     });
 

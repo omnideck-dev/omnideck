@@ -23,9 +23,14 @@ import logging
 from pathlib import Path
 
 from migrations._backup import backup_file
-from tasks import GOALS_SUBDIR
 
 logger = logging.getLogger(__name__)
+
+# The task store lived under ``goals/`` when this migration was written. A later
+# migration renames the directory to ``routines/``, but this one runs before it,
+# so it must keep looking at ``goals/``. Pinned as a literal rather than imported
+# from the live constant, which now points at the new name.
+_GOALS_SUBDIR = "goals"
 
 # Profile IDs below must match the filenames in agents/default_profiles/
 # (installed by migration 002_install_default_profiles).
@@ -64,7 +69,7 @@ def _migrate_task(task: dict) -> bool:
 
 def migrate(state_dir: Path) -> None:
     """Migrate all goal files in the state directory."""
-    goals_dir = state_dir / GOALS_SUBDIR
+    goals_dir = state_dir / _GOALS_SUBDIR
     if not goals_dir.is_dir():
         logger.debug("No goals directory at %s, nothing to migrate", goals_dir)
         return

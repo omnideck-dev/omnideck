@@ -9,7 +9,7 @@ The conversation is a simulated exchange around one ask: "show me what you
 can do." A sub-agent writes a getting-started checklist to a file, the agent
 generates a "Welcome to Omnideck" capabilities page with a script (the page
 loads that checklist file live), and finishes by inviting the user to
-continue (browsing, integrations, goals, and memory are offered as next
+continue (browsing, integrations, routines, and memory are offered as next
 steps). The page is opened in the preview panel via saved preview state.
 
 The events are built through the real ``AgentEvent`` payload models and
@@ -97,7 +97,7 @@ _CHECKLIST_WRITE_PREVIEW = (
 )
 _CONCIERGE_SUMMARY = (
     "Saved **checklist.json** — six things to try, from building a page to "
-    "setting up an autonomous goal. All unchecked and ready."
+    "setting up an autonomous routine. All unchecked and ready."
 )
 
 _BUILD_CMD = "python build_page.py"
@@ -133,7 +133,7 @@ _FINAL_MESSAGE = (
     "**live** on the right\n"
     "- **\"Open this page in a browser and test it\"** — I'll drive a real browser and click through it\n"
     "- **\"Connect my Google Calendar\"** — I'll point you to **Settings → Integrations**, then start using it\n"
-    "- **\"Every morning, summarize my inbox\"** — I'll set up an autonomous goal that runs on its own\n"
+    "- **\"Every morning, summarize my inbox\"** — I'll set up an autonomous routine that runs on its own\n"
     "- **\"Remember my name is Alex\"** — I'll save it to memory and use it in future chats\n\n"
     "What would you like to try first?"
 )

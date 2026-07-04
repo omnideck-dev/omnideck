@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { StatusIcon, formatTime, formatDuration } from './goalUtils.jsx';
+import { StatusIcon, formatTime, formatDuration } from './routineUtils.jsx';
 import styles from './RunDetail.module.css';
 
 export default function RunDetail({ run, tasks }) {

@@ -124,7 +124,7 @@ class ParallelConfig(BaseModel):
 
 
 class NotificationsConfig(BaseModel):
-    """Telegram push notification settings for goal run completion/failure."""
+    """Telegram push notification settings for routine run completion/failure."""
 
     enabled: bool = False
     on_run_completed: bool = True
@@ -133,15 +133,15 @@ class NotificationsConfig(BaseModel):
     max_attachment_size_mb: int = 50
 
 
-class GoalsConfig(BaseModel):
+class RoutinesConfig(BaseModel):
     """Configuration for the autonomous task engine."""
 
     enabled: bool = True
-    goals_dir: str = ""
+    routines_dir: str = ""
     poll_interval: int = 5
     max_concurrent: int = 2
     shutdown_timeout: int = 60
-    timezone: str = "UTC"  # Default timezone for goals (IANA name)
+    timezone: str = "UTC"  # Default timezone for routines (IANA name)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
 
@@ -168,7 +168,7 @@ class AppConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    goals: GoalsConfig = Field(default_factory=GoalsConfig)
+    routines: RoutinesConfig = Field(default_factory=RoutinesConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
 
 

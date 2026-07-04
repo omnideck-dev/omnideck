@@ -23,7 +23,7 @@ from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
     from agents._agent_profiles import AgentProfile
-    from tasks._models import Goal, Task, TaskResult
+    from tasks._models import Routine, Task, TaskResult
     from tasks._store import TaskStore
 
 logger = logging.getLogger(__name__)
@@ -41,13 +41,13 @@ class TaskExecutor:
         if not run:
             msg = f"Run {task_result.run_id} not found"
             raise ValueError(msg)
-        goal = self._store.get_goal(run.goal_id)
-        if not goal:
-            msg = f"Goal {run.goal_id} not found"
+        routine = self._store.get_routine(run.routine_id)
+        if not routine:
+            msg = f"Routine {run.routine_id} not found"
             raise ValueError(msg)
 
-        instruction = self._build_instruction(task_result, task, goal)
-        conversation_id = f"goals/{run.goal_id}/{run.id}/{task_result.id}"
+        instruction = self._build_instruction(task_result, task, routine)
+        conversation_id = f"routines/{run.routine_id}/{run.id}/{task_result.id}"
         self._store.set_conversation_id(task_result.id, conversation_id)
 
         profile = self._profile_for(task)
@@ -110,11 +110,11 @@ class TaskExecutor:
         return profile
 
     def _build_instruction(
-        self, task_result: TaskResult, task: Task, goal: Goal
+        self, task_result: TaskResult, task: Task, routine: Routine
     ) -> str:
         """Build the agent instruction, injecting predecessor task results."""
         parts = [
-            f"## Goal\n{goal.description}\n",
+            f"## Routine\n{routine.description}\n",
             f"## Task\n{task.instruction}\n",
         ]
 

@@ -21,7 +21,7 @@ CARDS = [
     ("📁", "File Artifacts", "Every file it makes shows up in the preview — pages, images, docs, data. You're looking at one right now."),
     ("🧠", "Memory", "Remembers facts across conversations — your preferences, projects, and context stick around."),
     ("🔗", "Integrations", "Connect Gmail, Calendar, Drive, and custom MCP servers (coming soon), and it works with your tools directly."),
-    ("🎯", "Autonomous Goals", "Schedule recurring background tasks that run on their own while you get on with other things."),
+    ("🎯", "Autonomous Routines", "Schedule recurring background tasks that run on their own while you get on with other things."),
 ]
 
 

@@ -39,7 +39,7 @@ function draftAgent(providers) {
 /**
  * Agents view: a searchable, sortable table of agent profiles that owns the
  * full width until an agent is selected, then the agent opens full-width with a
- * back nav — mirroring the Goals view. Self-contained; it drives profile state
+ * back nav. Self-contained; it drives profile state
  * through the shared profilesHook so chat and this view stay in sync. The
  * detail is the existing ProfileBuilder editor.
  */
@@ -62,14 +62,14 @@ export default function AgentsView() {
     useEffect(() => {
         fetch('/api/providers').then((r) => r.json()).then((data) => {
             setProviders(data.providers || []);
-        }).catch(() => {});
+        }).catch(() => { });
     }, []);
 
     // Tool-category metadata for the skill picker (tool counts, connection dots).
     useEffect(() => {
         fetch('/api/tool-categories').then((r) => r.json()).then((data) => {
             setCategories(Array.isArray(data) ? data : []);
-        }).catch(() => {});
+        }).catch(() => { });
     }, []);
 
     // Drop any stale delete conflict when the open agent changes.
@@ -114,15 +114,15 @@ export default function AgentsView() {
     };
 
     // Inline delete from the list row — no modal. A profile pinned by one or
-    // more goals can't be deleted (409); surface that as a toast rather than
+    // more routines can't be deleted (409); surface that as a toast rather than
     // silently no-op'ing, since there's no editor open to show the callout.
     const deleteAgent = async (p) => {
         const result = await profilesHook.deleteProfile(p.id);
         if (result?.conflict) {
-            const n = new Set((result.usage || []).map((u) => u.goal_id)).size;
+            const n = new Set((result.usage || []).map((u) => u.routine_id)).size;
             addToast(
-                `“${p.name}” is used by ${n} goal${n === 1 ? '' : 's'}. `
-                + `Remove it from ${n === 1 ? 'that goal' : 'them'} first, then delete.`,
+                `“${p.name}” is used by ${n} routine${n === 1 ? '' : 's'}. `
+                + `Remove it from ${n === 1 ? 'that routine' : 'them'} first, then delete.`,
                 { type: 'error', title: 'Can’t delete agent' },
             );
             return;

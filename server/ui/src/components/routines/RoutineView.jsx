@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import RunDetail from './RunDetail.jsx';
 import TaskDetail from './TaskDetail.jsx';
-import { StatusIcon, formatTime, formatDuration, formatCron } from './goalUtils.jsx';
+import { StatusIcon, formatTime, formatDuration, formatCron } from './routineUtils.jsx';
 import Button from '../primitives/Button.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
-import styles from './GoalView.module.css';
+import styles from './RoutineView.module.css';
 
-export default function GoalView({ goal, onBack, onDeleteGoal, onDeleteRun, onPauseGoal, onResumeGoal, onTriggerGoal, fetchDetail }) {
+export default function RoutineView({ routine, onBack, onDeleteRoutine, onDeleteRun, onPauseRoutine, onResumeRoutine, onTriggerRoutine, fetchDetail }) {
     const [detail, setDetail] = useState(null);
     const [tab, setTab] = useState('runs');
     const [selectedRunId, setSelectedRunId] = useState(null);
@@ -37,7 +37,7 @@ export default function GoalView({ goal, onBack, onDeleteGoal, onDeleteRun, onPa
         load();
         const id = setInterval(load, 5000);
         return () => { active = false; clearInterval(id); };
-    }, [goal.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [routine.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Clear stale selectedRunId when the selected run disappears from polled data
     const runIds = detail?.runs?.map(r => r.id);
@@ -46,7 +46,7 @@ export default function GoalView({ goal, onBack, onDeleteGoal, onDeleteRun, onPa
 
     const selectedRun = detail?.runs?.find(r => r.id === validSelectedRunId);
     const selectedTask = detail?.tasks?.find(t => t.id === selectedTaskId);
-    const isActive = goal.status === 'active';
+    const isActive = routine.status === 'active';
 
     const taskMap = useMemo(
         () => Object.fromEntries((detail?.tasks || []).map(t => [t.id, t])),
@@ -58,30 +58,30 @@ export default function GoalView({ goal, onBack, onDeleteGoal, onDeleteRun, onPa
             {/* Header */}
             <div className={styles.header}>
                 <div className={styles.backRow}>
-                    <button className={styles.backBtn} onClick={onBack}>&larr; Goals</button>
+                    <button className={styles.backBtn} onClick={onBack}>&larr; Routines</button>
                 </div>
                 <div className={styles.titleRow}>
-                    <StatusIcon status={goal.status} size={12} />
-                    <span className={styles.title}>{goal.description}</span>
-                    {goal.cron && (
+                    <StatusIcon status={routine.status} size={12} />
+                    <span className={styles.title}>{routine.description}</span>
+                    {routine.cron && (
                         <span className={styles.cronBadge}>
-                            {formatCron(goal.cron)}
-                            {goal.timezone && <span className={styles.tzSuffix}>{goal.timezone}</span>}
+                            {formatCron(routine.cron)}
+                            {routine.timezone && <span className={styles.tzSuffix}>{routine.timezone}</span>}
                         </span>
                     )}
                     <div className={styles.actions}>
-                        <Button variant="filled" onClick={() => onTriggerGoal(goal.id)}>Run now</Button>
+                        <Button variant="filled" onClick={() => onTriggerRoutine(routine.id)}>Run now</Button>
                         {isActive ? (
-                            <Button onClick={() => onPauseGoal(goal.id)}>Pause</Button>
+                            <Button onClick={() => onPauseRoutine(routine.id)}>Pause</Button>
                         ) : (
-                            <Button onClick={() => onResumeGoal(goal.id)}>Resume</Button>
+                            <Button onClick={() => onResumeRoutine(routine.id)}>Resume</Button>
                         )}
                         <ConfirmButton
                             label="Delete"
                             confirmLabel="Confirm?"
                             busyLabel="Deleting…"
-                            title="Delete this goal"
-                            onConfirm={() => { onDeleteGoal(goal.id); onBack(); }}
+                            title="Delete this routine"
+                            onConfirm={() => { onDeleteRoutine(routine.id); onBack(); }}
                         />
                     </div>
                 </div>
