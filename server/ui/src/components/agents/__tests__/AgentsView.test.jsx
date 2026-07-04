@@ -129,10 +129,10 @@ test('inline delete needs two clicks and does not open the detail', async () => 
     expect(screen.queryByTestId('agent-detail')).not.toBeInTheDocument();
 });
 
-test('a delete blocked by a goal surfaces a toast', async () => {
+test('a delete blocked by a routine surfaces a toast', async () => {
     profilesHook.deleteProfile.mockResolvedValue({
         conflict: true,
-        usage: [{ goal_id: 'g1', goal_description: 'Daily digest' }],
+        usage: [{ routine_id: 'g1', routine_description: 'Daily digest' }],
     });
     renderView();
     await waitFor(() => expect(screen.getByText('Researcher')).toBeInTheDocument());
@@ -142,7 +142,7 @@ test('a delete blocked by a goal surfaces a toast', async () => {
     fireEvent.click(del);
     fireEvent.click(del);
 
-    expect(await screen.findByText(/used by 1 goal/)).toBeInTheDocument();
+    expect(await screen.findByText(/used by 1 routine/)).toBeInTheDocument();
 });
 
 test('row Duplicate calls duplicateProfile and stays on the list', async () => {

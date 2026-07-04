@@ -25,7 +25,7 @@ Host
 |------|-------|---------|
 | `/opt/omnideck` | root | App source (baked into image; overwritten by tar-pipe on `just dev`/`restart-app`/`rebuild-ui`) |
 | `/home/omnideck` | omnideck | Agent workspace, downloads, generated files |
-| `/var/lib/omnideck` | omnideck | Conversations, memory, custom tools, goals |
+| `/var/lib/omnideck` | omnideck | Conversations, memory, custom tools, routines |
 
 ## Dev Workflow
 

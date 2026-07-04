@@ -8,23 +8,23 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from tasks._models import Goal, Run, Task, TaskResult, _new_id, _utcnow
+from tasks._models import Routine, Run, Task, TaskResult, _new_id, _utcnow
 from tasks._scheduler import cron_has_fired_since
 
 logger = logging.getLogger(__name__)
 
-GOALS_SUBDIR = "goals"
+ROUTINES_SUBDIR = "routines"
 
 
 class FileTaskStore:
     """File-based TaskStore implementation.
 
-    One JSON file per goal (containing task definitions), one JSON file per
+    One JSON file per routine (containing task definitions), one JSON file per
     run (containing task results). Layout::
 
         {base_dir}/
-        ├── {goal_id}.json
-        └── {goal_id}/
+        ├── {routine_id}.json
+        └── {routine_id}/
             └── runs/
                 └── {run_id}.json
     """
@@ -35,19 +35,19 @@ class FileTaskStore:
         self._default_timezone = default_timezone
 
 
-    def _goal_path(self, goal_id: str) -> Path:
-        return self._base / f"{goal_id}.json"
+    def _routine_path(self, routine_id: str) -> Path:
+        return self._base / f"{routine_id}.json"
 
-    def _runs_dir(self, goal_id: str) -> Path:
-        return self._base / goal_id / "runs"
+    def _runs_dir(self, routine_id: str) -> Path:
+        return self._base / routine_id / "runs"
 
-    def _run_path(self, goal_id: str, run_id: str) -> Path:
-        return self._runs_dir(goal_id) / f"{run_id}.json"
+    def _run_path(self, routine_id: str, run_id: str) -> Path:
+        return self._runs_dir(routine_id) / f"{run_id}.json"
 
 
     @staticmethod
-    def _goal_from_data(data: dict) -> "Goal":
-        return Goal(**{k: v for k, v in data.items() if k != "tasks"})
+    def _routine_from_data(data: dict) -> "Routine":
+        return Routine(**{k: v for k, v in data.items() if k != "tasks"})
 
     @staticmethod
     def _run_from_data(data: dict) -> "Run":
@@ -66,44 +66,44 @@ class FileTaskStore:
         return json.loads(path.read_text(encoding="utf-8"))
 
 
-    def create_goal(self, description: str, cron: str | None = None, timezone: str | None = None, auto_run: bool = True) -> Goal:
-        """Create a new goal. One-shot goals (no cron) auto-spawn a run unless auto_run=False."""
-        goal = Goal(description=description, cron=cron, timezone=timezone or self._default_timezone)
-        data = goal.model_dump()
+    def create_routine(self, description: str, cron: str | None = None, timezone: str | None = None, auto_run: bool = True) -> Routine:
+        """Create a new routine. One-shot routines (no cron) auto-spawn a run unless auto_run=False."""
+        routine = Routine(description=description, cron=cron, timezone=timezone or self._default_timezone)
+        data = routine.model_dump()
         data["tasks"] = []
-        self._write_json(self._goal_path(goal.id), data)
+        self._write_json(self._routine_path(routine.id), data)
         if auto_run and not cron:
-            self.queue_run(goal.id)
-        return goal
+            self.queue_run(routine.id)
+        return routine
 
-    def get_goal(self, goal_id: str) -> Goal | None:
-        """Return a goal by ID, or None if not found."""
-        data = self._read_json(self._goal_path(goal_id))
+    def get_routine(self, routine_id: str) -> Routine | None:
+        """Return a routine by ID, or None if not found."""
+        data = self._read_json(self._routine_path(routine_id))
         if not data:
             return None
-        return self._goal_from_data(data)
+        return self._routine_from_data(data)
 
-    def list_goals(self, status: str | None = None) -> list[Goal]:
-        """List goals, optionally filtered by status."""
-        goals = []
+    def list_routines(self, status: str | None = None) -> list[Routine]:
+        """List routines, optionally filtered by status."""
+        routines = []
         for p in self._base.glob("*.json"):
             data = self._read_json(p)
             if data and (status is None or data.get("status") == status):
-                goals.append(self._goal_from_data(data))
-        return sorted(goals, key=lambda g: g.created_at, reverse=True)
+                routines.append(self._routine_from_data(data))
+        return sorted(routines, key=lambda g: g.created_at, reverse=True)
 
-    def set_goal_status(self, goal_id: str, status: str) -> None:
-        """Update the status of a goal."""
-        path = self._goal_path(goal_id)
+    def set_routine_status(self, routine_id: str, status: str) -> None:
+        """Update the status of a routine."""
+        path = self._routine_path(routine_id)
         data = self._read_json(path)
         if data:
             data["status"] = status
             self._write_json(path, data)
 
-    def delete_goal(self, goal_id: str) -> list[str]:
-        """Delete goal and all runs. Returns conversation_ids for cleanup."""
+    def delete_routine(self, routine_id: str) -> list[str]:
+        """Delete routine and all runs. Returns conversation_ids for cleanup."""
         conv_ids: list[str] = []
-        runs_dir = self._runs_dir(goal_id)
+        runs_dir = self._runs_dir(routine_id)
         if runs_dir.exists():
             for rp in runs_dir.glob("*.json"):
                 run_data = self._read_json(rp)
@@ -111,22 +111,22 @@ class FileTaskStore:
                     for tr in run_data.get("task_results", []):
                         if tr.get("conversation_id"):
                             conv_ids.append(tr["conversation_id"])
-        goal_dir = self._base / goal_id
-        if goal_dir.exists():
-            shutil.rmtree(goal_dir)
-        self._goal_path(goal_id).unlink(missing_ok=True)
+        routine_dir = self._base / routine_id
+        if routine_dir.exists():
+            shutil.rmtree(routine_dir)
+        self._routine_path(routine_id).unlink(missing_ok=True)
         return conv_ids
 
 
     def create_task(
         self,
-        goal_id: str,
+        routine_id: str,
         description: str,
         instruction: str,
         agent_profile: str | None = None,
         depends_on: list[str] | None = None,
     ) -> Task:
-        """Create a task definition belonging to a goal."""
+        """Create a task definition belonging to a routine."""
         td: dict = {
             "description": description,
             "instruction": instruction,
@@ -134,30 +134,30 @@ class FileTaskStore:
         }
         if agent_profile:
             td["agent_profile"] = agent_profile
-        return self.create_tasks(goal_id, [td])[0]
+        return self.create_tasks(routine_id, [td])[0]
 
     def create_tasks(
         self,
-        goal_id: str,
+        routine_id: str,
         task_defs: list[dict],
     ) -> list[Task]:
         """Create multiple task definitions in a single read-write cycle."""
-        path = self._goal_path(goal_id)
+        path = self._routine_path(routine_id)
         data = self._read_json(path)
         if not data:
-            msg = f"Goal {goal_id} not found"
+            msg = f"Routine {routine_id} not found"
             raise ValueError(msg)
         created: list[Task] = []
         for td in task_defs:
-            task = Task(goal_id=goal_id, **td)
+            task = Task(routine_id=routine_id, **td)
             data["tasks"].append(task.model_dump())
             created.append(task)
         self._write_json(path, data)
         return created
 
-    def list_tasks(self, goal_id: str) -> list[Task]:
-        """List task definitions for a goal."""
-        data = self._read_json(self._goal_path(goal_id))
+    def list_tasks(self, routine_id: str) -> list[Task]:
+        """List task definitions for a routine."""
+        data = self._read_json(self._routine_path(routine_id))
         if not data:
             return []
         return [Task(**t) for t in data.get("tasks", [])]
@@ -173,13 +173,13 @@ class FileTaskStore:
         return None
 
 
-    def queue_run(self, goal_id: str) -> Run:
-        """Create a new run for a goal with TaskResults for each task."""
-        existing = self.get_goal_runs(goal_id)
+    def queue_run(self, routine_id: str) -> Run:
+        """Create a new run for a routine with TaskResults for each task."""
+        existing = self.get_routine_runs(routine_id)
         run_number = max((r.run_number for r in existing), default=0) + 1
 
-        run = Run(goal_id=goal_id, run_number=run_number)
-        tasks = self.list_tasks(goal_id)
+        run = Run(routine_id=routine_id, run_number=run_number)
+        tasks = self.list_tasks(routine_id)
         task_results = [
             TaskResult(run_id=run.id, task_id=t.id).model_dump()
             for t in tasks
@@ -187,16 +187,16 @@ class FileTaskStore:
 
         run_data = run.model_dump()
         run_data["task_results"] = task_results
-        self._write_json(self._run_path(goal_id, run.id), run_data)
+        self._write_json(self._run_path(routine_id, run.id), run_data)
         return run
 
-    def stamp_last_run_spawned(self, goal_id: str) -> None:
-        """Update the goal's last_run_spawned_at timestamp.
+    def stamp_last_run_spawned(self, routine_id: str) -> None:
+        """Update the routine's last_run_spawned_at timestamp.
 
         Called by the scheduler when spawning a cron-triggered run so the
         anchor survives run deletion. Manual triggers should NOT call this.
         """
-        path = self._goal_path(goal_id)
+        path = self._routine_path(routine_id)
         data = self._read_json(path)
         if data:
             data["last_run_spawned_at"] = _utcnow()
@@ -210,9 +210,9 @@ class FileTaskStore:
         except ValueError:
             return None
 
-    def get_goal_runs(self, goal_id: str) -> list[Run]:
-        """List all runs for a goal."""
-        runs_dir = self._runs_dir(goal_id)
+    def get_routine_runs(self, routine_id: str) -> list[Run]:
+        """List all runs for a routine."""
+        runs_dir = self._runs_dir(routine_id)
         if not runs_dir.exists():
             return []
         runs = []
@@ -224,12 +224,12 @@ class FileTaskStore:
 
     def update_run_status(self, run_id: str) -> str:
         """Recompute run status from its task_results."""
-        goal_id, run_data, run_path = self._find_run(run_id)
+        routine_id, run_data, run_path = self._find_run(run_id)
         task_results = run_data.get("task_results", [])
 
         # Cascade failures: if a pending task's dependency has failed, fail it too.
         # Loop until no more cascades are possible.
-        tasks = {t.id: t for t in self.list_tasks(goal_id)}
+        tasks = {t.id: t for t in self.list_tasks(routine_id)}
         changed = True
         while changed:
             changed = False
@@ -267,10 +267,10 @@ class FileTaskStore:
 
     def delete_run(self, run_id: str) -> list[str]:
         """Delete run and task_results. Returns conversation_ids for cleanup."""
-        for goal_dir in self._base.iterdir():
-            if not goal_dir.is_dir():
+        for routine_dir in self._base.iterdir():
+            if not routine_dir.is_dir():
                 continue
-            run_path = goal_dir / "runs" / f"{run_id}.json"
+            run_path = routine_dir / "runs" / f"{run_id}.json"
             if run_path.exists():
                 data = self._read_json(run_path)
                 conv_ids = [
@@ -292,19 +292,19 @@ class FileTaskStore:
         return [TaskResult(**tr) for tr in run_data.get("task_results", [])]
 
     def get_ready_task_results(self) -> list[tuple[TaskResult, Task]]:
-        """Pending results (deps met) in any goal's in-progress runs.
+        """Pending results (deps met) in any routine's in-progress runs.
 
-        Not limited to active goals: pausing a goal only stops its cron
-        scheduling (see get_due_recurring_goals), not the execution of a run
+        Not limited to active routines: pausing a routine only stops its cron
+        scheduling (see get_due_recurring_routines), not the execution of a run
         that was manually triggered or already in flight when it was paused.
         """
         ready: list[tuple[TaskResult, Task]] = []
-        for goal in self.list_goals():
-            tasks = {t.id: t for t in self.list_tasks(goal.id)}
-            for run in self.get_goal_runs(goal.id):
+        for routine in self.list_routines():
+            tasks = {t.id: t for t in self.list_tasks(routine.id)}
+            for run in self.get_routine_runs(routine.id):
                 if run.status not in ("pending", "running"):
                     continue
-                run_data = self._read_json(self._run_path(goal.id, run.id))
+                run_data = self._read_json(self._run_path(routine.id, run.id))
                 if not run_data:
                     continue
                 results = run_data.get("task_results", [])
@@ -374,8 +374,8 @@ class FileTaskStore:
         self, run_id: str, task_ids: list[str]
     ) -> list[tuple[str, str]]:
         """Returns (task.description, result_text) for completed deps in a run."""
-        goal_id, run_data, _ = self._find_run(run_id)
-        tasks = {t.id: t for t in self.list_tasks(goal_id)}
+        routine_id, run_data, _ = self._find_run(run_id)
+        tasks = {t.id: t for t in self.list_tasks(routine_id)}
         results: list[tuple[str, str]] = []
         for tr in run_data.get("task_results", []):
             if (
@@ -389,34 +389,34 @@ class FileTaskStore:
         return results
 
 
-    def get_due_recurring_goals(self) -> list[Goal]:
-        """Active goals with cron, no in-progress run, and cron due since last run."""
-        result: list[Goal] = []
-        for goal in self.list_goals(status="active"):
-            if not goal.cron:
+    def get_due_recurring_routines(self) -> list[Routine]:
+        """Active routines with cron, no in-progress run, and cron due since last run."""
+        result: list[Routine] = []
+        for routine in self.list_routines(status="active"):
+            if not routine.cron:
                 continue
-            runs = self.get_goal_runs(goal.id)
+            runs = self.get_routine_runs(routine.id)
             # Skip if any run is still in progress
             if any(r.status in ("pending", "running") for r in runs):
                 continue
             last_completed = max(
                 (r.completed_at for r in runs if r.completed_at), default=None
             )
-            anchor = last_completed or goal.last_run_spawned_at or goal.created_at
-            if cron_has_fired_since(goal.cron, anchor, goal.timezone):
-                result.append(goal)
+            anchor = last_completed or routine.last_run_spawned_at or routine.created_at
+            if cron_has_fired_since(routine.cron, anchor, routine.timezone):
+                result.append(routine)
         return result
 
 
     def reset_stale_running(self) -> None:
         """Reset task_results stuck in 'running' back to 'pending', then cascade failures."""
-        for goal_dir in self._base.iterdir():
-            if not goal_dir.is_dir():
+        for routine_dir in self._base.iterdir():
+            if not routine_dir.is_dir():
                 continue
-            runs_dir = goal_dir / "runs"
+            runs_dir = routine_dir / "runs"
             if not runs_dir.exists():
                 continue
-            tasks = {t.id: t for t in self.list_tasks(goal_dir.name)}
+            tasks = {t.id: t for t in self.list_tasks(routine_dir.name)}
             for run_path in runs_dir.glob("*.json"):
                 data = self._read_json(run_path)
                 if not data:
@@ -469,27 +469,27 @@ class FileTaskStore:
         """Locate a run file by run_id.
 
         Returns:
-            Tuple of (goal_id, run_data, run_path).
+            Tuple of (routine_id, run_data, run_path).
 
         Raises:
             ValueError: If the run is not found.
         """
-        for goal_dir in self._base.iterdir():
-            if not goal_dir.is_dir():
+        for routine_dir in self._base.iterdir():
+            if not routine_dir.is_dir():
                 continue
-            run_path = goal_dir / "runs" / f"{run_id}.json"
+            run_path = routine_dir / "runs" / f"{run_id}.json"
             if run_path.exists():
                 data = self._read_json(run_path)
                 if data is not None:
-                    return goal_dir.name, data, run_path
+                    return routine_dir.name, data, run_path
         raise ValueError(f"Run {run_id} not found")
 
     def _mutate_task_result(self, result_id: str, fn: Callable[[dict], None]) -> None:
         """Find a task_result by ID across all runs, apply mutation, save."""
-        for goal_dir in self._base.iterdir():
-            if not goal_dir.is_dir():
+        for routine_dir in self._base.iterdir():
+            if not routine_dir.is_dir():
                 continue
-            runs_dir = goal_dir / "runs"
+            runs_dir = routine_dir / "runs"
             if not runs_dir.exists():
                 continue
             for run_path in runs_dir.glob("*.json"):

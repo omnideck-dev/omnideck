@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { formatCron } from '../goalUtils.jsx';
+import { formatCron } from '../routineUtils.jsx';
 
 test('humanizes daily schedules with a friendly time', () => {
     expect(formatCron('0 9 * * *')).toBe('Daily at 9 AM');

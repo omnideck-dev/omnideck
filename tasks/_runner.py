@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config import GoalsConfig
+    from config import RoutinesConfig
     from tasks._executor import TaskExecutor
     from tasks._notifier import TelegramNotifier
     from tasks._store import TaskStore
@@ -30,7 +30,7 @@ class TaskRunner:
         self,
         store: TaskStore,
         executor: TaskExecutor,
-        config: GoalsConfig,
+        config: RoutinesConfig,
         notifier: TelegramNotifier | None = None,
     ) -> None:
         self._store = store
@@ -38,7 +38,7 @@ class TaskRunner:
         self._config = config
         self._notifier = notifier
         self._running: dict[str, asyncio.Task] = {}  # result_id → asyncio.Task
-        self._running_goal_ids: dict[str, str] = {}  # result_id → goal_id
+        self._running_routine_ids: dict[str, str] = {}  # result_id → routine_id
         self._stop_event = asyncio.Event()
         self._paused = False
         self._loop_task: asyncio.Task | None = None
@@ -77,7 +77,7 @@ class TaskRunner:
             "paused": self._paused,
             "active_tasks": len(self._running),
             "max_concurrent": self._config.max_concurrent,
-            "running_goal_ids": list(set(self._running_goal_ids.values())),
+            "running_routine_ids": list(set(self._running_routine_ids.values())),
         }
 
     async def _poll_loop(self) -> None:
@@ -99,10 +99,10 @@ class TaskRunner:
 
     async def _tick(self) -> None:
         """Single tick: spawn due runs, pick up ready tasks, clean up finished."""
-        for goal in self._store.get_due_recurring_goals():
-            run = self._store.queue_run(goal.id)
-            self._store.stamp_last_run_spawned(goal.id)
-            logger.info("Spawned run #%d for goal %s", run.run_number, goal.id)
+        for routine in self._store.get_due_recurring_routines():
+            run = self._store.queue_run(routine.id)
+            self._store.stamp_last_run_spawned(routine.id)
+            logger.info("Spawned run #%d for routine %s", run.run_number, routine.id)
 
         for task_result, task in self._store.get_ready_task_results():
             if len(self._running) >= self._config.max_concurrent:
@@ -114,12 +114,12 @@ class TaskRunner:
                     self._execute(task_result, task),
                     name=f"task-exec-{task_result.id[:8]}",
                 )
-                self._running_goal_ids[task_result.id] = task.goal_id
+                self._running_routine_ids[task_result.id] = task.routine_id
 
         done = [trid for trid, t in self._running.items() if t.done()]
         for trid in done:
             del self._running[trid]
-            self._running_goal_ids.pop(trid, None)
+            self._running_routine_ids.pop(trid, None)
 
     async def _execute(self, task_result: "TaskResult", task: "Task") -> None:
         """Execute a task, recording outcome into its result."""
@@ -161,12 +161,12 @@ class TaskRunner:
         run = self._store.get_run(run_id)
         if not run:
             return
-        goal = self._store.get_goal(run.goal_id)
-        if not goal:
+        routine = self._store.get_routine(run.routine_id)
+        if not routine:
             return
 
         results = self._store.get_task_results(run_id)
-        tasks = {t.id: t for t in self._store.list_tasks(run.goal_id)}
+        tasks = {t.id: t for t in self._store.list_tasks(run.routine_id)}
         completed_count = sum(1 for r in results if r.status == "completed")
         total_count = len(results)
 
@@ -197,7 +197,7 @@ class TaskRunner:
                     last_result = r.result
                     break
             message = format_run_completed(
-                goal_description=goal.description,
+                routine_description=routine.description,
                 run_number=run.run_number,
                 duration=duration,
                 total_tasks=total_count,
@@ -216,7 +216,7 @@ class TaskRunner:
                     error = r.error or ""
                     break
             message = format_run_failed(
-                goal_description=goal.description,
+                routine_description=routine.description,
                 run_number=run.run_number,
                 duration=duration,
                 total_tasks=total_count,

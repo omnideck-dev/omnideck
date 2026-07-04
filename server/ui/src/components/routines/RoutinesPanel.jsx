@@ -1,7 +1,7 @@
-import { StatusIcon, formatCron } from './goalUtils.jsx';
-import styles from './GoalsPanel.module.css';
+import { StatusIcon, formatCron } from './routineUtils.jsx';
+import styles from './RoutinesPanel.module.css';
 
-export default function GoalsPanel({ goals, runnerStatus, onSelectGoal }) {
+export default function RoutinesPanel({ routines, runnerStatus, onSelectRoutine }) {
     return (
         <div className={styles.container}>
             {runnerStatus && (
@@ -14,25 +14,25 @@ export default function GoalsPanel({ goals, runnerStatus, onSelectGoal }) {
                     </span>
                 </div>
             )}
-            {goals.length === 0 && (
+            {routines.length === 0 && (
                 <div className={styles.empty}>
-                    No goals yet. Ask the agent to create one.
+                    No routines yet. Ask the agent to create one.
                 </div>
             )}
             <ul className={styles.list}>
-                {goals.map(goal => (
+                {routines.map(routine => (
                     <li
-                        key={goal.id}
+                        key={routine.id}
                         className={styles.item}
-                        onClick={() => onSelectGoal(goal.id)}
+                        onClick={() => onSelectRoutine(routine.id)}
                     >
                         <div className={styles.itemHeader}>
-                            <StatusIcon status={goal.status} size={12} />
-                            <span className={styles.itemTitle}>{goal.description}</span>
+                            <StatusIcon status={routine.status} size={12} />
+                            <span className={styles.itemTitle}>{routine.description}</span>
                         </div>
                         <div className={styles.itemMeta}>
-                            {goal.cron && <span className={styles.cron}>{formatCron(goal.cron)}{goal.timezone && <span className={styles.tz}> · {goal.timezone}</span>}</span>}
-                            <span className={styles.status}>{goal.status}</span>
+                            {routine.cron && <span className={styles.cron}>{formatCron(routine.cron)}{routine.timezone && <span className={styles.tz}> · {routine.timezone}</span>}</span>}
+                            <span className={styles.status}>{routine.status}</span>
                         </div>
                     </li>
                 ))}

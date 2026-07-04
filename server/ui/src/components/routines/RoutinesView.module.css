@@ -8,7 +8,7 @@
     background: var(--canvas);
 }
 
-/* list mode: the list owns the whole view until a goal is opened */
+/* list mode: the list owns the whole view until a routine is opened */
 .listPane {
     flex: 1;
     min-width: 0;
@@ -75,7 +75,7 @@
     opacity: 0.5;
 }
 
-/* full-screen empty state (no goals at all) — hosts the StarterPrompts grid */
+/* full-screen empty state (no routines at all) — hosts the StarterPrompts grid */
 .emptyState {
     display: flex;
     flex-direction: column;
@@ -144,7 +144,7 @@
     text-align: right;
 }
 
-/* detail mode: full-width goal detail with a back nav in the header */
+/* detail mode: full-width routine detail with a back nav in the header */
 .detailHead {
     display: flex;
     align-items: center;

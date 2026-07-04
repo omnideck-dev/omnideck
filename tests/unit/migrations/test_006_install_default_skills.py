@@ -11,7 +11,7 @@ import pytest
 
 from migrations._006_install_default_skills import migrate
 
-_STARTERS = {"assistant", "coder", "browser", "goal_planner"}
+_STARTERS = {"assistant", "coder", "browser", "routine_planner"}
 
 
 def _write_profile(state_dir, pid, skills):

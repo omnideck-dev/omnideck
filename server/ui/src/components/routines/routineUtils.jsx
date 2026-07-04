@@ -1,9 +1,9 @@
 /**
- * Utility functions for Goals UI components.
+ * Utility functions for Routines UI components.
  * Status icons, formatting helpers, and common patterns.
  */
 
-// Status Icon component (reused across goals)
+// Status Icon component (reused across routines)
 export function StatusIcon({ status, size = 14 }) {
     const color = {
         active: 'var(--text-primary)',

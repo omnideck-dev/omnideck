@@ -3197,7 +3197,7 @@ body {
           <div class="signal-tabs">
             <button class="signal-tab active">Chat</button>
             <button class="signal-tab">Network</button>
-            <button class="signal-tab">Goals</button>
+            <button class="signal-tab">Routines</button>
           </div>
         </div>
 
@@ -3313,7 +3313,7 @@ body {
             <td><code>--success</code></td>
             <td><span class="vocab-dot" style="background:var(--success);box-shadow:0 0 6px var(--success-muted)"></span><span style="color:var(--text-tertiary)">solid + glow</span></td>
             <td><code>--success-muted</code></td>
-            <td>Connected integrations, enabled goals, healthy services</td>
+            <td>Connected integrations, enabled routines, healthy services</td>
           </tr>
           <tr>
             <td><span class="vocab-state">Running</span></td>
@@ -3798,7 +3798,7 @@ body {
     <div class="subsection">
       <div class="subsection-label">Empty State</div>
       <div class="empty-state">
-        <div class="empty-state-heading">No goals yet</div>
+        <div class="empty-state-heading">No routines yet</div>
         <div class="empty-state-desc">Create one in chat or use the <code class="inline-code">+ NEW</code> button to get started.</div>
       </div>
     </div>
@@ -3854,7 +3854,7 @@ body {
           <i class="bi bi-info-circle toast-icon"></i>
           <div class="toast-info">
             <div class="toast-title">Run scheduled</div>
-            <div class="toast-msg">Goal will execute at the next cron tick.</div>
+            <div class="toast-msg">Routine will execute at the next cron tick.</div>
           </div>
           <button class="toast-close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -3922,7 +3922,7 @@ body {
             <i class="bi bi-exclamation-circle callout-icon"></i>
             <div class="callout-body">
               <div class="callout-title">Can&apos;t delete &mdash; profile is in use</div>
-              <div class="callout-desc">Used by <strong>14 task(s)</strong> across 4 goals. Showing the first 6.</div>
+              <div class="callout-desc">Used by <strong>14 task(s)</strong> across 4 routines. Showing the first 6.</div>
             </div>
             <button class="callout-close" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
           </div>
@@ -4110,7 +4110,7 @@ body {
       <div class="m-sidebar" style="height:280px;border-radius:var(--radius-lg);border:1px solid var(--border)">
         <button class="m-sidebar-icon active" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon" title="Agent Network"><i class="bi bi-diagram-3"></i></button>
-        <button class="m-sidebar-icon" title="Goals"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
         <button class="m-sidebar-icon" title="Memory"><i class="bi bi-database"></i></button>
         <div class="m-sidebar-sep"></div>
         <button class="m-sidebar-icon" title="Conversations"><i class="bi bi-clock-history"></i></button>
@@ -4137,7 +4137,7 @@ body {
     <div class="section-title">14. Tabs</div>
     <div class="section-desc">
       Standalone horizontal tab bar pattern, used for switching between content modes within a panel
-      (Settings tabs, Goal Detail tabs, etc.). Active tab shows the Signal Line: 2px accent bottom
+      (Settings tabs, Routine Detail tabs, etc.). Active tab shows the Signal Line: 2px accent bottom
       border. Brand monospace, uppercase, <code>0.06em</code> letter-spacing.
     </div>
 
@@ -4231,7 +4231,7 @@ body {
       <div class="flyout-sidebar-mini">
         <button class="m-sidebar-icon" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon active" title="Settings"><i class="bi bi-gear"></i></button>
-        <button class="m-sidebar-icon" title="Goals"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
       </div>
       <div class="flyout-panel">
         <div class="flyout-header">
@@ -4288,7 +4288,7 @@ body {
   <div class="section">
     <div class="section-title">17. Split Panel &amp; Split Handle</div>
     <div class="section-desc">
-      Master-detail layout — list on the left, detail on the right. Used for Goals, Profiles,
+      Master-detail layout — list on the left, detail on the right. Used for Routines, Profiles,
       Conversations, and any browse-and-edit interface. The list panel uses the Signal Line on the
       active item (see List Item in §10). For resizable splits (chat + preview), a draggable
       <strong>Split Handle</strong> sits between the columns and respects <code>--split-min</code>
@@ -4494,7 +4494,7 @@ body {
   <div class="section">
     <div class="section-title">20. Sectioned Detail Page</div>
     <div class="section-desc">
-      The sectioned detail pattern is a header-tabs-content layout used for entity detail views (Goal Detail,
+      The sectioned detail pattern is a header-tabs-content layout used for entity detail views (Routine Detail,
       Run Detail, Profile Detail, Conversation Detail). Header has a title row and a meta row in monospace.
       Below: tabs, then a content area of stacked labeled blocks.
     </div>
@@ -4951,7 +4951,7 @@ body {
       <div class="icon-grid">
         <div class="icon-row"><span class="glyph"><i class="bi bi-chat"></i></span><div class="icon-info"><span class="icon-name">bi-chat</span><span class="icon-usage">Chat sidebar tab</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-diagram-3"></i></span><div class="icon-info"><span class="icon-name">bi-diagram-3</span><span class="icon-usage">Agent Network view</span></div></div>
-        <div class="icon-row"><span class="glyph"><i class="bi bi-bullseye"></i></span><div class="icon-info"><span class="icon-name">bi-bullseye</span><span class="icon-usage">Goals sidebar tab</span></div></div>
+        <div class="icon-row"><span class="glyph"><i class="bi bi-bullseye"></i></span><div class="icon-info"><span class="icon-name">bi-bullseye</span><span class="icon-usage">Routines sidebar tab</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-clock-history"></i></span><div class="icon-info"><span class="icon-name">bi-clock-history</span><span class="icon-usage">Conversations</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-wrench"></i></span><div class="icon-info"><span class="icon-name">bi-wrench</span><span class="icon-usage">Custom Tools</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-database"></i></span><div class="icon-info"><span class="icon-name">bi-database</span><span class="icon-usage">Memory</span></div></div>

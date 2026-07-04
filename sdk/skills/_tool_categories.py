@@ -80,7 +80,7 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
     disabled feature's module gets imported regardless.
     """
     from config import load_config
-    from tasks import add_task, begin_goal, commit_goal, list_goals, list_tasks, trigger_goal
+    from tasks import add_task, begin_routine, commit_routine, list_routines, list_tasks, trigger_routine
     from tools.browser import (
         browse_page,
         click,
@@ -140,8 +140,8 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             [remember, forget, load_memory],
         ),
         "planning": ToolCategory(
-            "planning", "Goal Planning", "Break work into tracked goals and tasks.",
-            [begin_goal, add_task, commit_goal, list_goals, list_tasks, trigger_goal],
+            "planning", "Routine Planning", "Break work into tracked routines and tasks.",
+            [begin_routine, add_task, commit_routine, list_routines, list_tasks, trigger_routine],
         ),
     }
 

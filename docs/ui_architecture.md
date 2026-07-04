@@ -15,7 +15,7 @@ its parent *provides*.
 
 `DesktopAppInner` is the orchestrator for everything below: the shell & views
 (§2), state & streaming (§3), chat (§4), network/activity (§5), preview (§6)
-including browser takeover (§7), and settings/goals (§8).
+including browser takeover (§7), and settings/routines (§8).
 
 Two **independent real-time channels** feed the UI:
 
@@ -33,13 +33,13 @@ The shell is a left **`Sidebar`** (nav, OMNIDECK wordmark, theme toggle, audio,
 new-chat, recent conversations) plus a main area that shows **exactly one** view,
 and an optional preview column on the right.
 
-`view ∈ {chat, settings, goals, network}`:
+`view ∈ {chat, settings, routines, network}`:
 
 - **Chat** (`ChatPanel`) — default; always mounted, hidden via CSS when another
   view is active so scroll/input state survive.
 - **Network** — `AgentNetwork` (no agent selected) or `AgentActivityView` (an
   agent is drilled into).
-- **Goals** (`GoalsView`) and **Settings** (`SettingsPage`) — full width.
+- **Routines** (`RoutinesView`) and **Settings** (`SettingsPage`) — full width.
 
 The preview column (a `SplitHandle` + `PreviewPanel`) shows only alongside Chat or
 Activity, gated by
@@ -133,7 +133,7 @@ root's preview data.
 | `usePreviewState` | hook | preview tabs, `activeTab`, `splitPosition`, `fullscreenItem`, `openFile`/`reset` |
 | `useBrowserTabs` | hook | merge `liveTabs` + agent screenshots; selection |
 | `useBrowserControl` | hook | the browser-control WebSocket (screencast, input, engage, per-tab frame cache) |
-| `useGoals` | hook | goals + runner polling/CRUD |
+| `useRoutines` | hook | routines + runner polling/CRUD |
 | `useFileContent` | hook | decode/watch a previewed file; source/preview toggle |
 | `useAutoScroll` | hook | stick-to-bottom for chat/activity |
 | `useAppData` | context | `{ profilesHook, features }` — profiles store + feature flags, shared once |
@@ -226,14 +226,14 @@ frames). Invariants worth knowing before editing:
 
 ---
 
-## 8. Settings, Goals, Integrations
+## 8. Settings, Routines, Integrations
 
 - **`SettingsPage`** — a flat tab bar: Profiles, Skills, Providers, Integrations,
   Memory, Custom Tools, System. Each tab owns its data via a dedicated hook
   (`useAgentProfiles`, `useSkills`, …) and is feature-gated via
   `useAppData().features`.
-- **`GoalsView`** — split screen: `GoalsListPanel` (left) and a drill-down on the
-  right (`GoalView → RunDetail → TaskDetail → TaskOutputModal`).
+- **`RoutinesView`** — split screen: `RoutinesListPanel` (left) and a drill-down on the
+  right (`RoutineView → RunDetail → TaskDetail → TaskOutputModal`).
 
 ---
 

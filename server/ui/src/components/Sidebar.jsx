@@ -11,7 +11,7 @@ const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 // Memory and Custom Tools live under Settings, not in the nav.
 const NAV = [
     { id: 'agents', icon: 'bi-robot', label: 'Agents' },
-    { id: 'goals', icon: 'bi-bullseye', label: 'Goals' },
+    { id: 'routines', icon: 'bi-bullseye', label: 'Routines' },
     { id: 'artifacts', icon: 'bi-collection', label: 'Artifacts' },
 ];
 

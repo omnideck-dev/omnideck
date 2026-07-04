@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def _cleanup_conversations(conv_ids: list[str]) -> None:
-    """Delete conversation records for removed goals/runs."""
+    """Delete conversation records for removed routines/runs."""
     for cid in conv_ids:
         delete_conversation(cid)
 
@@ -41,76 +41,76 @@ def _serialize_run(store, run, profile_name_map: dict[str, str] | None = None) -
     return {**run.model_dump(), "task_results": [tr.model_dump() for tr in results]}
 
 
-async def handle_list_goals(request: web.Request) -> web.Response:
-    """List goals, optionally filtered by status."""
+async def handle_list_routines(request: web.Request) -> web.Response:
+    """List routines, optionally filtered by status."""
     status = request.query.get("status")
     store = get_store()
-    goals = store.list_goals(status=status)
+    routines = store.list_routines(status=status)
     result = []
-    for g in goals:
+    for g in routines:
         data = g.model_dump()
-        runs = store.get_goal_runs(g.id)
+        runs = store.get_routine_runs(g.id)
         if runs:
             latest = max(runs, key=lambda r: r.started_at or r.created_at)
             data["last_run_at"] = latest.started_at or latest.created_at
         result.append(data)
-    return web.json_response({"goals": result})
+    return web.json_response({"routines": result})
 
 
-async def handle_get_goal(request: web.Request) -> web.Response:
-    """Get full goal detail including tasks and runs with task_results."""
-    goal_id = request.match_info["goal_id"]
+async def handle_get_routine(request: web.Request) -> web.Response:
+    """Get full routine detail including tasks and runs with task_results."""
+    routine_id = request.match_info["routine_id"]
     store = get_store()
-    goal = store.get_goal(goal_id)
-    if not goal:
+    routine = store.get_routine(routine_id)
+    if not routine:
         return web.json_response({"error": "Not found"}, status=404)
-    tasks = store.list_tasks(goal_id)
-    runs = store.get_goal_runs(goal_id)
+    tasks = store.list_tasks(routine_id)
+    runs = store.get_routine_runs(routine_id)
     names = _profile_names()
     return web.json_response({
-        "goal": goal.model_dump(),
+        "routine": routine.model_dump(),
         "tasks": [_enrich_task(t.model_dump(), names) for t in tasks],
         "runs": [_serialize_run(store, r) for r in runs],
     })
 
 
-async def handle_delete_goal(request: web.Request) -> web.Response:
-    """Delete a goal and all its runs/conversations."""
-    goal_id = request.match_info["goal_id"]
-    _cleanup_conversations(get_store().delete_goal(goal_id))
-    return web.json_response({"deleted": goal_id})
+async def handle_delete_routine(request: web.Request) -> web.Response:
+    """Delete a routine and all its runs/conversations."""
+    routine_id = request.match_info["routine_id"]
+    _cleanup_conversations(get_store().delete_routine(routine_id))
+    return web.json_response({"deleted": routine_id})
 
 
-async def handle_pause_goal(request: web.Request) -> web.Response:
-    """Pause a goal — its tasks won't be picked up by the runner."""
-    goal_id = request.match_info["goal_id"]
-    get_store().set_goal_status(goal_id, "paused")
+async def handle_pause_routine(request: web.Request) -> web.Response:
+    """Pause a routine — its tasks won't be picked up by the runner."""
+    routine_id = request.match_info["routine_id"]
+    get_store().set_routine_status(routine_id, "paused")
     return web.json_response({"status": "paused"})
 
 
-async def handle_resume_goal(request: web.Request) -> web.Response:
-    """Resume a paused goal."""
-    goal_id = request.match_info["goal_id"]
-    get_store().set_goal_status(goal_id, "active")
+async def handle_resume_routine(request: web.Request) -> web.Response:
+    """Resume a paused routine."""
+    routine_id = request.match_info["routine_id"]
+    get_store().set_routine_status(routine_id, "active")
     return web.json_response({"status": "active"})
 
 
-async def handle_trigger_goal(request: web.Request) -> web.Response:
-    """Manually trigger a run for any goal (one-shot or recurring)."""
-    goal_id = request.match_info["goal_id"]
+async def handle_trigger_routine(request: web.Request) -> web.Response:
+    """Manually trigger a run for any routine (one-shot or recurring)."""
+    routine_id = request.match_info["routine_id"]
     store = get_store()
-    goal = store.get_goal(goal_id)
-    if not goal:
+    routine = store.get_routine(routine_id)
+    if not routine:
         return web.json_response({"error": "Not found"}, status=404)
-    run = store.queue_run(goal_id)
+    run = store.queue_run(routine_id)
     return web.json_response({"run_id": run.id, "run_number": run.run_number}, status=201)
 
 
 async def handle_list_runs(request: web.Request) -> web.Response:
-    """List runs for a goal with their task_results."""
-    goal_id = request.match_info["goal_id"]
+    """List runs for a routine with their task_results."""
+    routine_id = request.match_info["routine_id"]
     store = get_store()
-    runs = store.get_goal_runs(goal_id)
+    runs = store.get_routine_runs(routine_id)
     return web.json_response({"runs": [_serialize_run(store, r) for r in runs]})
 
 
@@ -152,14 +152,14 @@ async def handle_runner_resume(request: web.Request) -> web.Response:
 
 def register_task_routes(app: web.Application) -> None:
     """Register all task engine HTTP routes on the application."""
-    app.router.add_route("GET", "/api/goals", handle_list_goals)
-    app.router.add_route("GET", "/api/goals/{goal_id}", handle_get_goal)
-    app.router.add_route("DELETE", "/api/goals/{goal_id}", handle_delete_goal)
-    app.router.add_route("POST", "/api/goals/{goal_id}/pause", handle_pause_goal)
-    app.router.add_route("POST", "/api/goals/{goal_id}/resume", handle_resume_goal)
-    app.router.add_route("POST", "/api/goals/{goal_id}/trigger", handle_trigger_goal)
-    app.router.add_route("GET", "/api/goals/{goal_id}/runs", handle_list_runs)
-    app.router.add_route("DELETE", "/api/goals/{goal_id}/runs/{run_id}", handle_delete_run)
+    app.router.add_route("GET", "/api/routines", handle_list_routines)
+    app.router.add_route("GET", "/api/routines/{routine_id}", handle_get_routine)
+    app.router.add_route("DELETE", "/api/routines/{routine_id}", handle_delete_routine)
+    app.router.add_route("POST", "/api/routines/{routine_id}/pause", handle_pause_routine)
+    app.router.add_route("POST", "/api/routines/{routine_id}/resume", handle_resume_routine)
+    app.router.add_route("POST", "/api/routines/{routine_id}/trigger", handle_trigger_routine)
+    app.router.add_route("GET", "/api/routines/{routine_id}/runs", handle_list_runs)
+    app.router.add_route("DELETE", "/api/routines/{routine_id}/runs/{run_id}", handle_delete_run)
     app.router.add_route("GET", "/api/runner/status", handle_runner_status)
     app.router.add_route("POST", "/api/runner/pause", handle_runner_pause)
     app.router.add_route("POST", "/api/runner/resume", handle_runner_resume)

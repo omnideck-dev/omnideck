@@ -413,20 +413,20 @@ export default function ProfileBuilder({
 }
 
 function DeleteConflictCallout({ conflict, onDismiss }) {
-    const goals = useMemo(() => {
+    const routines = useMemo(() => {
         const seen = new Set();
         const rows = [];
         for (const u of conflict.usage || []) {
-            if (seen.has(u.goal_id)) continue;
-            seen.add(u.goal_id);
-            rows.push({ id: u.goal_id, description: u.goal_description });
+            if (seen.has(u.routine_id)) continue;
+            seen.add(u.routine_id);
+            rows.push({ id: u.routine_id, description: u.routine_description });
         }
         return rows;
     }, [conflict.usage]);
 
-    const description = goals.length === 1
-        ? 'Remove this profile from the goal below, then try again.'
-        : `Remove this profile from the ${goals.length} goals below, then try again.`;
+    const description = routines.length === 1
+        ? 'Remove this profile from the routine below, then try again.'
+        : `Remove this profile from the ${routines.length} routines below, then try again.`;
 
     return (
         <Callout
@@ -436,8 +436,8 @@ function DeleteConflictCallout({ conflict, onDismiss }) {
             onDismiss={onDismiss}
         >
             <Callout.List>
-                {goals.map(g => (
-                    <Callout.Item key={g.id} kind="goal">{g.description}</Callout.Item>
+                {routines.map(g => (
+                    <Callout.Item key={g.id} kind="routine">{g.description}</Callout.Item>
                 ))}
             </Callout.List>
         </Callout>

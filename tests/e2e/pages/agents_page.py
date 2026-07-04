@@ -1,8 +1,8 @@
 """POM for the Agents view — the agent-profile list and its editor.
 
 Agents live in the left-nav "Agents" panel: a searchable, sortable list
-that opens the full profile editor with a back breadcrumb (mirroring the
-Goals view). The editor is the same ProfileBuilder component that used to
+that opens the full profile editor with a back breadcrumb. 
+The editor is the same ProfileBuilder component that used to
 live under Settings, so its interaction surface is unchanged.
 """
 

@@ -41,7 +41,7 @@ parallel:
   enabled: true
   max_concurrent: 4
 
-goals:
+routines:
   enabled: true
   poll_interval: 5
   max_concurrent: 2
