@@ -8,7 +8,7 @@ export const FIELD_SUPPORT = {
     top_k:                  ['ollama', 'anthropic'],
     top_p:                  ['ollama', 'openai', 'anthropic', 'openai_compat', 'openrouter'],
     repeat_penalty:         ['ollama'],
-    context_window:         ['ollama'],
+    context_window:         ['ollama', 'openai', 'anthropic', 'openai_compat', 'openrouter'],
     num_predict:            ['ollama', 'openai', 'anthropic', 'openai_compat', 'openrouter'],
     max_iterations:         ['ollama', 'openai', 'anthropic', 'openai_compat', 'openrouter'],
     think:                  ['ollama', 'openai', 'anthropic', 'openai_compat', 'openrouter'],

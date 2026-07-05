@@ -356,7 +356,7 @@ async def desktop_start_handler(_request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
+def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
     """Create and configure the aiohttp application.
 
     Args:
