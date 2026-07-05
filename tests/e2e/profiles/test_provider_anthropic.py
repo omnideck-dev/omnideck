@@ -7,12 +7,12 @@ from playwright.sync_api import expect
 from tests.e2e.pages import AgentsPage
 
 
-VISIBLE_FIELDS = ("temperature", "top_k", "top_p", "num_predict", "max_iterations", "think")
-HIDDEN_FIELDS = ("repeat_penalty", "context_window")
+VISIBLE_FIELDS = ("temperature", "top_k", "top_p", "num_predict", "max_iterations", "think", "context_window")
+HIDDEN_FIELDS = ("repeat_penalty",)
 
 
 def test_anthropic_field_visibility(page, provider_profile):
-    """Anthropic shows top_k but hides repeat_penalty and context_window."""
+    """Anthropic shows top_k and context_window but hides repeat_penalty."""
     provider_profile("test_prov_anth_vis", "anthropic")
 
     agents = AgentsPage(page).goto()

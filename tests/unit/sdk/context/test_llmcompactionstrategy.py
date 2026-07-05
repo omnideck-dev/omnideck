@@ -16,6 +16,7 @@ from sdk.context._strategy import (
     _serialize_messages,
 )
 from sdk.events import CompactionPayload
+from sdk.providers import ProviderError
 
 
 def _make_stats(fill_ratio: float = 0.8) -> ContextStats:
@@ -59,6 +60,37 @@ async def test_compaction_publishes_payload_and_derived_view_shows_summary():
     assert compactions[0].summary_text == "This is the summary."
     assert compactions[0].kept_from_id  # bound to an iteration event id
     assert compactions[0].kept_to_id
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_compaction_failure_raises_with_user_facing_message():
+    """When the summarizer call fails, apply() raises a ProviderError carrying a
+    user-facing message instead of silently skipping, so the turn loop surfaces
+    it and the user can fix the compaction model and retry."""
+    messages = [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "original request"},
+        *[{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"} for i in range(10)],
+        {"role": "user", "content": "recent user"},
+        {"role": "assistant", "content": "recent assistant"},
+    ]
+    history = _build_history(messages)
+    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
+
+    with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
+         patch("sdk.context._strategy._unload_model", new_callable=AsyncMock), \
+         patch("sdk.context._strategy.load_settings",
+               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
+        mock_summarize.side_effect = ProviderError("rate limited (status code: 429)", retryable=True)
+        with pytest.raises(ProviderError) as excinfo:
+            await strategy.apply(history, _make_stats(0.8))
+
+    assert excinfo.value.retryable is True
+    message = str(excinfo.value)
+    assert "test-model" in message
+    assert "rate limited" in message
+    assert "Settings" in message
 
 
 @pytest.mark.unit
