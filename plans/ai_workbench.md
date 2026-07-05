@@ -1,7 +1,7 @@
 # Making Omnideck a true AI workbench
 
-> Status: high-level draft, for discussion. Comment inline. We drill into
-> the pieces once the shape is agreed.
+> Status: high-level draft, for discussion. This file is the canonical overview.
+> Drill-down designs live under `plans/ai-workbench/`.
 
 Apps you return to, backed by backend logic the agent can build, bundled with
 the callables they need, and connected to the integrations the user already
@@ -12,8 +12,8 @@ granted to Omnideck.
 ## 1. The core idea
 
 The backend unit is a callable: versioned code with a manifest, input and output
-schemas, dependencies, and metadata about what it does. Everything else is a
-binding over callables.
+schemas, dependencies, and metadata about what it does. Everything else is an
+adapter over callables.
 
 Today each integration tool, such as `send_email`, is one function doing two
 jobs. It is the programmatic caller that builds RPC args and calls
@@ -48,99 +48,28 @@ An app never sees credentials and never grants Gmail or Drive access. The app
 router only decides whether the app frontend may invoke a public app callable.
 The callable still fails if the broker denies the integration operation.
 
-## 2. Callable model
+## 2. Callable runtime
 
-A callable has:
+The callable runtime is the foundation for core, local, and app callables. See
+[callable-runtime.md](ai-workbench/callable-runtime.md) for the detailed design.
 
-- a stable id or namespace,
-- a version,
-- input and output schemas,
-- an implementation,
-- a manifest,
-- dependencies,
-- optional hashes for bundled files,
-- a scope,
-- optional bindings.
+Locked decisions:
 
-Scopes:
+- All callable scopes use the same package format: a manifest plus
+  implementation files.
+- Core callable packages live in the repo and can point at existing Python
+  import targets while integrations are migrated.
+- Local callable packages live in backend-owned durable state under
+  `settings.home_dir` and are versioned immutably.
+- App callable packages live inside app version bundles.
+- App versions vendor local callable dependencies and never call back into the
+  live local callable store.
+- Callable-to-callable invocation uses declared dependencies, not LLM tools.
+- Core and local callables may expose `agent_binding`; app callables never do.
+- App callables expose `app_visibility` as `public` or `private`.
+- The app router invokes only public app callables in the active app version.
 
-| Scope | Owner | Shared directly? | Agent callable? | App frontend callable? |
-|---|---|---:|---:|---:|
-| Core callable | Omnideck | ships with Omnideck | optional | only through app callables |
-| Local callable | user install | no, private to this install | optional | only if vendored into an app |
-| App callable | app version | only as part of the app bundle | no | yes, if public |
-
-Bindings:
-
-- Programmatic binding: one callable invokes another.
-- Agent-tool binding: the LLM gets an agent-friendly name, description,
-  arguments, and result format for a core or local callable.
-- App-public binding: the built-in app router can invoke a public app callable.
-
-App callables are not LLM-bindable. The agent can inspect, edit, and test them
-when it is working on that app, but they do not become reusable agent tools. If
-app logic should be reusable elsewhere, the agent extracts it into a local
-callable. A later app version can vendor a copy of that local callable.
-
-## 3. Names, manifests, and hashes
-
-Every callable needs a unique identity under the hood, even if regular users see
-friendly names. Use namespaces, not bare names:
-
-```text
-omnideck.email.send@1
-omnideck.app.storage.get@1
-local.normalize_bank_csv@1.0.0
-app.submit_invoice@1.0.0
-```
-
-Core ids are stable API families owned by Omnideck. Local ids are private to the
-install. App ids are meaningful only inside an app bundle. If standalone
-callable sharing is added later, it can introduce community or publisher
-namespaces, but that is not needed for the first version.
-
-Each packaged app version has a manifest. The manifest is both the reviewable
-contract and the bundled-content inventory. Avoid a package-manager-style
-lockfile for v1. Since app versions vendor the code they need, hashes can live
-directly in the manifest:
-
-```json
-{
-  "id": "app.invoice_dashboard",
-  "version": "3",
-  "requires": {
-    "omnideck_core": ">=1"
-  },
-  "core_dependencies": [
-    "omnideck.email.create_draft@1",
-    "omnideck.app.storage@1"
-  ],
-  "callables": {
-    "submit_invoice": {
-      "visibility": "public",
-      "path": "callables/submit_invoice.py",
-      "sha256": "..."
-    },
-    "parse_invoice_pdf": {
-      "visibility": "private",
-      "path": "callables/parse_invoice_pdf.py",
-      "sha256": "..."
-    }
-  },
-  "vendored_callables": {
-    "local.normalize_vendor": {
-      "version": "1.0.0",
-      "path": "vendor/local.normalize_vendor/",
-      "sha256": "..."
-    }
-  }
-}
-```
-
-The hash is tamper evidence and supports exact rollback. It does not mean the
-code is trusted. Review, isolation, and broker enforcement still matter.
-
-## 4. Apps and bundles
+## 3. Apps and bundles
 
 An app is a versioned bundle, not a live pointer to an artifact file. Promoting
 an artifact to an app copies it into app-owned storage and creates version 1.
@@ -170,7 +99,7 @@ Import/export stays simple: an exported app contains its frontend and all
 non-core callable code it needs. The importing install only needs a compatible
 Omnideck core API and the user's existing integration grants.
 
-## 5. Local callables
+## 4. Local callables
 
 Local callables replace the old "custom tools" concept. They are reusable
 automations the agent creates for this user's install. They are private by
@@ -186,9 +115,9 @@ clean_contact_list
 resize_images_for_listing
 ```
 
-Local callables can invoke core callables and other local callables. App callables
-can invoke local callables while the app is a draft. Once the app is versioned,
-those local callable dependencies are copied into the app bundle.
+Local callables can invoke core callables and other local callables. App
+callables can invoke local callables while the app is a draft. Once the app is
+versioned, those local callable dependencies are copied into the app bundle.
 
 Standalone sharing of local callables is out of scope for v1. If users later
 want to share reusable automations independently of apps, add "export local
@@ -201,7 +130,7 @@ semi-trusted code with a clean boundary. This code is agent-authored and may
 reach integrations through core callables, so isolation matters more than it did
 for today's shell-style custom tools.
 
-## 6. Core callables and integrations
+## 5. Core callables and integrations
 
 Split each integration tool into a core callable plus the existing agent-tool
 binding. The LLM-facing tool shape stays unchanged. The core callable is what
@@ -225,7 +154,7 @@ That summary is not a new integration grant. It is an explanation of what the
 bundled app callables can trigger if the user's existing broker permissions
 allow it.
 
-## 7. App router
+## 6. App router
 
 The app router is built into Omnideck. Apps do not define arbitrary HTTP
 handlers for v1. The frontend invokes public app callables:
@@ -246,7 +175,7 @@ Router behavior:
 Shared/core/local dependencies are not directly invokable through an app route.
 They are reachable only from app callables that explicitly depend on them.
 
-## 8. Helping the agent build
+## 7. Helping the agent build
 
 The agent needs to know what exists and needs tools to create the new things.
 
@@ -264,7 +193,7 @@ The user-facing language should stay simple. "Callable" is an internal design
 term. The UI can describe these as reusable automations, app actions, and app
 versions.
 
-## 9. XSRF and isolation
+## 8. XSRF and isolation
 
 XSRF has to be handled. The current defense is a header trick: mutating requests
 must carry an `X-Requested-With` header the server refuses to allow cross-origin.
@@ -281,7 +210,7 @@ second origin, not whether same-origin is enough.
 This is about containing untrusted frontend code. It is not about integration
 permissions, which stay at the broker.
 
-## 10. Next planning layers
+## 9. Next planning layers
 
 The callable/app-bundle model is the foundation. After that shape is locked,
 drill into these layers separately so the core model does not keep changing while
@@ -303,7 +232,7 @@ we work through implementation details:
 - Bundle format. Specify manifest schema, hash coverage, version directories,
   vendoring rules, import/export archive format, and rollback behavior.
 
-## 11. Open decisions
+## 10. Open decisions
 
 - Name for the apps feature. Being workshopped.
 - Internal/external naming for "callable", "local callable", and "app callable".
@@ -314,7 +243,7 @@ we work through implementation details:
 - Whether standalone local-callable sharing ever exists, separate from app
   export/import.
 
-## 12. Phasing
+## 11. Phasing
 
 A rough order, to be revised as decisions land.
 
