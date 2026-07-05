@@ -1,0 +1,19 @@
+{
+  "id": "local.nested",
+  "version": "1",
+  "scope": "local",
+  "title": "Double then add one",
+  "input_schema": {
+    "type": "object",
+    "properties": { "value": { "type": "integer" } },
+    "required": ["value"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": { "result": { "type": "integer" } },
+    "required": ["result"]
+  },
+  "implementation": { "kind": "python_script", "path": "implementation.py" },
+  "runtime": { "kind": "python", "version": "3.12" },
+  "callable_dependencies": ["local.double@1"]
+}

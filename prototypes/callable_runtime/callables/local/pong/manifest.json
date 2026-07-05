@@ -1,0 +1,11 @@
+{
+  "id": "local.pong",
+  "version": "1",
+  "scope": "local",
+  "title": "Pong (calls ping)",
+  "input_schema": { "type": "object" },
+  "output_schema": { "type": "object" },
+  "implementation": { "kind": "python_script", "path": "implementation.py" },
+  "runtime": { "kind": "python", "version": "3.12" },
+  "callable_dependencies": ["local.ping@1"]
+}

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omnideck App Builder — Mockups</title>
+<style>
+:root {
+  --canvas: #f8f9fb; --surface: #eef0f5; --elevated: #ffffff;
+  --text-primary: #0f172a; --text-secondary: #475569; --text-tertiary: #94a3b8;
+  --border: #e2e8f0; --border-subtle: #f1f5f9; --border-strong: #cbd5e1;
+  --accent: #2563eb; --accent-hover: #1d4ed8; --accent-muted: rgba(37,99,235,0.08); --accent-glow: rgba(37,99,235,0.15);
+  --success: #16a34a; --success-muted: rgba(22,163,74,0.08);
+  --warning: #d97706; --warning-muted: rgba(217,119,6,0.08);
+  --danger: #dc2626; --danger-muted: rgba(220,38,38,0.08);
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.05);
+  --shadow-md: 0 2px 8px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04);
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-xl: 12px; --radius-full: 999px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  --font-brand: "Roboto Mono", Consolas, monospace;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-code: "JetBrains Mono", "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+  --terminal-bg: #edf1fb; --terminal-border: #c8d4ec; --terminal-text: #1e293b;
+  --terminal-prompt: #16a34a; --terminal-stderr: #dc2626; --terminal-comment: #8898b5;
+  --ease: cubic-bezier(0.4,0,0.2,1);
+}
+:root[data-theme="dark"] {
+  --canvas: #0c0e14; --surface: #151821; --elevated: #1e2130;
+  --text-primary: #e8ecf4; --text-secondary: #8892a8; --text-tertiary: #4a5168;
+  --border: #252a3a; --border-subtle: #1a1e2a; --border-strong: #363d52;
+  --accent: #3b82f6; --accent-hover: #60a5fa; --accent-muted: rgba(59,130,246,0.12); --accent-glow: rgba(59,130,246,0.2);
+  --success: #4ade80; --success-muted: rgba(74,222,128,0.12);
+  --warning: #fbbf24; --warning-muted: rgba(251,191,36,0.12);
+  --danger: #f87171; --danger-muted: rgba(248,113,113,0.12);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.2);
+  --terminal-bg: #111318; --terminal-border: #252a3a; --terminal-text: #c8cdd8;
+  --terminal-prompt: #4ade80; --terminal-stderr: #ff7043; --terminal-comment: #4a5168;
+}
+* , *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--canvas); color: var(--text-primary); font-family: var(--font-body); font-size: 14px; -webkit-font-smoothing: antialiased; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+
+/* viewer shell */
+.viewer { display: flex; height: 100vh; }
+.viewer-nav { width: 236px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: var(--sp-4) var(--sp-3); gap: 2px; }
+.viewer-brand { font-family: var(--font-brand); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); padding: 0 var(--sp-2) var(--sp-3); }
+.viewer-brand b { color: var(--text-primary); }
+.nav-link { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 13px; font-weight: 500; border: 1px solid transparent; }
+.nav-link:hover { background: var(--elevated); color: var(--text-primary); }
+.nav-link.active { background: var(--accent-muted); color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.nav-num { font-family: var(--font-brand); font-size: 10px; color: var(--text-tertiary); width: 18px; }
+.nav-link.active .nav-num { color: var(--accent); }
+.nav-spacer { flex: 1; }
+.nav-note { font-size: 11px; color: var(--text-tertiary); line-height: 1.5; padding: var(--sp-3) var(--sp-2) 0; }
+.theme-toggle { height: 30px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); color: var(--text-secondary); font-size: 12px; }
+.theme-toggle:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+.viewer-main { flex: 1; min-width: 0; display: flex; }
+.screen { flex: 1; min-width: 0; display: none; flex-direction: column; overflow: hidden; }
+.screen.active { display: flex; }
+
+/* SIGNAL components */
+.topbar { height: 40px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); background: var(--elevated); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); flex-shrink: 0; }
+.brand { font-family: var(--font-brand); font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+.topbar-title { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-secondary); font-size: 13px; min-width: 0; }
+.spacer { flex: 1; }
+.app-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.rail { width: 44px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: var(--sp-3) 0; gap: var(--sp-2); }
+.rail-btn { width: 32px; height: 32px; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--text-tertiary); display: grid; place-items: center; font-family: var(--font-brand); font-size: 13px; }
+.rail-btn.active, .rail-btn:hover { background: var(--accent-muted); color: var(--accent); }
+.workspace { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.header { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border); background: var(--canvas); flex-shrink: 0; }
+.header-title { margin: 0; font-size: 18px; font-weight: 650; }
+.header-subtitle { margin-top: 2px; color: var(--text-secondary); font-size: 13px; }
+.header-actions, .row-actions { display: inline-flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+.btn { height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid transparent; background: transparent; color: var(--text-primary); font-size: 13px; font-weight: 500; transition: background 150ms var(--ease), border-color 150ms var(--ease); white-space: nowrap; }
+.btn.primary { background: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.outline { border-color: var(--border); }
+.btn.outline:hover, .btn.ghost:hover { background: var(--surface); border-color: var(--border-strong); }
+.btn.ghost { color: var(--text-tertiary); }
+.btn.danger { background: var(--danger-muted); color: var(--danger); }
+.btn.small { height: 26px; padding: 0 10px; font-size: 12px; }
+.icon-btn { width: 32px; height: 32px; border-radius: var(--radius-md); border: 1px solid var(--border); background: transparent; color: var(--text-secondary); display: inline-grid; place-items: center; }
+.icon-btn:hover { background: var(--surface); color: var(--text-primary); }
+.content { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-5); }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 360px) minmax(420px, 1fr); overflow: hidden; }
+.split.three { grid-template-columns: minmax(280px, 340px) minmax(400px, 1fr) minmax(300px, 380px); }
+.panel { min-height: 0; display: flex; flex-direction: column; background: var(--canvas); border-right: 1px solid var(--border); }
+.panel:last-child { border-right: 0; }
+.panel-head { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 0 var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-title { font-family: var(--font-brand); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+.panel-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4); }
+.card { background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.card + .card { margin-top: var(--sp-3); }
+.card-section { padding: var(--sp-4); border-bottom: 1px solid var(--border-subtle); }
+.card-section:last-child { border-bottom: 0; }
+.list-item { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.list-item:last-child { border-bottom: 0; }
+.item-main { min-width: 0; flex: 1; }
+.item-title { font-size: 13px; font-weight: 650; line-height: 1.35; }
+.item-subtitle { margin-top: 2px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+.meta-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); align-items: center; }
+.badge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: var(--radius-sm); background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); font-family: var(--font-brand); font-size: 10px; font-weight: 500; white-space: nowrap; }
+.badge.success { background: var(--success-muted); color: var(--success); border-color: transparent; }
+.badge.warning { background: var(--warning-muted); color: var(--warning); border-color: transparent; }
+.badge.danger { background: var(--danger-muted); color: var(--danger); border-color: transparent; }
+.badge.accent { background: var(--accent-muted); color: var(--accent); border-color: transparent; }
+.muted { color: var(--text-secondary); }
+.tertiary { color: var(--text-tertiary); }
+.mono { font-family: var(--font-code); }
+.link { color: var(--accent); font-size: 12px; font-family: var(--font-code); }
+.link:hover { text-decoration: underline; }
+.search { width: 240px; height: 32px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); color: var(--text-primary); padding: 0 10px; font-size: 13px; }
+:root[data-theme="dark"] .search, :root[data-theme="dark"] .composer input { background: var(--surface); }
+.search:focus, .composer input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.table { width: 100%; border-collapse: collapse; }
+.table th { position: sticky; top: 0; background: var(--canvas); color: var(--text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.table td { padding: 10px var(--sp-4); border-bottom: 1px solid var(--border-subtle); font-size: 13px; vertical-align: middle; }
+.table tr:hover td { background: var(--accent-muted); }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: var(--sp-2) var(--sp-4); font-size: 13px; }
+.kv dt { color: var(--text-tertiary); }
+.kv dd { margin: 0; }
+.callout { display: flex; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--elevated); }
+.callout.warning { border-color: var(--warning-muted); background: var(--warning-muted); }
+.callout.danger { border-color: var(--danger-muted); background: var(--danger-muted); }
+.callout.accent { border-color: var(--accent-muted); background: var(--accent-muted); }
+.callout-icon { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; font-family: var(--font-brand); font-weight: 700; }
+.callout.warning .callout-icon { color: var(--warning); }
+.callout.danger .callout-icon { color: var(--danger); }
+.callout.accent .callout-icon { color: var(--accent); }
+.section-title { margin: var(--sp-4) 0 var(--sp-2); font-family: var(--font-brand); color: var(--text-secondary); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+.section-title:first-child { margin-top: 0; }
+.preview-frame { display: flex; flex-direction: column; min-height: 0; background: var(--elevated); }
+.preview-chrome { height: 38px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: 12px; flex-shrink: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.preview-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4); }
+.app-preview { max-width: 940px; margin: 0 auto; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--sp-3); }
+.metric { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--canvas); }
+.metric-value { font-size: 22px; font-weight: 700; }
+.metric-label { color: var(--text-secondary); font-size: 12px; }
+.chat-log { display: flex; flex-direction: column; gap: var(--sp-3); }
+.message { padding: var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--elevated); font-size: 13px; line-height: 1.5; }
+.message.agent { border-left: 2px solid var(--accent); }
+.message.user { background: var(--surface); }
+.message .who { font-family: var(--font-brand); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 4px; }
+.composer { padding: var(--sp-3); border-top: 1px solid var(--border); display: flex; gap: var(--sp-2); background: var(--canvas); flex-shrink: 0; }
+.composer input { flex: 1; height: 34px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); color: var(--text-primary); padding: 0 var(--sp-3); }
+.terminal { margin: 0; padding: var(--sp-3); border: 1px solid var(--terminal-border); border-radius: var(--radius-md); background: var(--terminal-bg); color: var(--terminal-text); font-family: var(--font-code); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.term-err { color: var(--terminal-stderr); }
+.term-ok { color: var(--terminal-prompt); }
+.term-dim { color: var(--terminal-comment); }
+.pill-state { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: var(--radius-full); background: var(--accent-muted); color: var(--accent); font-family: var(--font-brand); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.pill-state .dot { background: var(--accent); }
+.effect-line { display: flex; align-items: baseline; gap: var(--sp-2); font-size: 13px; padding: 5px 0; color: var(--text-secondary); }
+.effect-line b { color: var(--text-primary); font-weight: 600; }
+.modal-scrim { flex: 1; display: grid; place-items: center; background: var(--canvas); padding: var(--sp-6); overflow: auto; }
+.modal { width: 100%; max-width: 560px; }
+.pre-source { margin: 0; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--canvas); font-family: var(--font-code); font-size: 12px; line-height: 1.6; white-space: pre; overflow: auto; color: var(--text-secondary); }
+.pre-source .k { color: var(--accent); }
+.pre-source .s { color: var(--success); }
+.pre-source .c { color: var(--terminal-comment); }
+.data-tag { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:var(--radius-sm); background:var(--surface); border:1px solid var(--border); font-size:11px; color:var(--text-secondary); }
+.clickable { cursor: pointer; }
+@media (max-width: 860px) { .split, .split.three { grid-template-columns: 1fr; overflow: auto; } .panel, .preview-frame { min-height: 360px; } }
+</style>
+</head>
+<body>
+<div class="viewer">
+  <aside class="viewer-nav">
+    <div class="viewer-brand"><b>OMNIDECK</b> · app builder mockups</div>
+    <a class="nav-link active" data-screen="library"><span class="nav-num">01</span> App library</a>
+    <a class="nav-link" data-screen="build"><span class="nav-num">02</span> Build with agent</a>
+    <a class="nav-link" data-screen="source"><span class="nav-num">03</span> Action source</a>
+    <a class="nav-link" data-screen="review"><span class="nav-num">04</span> Save review</a>
+    <a class="nav-link" data-screen="run"><span class="nav-num">05</span> Run a saved app</a>
+    <a class="nav-link" data-screen="debug"><span class="nav-num">06</span> Debug with agent</a>
+    <a class="nav-link" data-screen="import"><span class="nav-num">07</span> Import an app</a>
+    <div class="nav-spacer"></div>
+    <button class="theme-toggle" id="themeToggle">Toggle light / dark</button>
+    <div class="nav-note">Static mockups of the AI workbench app builder. Click a screen, use ↑ / ↓, or follow the buttons inside each screen.</div>
+  </aside>
+  <main class="viewer-main">
+
+    <!-- 01 LIBRARY -->
+    <section class="screen active" id="library">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Apps</span><span class="spacer"></span></div>
+      <div class="app-body">
+        <div class="rail"><div class="rail-btn">☰</div><div class="rail-btn">✦</div><div class="rail-btn active">▦</div><div class="rail-btn">◷</div></div>
+        <div class="workspace">
+          <div class="header">
+            <div><h1 class="header-title">Apps</h1><div class="header-subtitle">Durable tools you return to and use, built with the agent</div></div>
+            <div class="header-actions"><input class="search" placeholder="Search apps"><button class="btn outline" data-goto="import">Import app</button><button class="btn primary" data-goto="build">New app</button></div>
+          </div>
+          <div class="content" style="padding:0">
+            <table class="table">
+              <thead><tr><th>App</th><th>Status</th><th>Version</th><th>Last opened</th><th>May do</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><div class="item-title">Project Backlog</div><div class="item-subtitle">GitHub issues, local backlog, Drive backup</div></td><td><span class="badge success">● active</span></td><td class="mono">v3</td><td class="muted">2h ago</td><td class="muted">storage · GitHub · Drive</td><td class="row-actions"><button class="btn ghost small" data-goto="run">Open</button><button class="btn outline small" data-goto="build">Edit</button></td></tr>
+                <tr><td><div class="item-title">Invoice Dashboard</div><div class="item-subtitle">Parses invoices, drafts summary emails</div></td><td><span class="badge success">● active</span></td><td class="mono">v1</td><td class="muted">yesterday</td><td class="muted">storage · email</td><td class="row-actions"><button class="btn ghost small" data-goto="run">Open</button><button class="btn outline small" data-goto="build">Edit</button></td></tr>
+                <tr><td><div class="item-title">Meeting Notes</div><div class="item-subtitle">Summarizes and files meeting notes</div></td><td><span class="badge warning">◐ draft</span></td><td class="tertiary mono">—</td><td class="muted">building now</td><td class="muted">storage</td><td class="row-actions"><button class="btn ghost small" data-goto="build">Resume</button></td></tr>
+                <tr><td><div class="item-title">Habit Tracker</div><div class="item-subtitle">Imported · not yet reviewed</div></td><td><span class="badge danger">◌ disabled</span></td><td class="tertiary mono">import</td><td class="muted">just now</td><td class="muted">storage · web</td><td class="row-actions"><button class="btn outline small" data-goto="import">Review</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 BUILD -->
+    <section class="screen" id="build">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Project Backlog <span class="badge warning" style="margin-left:6px">◐ draft</span></span><span class="spacer"></span><span class="pill-state"><span class="dot"></span> editing</span><button class="btn outline" data-goto="review">What this app may do</button><button class="btn primary" data-goto="review">Save version</button></div>
+      <div class="app-body">
+        <div class="rail"><div class="rail-btn">☰</div><div class="rail-btn">✦</div><div class="rail-btn active">▦</div><div class="rail-btn">◷</div></div>
+        <div class="workspace">
+          <div class="split three">
+            <!-- chat -->
+            <div class="panel">
+              <div class="panel-head"><span class="panel-title">Agent</span><span class="badge accent">● live</span></div>
+              <div class="panel-body">
+                <div class="chat-log">
+                  <div class="message user"><div class="who">You</div>Build me an app to manage the backlog for my omnideck repo. Pull GitHub issues, let me add local items, and back it all up to Drive.</div>
+                  <div class="message agent"><div class="who">Agent</div>First pass is up. I made a backlog view, a <b>sync_github</b> action that reads and closes issues through your GitHub, a <b>backup_project</b> action, and a <b>normalize_item</b> helper. Try it in the preview.</div>
+                  <div class="message user"><div class="who">You</div>The priority column is empty for local items.</div>
+                  <div class="message agent"><div class="who">Agent</div>I see it — <b>list_backlog</b> didn't default a priority. I watched your test run <span class="mono tertiary">call_9f2</span> and I'm patching the action now.</div>
+                </div>
+              </div>
+              <div class="composer"><input placeholder="Ask the agent to change the app…"><button class="icon-btn">↑</button></div>
+            </div>
+            <!-- preview -->
+            <div class="preview-frame">
+              <div class="preview-chrome"><span class="dot"></span> Draft preview · updates live · external effects dry-run</div>
+              <div class="preview-body">
+                <div class="app-preview">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                    <div><div style="font-size:17px;font-weight:700">Project backlog</div><div class="muted" style="font-size:12px">omnideck-dev / omnideck</div></div>
+                    <div class="row-actions"><span class="badge">status: open</span><button class="btn primary small">Back up to Drive</button></div>
+                  </div>
+                  <div class="metric-grid" style="margin-bottom:var(--sp-4)">
+                    <div class="metric"><div class="metric-value">18</div><div class="metric-label">open issues</div></div>
+                    <div class="metric"><div class="metric-value">6</div><div class="metric-label">local items</div></div>
+                    <div class="metric"><div class="metric-value">2</div><div class="metric-label">high priority</div></div>
+                  </div>
+                  <div class="card">
+                    <table class="table">
+                      <thead><tr><th>Item</th><th>Source</th><th>Priority</th><th>Status</th></tr></thead>
+                      <tbody>
+                        <tr><td>Rename computron to omnideck</td><td class="muted">GitHub #110</td><td><span class="badge danger">high</span></td><td class="muted">open</td></tr>
+                        <tr><td>Named volumes for the CLI</td><td class="muted">GitHub #8</td><td><span class="badge warning">medium</span></td><td class="muted">open</td></tr>
+                        <tr><td>Write the app-builder skill</td><td class="muted">local</td><td><span class="badge accent">medium</span></td><td class="muted">todo</td></tr>
+                        <tr><td>Draft launch note</td><td class="muted">local</td><td><span class="badge">low</span></td><td class="muted">todo</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- structure / transparency -->
+            <div class="panel">
+              <div class="panel-head"><span class="panel-title">App</span><span class="badge">v-next</span></div>
+              <div class="panel-body">
+                <div class="section-title">Actions</div>
+                <div class="card">
+                  <div class="list-item"><div class="item-main"><div class="item-title">list_backlog</div><div class="item-subtitle">Lists issues and local items</div><div class="meta-row"><span class="badge accent">action</span><span class="link clickable" data-goto="source">view source</span></div></div></div>
+                  <div class="list-item"><div class="item-main"><div class="item-title">sync_github</div><div class="item-subtitle">Reads and closes GitHub issues</div><div class="meta-row"><span class="badge accent">action</span><span class="link clickable" data-goto="source">view source</span></div></div></div>
+                  <div class="list-item"><div class="item-main"><div class="item-title">backup_project</div><div class="item-subtitle">Exports and uploads to Drive</div><div class="meta-row"><span class="badge accent">action</span><span class="link clickable" data-goto="source">view source</span></div></div></div>
+                  <div class="list-item"><div class="item-main"><div class="item-title">normalize_item</div><div class="item-subtitle">Cleans a backlog record</div><div class="meta-row"><span class="badge">helper</span><span class="link clickable" data-goto="source">view source</span></div></div></div>
+                </div>
+                <div class="section-title">What this app may do</div>
+                <div class="effect-line">read and write <b>app storage</b></div>
+                <div class="effect-line">read and write through your <b>GitHub</b></div>
+                <div class="effect-line">upload files to your <b>Drive</b></div>
+                <div class="section-title">Uses packages</div>
+                <div class="meta-row"><span class="data-tag">python-dateutil</span><span class="data-tag">pydantic</span></div>
+                <div class="section-title">Local data</div>
+                <div class="meta-row"><span class="data-tag">settings</span><span class="data-tag">backlog_items</span><span class="data-tag">metadata</span></div>
+                <div class="section-title">Recent runs · shared</div>
+                <div class="card"><div class="card-section" style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span><span class="mono">list_backlog</span> <span class="tertiary">· you tested</span></span><span class="badge success">ok</span></div><div class="card-section" style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span><span class="mono">backup_project</span> <span class="tertiary">· agent dry-run</span></span><span class="badge accent">dry-run</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 ACTION SOURCE -->
+    <section class="screen" id="source">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Project Backlog / sync_github</span><span class="spacer"></span><button class="btn ghost" data-goto="build">Back to builder</button></div>
+      <div class="content">
+        <div style="max-width:820px;margin:0 auto">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:var(--sp-4)">
+            <div><h1 class="header-title">sync_github</h1><div class="header-subtitle">Public action · you see exactly what it does</div></div>
+            <div class="row-actions"><span class="badge accent">action</span><button class="btn outline small">Test action</button></div>
+          </div>
+          <div class="card">
+            <div class="card-section"><div class="kv"><dt>Inputs</dt><dd class="mono">state: string</dd><dt>Returns</dt><dd class="mono">{ items: object[] }</dd><dt>Uses</dt><dd class="mono">omnideck.app.storage.list · your GitHub</dd><dt>Effects</dt><dd class="muted">reads GitHub, reads and writes app storage</dd></div></div>
+            <div class="card-section">
+              <div class="section-title" style="margin-top:0">implementation.py</div>
+<pre class="pre-source"><span class="c"># the agent wrote this; the schema was read from the function</span>
+<span class="k">def</span> run(omni, state: str) -&gt; dict:
+    issues = omni.call(<span class="s">"github.list_issues"</span>, state=state)
+    local  = omni.call(<span class="s">"omnideck.app.storage.list"</span>,
+                       collection=<span class="s">"backlog_items"</span>)
+    items = [normalize(i) <span class="k">for</span> i <span class="k">in</span> issues] + local.items
+    <span class="k">return</span> {<span class="s">"items"</span>: items}</pre>
+            </div>
+          </div>
+          <div class="callout accent" style="margin-top:var(--sp-4)"><div class="callout-icon">i</div><div style="font-size:13px">Every action's source and metadata is visible here and in the saved app. Integrations like <span class="mono">github.list_issues</span> are just callables the action uses — the app never sees your credentials.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 SAVE REVIEW -->
+    <section class="screen" id="review">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Project Backlog · save</span><span class="spacer"></span><button class="btn ghost" data-goto="build">Cancel</button></div>
+      <div class="modal-scrim">
+        <div class="modal">
+          <div class="card">
+            <div class="card-section"><div style="font-size:16px;font-weight:700">Save as version 4</div><div class="muted" style="font-size:13px;margin-top:2px">Editing an app creates a new version. v3 stays available to roll back to.</div></div>
+            <div class="card-section">
+              <div class="section-title" style="margin-top:0">This app contains</div>
+              <div class="effect-line">a frontend, <b>4 actions</b>, and <b>1 reusable automation</b> copied in</div>
+              <div class="section-title">This app may</div>
+              <div class="effect-line">read and write <b>app storage</b></div>
+              <div class="effect-line">read and write through your <b>GitHub</b> <span class="badge warning" style="margin-left:6px">changed</span></div>
+              <div class="effect-line">upload files to your <b>Drive</b></div>
+              <div class="section-title">Wants to install packages</div>
+              <div class="callout warning"><div class="callout-icon">!</div><div style="font-size:13px"><span class="mono">pypdf==4.3.1</span> — installing a package runs its code. Approve only packages you trust.</div></div>
+              <div class="section-title">Stores local data</div>
+              <div class="meta-row"><span class="data-tag">settings</span><span class="data-tag">backlog_items</span><span class="data-tag">metadata</span></div>
+            </div>
+            <div class="card-section" style="display:flex;justify-content:flex-end;gap:var(--sp-2)"><button class="btn ghost" data-goto="build">Keep editing</button><button class="btn primary" data-goto="run">Save version 4</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 RUN SAVED APP -->
+    <section class="screen" id="run">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Project Backlog <span class="badge success" style="margin-left:6px">v3</span></span><span class="spacer"></span><button class="btn outline">What this app may do</button><button class="btn outline" data-goto="build">Edit with agent</button><button class="icon-btn">⋯</button></div>
+      <div class="app-body">
+        <div class="rail"><div class="rail-btn">☰</div><div class="rail-btn">✦</div><div class="rail-btn active">▦</div><div class="rail-btn">◷</div></div>
+        <div class="workspace">
+          <div class="preview-frame" style="border-left:0">
+            <div class="preview-chrome"><span class="dot" style="background:var(--success)"></span> Running · saved v3 · isolated app frame</div>
+            <div class="preview-body">
+              <div class="app-preview">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4)">
+                  <div><div style="font-size:17px;font-weight:700">Project backlog</div><div class="muted" style="font-size:12px">omnideck-dev / omnideck · last backup 2h ago</div></div>
+                  <div class="row-actions"><input class="search" style="width:180px" placeholder="Filter items"><button class="btn primary small">Back up to Drive</button></div>
+                </div>
+                <div class="metric-grid" style="margin-bottom:var(--sp-4)">
+                  <div class="metric"><div class="metric-value">18</div><div class="metric-label">open issues</div></div>
+                  <div class="metric"><div class="metric-value">6</div><div class="metric-label">local items</div></div>
+                  <div class="metric"><div class="metric-value">2</div><div class="metric-label">high priority</div></div>
+                </div>
+                <div class="card"><table class="table"><thead><tr><th>Item</th><th>Source</th><th>Priority</th><th>Status</th></tr></thead><tbody>
+                  <tr><td>Rename computron to omnideck</td><td class="muted">GitHub #110</td><td><span class="badge danger">high</span></td><td class="muted">open</td></tr>
+                  <tr><td>Named volumes for the CLI</td><td class="muted">GitHub #8</td><td><span class="badge warning">medium</span></td><td class="muted">open</td></tr>
+                  <tr><td>Write the app-builder skill</td><td class="muted">local</td><td><span class="badge accent">medium</span></td><td class="muted">todo</td></tr>
+                </tbody></table></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 DEBUG -->
+    <section class="screen" id="debug">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Project Backlog · debug</span><span class="spacer"></span><span class="pill-state" style="background:var(--danger-muted);color:var(--danger)"><span class="dot" style="background:var(--danger)"></span> failed</span></div>
+      <div class="app-body">
+        <div class="rail"><div class="rail-btn">☰</div><div class="rail-btn">✦</div><div class="rail-btn active">▦</div><div class="rail-btn">◷</div></div>
+        <div class="workspace">
+          <div class="split">
+            <div class="panel">
+              <div class="panel-head"><span class="panel-title">Agent</span></div>
+              <div class="panel-body"><div class="chat-log">
+                <div class="message user"><div class="who">You</div>Back up to Drive isn't working. <button class="btn outline small" style="margin-top:6px">Debug with agent</button></div>
+                <div class="message agent"><div class="who">Agent</div>I pulled the run <span class="mono tertiary">call_f43</span>. <b>backup_project</b> made the export fine, then <b>drive.upload_file</b> was denied. Your Drive integration is connected but read-only, so the upload can't write.</div>
+                <div class="message agent"><div class="who">Agent</div>Two options: turn on write access for your Drive integration in Settings, or I can change the app to save the backup as a downloadable file instead. Which do you want?</div>
+              </div></div>
+              <div class="composer"><input placeholder="Reply to the agent…"><button class="icon-btn">↑</button></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><span class="panel-title">Run · call_f43</span><span class="badge danger">error</span></div>
+              <div class="panel-body">
+                <div class="kv"><dt>Action</dt><dd class="mono">backup_project</dd><dt>Error</dt><dd class="mono">INTEGRATION_DENIED</dd><dt>Duration</dt><dd class="muted">0.9s</dd></div>
+                <div class="section-title">Call tree</div>
+<pre class="terminal"><span class="term-ok">✓</span> omnideck.app.storage.export      <span class="term-dim">exp_ab12</span>
+<span class="term-err">✗</span> drive.upload_file                <span class="term-err">denied</span>
+<span class="term-dim">  drive integration is read-only</span></pre>
+                <div class="callout danger" style="margin-top:var(--sp-4)"><div class="callout-icon">!</div><div style="font-size:13px">No credentials, request bodies, or host paths are shown. The broker decides whether an operation is allowed, not the app.</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 IMPORT -->
+    <section class="screen" id="import">
+      <div class="topbar"><span class="brand">OMNIDECK</span><span class="topbar-title">/ Import app</span><span class="spacer"></span><button class="btn ghost" data-goto="library">Cancel</button></div>
+      <div class="modal-scrim">
+        <div class="modal">
+          <div class="card">
+            <div class="card-section"><div style="font-size:16px;font-weight:700">Import “Habit Tracker”</div><div class="muted" style="font-size:13px;margin-top:2px">habit-tracker-v2.omnideck-app.zip · from a shared link</div></div>
+            <div class="card-section">
+              <div class="callout danger"><div class="callout-icon">!</div><div style="font-size:13px"><b>This app contains code.</b> Only import apps from sources you trust. It stays disabled until you enable it.</div></div>
+              <div class="section-title">This app may</div>
+              <div class="effect-line">read and write <b>app storage</b></div>
+              <div class="effect-line">fetch from <b>api.quotable.io</b> <span class="tertiary">(public web, allowlisted)</span></div>
+              <div class="section-title">Wants to install packages</div>
+              <div class="meta-row"><span class="data-tag">python-dateutil</span></div>
+              <div class="section-title">Integrations it needs</div>
+              <div class="effect-line muted">none — this app uses only storage and public web</div>
+              <div class="section-title">Verification</div>
+              <div class="effect-line"><span class="badge success">✓ hashes verified</span> <span class="tertiary mono" style="margin-left:8px">sha256 4f9c…a21</span></div>
+            </div>
+            <div class="card-section" style="display:flex;justify-content:flex-end;gap:var(--sp-2)"><button class="btn ghost" data-goto="library">Cancel</button><button class="btn outline" data-goto="library">Import, keep disabled</button><button class="btn primary" data-goto="library">Import and enable</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<script>
+  const links = Array.from(document.querySelectorAll('.nav-link'));
+  const screens = Array.from(document.querySelectorAll('.screen'));
+  function show(id) {
+    if (!document.getElementById(id)) return;
+    links.forEach(l => l.classList.toggle('active', l.dataset.screen === id));
+    screens.forEach(s => s.classList.toggle('active', s.id === id));
+    const main = document.querySelector('.viewer-main');
+    if (main) main.scrollTop = 0;
+  }
+  links.forEach(l => l.addEventListener('click', () => show(l.dataset.screen)));
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-goto]');
+    if (t) { e.preventDefault(); show(t.dataset.goto); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const i = links.findIndex(l => l.classList.contains('active'));
+    const n = e.key === 'ArrowDown' ? Math.min(i + 1, links.length - 1) : Math.max(i - 1, 0);
+    show(links[n].dataset.screen);
+  });
+  const root = document.documentElement;
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+</script>
+</body>
+</html>
