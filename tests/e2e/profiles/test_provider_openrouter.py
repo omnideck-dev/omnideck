@@ -7,8 +7,8 @@ from playwright.sync_api import expect
 from tests.e2e.pages import AgentsPage
 
 
-VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "think")
-HIDDEN_FIELDS = ("top_k", "repeat_penalty", "context_window")
+VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "think", "context_window")
+HIDDEN_FIELDS = ("top_k", "repeat_penalty")
 
 
 def test_openrouter_field_visibility(page, provider_profile):
