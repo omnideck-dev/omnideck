@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Reveal host</title>
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    h1 { margin: 8px; }
+    #frame { position: fixed; top: 4%; left: 4%; width: 92vw; height: 92vh; border: 0; }
+  </style>
+</head>
+<body>
+  <!--
+    In-page dominant-iframe reveal. On load there is no iframe, so the active
+    view is this host page. Clicking "Open widget" injects a viewport-filling
+    iframe (same-origin widget.html) WITHOUT navigating — the url never changes.
+    That exercises _finalize_action's in-page branch, where an interaction
+    changes the dominant frame and the tools must repoint into the new iframe.
+  -->
+  <h1>Host page heading</h1>
+  <button id="open" type="button">Open widget</button>
+  <script>
+    document.getElementById('open').addEventListener('click', function () {
+      if (document.getElementById('frame')) return;
+      var frame = document.createElement('iframe');
+      frame.id = 'frame';
+      frame.title = 'Embedded widget';
+      frame.src = 'closable-widget.html';
+      document.body.appendChild(frame);
+    });
+  </script>
+</body>
+</html>

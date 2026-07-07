@@ -44,7 +44,7 @@ class _SimpleBrowser:
             title = "Test Page"
         return ActiveView(frame=frame, title=title, url=page.url)
 
-    def invalidate_dominant_frame(self, page: Any) -> None:
+    def _invalidate_active_view(self, page: Any) -> None:
         self._dominant_frames.pop(page, None)
 
     async def navigate_back(self, page: Any = None) -> BrowserInteractionResult:
