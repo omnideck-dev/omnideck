@@ -586,7 +586,11 @@ async def build_page_view(
     truncated = False
     viewport_data: dict[str, int] | None = None
 
-    if _non_html:
+    # A blocked view renders as its banner, and a non-HTML file renders as a
+    # canned message. Neither can be snapshotted, so both skip the DOM walk.
+    if view.challenge:
+        content = view.challenge.banner
+    elif _non_html:
         _ext = view.url.split("?")[0].rsplit(".", 1)[-1].lower() if "." in view.url else "file"
         content = (
             f"[This is a {_ext.upper()} file, not a web page: {view.url}]\n"

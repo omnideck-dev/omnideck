@@ -678,7 +678,7 @@ class StubBrowser:
             title = "Test Page"
         return ActiveView(frame=frame, title=title, url=self._page.url)
 
-    def invalidate_dominant_frame(self, page: Any) -> None:
+    def _invalidate_active_view(self, page: Any) -> None:
         self._dominant_frames.pop(page, None)
 
     async def new_page(self) -> StubPage:
@@ -696,7 +696,7 @@ class StubBrowser:
     async def navigate(self, url: str, *, page: Any = None) -> Any:
         from tools.browser.core.browser import BrowserInteractionResult
         target = page if page is not None else self._page
-        self.invalidate_dominant_frame(target)
+        self._invalidate_active_view(target)
         await target.goto(url)
         return BrowserInteractionResult(
             navigation_response=None,

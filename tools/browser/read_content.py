@@ -144,6 +144,19 @@ async def read_page(
     browser, view = await get_active_view("read_page", tab=tab)
     resolved_page = view.page
 
+    # A blocked view has no readable text in the browser; return only the banner
+    # (which routes the agent to fetch_url) and skip the read entirely.
+    if view.challenge:
+        return format_page_view(
+            title=view.title,
+            url=view.url,
+            status_code=None,
+            viewport=None,
+            content=view.challenge.banner,
+            truncated=False,
+            tab_id=browser.tab_id_of(resolved_page),
+        )
+
     try:
         raw_html: str = await view.frame.evaluate(_CONTENT_ROOT_JS)
         full_content = html_to_markdown(raw_html)

@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict
 
 import tools.browser.core.waits as browser_waits
 from config import load_config
+from tools.browser.core._challenge import ChallengeInfo, detect_challenge
 from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core._file_detection import DownloadInfo
 
@@ -54,18 +55,40 @@ PageOrFrame = Page | Frame
 
 
 class ActiveView(NamedTuple):
-    """Snapshot of the current browser view for tools to operate on.
+    """The resolved view a tool should operate on for one tab.
 
-    Tools should call ``Browser.active_view()`` instead of ``current_page()``
-    or ``active_frame()`` directly.  The ``frame`` is whichever context the
-    tool should interact with (iframe if dominant, otherwise the main page).
-    ``title`` and ``url`` always come from the main page so the agent sees
-    a consistent identity regardless of iframes.
+    A tab is not a single document. It is a frame tree: the top-level page is
+    the root frame, and it may contain iframes. So "the page" is ambiguous —
+    the content the agent cares about sometimes lives in an iframe that fills
+    the viewport (an embedded app, a doc viewer, a payment widget). The active
+    view is the one answer to "which frame do tools read from and act on right
+    now", resolved once and cached, so every tool agrees instead of each
+    re-deciding. Tools get it from ``active_view()`` and never resolve frames
+    themselves.
+
+    ``frame`` is that context. It is the ``Page`` when the top document is the
+    target, or a ``Frame`` when a dominant iframe is. The two are
+    interchangeable for content operations — a ``Page`` delegates ``evaluate`` /
+    ``click`` / ``query_selector`` to its own main frame — so a tool acts on
+    either without caring which it got. ``page`` recovers the owning ``Page``
+    when a caller needs the tab-level methods a ``Frame`` lacks (title,
+    viewport, dialogs).
+
+    ``title`` and ``url`` always come from the main page, never from ``frame``.
+    When the active frame is an iframe its own url is usually an embed or CDN
+    origin the agent never navigated to; pinning identity to the main page
+    keeps "what page am I on" stable while the interaction target may be nested.
+
+    ``challenge`` is set when the tab is an anti-bot "Verify you are human"
+    interstitial (Cloudflare, …). The browser can't get past it, so ``frame``
+    stays the main page and tools replace the view with ``challenge.banner`` to
+    route the agent to fetch_url rather than entering the interstitial's frame.
     """
 
     frame: Page | Frame
     title: str
     url: str
+    challenge: ChallengeInfo | None = None
 
     @property
     def page(self) -> Page:
@@ -250,6 +273,11 @@ class Browser:
         #     viewer stub or a fresh page — old frame is gone)
         #   - the cached frame becomes detached (checked at read time)
         self._dominant_frames: dict[Page, Frame] = {}
+        # Tabs currently behind an anti-bot interstitial, mapped to the detected
+        # challenge (vendor + banner). Cleared whenever the page changes
+        # (navigation, tab close, URL change) so a stale banner never outlives
+        # the page that raised it.
+        self._challenges: dict[Page, ChallengeInfo] = {}
         self._tab_id_of: dict[Page, int] = {}
         self._next_tab_id: int = 0
         self._pages_in_navigation: set[Page] = set()
@@ -311,7 +339,7 @@ class Browser:
         def _on_close(_p: Any) -> None:
             self._tab_id_of.pop(page, None)
             self._pages_in_navigation.discard(page)
-            self._dominant_frames.pop(page, None)
+            self._invalidate_active_view(page)
 
         page.on("close", _on_close)
 
@@ -411,7 +439,6 @@ class Browser:
             # natural screen >= window >= viewport relationship a real browser
             # has. (Works without a window manager, unlike --start-maximized.)
             "--window-size=1920,1080",
-            "--enable-automation=false",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
@@ -429,6 +456,11 @@ class Browser:
         launch_kwargs: dict[str, Any] = dict(
             headless=headless,
             args=chrome_args,
+            # Playwright adds --enable-automation by default, which turns on
+            # Chrome's automation mode (infobar + automation-mode behaviours a
+            # bot detector can key on). Drop it; navigator.webdriver is already
+            # suppressed by --disable-blink-features=AutomationControlled.
+            ignore_default_args=["--enable-automation"],
         )
         # Google Chrome is amd64-only on Linux.  On arm64, omit the
         # channel so Playwright uses its bundled Chromium instead.
@@ -691,13 +723,16 @@ class Browser:
                 return cached
         return page
 
-    def invalidate_dominant_frame(self, page: Page) -> None:
-        """Drop the cached dominant iframe for *page*, if any.
+    def _invalidate_active_view(self, page: Page) -> None:
+        """Drop the cached active view for *page* — its dominant iframe and any
+        challenge state.
 
-        Call before a navigation on that tab (the new DOM won't share
-        the old iframe) or whenever the cache should be re-evaluated.
+        Call before a navigation on that tab (the new DOM won't share the old
+        iframe), on tab close, or whenever the cached view should be dropped and
+        re-resolved.
         """
         self._dominant_frames.pop(page, None)
+        self._challenges.pop(page, None)
 
     async def active_view(self, page: Page) -> ActiveView:
         """Return an ``ActiveView`` for tools to operate on.
@@ -708,24 +743,45 @@ class Browser:
         cached = self._dominant_frames.get(page)
         if cached is not None and not cached.is_detached():
             frame: Page | Frame = cached
+            challenge = self._challenges.get(page)
         else:
             self._dominant_frames.pop(page, None)
-            try:
-                dominant = await self._detect_dominant_frame(page)
-                if dominant is not None:
-                    self._dominant_frames[page] = dominant
-                    frame = dominant
-                else:
-                    frame = page
-            except Exception:  # noqa: BLE001 - detection is best-effort
-                frame = page
+            frame, challenge = await self._resolve_active_frame(page)
+            if isinstance(frame, Frame):
+                self._dominant_frames[page] = frame
+            if challenge is not None:
+                self._challenges[page] = challenge
+            else:
+                self._challenges.pop(page, None)
 
         try:
             title = await page.title()
         except PlaywrightError:
             title = ""
 
-        return ActiveView(frame=frame, title=title, url=page.url)
+        return ActiveView(frame=frame, title=title, url=page.url, challenge=challenge)
+
+    async def _resolve_active_frame(
+        self, page: Page,
+    ) -> tuple[Page | Frame, ChallengeInfo | None]:
+        """Decide which frame tools operate on and whether an interstitial blocks it.
+
+        An anti-bot interstitial takes priority: when one blocks the page the
+        browser can't get past it, so the main page stays the active view and
+        callers surface the challenge banner. Otherwise the largest content
+        iframe wins, else the page.
+        """
+        # detect_challenge is total — it swallows any detector error itself —
+        # so it needs no guard here.
+        challenge = await detect_challenge(page)
+        if challenge is not None:
+            return page, challenge
+
+        try:
+            dominant = await self._detect_dominant_frame(page)
+        except Exception:  # noqa: BLE001 - detection is best-effort
+            dominant = None
+        return (dominant if dominant is not None else page), None
 
     # Minimum fraction of viewport area an iframe must cover to become dominant.
     _DOMINANT_FRAME_THRESHOLD = 0.25
@@ -836,7 +892,7 @@ class Browser:
         self._pages_in_navigation.add(page)
         # Any cached dominant iframe belongs to the old DOM; drop it
         # so the post-nav settle re-detects against the new one.
-        self.invalidate_dominant_frame(page)
+        self._invalidate_active_view(page)
         self._pending_downloads.clear()
         initial_url = getattr(page, "url", "")
         try:
@@ -995,7 +1051,49 @@ class Browser:
         initial_url: str,
         saw_download_response: bool = False,
     ) -> BrowserInteractionResult:
-        """Shared post-action pipeline: downloads, settle, iframe detection, logging."""
+        """Resolve a tab's new state after a navigation or interaction.
+
+        This is the shared pipeline run after anything changes the page. It
+        decides what happened (a download, a challenge, a new document, or an
+        in-page frame change), updates the per-tab caches accordingly, and
+        returns the result both the navigate and interaction paths hand back.
+
+        *initial_url* is the tab's url before the action; comparing it to the
+        settled url tells whether the action navigated. *response* is the
+        navigation response when there was one, else None. *saw_download_response*
+        flags that a ``Content-Disposition: attachment`` header was seen, so a
+        download event may still be in flight.
+
+        Four phases:
+
+        1. Downloads. Drain any captured download; if there is none but the
+           response is a file content-type, save the body as a file.
+
+        2. Settle. If it was not a download, wait for the page to quiet, then
+           re-check for downloads that arrived during settle (same-tab
+           redirect-to-file chains) and honour a brief grace wait when an
+           attachment header was seen but its event has not fired yet.
+
+        3. View resolution — the part that updates the caches. Exactly one case
+           applies:
+           - download: clear the cached view; the page may be a file-viewer stub
+             with no real DOM to resolve.
+           - challenge: an anti-bot interstitial is up. Cache it, drop any
+             dominant frame (tools never act inside the interstitial), and label
+             the transition the first time it appears. The response is passed to
+             detection so header-only variants are caught here, where the header
+             still exists.
+           - navigated with no challenge: a fresh document. Clear the cached view
+             and let the next read re-resolve it — dominant-iframe detection
+             deliberately skips fresh navigations.
+           - otherwise (an in-page change, no navigation): re-run dominant-iframe
+             detection, and if the dominant frame changed, label the transition,
+             update the cache, and settle the newly-entered frame.
+
+        4. Return the result: the response, any download, settle timings, and the
+           frame transition — a short label for the log panel, e.g.
+           ``"→ iframe <url>"`` or ``"→ cloudflare challenge"``.
+        """
         wait_cfg = load_config().tools.browser.waits
 
         # 1. Download detection
@@ -1060,39 +1158,52 @@ class Browser:
                     download_info.filename,
                 )
 
-        # 3. Iframe detection (skip if download — page may be a PDF viewer stub)
-        # Operates on this tab's dominant-frame slot only; other tabs'
-        # cached frames are untouched.
+        # 3. Iframe / challenge detection (skip if download — page may be a
+        # PDF viewer stub). Operates on this tab's dominant-frame slot only;
+        # other tabs' cached frames are untouched.
         frame_transition: str | None = None
         final_url = getattr(page, "url", initial_url)
         navigated = bool(initial_url and final_url and final_url != initial_url)
 
         if download_info is not None:
-            self._dominant_frames.pop(page, None)
-        elif navigated:
-            self._dominant_frames.pop(page, None)
+            self._invalidate_active_view(page)
         else:
-            try:
-                previous_frame = self._dominant_frames.get(page)
-                dominant = await self._detect_dominant_frame(page)
-                if dominant != previous_frame:
-                    if dominant is not None:
-                        frame_transition = f"→ iframe {dominant.url}"
-                    elif previous_frame is not None:
-                        frame_transition = "→ main page"
-                    if dominant is not None:
-                        self._dominant_frames[page] = dominant
-                    else:
-                        self._dominant_frames.pop(page, None)
+            # Detect before the dominant-iframe path so a challenge wins; the
+            # response lets header-only variants be caught here.
+            challenge = await detect_challenge(page, response)
+            if challenge is not None:
+                # Don't enter the interstitial's frame; the banner replaces the
+                # view and routes the agent to fetch_url.
+                was_challenge = page in self._challenges
+                self._challenges[page] = challenge
+                self._dominant_frames.pop(page, None)
+                if not was_challenge:
+                    frame_transition = f"→ {challenge.vendor} challenge"
+            elif navigated:
+                self._invalidate_active_view(page)
+            else:
+                self._challenges.pop(page, None)
+                try:
+                    previous_frame = self._dominant_frames.get(page)
+                    dominant = await self._detect_dominant_frame(page)
+                    if dominant != previous_frame:
+                        if dominant is not None:
+                            frame_transition = f"→ iframe {dominant.url}"
+                        elif previous_frame is not None:
+                            frame_transition = "→ main page"
+                        if dominant is not None:
+                            self._dominant_frames[page] = dominant
+                        else:
+                            self._dominant_frames.pop(page, None)
 
-                if dominant is not None and dominant != previous_frame:
-                    try:
-                        await dominant.wait_for_load_state("load", timeout=5000)
-                        await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
-                    except (PlaywrightTimeoutError, PlaywrightError):
-                        pass
-            except Exception:  # noqa: BLE001
-                logger.debug("Dominant frame detection failed; keeping current state")
+                    if dominant is not None and dominant != previous_frame:
+                        try:
+                            await dominant.wait_for_load_state("load", timeout=5000)
+                            await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
+                        except (PlaywrightTimeoutError, PlaywrightError):
+                            pass
+                except Exception:  # noqa: BLE001
+                    logger.debug("Dominant frame detection failed; keeping current state")
 
         return BrowserInteractionResult(
             navigation_response=response,

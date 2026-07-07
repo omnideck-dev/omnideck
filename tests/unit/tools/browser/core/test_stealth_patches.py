@@ -58,3 +58,16 @@ class TestChromeArgs:
         source = inspect.getsource(Browser.start)
         assert '["channel"] = "chrome"' in source
         assert 'platform.machine() == "x86_64"' in source
+
+
+@pytest.mark.unit
+def test_drops_enable_automation_flag():
+    """Playwright's default --enable-automation is removed, not re-added.
+
+    The flag turns on Chrome's automation mode (a bot signal). The old
+    --enable-automation=false arg was a no-op — Chromium keys on the flag's
+    presence, not its value — so it is dropped in favour of ignore_default_args.
+    """
+    source = inspect.getsource(Browser.start)
+    assert 'ignore_default_args=["--enable-automation"]' in source
+    assert "--enable-automation=false" not in source
