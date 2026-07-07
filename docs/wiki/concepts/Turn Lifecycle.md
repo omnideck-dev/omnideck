@@ -1,65 +1,106 @@
 ---
 title: Turn Lifecycle
 type: concept
-tags: [turn, lifecycle, context-var, stop, nudge, events]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - SDK Overview]]", "[[Source - Server Overview]]"]
+tags: [sdk, agent, turn, hooks, streaming]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "sdk/turn/"
+  - "server/message_handler.py"
+  - "sdk/hooks/"
 ---
 
 # Turn Lifecycle
 
 ## Overview
 
-A "turn" in Omnideck is one complete user message → assistant response cycle, including all tool calls and sub-agent work. The turn lifecycle governs how the system is set up and torn down around each turn, ensuring clean isolation between turns, proper event routing, and safe stop/interrupt handling.
+A **turn** is a single user message → agent response cycle. It encompasses all LLM calls, tool executions, sub-agent work, and event emissions needed to produce one reply. Turns within a conversation execute sequentially; there is no parallel execution of turns within a single conversation.
 
 ## How It Works
 
-```
-handle_user_message()
-    └─ turn_scope(handler, conversation_id)    ← async context manager
-        ├─ Create EventDispatcher
-        ├─ Create asyncio stop event
-        ├─ Register conversation as active
-        ├─ Set ContextVars (dispatcher, stop_event, conversation_id)
-        ├─ Subscribe handler (event queue writer)
-        │
-        └─ [body: agent_span → run_turn]
-        
-        On exit (normal or exception):
-        ├─ Publish TurnEndPayload
-        ├─ drain() EventDispatcher (wait for in-flight async handlers)
-        ├─ Unsubscribe handler
-        ├─ Reset ContextVars
-        ├─ Remove conversation from active set
-        └─ Remove stop event
-```
+### 1. HTTP Request Arrives
 
-**ContextVars set during turn:**
-- `_current_dispatcher` — `EventDispatcher` instance; `publish_event()` uses this
-- `_stop_event` — `asyncio.Event`; `check_stop()` reads this
-- `_conversation_id` — conversation ID string; `get_conversation_id()` reads this
+`POST /api/chat` → `server/aiohttp_app.py:chat_handler()` validates the request with Pydantic and calls `server/message_handler.py:handle_user_message()`.
 
-**Stop signaling:**
-- `request_stop(conversation_id)` — HTTP endpoint sets the stop event for a specific conversation
-- `check_stop()` — raises `StopRequestedError` at safe checkpoints (within streaming delta loop)
-- Stop is per-conversation: stopping one conversation doesn't affect others
+### 2. Conversation Lookup
 
-**Nudge queues:**
-- Mid-turn user messages sent via `/api/nudge`
-- `queue_nudge(agent_id, text)` queues a message
-- `NudgeHook` (if loaded) drains the queue at `before_model` phase and injects messages into history
+`handle_user_message()` resolves or creates a `ConversationHistory` via an LRU in-memory cache (capped at 25 entries, hydrated from disk on miss).
 
-**Sub-agent inheritance:** ContextVars are inherited by child asyncio tasks; sub-agents spawned within a turn automatically publish to the same dispatcher and inherit the same stop event
+### 3. Agent Construction
+
+The `AgentProfile` is loaded by ID → `build_agent()` constructs an `Agent` dataclass carrying the model name, system prompt, inference options, and tool list.
+
+### 4. Turn Scope
+
+`turn_scope(conversation_id)` opens an async context that:
+- Creates a fresh `EventDispatcher` bound via ContextVar to the turn
+- Installs a per-conversation stop event (for cooperative cancellation)
+- Opens a nudge queue (for mid-turn user interrupts)
+- Marks the conversation as active (prevents LRU eviction)
+
+### 5. Agent Span
+
+`agent_span(agent_name, instruction, ...)` opens a context tracking the root agent's execution depth. Sub-agents spawned during the turn get deeper spans. The span automatically emits `AgentStartedPayload` on entry and `AgentCompletedPayload` on exit.
+
+### 6. Hook Composition
+
+`default_hooks()` assembles the standard hook chain:
+1. `NudgeHook` — injects queued nudge messages before model calls
+2. `StopHook` — checks for stop requests at each iteration
+3. `BudgetGuard` — enforces `max_iterations` limit
+4. `LoopDetector` — detects repetitive tool-call patterns
+5. `LoggingHook` — Rich console output per turn
+6. `ScratchpadHook` — manages the agent's scratchpad tool
+7. `LoadedSkillHook` — appends the loaded-skills block to every model call
+8. `ToolResultCapHook` — truncates oversized tool results to fit the context window
+9. `ContextHook` — fires compaction strategies when context approaches capacity
+10. `PersistenceHook` — saves conversation history to disk after each model call
+
+### 7. `run_turn()` Loop
+
+`sdk/turn/run_turn()` drives the agent:
+1. Call `before_model(history, iteration)` on all hooks
+2. Call the LLM provider with current history + tools
+3. Call `after_model(response, ...)` on hooks (can rewrite)
+4. If the response contains tool calls: call `before_tool`, execute, call `after_tool` for each
+5. Append results to history; repeat from 1
+6. When the model stops calling tools (or stop/budget fires): call `on_turn_end()`
+
+### 8. Event Streaming
+
+Tools and the turn loop publish events via `publish_event()`. The `EventDispatcher` fans them out to all subscribers. `handle_user_message()` bridges the dispatcher into an `asyncio.Queue` and yields events to the `stream_events()` SSE writer, which serializes each event as a JSONL line.
+
+### 9. Post-Turn Work
+
+After the turn loop completes:
+- `AgentEventBufferHook` saves the turn's events (screenshots, file outputs, terminal blocks) to `events.json` for conversation resume
+- Loaded skill IDs are persisted to conversation metadata
+- For new conversations, a background task generates a title via LLM
+
+## Where It Lives
+
+| File | Role |
+|------|------|
+| `server/message_handler.py` | HTTP-to-agent bridge, LRU conversation cache |
+| `sdk/turn/_turn.py` | `run_turn()` core loop |
+| `sdk/turn/_execution.py` | Hook dispatch phases |
+| `sdk/turn/_scope.py` | `turn_scope()` context manager |
+| `sdk/hooks/_default.py` | `default_hooks()` factory |
+| `sdk/events/_context.py` | `agent_span()`, `publish_event()` |
+| `sdk/events/_dispatcher.py` | `EventDispatcher` |
 
 ## Key Details
 
-- `is_turn_active(conversation_id)` allows external code (e.g., LRU eviction) to check before making changes
-- `any_turn_active()` used for monitoring
-- `drain()` is called before teardown to ensure all async event handlers complete before the queue consumer stops
-- `TurnEndPayload` is published inside the `finally` block — always fires even if the body raises
+- **Conversation isolation:** each `conversation_id` has its own history, context manager, and stop event. Concurrent conversations don't share state.
+- **Stop signal:** `request_stop(conversation_id)` sets a ContextVar event that `StopHook` checks before each LLM call. Raises `StopRequestedError` which is caught cleanly by `_run_turn()`.
+- **Nudge:** `queue_nudge(agent_id, text)` injects a user message into a running turn without creating a new turn. The `NudgeHook` splices it into history before the next model call.
+- **Sub-agents:** the turn loop calls tools synchronously, but a `spawn_agent` tool can recursively invoke `run_turn()` for a sub-agent inside the same turn scope. Sub-agents inherit the parent's dispatcher and stop event.
+
+## Open Questions
+
+- Parallel sub-agent execution — currently sub-agents are sequential; the config has `parallel.enabled` but it's not yet wired.
 
 ## Sources
 
-- [[Source - SDK Overview]]
-- [[Source - Server Overview]]
+- `docs/sdk_semantics.md` — authoritative description of Turn, Conversation, Agent Span, Event

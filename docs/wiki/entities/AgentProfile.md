@@ -1,56 +1,64 @@
 ---
 title: AgentProfile
 type: entity
-tags: [agent, profile, configuration, pydantic]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - Agents Overview]]", "[[Source - README.md]]"]
+tags: [agent, profile, configuration]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "agents/_agent_profiles.py"
+  - "agents/types.py"
 ---
 
 # AgentProfile
 
 ## Overview
 
-`AgentProfile` is a Pydantic model in `agents/_agent_profiles.py` that represents a reusable agent configuration. It bundles together a model+provider selection, system prompt, skill list, and inference parameters. Profiles are persisted as JSON files and loaded fresh from disk on every access. The setup wizard stamps the chosen model/provider onto blank profiles at first run.
+`AgentProfile` is the Pydantic model that defines an agent's full runtime configuration: model provider, model name, system prompt, inference parameters, skills, and operational limits. Profiles are stored as JSON files in the state directory and can be created, edited, duplicated, and deleted by the user.
+
+## Location
+
+Defined in `agents/_agent_profiles.py`. Re-exported from `agents/__init__.py`.
 
 ## Details
 
-**Storage:** `{home_dir}/agent_profiles/{id}.json`
+Key fields:
 
-**Key fields:**
-- `id: str` — stable identifier; "omnideck" is always sorted first in listings
-- `name: str` — display name
-- `description: str` — one-line description
-- `enabled: bool` — disabled profiles are filtered from normal listings
-- `system_prompt: str` — the agent's base instruction; memory is prepended at turn time
-- `provider: str` — which provider (e.g., "anthropic", "openai", "ollama")
-- `model: str` — model identifier
-- `skills: list[str]` — list of skill IDs to attach at baseline
-- `allow_spawn: bool` — whether this agent can spawn sub-agents
-- `allow_load_skills: bool` — whether this agent can load additional skills mid-conversation
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | `str` | Unique identifier (slug, used as filename) |
+| `name` | `str` | Display name |
+| `description` | `str` | Short description shown in the UI |
+| `system_prompt` | `str` | Root instruction given to the model |
+| `provider` | `str \| None` | LLM provider name (e.g., `"ollama"`, `"anthropic"`) |
+| `model` | `str \| None` | Model identifier |
+| `skills` | `list[str]` | Skill IDs to load at turn start |
+| `temperature` | `float \| None` | Sampling temperature |
+| `top_k` | `int \| None` | Top-K sampling |
+| `top_p` | `float \| None` | Nucleus sampling |
+| `context_window` | `int \| None` | Model context window in tokens (used for compaction) |
+| `compaction_threshold` | `float \| None` | Fill ratio (0.0–1.0) at which compaction fires |
+| `max_iterations` | `int \| None` | Turn loop iteration cap |
+| `think` | `bool \| None` | Enable chain-of-thought / thinking mode |
+| `reasoning_effort` | `str \| None` | Provider-specific reasoning effort hint |
+| `thinking_budget` | `int \| None` | Token budget for thinking |
 
-**Inference parameters:** `temperature`, `top_k`, `top_p`, `repeat_penalty`, `num_predict`, `think`, `reasoning_effort`, `reasoning_summary`, `thinking_budget`, `context_window`, `compaction_threshold`, `max_iterations`
+## Key Functions
 
-**Registry functions:**
-- `list_agent_profiles(include_disabled=False)` — sorted list; "omnideck" first
-- `get_agent_profile(profile_id)` → `AgentProfile | None`
-- `get_default_profile()` — reads `default_agent` from settings
-- `save_agent_profile(profile)` — writes JSON to disk
-- `delete_agent_profile(profile_id)` → bool
-- `duplicate_agent_profile(profile_id, new_name=None)` → new AgentProfile with new hex ID
-- `apply_llm_config_to_profiles(model, provider, context_window)` — setup wizard stamp
+- `get_agent_profile(profile_id)` — load a single profile by ID from disk
+- `get_default_profile()` — return the profile marked as default (or first available)
+- `list_agent_profiles()` — list all profiles
+- `save_agent_profile(profile)` — write profile JSON to disk
+- `delete_agent_profile(profile_id)` — remove from disk
+- `duplicate_agent_profile(profile_id)` — clone with a new ID
+- `apply_llm_config_to_profiles(provider, model)` — bulk-update all profiles to a new provider/model (used by setup wizard)
 
 ## Related Entities
 
-- [[AgentBuilder]] (creates [[Agent]] from profile)
-- [[Agent]] (runtime representation)
-- [[AgentState]] (built from profile's skills)
-- [[Skill]] (referenced by skills list)
-- [[Settings]] (provides `default_agent`)
-- [[ContextManager]] (uses `compaction_threshold` from profile)
+- [[build_agent]] — constructs an `Agent` from a profile
+- [[AgentEvent]] — events emitted during a turn driven by a profile
+- [[Task Engine]] — autonomous tasks reference a profile ID
 
 ## Sources
 
-- [[Source - Agents Overview]]
-- [[Source - README.md]]
-- [[Source - Server Overview]]
+- `agents/_agent_profiles.py`

@@ -1,47 +1,54 @@
 ---
 title: ConversationHistory
 type: entity
-tags: [conversation, history, messages, persistence]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - SDK Overview]]", "[[Source - Server Overview]]"]
+tags: [sdk, conversation, history, persistence]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "sdk/context/_history.py"
+  - "conversations/"
+  - "server/message_handler.py"
 ---
 
 # ConversationHistory
 
 ## Overview
 
-`ConversationHistory` (in `sdk/context/_history.py`) is the in-memory representation of a conversation's message list. It provides controlled access to the messages array with helpers for system message management, range deletion, and insertion — operations needed by the compaction strategy. Conversations are cached in-memory (LRU, 25 slots) in the message handler and loaded from disk on cache miss.
+`ConversationHistory` is the in-memory representation of all messages in a conversation: system, user, assistant, and tool results. It is the primary data structure passed into the agent turn loop. Its on-disk form is a JSON file in the state directory, written by `PersistenceHook` after each model call.
+
+## Location
+
+`sdk/context/_history.py`. Persistence helpers in `conversations/_store.py`. LRU cache management in `server/message_handler.py`.
 
 ## Details
 
-**Constructor:** `ConversationHistory(messages: list[dict] | None, instance_id: str = "")`
+`ConversationHistory` wraps an ordered list of message dicts (`{role, content}`). Key operations:
 
-**Key properties/methods:**
-- `messages` — full message list including system message
-- `non_system_messages` — all messages except the system message
-- `system_message` — the current system message dict, or None
-- `set_system_message(content)` — inserts or replaces the system message at position 0
-- `append(message)` — appends a message to the list
-- `drop_range(start, end)` — removes messages at `[start:end]`
-- `insert(index, message)` — inserts a message at a position
-- `get_mutable(index)` — returns the dict at index (for in-place mutation, e.g. intent extraction)
-- `instance_id` — the conversation ID string (for logging)
+- `append(message)` — add a message
+- `set_system_message(instruction)` — replace (or insert) the system message at position 0
+- `as_list()` — return the flat message list for LLM consumption
 
-**Persistence:** `PersistenceHook` calls `save_conversation_history(conversation_id, history.non_system_messages)` at turn end — the system message is excluded because it's re-generated each turn
+Messages follow the OpenAI/Ollama format: `{"role": "system"|"user"|"assistant"|"tool", "content": "..."}`.
 
-**Loading:** `load_conversation_history(conversation_id)` → `list[dict] | None`; None means new conversation
+### LRU Cache
 
-**LRU cache:** `_conversations: OrderedDict[str, ConversationHistory]` in `message_handler.py`; max 25 entries; eviction skips active turns
+`server/message_handler.py` maintains an in-memory `OrderedDict` of up to 25 `ConversationHistory` instances, keyed by `conversation_id`. On cache miss, the history is rehydrated from disk (if it exists). On eviction, the browser session for that conversation is also released.
+
+### Persistence
+
+`conversations/_store.py` reads/writes `history.json` per conversation under the state directory. `conversations/__init__.py` also provides:
+- `load_agent_events` / `save_agent_events` — for event replay on resume
+- `load_preview_state` / `save_preview_state` — for preview panel state
+- `save_conversation_title` — for generated titles
+- `load_conversation_profile` / `save_conversation_profile` — which profile a conversation used
 
 ## Related Entities
 
-- [[ContextManager]] (reads history for token estimation)
-- [[LLMCompactionStrategy]] (mutates history via `drop_range` / `insert`)
-- [[PersistenceHook]] (persists history at turn end)
-- [[MessageHandler]] (owns the LRU cache)
+- [[Turn Lifecycle]] — each turn appends to a history
+- [[Context Compaction]] — operates on the history to reduce token count
+- [[AgentProfile]] — system prompt comes from the profile
 
 ## Sources
 
-- [[Source - SDK Overview]]
-- [[Source - Server Overview]]
+- `docs/sdk_semantics.md` — Conversation and History concepts

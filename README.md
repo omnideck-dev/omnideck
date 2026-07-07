@@ -122,3 +122,7 @@ omnideck install --image omnideck:latest
 ```
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the dev workflow.
+
+## Codebase Wiki
+
+A navigable knowledge wiki lives in [`docs/wiki/`](docs/wiki/overview.md). Start with [`overview.md`](docs/wiki/overview.md) for the big picture or [`codemap.md`](docs/wiki/codemap.md) to find a specific file or task.
