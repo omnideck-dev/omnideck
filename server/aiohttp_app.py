@@ -30,6 +30,7 @@ from config import load_config
 from sdk.turn import is_turn_active, queue_nudge, request_stop
 from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
+from server._bundle_routes import register_bundle_routes
 from server._conversation_routes import register_conversation_routes
 from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
@@ -389,6 +390,9 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
 
     # Editable skills
     register_skill_routes(app)
+
+    # Export/import bundles for profiles and skills
+    register_bundle_routes(app)
 
     # Tool-category catalog
     register_tool_category_routes(app)

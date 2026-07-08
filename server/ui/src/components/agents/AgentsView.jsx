@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
 import useSkills from '../../hooks/useSkills.js';
+import { importBundleFile, importSummaryText } from '../../utils/bundles.js';
 import Badge from '../Badge.jsx';
 import ProfileBuilder from '../ProfileBuilder.jsx';
 import { useToast } from '../ToastProvider.jsx';
@@ -11,6 +12,7 @@ import Modal from '../primitives/Modal.jsx';
 import RowDeleteButton from '../primitives/RowDeleteButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
+import ExportProfileModal from './ExportProfileModal.jsx';
 import styles from './AgentsView.module.css';
 
 // Sortable columns, also shown in the toolbar's sort select.
@@ -45,7 +47,7 @@ function draftAgent(providers) {
  */
 export default function AgentsView() {
     const { profilesHook } = useAppData();
-    const { skills } = useSkills();
+    const { skills, refresh: refreshSkills } = useSkills();
     const { addToast } = useToast();
     const [providers, setProviders] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -54,6 +56,10 @@ export default function AgentsView() {
     const [deleteConflict, setDeleteConflict] = useState(null);
     const [query, setQuery] = useState('');
     const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
+    // Profile pending export (its options modal is open) and the hidden file
+    // input backing the Import button.
+    const [exportProfile, setExportProfile] = useState(null);
+    const importInputRef = useRef(null);
     // Unsaved-changes guard: the editor reports its dirty state up, and the
     // back nav shows an inline warning instead of discarding silently.
     const [builderDirty, setBuilderDirty] = useState(false);
@@ -111,6 +117,21 @@ export default function AgentsView() {
     const duplicateFromList = async (p) => {
         const created = await profilesHook.duplicateProfile(p.id);
         if (created) addToast(`Duplicated “${p.name}”.`, { type: 'success' });
+    };
+
+    // Import a bundle picked from disk. A profile bundle may carry skills, so
+    // refresh both lists. Reset the input so re-picking the same file re-fires.
+    const handleImportFile = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        const result = await importBundleFile(file);
+        if (!result.ok) {
+            addToast(result.error, { type: 'error', title: 'Import failed' });
+            return;
+        }
+        await Promise.all([profilesHook.refresh(), refreshSkills()]);
+        addToast(importSummaryText(result.data), { type: 'success' });
     };
 
     // Inline delete from the list row — no modal. A profile pinned by one or
@@ -204,6 +225,14 @@ export default function AgentsView() {
             revealOnHover: true,
             render: (p) => (
                 <span className={styles.actWrap}>
+                    <IconButton
+                        title="Export agent"
+                        aria-label={`Export ${p.name}`}
+                        data-testid="agent-export"
+                        onClick={(e) => { e.stopPropagation(); setExportProfile(p); }}
+                    >
+                        <i className="bi bi-download" />
+                    </IconButton>
                     <IconButton
                         title="Duplicate agent"
                         aria-label={`Duplicate ${p.name}`}
@@ -348,6 +377,21 @@ export default function AgentsView() {
                             <i className={`bi ${sort.dir === 'asc' ? 'bi-sort-down-alt' : 'bi-sort-down'}`} />
                         </IconButton>
                     </label>
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: 'none' }}
+                        onChange={handleImportFile}
+                        data-testid="agents-import-input"
+                    />
+                    <Button
+                        variant="outline"
+                        onClick={() => importInputRef.current?.click()}
+                        data-testid="agents-import"
+                    >
+                        <i className="bi bi-upload" /> Import
+                    </Button>
                     <Button
                         variant="filled"
                         onClick={newAgent}
@@ -377,6 +421,12 @@ export default function AgentsView() {
                     )}
                 </div>
             </div>
+            {exportProfile && (
+                <ExportProfileModal
+                    profile={exportProfile}
+                    onClose={() => setExportProfile(null)}
+                />
+            )}
         </div>
     );
 }

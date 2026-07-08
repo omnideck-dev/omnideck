@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../ToastProvider.jsx';
 import SkillsTab from '../SkillsTab.jsx';
+
+// SkillsTab reads useToast for import feedback, so every render needs a provider.
+const renderTab = () => render(<SkillsTab />, { wrapper: ToastProvider });
 
 const _skills = [
     { id: 'coder', name: 'Coder', description: 'Write code', prompt: 'Write code.', tool_categories: ['coding'] },
@@ -34,14 +38,14 @@ describe('SkillsTab', () => {
     });
 
     it('renders a row per skill from /api/skills', async () => {
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         expect(screen.getByText('Coder')).toBeInTheDocument();
         expect(screen.getByText('Mailer')).toBeInTheDocument();
     });
 
     it('shows the skill and category counts in the view tabs', async () => {
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         expect(screen.getByRole('tab', { name: /My Skills/ })).toHaveTextContent('2');
         await waitFor(() => expect(screen.getByRole('tab', { name: /Tool Categories/ })).toHaveTextContent('2'));
@@ -49,7 +53,7 @@ describe('SkillsTab', () => {
 
     it('uses a per-view search placeholder', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         expect(screen.getByPlaceholderText('Search skills…')).toBeInTheDocument();
 
@@ -58,7 +62,7 @@ describe('SkillsTab', () => {
     });
 
     it('filters the skill list by the search box', async () => {
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
 
         fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mail' } });
@@ -68,7 +72,7 @@ describe('SkillsTab', () => {
 
     it('filters the tool categories by the search box', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         await user.click(screen.getByRole('tab', { name: /Tool Categories/ }));
         await waitFor(() => expect(screen.getByTestId('cat-row-coding')).toBeInTheDocument());
@@ -80,7 +84,7 @@ describe('SkillsTab', () => {
 
     it('opens the editor when a skill is selected', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         await user.click(screen.getByTestId('skill-item-coder'));
         await waitFor(() => expect(screen.getByDisplayValue('Coder')).toBeInTheDocument());
@@ -89,7 +93,7 @@ describe('SkillsTab', () => {
 
     it('reflects and toggles a category chip active state', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         await user.click(screen.getByTestId('skill-item-coder'));
         await waitFor(() => expect(screen.getByTestId('cat-chip-coding')).toBeInTheDocument());
@@ -105,7 +109,7 @@ describe('SkillsTab', () => {
 
     it('shows a connection dot only on integration category chips', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         await user.click(screen.getByTestId('skill-item-coder'));
         await waitFor(() => expect(screen.getByTestId('cat-chip-email')).toBeInTheDocument());
@@ -116,7 +120,7 @@ describe('SkillsTab', () => {
 
     it('lists tool categories and expands a card to show its tools', async () => {
         const user = userEvent.setup();
-        render(<SkillsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
 
         await user.click(screen.getByRole('tab', { name: /Tool Categories/ }));
