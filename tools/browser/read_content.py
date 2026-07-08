@@ -20,12 +20,19 @@ _QUERY_CONTEXT_LINES = 1
 # Prefers <article>, then <main>, then falls back to <body>.
 #
 # <article> is only trusted when it actually holds the page's content. Some
-# pages (e.g. noaa.gov) wrap just the H1 headline in an <article> while the
-# real content lives in a sibling <main>; blindly returning that <article>
-# yields a single line. So an <article> is only used when its visible text is
-# both non-trivial in absolute terms and a meaningful share of the page body.
+# pages wrap only a headline or a single review in an <article> while the real
+# content lives in <main>; blindly returning that <article> drops most of the
+# page. So an <article> is the sole content root only when its visible text is
+# both non-trivial in absolute terms (>=200 chars) and a meaningful share of
+# the page body (>=5%).
+#
+# When the <article> is too thin but sits OUTSIDE <main> (a lead headline in a
+# sibling <article>, as on noaa.gov), it's still real content, so pair it with
+# <main> rather than dropping it. A thin <article> nested INSIDE <main> is
+# already covered by <main>, so <main> alone is used and nothing is duplicated.
 _CONTENT_ROOT_JS = """
 () => {
+  const main = document.querySelector('main');
   const article = document.querySelector('article');
   if (article) {
     const articleText = article.innerText || '';
@@ -33,8 +40,10 @@ _CONTENT_ROOT_JS = """
     if (articleText.length >= 200 && articleText.length >= bodyText.length * 0.05) {
       return article.outerHTML;
     }
+    if (main && !main.contains(article)) {
+      return article.outerHTML + main.outerHTML;
+    }
   }
-  const main = document.querySelector('main');
   if (main) return main.outerHTML;
   return document.body.outerHTML;
 }
