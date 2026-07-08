@@ -18,10 +18,22 @@ _QUERY_CONTEXT_LINES = 1
 
 # JS to find the best content root and return its outerHTML.
 # Prefers <article>, then <main>, then falls back to <body>.
+#
+# <article> is only trusted when it actually holds the page's content. Some
+# pages (e.g. noaa.gov) wrap just the H1 headline in an <article> while the
+# real content lives in a sibling <main>; blindly returning that <article>
+# yields a single line. So an <article> is only used when its visible text is
+# both non-trivial in absolute terms and a meaningful share of the page body.
 _CONTENT_ROOT_JS = """
 () => {
   const article = document.querySelector('article');
-  if (article) return article.outerHTML;
+  if (article) {
+    const articleText = article.innerText || '';
+    const bodyText = document.body ? document.body.innerText : '';
+    if (articleText.length >= 200 && articleText.length >= bodyText.length * 0.05) {
+      return article.outerHTML;
+    }
+  }
   const main = document.querySelector('main');
   if (main) return main.outerHTML;
   return document.body.outerHTML;

@@ -34,6 +34,20 @@ async def test_read_page_returns_markdown(browser_session, servers):
     assert body.strip() == _EXPECTED_MARKDOWN
 
 
+async def test_read_page_skips_thin_article(browser_session, servers):
+    # Regression for noaa.gov: an <article> that wraps only the lead headline
+    # must not be picked over the sibling <main> that holds the real content.
+    # The old selector returned the article unconditionally, yielding one line.
+    tab = await browser_session.open(f"{servers.primary}/thin-article/thin-article.html")
+    _, _, body = (await read_page(tab=tab)).partition("\n\n")
+
+    # The <main> content is present — we didn't stop at the thin article.
+    assert "Latest forecasts" in body
+    assert "tropical storm forecasts" in body
+    assert "Northeast River Forecast Center" in body
+    assert "Contact the newsroom" in body
+
+
 async def test_read_page_paginates(browser_session, servers, monkeypatch):
     # Shrink the read budget so the small article spans several pages, letting
     # us exercise the slice/truncate/past-end logic without a huge fixture.
