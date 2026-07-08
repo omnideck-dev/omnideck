@@ -587,6 +587,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                                         return file ? (
                                             <FilePreview
                                                 item={file}
+                                                dark={dark}
                                                 onFullscreen={() => preview.setFullscreenItem({ kind: 'file', file })}
                                             />
                                         ) : null;
@@ -618,6 +619,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 <FilePreview
                     item={preview.fullscreenItem.file}
                     fullscreen
+                    dark={dark}
                     onClose={() => preview.setFullscreenItem(null)}
                 />
             )}
