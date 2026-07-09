@@ -28,7 +28,7 @@ export default function ExportProfileModal({ profile, onClose }) {
                 Export “{profile.name}”
             </div>
             <div className={styles.body}>
-                Downloads a bundle you can import on another install. The system prompt and
+                Downloads a file you can import on another install. The system prompt and
                 every setting are always included.
             </div>
             <label className={styles.row}>
@@ -42,7 +42,7 @@ export default function ExportProfileModal({ profile, onClose }) {
                     <span className={styles.rowLabel}>Include attached skills</span>
                     <span className={styles.rowHint}>
                         {hasSkills
-                            ? `Bundles the ${profile.skills.length} attached skill${profile.skills.length === 1 ? '' : 's'} so the agent arrives complete.`
+                            ? `Includes the ${profile.skills.length} attached skill${profile.skills.length === 1 ? '' : 's'} so the agent arrives complete.`
                             : 'This agent has no attached skills.'}
                     </span>
                 </span>

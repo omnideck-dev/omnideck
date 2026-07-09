@@ -72,7 +72,7 @@ describe('importBundleFile', () => {
     it('rejects a file that is not JSON', async () => {
         const result = await importBundleFile(fileWith('not json {'));
         expect(result.ok).toBe(false);
-        expect(result.error).toMatch(/not a valid bundle/i);
+        expect(result.error).toMatch(/not a valid export/i);
     });
 
     it('posts parsed JSON to /api/import and returns data on success', async () => {

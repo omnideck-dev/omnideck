@@ -38,7 +38,7 @@ export async function importBundleFile(file) {
     try {
         payload = JSON.parse(text);
     } catch {
-        return { ok: false, error: 'That file is not a valid bundle (not JSON).' };
+        return { ok: false, error: 'That file is not a valid export (not JSON).' };
     }
     let res;
     try {

@@ -81,7 +81,7 @@ async def handle_import_bundle(request: web.Request) -> web.Response:
         bundle = Bundle.model_validate(body)
     except Exception as exc:
         logger.warning("Rejected bundle: %s", exc)
-        return web.json_response({"error": "Not a valid omnideck bundle"}, status=400)
+        return web.json_response({"error": "Not a valid omnideck export file"}, status=400)
     if not bundle.profiles and not bundle.skills:
         return web.json_response({"error": "Bundle is empty"}, status=400)
     try:
