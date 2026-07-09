@@ -1,73 +1,197 @@
-# Omnideck
+<p align="center">
+  <a href="https://omnideck.dev">
+    <img src="image.png" alt="Omnideck" width="600"/>
+  </a>
+</p>
 
-A self-hosted agentic workbench in a single container. Bring your own LLMs — securely-brokered cloud providers (OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint) or local Ollama models — and connect the integrations your agents need (Gmail, Calendar, Drive, custom MCP servers (coming soon)). Agents browse the web, write and run code, and work on routines in the background. Everything runs on your hardware.
+<h1 align="center">Omnideck</h1>
 
-![Omnideck](image.png)
+<p align="center">
+  <strong>A self-hosted AI agent workbench in a single container. Bring your own LLMs, connect your integrations, and run agents on your own hardware.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/omnideck-dev/cli/releases/latest">
+    <img src="https://img.shields.io/github/v/release/omnideck-dev/cli?style=flat-square&label=release" alt="Latest Release">
+  </a>
+  <a href="https://github.com/omnideck-dev/omnideck/actions/workflows/publish.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/omnideck-dev/omnideck/publish.yml?branch=main&style=flat-square&label=CI" alt="CI Status">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square" alt="License: Apache 2.0">
+  </a>
+  <a href="https://omnideckcommunity.slack.com/">
+    <img src="https://img.shields.io/badge/Slack-Join%20us-4A154B?style=flat-square&logo=slack&logoColor=white" alt="Slack">
+  </a>
+  <a href="https://github.com/omnideck-dev/omnideck/stargazers">
+    <img src="https://img.shields.io/github/stars/omnideck-dev/omnideck?style=flat-square" alt="GitHub Stars">
+  </a>
+</p>
+
+---
+
+## Quick Start
+
+```bash
+# Install the CLI
+brew install omnideck-dev/tap/omnideck
+
+# Install and start Omnideck
+omnideck install
+
+# Open the UI in your browser
+# → http://localhost:2337
+```
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Managing Omnideck](#managing-omnideck)
+- [Using Ollama for Local Models](#using-ollama-for-local-models)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Community & Support](#community--support)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Features
+
+- **Chat** — Talk to the agent, ask it to do things. Conversations include persistent memory across sessions.
+- **Agent profiles** — Reusable profiles bundling model, system prompt, skills, and inference parameters. Ships with defaults, or create your own.
+- **Multi-provider model support** — Use OpenAI, Anthropic, OpenRouter, any OpenAI-compatible endpoint, or local Ollama models. Model assignment is per-role (chat, vision, compaction can each use a different provider). No provider is privileged over another.
+- **Skills** — Loadable capability packages that extend what an agent can do. Skills can be loaded mid-conversation without restarting, and multiple skills can be active simultaneously on a single agent.
+- **Sub-agent orchestration** — Agents can spawn sub-agents to handle subtasks, each with its own profile and context. Sub-agents can nest arbitrarily, and execution is tracked via hierarchical agent-span IDs.
+- **Multi-agent instances** — Build separate instanes for work, home, and projects — each is its own isolated context with its own agents, configs, and tool access. Agents in one instance don't see data from another.
+- **Browser automation** — Controls Chrome with human-like clicking, typing, and scrolling. Agents can browse the web, fill forms, and extract information. 
+- **Code execution** — Writes and runs Python, installs packages, builds projects. Full sandboxed code environment inside the container.
+- **Routines** — Schedule recurring tasks that run in the background on a cron-like schedule. Agents work while you're away. The user can inspect, interrupt, or redirect any scheduled task at any time.
+- **Memory** — Persistent memory across conversations. Agents remember facts, preferences, and project context.
+- **Integrations** — Connect Gmail, Calendar, Drive, Contacts, and HTTP APIs. Integrations are named and explicit — the agent never acts on an integration without being told which one to use. MCP server support is on the roadmap.
+
+**Privacy:** Zero telemetry — no analytics SDKs, no reporting calls, no update-check endpoints, no crash reporters. The only network traffic is what you explicitly initiate: API calls to your LLM provider or your own integration calls. Everything runs on your machine. Your data stays in `~/Omnideck`.
+
+**Security:** Credentials are encrypted at rest with AES-256-GCM and decrypted only inside isolated broker processes. The agent runtime cannot directly access stored credentials. Agent processes run inside a container with restricted access to the host system.
+
+**No account required:** No Omnideck account, no registration, no login. The only account you need is with your LLM provider... and that disappears entirely if running local models.
+
+---
 
 ## Prerequisites
 
-- A container engine: [Docker](https://docs.docker.com/get-docker/) or Podman
-- The [`omnideck` CLI](https://github.com/omnideck-dev/cli) — installs and manages Omnideck for you
-- An LLM provider — a cloud account (OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint) or [Ollama](https://ollama.com/) for local models
+- **Container engine:** [Podman](https://podman.io/) 4.0+ (recommended) or [Docker](https://docs.docker.com/get-docker/) 20.10+. Other container engines such as Colima are not supported at this time. We recommend Podman for its open-source nature and smaller resource footprint.
+- **LLM provider:** An API key for OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint — or [Ollama](https://ollama.com/) for local models.
+- **RAM:** 4 GB minimum (8 GB recommended for local models).
 
-## Install the CLI
+---
 
-The `omnideck` CLI wraps your container engine with a guided installer and simple management commands. Download the binary for your platform and put it on your path.
+## Installation
 
-**Linux** (and Windows via [WSL2](https://learn.microsoft.com/windows/wsl/install)):
+### Step 1: Install the CLI
 
-```bash
-curl -L https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-linux-amd64 -o omnideck && chmod +x omnideck && sudo mv omnideck /usr/local/bin/
-```
+The `omnideck` CLI wraps your container engine with a guided installer and simple management commands.
 
-**macOS** (Apple Silicon):
+**Option A: Homebrew (macOS and Linux — recommended)**
 
 ```bash
-curl -L https://github.com/omnideck-dev/cli/releases/latest/download/omnideck-darwin-arm64 -o omnideck && chmod +x omnideck && sudo mv omnideck /usr/local/bin/
+brew install omnideck-dev/tap/omnideck
 ```
 
-On Intel Macs or ARM Linux, use the `darwin-amd64` / `linux-arm64` build from the [releases page](https://github.com/omnideck-dev/cli/releases/latest).
+To upgrade later:
 
-Verify it's on your path:
+```bash
+brew upgrade omnideck
+```
+
+**Option B: Download a binary**
+
+Grab the binary for your OS from the [releases page](https://github.com/omnideck-dev/cli/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `omnideck-darwin-arm64.tar.gz` |
+| macOS (Intel) | `omnideck-darwin-amd64.tar.gz` |
+| Linux (x86-64) | `omnideck-linux-amd64.tar.gz` |
+| Linux (ARM64) | `omnideck-linux-arm64.tar.gz` |
+| Windows (x86-64) | `omnideck-windows-amd64.zip` |
+
+Extract the archive and move the binary to a directory on your PATH. On Linux or macOS:
+
+```bash
+tar -xzf omnideck-linux-amd64.tar.gz
+chmod +x omnideck
+sudo mv omnideck /usr/local/bin/
+```
+
+**Verify the install:**
 
 ```bash
 omnideck --version
 ```
 
-## Get Started
+### Step 2: Install Omnideck
 
 ```bash
 omnideck install
 ```
 
-The install wizard detects your container engine, checks that Ollama is reachable, suggests memory limits sized for your machine, and starts the container.
+The install wizard:
 
-When it finishes, open **[http://localhost:2337](http://localhost:2337)**. A setup wizard walks you through adding an LLM provider and picking your main model (used for chat, compaction, and titles) plus an optional vision model. Cloud providers list their models automatically; Ollama lists whatever you've pulled.
+- Detects your container engine (Docker or Podman)
+- Checks whether Ollama is reachable on the host
+- Suggests container memory limits sized for your system
+- Pulls the container image and starts the container
+
+### Step 3: Open the tool
+
+When the wizard finishes, open **[http://localhost:2337](http://localhost:2337)** in your browser.
+
+A setup wizard runs in the UI the first time you open it. It guides you through:
+
+- **Adding an LLM provider** — cloud (OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint) or local Ollama
+- **Picking your main model** — used for chat, context compaction, and conversation titles
+- **Picking an optional vision model** — for tasks that involve image input
+
+Cloud providers list available models automatically. Ollama lists whatever you've already pulled.
 
 That's it — you're running.
 
+---
+
+
+
 ## Managing Omnideck
 
-Everything is driven through the CLI:
+All management is driven through the CLI:
 
 ```bash
-omnideck status      # container, data dirs, Ollama, and web UI port at a glance
-omnideck logs -f     # tail container logs
+omnideck tui         # open the TUI dashboard to manage your instances
+omnideck update      # pull the latest image and recreate the container
 omnideck stop        # gracefully stop the container
 omnideck start       # start it back up
 omnideck restart     # stop then start
-omnideck update      # pull the latest image and recreate the container
+omnideck logs -f     # tail container logs
 omnideck doctor      # run health checks and print a pass/warn/fail report
+omnideck status      # container state, data dirs, Ollama reachability, and web UI port
 omnideck uninstall   # remove the container (optionally back up and delete data)
 ```
 
-Your data lives in `~/Omnideck` and survives restarts and upgrades. Conversations, memory, agent profiles, routines, and generated files are all preserved when you `update`.
+Your data lives in a named volume and survives restarts and upgrades. Conversations, memory, agent profiles, routines, and generated files are all preserved when you `update`.
 
 Run `omnideck --help` (or `omnideck <command> --help`) for the full list of commands and flags.
 
+---
+
 ## Using Ollama for Local Models
 
-If you'd rather run models locally than use a cloud provider, install [Ollama](https://ollama.com/) on the host and pull at least one model. The setup wizard lists whatever you've pulled.
+If you'd rather run models locally than use a cloud provider, install [Ollama](https://ollama.com/) (or other local LLM manager) on the host and pull at least one model. The setup wizard lists whatever you've pulled.
 
 ```bash
 ollama pull kimi-k2.5    # main model
@@ -87,15 +211,7 @@ ollama pull kimi-k2.5:cloud
 
 Cloud variants skip your local GPU but still need to be pulled so Ollama exposes them.
 
-## Features
-
-- **Chat** — talk to the agent, ask it to do things
-- **Agents** — reusable profiles bundling model, system prompt, skills, and inference parameters. Ship with defaults, or create your own from the Agents panel in the left nav.
-- **Browser automation** — controls Chrome with human-like clicking, typing, and scrolling
-- **Code execution** — writes and runs Python, installs packages, builds projects
-- **Autonomous tasks** — schedule recurring routines that run in the background
-- **Memory** — persistent memory across conversations
-- **Integrations** — connect Gmail, Calendar, Drive, and custom MCP servers (coming soon)
+---
 
 ## Troubleshooting
 
@@ -105,7 +221,21 @@ Start with `omnideck doctor` — it runs parallel health checks (engine, contain
 
 **"Ollama connection refused"** — Only matters if you're using local models. Make sure Ollama is running on the host; `omnideck doctor` reports reachability. On macOS / Docker Desktop, Ollama must be bound to `0.0.0.0` (set `OLLAMA_HOST=0.0.0.0` and restart it — it defaults to `127.0.0.1`).
 
-## Building from Source
+---
+
+## Documentation
+
+Full documentation is available at **[omnideck.dev](https://omnideck.dev)**:
+
+- [Getting Started](https://omnideck.dev) — Install and run in under five minutes
+- [CLI Reference](https://omnideck.dev) — Full command and flag reference
+- [Local Models](https://omnideck.dev) — Run Omnideck fully offline with Ollama
+- [Integrations](https://omnideck.dev) — Connect Gmail, Calendar, and Drive
+- [Agents](https://omnideck.dev) — Create and customize agent profiles
+- [Routines](https://omnideck.dev) — Schedule background tasks
+
+<details>
+<summary>Build from source</summary>
 
 To build the Omnideck container image yourself instead of pulling from the registry:
 
@@ -122,3 +252,43 @@ omnideck install --image omnideck:latest
 ```
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the dev workflow.
+
+</details>
+
+---
+
+## Roadmap
+
+- **MCP server support** — Connect custom MCP servers as integrations
+- **Workflows** — Multi-step, conditional, and chained agent execution (an evolution of Routines)
+
+See the [project roadmap](https://github.com/omnideck-dev/omnideck/projects) for the full list.
+
+---
+
+## Community & Support
+
+- **Slack** — [Join our community](https://omnideckcommunity.slack.com/) for real-time chat and support
+- **GitHub Issues** — [Report bugs](https://github.com/omnideck-dev/omnideck/issues) and request features
+- **GitHub Discussions** — [Ask questions](https://github.com/omnideck-dev/omnideck/discussions) and share ideas
+
+### Security
+
+Found a security vulnerability? Please **do not** open a public issue. Email **security@omnideck.dev** instead. See [SECURITY.md](SECURITY.md) for details.
+
+---
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+
+- Setting up a development environment
+- Running tests
+- Submitting pull requests
+- Commit message conventions
+
+---
+
+## License
+
+Omnideck is open-source software licensed under the [Apache License 2.0](LICENSE). Fork it, modify it, use it commercially — no strings attached.
