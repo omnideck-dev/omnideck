@@ -82,7 +82,7 @@ export default function SkillsTab() {
                         <input
                             ref={importInputRef}
                             type="file"
-                            accept=".json,application/json"
+                            accept=".omnideck.agent,.omnideck.skill,.json,application/json"
                             style={{ display: 'none' }}
                             onChange={handleImportFile}
                             data-testid="skills-import-input"
@@ -124,6 +124,7 @@ export default function SkillsTab() {
                             await deleteSkill(id);
                             setSelectedId(null);
                         }}
+                        onExport={(id) => downloadSkillBundle(id)}
                     />
                 </div>
             ) : (

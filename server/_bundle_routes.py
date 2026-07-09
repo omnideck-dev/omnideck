@@ -32,13 +32,17 @@ def _slug(name: str) -> str:
     return cleaned or "bundle"
 
 
-def _download_response(bundle: Bundle, stem: str) -> web.Response:
-    """Serialize a bundle as an attachment download."""
+def _download_response(bundle: Bundle, stem: str, ext: str) -> web.Response:
+    """Serialize a bundle as an attachment download.
+
+    ``ext`` is the type-specific extension (``agent`` / ``skill``) so a
+    downloaded file's name signals what it holds; the payload is JSON either way.
+    """
     body = json.dumps(bundle.model_dump(), indent=2)
     return web.Response(
         body=body.encode("utf-8"),
         content_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{_slug(stem)}.omnideck.json"'},
+        headers={"Content-Disposition": f'attachment; filename="{_slug(stem)}.omnideck.{ext}"'},
     )
 
 
@@ -58,7 +62,7 @@ async def handle_export_profile(request: web.Request) -> web.Response:
         )
     except KeyError:
         return web.json_response({"error": f"Profile '{profile_id}' not found"}, status=404)
-    return _download_response(bundle, bundle.profiles[0].name)
+    return _download_response(bundle, bundle.profiles[0].name, "agent")
 
 
 async def handle_export_skill(request: web.Request) -> web.Response:
@@ -68,7 +72,7 @@ async def handle_export_skill(request: web.Request) -> web.Response:
         bundle = build_skill_bundle(skill_id)
     except KeyError:
         return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
-    return _download_response(bundle, bundle.skills[0].name)
+    return _download_response(bundle, bundle.skills[0].name, "skill")
 
 
 async def handle_import_bundle(request: web.Request) -> web.Response:

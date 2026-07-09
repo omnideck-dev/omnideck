@@ -143,6 +143,19 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         expect(onSave).not.toHaveBeenCalled();
     });
 
+    it('shows an Export button for a saved profile and calls onExport', async () => {
+        const user = userEvent.setup();
+        const onExport = vi.fn();
+        renderBuilder({ onExport });
+        await user.click(screen.getByTestId('profile-export'));
+        expect(onExport).toHaveBeenCalledWith('p1');
+    });
+
+    it('hides the Export button on an unsaved draft profile', () => {
+        renderBuilder({ profile: _profile({ _unsaved: true }), onExport: vi.fn() });
+        expect(screen.queryByTestId('profile-export')).not.toBeInTheDocument();
+    });
+
     it('surfaces a save error as a Callout alert', async () => {
         const user = userEvent.setup();
         const onSave = vi.fn().mockResolvedValue({
