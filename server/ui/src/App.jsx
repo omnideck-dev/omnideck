@@ -1,19 +1,9 @@
-import { useState, useEffect } from 'react';
-
 import DesktopApp from './DesktopApp.jsx';
 
+// Theme now lives in <ThemeProvider> at the app root; the shell just renders
+// the desktop layout.
 function App() {
-    const [dark, setDark] = useState(false);
-
-    useEffect(() => {
-        setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }, []);
-
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    }, [dark]);
-
-    return <DesktopApp dark={dark} onToggleTheme={() => setDark((d) => !d)} />;
+    return <DesktopApp />;
 }
 
 export default App;

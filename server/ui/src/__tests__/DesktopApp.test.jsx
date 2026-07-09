@@ -233,7 +233,7 @@ async function renderApp() {
     await act(async () => {
         result = render(
             <AppDataProvider>
-                <DesktopApp dark={false} onToggleTheme={vi.fn()} />
+                <DesktopApp />
             </AppDataProvider>,
         );
     });

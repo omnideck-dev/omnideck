@@ -139,16 +139,16 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
 
                 <div className={styles.toolbarRight}>
                     {canSave && viewMode === 'source' && (
-                        <button
-                            className={`${styles.saveBtn} ${isDirty ? styles.saveBtnDirty : ''}`}
+                        <IconButton
+                            size="sm"
                             onClick={save}
                             disabled={!isDirty || saving}
-                            title={saveError ? `Save failed: ${saveError}` : (isDirty ? 'Save (⌘S)' : 'Saved')}
+                            title={saveError ? `Save failed: ${saveError}` : saving ? 'Saving…' : isDirty ? 'Save (⌘S)' : 'Saved'}
+                            aria-label="Save file"
                             data-testid={t('file-save')}
                         >
-                            <SaveIcon size={12} />
-                            {saving ? 'Saving…' : isDirty ? 'Save' : 'Saved'}
-                        </button>
+                            <SaveIcon size={14} className={isDirty ? styles.saveIconDirty : undefined} />
+                        </IconButton>
                     )}
                     {stale && (
                         <button

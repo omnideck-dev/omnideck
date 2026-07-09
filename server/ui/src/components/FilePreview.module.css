@@ -128,35 +128,10 @@
     color: var(--text-primary);
 }
 
-/* Save button (right side, source edit mode) */
-.saveBtn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    font-size: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.saveBtn:disabled {
-    cursor: default;
-    opacity: 0.65;
-}
-
-.saveBtnDirty {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-}
-
-.saveBtnDirty:hover {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
+/* Save icon tints to the accent while there are unsaved edits, so the bare
+   icon still signals a pending save the way the old labelled button did. */
+.saveIconDirty {
+    color: var(--accent);
 }
 
 /* Content area */
