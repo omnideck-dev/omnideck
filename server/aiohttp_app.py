@@ -30,13 +30,13 @@ from config import load_config
 from sdk.turn import is_turn_active, queue_nudge, request_stop
 from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
-from server._bundle_routes import register_bundle_routes
 from server._conversation_routes import register_conversation_routes
 from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._model_routes import register_model_routes
 from server._profile_routes import register_profile_routes
+from server._sharing_routes import register_sharing_routes
 from server._skill_routes import register_skill_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._provider_routes import register_provider_routes
@@ -391,8 +391,8 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
     # Editable skills
     register_skill_routes(app)
 
-    # Export/import bundles for profiles and skills
-    register_bundle_routes(app)
+    # Sharing: export/import for profiles and skills
+    register_sharing_routes(app)
 
     # Tool-category catalog
     register_tool_category_routes(app)
