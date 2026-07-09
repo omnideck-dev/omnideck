@@ -29,6 +29,7 @@ from agents.types import Data
 from config import load_config
 from sdk.turn import is_turn_active, queue_nudge, request_stop
 from server._artifacts_routes import register_artifacts_routes
+from server._container_file_routes import register_container_file_routes
 from server._browser_control_routes import register_browser_control_routes
 from server._conversation_routes import register_conversation_routes
 from server._feature_routes import register_feature_routes
@@ -236,45 +237,6 @@ async def nudge_handler(request: Request) -> Response:
     return web.json_response({"ok": True})
 
 
-async def container_file_handler(request: Request) -> StreamResponse:
-    """Serve files from the container's home directory via the host volume mount."""
-    path = request.match_info.get("path", "")
-    cfg = load_config()
-    host_home = Path(cfg.virtual_computer.home_dir).resolve()
-    host_path = (host_home / path).resolve()
-
-    if not host_path.is_relative_to(host_home):
-        return web.Response(status=403, text="Forbidden")
-    if not host_path.is_file():
-        return web.Response(status=404, text="Not found")
-
-    return web.FileResponse(host_path)
-
-
-async def container_file_write_handler(request: Request) -> Response:
-    """Overwrite a container-home file with the request body.
-
-    Backs the preview panel's source editor: the frontend PUTs the edited
-    text to the same URL it reads the file from. Writes are confined to the
-    container home directory (same jail as the read handler) and only replace
-    files that already exist — this route edits sources, it does not create
-    new paths.
-    """
-    path = request.match_info.get("path", "")
-    cfg = load_config()
-    host_home = Path(cfg.virtual_computer.home_dir).resolve()
-    host_path = (host_home / path).resolve()
-
-    if not host_path.is_relative_to(host_home):
-        return web.Response(status=403, text="Forbidden")
-    if not host_path.is_file():
-        return web.Response(status=404, text="Not found")
-
-    body = await request.read()
-    host_path.write_bytes(body)
-    return web.json_response({"ok": True})
-
-
 async def index_handler(_request: Request) -> StreamResponse:
     """Serve the main UI index file.
 
@@ -444,20 +406,7 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
 
     # Container file serving — lets the frontend (and agent-authored HTML) reference
     # container files by their real path instead of base64-encoding them.
-    cfg = load_config()
-    container_prefix = cfg.virtual_computer.home_dir
-    app.router.add_route("GET", f"{container_prefix}/{{path:.*}}", container_file_handler)
-    # HEAD lets the preview poll a file's Last-Modified/ETag without transferring the body.
-    app.router.add_route("HEAD", f"{container_prefix}/{{path:.*}}", container_file_handler)
-    # PUT lets the preview panel's source editor save edits back to disk.
-    app.router.add_route("PUT", f"{container_prefix}/{{path:.*}}", container_file_write_handler)
-    # Alias for the pre-rename home path so stale references (old conversation
-    # history, agent-authored HTML) keep resolving. The handler only uses the
-    # wildcard tail, so both prefixes serve the same files. Remove once no
-    # stored content references the old path.
-    app.router.add_route("GET", "/home/computron/{path:.*}", container_file_handler)
-    app.router.add_route("HEAD", "/home/computron/{path:.*}", container_file_handler)
-    app.router.add_route("PUT", "/home/computron/{path:.*}", container_file_write_handler)
+    register_container_file_routes(app)
 
     # UI routes
     app.router.add_route("GET", "/", index_handler)
