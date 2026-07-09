@@ -5,12 +5,10 @@
   <title>Blade Runner 2049 — Reviews</title>
 </head>
 <body>
-  <!-- Like letterboxd.com: the first <article> wraps a single review whose
-       text easily clears 200 chars, so the absolute threshold alone would
-       still trust it. But that review is a tiny fraction of a huge <main>,
-       so the >=5% relative threshold is what rejects it. The review is nested
-       INSIDE <main>, so <main> already contains it — read_page must return the
-       whole <main>, not just the one review, and must not duplicate it. -->
+  <!-- Like letterboxd.com: the first <article> wraps a single review nested
+       inside a large <main>. Preferring <article> would return only that one
+       review. Preferring <main> returns the whole page, and since the review
+       lives inside <main> it appears there once. -->
   <main>
     <h1>Blade Runner 2049</h1>
 

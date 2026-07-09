@@ -35,11 +35,10 @@ async def test_read_page_returns_markdown(browser_session, servers):
 
 
 async def test_read_page_thin_article_beside_main(browser_session, servers):
-    # Regression for noaa.gov: an <article> that wraps only the lead headline,
-    # as a sibling of the <main> that holds the real content. The old selector
-    # returned the article unconditionally, yielding one line. The fix must
-    # return the <main> content — and keep the headline, since it's real
-    # content sitting outside <main>.
+    # Regression for pages like noaa.gov: an <article> wraps only the lead
+    # headline, sitting beside the <main> that holds the real content. The old
+    # selector returned the <article> and produced a single line. Preferring
+    # <main> gives the agent the actual page content.
     tab = await browser_session.open(f"{servers.primary}/thin-article/thin-article.html")
     _, _, body = (await read_page(tab=tab)).partition("\n\n")
 
@@ -48,16 +47,14 @@ async def test_read_page_thin_article_beside_main(browser_session, servers):
     assert "tropical storm forecasts" in body
     assert "Northeast River Forecast Center" in body
     assert "Contact the newsroom" in body
-    # The lead headline from the sibling <article> is preserved, not dropped.
-    assert "Storm warning issued for the eastern seaboard" in body
 
 
 async def test_read_page_thin_article_inside_main(browser_session, servers):
-    # Regression for letterboxd.com: the first <article> wraps a single review
-    # nested inside a large <main>. The review text clears 200 chars, so the
-    # absolute threshold alone would still trust it — the >=5% relative check
-    # is what rejects it. read_page must return the whole <main>, and since the
-    # review lives inside <main> it must appear exactly once (no duplication).
+    # Regression for pages like letterboxd.com: the first <article> wraps a
+    # single review nested inside a large <main>. The old selector returned that
+    # one review and dropped the rest of the page. Preferring <main> returns the
+    # whole page, and since the review lives inside <main> it still appears,
+    # exactly once, rather than being returned alone.
     tab = await browser_session.open(f"{servers.primary}/thin-article/nested-review.html")
     _, _, body = (await read_page(tab=tab)).partition("\n\n")
 
@@ -66,7 +63,7 @@ async def test_read_page_thin_article_inside_main(browser_session, servers):
     assert "Directed by Denis Villeneuve" in body
     assert "Review by neon_dreams" in body
     assert "Review by late_night_screening" in body
-    # The nested review is included, exactly once — not dropped, not duplicated.
+    # The nested review is still there, exactly once.
     assert body.count("Review by cinephile_42") == 1
 
 

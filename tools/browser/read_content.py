@@ -17,34 +17,19 @@ _READ_BUDGET = 20_000
 _QUERY_CONTEXT_LINES = 1
 
 # JS to find the best content root and return its outerHTML.
-# Prefers <article>, then <main>, then falls back to <body>.
+# Prefers <main>, then <article>, then falls back to <body>.
 #
-# <article> is only trusted when it actually holds the page's content. Some
-# pages wrap only a headline or a single review in an <article> while the real
-# content lives in <main>; blindly returning that <article> drops most of the
-# page. So an <article> is the sole content root only when its visible text is
-# both non-trivial in absolute terms (>=200 chars) and a meaningful share of
-# the page body (>=5%).
-#
-# When the <article> is too thin but sits OUTSIDE <main> (a lead headline in a
-# sibling <article>, as on noaa.gov), it's still real content, so pair it with
-# <main> rather than dropping it. A thin <article> nested INSIDE <main> is
-# already covered by <main>, so <main> alone is used and nothing is duplicated.
+# <main> is checked before <article> because some pages wrap only a headline or
+# a single review in an <article> while the real content lives in <main>.
+# Preferring <article> there returns almost nothing. An <article> is used only
+# when there is no <main> and it actually holds text, so a headline-only
+# <article> falls through to <body> instead of returning a single line.
 _CONTENT_ROOT_JS = """
 () => {
   const main = document.querySelector('main');
-  const article = document.querySelector('article');
-  if (article) {
-    const articleText = article.innerText || '';
-    const bodyText = document.body ? document.body.innerText : '';
-    if (articleText.length >= 200 && articleText.length >= bodyText.length * 0.05) {
-      return article.outerHTML;
-    }
-    if (main && !main.contains(article)) {
-      return article.outerHTML + main.outerHTML;
-    }
-  }
   if (main) return main.outerHTML;
+  const article = document.querySelector('article');
+  if (article && (article.innerText || '').length >= 200) return article.outerHTML;
   return document.body.outerHTML;
 }
 """
