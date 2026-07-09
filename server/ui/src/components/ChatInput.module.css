@@ -4,6 +4,9 @@
 
 /* ── Composer card ───────────────────────────────────── */
 .inputArea {
+  /* Positioning context for the corner expand button, so the button stays
+     pinned to the card's top-right corner regardless of the attachment tray. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
@@ -22,9 +25,10 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
-/* Textarea wrapper — needed to position the expand button absolutely. */
+/* Groups the textarea with the corner expand button. In expanded mode this is
+   the flex child that stretches to fill the card. */
 .textareaWrapper {
-  position: relative;
+  min-width: 0;
 }
 
 .customInput {

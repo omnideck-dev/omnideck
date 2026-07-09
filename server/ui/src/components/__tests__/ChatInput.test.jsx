@@ -127,7 +127,7 @@ describe('ChatInput', () => {
     it('renders a file card (not an image) for a non-image attachment', async () => {
         render(<ChatInput onSend={vi.fn()} isStreaming={false}
             attachment={{ base64: 'YWJj', contentType: 'application/pdf', filename: 'report.pdf' }} />);
-        expect(await screen.findByText('report.pdf')).toBeInTheDocument();
+        expect(await screen.findByTitle('report.pdf')).toBeInTheDocument();
         expect(screen.getByText(/^PDF/)).toBeInTheDocument();
         expect(screen.queryByTestId('attachment-image')).not.toBeInTheDocument();
     });
