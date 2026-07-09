@@ -72,7 +72,7 @@ describe('RecentConversations', () => {
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
 
         await user.type(screen.getByTestId('recent-search'), 'snake');
-        expect(screen.getAllByTestId('recent-item')).toHaveLength(1);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(1));
         expect(screen.getByText('snake game')).toBeInTheDocument();
     });
 

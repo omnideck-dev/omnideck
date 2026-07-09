@@ -189,11 +189,13 @@ describe('ChatInput', () => {
 
         expect(onSend).toHaveBeenCalledWith(
             'Check this image',
-            expect.objectContaining({
-                content_type: 'image/png',
-                base64: expect.any(String),
-                filename: 'test.png',
-            }),
+            expect.arrayContaining([
+                expect.objectContaining({
+                    content_type: 'image/png',
+                    base64: expect.any(String),
+                    filename: 'test.png',
+                }),
+            ]),
         );
     });
 
@@ -257,10 +259,12 @@ describe('ChatInput', () => {
 
             expect(onSend).toHaveBeenCalledWith(
                 'External image',
-                expect.objectContaining({
-                    content_type: 'image/png',
-                    base64: MOCK_BASE64_PNG,
-                }),
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        content_type: 'image/png',
+                        base64: MOCK_BASE64_PNG,
+                    }),
+                ]),
             );
         });
 
