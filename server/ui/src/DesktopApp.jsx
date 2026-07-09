@@ -313,7 +313,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
         return () => clearTimeout(handle);
     }, [_previewStateSnapshot, savePreviewState, view, agentState.selectedAgentId, agentState.rootId]);
 
-    const handleSend = useCallback((message, fileData) => {
+    const handleSend = useCallback((message, attachments) => {
         setAttachment(null);
         if (isStreaming) {
             if (!stopRequested) sendNudge(message);
@@ -321,7 +321,7 @@ function DesktopAppInner({ dark, onToggleTheme }) {
             // The new-conversation case (optimistic sidebar insert + title
             // generation) is handled by the onConversationStarted callback,
             // which sendMessage fires when it starts a fresh conversation.
-            sendMessage(message, fileData, selectedProfileId);
+            sendMessage(message, attachments, selectedProfileId);
         }
     }, [sendMessage, sendNudge, isStreaming, stopRequested, selectedProfileId]);
 

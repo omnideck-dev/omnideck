@@ -10,12 +10,13 @@ function _uuid() {
 
 /**
  * Build the request body for /api/chat.
+ * Strips the UI-only `preview` field from each attachment before sending.
  */
-function _buildRequestBody(message, fileData, profileId, conversationId) {
+function _buildRequestBody(message, attachments, profileId, conversationId) {
     const body = { message: message || '(uploaded file)' };
     if (conversationId) body.conversation_id = conversationId;
-    if (fileData) {
-        body.data = [fileData];
+    if (attachments?.length) {
+        body.data = attachments.map(({ preview: _preview, ...rest }) => rest);
     }
     if (profileId) body.profile_id = profileId;
     return body;
@@ -620,8 +621,8 @@ export default function useStreamingChat(callbacks) {
         }
     }, [callbacks]);
 
-    const sendMessage = useCallback(async (message, fileData, profileId) => {
-        if (!message && !fileData) return;
+    const sendMessage = useCallback(async (message, attachments, profileId) => {
+        if (!message && !attachments?.length) return;
 
         // First message of a brand-new conversation: the events-first backend
         // persists it as soon as the turn starts, so tell consumers now (the
@@ -635,16 +636,21 @@ export default function useStreamingChat(callbacks) {
             });
         }
 
-        // Build user message with optional attachment preview
+        // Build user message with optional attachment previews
         const userMsg = {
             id: `u_${Date.now()}_${Math.random().toString(36).slice(2)}`,
             role: 'user',
             content: message || '',
         };
-        if (fileData && fileData.content_type && fileData.content_type.startsWith('image/')) {
-            userMsg.images = [`data:${fileData.content_type};base64,${fileData.base64}`];
-        } else if (fileData && fileData.filename) {
-            userMsg.files = [{ filename: fileData.filename, content_type: fileData.content_type }];
+        if (attachments?.length) {
+            const images = attachments
+                .filter(a => a.content_type?.startsWith('image/'))
+                .map(a => a.preview || `data:${a.content_type};base64,${a.base64}`);
+            const files = attachments
+                .filter(a => !a.content_type?.startsWith('image/'))
+                .map(a => ({ filename: a.filename, content_type: a.content_type }));
+            if (images.length) userMsg.images = images;
+            if (files.length) userMsg.files = files;
         }
 
         // Add user message + a placeholder "Thinking..." bubble to the
@@ -668,7 +674,7 @@ export default function useStreamingChat(callbacks) {
             ],
         });
 
-        const body = _buildRequestBody(message, fileData, profileId, conversationIdRef.current);
+        const body = _buildRequestBody(message, attachments, profileId, conversationIdRef.current);
 
         // IDs for pending animation frame flushes. Declared here so the
         // finally block can cancel them if the stream errors or aborts.
