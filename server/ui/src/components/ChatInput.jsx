@@ -181,6 +181,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                                 key={i}
                                 src={att.preview || undefined}
                                 filename={att.filename}
+                                content_type={att.content_type}
                                 sizeBytes={att.base64 ? _base64Bytes(att.base64) : undefined}
                                 onRemove={() => removeAttachment(i)}
                             />

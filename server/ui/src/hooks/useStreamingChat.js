@@ -636,22 +636,23 @@ export default function useStreamingChat(callbacks) {
             });
         }
 
-        // Build user message with optional attachment previews
+        // Build user message. The pending attachment list keeps upload order
+        // and carries filename + content_type for every entry (images too), so
+        // the optimistic turn renders the same chips the composer showed.
         const userMsg = {
             id: `u_${Date.now()}_${Math.random().toString(36).slice(2)}`,
             role: 'user',
             content: message || '',
         };
-        if (attachments?.length) {
-            const images = attachments
-                .filter(a => a.content_type?.startsWith('image/'))
-                .map(a => a.preview || `data:${a.content_type};base64,${a.base64}`);
-            const files = attachments
-                .filter(a => !a.content_type?.startsWith('image/'))
-                .map(a => ({ filename: a.filename, content_type: a.content_type }));
-            if (images.length) userMsg.images = images;
-            if (files.length) userMsg.files = files;
-        }
+        const pendingAttachments = (attachments || []).map((a) => {
+            const isImage = a.content_type?.startsWith('image/');
+            return {
+                kind: isImage ? 'image' : 'file',
+                filename: a.filename,
+                content_type: a.content_type,
+                src: isImage ? (a.preview || `data:${a.content_type};base64,${a.base64}`) : undefined,
+            };
+        });
 
         // Add user message + a placeholder "Thinking..." bubble to the
         // legacy messages list (still used by ChatPanel's turnCount and
@@ -668,10 +669,7 @@ export default function useStreamingChat(callbacks) {
         setPendingUserPrompt({
             id: userMsg.id,
             content: userMsg.content,
-            attachments: [
-                ...(userMsg.images || []).map((src) => ({ kind: 'image', src })),
-                ...(userMsg.files || []),
-            ],
+            attachments: pendingAttachments,
         });
 
         const body = _buildRequestBody(message, attachments, profileId, conversationIdRef.current);

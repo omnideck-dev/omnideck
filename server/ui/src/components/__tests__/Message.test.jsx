@@ -54,14 +54,29 @@ describe('Message markdown image handling', () => {
 
 describe('Message user attachments', () => {
     it('renders an image attachment as a thumbnail chip', () => {
-        render(<Message role="user" content="look at this" images={[DATA_URL_PNG]} />);
+        render(<Message role="user" content="look at this"
+            attachments={[{ src: DATA_URL_PNG, content_type: 'image/png', filename: 'shot.png' }]} />);
         expect(screen.getByTestId('attachment-image')).toHaveAttribute('src', DATA_URL_PNG);
     });
 
     it('renders a file attachment as a file card', () => {
-        render(<Message role="user" content="" files={[{ filename: 'report.pdf' }]} />);
+        render(<Message role="user" content=""
+            attachments={[{ filename: 'report.pdf', content_type: 'application/pdf' }]} />);
         expect(screen.getByTestId('attachment-file')).toBeInTheDocument();
-        expect(screen.getByText('report.pdf')).toBeInTheDocument();
+        expect(screen.getByTitle('report.pdf')).toBeInTheDocument();
+    });
+
+    it('preserves upload order across mixed images and files', () => {
+        render(<Message role="user" content=""
+            attachments={[
+                { filename: 'a.txt', content_type: 'text/plain' },
+                { src: DATA_URL_PNG, content_type: 'image/png', filename: 'b.png' },
+                { filename: 'c.json', content_type: 'application/json' },
+            ]} />);
+        const titles = screen.getAllByTestId('message-user')[0]
+            .querySelectorAll('[title]');
+        expect([...titles].map((el) => el.getAttribute('title')))
+            .toEqual(['a.txt', 'b.png', 'c.json']);
     });
 
     it('renders no attachment row when there are none', () => {
