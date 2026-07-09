@@ -22,6 +22,9 @@ export default function useFileContent(item) {
     const { filename, content_type, content, path } = item || {};
 
     const [fetchedText, setFetchedText] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
     const [viewMode, setViewMode] = useState(() =>
         hasPreviewToggle(content_type, filename) ? 'preview' : 'source'
     );
@@ -61,6 +64,44 @@ export default function useFileContent(item) {
         if (content) return _decodeText(content);
         return fetchedText;
     }, [content, fetchedText, isImage, isPdf]);
+
+    // The source view is an edit view: `draft` is the editable buffer. It mirrors
+    // the on-disk text until the user types, and re-syncs whenever the text
+    // changes underneath it (file switch, external refresh, or a save reload).
+    useEffect(() => {
+        setDraft(text);
+        setSaveError(null);
+    }, [text]);
+
+    // Save is offered only for real disk-backed files (a path with no inline
+    // base64). Inline snapshots have nowhere to write back to.
+    const canSave = !isImage && !isPdf && !!path && !content;
+    const isDirty = draft != null && draft !== text;
+
+    const save = useCallback(async () => {
+        if (!canSave || draft == null) return false;
+        setSaving(true);
+        setSaveError(null);
+        try {
+            const res = await fetch(path, {
+                method: 'PUT',
+                headers: { 'Content-Type': content_type || 'text/plain; charset=utf-8' },
+                body: draft,
+            });
+            if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+            // Re-baseline the disk watcher and reload the just-written bytes as
+            // the canonical text, so the dirty flag clears and our own write
+            // doesn't trip the "changed on disk" prompt.
+            if (watchKey) fileWatch.refresh(watchKey);
+            else setFetchedText(draft);
+            return true;
+        } catch (err) {
+            setSaveError(err.message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    }, [canSave, draft, path, content_type, watchKey]);
 
     // Fetch remote text content (not for images or PDFs). Re-runs on refresh.
     useEffect(() => {
@@ -184,6 +225,13 @@ export default function useFileContent(item) {
 
     return {
         text,
+        draft,
+        setDraft,
+        isDirty,
+        canSave,
+        save,
+        saving,
+        saveError,
         viewMode,
         setViewMode,
         isHtml,

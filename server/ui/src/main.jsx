@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { ToastProvider } from './components/ToastProvider.jsx';
 import { AppDataProvider } from './contexts/AppData.jsx';
+import { ThemeProvider } from './contexts/Theme.jsx';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
@@ -22,10 +23,12 @@ window.fetch = (input, init = {}) => {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <ToastProvider>
-            <AppDataProvider>
-                <App />
-            </AppDataProvider>
-        </ToastProvider>
+        <ThemeProvider>
+            <ToastProvider>
+                <AppDataProvider>
+                    <App />
+                </AppDataProvider>
+            </ToastProvider>
+        </ThemeProvider>
     </React.StrictMode>
 );

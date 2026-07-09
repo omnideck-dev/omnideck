@@ -6,6 +6,7 @@ import DownloadIcon from './icons/DownloadIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
+import SaveIcon from './icons/SaveIcon.jsx';
 import RefreshIcon from './icons/RefreshIcon.jsx';
 import FileContentRenderer from './FileContentRenderer.jsx';
 import IconButton from './primitives/IconButton.jsx';
@@ -29,6 +30,13 @@ function getFileIcon(contentType, filename) {
 export default function FilePreview({ item, fullscreen = false, onFullscreen, onClose }) {
     const {
         text,
+        draft,
+        setDraft,
+        isDirty,
+        canSave,
+        save,
+        saving,
+        saveError,
         viewMode,
         setViewMode,
         isHtml,
@@ -63,6 +71,19 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [fullscreen, handleKeyDown]);
+
+    // Cmd/Ctrl+S saves the source edits, matching editor muscle memory.
+    useEffect(() => {
+        if (!canSave) return undefined;
+        const onSaveKey = (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                if (isDirty && !saving) save();
+            }
+        };
+        document.addEventListener('keydown', onSaveKey);
+        return () => document.removeEventListener('keydown', onSaveKey);
+    }, [canSave, isDirty, saving, save]);
 
     const { filename, content_type } = item;
     const fileIcon = getFileIcon(content_type, filename);
@@ -117,6 +138,18 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                 </div>
 
                 <div className={styles.toolbarRight}>
+                    {canSave && viewMode === 'source' && (
+                        <IconButton
+                            size="sm"
+                            onClick={save}
+                            disabled={!isDirty || saving}
+                            title={saveError ? `Save failed: ${saveError}` : saving ? 'Saving…' : isDirty ? 'Save (⌘S)' : 'Saved'}
+                            aria-label="Save file"
+                            data-testid={t('file-save')}
+                        >
+                            <SaveIcon size={14} className={isDirty ? styles.saveIconDirty : undefined} />
+                        </IconButton>
+                    )}
                     {stale && (
                         <button
                             className={styles.refreshLink}
@@ -177,6 +210,8 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                     item={item}
                     viewMode={viewMode}
                     text={text}
+                    draft={draft}
+                    onDraftChange={setDraft}
                     isMarkdown={isMarkdown}
                     isHtml={isHtml}
                     isImageFile={isImageFile}
