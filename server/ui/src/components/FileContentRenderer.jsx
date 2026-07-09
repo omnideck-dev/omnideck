@@ -20,7 +20,6 @@ export default function FileContentRenderer({
     text,
     draft,
     onDraftChange,
-    dark,
     isMarkdown,
     isHtml,
     isImageFile,
@@ -54,7 +53,6 @@ export default function FileContentRenderer({
                             onChange={onDraftChange}
                             filename={filename}
                             contentType={content_type}
-                            dark={dark}
                         />
                     </Suspense>
                 )

@@ -27,7 +27,7 @@ function getFileIcon(contentType, filename) {
  * overlay. The two modes share one toolbar and renderer; `fullscreen` only swaps
  * the outer chrome (overlay + Esc + Back vs panel + Expand).
  */
-export default function FilePreview({ item, fullscreen = false, dark = false, onFullscreen, onClose }) {
+export default function FilePreview({ item, fullscreen = false, onFullscreen, onClose }) {
     const {
         text,
         draft,
@@ -212,7 +212,6 @@ export default function FilePreview({ item, fullscreen = false, dark = false, on
                     text={text}
                     draft={draft}
                     onDraftChange={setDraft}
-                    dark={dark}
                     isMarkdown={isMarkdown}
                     isHtml={isHtml}
                     isImageFile={isImageFile}
