@@ -33,7 +33,10 @@ describe('importSummaryText', () => {
 
 describe('download helpers', () => {
     function captureAnchor() {
-        const anchor = { href: '', rel: '', click: vi.fn() };
+        // A real <a> so appendChild/remove work; only click is stubbed (jsdom
+        // would otherwise try to navigate).
+        const anchor = document.createElement('a');
+        anchor.click = vi.fn();
         vi.spyOn(document, 'createElement').mockReturnValue(anchor);
         return anchor;
     }

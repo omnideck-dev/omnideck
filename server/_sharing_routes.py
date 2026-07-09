@@ -1,4 +1,4 @@
-"""HTTP route handlers for exporting and importing profile/skill bundles.
+"""HTTP route handlers for the sharing API — export and import.
 
 Export returns a bundle as a downloadable JSON document; import accepts one
 back and creates fresh copies of everything inside it.
@@ -12,7 +12,7 @@ import re
 
 from aiohttp import web
 
-from bundles import (
+from sharing import (
     Bundle,
     build_profile_bundle,
     build_skill_bundle,
@@ -95,11 +95,11 @@ async def handle_import_bundle(request: web.Request) -> web.Response:
     return web.json_response(summary.model_dump(), status=201)
 
 
-def register_bundle_routes(app: web.Application) -> None:
-    """Register the export/import bundle routes."""
+def register_sharing_routes(app: web.Application) -> None:
+    """Register the sharing (export/import) routes."""
     app.router.add_route("GET", "/api/profiles/{id}/export", handle_export_profile)
     app.router.add_route("GET", "/api/skills/{id}/export", handle_export_skill)
     app.router.add_route("POST", "/api/import", handle_import_bundle)
 
 
-__all__ = ["register_bundle_routes"]
+__all__ = ["register_sharing_routes"]

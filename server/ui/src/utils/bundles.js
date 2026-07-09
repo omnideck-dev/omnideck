@@ -8,7 +8,11 @@ function triggerDownload(url) {
     const a = document.createElement('a');
     a.href = url;
     a.rel = 'noopener';
+    // Some browsers only honor a programmatic download click when the anchor
+    // is in the document, so attach it briefly.
+    document.body.appendChild(a);
     a.click();
+    a.remove();
 }
 
 export function downloadProfileBundle(id, { includeSkills = false, includeModel = true } = {}) {

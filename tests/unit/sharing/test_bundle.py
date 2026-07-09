@@ -13,7 +13,7 @@ from agents._agent_profiles import (
     list_agent_profiles,
     save_agent_profile,
 )
-from bundles import (
+from sharing import (
     BUNDLE_KIND,
     Bundle,
     build_profile_bundle,

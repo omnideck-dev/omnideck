@@ -1,4 +1,4 @@
-"""Tests for server._bundle_routes HTTP handlers.
+"""Tests for server._sharing_routes HTTP handlers.
 
 Export returns a downloadable bundle with a Content-Disposition header; import
 accepts a bundle back and creates fresh copies. These cover the option query
@@ -12,7 +12,7 @@ import pytest
 
 from agents._agent_profiles import AgentProfile, list_agent_profiles, save_agent_profile
 from sdk.skills._store import SkillRecord, list_skill_records, save_skill_record
-from server._bundle_routes import (
+from server._sharing_routes import (
     handle_export_profile,
     handle_export_skill,
     handle_import_bundle,
