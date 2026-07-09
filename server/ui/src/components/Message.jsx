@@ -150,20 +150,20 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
     );
 }
 
-function UserMessage({ content, images, files }) {
-    const imageList = Array.isArray(images) ? images : [];
-    const fileList = Array.isArray(files) ? files : [];
-    const hasAttachments = imageList.length > 0 || fileList.length > 0;
+function UserMessage({ content, attachments }) {
+    const list = Array.isArray(attachments) ? attachments : [];
     return (
         <div className={`${styles.message} ${styles.user}`} data-testid="message-user">
             <div className={styles.bubble}>
-                {hasAttachments && (
+                {list.length > 0 && (
                     <div className={styles.attachments}>
-                        {imageList.map((src, i) => (
-                            <AttachmentChip key={`img-${i}`} src={src} />
-                        ))}
-                        {fileList.map((f, i) => (
-                            <AttachmentChip key={`file-${i}`} filename={f.filename} />
+                        {list.map((a, i) => (
+                            <AttachmentChip
+                                key={i}
+                                src={a.src || undefined}
+                                filename={a.filename}
+                                content_type={a.content_type}
+                            />
                         ))}
                     </div>
                 )}
