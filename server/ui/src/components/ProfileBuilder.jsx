@@ -35,6 +35,7 @@ export default function ProfileBuilder({
     onSave,
     onDelete,
     onDuplicate,
+    onExport,
     onDirtyChange,
     providers,
     skills,
@@ -177,6 +178,15 @@ export default function ProfileBuilder({
                             onConfirm={() => onDelete?.(profile.id)}
                         />
                         <div className={styles.actionsRight}>
+                            {!draft._unsaved && (
+                                <Button
+                                    onClick={() => onExport?.(profile.id)}
+                                    title="Export this agent"
+                                    data-testid="profile-export"
+                                >
+                                    <i className="bi bi-download" /> Export
+                                </Button>
+                            )}
                             <Button onClick={() => onDuplicate?.(profile.id)}>
                                 Duplicate
                             </Button>

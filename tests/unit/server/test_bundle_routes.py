@@ -50,7 +50,7 @@ async def test_export_profile_downloads_bundle_with_attachment_header():
     resp = await handle_export_profile(_make_request(match_info={"id": "researcher"}))
     assert resp.status == 200
     assert "attachment" in resp.headers["Content-Disposition"]
-    assert ".omnideck.json" in resp.headers["Content-Disposition"]
+    assert ".omnideck.agent" in resp.headers["Content-Disposition"]
     bundle = json.loads(resp.body)
     assert bundle["profiles"][0]["system_prompt"] == "hi"
 
@@ -83,6 +83,7 @@ async def test_export_skill_downloads_bundle():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code."))
     resp = await handle_export_skill(_make_request(match_info={"id": "coder"}))
     assert resp.status == 200
+    assert ".omnideck.skill" in resp.headers["Content-Disposition"]
     bundle = json.loads(resp.body)
     assert bundle["skills"][0]["prompt"] == "Write code."
 

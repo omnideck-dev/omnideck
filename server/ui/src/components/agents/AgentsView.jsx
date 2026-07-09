@@ -329,12 +329,19 @@ export default function AgentsView() {
                             const result = await profilesHook.duplicateProfile(id);
                             if (result) openAgent(result.id);
                         }}
+                        onExport={() => setExportProfile(selected)}
                         onDirtyChange={setBuilderDirty}
                         providers={providers}
                         skills={skills}
                         categories={categories}
                     />
                 </div>
+                {exportProfile && (
+                    <ExportProfileModal
+                        profile={exportProfile}
+                        onClose={() => setExportProfile(null)}
+                    />
+                )}
             </div>
         );
     }
@@ -380,7 +387,7 @@ export default function AgentsView() {
                     <input
                         ref={importInputRef}
                         type="file"
-                        accept=".json,application/json"
+                        accept=".omnideck.agent,.omnideck.skill,.json,application/json"
                         style={{ display: 'none' }}
                         onChange={handleImportFile}
                         data-testid="agents-import-input"
