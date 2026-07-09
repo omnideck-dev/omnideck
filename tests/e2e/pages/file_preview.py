@@ -16,6 +16,29 @@ class FilePreview:
         return self.page.get_by_test_id("preview-content")
 
     @property
+    def editor(self) -> Locator:
+        """The CodeMirror editable surface shown in source mode."""
+        return self.content.locator(".cm-content")
+
+    @property
+    def save_button(self) -> Locator:
+        return self.page.get_by_test_id("file-save")
+
+    def set_source(self, text: str) -> "FilePreview":
+        """Replace the whole editor buffer with text (source mode)."""
+        self.editor.click()
+        self.page.keyboard.press("Control+a")
+        self.page.keyboard.press("Delete")
+        self.page.keyboard.type(text)
+        self.page.wait_for_timeout(150)
+        return self
+
+    def save(self) -> "FilePreview":
+        self.save_button.click()
+        self.page.wait_for_timeout(300)
+        return self
+
+    @property
     def toggle(self) -> Locator:
         return self.content.get_by_test_id("file-view-toggle")
 

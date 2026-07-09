@@ -1,0 +1,19 @@
+/* Fill the preview content area and let CodeMirror own its own scrolling. */
+.editor {
+    height: 100%;
+    font-size: 13px;
+}
+
+.editor :global(.cm-editor) {
+    height: 100%;
+}
+
+.editor :global(.cm-scroller) {
+    font-family: var(--font-code);
+    line-height: 1.6;
+}
+
+/* Drop the default focus outline so it blends into the panel chrome. */
+.editor :global(.cm-editor.cm-focused) {
+    outline: none;
+}

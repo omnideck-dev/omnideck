@@ -3,28 +3,31 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
 import { ConversationsProvider } from '../../contexts/Conversations.jsx';
+import { ThemeProvider } from '../../contexts/Theme.jsx';
 
-// The expanded sidebar renders RecentConversations, which reads the
-// conversations context — so every render is wrapped in the provider.
-const render = (ui, options) => _render(ui, { wrapper: ConversationsProvider, ...options });
+// The expanded sidebar renders RecentConversations (conversations context) and
+// reads the theme context for its toggle — so every render supplies both.
+const Wrapper = ({ children }) => (
+    <ThemeProvider>
+        <ConversationsProvider>{children}</ConversationsProvider>
+    </ThemeProvider>
+);
+const render = (ui, options) => _render(ui, { wrapper: Wrapper, ...options });
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 
 function setup(props = {}) {
     const onPanelToggle = vi.fn();
-    const onToggleTheme = vi.fn();
     const onNewConversation = vi.fn();
     render(
         <Sidebar
             activePanel={null}
             onPanelToggle={onPanelToggle}
-            dark={true}
-            onToggleTheme={onToggleTheme}
             onNewConversation={onNewConversation}
             {...props}
         />,
     );
-    return { onPanelToggle, onToggleTheme, onNewConversation };
+    return { onPanelToggle, onNewConversation };
 }
 
 beforeEach(() => localStorage.clear());
@@ -71,11 +74,15 @@ describe('Sidebar', () => {
         expect(onNewConversation).toHaveBeenCalledOnce();
     });
 
-    it('fires onToggleTheme from the theme button', async () => {
+    it('toggles the theme from the theme button', async () => {
         const user = userEvent.setup();
-        const { onToggleTheme } = setup();
-        await user.click(screen.getByTestId('sidebar-theme-toggle'));
-        expect(onToggleTheme).toHaveBeenCalledOnce();
+        setup();
+        const btn = screen.getByTestId('sidebar-theme-toggle');
+        // jsdom has no matchMedia, so the provider starts on its light default.
+        expect(btn).toHaveAttribute('title', 'Switch to dark theme');
+        await user.click(btn);
+        expect(btn).toHaveAttribute('title', 'Switch to light theme');
+        expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     });
 
     it('opens a panel from a nav item', async () => {

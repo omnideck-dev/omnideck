@@ -128,6 +128,12 @@
     color: var(--text-primary);
 }
 
+/* Save icon tints to the accent while there are unsaved edits, so the bare
+   icon still signals a pending save the way the old labelled button did. */
+.saveIconDirty {
+    color: var(--accent);
+}
+
 /* Content area */
 .content {
     flex: 1;

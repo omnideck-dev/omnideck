@@ -34,7 +34,7 @@ import styles from './App.module.css';
  * simple chat preview column reads from the root agent's node, same as
  * the agent detail view reads from any selected agent's node.
  */
-function DesktopAppInner({ dark, onToggleTheme }) {
+function DesktopAppInner() {
     const agentDispatch = useAgentDispatch();
     const agentState = useAgentState();
 
@@ -479,8 +479,6 @@ function DesktopAppInner({ dark, onToggleTheme }) {
                 {/* Navigation sidebar */}
                 <Sidebar
                     activePanel={['settings', 'routines', 'artifacts', 'agents'].includes(view) ? view : null}
-                    dark={dark}
-                    onToggleTheme={onToggleTheme}
                     onNewConversation={newConversation}
                     audio={pendingAudio}
                     muted={muted}
