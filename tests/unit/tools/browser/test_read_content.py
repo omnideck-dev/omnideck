@@ -41,10 +41,11 @@ class _ReadContentPage(StubPage):
         super().__init__(title=title, body_text="", url=url)
         self._html = html
 
+    async def content(self) -> str:
+        # read_page reads the full document HTML via frame.content()
+        return self._html
+
     async def evaluate(self, script: str, arg: Any = None) -> Any:
-        # Content root JS — return the stored HTML
-        if "querySelector" in script and "article" in script:
-            return self._html
         # Viewport info query
         if "scroll_top" in script and "scrollY" in script:
             return {

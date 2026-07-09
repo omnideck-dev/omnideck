@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import trafilatura
 from playwright.async_api import Error as PlaywrightError
 
 from tools.browser.core import get_active_view, get_browser
@@ -16,23 +17,29 @@ logger = logging.getLogger(__name__)
 _READ_BUDGET = 20_000
 _QUERY_CONTEXT_LINES = 1
 
-# JS to find the best content root and return its outerHTML.
-# Prefers <main>, then <article>, then falls back to <body>.
-#
-# <main> is checked before <article> because some pages wrap only a headline or
-# a single review in an <article> while the real content lives in <main>.
-# Preferring <article> there returns almost nothing. An <article> is used only
-# when there is no <main> and it actually holds text, so a headline-only
-# <article> falls through to <body> instead of returning a single line.
-_CONTENT_ROOT_JS = """
-() => {
-  const main = document.querySelector('main');
-  if (main) return main.outerHTML;
-  const article = document.querySelector('article');
-  if (article && (article.innerText || '').length >= 200) return article.outerHTML;
-  return document.body.outerHTML;
-}
-"""
+
+def _extract_markdown(html: str) -> str:
+    """Extract the page's main readable content from *html* as markdown.
+
+    trafilatura scores the DOM by text and link density to find the real
+    content and drop navigation, headers, footers, and other boilerplate,
+    keeping articles, docs, and tables. ``favor_recall`` biases it toward
+    keeping content rather than trimming aggressively.
+
+    Some page types (search results, forums, app shells) have no article-like
+    content for trafilatura to find; it returns nothing there, so fall back to
+    a full-document conversion. The read is then bulkier but never empty, and
+    the agent can narrow it with ``query`` or reach the raw page with
+    ``save_page_content``.
+    """
+    extracted = trafilatura.extract(
+        html,
+        output_format="markdown",
+        favor_recall=True,
+        include_tables=True,
+        include_links=True,
+    )
+    return extracted or html_to_markdown(html)
 
 
 def _filter_by_query(
@@ -164,8 +171,8 @@ async def read_page(
         )
 
     try:
-        raw_html: str = await view.frame.evaluate(_CONTENT_ROOT_JS)
-        full_content = html_to_markdown(raw_html)
+        raw_html: str = await view.frame.content()
+        full_content = _extract_markdown(raw_html)
 
         if query:
             # Filter mode — return only matching snippets

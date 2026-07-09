@@ -14,10 +14,11 @@ Hubble has orbited Earth since 1990, returning deep-field images of distant gala
 
 ## Instruments
 
-It carries cameras and spectrographs. See the [mission overview](</article/article.html>) for details.
+It carries cameras and spectrographs. See the
+[mission overview](/article/article.html) for details.
 
-  * Wide Field Camera 3
-  * Cosmic Origins Spectrograph"""
+- Wide Field Camera 3
+- Cosmic Origins Spectrograph"""
 
 
 async def test_read_page_returns_markdown(browser_session, servers):
@@ -104,7 +105,7 @@ async def test_read_page_viewport_reports_truncation(browser_session, servers, m
     tab = await browser_session.open(f"{servers.primary}/article/article.html")
 
     # Line 0 is "[Page: ...]", line 1 is "[Viewport: ...]". At 100-char pages
-    # the 289-char article truncates on page 1 and ends on page 3.
+    # the ~280-char article truncates on page 1 and ends on page 3.
     truncated_viewport = (await read_page(tab=tab)).splitlines()[1]
     final_viewport = (await read_page(page_number=3, tab=tab)).splitlines()[1]
 
