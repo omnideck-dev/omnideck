@@ -11,7 +11,9 @@ from playwright.sync_api import Page, expect
 def test_app_loads_after_setup(page: Page):
     """After setup, the chat UI should load without showing the wizard."""
     page.goto("/")
-    expect(page.get_by_text("Welcome to Omnideck")).not_to_be_visible()
+    # By role: the seeded welcome conversation's sidebar title reads the same,
+    # so a plain text match would find it and fail here.
+    expect(page.get_by_role("heading", name="Welcome to Omnideck")).not_to_be_visible()
     expect(page.locator("textarea")).to_be_visible()
 
 
