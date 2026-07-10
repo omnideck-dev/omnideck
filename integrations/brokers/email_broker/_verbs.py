@@ -272,7 +272,7 @@ class VerbDispatcher:
         """``create_event`` creates a VEVENT and returns its server representation."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
-        calendar_url = _require_calendar_ref(args)
+        calendar_url = _require_str(args, "calendar_url")
         summary = _require_str(args, "summary")
         start = _require_str(args, "start")
         end = _require_str(args, "end")
@@ -292,7 +292,7 @@ class VerbDispatcher:
         """``update_event`` changes only the supplied VEVENT fields."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
-        calendar_url = _require_calendar_ref(args)
+        calendar_url = _require_str(args, "calendar_url")
         event_id = _require_str(args, "event_id")
         summary = _optional_update_str(args, "summary")
         start = _optional_update_str(args, "start")
@@ -322,7 +322,7 @@ class VerbDispatcher:
         """``delete_event`` permanently removes a VEVENT."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
-        calendar_url = _require_calendar_ref(args)
+        calendar_url = _require_str(args, "calendar_url")
         event_id = _require_str(args, "event_id")
         try:
             await self._caldav.delete_event(calendar_url, event_id)
@@ -336,12 +336,6 @@ def _require_str(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise RpcError("BAD_REQUEST", f"{key!r} required (non-empty string)")
     return value
-
-
-def _require_calendar_ref(args: dict[str, Any]) -> str:
-    """Read the canonical calendar URL, accepting old write frames temporarily."""
-    key = "calendar_url" if "calendar_url" in args else "calendar_id"
-    return _require_str(args, key)
 
 
 def _require_int(args: dict[str, Any], key: str, *, default: int) -> int:

@@ -308,7 +308,7 @@ class VerbDispatcher:
         return result
 
     async def _handle_create_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_calendar_ref(args)
+        calendar_id = _require_str(args, "calendar_url")
         summary = _require_str(args, "summary")
         start = _require_str(args, "start")
         end = _require_str(args, "end")
@@ -330,7 +330,7 @@ class VerbDispatcher:
         return {"event": _flatten_event(event)}
 
     async def _handle_update_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_calendar_ref(args)
+        calendar_id = _require_str(args, "calendar_url")
         event_id = _require_str(args, "event_id")
         summary = args.get("summary") or None
         start = args.get("start") or None
@@ -362,7 +362,7 @@ class VerbDispatcher:
         return {"event": _flatten_event(event)}
 
     async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_calendar_ref(args)
+        calendar_id = _require_str(args, "calendar_url")
         event_id = _require_str(args, "event_id")
         try:
             await _run_sync(
@@ -507,12 +507,6 @@ def _require_str(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise RpcError("BAD_REQUEST", f"{key!r} required (non-empty string)")
     return value
-
-
-def _require_calendar_ref(args: dict[str, Any]) -> str:
-    """Read the canonical calendar URL, accepting old write frames temporarily."""
-    key = "calendar_url" if "calendar_url" in args else "calendar_id"
-    return _require_str(args, key)
 
 
 def _require_str_list(args: dict[str, Any], key: str) -> list[str]:
