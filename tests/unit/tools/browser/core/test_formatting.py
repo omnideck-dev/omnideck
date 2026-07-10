@@ -6,9 +6,43 @@ import pytest
 
 from tools.browser.core._formatting import (
     format_javascript_result,
+    format_page_header,
     format_page_view,
     format_save_result,
 )
+
+
+@pytest.mark.unit
+def test_page_header_full() -> None:
+    """Title, url, status and tab all render, joined by pipes."""
+    out = format_page_header(
+        title="Example", url="https://example.com", status="200", tab_id=4
+    )
+    assert out == "[Page: Example | https://example.com | 200 | tab=4]"
+
+
+@pytest.mark.unit
+def test_page_header_omits_status_when_none() -> None:
+    """A None status drops the segment entirely — no empty slot."""
+    out = format_page_header(
+        title="Example", url="https://example.com", tab_id=4
+    )
+    assert out == "[Page: Example | https://example.com | tab=4]"
+
+
+@pytest.mark.unit
+def test_page_header_empty_status_keeps_a_slot() -> None:
+    """An empty-string status keeps the slot the snapshot tools have shown."""
+    out = format_page_header(
+        title="Example", url="https://example.com", status="", tab_id=1
+    )
+    assert out == "[Page: Example | https://example.com |  | tab=1]"
+
+
+@pytest.mark.unit
+def test_page_header_omits_tab_when_none() -> None:
+    out = format_page_header(title="Example", url="https://example.com", status="200")
+    assert out == "[Page: Example | https://example.com | 200]"
 
 
 @pytest.mark.unit
