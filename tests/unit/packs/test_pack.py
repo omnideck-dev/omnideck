@@ -86,6 +86,34 @@ def test_build_profile_pack_exclude_model_clears_provider_and_model_but_keeps_pr
 
 
 @pytest.mark.unit
+def test_build_profile_pack_exclude_model_clears_model_bound_inference_settings():
+    save_agent_profile(
+        _profile(
+            temperature=0.4,
+            reasoning_effort="high",
+            context_window=8000,
+            # App-orchestration setting, not tied to a specific model, so it stays.
+            max_iterations=12,
+        )
+    )
+    pack = build_profile_pack("researcher", include_skills=False, include_model=False)
+    p = pack.profiles[0]
+    assert p.temperature is None
+    assert p.reasoning_effort is None
+    assert p.context_window is None
+    assert p.max_iterations == 12
+
+
+@pytest.mark.unit
+def test_build_profile_pack_include_model_keeps_inference_settings():
+    save_agent_profile(_profile(temperature=0.4, context_window=8000))
+    pack = build_profile_pack("researcher", include_skills=False, include_model=True)
+    p = pack.profiles[0]
+    assert p.temperature == 0.4
+    assert p.context_window == 8000
+
+
+@pytest.mark.unit
 def test_build_profile_pack_include_skills_embeds_attached_records():
     save_skill_record(_skill(id="coder", name="Coder"))
     save_skill_record(_skill(id="searcher", name="Searcher", tool_categories=["webfetch"]))
@@ -127,19 +155,19 @@ def test_build_skill_pack_packs_single_skill():
 
 @pytest.mark.unit
 def test_import_pack_rejects_foreign_kind():
-    with pytest.raises(ValueError, match="kind"):
+    with pytest.raises(ValueError, match="omnideck pack"):
         import_pack(Pack(kind="something.else"))
 
 
 @pytest.mark.unit
 def test_import_pack_rejects_newer_version():
-    with pytest.raises(ValueError, match="version"):
+    with pytest.raises(ValueError, match="newer version"):
         import_pack(Pack(version=999))
 
 
 @pytest.mark.unit
 def test_import_pack_rejects_empty():
-    with pytest.raises(ValueError, match="empty"):
+    with pytest.raises(ValueError, match="no agents or skills"):
         import_pack(Pack())
 
 

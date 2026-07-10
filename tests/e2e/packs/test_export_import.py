@@ -30,6 +30,14 @@ INFERENCE = {
     "compaction_threshold": 0.66,
 }
 
+# The INFERENCE keys tuned to a specific provider/model. These travel only when
+# the provider and model do; the rest (max_iterations, compaction_threshold) are
+# app-orchestration settings and always travel.
+MODEL_BOUND_INFERENCE = (
+    "temperature", "top_k", "top_p", "repeat_penalty",
+    "num_predict", "think", "context_window", "reasoning_effort",
+)
+
 
 @pytest.fixture
 def clean_stores(page: Page):
@@ -86,9 +94,9 @@ def _download_json(page: Page, trigger) -> tuple[dict, str]:
 @pytest.mark.parametrize("include_skills", [True, False])
 @pytest.mark.parametrize("include_model", [True, False])
 def test_agent_export_permutations(page: Page, clean_stores, include_skills: bool, include_model: bool):
-    """Every skills×model permutation: the download always carries the full
-    profile (system prompt + all inference settings); skills and provider·model
-    appear only when their toggle is on."""
+    """Every skills×model permutation: the system prompt and app-orchestration
+    settings always travel; skills, provider·model, and the model-tuned inference
+    settings appear only when their toggle is on."""
     _seed_skill(page, "e2e_share_skill", "E2E Share Skill")
     _seed_profile(page, "e2e_share_agent", "E2E Share Agent", skills=["e2e_share_skill"])
 
@@ -102,10 +110,12 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
     assert pack["kind"] == "omnideck.pack"
     prof = pack["profiles"][0]
 
-    # Always present, regardless of toggles.
+    # Always present, regardless of toggles: the system prompt and the
+    # app-orchestration settings that don't depend on a specific model.
     assert prof["system_prompt"] == "You are the seeded agent."
     for key, value in INFERENCE.items():
-        assert prof[key] == value, f"inference field {key} was dropped from the export"
+        if key not in MODEL_BOUND_INFERENCE:
+            assert prof[key] == value, f"app setting {key} was dropped from the export"
     # The skill reference on the profile is preserved either way; only the
     # embedded skill records depend on the toggle.
     assert prof["skills"] == ["e2e_share_skill"]
@@ -113,9 +123,15 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
     if include_model:
         assert prof["provider"] == "ollama"
         assert prof["model"] == "test-model:7b"
+        # The model-tuned settings travel with the provider and model.
+        for key in MODEL_BOUND_INFERENCE:
+            assert prof[key] == INFERENCE[key], f"{key} should travel with the model"
     else:
         assert prof["provider"] == ""
         assert prof["model"] == ""
+        # And are cleared when the model stays behind.
+        for key in MODEL_BOUND_INFERENCE:
+            assert prof[key] is None, f"{key} should be cleared when the model isn't included"
 
     if include_skills:
         assert [s["id"] for s in pack["skills"]] == ["e2e_share_skill"]

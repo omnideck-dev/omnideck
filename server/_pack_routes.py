@@ -11,6 +11,7 @@ import logging
 import re
 
 from aiohttp import web
+from pydantic import BaseModel, ValidationError
 
 from packs import (
     Pack,
@@ -25,9 +26,17 @@ logger = logging.getLogger(__name__)
 # limit common to most filesystems.
 _MAX_STEM = 64
 
+_INVALID_PACK_MESSAGE = (
+    "This file isn't a valid omnideck pack. Export one from the Agents or "
+    "Skills page, then import that file."
+)
 
-def _truthy(value: str) -> bool:
-    return value.lower() in {"1", "true", "yes", "on"}
+
+class ExportOptions(BaseModel):
+    """Profile-export options, parsed and validated from the query string."""
+
+    include_skills: bool = False
+    include_model: bool = True
 
 
 def _slug(name: str) -> str:
@@ -67,11 +76,15 @@ async def handle_export_profile(request: web.Request) -> web.Response:
         include_model: keep the bound provider and model (default true).
     """
     profile_id = request.match_info["id"]
-    include_skills = _truthy(request.query.get("include_skills", "false"))
-    include_model = _truthy(request.query.get("include_model", "true"))
+    try:
+        options = ExportOptions.model_validate(dict(request.query))
+    except ValidationError:
+        return web.json_response({"error": "Invalid export options"}, status=400)
     try:
         pack = build_profile_pack(
-            profile_id, include_skills=include_skills, include_model=include_model,
+            profile_id,
+            include_skills=options.include_skills,
+            include_model=options.include_model,
         )
     except KeyError:
         return web.json_response({"error": f"Profile '{profile_id}' not found"}, status=404)
@@ -99,12 +112,12 @@ async def handle_import_pack(request: web.Request) -> web.Response:
         body = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         logger.warning("Rejected unparseable pack: %s", exc)
-        return web.json_response({"error": "Not a valid omnideck export file"}, status=400)
+        return web.json_response({"error": _INVALID_PACK_MESSAGE}, status=400)
     try:
         pack = Pack.model_validate(body)
     except Exception as exc:
         logger.warning("Rejected pack: %s", exc)
-        return web.json_response({"error": "Not a valid omnideck export file"}, status=400)
+        return web.json_response({"error": _INVALID_PACK_MESSAGE}, status=400)
     try:
         summary = import_pack(pack)
     except ValueError as exc:

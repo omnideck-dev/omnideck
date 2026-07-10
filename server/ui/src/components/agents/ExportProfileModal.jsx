@@ -7,10 +7,11 @@ import Modal from '../primitives/Modal.jsx';
 import styles from './ExportProfileModal.module.css';
 
 /**
- * Export options for an agent profile. The system prompt and all other
- * settings always travel; the two toggles decide whether the profile's
- * attached skills are embedded in the pack and whether the bound provider
- * and model come along (off when sharing to an install with a different setup).
+ * Export options for an agent profile. The system prompt and skills settings
+ * always travel; the two toggles decide whether the profile's attached skills
+ * are embedded in the pack and whether the provider and model — along with the
+ * sampling and reasoning settings tuned to them — come along (off when sharing
+ * to an install with a different setup).
  */
 export default function ExportProfileModal({ profile, onClose }) {
     const hasSkills = (profile.skills || []).length > 0;
@@ -28,8 +29,8 @@ export default function ExportProfileModal({ profile, onClose }) {
                 Export “{profile.name}”
             </div>
             <div className={styles.body}>
-                Downloads a file you can import on another install. The system prompt and
-                every setting are always included.
+                Downloads a file you can import on another install. The system prompt
+                and skill settings always travel.
             </div>
             <label className={styles.row}>
                 <ToggleSwitch
@@ -56,7 +57,8 @@ export default function ExportProfileModal({ profile, onClose }) {
                 <span className={styles.rowText}>
                     <span className={styles.rowLabel}>Include provider &amp; model</span>
                     <span className={styles.rowHint}>
-                        Turn off when the target install uses a different provider or model.
+                        Carries the provider, model, and their sampling and reasoning
+                        settings. Turn off when the target install uses a different setup.
                     </span>
                 </span>
             </label>

@@ -5,6 +5,10 @@
 // picked file's bytes to /api/pack/import untouched; the server owns parsing
 // and validation, so this stays correct for pack formats that aren't text.
 
+// Save the file at `url` without leaving the app. Export is a plain GET that
+// responds with a Content-Disposition attachment, so a synthetic <a> click lets
+// the browser download it in place — unlike setting window.location, which would
+// navigate the SPA away, or fetch(), which can't write a file to disk.
 function triggerDownload(url) {
     const a = document.createElement('a');
     a.href = url;

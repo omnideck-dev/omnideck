@@ -37,6 +37,22 @@ logger = logging.getLogger(__name__)
 PACK_KIND = "omnideck.pack"
 PACK_VERSION = 1
 
+# Profile fields that only make sense next to the provider and model they were
+# tuned for. Cleared from an export that leaves the provider and model behind,
+# so the pack lands cleanly on an install with a different setup.
+_MODEL_BOUND_FIELDS = (
+    "temperature",
+    "top_k",
+    "top_p",
+    "repeat_penalty",
+    "num_predict",
+    "think",
+    "reasoning_effort",
+    "reasoning_summary",
+    "thinking_budget",
+    "context_window",
+)
+
 
 class Pack(BaseModel):
     """A portable collection of agent profiles and/or skills.
@@ -71,9 +87,10 @@ def build_profile_pack(
         include_skills: When True, the profile's attached skill records are
             embedded so the profile arrives complete. Skills that no longer
             resolve are silently dropped.
-        include_model: When False, the bound provider and model are cleared so
-            the pack can be imported on an install with a different setup.
-            The system prompt and every other setting are always kept.
+        include_model: When False, the provider and model, and the sampling and
+            reasoning settings tuned to them, are cleared so the pack imports
+            cleanly on an install with a different setup. The system prompt,
+            skills, and remaining settings are always kept.
 
     Raises:
         KeyError: If the profile doesn't exist.
@@ -83,7 +100,9 @@ def build_profile_pack(
         raise KeyError(profile_id)
 
     if not include_model:
-        profile = profile.model_copy(update={"provider": "", "model": ""})
+        cleared: dict[str, object] = {"provider": "", "model": ""}
+        cleared.update(dict.fromkeys(_MODEL_BOUND_FIELDS))
+        profile = profile.model_copy(update=cleared)
 
     skills: list[SkillRecord] = []
     if include_skills:
@@ -120,13 +139,14 @@ def import_pack(pack: Pack) -> ImportSummary:
             carries neither a profile nor a skill.
     """
     if pack.kind != PACK_KIND:
-        msg = f"unrecognized pack kind {pack.kind!r}"
-        raise ValueError(msg)
+        raise ValueError("This file isn't an omnideck pack.")
     if pack.version > PACK_VERSION:
-        msg = f"pack version {pack.version} is newer than supported ({PACK_VERSION})"
-        raise ValueError(msg)
+        raise ValueError(
+            "This pack was made by a newer version of omnideck. "
+            "Update omnideck, then try importing it again."
+        )
     if not pack.profiles and not pack.skills:
-        raise ValueError("pack is empty")
+        raise ValueError("This pack has no agents or skills to import.")
 
     used_skill_names = {r.name for r in list_skill_records()}
     skill_id_map: dict[str, str] = {}

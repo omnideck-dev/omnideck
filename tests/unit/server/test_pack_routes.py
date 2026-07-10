@@ -77,6 +77,14 @@ async def test_export_profile_include_skills_and_exclude_model():
 
 
 @pytest.mark.unit
+async def test_export_profile_rejects_non_boolean_option():
+    save_agent_profile(AgentProfile(id="r", name="R"))
+    req = _make_request(match_info={"id": "r"}, query={"include_skills": "maybe"})
+    resp = await handle_export_profile(req)
+    assert resp.status == 400
+
+
+@pytest.mark.unit
 async def test_export_skill_unknown_returns_404():
     resp = await handle_export_skill(_make_request(match_info={"id": "nope"}))
     assert resp.status == 404
@@ -137,7 +145,7 @@ async def test_import_empty_body_returns_400():
 async def test_import_empty_pack_returns_400():
     resp = await handle_import_pack(_make_request(json_body={"kind": "omnideck.pack"}))
     assert resp.status == 400
-    assert "empty" in json.loads(resp.body)["error"].lower()
+    assert "no agents or skills" in json.loads(resp.body)["error"].lower()
 
 
 @pytest.mark.unit
