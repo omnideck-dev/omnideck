@@ -16,10 +16,13 @@ logger = logging.getLogger(__name__)
 # Chars per chunk — roughly 5k tokens of markdown, a comfortable single read.
 _READ_BUDGET = 20_000
 
-# Non-blank lines of context kept either side of a query match. The markdown
-# converter runs unwrapped, so one non-blank line is a whole paragraph. Blank
-# lines don't count towards this, otherwise the context is spent on the blank
-# separator that follows every block and the match arrives with nothing around it.
+# How many paragraphs of context to keep on each side of a query match.
+#
+# The markdown is one paragraph per line (we don't wrap) with a blank line
+# between paragraphs. "1" means one real paragraph before and one after the
+# match. Blank lines are skipped, not counted — if they counted, "one line up"
+# would land on the blank separator and the match would come back with nothing
+# useful around it.
 _QUERY_CONTEXT_LINES = 1
 
 # Ceiling on passages in a query result, so a common word cannot return the
