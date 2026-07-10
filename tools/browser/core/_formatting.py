@@ -11,6 +11,30 @@ import json
 from typing import Any
 
 
+def format_page_header(
+    *,
+    title: str,
+    url: str,
+    status: str | None = None,
+    tab_id: int | None = None,
+) -> str:
+    """Build the shared ``[Page: title | url | ...]`` line.
+
+    This is the one part of a page view every browser tool renders the same
+    way, so the agent always sees the same "what page am I on" line.
+
+    ``status`` is the already-rendered status text. ``None`` drops the segment
+    entirely; an empty string keeps an empty slot, the shape a status-less view
+    has always shown. ``tab_id`` adds ``tab=N`` when present.
+    """
+    parts = [title, url]
+    if status is not None:
+        parts.append(status)
+    if tab_id is not None:
+        parts.append(f"tab={tab_id}")
+    return f"[Page: {' | '.join(parts)}]"
+
+
 def format_page_view(
     *,
     title: str,
@@ -44,11 +68,14 @@ def format_page_view(
 
         return format_download_message(downloaded_file)
 
-    status = status_code if status_code is not None else ""
     trunc = " | truncated" if truncated else ""
 
-    tab_segment = f" | tab={tab_id}" if tab_id is not None else ""
-    header = f"[Page: {title} | {url} | {status}{tab_segment}]"
+    header = format_page_header(
+        title=title,
+        url=url,
+        status="" if status_code is None else str(status_code),
+        tab_id=tab_id,
+    )
     if viewport is None:
         vp_line = "[Viewport: unavailable]"
     else:
@@ -117,6 +144,7 @@ def format_save_result(
 
 __all__ = [
     "format_javascript_result",
+    "format_page_header",
     "format_page_view",
     "format_save_result",
 ]
