@@ -61,6 +61,11 @@ class CalDavClient:
         self._lock = asyncio.Lock()
         self._client: caldav.DAVClient | None = None
         self._principal: Any | None = None
+        # iCloud rejects the UID-only calendar-query REPORT used by
+        # ``get_event_by_uid`` with HTTP 412. Remember hrefs returned by
+        # create/list calls so mutations can reload the resource with GET,
+        # which also refreshes its ETag before PUT.
+        self._event_urls: dict[str, str] = {}
 
     async def connect(self) -> None:
         """Open the CalDAV session and resolve the user's principal.
@@ -184,6 +189,7 @@ class CalDavClient:
             if ev is None:
                 skipped += 1
                 continue
+            self._remember_event_url(ev.uid, hit)
             events.append(ev)
             if len(events) >= limit:
                 break
@@ -237,6 +243,7 @@ class CalDavClient:
         if event is None:
             msg = "CalDAV server returned an event without a usable UID"
             raise RuntimeError(msg)
+        self._remember_event_url(event.uid, raw)
         logger.info("create_event(%s): created %s", calendar_url, event.uid)
         return event
 
@@ -260,7 +267,7 @@ class CalDavClient:
 
             def _op(client: caldav.DAVClient, _principal: Any) -> Any:
                 cal = client.calendar(url=calendar_url)
-                resource = cal.get_event_by_uid(event_id)
+                resource = self._get_event_resource(cal, event_id)
                 component = next(
                     iter(resource.icalendar_instance.walk("VEVENT")), None,
                 )
@@ -302,6 +309,7 @@ class CalDavClient:
         if event is None:
             msg = "CalDAV server returned an event without a usable UID"
             raise RuntimeError(msg)
+        self._remember_event_url(event.uid, raw)
         logger.info("update_event(%s): updated %s", calendar_url, event.uid)
         return event
 
@@ -311,13 +319,26 @@ class CalDavClient:
 
             def _op(client: caldav.DAVClient, _principal: Any) -> None:
                 cal = client.calendar(url=calendar_url)
-                cal.get_event_by_uid(event_id).delete()
+                self._get_event_resource(cal, event_id).delete()
 
             try:
                 await asyncio.to_thread(self._with_reconnect, _op)
             except caldav_error.NotFoundError as exc:
                 raise LookupError(f"event not found: {event_id}") from exc
+        self._event_urls.pop(event_id, None)
         logger.info("delete_event(%s): deleted %s", calendar_url, event_id)
+
+    def _get_event_resource(self, calendar: Any, event_id: str) -> Any:
+        """Load an event by cached href, falling back to a UID REPORT."""
+        event_url = self._event_urls.get(event_id)
+        if event_url is not None:
+            return calendar.event_by_url(event_url)
+        return calendar.get_event_by_uid(event_id)
+
+    def _remember_event_url(self, event_id: str, resource: Any) -> None:
+        event_url = getattr(resource, "url", None)
+        if event_url is not None:
+            self._event_urls[event_id] = str(event_url)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

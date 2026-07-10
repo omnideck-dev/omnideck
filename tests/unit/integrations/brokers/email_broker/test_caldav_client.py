@@ -14,8 +14,9 @@ from integrations.brokers.email_broker._caldav_client import CalDavClient
 
 
 class _StubResource:
-    def __init__(self, calendar: ICalendar) -> None:
+    def __init__(self, calendar: ICalendar, url: str = "") -> None:
         self.icalendar_instance = calendar
+        self.url = url
         self.save_calls = 0
         self.delete_calls = 0
 
@@ -41,13 +42,15 @@ def _event_resource(
     if end is not None:
         component.add("dtend", datetime.fromisoformat(end))
     calendar.add_component(component)
-    return _StubResource(calendar)
+    return _StubResource(calendar, f"https://caldav.example/home/{uid}.ics")
 
 
 class _StubCalendar:
     def __init__(self) -> None:
         self.added: list[dict[str, Any]] = []
         self.resources: dict[str, _StubResource] = {}
+        self.event_by_url_calls: list[str] = []
+        self.reject_uid_report = False
 
     def add_event(self, **properties: Any) -> Any:
         self.added.append(properties)
@@ -61,10 +64,19 @@ class _StubCalendar:
         return resource
 
     def get_event_by_uid(self, uid: str) -> _StubResource:
+        if self.reject_uid_report:
+            raise caldav_error.ReportError("412 Precondition Failed")
         try:
             return self.resources[uid]
         except KeyError as exc:
             raise caldav_error.NotFoundError(uid) from exc
+
+    def event_by_url(self, url: str) -> _StubResource:
+        self.event_by_url_calls.append(url)
+        for resource in self.resources.values():
+            if resource.url == url:
+                return resource
+        raise caldav_error.NotFoundError(url)
 
 
 class _StubDavClient:
@@ -214,3 +226,48 @@ async def test_summary_update_allows_valid_event_without_dtend() -> None:
     assert event.summary == "Updated title"
     assert event.end == ""
     assert resource.save_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_created_event_updates_by_href_without_icloud_uid_report() -> None:
+    calendar = _StubCalendar()
+    client = _connected_client(calendar)
+
+    created = await client.create_event(
+        "https://caldav.example/home/",
+        "Initial title",
+        "2026-07-15T09:00:00-05:00",
+        "2026-07-15T10:00:00-05:00",
+    )
+    calendar.reject_uid_report = True
+
+    updated = await client.update_event(
+        "https://caldav.example/home/",
+        created.uid,
+        summary="Updated title",
+    )
+
+    assert updated.summary == "Updated title"
+    assert calendar.event_by_url_calls == [
+        "https://caldav.example/home/icloud-event-123.ics",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_created_event_deletes_by_href_without_icloud_uid_report() -> None:
+    calendar = _StubCalendar()
+    client = _connected_client(calendar)
+
+    created = await client.create_event(
+        "https://caldav.example/home/",
+        "Delete me",
+        "2026-07-15T09:00:00-05:00",
+        "2026-07-15T10:00:00-05:00",
+    )
+    resource = calendar.resources[created.uid]
+    calendar.reject_uid_report = True
+
+    await client.delete_event("https://caldav.example/home/", created.uid)
+
+    assert resource.delete_calls == 1
+    assert created.uid not in client._event_urls
