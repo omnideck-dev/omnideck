@@ -72,7 +72,7 @@ omnideck install
 - **Multi-agent instances** — Build separate instanes for work, home, and projects — each is its own isolated context with its own agents, configs, and tool access. Agents in one instance don't see data from another.
 - **Browser automation** — Controls Chrome with human-like clicking, typing, and scrolling. Agents can browse the web, fill forms, and extract information. 
 - **Code execution** — Writes and runs Python, installs packages, builds projects. Full sandboxed code environment inside the container.
-- **Routines** — Schedule recurring tasks that run in the background on a cron-like schedule. Agents work while you're away. The user can inspect, interrupt, or redirect any scheduled task at any time.
+- **Routines** — Schedule recurring tasks that run in the background on a cron-like schedule. Agents work while you're away. 
 - **Memory** — Persistent memory across conversations. Agents remember facts, preferences, and project context.
 - **Integrations** — Connect Gmail, Calendar, Drive, Contacts, and HTTP APIs. Integrations are named and explicit — the agent never acts on an integration without being told which one to use. MCP server support is on the roadmap.
 
