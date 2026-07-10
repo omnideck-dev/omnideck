@@ -116,9 +116,6 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
     for key, value in INFERENCE.items():
         if key not in MODEL_BOUND_INFERENCE:
             assert prof[key] == value, f"app setting {key} was dropped from the export"
-    # The skill reference on the profile is preserved either way; only the
-    # embedded skill records depend on the toggle.
-    assert prof["skills"] == ["e2e_share_skill"]
 
     if include_model:
         assert prof["provider"] == "ollama"
@@ -133,12 +130,15 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
         for key in MODEL_BOUND_INFERENCE:
             assert prof[key] is None, f"{key} should be cleared when the model isn't included"
 
+    # Skills ride inside the profile as full records; the top-level list stays
+    # empty. Off means the agent packs with no skills — no dangling references.
+    assert pack["skills"] == []
     if include_skills:
-        assert [s["id"] for s in pack["skills"]] == ["e2e_share_skill"]
-        assert pack["skills"][0]["prompt"] == "E2E Share Skill prompt."
-        assert pack["skills"][0]["tool_categories"] == ["coding"]
+        assert [s["name"] for s in prof["skills"]] == ["E2E Share Skill"]
+        assert prof["skills"][0]["prompt"] == "E2E Share Skill prompt."
+        assert prof["skills"][0]["tool_categories"] == ["coding"]
     else:
-        assert pack["skills"] == []
+        assert prof["skills"] == []
 
 
 def test_agent_export_from_editor(page: Page, clean_stores):
@@ -186,21 +186,19 @@ def test_import_agent_pack_creates_profile_and_skill(page: Page, clean_stores, t
         "kind": "omnideck.pack",
         "version": 1,
         "profiles": [{
-            "id": "orig_agent",
             "name": "Imported Agent",
             "system_prompt": "Imported prompt.",
             "provider": "ollama",
             "model": "test-model:7b",
-            "skills": ["orig_skill"],
+            "skills": [{
+                "name": "Imported Skill",
+                "description": "",
+                "prompt": "Imported skill prompt.",
+                "tool_categories": ["coding"],
+            }],
             **INFERENCE,
         }],
-        "skills": [{
-            "id": "orig_skill",
-            "name": "Imported Skill",
-            "description": "",
-            "prompt": "Imported skill prompt.",
-            "tool_categories": ["coding"],
-        }],
+        "skills": [],
     }
     path = _write_pack(tmp_path, "imported-agent.agent.omnideck.json", pack)
 
@@ -211,15 +209,15 @@ def test_import_agent_pack_creates_profile_and_skill(page: Page, clean_stores, t
 
     profiles = page.request.get("/api/profiles?include_disabled=true").json()
     created = next(p for p in profiles if p["name"] == "Imported Agent")
-    assert created["id"] != "orig_agent"  # fresh id
+    assert created["id"]  # a fresh id was assigned
     assert created["system_prompt"] == "Imported prompt."
     for key, value in INFERENCE.items():
         assert created[key] == value
 
     skills = page.request.get("/api/skills").json()
     imported_skill = next(s for s in skills if s["name"] == "Imported Skill")
-    assert imported_skill["id"] != "orig_skill"
-    # The profile reference was remapped onto the new skill id.
+    assert imported_skill["id"]
+    # The profile was attached to the freshly created copy of its bundled skill.
     assert created["skills"] == [imported_skill["id"]]
 
 
@@ -229,7 +227,6 @@ def test_import_skill_pack_creates_skill(page: Page, clean_stores, tmp_path):
         "kind": "omnideck.pack",
         "version": 1,
         "skills": [{
-            "id": "orig",
             "name": "Imported Solo Skill",
             "description": "solo",
             "prompt": "Solo prompt.",
@@ -244,7 +241,7 @@ def test_import_skill_pack_creates_skill(page: Page, clean_stores, tmp_path):
     expect(page.get_by_text("Imported Solo Skill")).to_be_visible()
     stored = page.request.get("/api/skills").json()
     created = next(s for s in stored if s["name"] == "Imported Solo Skill")
-    assert created["id"] != "orig"
+    assert created["id"]
     assert created["prompt"] == "Solo prompt."
 
 
@@ -273,3 +270,38 @@ def test_agent_round_trip_export_then_import(page: Page, clean_stores):
     assert imported["system_prompt"] == "You are the seeded agent."
     for key, value in INFERENCE.items():
         assert imported[key] == value
+    # The skill travelled and the copy points at its own fresh skill record.
+    assert len(imported["skills"]) == 1
+    assert imported["skills"][0] != "rt_skill"
+    skills = page.request.get("/api/skills").json()
+    imported_skill = next(s for s in skills if s["id"] == imported["skills"][0])
+    assert imported_skill["name"] == "RT Skill (imported)"
+
+
+def test_agent_round_trip_export_without_skills(page: Page, clean_stores):
+    """Export an agent with "Include attached skills" off, then import it — the
+    copy lands with no skills. It must not re-attach to a same-id skill that
+    happens to exist on this install, and no skill copy is created."""
+    _seed_skill(page, "rt_bare_skill", "RT Bare Skill")
+    _seed_profile(page, "rt_bare_agent", "RT Bare Agent", skills=["rt_bare_skill"])
+
+    agents = AgentsPage(page).goto()
+    agents.profiles.export("rt_bare_agent")
+    agents.set_export_include_skills(False)
+    agents.set_export_include_model(True)
+    with page.expect_download() as dl_info:
+        agents.export_confirm.click()
+    download = dl_info.value
+
+    agents.import_file(download.path())
+
+    profiles = page.request.get("/api/profiles?include_disabled=true").json()
+    imported = next(
+        p for p in profiles
+        if p["name"].startswith("RT Bare Agent") and p["id"] != "rt_bare_agent"
+    )
+    assert imported["skills"] == []
+    # The skills-off export created no extra skill record: only the seed remains.
+    bare = [s for s in page.request.get("/api/skills").json()
+            if s["name"].startswith("RT Bare Skill")]
+    assert len(bare) == 1 and bare[0]["id"] == "rt_bare_skill"

@@ -73,7 +73,9 @@ async def test_export_profile_include_skills_and_exclude_model():
     pack = json.loads(resp.body)
     assert pack["profiles"][0]["provider"] == ""
     assert pack["profiles"][0]["model"] == ""
-    assert {s["id"] for s in pack["skills"]} == {"coder"}
+    # Skills ride inside the profile by content, not as top-level id references.
+    assert pack["skills"] == []
+    assert {s["name"] for s in pack["profiles"][0]["skills"]} == {"Coder"}
 
 
 @pytest.mark.unit
@@ -160,15 +162,17 @@ async def test_import_creates_profiles_and_skills():
     body = {
         "kind": "omnideck.pack",
         "version": 1,
-        "profiles": [{"id": "r", "name": "Researcher", "skills": ["coder"]}],
-        "skills": [{"id": "coder", "name": "Coder"}],
+        "profiles": [
+            {"name": "Researcher", "skills": [{"name": "Coder", "prompt": "Write code."}]}
+        ],
+        "skills": [],
     }
     resp = await handle_import_pack(_make_request(json_body=body))
     assert resp.status == 201
     summary = json.loads(resp.body)
     assert len(summary["profiles"]) == 1
     assert len(summary["skills"]) == 1
-    # Persisted with fresh ids and the reference remapped.
+    # Persisted with fresh ids and the profile attached to its bundled skill.
     assert len(list_agent_profiles(include_disabled=True)) == 1
     assert len(list_skill_records()) == 1
     assert summary["profiles"][0]["skills"] == [summary["skills"][0]["id"]]
