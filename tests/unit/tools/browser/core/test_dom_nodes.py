@@ -5,7 +5,6 @@ import pytest
 from tools.browser.core._dom_nodes import (
     DomNode,
     NodeType,
-    ViewportPosition,
     parse_nodes,
 )
 
@@ -23,7 +22,6 @@ class TestParseNodes:
         assert n.type == NodeType.TEXT
         assert n.depth == 0
         assert n.text == "Hello world"
-        assert n.viewport == ViewportPosition.IN
 
     def test_interactive_node_with_all_fields(self):
         """An interactive node populates all optional fields."""
@@ -37,7 +35,6 @@ class TestParseNodes:
                 "level": None,
                 "depth": 3,
                 "tag": "BUTTON",
-                "viewport": "in",
                 "expanded": None,
                 "selected": None,
                 "checked": None,
@@ -71,18 +68,6 @@ class TestParseNodes:
         assert nodes[0].type == NodeType.CONTAINER_START
         assert nodes[1].type == NodeType.CONTAINER_END
 
-    def test_viewport_positions(self):
-        """All viewport positions map correctly."""
-        raw = [
-            {"type": "text", "depth": 0, "text": "a", "viewport": "in"},
-            {"type": "text", "depth": 0, "text": "b", "viewport": "out"},
-            {"type": "text", "depth": 0, "text": "c", "viewport": "clipped"},
-        ]
-        nodes = parse_nodes(raw)
-        assert nodes[0].viewport == ViewportPosition.IN
-        assert nodes[1].viewport == ViewportPosition.OUT
-        assert nodes[2].viewport == ViewportPosition.CLIPPED
-
     def test_defaults_for_missing_fields(self):
         """Missing optional fields get sensible defaults."""
         raw = [{"type": "text", "depth": 2}]
@@ -92,7 +77,6 @@ class TestParseNodes:
         assert n.name is None
         assert n.text is None
         assert n.value is None
-        assert n.viewport == ViewportPosition.IN
 
     def test_empty_list(self):
         """Empty input returns empty list."""
