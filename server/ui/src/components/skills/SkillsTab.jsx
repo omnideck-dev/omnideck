@@ -17,7 +17,7 @@ import styles from './SkillsTab.module.css';
  * active view.
  */
 export default function SkillsTab() {
-    const { skills, refresh, createSkill, updateSkill, deleteSkill } = useSkills();
+    const { skills, addSkills, createSkill, updateSkill, deleteSkill } = useSkills();
     const { addToast } = useToast();
     const [categories, setCategories] = useState([]);
     const [view, setView] = useState('skills');
@@ -33,7 +33,8 @@ export default function SkillsTab() {
             .catch(() => {});
     }, []);
 
-    // Import a pack picked from disk, then refresh the skill list. Reset the
+    // Import a pack picked from disk. The response carries the freshly created
+    // records, so merge them into the list instead of refetching. Reset the
     // input so re-picking the same file re-fires the change event.
     const handleImportFile = async (e) => {
         const file = e.target.files?.[0];
@@ -44,7 +45,7 @@ export default function SkillsTab() {
             addToast(result.error, { type: 'error', title: 'Import failed' });
             return;
         }
-        await refresh();
+        addSkills(result.data.skills || []);
         addToast(importSummaryText(result.data), { type: 'success' });
     };
 

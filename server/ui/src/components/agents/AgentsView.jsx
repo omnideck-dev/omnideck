@@ -47,7 +47,7 @@ function draftAgent(providers) {
  */
 export default function AgentsView() {
     const { profilesHook } = useAppData();
-    const { skills, refresh: refreshSkills } = useSkills();
+    const { skills, addSkills } = useSkills();
     const { addToast } = useToast();
     const [providers, setProviders] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -119,8 +119,9 @@ export default function AgentsView() {
         if (created) addToast(`Duplicated “${p.name}”.`, { type: 'success' });
     };
 
-    // Import a pack picked from disk. A profile pack may carry skills, so
-    // refresh both lists. Reset the input so re-picking the same file re-fires.
+    // Import a pack picked from disk. The response carries the freshly created
+    // records; merge them into both lists instead of refetching. A profile pack
+    // may carry skills. Reset the input so re-picking the same file re-fires.
     const handleImportFile = async (e) => {
         const file = e.target.files?.[0];
         e.target.value = '';
@@ -130,7 +131,8 @@ export default function AgentsView() {
             addToast(result.error, { type: 'error', title: 'Import failed' });
             return;
         }
-        await Promise.all([profilesHook.refresh(), refreshSkills()]);
+        profilesHook.addProfiles(result.data.profiles || []);
+        addSkills(result.data.skills || []);
         addToast(importSummaryText(result.data), { type: 'success' });
     };
 

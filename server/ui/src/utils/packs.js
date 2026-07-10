@@ -2,8 +2,8 @@
 //
 // Export is a plain GET the browser saves as a file — the server sends the
 // pack with a Content-Disposition attachment header. Import uploads the
-// picked file's bytes to /api/import untouched; the server owns parsing and
-// validation, so this stays correct for pack formats that aren't text.
+// picked file's bytes to /api/pack/import untouched; the server owns parsing
+// and validation, so this stays correct for pack formats that aren't text.
 
 function triggerDownload(url) {
     const a = document.createElement('a');
@@ -21,11 +21,11 @@ export function downloadProfilePack(id, { includeSkills = false, includeModel = 
         include_skills: includeSkills ? 'true' : 'false',
         include_model: includeModel ? 'true' : 'false',
     });
-    triggerDownload(`/api/profiles/${encodeURIComponent(id)}/export?${params.toString()}`);
+    triggerDownload(`/api/pack/export/profiles/${encodeURIComponent(id)}?${params.toString()}`);
 }
 
 export function downloadSkillPack(id) {
-    triggerDownload(`/api/skills/${encodeURIComponent(id)}/export`);
+    triggerDownload(`/api/pack/export/skills/${encodeURIComponent(id)}`);
 }
 
 /**
@@ -35,7 +35,7 @@ export function downloadSkillPack(id) {
 export async function importPackFile(file) {
     let res;
     try {
-        res = await fetch('/api/import', {
+        res = await fetch('/api/pack/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/octet-stream' },
             body: file,

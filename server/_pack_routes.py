@@ -114,9 +114,9 @@ async def handle_import_pack(request: web.Request) -> web.Response:
 
 def register_pack_routes(app: web.Application) -> None:
     """Register the pack (export/import) routes."""
-    app.router.add_route("GET", "/api/profiles/{id}/export", handle_export_profile)
-    app.router.add_route("GET", "/api/skills/{id}/export", handle_export_skill)
-    app.router.add_route("POST", "/api/import", handle_import_pack)
+    app.router.add_route("GET", "/api/pack/export/profiles/{id}", handle_export_profile)
+    app.router.add_route("GET", "/api/pack/export/skills/{id}", handle_export_skill)
+    app.router.add_route("POST", "/api/pack/import", handle_import_pack)
 
 
 __all__ = ["register_pack_routes"]

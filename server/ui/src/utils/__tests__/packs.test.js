@@ -41,7 +41,7 @@ describe('download helpers', () => {
     it('builds the profile export URL with options and clicks a download', () => {
         const anchor = captureAnchor();
         downloadProfilePack('abc', { includeSkills: true, includeModel: false });
-        expect(anchor.href).toContain('/api/profiles/abc/export?');
+        expect(anchor.href).toContain('/api/pack/export/profiles/abc?');
         expect(anchor.href).toContain('include_skills=true');
         expect(anchor.href).toContain('include_model=false');
         expect(anchor.click).toHaveBeenCalled();
@@ -57,20 +57,20 @@ describe('download helpers', () => {
     it('builds the skill export URL', () => {
         const anchor = captureAnchor();
         downloadSkillPack('xyz');
-        expect(anchor.href).toContain('/api/skills/xyz/export');
+        expect(anchor.href).toContain('/api/pack/export/skills/xyz');
         expect(anchor.click).toHaveBeenCalled();
     });
 });
 
 describe('importPackFile', () => {
-    it('uploads the file untouched to /api/import and returns data on success', async () => {
+    it('uploads the file untouched to /api/pack/import and returns data on success', async () => {
         const data = { profiles: [{ id: 'x' }], skills: [] };
         global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => data });
         const result = await importPackFile(file);
         expect(result.ok).toBe(true);
         expect(result.data).toEqual(data);
         const [url, init] = global.fetch.mock.calls[0];
-        expect(url).toBe('/api/import');
+        expect(url).toBe('/api/pack/import');
         expect(init.method).toBe('POST');
         // The file object itself is the body: no reading, no parsing, no re-encoding.
         expect(init.body).toBe(file);
