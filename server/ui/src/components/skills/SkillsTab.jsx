@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import useSkills from '../../hooks/useSkills.js';
+import { downloadSkillPack, importPackFile, importSummaryText } from '../../utils/packs.js';
+import { useToast } from '../ToastProvider.jsx';
+import Button from '../primitives/Button.jsx';
 import CategoryCatalog from './CategoryCatalog.jsx';
 import LibraryHeader from '../primitives/LibraryHeader.jsx';
 import SkillBuilder from './SkillBuilder.jsx';
@@ -14,12 +17,14 @@ import styles from './SkillsTab.module.css';
  * active view.
  */
 export default function SkillsTab() {
-    const { skills, createSkill, updateSkill, deleteSkill } = useSkills();
+    const { skills, addSkills, createSkill, updateSkill, deleteSkill } = useSkills();
+    const { addToast } = useToast();
     const [categories, setCategories] = useState([]);
     const [view, setView] = useState('skills');
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState(null);
     const [draft, setDraft] = useState(null);
+    const importInputRef = useRef(null);
 
     useEffect(() => {
         fetch('/api/tool-categories')
@@ -27,6 +32,22 @@ export default function SkillsTab() {
             .then((data) => setCategories(Array.isArray(data) ? data : []))
             .catch(() => {});
     }, []);
+
+    // Import a pack picked from disk. The response carries the freshly created
+    // records, so merge them into the list instead of refetching. Reset the
+    // input so re-picking the same file re-fires the change event.
+    const handleImportFile = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        const result = await importPackFile(file);
+        if (!result.ok) {
+            addToast(result.error, { type: 'error', title: 'Import failed' });
+            return;
+        }
+        addSkills(result.data.skills || []);
+        addToast(importSummaryText(result.data), { type: 'success' });
+    };
 
     const selectedSkill = draft ?? skills.find((s) => s.id === selectedId) ?? null;
 
@@ -57,6 +78,25 @@ export default function SkillsTab() {
                 searchValue={search}
                 onSearchChange={setSearch}
                 searchPlaceholder={view === 'skills' ? 'Search skills…' : 'Search tool categories…'}
+                actions={view === 'skills' ? (
+                    <>
+                        <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".omnideck.json,application/json"
+                            style={{ display: 'none' }}
+                            onChange={handleImportFile}
+                            data-testid="skills-import-input"
+                        />
+                        <Button
+                            variant="outline"
+                            onClick={() => importInputRef.current?.click()}
+                            data-testid="skills-import"
+                        >
+                            <i className="bi bi-upload" /> Import
+                        </Button>
+                    </>
+                ) : null}
             />
             {view === 'skills' ? (
                 <div className={styles.master}>
@@ -66,6 +106,7 @@ export default function SkillsTab() {
                         selectedId={draft ? null : selectedId}
                         onSelect={(id) => { setDraft(null); setSelectedId(id); }}
                         onNew={handleNew}
+                        onExport={(id) => downloadSkillPack(id)}
                     />
                     <SkillBuilder
                         skill={selectedSkill}
@@ -84,6 +125,7 @@ export default function SkillsTab() {
                             await deleteSkill(id);
                             setSelectedId(null);
                         }}
+                        onExport={(id) => downloadSkillPack(id)}
                     />
                 </div>
             ) : (

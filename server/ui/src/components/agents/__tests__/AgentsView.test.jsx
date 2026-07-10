@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import AgentsView from '../AgentsView.jsx';
 import { ToastProvider } from '../../ToastProvider.jsx';
+import { importPackFile } from '../../../utils/packs.js';
 
 const PROFILES = [
     {
@@ -23,14 +24,23 @@ const profilesHook = {
     updateProfile: vi.fn(),
     deleteProfile: vi.fn(),
     duplicateProfile: vi.fn(),
+    addProfiles: vi.fn(),
 };
 
 vi.mock('../../../contexts/AppData.jsx', () => ({
     useAppData: () => ({ profilesHook, features: {} }),
 }));
 
+const skillsHook = { skills: [], addSkills: vi.fn() };
 vi.mock('../../../hooks/useSkills.js', () => ({
-    default: () => ({ skills: [] }),
+    default: () => skillsHook,
+}));
+
+// Import goes through the real utils, but the network call is stubbed so the
+// test drives the handler's merge-into-lists behaviour deterministically.
+vi.mock('../../../utils/packs.js', async (importOriginal) => ({
+    ...(await importOriginal()),
+    importPackFile: vi.fn(),
 }));
 
 // The detail is the full ProfileBuilder editor; stub it to keep this test
@@ -57,6 +67,9 @@ beforeEach(() => {
     profilesHook.deleteProfile.mockResolvedValue({ conflict: false });
     profilesHook.duplicateProfile.mockReset();
     profilesHook.duplicateProfile.mockResolvedValue({ id: 'p1_copy', name: 'Researcher copy' });
+    profilesHook.addProfiles.mockClear();
+    skillsHook.addSkills.mockClear();
+    importPackFile.mockReset();
     global.fetch = vi.fn((url) => {
         const u = String(url);
         if (u === '/api/providers') {
@@ -197,4 +210,38 @@ test('leaving a clean editor returns to the list without a warning', async () =>
 
     expect(screen.queryByTestId('agent-unsaved-warning')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('agents-list')).toBeInTheDocument());
+});
+
+test('importing a pack merges the returned records and toasts a summary', async () => {
+    // A profile pack that also carries a skill: both lists should take the
+    // freshly created records straight from the response, no refetch.
+    const imported = {
+        profiles: [{ id: 'np', name: 'Imported Agent' }],
+        skills: [{ id: 'ns', name: 'Imported Skill' }],
+    };
+    importPackFile.mockResolvedValue({ ok: true, data: imported });
+
+    renderView();
+    await waitFor(() => expect(screen.getByText('Researcher')).toBeInTheDocument());
+
+    const file = new File(['{}'], 'x.agent.omnideck.json');
+    fireEvent.change(screen.getByTestId('agents-import-input'), { target: { files: [file] } });
+
+    await waitFor(() => expect(profilesHook.addProfiles).toHaveBeenCalledWith(imported.profiles));
+    expect(skillsHook.addSkills).toHaveBeenCalledWith(imported.skills);
+    expect(await screen.findByText('Imported 1 agent and 1 skill.')).toBeInTheDocument();
+});
+
+test('a failed import toasts the error and touches neither list', async () => {
+    importPackFile.mockResolvedValue({ ok: false, error: 'Not a valid omnideck export file' });
+
+    renderView();
+    await waitFor(() => expect(screen.getByText('Researcher')).toBeInTheDocument());
+
+    const file = new File(['nope'], 'x.agent.omnideck.json');
+    fireEvent.change(screen.getByTestId('agents-import-input'), { target: { files: [file] } });
+
+    expect(await screen.findByText('Not a valid omnideck export file')).toBeInTheDocument();
+    expect(profilesHook.addProfiles).not.toHaveBeenCalled();
+    expect(skillsHook.addSkills).not.toHaveBeenCalled();
 });
