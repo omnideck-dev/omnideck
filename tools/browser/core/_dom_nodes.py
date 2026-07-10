@@ -21,14 +21,6 @@ class NodeType(Enum):
     CONTAINER_END = "container_end"
 
 
-class ViewportPosition(Enum):
-    """Whether a node is inside, outside, or partially clipped by the viewport."""
-
-    IN = "in"
-    OUT = "out"
-    CLIPPED = "clipped"
-
-
 @dataclass(slots=True)
 class DomNode:
     """Single node from the structured DOM snapshot."""
@@ -42,7 +34,6 @@ class DomNode:
     value: str | None = None
     level: int | None = None
     tag: str | None = None
-    viewport: ViewportPosition = ViewportPosition.IN
     expanded: bool | None = None
     selected: bool | None = None
     checked: bool | None = None
@@ -50,7 +41,7 @@ class DomNode:
     extra: dict | None = None
 
 
-__all__ = ["DomNode", "NodeType", "ViewportPosition", "parse_nodes"]
+__all__ = ["DomNode", "NodeType", "parse_nodes"]
 
 
 def parse_nodes(raw: list[dict]) -> list[DomNode]:
@@ -67,7 +58,6 @@ def parse_nodes(raw: list[dict]) -> list[DomNode]:
             value=d.get("value"),
             level=d.get("level"),
             tag=d.get("tag"),
-            viewport=ViewportPosition(d.get("viewport", "in")),
             expanded=d.get("expanded"),
             selected=d.get("selected"),
             checked=d.get("checked"),

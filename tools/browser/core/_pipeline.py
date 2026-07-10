@@ -5,10 +5,12 @@ format the agent expects (``[ref] [role] name`` lines mixed with text content).
 
 Pipeline stages:
 1. ``parse_nodes()`` — dict → DomNode
-2. ``_filter_viewport()`` — remove out-of-viewport nodes
-3. ``_filter_scope()`` — narrow to a heading/container section
-4. ``_render_lines()`` — DomNode → text lines
-5. ``_apply_budget()`` — truncate at character budget
+2. ``_filter_scope()`` — narrow to a heading/container section
+3. ``_render_lines()`` — DomNode → text lines
+4. ``_apply_budget()`` — truncate at character budget
+
+Viewport filtering happens in the JS walker, which never emits an
+off-screen element, so there is nothing left to filter here.
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from __future__ import annotations
 from tools.browser.core._dom_nodes import (
     DomNode,
     NodeType,
-    ViewportPosition,
     parse_nodes,
 )
 from tools.browser.core.site_filters import filter_for_site
@@ -31,7 +32,6 @@ def process_snapshot(
     scope_query: str | None = None,
     budget: int = 8000,
     name_limit: int = 150,
-    full_page: bool = False,
 ) -> tuple[str, bool]:
     """Process structured DOM nodes into annotated text output.
 
@@ -41,14 +41,11 @@ def process_snapshot(
         scope_query: Optional section name to scope to.
         budget: Character budget for the output.
         name_limit: Max length for displayed names.
-        full_page: If True, include out-of-viewport nodes.
 
     Returns:
         Tuple of (annotated text content, whether output was truncated).
     """
     nodes = parse_nodes(raw_nodes)
-    if not full_page:
-        nodes = _filter_viewport(nodes)
     prefix = ""
     if scope_query:
         nodes, found = _filter_scope(nodes, scope_query)
@@ -59,16 +56,6 @@ def process_snapshot(
     lines = _render_lines(nodes, name_limit=name_limit)
     content, truncated = _apply_budget(lines, budget=budget)
     return prefix + content, truncated
-
-
-def _filter_viewport(nodes: list[DomNode]) -> list[DomNode]:
-    """Remove nodes entirely outside the viewport.
-
-    Keeps ``IN`` and ``CLIPPED`` nodes. Container start/end markers are
-    kept if they are ``IN`` or ``CLIPPED`` — their children handle
-    themselves.
-    """
-    return [n for n in nodes if n.viewport != ViewportPosition.OUT]
 
 
 def _filter_scope(
