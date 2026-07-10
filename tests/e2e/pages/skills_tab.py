@@ -57,7 +57,7 @@ class SkillsTab:
         self.page.get_by_test_id("skill-export").click()
 
     def import_file(self, path: str) -> "SkillsTab":
-        """Feed a bundle file to the hidden import input (no OS dialog)."""
+        """Feed a pack file to the hidden import input (no OS dialog)."""
         self.page.get_by_test_id("skills-import-input").set_input_files(path)
         return self
 

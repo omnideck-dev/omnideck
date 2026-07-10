@@ -102,13 +102,14 @@ def test_text_file_upload_round_trip(page: Page, tmp_path):
 
 def test_image_upload_round_trip(page: Page):
     """An attached image is base64-encoded into the /api/chat request and
-    rendered in the user bubble as a data URL.
+    rendered in the user bubble as an <img> served from its stored path.
 
     Does not exercise the vision model — that's a model-quality check,
     not an upload-pipeline check.
     """
     assert _FIXTURE_RED_SQUARE.exists(), f"missing fixture {_FIXTURE_RED_SQUARE}"
     expected_b64 = base64.b64encode(_FIXTURE_RED_SQUARE.read_bytes()).decode()
+    served_path = f"/home/computron/uploads/{_FIXTURE_RED_SQUARE.name}"
 
     captured: dict = {}
 
@@ -120,11 +121,21 @@ def test_image_upload_round_trip(page: Page):
             body=_minimal_chat_response(attachments=[{
                 "filename": _FIXTURE_RED_SQUARE.name,
                 "content_type": "image/png",
-                "path": f"/home/computron/uploads/{_FIXTURE_RED_SQUARE.name}",
+                "path": served_path,
             }]),
         )
 
     page.route("**/api/chat", handler)
+
+    # Mocking the chat endpoint means nothing ever writes the file that the
+    # returned path points at, so stand in for the route that normally serves
+    # it. Without this the thumbnail 404s and the chip drops the <img> for its
+    # file-type icon, which is the intended behaviour for a missing file.
+    page.route(f"**{served_path}", lambda route: route.fulfill(
+        status=200,
+        headers={"Content-Type": "image/png"},
+        body=_FIXTURE_RED_SQUARE.read_bytes(),
+    ))
 
     chat = ChatView(page).goto().new_conversation()
     chat.attach_file(str(_FIXTURE_RED_SQUARE)).send("describe this image")

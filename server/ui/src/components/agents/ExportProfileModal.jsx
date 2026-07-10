@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import ToggleSwitch from '../ToggleSwitch.jsx';
-import { downloadProfileBundle } from '../../utils/bundles.js';
+import { downloadProfilePack } from '../../utils/packs.js';
 import Button from '../primitives/Button.jsx';
 import Modal from '../primitives/Modal.jsx';
 import styles from './ExportProfileModal.module.css';
@@ -9,7 +9,7 @@ import styles from './ExportProfileModal.module.css';
 /**
  * Export options for an agent profile. The system prompt and all other
  * settings always travel; the two toggles decide whether the profile's
- * attached skills are embedded in the bundle and whether the bound provider
+ * attached skills are embedded in the pack and whether the bound provider
  * and model come along (off when sharing to an install with a different setup).
  */
 export default function ExportProfileModal({ profile, onClose }) {
@@ -18,7 +18,7 @@ export default function ExportProfileModal({ profile, onClose }) {
     const [includeModel, setIncludeModel] = useState(true);
 
     const doExport = () => {
-        downloadProfileBundle(profile.id, { includeSkills, includeModel });
+        downloadProfilePack(profile.id, { includeSkills, includeModel });
         onClose();
     };
 

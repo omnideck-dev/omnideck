@@ -1,8 +1,9 @@
-// Export/import helpers for agent-profile and skill bundles.
+// Export/import helpers for agent-profile and skill packs.
 //
 // Export is a plain GET the browser saves as a file — the server sends the
-// bundle with a Content-Disposition attachment header. Import reads a picked
-// file, checks it parses as JSON, and POSTs it to /api/import.
+// pack with a Content-Disposition attachment header. Import uploads the
+// picked file's bytes to /api/import untouched; the server owns parsing and
+// validation, so this stays correct for pack formats that aren't text.
 
 function triggerDownload(url) {
     const a = document.createElement('a');
@@ -15,7 +16,7 @@ function triggerDownload(url) {
     a.remove();
 }
 
-export function downloadProfileBundle(id, { includeSkills = false, includeModel = true } = {}) {
+export function downloadProfilePack(id, { includeSkills = false, includeModel = true } = {}) {
     const params = new URLSearchParams({
         include_skills: includeSkills ? 'true' : 'false',
         include_model: includeModel ? 'true' : 'false',
@@ -23,33 +24,21 @@ export function downloadProfileBundle(id, { includeSkills = false, includeModel 
     triggerDownload(`/api/profiles/${encodeURIComponent(id)}/export?${params.toString()}`);
 }
 
-export function downloadSkillBundle(id) {
+export function downloadSkillPack(id) {
     triggerDownload(`/api/skills/${encodeURIComponent(id)}/export`);
 }
 
 /**
- * Read a picked bundle file and import it.
+ * Upload a picked pack file to be imported.
  * Returns { ok: true, data } or { ok: false, error } for the caller to toast.
  */
-export async function importBundleFile(file) {
-    let text;
-    try {
-        text = await file.text();
-    } catch {
-        return { ok: false, error: 'Could not read that file.' };
-    }
-    let payload;
-    try {
-        payload = JSON.parse(text);
-    } catch {
-        return { ok: false, error: 'That file is not a valid export (not JSON).' };
-    }
+export async function importPackFile(file) {
     let res;
     try {
         res = await fetch('/api/import', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
         });
     } catch {
         return { ok: false, error: 'Import request failed.' };

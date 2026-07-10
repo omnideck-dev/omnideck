@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
 import useSkills from '../../hooks/useSkills.js';
-import { importBundleFile, importSummaryText } from '../../utils/bundles.js';
+import { importPackFile, importSummaryText } from '../../utils/packs.js';
 import Badge from '../Badge.jsx';
 import ProfileBuilder from '../ProfileBuilder.jsx';
 import { useToast } from '../ToastProvider.jsx';
@@ -119,13 +119,13 @@ export default function AgentsView() {
         if (created) addToast(`Duplicated “${p.name}”.`, { type: 'success' });
     };
 
-    // Import a bundle picked from disk. A profile bundle may carry skills, so
+    // Import a pack picked from disk. A profile pack may carry skills, so
     // refresh both lists. Reset the input so re-picking the same file re-fires.
     const handleImportFile = async (e) => {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file) return;
-        const result = await importBundleFile(file);
+        const result = await importPackFile(file);
         if (!result.ok) {
             addToast(result.error, { type: 'error', title: 'Import failed' });
             return;
@@ -387,7 +387,7 @@ export default function AgentsView() {
                     <input
                         ref={importInputRef}
                         type="file"
-                        accept=".omnideck.agent,.omnideck.skill,.json,application/json"
+                        accept=".omnideck.json,application/json"
                         style={{ display: 'none' }}
                         onChange={handleImportFile}
                         data-testid="agents-import-input"

@@ -1,8 +1,9 @@
-"""Tests for server._sharing_routes HTTP handlers.
+"""Tests for the pack export/import HTTP handlers.
 
-Export returns a downloadable bundle with a Content-Disposition header; import
-accepts a bundle back and creates fresh copies. These cover the option query
-params, 404s for unknown items, and rejection of malformed import bodies.
+Export returns a downloadable pack with a Content-Disposition header; import
+accepts one back and creates fresh copies. These cover the option query params,
+404s for unknown items, the download filename, and rejection of malformed
+uploads.
 """
 
 import json
@@ -12,10 +13,11 @@ import pytest
 
 from agents._agent_profiles import AgentProfile, list_agent_profiles, save_agent_profile
 from sdk.skills._store import SkillRecord, list_skill_records, save_skill_record
-from server._sharing_routes import (
+from server._pack_routes import (
+    _slug,
     handle_export_profile,
     handle_export_skill,
-    handle_import_bundle,
+    handle_import_pack,
 )
 
 
@@ -27,14 +29,15 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
-def _make_request(*, match_info=None, json_body=None, query=None, json_error=None):
+def _make_request(*, match_info=None, json_body=None, query=None, raw_body=None):
+    """Build a stub request. Import reads the raw uploaded bytes, not parsed JSON."""
     req = MagicMock()
     req.match_info = match_info or {}
     req.query = query or {}
-    if json_error is not None:
-        req.json = AsyncMock(side_effect=json_error)
+    if raw_body is not None:
+        req.read = AsyncMock(return_value=raw_body)
     elif json_body is not None:
-        req.json = AsyncMock(return_value=json_body)
+        req.read = AsyncMock(return_value=json.dumps(json_body).encode())
     return req
 
 
@@ -45,14 +48,15 @@ async def test_export_profile_unknown_returns_404():
 
 
 @pytest.mark.unit
-async def test_export_profile_downloads_bundle_with_attachment_header():
+async def test_export_profile_downloads_pack_with_attachment_header():
     save_agent_profile(AgentProfile(id="researcher", name="Researcher", system_prompt="hi"))
     resp = await handle_export_profile(_make_request(match_info={"id": "researcher"}))
     assert resp.status == 200
-    assert "attachment" in resp.headers["Content-Disposition"]
-    assert ".omnideck.agent" in resp.headers["Content-Disposition"]
-    bundle = json.loads(resp.body)
-    assert bundle["profiles"][0]["system_prompt"] == "hi"
+    disposition = resp.headers["Content-Disposition"]
+    assert "attachment" in disposition
+    assert 'filename="Researcher.agent.omnideck.json"' in disposition
+    pack = json.loads(resp.body)
+    assert pack["profiles"][0]["system_prompt"] == "hi"
 
 
 @pytest.mark.unit
@@ -66,10 +70,10 @@ async def test_export_profile_include_skills_and_exclude_model():
         query={"include_skills": "true", "include_model": "false"},
     )
     resp = await handle_export_profile(req)
-    bundle = json.loads(resp.body)
-    assert bundle["profiles"][0]["provider"] == ""
-    assert bundle["profiles"][0]["model"] == ""
-    assert {s["id"] for s in bundle["skills"]} == {"coder"}
+    pack = json.loads(resp.body)
+    assert pack["profiles"][0]["provider"] == ""
+    assert pack["profiles"][0]["model"] == ""
+    assert {s["id"] for s in pack["skills"]} == {"coder"}
 
 
 @pytest.mark.unit
@@ -79,25 +83,59 @@ async def test_export_skill_unknown_returns_404():
 
 
 @pytest.mark.unit
-async def test_export_skill_downloads_bundle():
+async def test_export_skill_downloads_pack():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code."))
     resp = await handle_export_skill(_make_request(match_info={"id": "coder"}))
     assert resp.status == 200
-    assert ".omnideck.skill" in resp.headers["Content-Disposition"]
-    bundle = json.loads(resp.body)
-    assert bundle["skills"][0]["prompt"] == "Write code."
+    assert 'filename="Coder.skill.omnideck.json"' in resp.headers["Content-Disposition"]
+    pack = json.loads(resp.body)
+    assert pack["skills"][0]["prompt"] == "Write code."
 
 
 @pytest.mark.unit
-async def test_import_invalid_json_returns_400():
-    req = _make_request(json_error=json.JSONDecodeError("x", "", 0))
-    resp = await handle_import_bundle(req)
+def test_slug_replaces_dots_so_only_structural_dots_remain():
+    assert _slug("v1.2 Researcher") == "v1-2-Researcher"
+
+
+@pytest.mark.unit
+def test_slug_does_not_produce_a_dotfile():
+    assert _slug(".hidden") == "hidden"
+
+
+@pytest.mark.unit
+def test_slug_falls_back_when_nothing_survives():
+    assert _slug("!!!") == "pack"
+
+
+@pytest.mark.unit
+def test_slug_caps_length_without_leaving_a_trailing_separator():
+    stem = _slug("a" * 60 + " " + "b" * 40)
+    assert len(stem) <= 64
+    assert not stem.endswith("-")
+
+
+@pytest.mark.unit
+async def test_import_unparseable_bytes_returns_400():
+    resp = await handle_import_pack(_make_request(raw_body=b"not json {"))
     assert resp.status == 400
 
 
 @pytest.mark.unit
-async def test_import_empty_bundle_returns_400():
-    resp = await handle_import_bundle(_make_request(json_body={"kind": "omnideck.bundle"}))
+async def test_import_non_utf8_bytes_returns_400():
+    # An uploaded binary file reaches the handler as raw bytes that never decode.
+    resp = await handle_import_pack(_make_request(raw_body=b"\xff\xfe\x00\x01"))
+    assert resp.status == 400
+
+
+@pytest.mark.unit
+async def test_import_empty_body_returns_400():
+    resp = await handle_import_pack(_make_request(raw_body=b""))
+    assert resp.status == 400
+
+
+@pytest.mark.unit
+async def test_import_empty_pack_returns_400():
+    resp = await handle_import_pack(_make_request(json_body={"kind": "omnideck.pack"}))
     assert resp.status == 400
     assert "empty" in json.loads(resp.body)["error"].lower()
 
@@ -105,19 +143,19 @@ async def test_import_empty_bundle_returns_400():
 @pytest.mark.unit
 async def test_import_foreign_kind_returns_400():
     req = _make_request(json_body={"kind": "evil", "skills": [{"id": "x", "name": "X"}]})
-    resp = await handle_import_bundle(req)
+    resp = await handle_import_pack(req)
     assert resp.status == 400
 
 
 @pytest.mark.unit
 async def test_import_creates_profiles_and_skills():
     body = {
-        "kind": "omnideck.bundle",
+        "kind": "omnideck.pack",
         "version": 1,
         "profiles": [{"id": "r", "name": "Researcher", "skills": ["coder"]}],
         "skills": [{"id": "coder", "name": "Coder"}],
     }
-    resp = await handle_import_bundle(_make_request(json_body=body))
+    resp = await handle_import_pack(_make_request(json_body=body))
     assert resp.status == 201
     summary = json.loads(resp.body)
     assert len(summary["profiles"]) == 1

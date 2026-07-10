@@ -1,20 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    downloadProfileBundle,
-    downloadSkillBundle,
-    importBundleFile,
+    downloadProfilePack,
+    downloadSkillPack,
+    importPackFile,
     importSummaryText,
-} from '../bundles.js';
+} from '../packs.js';
 
 afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';
 });
 
-// A minimal File-like stand-in whose text() resolves to the given string.
-function fileWith(text, { throws = false } = {}) {
-    return { text: () => (throws ? Promise.reject(new Error('io')) : Promise.resolve(text)) };
-}
+const file = new File(['{"kind":"omnideck.pack","skills":[]}'], 'coder.skill.omnideck.json');
 
 describe('importSummaryText', () => {
     it('summarizes profiles and skills', () => {
@@ -43,7 +40,7 @@ describe('download helpers', () => {
 
     it('builds the profile export URL with options and clicks a download', () => {
         const anchor = captureAnchor();
-        downloadProfileBundle('abc', { includeSkills: true, includeModel: false });
+        downloadProfilePack('abc', { includeSkills: true, includeModel: false });
         expect(anchor.href).toContain('/api/profiles/abc/export?');
         expect(anchor.href).toContain('include_skills=true');
         expect(anchor.href).toContain('include_model=false');
@@ -52,48 +49,44 @@ describe('download helpers', () => {
 
     it('defaults profile export options', () => {
         const anchor = captureAnchor();
-        downloadProfileBundle('abc');
+        downloadProfilePack('abc');
         expect(anchor.href).toContain('include_skills=false');
         expect(anchor.href).toContain('include_model=true');
     });
 
     it('builds the skill export URL', () => {
         const anchor = captureAnchor();
-        downloadSkillBundle('xyz');
+        downloadSkillPack('xyz');
         expect(anchor.href).toContain('/api/skills/xyz/export');
         expect(anchor.click).toHaveBeenCalled();
     });
 });
 
-describe('importBundleFile', () => {
-    it('rejects a file that will not read', async () => {
-        const result = await importBundleFile(fileWith('', { throws: true }));
-        expect(result.ok).toBe(false);
-        expect(result.error).toMatch(/read/i);
-    });
-
-    it('rejects a file that is not JSON', async () => {
-        const result = await importBundleFile(fileWith('not json {'));
-        expect(result.ok).toBe(false);
-        expect(result.error).toMatch(/not a valid export/i);
-    });
-
-    it('posts parsed JSON to /api/import and returns data on success', async () => {
+describe('importPackFile', () => {
+    it('uploads the file untouched to /api/import and returns data on success', async () => {
         const data = { profiles: [{ id: 'x' }], skills: [] };
         global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => data });
-        const result = await importBundleFile(fileWith('{"kind":"omnideck.bundle","skills":[]}'));
+        const result = await importPackFile(file);
         expect(result.ok).toBe(true);
         expect(result.data).toEqual(data);
         const [url, init] = global.fetch.mock.calls[0];
         expect(url).toBe('/api/import');
         expect(init.method).toBe('POST');
-        expect(JSON.parse(init.body)).toEqual({ kind: 'omnideck.bundle', skills: [] });
+        // The file object itself is the body: no reading, no parsing, no re-encoding.
+        expect(init.body).toBe(file);
     });
 
     it('surfaces a server error message', async () => {
-        global.fetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'Not a valid omnideck bundle' }) });
-        const result = await importBundleFile(fileWith('{"kind":"x"}'));
+        global.fetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'Not a valid omnideck export file' }) });
+        const result = await importPackFile(file);
         expect(result.ok).toBe(false);
-        expect(result.error).toBe('Not a valid omnideck bundle');
+        expect(result.error).toBe('Not a valid omnideck export file');
+    });
+
+    it('reports a failed request', async () => {
+        global.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+        const result = await importPackFile(file);
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/failed/i);
     });
 });

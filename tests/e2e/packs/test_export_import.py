@@ -3,7 +3,7 @@
 Drives the real UI against the live backend. Exercises every export
 permutation for an agent (skills on/off × provider·model on/off), verifies the
 downloaded file carries the full profile — inference settings included, not
-just the prompt/model — and imports bundles back through the hidden file input,
+just the prompt/model — and imports packs back through the hidden file input,
 asserting the new items appear and persist.
 """
 
@@ -96,11 +96,11 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
     agents.profiles.export("e2e_share_agent")
     agents.set_export_include_skills(include_skills)
     agents.set_export_include_model(include_model)
-    bundle, filename = _download_json(page, agents.export_confirm.click)
+    pack, filename = _download_json(page, agents.export_confirm.click)
 
-    assert filename.endswith(".omnideck.agent")
-    assert bundle["kind"] == "omnideck.bundle"
-    prof = bundle["profiles"][0]
+    assert filename.endswith(".agent.omnideck.json")
+    assert pack["kind"] == "omnideck.pack"
+    prof = pack["profiles"][0]
 
     # Always present, regardless of toggles.
     assert prof["system_prompt"] == "You are the seeded agent."
@@ -118,11 +118,11 @@ def test_agent_export_permutations(page: Page, clean_stores, include_skills: boo
         assert prof["model"] == ""
 
     if include_skills:
-        assert [s["id"] for s in bundle["skills"]] == ["e2e_share_skill"]
-        assert bundle["skills"][0]["prompt"] == "E2E Share Skill prompt."
-        assert bundle["skills"][0]["tool_categories"] == ["coding"]
+        assert [s["id"] for s in pack["skills"]] == ["e2e_share_skill"]
+        assert pack["skills"][0]["prompt"] == "E2E Share Skill prompt."
+        assert pack["skills"][0]["tool_categories"] == ["coding"]
     else:
-        assert bundle["skills"] == []
+        assert pack["skills"] == []
 
 
 def test_agent_export_from_editor(page: Page, clean_stores):
@@ -132,24 +132,24 @@ def test_agent_export_from_editor(page: Page, clean_stores):
     agents = AgentsPage(page).goto()
     agents.profiles.select("e2e_editor_export")
     agents.builder.export()
-    bundle, filename = _download_json(page, agents.export_confirm.click)
+    pack, filename = _download_json(page, agents.export_confirm.click)
 
-    assert filename.endswith(".omnideck.agent")
-    assert bundle["profiles"][0]["name"] == "E2E Editor Export"
+    assert filename.endswith(".agent.omnideck.json")
+    assert pack["profiles"][0]["name"] == "E2E Editor Export"
 
 
 # ── Skill export ──────────────────────────────────────────────────────────
 
 def test_skill_export_contains_all_fields(page: Page, clean_stores):
-    """A skill export carries the record verbatim under a .omnideck.skill name."""
+    """A skill export carries the record verbatim under a .skill.omnideck.json name."""
     _seed_skill(page, "e2e_only_skill", "E2E Only Skill")
 
     skills_page = SettingsPage(page).goto_skills().skills
-    bundle, filename = _download_json(page, lambda: skills_page.export_row("e2e_only_skill"))
+    pack, filename = _download_json(page, lambda: skills_page.export_row("e2e_only_skill"))
 
-    assert filename.endswith(".omnideck.skill")
-    assert bundle["profiles"] == []
-    skill = bundle["skills"][0]
+    assert filename.endswith(".skill.omnideck.json")
+    assert pack["profiles"] == []
+    skill = pack["skills"][0]
     assert skill["name"] == "E2E Only Skill"
     assert skill["prompt"] == "E2E Only Skill prompt."
     assert skill["tool_categories"] == ["coding"]
@@ -157,17 +157,17 @@ def test_skill_export_contains_all_fields(page: Page, clean_stores):
 
 # ── Import ────────────────────────────────────────────────────────────────
 
-def _write_bundle(tmp_path: Path, name: str, bundle: dict) -> str:
+def _write_pack(tmp_path: Path, name: str, pack: dict) -> str:
     path = tmp_path / name
-    path.write_text(json.dumps(bundle), encoding="utf-8")
+    path.write_text(json.dumps(pack), encoding="utf-8")
     return str(path)
 
 
-def test_import_agent_bundle_creates_profile_and_skill(page: Page, clean_stores, tmp_path):
-    """Importing an agent bundle creates the profile with its settings and the
+def test_import_agent_pack_creates_profile_and_skill(page: Page, clean_stores, tmp_path):
+    """Importing an agent pack creates the profile with its settings and the
     embedded skill, and points the profile at the newly created skill."""
-    bundle = {
-        "kind": "omnideck.bundle",
+    pack = {
+        "kind": "omnideck.pack",
         "version": 1,
         "profiles": [{
             "id": "orig_agent",
@@ -186,7 +186,7 @@ def test_import_agent_bundle_creates_profile_and_skill(page: Page, clean_stores,
             "tool_categories": ["coding"],
         }],
     }
-    path = _write_bundle(tmp_path, "agent.omnideck.agent", bundle)
+    path = _write_pack(tmp_path, "imported-agent.agent.omnideck.json", pack)
 
     agents = AgentsPage(page).goto()
     agents.import_file(path)
@@ -207,10 +207,10 @@ def test_import_agent_bundle_creates_profile_and_skill(page: Page, clean_stores,
     assert created["skills"] == [imported_skill["id"]]
 
 
-def test_import_skill_bundle_creates_skill(page: Page, clean_stores, tmp_path):
-    """Importing a skill bundle creates the skill record."""
-    bundle = {
-        "kind": "omnideck.bundle",
+def test_import_skill_pack_creates_skill(page: Page, clean_stores, tmp_path):
+    """Importing a skill pack creates the skill record."""
+    pack = {
+        "kind": "omnideck.pack",
         "version": 1,
         "skills": [{
             "id": "orig",
@@ -220,7 +220,7 @@ def test_import_skill_bundle_creates_skill(page: Page, clean_stores, tmp_path):
             "tool_categories": ["coding"],
         }],
     }
-    path = _write_bundle(tmp_path, "skill.omnideck.skill", bundle)
+    path = _write_pack(tmp_path, "imported-skill.skill.omnideck.json", pack)
 
     skills_page = SettingsPage(page).goto_skills().skills
     skills_page.import_file(path)

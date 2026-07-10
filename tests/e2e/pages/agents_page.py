@@ -223,6 +223,6 @@ class AgentsPage:
 
     # ── Import ────────────────────────────────────────────────────
     def import_file(self, path: str) -> "AgentsPage":
-        """Feed a bundle file to the hidden import input (no OS dialog)."""
+        """Feed a pack file to the hidden import input (no OS dialog)."""
         self.page.get_by_test_id("agents-import-input").set_input_files(path)
         return self

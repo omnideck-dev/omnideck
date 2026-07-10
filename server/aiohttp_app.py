@@ -36,8 +36,8 @@ from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._model_routes import register_model_routes
+from server._pack_routes import register_pack_routes
 from server._profile_routes import register_profile_routes
-from server._sharing_routes import register_sharing_routes
 from server._skill_routes import register_skill_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._provider_routes import register_provider_routes
@@ -378,7 +378,7 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
     register_skill_routes(app)
 
     # Sharing: export/import for profiles and skills
-    register_sharing_routes(app)
+    register_pack_routes(app)
 
     # Tool-category catalog
     register_tool_category_routes(app)

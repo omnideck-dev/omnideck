@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import useSkills from '../../hooks/useSkills.js';
-import { downloadSkillBundle, importBundleFile, importSummaryText } from '../../utils/bundles.js';
+import { downloadSkillPack, importPackFile, importSummaryText } from '../../utils/packs.js';
 import { useToast } from '../ToastProvider.jsx';
 import Button from '../primitives/Button.jsx';
 import CategoryCatalog from './CategoryCatalog.jsx';
@@ -33,13 +33,13 @@ export default function SkillsTab() {
             .catch(() => {});
     }, []);
 
-    // Import a bundle picked from disk, then refresh the skill list. Reset the
+    // Import a pack picked from disk, then refresh the skill list. Reset the
     // input so re-picking the same file re-fires the change event.
     const handleImportFile = async (e) => {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file) return;
-        const result = await importBundleFile(file);
+        const result = await importPackFile(file);
         if (!result.ok) {
             addToast(result.error, { type: 'error', title: 'Import failed' });
             return;
@@ -82,7 +82,7 @@ export default function SkillsTab() {
                         <input
                             ref={importInputRef}
                             type="file"
-                            accept=".omnideck.agent,.omnideck.skill,.json,application/json"
+                            accept=".omnideck.json,application/json"
                             style={{ display: 'none' }}
                             onChange={handleImportFile}
                             data-testid="skills-import-input"
@@ -105,7 +105,7 @@ export default function SkillsTab() {
                         selectedId={draft ? null : selectedId}
                         onSelect={(id) => { setDraft(null); setSelectedId(id); }}
                         onNew={handleNew}
-                        onExport={(id) => downloadSkillBundle(id)}
+                        onExport={(id) => downloadSkillPack(id)}
                     />
                     <SkillBuilder
                         skill={selectedSkill}
@@ -124,7 +124,7 @@ export default function SkillsTab() {
                             await deleteSkill(id);
                             setSelectedId(null);
                         }}
-                        onExport={(id) => downloadSkillBundle(id)}
+                        onExport={(id) => downloadSkillPack(id)}
                     />
                 </div>
             ) : (
