@@ -1,4 +1,4 @@
-"""Agent tool: create an event on a Google Calendar."""
+"""Agent tool: create an event on a connected calendar."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     _create_event.__name__ = create_event.__name__
     _create_event.__doc__ = (
-        "Create a new event on a Google Calendar. Use list_calendars first to "
+        "Create a new event on a connected calendar. Use list_calendars first to "
         "get the calendar URL. "
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"

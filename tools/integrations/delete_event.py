@@ -1,4 +1,4 @@
-"""Agent tool: delete an event from a Google Calendar."""
+"""Agent tool: delete an event from a connected calendar."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def build_delete_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     _delete_event.__name__ = delete_event.__name__
     _delete_event.__doc__ = (
-        "Delete an event from a Google Calendar. This is permanent — the "
+        "Delete an event from a connected calendar. This is permanent — the "
         "event cannot be recovered. Use list_events to get event IDs. "
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"

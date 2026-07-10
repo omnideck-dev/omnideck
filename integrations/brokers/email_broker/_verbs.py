@@ -30,7 +30,7 @@ import mimetypes
 import secrets
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from integrations._perms import ATTACHMENT_FILE_MODE
 from integrations._rpc import RpcError
@@ -61,6 +61,7 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     "list_calendars": (Capability.CALENDAR, Access.READ),
     "list_events": (Capability.CALENDAR, Access.READ),
     "create_event": (Capability.CALENDAR, Access.READ_WRITE),
+    "update_event": (Capability.CALENDAR, Access.READ_WRITE),
     "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
 }
 
@@ -108,6 +109,9 @@ class VerbDispatcher:
         if caldav is not None:
             self._handlers["list_calendars"] = self._handle_list_calendars
             self._handlers["list_events"] = self._handle_list_events
+            self._handlers["create_event"] = self._handle_create_event
+            self._handlers["update_event"] = self._handle_update_event
+            self._handlers["delete_event"] = self._handle_delete_event
 
     async def dispatch(self, verb: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point called by the RPC layer for every incoming frame."""
@@ -264,6 +268,68 @@ class VerbDispatcher:
             "events": [e.model_dump() for e in events],
         }
 
+    async def _handle_create_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``create_event`` creates a VEVENT and returns its server representation."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_url = _require_str(args, "calendar_id")
+        summary = _require_str(args, "summary")
+        start = _require_str(args, "start")
+        end = _require_str(args, "end")
+        description = _optional_str(args, "description")
+        location = _optional_str(args, "location")
+        attendees = _optional_str_list(args, "attendees")
+        try:
+            event = await self._caldav.create_event(
+                calendar_url, summary, start, end,
+                description, location, attendees,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        return {"event": event.model_dump()}
+
+    async def _handle_update_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``update_event`` changes only the supplied VEVENT fields."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_url = _require_str(args, "calendar_id")
+        event_id = _require_str(args, "event_id")
+        summary = _optional_update_str(args, "summary")
+        start = _optional_update_str(args, "start")
+        end = _optional_update_str(args, "end")
+        description = _optional_update_str(args, "description")
+        location = _optional_update_str(args, "location")
+        attendees = _optional_str_list(args, "attendees")
+        if not any(
+            value is not None
+            for value in (summary, start, end, description, location, attendees)
+        ):
+            raise RpcError("BAD_REQUEST", "update requires at least one field to change")
+        try:
+            event = await self._caldav.update_event(
+                calendar_url, event_id,
+                summary=summary, start=start, end=end,
+                description=description, location=location,
+                attendees=attendees,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"event": event.model_dump()}
+
+    async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``delete_event`` permanently removes a VEVENT."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_url = _require_str(args, "calendar_id")
+        event_id = _require_str(args, "event_id")
+        try:
+            await self._caldav.delete_event(calendar_url, event_id)
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"deleted": True}
+
 
 def _require_str(args: dict[str, Any], key: str) -> str:
     value = args.get(key)
@@ -277,6 +343,35 @@ def _require_int(args: dict[str, Any], key: str, *, default: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise RpcError("BAD_REQUEST", f"{key!r} must be an integer")
     return value
+
+
+def _optional_str(args: dict[str, Any], key: str) -> str:
+    value = args.get(key, "")
+    if not isinstance(value, str):
+        raise RpcError("BAD_REQUEST", f"{key!r} must be a string")
+    return value
+
+
+def _optional_update_str(args: dict[str, Any], key: str) -> str | None:
+    if key not in args:
+        return None
+    value = args[key]
+    if not isinstance(value, str):
+        raise RpcError("BAD_REQUEST", f"{key!r} must be a string")
+    return value
+
+
+def _optional_str_list(args: dict[str, Any], key: str) -> list[str] | None:
+    value = args.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise RpcError(
+            "BAD_REQUEST", f"{key!r} must be an array of non-empty strings",
+        )
+    return list(value)
 
 
 def _require_str_list(args: dict[str, Any], key: str) -> list[str]:

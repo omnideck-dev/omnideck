@@ -17,7 +17,7 @@ import pytest
 
 from integrations._rpc import RpcError
 from integrations.brokers.email_broker._verbs import VerbDispatcher
-from integrations.brokers.email_broker.types import Mailbox, OutboundAttachment
+from integrations.brokers.email_broker.types import Event, Mailbox, OutboundAttachment
 from integrations.permissions import Access, Capability
 
 
@@ -87,6 +87,178 @@ class _StubSmtp:
             "attachments": list(attachments),
         })
         return "<stub@id>"
+
+
+class _StubCalDav:
+    """Drop-in for ``CalDavClient`` recording event creation calls."""
+
+    def __init__(self) -> None:
+        self.create_calls: list[tuple] = []
+        self.update_calls: list[tuple] = []
+        self.delete_calls: list[tuple[str, str]] = []
+
+    async def create_event(
+        self,
+        calendar_url: str,
+        summary: str,
+        start: str,
+        end: str,
+        description: str,
+        location: str,
+        attendees: list[str] | None,
+    ) -> Event:
+        self.create_calls.append((
+            calendar_url, summary, start, end,
+            description, location, attendees,
+        ))
+        return Event(
+            uid="icloud-event-123", summary=summary, start=start, end=end,
+            description=description, location=location,
+        )
+
+    async def update_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        **changes: object,
+    ) -> Event:
+        self.update_calls.append((calendar_url, event_id, changes))
+        return Event(
+            uid=event_id,
+            summary=str(changes.get("summary") or "Existing event"),
+        )
+
+    async def delete_event(self, calendar_url: str, event_id: str) -> None:
+        self.delete_calls.append((calendar_url, event_id))
+
+
+@pytest.mark.asyncio
+async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    result = await dispatcher.dispatch("create_event", {
+        "calendar_id": "https://caldav.icloud.com/123/calendars/home/",
+        "summary": "Project review",
+        "start": "2026-07-15T09:00:00-05:00",
+        "end": "2026-07-15T10:00:00-05:00",
+        "description": "Review the release",
+        "location": "Room 4",
+        "attendees": ["alice@example.com"],
+    })
+
+    assert result["event"] == {
+        "uid": "icloud-event-123",
+        "summary": "Project review",
+        "start": "2026-07-15T09:00:00-05:00",
+        "end": "2026-07-15T10:00:00-05:00",
+        "location": "Room 4",
+        "description": "Review the release",
+    }
+    assert caldav.create_calls == [(
+        "https://caldav.icloud.com/123/calendars/home/",
+        "Project review",
+        "2026-07-15T09:00:00-05:00",
+        "2026-07-15T10:00:00-05:00",
+        "Review the release",
+        "Room 4",
+        ["alice@example.com"],
+    )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_create_event_requires_calendar_write_access(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(RpcError) as excinfo:
+        await dispatcher.dispatch("create_event", {
+            "calendar_id": "https://caldav.example/home/",
+            "summary": "Denied",
+            "start": "2026-07-15",
+            "end": "2026-07-16",
+        })
+
+    assert excinfo.value.code == "PERMISSION_DENIED"
+    assert caldav.create_calls == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    result = await dispatcher.dispatch("update_event", {
+        "calendar_id": "https://caldav.example/home/",
+        "event_id": "icloud-event-123",
+        "summary": "Updated review",
+        "attendees": [],
+    })
+
+    assert result["event"]["summary"] == "Updated review"
+    assert caldav.update_calls == [(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        {
+            "summary": "Updated review",
+            "start": None,
+            "end": None,
+            "description": None,
+            "location": None,
+            "attendees": [],
+        },
+    )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_update_event_rejects_empty_update(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(RpcError) as excinfo:
+        await dispatcher.dispatch("update_event", {
+            "calendar_id": "https://caldav.example/home/",
+            "event_id": "icloud-event-123",
+        })
+
+    assert excinfo.value.code == "BAD_REQUEST"
+    assert caldav.update_calls == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    result = await dispatcher.dispatch("delete_event", {
+        "calendar_id": "https://caldav.example/home/",
+        "event_id": "icloud-event-123",
+    })
+
+    assert result == {"deleted": True}
+    assert caldav.delete_calls == [(
+        "https://caldav.example/home/", "icloud-event-123",
+    )]
 
 
 @pytest.mark.asyncio

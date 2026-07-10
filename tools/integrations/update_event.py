@@ -1,4 +1,4 @@
-"""Agent tool: update an existing Google Calendar event."""
+"""Agent tool: update an existing event on a connected calendar."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ def build_update_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     _update_event.__name__ = update_event.__name__
     _update_event.__doc__ = (
-        "Update an existing event on a Google Calendar. Only supplied fields "
+        "Update an existing event on a connected calendar. Only supplied fields "
         "are changed. Use list_events to get event IDs. "
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"

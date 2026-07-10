@@ -20,12 +20,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import caldav
 import requests.exceptions
 import urllib3.exceptions
+from caldav.lib import error as caldav_error
 
 from integrations.brokers.email_broker.types import Calendar, Event
 
@@ -69,7 +70,7 @@ class CalDavClient:
         """
         try:
             self._client, self._principal = await asyncio.to_thread(self._blocking_connect)
-        except caldav.lib.error.AuthorizationError as exc:
+        except caldav_error.AuthorizationError as exc:
             msg = f"CalDAV auth rejected: {exc}"
             raise CalDavAuthError(msg) from exc
         except Exception as exc:
@@ -190,6 +191,132 @@ class CalDavClient:
             logger.info("list_events: skipped %d unparseable hit(s)", skipped)
         return name, events
 
+    async def create_event(
+        self,
+        calendar_url: str,
+        summary: str,
+        start: str,
+        end: str,
+        description: str = "",
+        location: str = "",
+        attendees: list[str] | None = None,
+    ) -> Event:
+        """Create and return a VEVENT in ``calendar_url``."""
+        dtstart = _parse_event_time(start, "start")
+        dtend = _parse_event_time(end, "end")
+        if isinstance(dtstart, datetime) != isinstance(dtend, datetime):
+            msg = "start and end must both be datetimes or both be dates"
+            raise ValueError(msg)
+        if dtend <= dtstart:
+            raise ValueError("end must be after start")
+
+        async with self._lock:
+
+            def _op(client: caldav.DAVClient, _principal: Any) -> Any:
+                cal = client.calendar(url=calendar_url)
+                properties: dict[str, Any] = {
+                    "summary": summary,
+                    "dtstart": dtstart,
+                    "dtend": dtend,
+                }
+                if description:
+                    properties["description"] = description
+                if location:
+                    properties["location"] = location
+                if attendees:
+                    properties["attendee"] = [
+                        address if address.lower().startswith("mailto:")
+                        else f"mailto:{address}"
+                        for address in attendees
+                    ]
+                return cal.add_event(**properties)
+
+            raw = await asyncio.to_thread(self._with_reconnect, _op)
+
+        event = _parse_event(raw)
+        if event is None:
+            msg = "CalDAV server returned an event without a usable UID"
+            raise RuntimeError(msg)
+        logger.info("create_event(%s): created %s", calendar_url, event.uid)
+        return event
+
+    async def update_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        *,
+        summary: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        attendees: list[str] | None = None,
+    ) -> Event:
+        """Update supplied fields on the VEVENT identified by ``event_id``."""
+        parsed_start = _parse_event_time(start, "start") if start is not None else None
+        parsed_end = _parse_event_time(end, "end") if end is not None else None
+
+        async with self._lock:
+
+            def _op(client: caldav.DAVClient, _principal: Any) -> Any:
+                cal = client.calendar(url=calendar_url)
+                resource = cal.get_event_by_uid(event_id)
+                component = next(
+                    iter(resource.icalendar_instance.walk("VEVENT")), None,
+                )
+                if component is None:
+                    raise ValueError("CalDAV event does not contain a VEVENT")
+
+                updates: dict[str, Any] = {
+                    "summary": summary,
+                    "dtstart": parsed_start,
+                    "dtend": parsed_end,
+                    "description": description,
+                    "location": location,
+                }
+                for field, value in updates.items():
+                    if value is not None:
+                        _replace_ical_property(component, field, value)
+                if attendees is not None:
+                    addresses = [
+                        address if address.lower().startswith("mailto:")
+                        else f"mailto:{address}"
+                        for address in attendees
+                    ]
+                    _replace_ical_property(component, "attendee", addresses)
+
+                actual_start = _ical_value(component, "dtstart")
+                actual_end = _ical_value(component, "dtend")
+                _validate_event_range(actual_start, actual_end)
+                resource.save()
+                return resource
+
+            try:
+                raw = await asyncio.to_thread(self._with_reconnect, _op)
+            except caldav_error.NotFoundError as exc:
+                raise LookupError(f"event not found: {event_id}") from exc
+
+        event = _parse_event(raw)
+        if event is None:
+            msg = "CalDAV server returned an event without a usable UID"
+            raise RuntimeError(msg)
+        logger.info("update_event(%s): updated %s", calendar_url, event.uid)
+        return event
+
+    async def delete_event(self, calendar_url: str, event_id: str) -> None:
+        """Delete the VEVENT identified by ``event_id`` from a calendar."""
+        async with self._lock:
+
+            def _op(client: caldav.DAVClient, _principal: Any) -> None:
+                cal = client.calendar(url=calendar_url)
+                cal.get_event_by_uid(event_id).delete()
+
+            try:
+                await asyncio.to_thread(self._with_reconnect, _op)
+            except caldav_error.NotFoundError as exc:
+                raise LookupError(f"event not found: {event_id}") from exc
+        logger.info("delete_event(%s): deleted %s", calendar_url, event_id)
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -203,6 +330,42 @@ def _is_auth_failure(exc: Exception) -> bool:
     # exception hierarchy.
     text = str(exc).lower()
     return "401" in text or "unauthorized" in text
+
+
+def _parse_event_time(value: str, field: str) -> date | datetime:
+    """Parse an RFC 3339 datetime or an ISO date used by calendar tools."""
+    try:
+        if "T" not in value:
+            return date.fromisoformat(value)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an RFC 3339 datetime or ISO date") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} datetime must include a UTC offset")
+    return parsed
+
+
+def _ical_value(component: Any, field: str) -> Any:
+    value = component.get(field)
+    return getattr(value, "dt", value)
+
+
+def _validate_event_range(start: Any, end: Any) -> None:
+    if start is None or end is None:
+        raise ValueError("event must contain both start and end")
+    if isinstance(start, datetime) != isinstance(end, datetime):
+        raise ValueError("start and end must both be datetimes or both be dates")
+    if end <= start:
+        raise ValueError("end must be after start")
+
+
+def _replace_ical_property(component: Any, field: str, value: Any) -> None:
+    component.pop(field, None)
+    if isinstance(value, list):
+        for item in value:
+            component.add(field, item)
+    else:
+        component.add(field, value)
 
 
 def _calendar_name(cal: Any) -> str:
