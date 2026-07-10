@@ -32,7 +32,7 @@ async def delete_event(
         await broker_client.call(
             integration_id,
             "delete_event",
-            {"calendar_id": calendar_url, "event_id": event_id},
+            {"calendar_url": calendar_url, "event_id": event_id},
             app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:

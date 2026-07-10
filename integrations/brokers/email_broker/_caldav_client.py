@@ -285,9 +285,11 @@ class CalDavClient:
                     ]
                     _replace_ical_property(component, "attendee", addresses)
 
-                actual_start = _ical_value(component, "dtstart")
-                actual_end = _ical_value(component, "dtend")
-                _validate_event_range(actual_start, actual_end)
+                if parsed_start is not None or parsed_end is not None:
+                    actual_start = _ical_value(component, "dtstart")
+                    actual_end = _ical_value(component, "dtend")
+                    if actual_start is not None and actual_end is not None:
+                        _validate_event_range(actual_start, actual_end)
                 resource.save()
                 return resource
 
@@ -342,7 +344,7 @@ def _parse_event_time(value: str, field: str) -> date | datetime:
         raise ValueError(f"{field} must be an RFC 3339 datetime or ISO date") from exc
     if parsed.tzinfo is None:
         raise ValueError(f"{field} datetime must include a UTC offset")
-    return parsed
+    return parsed.astimezone(UTC)
 
 
 def _ical_value(component: Any, field: str) -> Any:

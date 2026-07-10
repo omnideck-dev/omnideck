@@ -31,14 +31,15 @@ def _event_resource(
     uid: str = "icloud-event-123",
     summary: str = "Project review",
     start: str = "2026-07-15T09:00:00-05:00",
-    end: str = "2026-07-15T10:00:00-05:00",
+    end: str | None = "2026-07-15T10:00:00-05:00",
 ) -> _StubResource:
     calendar = ICalendar()
     component = ICalendarEvent()
     component.add("uid", uid)
     component.add("summary", summary)
     component.add("dtstart", datetime.fromisoformat(start))
-    component.add("dtend", datetime.fromisoformat(end))
+    if end is not None:
+        component.add("dtend", datetime.fromisoformat(end))
     calendar.add_component(component)
     return _StubResource(calendar)
 
@@ -101,19 +102,24 @@ async def test_create_event_adds_vevent_and_returns_wire_event() -> None:
     assert event.model_dump() == {
         "uid": "icloud-event-123",
         "summary": "Project review",
-        "start": "2026-07-15T09:00:00-05:00",
-        "end": "2026-07-15T10:00:00-05:00",
+        "start": "2026-07-15T14:00:00+00:00",
+        "end": "2026-07-15T15:00:00+00:00",
         "location": "Room 4",
         "description": "Review the release",
     }
     assert calendar.added == [{
         "summary": "Project review",
-        "dtstart": datetime.fromisoformat("2026-07-15T09:00:00-05:00"),
-        "dtend": datetime.fromisoformat("2026-07-15T10:00:00-05:00"),
+        "dtstart": datetime.fromisoformat("2026-07-15T14:00:00+00:00"),
+        "dtend": datetime.fromisoformat("2026-07-15T15:00:00+00:00"),
         "description": "Review the release",
         "location": "Room 4",
         "attendee": ["mailto:alice@example.com", "mailto:bob@example.com"],
     }]
+    payload = calendar.resources["icloud-event-123"].icalendar_instance.to_ical()
+    assert b"DTSTART:20260715T140000Z" in payload
+    assert b"DTEND:20260715T150000Z" in payload
+    assert b"ATTENDEE:mailto:alice@example.com" in payload
+    assert b"ATTENDEE:mailto:bob@example.com" in payload
 
 
 @pytest.mark.asyncio
@@ -190,3 +196,21 @@ async def test_update_event_translates_missing_uid_to_lookup_error() -> None:
         await client.update_event(
             "https://caldav.example/home/", "missing", summary="Nope",
         )
+
+
+@pytest.mark.asyncio
+async def test_summary_update_allows_valid_event_without_dtend() -> None:
+    calendar = _StubCalendar()
+    resource = _event_resource(end=None)
+    calendar.resources["icloud-event-123"] = resource
+    client = _connected_client(calendar)
+
+    event = await client.update_event(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        summary="Updated title",
+    )
+
+    assert event.summary == "Updated title"
+    assert event.end == ""
+    assert resource.save_calls == 1

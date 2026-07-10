@@ -142,7 +142,7 @@ async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Pa
     )  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch("create_event", {
-        "calendar_id": "https://caldav.icloud.com/123/calendars/home/",
+        "calendar_url": "https://caldav.icloud.com/123/calendars/home/",
         "summary": "Project review",
         "start": "2026-07-15T09:00:00-05:00",
         "end": "2026-07-15T10:00:00-05:00",
@@ -181,7 +181,7 @@ async def test_dispatch_create_event_requires_calendar_write_access(tmp_path: Pa
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("create_event", {
-            "calendar_id": "https://caldav.example/home/",
+            "calendar_url": "https://caldav.example/home/",
             "summary": "Denied",
             "start": "2026-07-15",
             "end": "2026-07-16",
@@ -201,7 +201,7 @@ async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path:
     )  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch("update_event", {
-        "calendar_id": "https://caldav.example/home/",
+        "calendar_url": "https://caldav.example/home/",
         "event_id": "icloud-event-123",
         "summary": "Updated review",
         "attendees": [],
@@ -233,7 +233,7 @@ async def test_dispatch_update_event_rejects_empty_update(tmp_path: Path) -> Non
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("update_event", {
-            "calendar_id": "https://caldav.example/home/",
+            "calendar_url": "https://caldav.example/home/",
             "event_id": "icloud-event-123",
         })
 
@@ -251,7 +251,7 @@ async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
     )  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch("delete_event", {
-        "calendar_id": "https://caldav.example/home/",
+        "calendar_url": "https://caldav.example/home/",
         "event_id": "icloud-event-123",
     })
 

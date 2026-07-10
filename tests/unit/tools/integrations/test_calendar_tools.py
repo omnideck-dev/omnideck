@@ -251,6 +251,8 @@ async def test_create_event_passes_optional_fields(monkeypatch: pytest.MonkeyPat
     assert captured["description"] == "Team lunch"
     assert captured["location"] == "Cafeteria"
     assert captured["attendees"] == ["alice@example.com", "bob@example.com"]
+    assert captured["calendar_url"] == "primary"
+    assert "calendar_id" not in captured
 
 
 @pytest.mark.unit
@@ -344,6 +346,8 @@ async def test_update_event_passes_only_provided_fields(monkeypatch: pytest.Monk
     monkeypatch.setattr(broker_client, "call", _capture)
 
     await update_event("gw_work", "primary", "ev1", location="Room 42")
+    assert captured["calendar_url"] == "primary"
+    assert "calendar_id" not in captured
     assert captured["location"] == "Room 42"
     assert "summary" not in captured
     assert "start" not in captured

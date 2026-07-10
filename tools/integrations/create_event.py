@@ -40,7 +40,7 @@ async def create_event(
     """
     app_sock = load_config().integrations.app_sock_path
     args: dict[str, Any] = {
-        "calendar_id": calendar_url,
+        "calendar_url": calendar_url,
         "summary": summary,
         "start": start,
         "end": end,

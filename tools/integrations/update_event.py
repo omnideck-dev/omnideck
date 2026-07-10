@@ -43,7 +43,7 @@ async def update_event(
     """
     app_sock = load_config().integrations.app_sock_path
     args: dict[str, Any] = {
-        "calendar_id": calendar_url,
+        "calendar_url": calendar_url,
         "event_id": event_id,
     }
     if summary:
