@@ -257,35 +257,28 @@ _STRUCTURED_SNAPSHOT_JS = """
     return null;
   }
 
+  // Is this element itself on screen? Returns 'in' or 'out', looking only at the
+  // element's own geometry. It deliberately says nothing about the element's
+  // descendants: a box does not bound its content, since out-of-flow (absolute /
+  // fixed) or overflow-scrolled children render outside it. So the walk never
+  // prunes a subtree on this verdict — an 'out' element is still descended into,
+  // and each descendant is judged on its own rect. This verdict only decides
+  // whether to emit THIS element.
   function vpPos(el) {
     if (fullPage) return 'in';
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) {
-      return (el.children.length > 0 || el.shadowRoot) ? 'clipped' : 'out';
-    }
-    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) {
-      if (el.children.length > 0 || el.shadowRoot) {
-        const os = window.getComputedStyle(el);
-        if (os.overflowY === 'visible' && el.scrollHeight > r.height + 1) {
-          if (r.top + el.scrollHeight > 0 && r.top < vh) return 'clipped';
-        }
-        if (os.overflowX === 'visible' && el.scrollWidth > r.width + 1) {
-          if (r.left + el.scrollWidth > 0 && r.left < vw) return 'clipped';
-        }
-      }
-      return 'out';
-    }
+    // Zero-area, or outside the viewport rectangle: not on screen itself.
+    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) return 'out';
+    // On screen by coordinates, but scrolled out of a clipping ancestor's box.
     let ancestor = el.parentElement;
     while (ancestor && ancestor !== document.body) {
       const os = window.getComputedStyle(ancestor);
-      const ox = os.overflowX;
-      const oy = os.overflowY;
-      const clipX = ox === 'hidden' || ox === 'clip';
-      const clipY = oy === 'hidden' || oy === 'clip';
+      const clipX = os.overflowX === 'hidden' || os.overflowX === 'clip';
+      const clipY = os.overflowY === 'hidden' || os.overflowY === 'clip';
       if (clipX || clipY) {
         const ar = ancestor.getBoundingClientRect();
-        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return 'clipped';
-        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return 'clipped';
+        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return 'out';
+        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return 'out';
       }
       ancestor = ancestor.parentElement;
     }
@@ -369,16 +362,18 @@ _STRUCTURED_SNAPSHOT_JS = """
       return;
     }
 
-    if (!isRoot) {
-      const vis = vpPos(el);
-      if (vis === 'out') return;
-      if (vis === 'clipped') {
-        for (const child of el.children) walk(child, false);
-        return;
-      }
+    const vp = isRoot ? 'in' : vpPos(el);
+    if (vp === 'out') {
+      // Off screen itself, but its box may not bound its content: a descendant
+      // laid out of flow (absolute / fixed) or inside an overflow-scroll region
+      // can still be on screen. Descend and judge each child on its own rect
+      // rather than pruning the subtree. Off-screen descendants get their own
+      // 'out' and emit nothing, so the visible result is unchanged; only content
+      // that was being lost behind a mis-measured wrapper now surfaces.
+      for (const child of el.children) walk(child, false);
+      return;
     }
 
-    const vp = isRoot ? 'in' : vpPos(el);
     const role = getRole(el);
 
     if (role && SKIP_ROLES.has(role)) return;
