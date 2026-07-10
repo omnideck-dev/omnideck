@@ -43,8 +43,12 @@ export async function importPackFile(file) {
     } catch {
         return { ok: false, error: 'Import request failed.' };
     }
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: body.error || 'Import failed.' };
+    const body = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: (body && body.error) || 'Import failed.' };
+    // A 2xx with an unreadable or non-object body means the server didn't report
+    // what it created, so treat it as a failure rather than a green toast that
+    // silently claims nothing was imported.
+    if (!body || typeof body !== 'object') return { ok: false, error: 'Import failed.' };
     return { ok: true, data: body };
 }
 

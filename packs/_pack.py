@@ -115,9 +115,9 @@ def build_skill_pack(skill_id: str) -> Pack:
 def import_pack(pack: Pack) -> ImportSummary:
     """Persist a pack's profiles and skills as fresh copies.
 
-    Skills are imported first so profile skill references can be rewritten to
-    the new ids. Every item gets a new id; skill names are suffixed on
-    collision to satisfy the unique-name rule.
+    Raises:
+        ValueError: If the pack's kind or version is unsupported, or it
+            carries neither a profile nor a skill.
     """
     if pack.kind != PACK_KIND:
         msg = f"unrecognized pack kind {pack.kind!r}"
@@ -125,6 +125,8 @@ def import_pack(pack: Pack) -> ImportSummary:
     if pack.version > PACK_VERSION:
         msg = f"pack version {pack.version} is newer than supported ({PACK_VERSION})"
         raise ValueError(msg)
+    if not pack.profiles and not pack.skills:
+        raise ValueError("pack is empty")
 
     used_skill_names = {r.name for r in list_skill_records()}
     skill_id_map: dict[str, str] = {}

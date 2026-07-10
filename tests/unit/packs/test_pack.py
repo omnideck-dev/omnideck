@@ -138,6 +138,12 @@ def test_import_pack_rejects_newer_version():
 
 
 @pytest.mark.unit
+def test_import_pack_rejects_empty():
+    with pytest.raises(ValueError, match="empty"):
+        import_pack(Pack())
+
+
+@pytest.mark.unit
 def test_import_pack_skill_creates_fresh_id():
     pack = Pack(skills=[_skill(id="coder", name="Coder")])
     summary = import_pack(pack)

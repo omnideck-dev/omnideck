@@ -251,6 +251,15 @@ export default function AgentsView() {
         },
     ];
 
+    // Rendered in whichever branch is active below; defined once so the two
+    // mount points can't drift.
+    const exportModal = exportProfile && (
+        <ExportProfileModal
+            profile={exportProfile}
+            onClose={() => setExportProfile(null)}
+        />
+    );
+
     // Selecting an agent replaces the list with the full editor; a back nav in
     // the header returns to the list. Full-width either way.
     if (selected) {
@@ -336,12 +345,7 @@ export default function AgentsView() {
                         categories={categories}
                     />
                 </div>
-                {exportProfile && (
-                    <ExportProfileModal
-                        profile={exportProfile}
-                        onClose={() => setExportProfile(null)}
-                    />
-                )}
+                {exportModal}
             </div>
         );
     }
@@ -428,12 +432,7 @@ export default function AgentsView() {
                     )}
                 </div>
             </div>
-            {exportProfile && (
-                <ExportProfileModal
-                    profile={exportProfile}
-                    onClose={() => setExportProfile(null)}
-                />
-            )}
+            {exportModal}
         </div>
     );
 }

@@ -89,4 +89,14 @@ describe('importPackFile', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toMatch(/failed/i);
     });
+
+    it('treats a 2xx with an unreadable body as a failure', async () => {
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => { throw new SyntaxError('unexpected token'); },
+        });
+        const result = await importPackFile(file);
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/failed/i);
+    });
 });

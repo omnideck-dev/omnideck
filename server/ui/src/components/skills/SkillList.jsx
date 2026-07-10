@@ -32,7 +32,7 @@ function SkillItem({ skill, categories, selected, onSelect, onExport }) {
                 title="Export skill"
                 aria-label={`Export ${skill.name}`}
                 data-testid={`skill-export-${skill.id}`}
-                onClick={(e) => { e.stopPropagation(); onExport(skill.id); }}
+                onClick={(e) => { e.stopPropagation(); onExport?.(skill.id); }}
             >
                 <i className="bi bi-download" />
             </IconButton>

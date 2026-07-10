@@ -105,8 +105,6 @@ async def handle_import_pack(request: web.Request) -> web.Response:
     except Exception as exc:
         logger.warning("Rejected pack: %s", exc)
         return web.json_response({"error": "Not a valid omnideck export file"}, status=400)
-    if not pack.profiles and not pack.skills:
-        return web.json_response({"error": "Pack is empty"}, status=400)
     try:
         summary = import_pack(pack)
     except ValueError as exc:

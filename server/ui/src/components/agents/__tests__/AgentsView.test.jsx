@@ -23,6 +23,7 @@ const profilesHook = {
     updateProfile: vi.fn(),
     deleteProfile: vi.fn(),
     duplicateProfile: vi.fn(),
+    refresh: vi.fn(),
 };
 
 vi.mock('../../../contexts/AppData.jsx', () => ({
@@ -30,7 +31,7 @@ vi.mock('../../../contexts/AppData.jsx', () => ({
 }));
 
 vi.mock('../../../hooks/useSkills.js', () => ({
-    default: () => ({ skills: [] }),
+    default: () => ({ skills: [], refresh: vi.fn() }),
 }));
 
 // The detail is the full ProfileBuilder editor; stub it to keep this test
