@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mergeTerminalEvent, formatElapsed, formatTokens, formatAgentName } from '../agentUtils.js';
 
 describe('formatTokens', () => {
@@ -63,8 +63,12 @@ describe('formatElapsed', () => {
     });
 
     it('uses Date.now() when completedAt is not provided', () => {
-        const startedAt = Date.now() - 5000;
+        // Pin the clock so the elapsed calculation can't straddle a second boundary.
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:05Z'));
+        const startedAt = new Date('2026-01-01T00:00:00Z').getTime();
         expect(formatElapsed(startedAt)).toBe('5s');
+        vi.useRealTimers();
     });
 });
 

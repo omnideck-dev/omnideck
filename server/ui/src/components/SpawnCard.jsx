@@ -27,7 +27,7 @@ function _meta(agent) {
     }
     const ctx = agent.contextUsage;
     if (ctx && ctx.context_limit) {
-        parts.push(`${formatTokens(ctx.context_used)} / ${formatTokens(ctx.context_limit)}`);
+        parts.push(`${formatTokens(ctx.context_used) ?? '0'} / ${formatTokens(ctx.context_limit)}`);
     }
     return parts.join(' · ');
 }
