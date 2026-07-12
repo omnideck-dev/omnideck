@@ -1,13 +1,6 @@
 import StatusDot from './StatusDot.jsx';
-import { formatAgentName } from '../utils/agentUtils.js';
+import { formatAgentName, formatTokens } from '../utils/agentUtils.js';
 import styles from './SpawnCard.module.css';
-
-function _fmtTokens(n) {
-    if (n == null) return null;
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-    return String(n);
-}
 
 /** Status counts for the card header — running / done / error. */
 function _rollup(agents) {
@@ -34,7 +27,7 @@ function _meta(agent) {
     }
     const ctx = agent.contextUsage;
     if (ctx && ctx.context_limit) {
-        parts.push(`${_fmtTokens(ctx.context_used)} / ${_fmtTokens(ctx.context_limit)}`);
+        parts.push(`${formatTokens(ctx.context_used)} / ${formatTokens(ctx.context_limit)}`);
     }
     return parts.join(' · ');
 }

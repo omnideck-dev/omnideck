@@ -49,11 +49,11 @@ describe('CompactionChip', () => {
         render(<CompactionChip stats={baseStats} summaryText="done" />);
         fireEvent.click(screen.getByTestId('compaction-chip'));
         const panel = screen.getByTestId('compaction-panel');
-        // Token formatting: 20000 → 20.0k, 12000 → 12.0k
-        expect(panel).toHaveTextContent('20.0k');
-        expect(panel).toHaveTextContent('12.0k');
+        // Token formatting: 20000 → 20k, 12000 → 12k
+        expect(panel).toHaveTextContent('20k');
+        expect(panel).toHaveTextContent('12k');
         // Savings: 8000 saved, 40%
-        expect(panel).toHaveTextContent('saved 8.0k (40%)');
+        expect(panel).toHaveTextContent('saved 8k (40%)');
         // Spanned: "2m 6s" (125.5 → floor 2m + round 6s)
         expect(panel).toHaveTextContent('2m 6s');
         // Scope: tool calls only — turns and iterations are jargon.

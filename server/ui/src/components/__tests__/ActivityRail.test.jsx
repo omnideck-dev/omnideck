@@ -180,7 +180,7 @@ describe('ActivityRail', () => {
         const row = screen.getByTestId('activity-row-compaction');
         expect(row).toBeInTheDocument();
         expect(row).toHaveTextContent('compacted');
-        expect(row).toHaveTextContent('saved 12.0k (60%)');
+        expect(row).toHaveTextContent('saved 12k (60%)');
         // Collapsed: the summary text isn't shown yet.
         expect(screen.queryByTestId('activity-compaction-panel')).not.toBeVisible();
     });
@@ -198,8 +198,8 @@ describe('ActivityRail', () => {
         render(<ActivityRail entries={entries} />);
         await user.click(screen.getByTestId('activity-compaction-summary'));
         const panel = screen.getByTestId('activity-compaction-panel');
-        expect(panel).toHaveTextContent('20.0k');
-        expect(panel).toHaveTextContent('8.0k');
+        expect(panel).toHaveTextContent('20k');
+        expect(panel).toHaveTextContent('8k');
         expect(panel).toHaveTextContent('1 tool calls');
         expect(panel).toHaveTextContent('summarized the early turns');
         expect(panel).toHaveTextContent('user is iterating on the design');

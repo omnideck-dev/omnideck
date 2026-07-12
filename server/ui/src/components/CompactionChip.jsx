@@ -1,12 +1,6 @@
 import { useState } from 'react';
 import styles from './CompactionChip.module.css';
-
-/** Format a token count as compact (e.g. 12,400 → "12.4k"). */
-function _formatTokens(n) {
-    if (n == null) return '—';
-    if (n < 1000) return String(n);
-    return `${(n / 1000).toFixed(1)}k`;
-}
+import { formatTokens } from '../utils/agentUtils.js';
 
 /** Format a duration in seconds as "8.8s" / "1m 12s". */
 function _formatSeconds(s) {
@@ -54,7 +48,7 @@ export default function CompactionChip({
     // measurement is larger than "before" — showing that is misleading,
     // so hide the line.
     const savings = (stats?.saved_tokens != null && stats?.saved_ratio != null && stats.saved_tokens > 0)
-        ? `saved ${_formatTokens(stats.saved_tokens)} (${Math.round(stats.saved_ratio * 100)}%)`
+        ? `saved ${formatTokens(stats.saved_tokens)} (${Math.round(stats.saved_ratio * 100)}%)`
         : null;
 
     return (
@@ -82,9 +76,9 @@ export default function CompactionChip({
                         <>
                             <dt>context</dt>
                             <dd>
-                                <strong>{_formatTokens(stats?.context_before)}</strong>
+                                <strong>{formatTokens(stats?.context_before) ?? '—'}</strong>
                                 <span className={styles.arrow}>→</span>
-                                <strong>{_formatTokens(stats?.context_after)}</strong>
+                                <strong>{formatTokens(stats?.context_after) ?? '—'}</strong>
                                 {' tokens'}
                                 {savings && <>{' '}<span className={styles.savings}>{savings}</span></>}
                             </dd>
@@ -122,7 +116,7 @@ export default function CompactionChip({
                         <>
                             <dt>summary</dt>
                             <dd>
-                                <strong>{_formatTokens(stats.summary_tokens)}</strong>
+                                <strong>{formatTokens(stats.summary_tokens) ?? '—'}</strong>
                                 {' tokens'}
                             </dd>
                         </>

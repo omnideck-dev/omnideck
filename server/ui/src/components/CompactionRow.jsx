@@ -1,12 +1,6 @@
 import { useState } from 'react';
 import styles from './CompactionRow.module.css';
-
-/** Format a token count compactly (e.g. 12,400 → "12.4k"). */
-function _fmtTokens(n) {
-    if (n == null) return '—';
-    if (n < 1000) return String(n);
-    return `${(n / 1000).toFixed(1)}k`;
-}
+import { formatTokens } from '../utils/agentUtils.js';
 
 /**
  * Compaction marker for the agent activity rail. Collapsed it's a single
@@ -22,7 +16,7 @@ export default function CompactionRow({ stats, summaryText, userIntentSummary })
     const scope = stats?.scope;
     const msgs = scope ? (scope.user_messages ?? 0) + (scope.iterations ?? 0) : null;
     const savings = (stats?.saved_tokens != null && stats?.saved_ratio != null && stats.saved_tokens > 0)
-        ? `saved ${_fmtTokens(stats.saved_tokens)} (${Math.round(stats.saved_ratio * 100)}%)`
+        ? `saved ${formatTokens(stats.saved_tokens)} (${Math.round(stats.saved_ratio * 100)}%)`
         : null;
 
     return (
@@ -44,9 +38,9 @@ export default function CompactionRow({ stats, summaryText, userIntentSummary })
                         <>
                             <dt>context</dt>
                             <dd>
-                                {_fmtTokens(stats?.context_before)}
+                                {formatTokens(stats?.context_before) ?? '—'}
                                 <span className={styles.arrow}>→</span>
-                                {_fmtTokens(stats?.context_after)} tokens
+                                {formatTokens(stats?.context_after) ?? '—'} tokens
                             </dd>
                         </>
                     )}
@@ -59,7 +53,7 @@ export default function CompactionRow({ stats, summaryText, userIntentSummary })
                     {stats?.summary_tokens != null && (
                         <>
                             <dt>summary</dt>
-                            <dd>{_fmtTokens(stats.summary_tokens)} tokens{stats?.model && <> · via <code>{stats.model}</code></>}</dd>
+                            <dd>{formatTokens(stats.summary_tokens) ?? '—'} tokens{stats?.model && <> · via <code>{stats.model}</code></>}</dd>
                         </>
                     )}
                 </dl>
