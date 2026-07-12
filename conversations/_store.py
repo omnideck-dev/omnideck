@@ -118,6 +118,45 @@ def save_conversation_pinned(conversation_id: str, pinned: bool) -> None:
     tmp.replace(metadata_path)
 
 
+def save_conversation_folder(conversation_id: str, folder_id: str | None) -> None:
+    """File a conversation into a folder, or remove it from one.
+
+    The folder is recorded as a ``folder_id`` in metadata.json; passing None
+    clears it so the conversation returns to the normal date-grouped listing.
+    Nothing moves on disk — this is a label, not a relocation.
+    """
+    conv_dir = _get_conv_dir(conversation_id)
+    conv_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata_path = conv_dir / "metadata.json"
+    metadata: dict[str, Any] = {}
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    metadata["folder_id"] = folder_id
+    tmp = metadata_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    tmp.replace(metadata_path)
+
+
+def clear_folder_from_conversations(folder_id: str) -> int:
+    """Unfile every conversation currently in ``folder_id``.
+
+    Used when a folder is deleted so its members fall back to the normal
+    listing rather than pointing at a folder that no longer exists. Returns
+    the number of conversations cleared.
+    """
+    cleared = 0
+    for summary in list_conversations():
+        if summary.folder_id == folder_id:
+            save_conversation_folder(summary.conversation_id, None)
+            cleared += 1
+    return cleared
+
+
 def save_conversation_profile(conversation_id: str, profile_id: str) -> None:
     """Save the agent profile selected for a conversation.
 
@@ -263,6 +302,7 @@ def _summarize_conversation(entry: Path) -> ConversationSummary | None:
         started_at=started_at,
         turn_count=turn_count,
         pinned=bool(metadata.get("pinned", False)),
+        folder_id=metadata.get("folder_id") or None,
     )
 
 

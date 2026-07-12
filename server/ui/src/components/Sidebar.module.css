@@ -31,8 +31,8 @@
 
 /* ── Primary action ──────────────────────────────────── */
 /* No bottom padding — New chat and the nav below it visually belong
- * to the same section. The Recent Conversations area is what gets the
- * separating gap (see RecentConversations .search margin).
+ * to the same section. The conversations panel below is what gets the
+ * separating gap via its own search-row margin.
  */
 .primary {
     padding: var(--sp-2) var(--sp-2) 0;
