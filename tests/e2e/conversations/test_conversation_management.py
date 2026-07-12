@@ -80,6 +80,20 @@ def _delete_conversation(conv_id: str) -> None:
     )
 
 
+def _purge_conversation(conv_id: str) -> None:
+    """Remove a seeded conversation from both the active and archived areas.
+
+    Archiving moves the directory, so a test that archives could leave it in
+    either place depending on where it stopped; clean up both.
+    """
+    container_exec(
+        "import shutil, pathlib\n"
+        f"for p in (pathlib.Path('{CONV_DIR}/{conv_id}'), "
+        f"pathlib.Path('{CONV_DIR}/_archived/{conv_id}')):\n"
+        "    if p.exists(): shutil.rmtree(p)\n"
+    )
+
+
 def test_row_menu_exposes_pin_rename_delete(page: Page):
     """The 3-dot menu opens with Pin, Rename, and Delete actions."""
     nonce = time.time_ns()
@@ -185,6 +199,72 @@ def test_pin_conversation_marks_row_pinned(page: Page):
         expect(recent.item_by_id(conv_id).root).to_have_attribute("data-pinned", "true", timeout=5000)
     finally:
         _delete_conversation(conv_id)
+
+
+def test_row_menu_exposes_archive(page: Page):
+    """The 3-dot menu offers an Archive action alongside pin/rename/delete."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_arch_menu_{nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=f"ArchMenu {nonce}")
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.items.first).to_be_visible(timeout=5000)
+
+        recent.item_by_id(conv_id).open_menu()
+        expect(page.get_by_test_id("recent-menu-archive")).to_be_visible()
+
+        page.keyboard.press("Escape")
+        expect(page.get_by_test_id("recent-menu")).not_to_be_visible()
+    finally:
+        _purge_conversation(conv_id)
+
+
+def test_archive_then_restore_round_trip(page: Page):
+    """Archiving moves a chat to the Archived shelf; restoring brings it back.
+
+    Both transitions are asserted to survive a reload, proving the archive
+    and restore persist server-side rather than only mutating the in-memory
+    list.
+    """
+    nonce = time.time_ns()
+    conv_id = f"e2e_archive_{nonce}"
+    title = f"ArchiveMe {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "first"}, {"role": "assistant", "content": "y"},
+    ], title=title)
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.item_by_id(conv_id).root).to_be_visible(timeout=5000)
+
+        # Archive: the row leaves the active recents list.
+        recent.item_by_id(conv_id).archive()
+        expect(recent.item_by_id(conv_id).root).not_to_be_visible()
+
+        # It stays out of the recents after a reload (persisted server-side)...
+        page.reload()
+        expect(recent.items.first).to_be_visible(timeout=5000)
+        expect(recent.item_by_id(conv_id).root).not_to_be_visible()
+
+        # ...and surfaces in the Archived shelf, which loads on expand.
+        recent.expand_archived()
+        expect(recent.archived_item_by_id(conv_id).root).to_be_visible(timeout=5000)
+
+        # Restore: it returns to the recents and leaves the shelf.
+        recent.archived_item_by_id(conv_id).restore()
+        expect(recent.archived_item_by_id(conv_id).root).not_to_be_visible()
+        expect(recent.item_by_id(conv_id).root).to_be_visible()
+
+        # Restore persisted too: still in the recents after a reload.
+        page.reload()
+        expect(recent.item_by_id(conv_id).root).to_be_visible(timeout=5000)
+    finally:
+        _purge_conversation(conv_id)
 
 
 def test_unpin_conversation_clears_row_pin(page: Page):
