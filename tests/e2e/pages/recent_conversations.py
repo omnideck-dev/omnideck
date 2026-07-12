@@ -173,6 +173,9 @@ class RecentConversations:
     def open_folder_menu(self, name: str) -> Locator:
         """Open a folder header's 3-dot options menu and return the menu."""
         section = self.folder_section(name)
+        # The 3-dot trigger is hover-revealed (display:none until the folder
+        # header is hovered), so hover the header before clicking it.
+        section.get_by_test_id("recent-section-toggle").hover()
         section.get_by_test_id("recent-folder-menu-trigger").click()
         menu = self.page.get_by_test_id("recent-folder-menu")
         menu.wait_for(state="visible")
