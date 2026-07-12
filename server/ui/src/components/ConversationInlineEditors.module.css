@@ -1,0 +1,84 @@
+/* Inline "name this folder" input — used for both create and rename (bare). */
+.newFolderInput {
+    width: calc(100% - 12px);
+    height: 30px;
+    margin: 4px 6px 8px;
+    padding: 0 10px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .newFolderInput { background: var(--surface); }
+
+/* Bare variant used inside a folder-rename row (glyph + input). */
+.folderRenameInput {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .folderRenameInput { background: var(--surface); }
+
+/* ── Inline conversation-rename row ──────────────────── */
+.renameRow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-1) var(--sp-2) 10px;
+}
+.renameInput {
+    width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .renameInput { background: var(--surface); }
+.renameActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+}
+.renameCancel,
+.renameSave {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 12px;
+    cursor: pointer;
+}
+.renameCancel {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+}
+.renameCancel:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.renameSave {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+}
+.renameSave:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
