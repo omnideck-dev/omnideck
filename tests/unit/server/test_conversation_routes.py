@@ -142,7 +142,7 @@ class TestUpdateConversation:
 
 @pytest.mark.unit
 class TestFolderRoutes:
-    """Folder CRUD endpoints and folder_id on the session PATCH."""
+    """Folder CRUD endpoints and folder_id on the conversation PATCH."""
 
     async def test_create_folder(self, _conv_dir: Path) -> None:
         """Creating a folder returns 201 with the created folder."""
