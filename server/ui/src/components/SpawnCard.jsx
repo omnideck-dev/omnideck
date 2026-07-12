@@ -1,5 +1,5 @@
 import StatusDot from './StatusDot.jsx';
-import { formatAgentName } from './AgentCard.jsx';
+import { formatAgentName } from '../utils/agentUtils.js';
 import styles from './SpawnCard.module.css';
 
 function _fmtTokens(n) {

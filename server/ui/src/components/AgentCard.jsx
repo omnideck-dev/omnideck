@@ -1,14 +1,7 @@
 import React, { memo } from 'react';
-import { formatElapsed } from '../utils/agentUtils.js';
+import { formatElapsed, formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
 import styles from './AgentCard.module.css';
-
-function formatAgentName(name) {
-    if (!name) return 'Agent';
-    return name
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 /**
  * One card in the agent network graph. Shows the agent's name, status,
@@ -122,5 +115,3 @@ export default memo(AgentCard, (prev, next) => {
         a.activityLog.length === b.activityLog.length
     );
 });
-
-export { formatAgentName };

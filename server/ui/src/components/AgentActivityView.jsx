@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAgentState, useAgentDispatch } from '../hooks/useAgentState.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
-import { formatAgentName } from './AgentCard.jsx';
 import BackButton from './BackButton.jsx';
-import { formatElapsed } from '../utils/agentUtils.js';
+import { formatElapsed, formatAgentName } from '../utils/agentUtils.js';
 import ContextMeter from './ContextMeter.jsx';
 import ActivityRail from './ActivityRail.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
