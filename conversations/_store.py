@@ -124,6 +124,10 @@ def save_conversation_folder(conversation_id: str, folder_id: str | None) -> Non
     The folder is recorded as a ``folder_id`` in metadata.json; passing None
     clears it so the conversation returns to the normal date-grouped listing.
     Nothing moves on disk — this is a label, not a relocation.
+
+    Filing into a folder also clears the pinned flag: pinned conversations live
+    in their own section, so a folder and a pin are mutually exclusive homes.
+    Keeping this rule here means every caller gets it for free.
     """
     conv_dir = _get_conv_dir(conversation_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +141,8 @@ def save_conversation_folder(conversation_id: str, folder_id: str | None) -> Non
             pass
 
     metadata["folder_id"] = folder_id
+    if folder_id is not None:
+        metadata["pinned"] = False
     tmp = metadata_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     tmp.replace(metadata_path)

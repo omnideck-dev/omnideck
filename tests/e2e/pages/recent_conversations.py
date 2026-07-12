@@ -170,6 +170,36 @@ class RecentConversations:
         """Return the section element for a folder, located by its header name."""
         return self.page.get_by_test_id("recent-section").filter(has_text=name)
 
+    def open_folder_menu(self, name: str) -> Locator:
+        """Open a folder header's 3-dot options menu and return the menu."""
+        section = self.folder_section(name)
+        section.get_by_test_id("recent-folder-menu-trigger").click()
+        menu = self.page.get_by_test_id("recent-folder-menu")
+        menu.wait_for(state="visible")
+        return menu
+
+    def rename_folder(self, name: str, new_name: str) -> None:
+        """Rename a folder via its options menu."""
+        self.open_folder_menu(name).get_by_test_id("recent-folder-menu-rename").click()
+        field = self.page.get_by_test_id("recent-folder-rename-input")
+        field.wait_for(state="visible")
+        field.fill(new_name)
+        field.press("Enter")
+
+    def delete_folder(self, name: str) -> None:
+        """Delete a folder via its options menu (click-twice-to-confirm)."""
+        self.open_folder_menu(name)
+        delete = self.page.get_by_test_id("recent-folder-menu-delete")
+        delete.click()  # arms
+        delete.click()  # confirms
+
+    def change_folder_icon(self, name: str, icon_class: str) -> None:
+        """Change a folder's icon via its options menu and the icon picker."""
+        self.open_folder_menu(name).get_by_test_id("recent-folder-menu-icon").click()
+        picker = self.page.get_by_test_id("recent-icon-picker")
+        picker.wait_for(state="visible")
+        picker.locator(f'[data-icon="{icon_class}"]').click()
+
     def item_by_id(self, conversation_id: str) -> RecentConversationItem:
         """Return a row by its conversation id — independent of list position.
 
