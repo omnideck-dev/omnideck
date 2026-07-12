@@ -25,6 +25,17 @@ export function mergeTerminalEvent(prev, event, maxLines = 50) {
 }
 
 /**
+ * Format an agent's internal name for display: replace underscores with
+ * spaces and title-case each word.
+ */
+export function formatAgentName(name) {
+    if (!name) return 'Agent';
+    return name
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
  * Format elapsed time from a start timestamp to an end timestamp (or now
  * if the agent is still running).
  */

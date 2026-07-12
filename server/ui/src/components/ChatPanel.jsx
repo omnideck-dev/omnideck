@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
-import { formatAgentName } from './AgentCard.jsx';
+import { formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
 import ArtifactsDrawer from './artifacts/ArtifactsDrawer.jsx';
 import { useAgentState } from '../hooks/useAgentState.jsx';

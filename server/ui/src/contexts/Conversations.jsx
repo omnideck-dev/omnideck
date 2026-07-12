@@ -76,7 +76,52 @@ export function ConversationsProvider({ children }) {
         });
     }, []);
 
-    const value = { ...panel, addStartedConversation, focusFileInConversation };
+    // Archive a conversation: drop it from the active list optimistically and
+    // move it into the archive on the server. Archiving is the reversible
+    // alternative to delete — the conversation can be restored from the
+    // archived view. Returns the removed summary so callers can surface it in
+    // the archived list without a refetch.
+    const archiveConversation = useCallback(async (conversationId) => {
+        let removed = null;
+        setItems((prev) => {
+            removed = prev.find((c) => c.conversation_id === conversationId) || null;
+            return prev.filter((c) => c.conversation_id !== conversationId);
+        });
+        try {
+            await fetch(`/api/conversations/sessions/${conversationId}/archive`, {
+                method: 'POST',
+            });
+        } catch (_) {
+            // The optimistic removal already reflects the change; a failed
+            // write surfaces on the next reload rather than blocking the UI.
+        }
+        return removed;
+    }, [setItems]);
+
+    // Restore an archived conversation back into the active list. Takes the
+    // archived summary so the row can reappear among the recents without a
+    // refetch.
+    const unarchiveConversation = useCallback(async (summary) => {
+        const id = summary.conversation_id;
+        setItems((prev) => (
+            prev.some((c) => c.conversation_id === id) ? prev : [summary, ...prev]
+        ));
+        try {
+            await fetch(`/api/conversations/sessions/${id}/unarchive`, {
+                method: 'POST',
+            });
+        } catch (_) {
+            // Optimistic insert stands; a failed write surfaces on next reload.
+        }
+    }, [setItems]);
+
+    const value = {
+        ...panel,
+        addStartedConversation,
+        focusFileInConversation,
+        archiveConversation,
+        unarchiveConversation,
+    };
     return (
         <ConversationsContext.Provider value={value}>
             {children}

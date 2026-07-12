@@ -5,68 +5,46 @@ import pytest
 from tools.browser.core._pipeline import (
     _apply_budget,
     _filter_scope,
-    _filter_viewport,
     _render_lines,
     _render_node,
     process_snapshot,
 )
-from tools.browser.core._dom_nodes import DomNode, NodeType, ViewportPosition, parse_nodes
+from tools.browser.core._dom_nodes import DomNode, NodeType, parse_nodes
 
 
 # -- Helpers for building test nodes --
 
-def _text(text, *, depth=0, viewport="in"):
-    return {"type": "text", "depth": depth, "text": text, "viewport": viewport}
+def _text(text, *, depth=0):
+    return {"type": "text", "depth": depth, "text": text}
 
-def _heading(name, level, *, depth=0, viewport="in"):
-    return {"type": "heading", "depth": depth, "name": name, "level": level, "viewport": viewport}
+def _heading(name, level, *, depth=0):
+    return {"type": "heading", "depth": depth, "name": name, "level": level}
 
-def _interactive(role, name, *, ref=None, depth=0, viewport="in", value="", checked=None,
+def _interactive(role, name, *, ref=None, depth=0, value="", checked=None,
                  expanded=None, selected=None, pressed=None):
     d = {
         "type": "interactive", "depth": depth, "role": role, "name": name,
-        "value": value, "viewport": viewport, "checked": checked,
+        "value": value, "checked": checked,
         "expanded": expanded, "selected": selected, "pressed": pressed,
     }
     if ref is not None:
         d["ref"] = ref
     return d
 
-def _image(name, *, depth=0, viewport="in"):
-    return {"type": "image", "depth": depth, "name": name, "viewport": viewport}
+def _image(name, *, depth=0):
+    return {"type": "image", "depth": depth, "name": name}
 
-def _container_start(tag="TABLE", *, depth=0, viewport="in", role=None):
-    d = {"type": "container_start", "depth": depth, "tag": tag, "viewport": viewport}
+def _container_start(tag="TABLE", *, depth=0, role=None):
+    d = {"type": "container_start", "depth": depth, "tag": tag}
     if role:
         d["role"] = role
     return d
 
-def _container_end(tag="TABLE", *, depth=0, viewport="in", role=None):
-    d = {"type": "container_end", "depth": depth, "tag": tag, "viewport": viewport}
+def _container_end(tag="TABLE", *, depth=0, role=None):
+    d = {"type": "container_end", "depth": depth, "tag": tag}
     if role:
         d["role"] = role
     return d
-
-
-@pytest.mark.unit
-class TestFilterViewport:
-    """Viewport filtering removes out-of-viewport nodes."""
-
-    def test_keeps_in_and_clipped(self):
-        """Nodes with viewport IN or CLIPPED are kept."""
-        nodes = parse_nodes([
-            _text("visible", viewport="in"),
-            _text("clipped", viewport="clipped"),
-            _text("hidden", viewport="out"),
-        ])
-        filtered = _filter_viewport(nodes)
-        assert len(filtered) == 2
-        assert filtered[0].text == "visible"
-        assert filtered[1].text == "clipped"
-
-    def test_empty_list(self):
-        """Empty input returns empty output."""
-        assert _filter_viewport([]) == []
 
 
 @pytest.mark.unit
@@ -296,28 +274,6 @@ class TestProcessSnapshot:
         assert "[button] Click me" in content
         assert "[link] Learn more" in content
         assert truncated is False
-
-    def test_viewport_filtering(self):
-        """Out-of-viewport nodes are removed when not full_page."""
-        raw = [
-            _text("Visible text", viewport="in"),
-            _text("Hidden text", viewport="out"),
-            _interactive("button", "Hidden button", viewport="out"),
-        ]
-        content, truncated = process_snapshot(raw, budget=8000)
-        assert "Visible text" in content
-        assert "Hidden text" not in content
-        assert "Hidden button" not in content
-
-    def test_full_page_keeps_all(self):
-        """full_page=True keeps out-of-viewport nodes."""
-        raw = [
-            _text("Visible", viewport="in"),
-            _text("Below fold", viewport="out"),
-        ]
-        content, truncated = process_snapshot(raw, budget=8000, full_page=True)
-        assert "Visible" in content
-        assert "Below fold" in content
 
     def test_scope_filtering(self):
         """Scope query narrows output to matching section."""

@@ -257,39 +257,31 @@ _STRUCTURED_SNAPSHOT_JS = """
     return null;
   }
 
-  function vpPos(el) {
-    if (fullPage) return 'in';
+  // Is this element itself on screen? Looks only at the element's own geometry,
+  // and says nothing about its descendants: a box does not bound its content,
+  // since out-of-flow (absolute / fixed) or overflow-scrolled children render
+  // outside it. So the walk never prunes a subtree on this answer — an off-screen
+  // element is still descended into, and each descendant is judged on its own
+  // rect. This only decides whether to emit THIS element.
+  function onScreen(el) {
+    if (fullPage) return true;
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) {
-      return (el.children.length > 0 || el.shadowRoot) ? 'clipped' : 'out';
-    }
-    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) {
-      if (el.children.length > 0 || el.shadowRoot) {
-        const os = window.getComputedStyle(el);
-        if (os.overflowY === 'visible' && el.scrollHeight > r.height + 1) {
-          if (r.top + el.scrollHeight > 0 && r.top < vh) return 'clipped';
-        }
-        if (os.overflowX === 'visible' && el.scrollWidth > r.width + 1) {
-          if (r.left + el.scrollWidth > 0 && r.left < vw) return 'clipped';
-        }
-      }
-      return 'out';
-    }
+    // Zero-area, or outside the viewport rectangle: not on screen itself.
+    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) return false;
+    // On screen by coordinates, but scrolled out of a clipping ancestor's box.
     let ancestor = el.parentElement;
     while (ancestor && ancestor !== document.body) {
       const os = window.getComputedStyle(ancestor);
-      const ox = os.overflowX;
-      const oy = os.overflowY;
-      const clipX = ox === 'hidden' || ox === 'clip';
-      const clipY = oy === 'hidden' || oy === 'clip';
+      const clipX = os.overflowX === 'hidden' || os.overflowX === 'clip';
+      const clipY = os.overflowY === 'hidden' || os.overflowY === 'clip';
       if (clipX || clipY) {
         const ar = ancestor.getBoundingClientRect();
-        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return 'clipped';
-        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return 'clipped';
+        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return false;
+        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return false;
       }
       ancestor = ancestor.parentElement;
     }
-    return 'in';
+    return true;
   }
 
   const SKIP_ROLES = new Set(['separator']);
@@ -321,7 +313,7 @@ _STRUCTURED_SNAPSHOT_JS = """
         if (child.nodeType === 3) {
           const text = child.textContent.trim();
           if (text.length > 1) {
-            emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: 'in' });
+            emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
           }
         } else if (child.nodeType === 1) {
           walkSlotOrElement(child);
@@ -343,7 +335,7 @@ _STRUCTURED_SNAPSHOT_JS = """
             if (node.nodeType === 3) {
               const text = node.textContent.trim();
               if (text.length > 1) {
-                emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: 'in' });
+                emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
               }
             } else if (node.nodeType === 1) {
               walk(node, false);
@@ -369,16 +361,17 @@ _STRUCTURED_SNAPSHOT_JS = """
       return;
     }
 
-    if (!isRoot) {
-      const vis = vpPos(el);
-      if (vis === 'out') return;
-      if (vis === 'clipped') {
-        for (const child of el.children) walk(child, false);
-        return;
-      }
+    if (!isRoot && !onScreen(el)) {
+      // Off screen itself, but its box may not bound its content: a descendant
+      // laid out of flow (absolute / fixed) or inside an overflow-scroll region
+      // can still be on screen. Descend and judge each child on its own rect
+      // rather than pruning the subtree. Off-screen descendants are likewise not
+      // emitted, so the visible result is unchanged; only content that was being
+      // lost behind a mis-measured wrapper now surfaces.
+      for (const child of el.children) walk(child, false);
+      return;
     }
 
-    const vp = isRoot ? 'in' : vpPos(el);
     const role = getRole(el);
 
     if (role && SKIP_ROLES.has(role)) return;
@@ -402,7 +395,7 @@ _STRUCTURED_SNAPSHOT_JS = """
       refCounter++;
       el.setAttribute('data-ct-ref', String(refCounter));
 
-      const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || '', viewport: vp };
+      const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || ''};
 
       if (role === 'combobox' || el.tagName === 'SELECT') {
         const sel = el.querySelector('option:checked,option[selected]');
@@ -454,7 +447,7 @@ _STRUCTURED_SNAPSHOT_JS = """
         el.setAttribute('data-ct-ref', String(refCounter));
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', name);
-        emit({ type: 'interactive', depth: depth, ref: refCounter, role: 'button', name: name, viewport: vp });
+        emit({ type: 'interactive', depth: depth, ref: refCounter, role: 'button', name: name});
         return;
       }
     }
@@ -463,24 +456,24 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (role === 'heading') {
       const lvl = el.tagName.match(/H(\\d)/)?.[1] || '';
       const text = (el.innerText || '').trim();
-      if (text) emit({ type: 'heading', depth: depth, name: text, level: parseInt(lvl) || null, viewport: vp });
+      if (text) emit({ type: 'heading', depth: depth, name: text, level: parseInt(lvl) || null});
       return;
     }
 
     // Images
     if (role === 'img') {
       const alt = (el.getAttribute('alt') || el.getAttribute('aria-label') || '').trim();
-      if (alt) emit({ type: 'image', depth: depth, name: alt, viewport: vp });
+      if (alt) emit({ type: 'image', depth: depth, name: alt});
       return;
     }
 
     // Structural containers
     if (CONTAINER_TAGS.has(el.tagName)) {
-      emit({ type: 'container_start', depth: depth, tag: el.tagName.toLowerCase(), viewport: vp });
+      emit({ type: 'container_start', depth: depth, tag: el.tagName.toLowerCase()});
       depth++;
       walkChildren(el);
       depth--;
-      emit({ type: 'container_end', depth: depth, tag: el.tagName.toLowerCase(), viewport: vp });
+      emit({ type: 'container_end', depth: depth, tag: el.tagName.toLowerCase()});
       return;
     }
 
@@ -488,7 +481,7 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (el.children.length === 0 && !el.shadowRoot) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
+        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
       }
       return;
     }
@@ -502,7 +495,7 @@ _STRUCTURED_SNAPSHOT_JS = """
       }
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
+        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
       }
       return;
     }
@@ -511,7 +504,7 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (isTextContainer(el)) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
+        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
       }
       return;
     }
@@ -626,7 +619,6 @@ async def build_page_view(
                 scope_query=scope,
                 budget=budget,
                 name_limit=MAX_NAME_LEN,
-                full_page=full_page,
             )
             t_py = time.monotonic()
 
