@@ -112,15 +112,15 @@ def test_sub_agent_compaction_shows_in_activity_view(page: Page):
         row = page.get_by_test_id("activity-row-compaction")
         expect(row).to_be_visible()
         expect(row).to_contain_text("compacted")
-        expect(row).to_contain_text("saved 12.0k (60%)")
+        expect(row).to_contain_text("saved 12k (60%)")
 
         # Expanding reveals the stats + summary blocks.
         panel = page.get_by_test_id("activity-compaction-panel")
         expect(panel).not_to_be_visible()
         page.get_by_test_id("activity-compaction-summary").click()
         expect(panel).to_be_visible()
-        expect(panel).to_contain_text("20.0k")
-        expect(panel).to_contain_text("8.0k")
+        expect(panel).to_contain_text("20k")
+        expect(panel).to_contain_text("8k")
         expect(panel).to_contain_text("Reviewed the early portion of the diff.")
         expect(panel).to_contain_text("user wants a thorough code review")
     finally:
