@@ -94,6 +94,65 @@ def _purge_conversation(conv_id: str) -> None:
     )
 
 
+def _reset_folders() -> None:
+    """Remove the folder registry so a run's folders don't leak between tests."""
+    container_exec(
+        "import pathlib\n"
+        f"p = pathlib.Path('{CONV_DIR}/_folders.json')\n"
+        "if p.exists(): p.unlink()\n"
+    )
+
+
+def test_create_folder_shows_a_folder_section(page: Page):
+    """Creating a folder via the new-folder button adds a folder section."""
+    nonce = time.time_ns()
+    folder_name = f"Proj {nonce}"
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.items.first).to_be_visible(timeout=5000)
+
+        recent.create_folder(folder_name)
+        expect(recent.folder_section(folder_name)).to_be_visible(timeout=5000)
+    finally:
+        _reset_folders()
+
+
+def test_file_conversation_into_folder_persists(page: Page):
+    """Filing a conversation into a folder groups it there and survives reload."""
+    nonce = time.time_ns()
+    conv_id = f"e2e_folder_{nonce}"
+    folder_name = f"Proj {nonce}"
+    _seed_conversation(conv_id, [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
+    ], title=f"FolderChat {nonce}")
+
+    try:
+        ChatView(page).goto()
+        recent = RecentConversations(page)
+        expect(recent.item_by_id(conv_id).root).to_be_visible(timeout=5000)
+
+        recent.create_folder(folder_name)
+        expect(recent.folder_section(folder_name)).to_be_visible(timeout=5000)
+
+        # File the conversation into the folder; its row gains a folder tag and
+        # moves under the folder's section.
+        recent.item_by_id(conv_id).move_to_folder(folder_name)
+        expect(recent.item_by_id(conv_id).root).not_to_have_attribute(
+            "data-folder-id", "", timeout=5000,
+        )
+        section = recent.folder_section(folder_name)
+        expect(section.locator(f'[data-conversation-id="{conv_id}"]')).to_be_visible()
+
+        # Reload: the folder and its membership were persisted server-side.
+        page.reload()
+        section = recent.folder_section(folder_name)
+        expect(section.locator(f'[data-conversation-id="{conv_id}"]')).to_be_visible(timeout=5000)
+    finally:
+        _purge_conversation(conv_id)
+        _reset_folders()
+
+
 def test_row_menu_exposes_pin_rename_delete(page: Page):
     """The 3-dot menu opens with Pin, Rename, and Delete actions."""
     nonce = time.time_ns()

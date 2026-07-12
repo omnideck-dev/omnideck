@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback } from 'react';
+import { createContext, useContext, useCallback, useEffect, useState } from 'react';
 
 import useListPanel from '../hooks/useListPanel.js';
 
@@ -39,6 +39,69 @@ export function ConversationsProvider({ children }) {
     });
     const { setItems } = panel;
 
+    // Folders are a small, separately-loaded list. Like the conversation list
+    // they load once and are kept current by the mutations below.
+    const [folders, setFolders] = useState([]);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/conversations/folders')
+            .then((r) => (r.ok ? r.json() : []))
+            .then((data) => { if (!cancelled) setFolders(data); })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
+
+    // Create a folder and add it to the in-memory list. Returns the created
+    // folder (with its server-assigned id) so callers can immediately file a
+    // conversation into it.
+    const createFolder = useCallback(async (name) => {
+        try {
+            const resp = await fetch('/api/conversations/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            if (!resp.ok) return null;
+            const folder = await resp.json();
+            setFolders((prev) => [...prev, folder]);
+            return folder;
+        } catch (_) {
+            return null;
+        }
+    }, []);
+
+    const renameFolder = useCallback((folderId, name) => {
+        setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name } : f)));
+        fetch(`/api/conversations/folders/${folderId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+        }).catch(() => {});
+    }, []);
+
+    // Delete a folder: drop it from the list and clear the folder tag from any
+    // loaded conversations so they fall back to the date-grouped listing —
+    // mirroring what the server does to their metadata.
+    const deleteFolder = useCallback((folderId) => {
+        setFolders((prev) => prev.filter((f) => f.id !== folderId));
+        setItems((prev) => prev.map((c) => (
+            c.folder_id === folderId ? { ...c, folder_id: null } : c
+        )));
+        fetch(`/api/conversations/folders/${folderId}`, { method: 'DELETE' }).catch(() => {});
+    }, [setItems]);
+
+    // File a conversation into a folder (or remove it when folderId is null).
+    const setConversationFolder = useCallback((conversationId, folderId) => {
+        setItems((prev) => prev.map((c) => (
+            c.conversation_id === conversationId ? { ...c, folder_id: folderId } : c
+        )));
+        fetch(`/api/conversations/sessions/${conversationId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_id: folderId }),
+        }).catch(() => {});
+    }, [setItems]);
+
     // Add a conversation that just started its first turn to the list. The
     // events-first backend has already persisted it, so this only mirrors it
     // into the in-memory list (so it appears without a refetch) and fills in
@@ -55,6 +118,7 @@ export function ConversationsProvider({ children }) {
                     started_at: new Date().toISOString(),
                     turn_count: 1,
                     pinned: false,
+                    folder_id: null,
                 }, ...prev]
         ));
         _generateTitle(conversationId, firstMessage).then((title) => {
@@ -121,6 +185,11 @@ export function ConversationsProvider({ children }) {
         focusFileInConversation,
         archiveConversation,
         unarchiveConversation,
+        folders,
+        createFolder,
+        renameFolder,
+        deleteFolder,
+        setConversationFolder,
     };
     return (
         <ConversationsContext.Provider value={value}>

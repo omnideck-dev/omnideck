@@ -14,3 +14,14 @@ class ConversationSummary(BaseModel):
     started_at: str = ""
     turn_count: int = 0
     pinned: bool = False  # User-pinned to the top of the sidebar
+    folder_id: str | None = None  # Custom folder this chat belongs to, if any
+
+
+class Folder(BaseModel):
+    """A user-created folder for grouping conversations in the sidebar."""
+
+    id: str
+    name: str
+    color: str = ""  # Hex accent used for the folder's dot in the sidebar
+    order: int = 0  # Sort position among folders (lower shows first)
+    created_at: str = ""

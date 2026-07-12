@@ -5,12 +5,52 @@
     min-height: 0;
 }
 
-/* ── Search ──────────────────────────────────────────── */
-/* Visuals come from the SearchInput primitive; this only positions it. The
- * extra top margin separates the conversation search from the nav above. */
-.search {
+/* ── Search + new-folder ─────────────────────────────── */
+/* The search box and the new-folder button share a row above the list. */
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: var(--sp-3) var(--sp-2) var(--sp-1);
 }
+/* SearchInput brings its own visuals; it just needs to flex to fill the row. */
+.search {
+    flex: 1;
+    min-width: 0;
+}
+.newFolderBtn {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+}
+[data-theme="dark"] .newFolderBtn { background: var(--elevated); }
+.newFolderBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Inline "name this folder" input — used for both create and rename. */
+.newFolderInput {
+    width: calc(100% - 12px);
+    height: 30px;
+    margin: 4px 6px 8px;
+    padding: 0 10px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .newFolderInput { background: var(--surface); }
 
 /* ── Scrollable list ─────────────────────────────────── */
 .list {
@@ -22,18 +62,114 @@
 .list::-webkit-scrollbar { width: 5px; }
 .list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
 
+/* ── Section header (Pinned / folders / date buckets) ── */
 .dayLabel {
     display: flex;
     align-items: center;
+    gap: 4px;
+    padding: 6px 6px 2px;
+}
+/* The clickable label that toggles the section collapsed/expanded. */
+.sectionToggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
     gap: 5px;
+    height: 24px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
     font-family: var(--font-code);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.10em;
     color: var(--text-tertiary);
-    padding: 10px 10px 4px;
+    text-align: left;
 }
-.dayLabel i { font-size: 9px; }
+.sectionToggle:hover { color: var(--text-secondary); }
+.sectionToggle i { font-size: 9px; }
+.sectionToggle .chev { color: var(--text-tertiary); width: 9px; flex-shrink: 0; }
+.sectionName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sectionCount {
+    flex: none;
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    background: var(--accent-muted);
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    letter-spacing: 0;
+}
+
+/* Folder headers get a slightly stronger label and a colored dot. */
+.folderHead .sectionName { text-transform: none; letter-spacing: 0.01em; font-size: 11px; color: var(--text-secondary); }
+.folderDot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset;
+}
+
+/* Rename / delete actions on a folder header, revealed on hover. */
+.folderActions { display: flex; align-items: center; gap: 1px; }
+.folderAction, .folderDelete {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    flex-shrink: 0;
+    opacity: 0;
+    font-size: 11px;
+}
+.dayLabel:hover .folderAction,
+.dayLabel:hover .folderDelete,
+.folderAction:focus-visible,
+.folderDelete:focus-visible { opacity: 1; }
+.folderAction:hover { background: var(--accent-muted); color: var(--text-primary); }
+.folderDelete { color: var(--danger); }
+.folderDelete:hover:not(:disabled) { background: var(--danger-muted); }
+.folderDeleteArmed,
+.folderDeleteArmed:hover:not(:disabled) {
+    opacity: 1;
+    width: auto;
+    padding: 0 8px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+}
+
+/* Inline folder-rename row (dot + input). */
+.folderRename { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; }
+.folderRenameInput {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 12px;
+    outline: none;
+    box-shadow: var(--shadow-glow);
+}
+[data-theme="dark"] .folderRenameInput { background: var(--surface); }
 
 .item {
     display: flex;
@@ -112,6 +248,26 @@
 }
 .menuItem i { font-size: 12px; width: 14px; flex-shrink: 0; }
 .menuItem:hover { background: var(--accent-muted); color: var(--text-primary); }
+/* The Move-to-folder caret sits at the far end of its row. */
+.menuCaret { margin-left: auto; font-size: 9px !important; width: auto !important; color: var(--text-tertiary); }
+
+/* Inline folder picker that expands under "Move to folder". Indented and
+ * rule-marked so it reads as a nested list within the menu. */
+.folderPicker {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 1px 0 1px 8px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-subtle);
+    max-height: 208px;
+    overflow-y: auto;
+}
+.folderPicker::-webkit-scrollbar { width: 5px; }
+.folderPicker::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
+.folderPickerEmpty { padding: 6px 10px; font-size: 11.5px; color: var(--text-tertiary); }
+.folderPickerName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folderCheck { margin-left: auto; color: var(--accent); font-size: 11px !important; width: auto !important; }
 
 .menuSep {
     height: 1px;
