@@ -20,6 +20,7 @@ Endpoints:
 
 import json
 import logging
+import re
 
 from aiohttp import web
 from aiohttp.web import Request, Response
@@ -55,6 +56,11 @@ _MAX_TITLE_LEN = 50
 
 # The folder name input caps here; enforced server-side for the same reason.
 _MAX_FOLDER_NAME_LEN = 40
+
+# A folder icon is a Bootstrap icon class. Constrain it to that shape so the
+# value, which the UI renders straight into a className, can't smuggle in extra
+# classes or markup.
+_ICON_RE = re.compile(r"^bi-[a-z0-9-]{1,40}$")
 
 
 async def list_conversations_handler(_request: Request) -> Response:
@@ -246,7 +252,7 @@ async def list_folders_handler(_request: Request) -> Response:
 
 
 async def create_folder_handler(request: Request) -> Response:
-    """Create a folder from a JSON body: ``{"name": str, "color"?: str}``."""
+    """Create a folder from a JSON body: ``{"name": str, "icon"?: str}``."""
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -256,17 +262,17 @@ async def create_folder_handler(request: Request) -> Response:
     name = body.get("name")
     if not isinstance(name, str) or not name.strip():
         return web.json_response({"error": "name must be a non-empty string"}, status=400)
-    color = body.get("color")
-    if color is not None and not isinstance(color, str):
-        return web.json_response({"error": "color must be a string"}, status=400)
-    folder = create_folder(name.strip()[:_MAX_FOLDER_NAME_LEN], color=color)
+    icon = body.get("icon")
+    if icon is not None and (not isinstance(icon, str) or not _ICON_RE.match(icon)):
+        return web.json_response({"error": "icon must be a bootstrap icon class"}, status=400)
+    folder = create_folder(name.strip()[:_MAX_FOLDER_NAME_LEN], icon=icon)
     return web.json_response(folder.model_dump(), status=201)
 
 
 async def update_folder_handler(request: Request) -> Response:
-    """Rename, recolor, or reorder a folder.
+    """Rename, re-icon, or reorder a folder.
 
-    Accepts any of ``name`` (str), ``color`` (str), ``order`` (int).
+    Accepts any of ``name`` (str), ``icon`` (bootstrap icon class), ``order`` (int).
     """
     folder_id = request.match_info["folder_id"]
     try:
@@ -279,9 +285,9 @@ async def update_folder_handler(request: Request) -> Response:
     name = body.get("name")
     if "name" in body and (not isinstance(name, str) or not name.strip()):
         return web.json_response({"error": "name must be a non-empty string"}, status=400)
-    color = body.get("color")
-    if "color" in body and not isinstance(color, str):
-        return web.json_response({"error": "color must be a string"}, status=400)
+    icon = body.get("icon")
+    if "icon" in body and (not isinstance(icon, str) or not _ICON_RE.match(icon)):
+        return web.json_response({"error": "icon must be a bootstrap icon class"}, status=400)
     order = body.get("order")
     if "order" in body and not isinstance(order, int):
         return web.json_response({"error": "order must be an integer"}, status=400)
@@ -289,7 +295,7 @@ async def update_folder_handler(request: Request) -> Response:
     folder = update_folder(
         folder_id,
         name=name if "name" in body else None,
-        color=color if "color" in body else None,
+        icon=icon if "icon" in body else None,
         order=order if "order" in body else None,
     )
     if folder is None:

@@ -22,6 +22,6 @@ class Folder(BaseModel):
 
     id: str
     name: str
-    color: str = ""  # Hex accent used for the folder's dot in the sidebar
+    icon: str = "bi-folder"  # Bootstrap icon class shown beside the folder name
     order: int = 0  # Sort position among folders (lower shows first)
     created_at: str = ""

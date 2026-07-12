@@ -29,12 +29,17 @@ class TestFolderRegistry:
     """Create / list / update / delete folders."""
 
     def test_create_returns_populated_folder(self, _folders_file: Path) -> None:
-        """A created folder has an id, the given name, a color, and a timestamp."""
+        """A created folder has an id, the given name, the default icon, and a timestamp."""
         folder = create_folder("Work")
         assert folder.id
         assert folder.name == "Work"
-        assert folder.color  # auto-assigned from the palette
+        assert folder.icon == "bi-folder"  # default until the user picks one
         assert folder.created_at
+
+    def test_create_with_icon(self, _folders_file: Path) -> None:
+        """A supplied icon is stored on the folder."""
+        folder = create_folder("Work", icon="bi-briefcase")
+        assert folder.icon == "bi-briefcase"
 
     def test_list_returns_created_folders(self, _folders_file: Path) -> None:
         """Created folders come back from the listing."""
@@ -62,11 +67,11 @@ class TestFolderRegistry:
         assert updated.name == "Final"
         assert list_folders()[0].name == "Final"
 
-    def test_update_recolors(self, _folders_file: Path) -> None:
-        """Updating the color persists it."""
+    def test_update_reicons(self, _folders_file: Path) -> None:
+        """Updating the icon persists it."""
         folder = create_folder("Work")
-        update_folder(folder.id, color="#123456")
-        assert list_folders()[0].color == "#123456"
+        update_folder(folder.id, icon="bi-star")
+        assert list_folders()[0].icon == "bi-star"
 
     def test_update_missing_returns_none(self, _folders_file: Path) -> None:
         """Updating an unknown folder returns None."""

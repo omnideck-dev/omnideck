@@ -29,18 +29,9 @@ _FOLDERS_FILENAME = "_folders.json"
 # bound so a crafted request can't persist an oversized name.
 _MAX_NAME_LEN = 40
 
-# Dots cycle through these accents as folders are created, so a fresh folder
-# gets a distinct color without the user having to pick one.
-_PALETTE = [
-    "#2563eb",  # blue
-    "#0d9488",  # teal
-    "#c026d3",  # magenta
-    "#d97706",  # amber
-    "#dc2626",  # red
-    "#7c3aed",  # violet
-    "#16a34a",  # green
-    "#0891b2",  # cyan
-]
+# A fresh folder starts with a plain folder glyph; the user can pick another
+# icon from the sidebar afterwards.
+_DEFAULT_ICON = "bi-folder"
 
 
 def _folders_path() -> Path:
@@ -80,14 +71,14 @@ def folder_exists(folder_id: str) -> bool:
     return any(f.get("id") == folder_id for f in _read_raw())
 
 
-def create_folder(name: str, color: str | None = None) -> Folder:
-    """Create a folder with the given name, assigning a color and sort order."""
+def create_folder(name: str, icon: str | None = None) -> Folder:
+    """Create a folder with the given name, icon, and sort order."""
     raw = _read_raw()
     order = 1 + max((int(f.get("order", 0)) for f in raw), default=0)
     folder = Folder(
         id=uuid.uuid4().hex[:12],
         name=name.strip()[:_MAX_NAME_LEN],
-        color=color or _PALETTE[len(raw) % len(_PALETTE)],
+        icon=icon or _DEFAULT_ICON,
         order=order,
         created_at=datetime.now(UTC).isoformat(),
     )
@@ -100,10 +91,10 @@ def update_folder(
     folder_id: str,
     *,
     name: str | None = None,
-    color: str | None = None,
+    icon: str | None = None,
     order: int | None = None,
 ) -> Folder | None:
-    """Update a folder's name, color, and/or order. Returns None if missing."""
+    """Update a folder's name, icon, and/or order. Returns None if missing."""
     raw = _read_raw()
     updated: Folder | None = None
     for entry in raw:
@@ -111,8 +102,8 @@ def update_folder(
             continue
         if name is not None:
             entry["name"] = name.strip()[:_MAX_NAME_LEN]
-        if color is not None:
-            entry["color"] = color
+        if icon is not None:
+            entry["icon"] = icon
         if order is not None:
             entry["order"] = order
         updated = Folder(**entry)

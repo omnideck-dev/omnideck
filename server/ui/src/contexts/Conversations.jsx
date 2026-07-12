@@ -79,6 +79,15 @@ export function ConversationsProvider({ children }) {
         }).catch(() => {});
     }, []);
 
+    const setFolderIcon = useCallback((folderId, icon) => {
+        setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, icon } : f)));
+        fetch(`/api/conversations/folders/${folderId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ icon }),
+        }).catch(() => {});
+    }, []);
+
     // Delete a folder: drop it from the list and clear the folder tag from any
     // loaded conversations so they fall back to the date-grouped listing —
     // mirroring what the server does to their metadata.
@@ -188,6 +197,7 @@ export function ConversationsProvider({ children }) {
         folders,
         createFolder,
         renameFolder,
+        setFolderIcon,
         deleteFolder,
         setConversationFolder,
     };

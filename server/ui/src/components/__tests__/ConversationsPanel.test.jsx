@@ -38,7 +38,7 @@ function mockFetch(sessions = SESSIONS, folders = []) {
                 const name = JSON.parse(opts.body).name;
                 return Promise.resolve({
                     ok: true,
-                    json: () => Promise.resolve({ id: 'new-folder', name, color: '#2563eb', order: 99 }),
+                    json: () => Promise.resolve({ id: 'new-folder', name, icon: 'bi-folder', order: 99 }),
                 });
             }
             return Promise.resolve({ ok: true, json: () => Promise.resolve(folders) });
@@ -479,7 +479,7 @@ describe('ConversationsPanel — rename', () => {
 });
 
 describe('ConversationsPanel — folders', () => {
-    const FOLDERS = [{ id: 'f1', name: 'Work', color: '#2563eb', order: 1 }];
+    const FOLDERS = [{ id: 'f1', name: 'Work', icon: 'bi-folder', order: 1 }];
 
     it('renders a folder section holding its filed conversation', async () => {
         mockFetch([
@@ -607,6 +607,25 @@ describe('ConversationsPanel — folders', () => {
         // The chat is still listed — now under a date bucket.
         const row = screen.getByText('in work').closest('[data-testid="recent-item"]');
         expect(row).toHaveAttribute('data-folder-id', '');
+    });
+
+    it('picks a folder icon from the icon picker', async () => {
+        const user = userEvent.setup();
+        mockFetch(SESSIONS, FOLDERS);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
+
+        await user.click(screen.getByTestId('recent-folder-icon'));
+        const picker = await screen.findByTestId('recent-icon-picker');
+        await user.click(picker.querySelector('[data-icon="bi-star"]'));
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/folders/f1',
+            expect.objectContaining({
+                method: 'PATCH',
+                body: JSON.stringify({ icon: 'bi-star' }),
+            }),
+        );
     });
 
     it('collapses a section and persists it to localStorage', async () => {

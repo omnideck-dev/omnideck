@@ -180,6 +180,23 @@ class TestFolderRoutes:
         resp = await update_folder_handler(_make_folder_request("nope", {"name": "x"}))
         assert resp.status == 404
 
+    async def test_update_folder_sets_icon(self, _conv_dir: Path) -> None:
+        """A valid bootstrap icon class is persisted."""
+        folder = create_folder("Work")
+        resp = await update_folder_handler(
+            _make_folder_request(folder.id, {"icon": "bi-briefcase"}),
+        )
+        assert resp.status == 200
+        assert json.loads(resp.body)["icon"] == "bi-briefcase"
+
+    async def test_update_folder_bad_icon_400(self, _conv_dir: Path) -> None:
+        """A value that isn't a bootstrap icon class is rejected."""
+        folder = create_folder("Work")
+        resp = await update_folder_handler(
+            _make_folder_request(folder.id, {"icon": "bi-x' onload=alert(1)"}),
+        )
+        assert resp.status == 400
+
     async def test_delete_folder_unfiles_members(self, _conv_dir: Path) -> None:
         """Deleting a folder removes it and clears it from member conversations."""
         folder = create_folder("Work")

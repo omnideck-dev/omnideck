@@ -9,6 +9,17 @@ const BUCKET_ORDER = ['Today', 'Yesterday', 'Earlier'];
 const MAX_TITLE_LEN = 50;
 const MAX_FOLDER_NAME_LEN = 40;
 const MENU_WIDTH = 176;
+const DEFAULT_FOLDER_ICON = 'bi-folder';
+// Curated Bootstrap icons offered in the folder icon picker. Kept in sync with
+// the server's icon-shape validation (any `bi-*` class is accepted there).
+const FOLDER_ICONS = [
+    'bi-folder', 'bi-briefcase', 'bi-code-slash', 'bi-book', 'bi-lightbulb',
+    'bi-star', 'bi-heart', 'bi-flag', 'bi-bug', 'bi-rocket',
+    'bi-music-note-beamed', 'bi-camera', 'bi-cpu', 'bi-gear', 'bi-graph-up-arrow',
+    'bi-chat-dots', 'bi-journal-text', 'bi-kanban', 'bi-mortarboard', 'bi-controller',
+    'bi-terminal', 'bi-box-seam', 'bi-tag', 'bi-house', 'bi-globe2',
+    'bi-palette', 'bi-trophy', 'bi-basket',
+];
 // Persisted set of collapsed section keys. Keyed by stable section identity
 // ('pinned', 'folder:<id>', 'Today'…) so a chat migrating between date buckets
 // never carries a stale collapsed flag with it.
@@ -114,7 +125,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const {
         items, setItems, loading, deleting, handleDelete,
         archiveConversation, unarchiveConversation,
-        folders, createFolder, renameFolder, deleteFolder, setConversationFolder,
+        folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
     } = useConversations();
     const [query, setQuery] = useState('');
     // Which row's context menu is open, plus the trigger rect to anchor it.
@@ -123,6 +134,8 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const [collapsed, setCollapsed] = useState(_loadCollapsed);
     const [creatingFolder, setCreatingFolder] = useState(false);
     const [renamingFolderId, setRenamingFolderId] = useState(null);
+    // Which folder's icon picker is open, plus the trigger rect to anchor it.
+    const [iconPicker, setIconPicker] = useState(null); // { folderId, rect } | null
     // Archived conversations are loaded lazily the first time the section is
     // expanded, then kept current locally by restore/delete like the main list.
     const [showArchived, setShowArchived] = useState(false);
@@ -263,6 +276,17 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         if (name) renameFolder(folderId, name);
     }, [renameFolder]);
 
+    const openIconPicker = useCallback((folderId, rect) => {
+        setIconPicker((cur) => (cur?.folderId === folderId ? null : { folderId, rect }));
+    }, []);
+
+    const pickIcon = useCallback((icon) => {
+        setIconPicker((cur) => {
+            if (cur) setFolderIcon(cur.folderId, icon);
+            return null;
+        });
+    }, [setFolderIcon]);
+
     const menuConvo = menu ? items.find((c) => c.conversation_id === menu.id) : null;
 
     const renderRow = (convo) => {
@@ -372,7 +396,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                         <div key={section.key} data-testid="recent-section" data-section={section.key}>
                             {section.kind === 'folder' && renamingFolderId === section.folder.id ? (
                                 <div className={styles.folderRename}>
-                                    <span className={styles.folderDot} style={{ background: section.folder.color }} />
+                                    <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON} ${styles.folderGlyph}`} />
                                     <InlineNameInput
                                         seed={section.folder.name}
                                         placeholder="Folder name"
@@ -388,6 +412,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                                     collapsed={isCollapsed}
                                     deleting={deleting === `folder:${section.folder?.id}`}
                                     onToggle={() => toggleSection(section.key)}
+                                    onOpenIconPicker={(rect) => openIconPicker(section.folder.id, rect)}
                                     onRenameFolder={() => setRenamingFolderId(section.folder.id)}
                                     onDeleteFolder={() => deleteFolder(section.folder.id)}
                                 />
@@ -413,6 +438,15 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 />
             )}
 
+            {iconPicker && (
+                <IconPicker
+                    rect={iconPicker.rect}
+                    current={folderById.get(iconPicker.folderId)?.icon}
+                    onPick={pickIcon}
+                    onClose={() => setIconPicker(null)}
+                />
+            )}
+
             <ArchivedSection
                 open={showArchived}
                 loaded={archivedLoaded}
@@ -431,10 +465,22 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
  * folder headers additionally carry a color dot and hover actions to rename or
  * delete the folder. Clicking the header toggles the section's collapsed state.
  */
-function SectionHeader({ section, collapsed, deleting, onToggle, onRenameFolder, onDeleteFolder }) {
+function SectionHeader({ section, collapsed, deleting, onToggle, onOpenIconPicker, onRenameFolder, onDeleteFolder }) {
     const isFolder = section.kind === 'folder';
     return (
         <div className={[styles.dayLabel, isFolder ? styles.folderHead : ''].filter(Boolean).join(' ')}>
+            {isFolder && (
+                <button
+                    type="button"
+                    className={styles.folderIconBtn}
+                    onClick={(e) => onOpenIconPicker(e.currentTarget.getBoundingClientRect())}
+                    title="Change folder icon"
+                    aria-label="Change folder icon"
+                    data-testid="recent-folder-icon"
+                >
+                    <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON}`} />
+                </button>
+            )}
             <button
                 type="button"
                 className={styles.sectionToggle}
@@ -444,7 +490,6 @@ function SectionHeader({ section, collapsed, deleting, onToggle, onRenameFolder,
             >
                 <i className={`bi ${collapsed ? 'bi-chevron-right' : 'bi-chevron-down'} ${styles.chev}`} />
                 {section.kind === 'pinned' && <i className="bi bi-pin-angle-fill" />}
-                {isFolder && <span className={styles.folderDot} style={{ background: section.folder.color }} />}
                 <span className={styles.sectionName}>{section.label}</span>
                 {section.items.length > 0 && <span className={styles.sectionCount}>{section.items.length}</span>}
             </button>
@@ -643,7 +688,7 @@ function ConversationMenu({ convo, rect, folders, deleting, onClose, onTogglePin
                             data-testid="recent-menu-folder-option"
                             data-folder-id={f.id}
                         >
-                            <span className={styles.folderDot} style={{ background: f.color }} />
+                            <i className={`bi ${f.icon || DEFAULT_FOLDER_ICON}`} />
                             <span className={styles.folderPickerName}>{f.name}</span>
                             {convo.folder_id === f.id && <i className={`bi bi-check2 ${styles.folderCheck}`} />}
                         </button>
@@ -683,6 +728,73 @@ function ConversationMenu({ convo, rect, folders, deleting, onClose, onTogglePin
                 confirmClassName={styles.menuDeleteArmed}
                 data-testid="recent-menu-delete"
             />
+        </div>,
+        document.body,
+    );
+}
+
+/**
+ * Portaled grid of curated Bootstrap icons for choosing a folder's icon.
+ * Anchored under the trigger, flipping above / clamping to the viewport when
+ * there isn't room. Closes on outside click or Escape.
+ */
+function IconPicker({ rect, current, onPick, onClose }) {
+    const ref = useRef(null);
+    const [pos, setPos] = useState(null);
+
+    useLayoutEffect(() => {
+        const el = ref.current;
+        const height = el ? el.offsetHeight : 0;
+        const width = el ? el.offsetWidth : 220;
+        const margin = 8;
+        let left = rect.left;
+        if (left + width + margin > window.innerWidth) {
+            left = Math.max(margin, window.innerWidth - width - margin);
+        }
+        let top = rect.bottom + 4;
+        if (top + height + margin > window.innerHeight) {
+            top = Math.max(margin, rect.top - 4 - height);
+        }
+        setPos({ left, top });
+    }, [rect]);
+
+    useEffect(() => {
+        const onDown = (e) => {
+            if (ref.current?.contains(e.target)) return;
+            onClose();
+        };
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [onClose]);
+
+    return createPortal(
+        <div
+            ref={ref}
+            className={styles.iconPicker}
+            role="menu"
+            data-testid="recent-icon-picker"
+            style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {FOLDER_ICONS.map((icon) => (
+                <button
+                    key={icon}
+                    type="button"
+                    className={[styles.iconOption, icon === current ? styles.iconOptionActive : ''].filter(Boolean).join(' ')}
+                    onClick={() => onPick(icon)}
+                    title={icon.replace('bi-', '')}
+                    aria-label={icon.replace('bi-', '')}
+                    data-testid="recent-icon-option"
+                    data-icon={icon}
+                >
+                    <i className={`bi ${icon}`} />
+                </button>
+            ))}
         </div>,
         document.body,
     );
