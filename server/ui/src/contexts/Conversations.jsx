@@ -100,9 +100,14 @@ export function ConversationsProvider({ children }) {
     }, [setItems]);
 
     // File a conversation into a folder (or remove it when folderId is null).
+    // The server owns the rule that filing into a folder unpins the chat; here
+    // we just send the folder and optimistically mirror the resulting state
+    // (folder set, pin cleared) so the row moves without waiting on the write.
     const setConversationFolder = useCallback((conversationId, folderId) => {
         setItems((prev) => prev.map((c) => (
-            c.conversation_id === conversationId ? { ...c, folder_id: folderId } : c
+            c.conversation_id === conversationId
+                ? { ...c, folder_id: folderId, pinned: folderId ? false : c.pinned }
+                : c
         )));
         fetch(`/api/conversations/sessions/${conversationId}`, {
             method: 'PATCH',

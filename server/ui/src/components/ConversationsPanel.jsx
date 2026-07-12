@@ -43,6 +43,25 @@ function _label(convo) {
     return convo.title || convo.first_message || '(empty)';
 }
 
+/** A slim relative-age stamp (e.g. "3h", "2d") shown inline on search results. */
+function _relativeAge(iso) {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return '';
+    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.round(hrs / 24);
+    if (days < 7) return `${days}d`;
+    const weeks = Math.round(days / 7);
+    if (weeks < 5) return `${weeks}w`;
+    const months = Math.round(days / 30);
+    if (months < 12) return `${months}mo`;
+    return `${Math.round(days / 365)}y`;
+}
+
 /** The value the rename input opens with — the visible label, sans placeholder. */
 function _renameSeed(convo) {
     return convo.title || convo.first_message || '';
@@ -136,6 +155,8 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const [renamingFolderId, setRenamingFolderId] = useState(null);
     // Which folder's icon picker is open, plus the trigger rect to anchor it.
     const [iconPicker, setIconPicker] = useState(null); // { folderId, rect } | null
+    // Which folder's options menu is open, plus the trigger rect to anchor it.
+    const [folderMenu, setFolderMenu] = useState(null); // { folderId, rect } | null
     // Archived conversations are loaded lazily the first time the section is
     // expanded, then kept current locally by restore/delete like the main list.
     const [showArchived, setShowArchived] = useState(false);
@@ -150,9 +171,22 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
 
     const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
 
+    const searching = query.trim().length > 0;
+
+    // While searching we drop the section structure entirely and show a flat,
+    // recency-sorted list of matches (each with an inline age). Sections are
+    // only built when not searching.
+    const searchResults = useMemo(() => {
+        if (!searching) return [];
+        const q = query.trim().toLowerCase();
+        return items
+            .filter((c) => _label(c).toLowerCase().includes(q))
+            .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+    }, [items, query, searching]);
+
     const sections = useMemo(
-        () => _buildSections(items, folders, folderById, query),
-        [items, folders, folderById, query],
+        () => (searching ? [] : _buildSections(items, folders, folderById, query)),
+        [items, folders, folderById, query, searching],
     );
 
     const hasRows = sections.some((s) => s.items.length > 0);
@@ -230,24 +264,18 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         if (id === activeConversationId) onNewConversation?.();
     }, [closeMenu, archiveConversation, archivedLoaded, activeConversationId, onNewConversation]);
 
-    const loadArchived = useCallback(async () => {
-        try {
-            const resp = await fetch('/api/conversations/archived');
-            if (resp.ok) setArchived(await resp.json());
-        } catch (_) {
-            // Leave the section empty on failure; toggling again retries.
-        } finally {
-            setArchivedLoaded(true);
-        }
+    // Load the archived list up front so its count shows on the collapsed
+    // header — you can see how many are archived without expanding.
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/conversations/archived')
+            .then((r) => (r.ok ? r.json() : []))
+            .then((data) => { if (!cancelled) { setArchived(data); setArchivedLoaded(true); } })
+            .catch(() => { if (!cancelled) setArchivedLoaded(true); });
+        return () => { cancelled = true; };
     }, []);
 
-    const toggleArchived = useCallback(() => {
-        setShowArchived((cur) => {
-            const next = !cur;
-            if (next && !archivedLoaded) loadArchived();
-            return next;
-        });
-    }, [archivedLoaded, loadArchived]);
+    const toggleArchived = useCallback(() => setShowArchived((cur) => !cur), []);
 
     const restoreArchived = useCallback((convo) => {
         const id = convo.conversation_id;
@@ -287,9 +315,14 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         });
     }, [setFolderIcon]);
 
+    // Toggle so clicking the same folder's 3-dot closes an already-open menu.
+    const toggleFolderMenu = useCallback((folderId, rect) => {
+        setFolderMenu((cur) => (cur?.folderId === folderId ? null : { folderId, rect }));
+    }, []);
+
     const menuConvo = menu ? items.find((c) => c.conversation_id === menu.id) : null;
 
-    const renderRow = (convo) => {
+    const renderRow = (convo, { showAge = false } = {}) => {
         const id = convo.conversation_id;
         if (renamingId === id) {
             return (
@@ -327,8 +360,16 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 data-folder-id={convo.folder_id || ''}
             >
                 <span className={styles.itemTitle}>{_label(convo)}</span>
+                {showAge && (
+                    <span className={styles.itemAge} data-testid="recent-item-age">
+                        {_relativeAge(convo.started_at)}
+                    </span>
+                )}
                 <button
                     className={styles.menuBtn}
+                    // Stop mousedown reaching the menu's outside-click handler so
+                    // re-clicking an open menu's trigger toggles it shut.
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                         e.stopPropagation();
                         openMenu(id, e.currentTarget.getBoundingClientRect());
@@ -379,18 +420,20 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                     />
                 )}
 
-                {!loading && !hasRows && !creatingFolder && folders.length === 0 && (
-                    <div className={styles.empty} data-testid="recent-empty">
-                        {query ? `No matches for "${query}"` : 'No conversations yet'}
-                    </div>
-                )}
-                {!loading && query && !hasRows && folders.length > 0 && (
+                {searching && searchResults.length === 0 && (
                     <div className={styles.empty} data-testid="recent-empty">
                         {`No matches for "${query}"`}
                     </div>
                 )}
+                {!searching && !loading && !hasRows && !creatingFolder && folders.length === 0 && (
+                    <div className={styles.empty} data-testid="recent-empty">
+                        No conversations yet
+                    </div>
+                )}
 
-                {sections.map((section) => {
+                {searching && searchResults.map((convo) => renderRow(convo, { showAge: true }))}
+
+                {!searching && sections.map((section) => {
                     const isCollapsed = collapsed.has(section.key);
                     return (
                         <div key={section.key} data-testid="recent-section" data-section={section.key}>
@@ -410,11 +453,9 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                                 <SectionHeader
                                     section={section}
                                     collapsed={isCollapsed}
-                                    deleting={deleting === `folder:${section.folder?.id}`}
+                                    menuOpen={folderMenu?.folderId === section.folder?.id}
                                     onToggle={() => toggleSection(section.key)}
-                                    onOpenIconPicker={(rect) => openIconPicker(section.folder.id, rect)}
-                                    onRenameFolder={() => setRenamingFolderId(section.folder.id)}
-                                    onDeleteFolder={() => deleteFolder(section.folder.id)}
+                                    onOpenFolderMenu={(rect) => toggleFolderMenu(section.folder.id, rect)}
                                 />
                             )}
                             {!isCollapsed && section.items.map(renderRow)}
@@ -435,6 +476,16 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                     onMoveToFolder={(folderId) => moveToFolder(menuConvo, folderId)}
                     onArchive={() => archiveConvo(menuConvo)}
                     onDelete={() => deleteConversation(menuConvo.conversation_id)}
+                />
+            )}
+
+            {folderMenu && (
+                <FolderMenu
+                    rect={folderMenu.rect}
+                    onClose={() => setFolderMenu(null)}
+                    onChangeIcon={() => { openIconPicker(folderMenu.folderId, folderMenu.rect); setFolderMenu(null); }}
+                    onRename={() => { setRenamingFolderId(folderMenu.folderId); setFolderMenu(null); }}
+                    onDelete={() => { deleteFolder(folderMenu.folderId); setFolderMenu(null); }}
                 />
             )}
 
@@ -462,25 +513,18 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
 
 /**
  * A collapsible section header. Pinned and date buckets show a label + count;
- * folder headers additionally carry a color dot and hover actions to rename or
- * delete the folder. Clicking the header toggles the section's collapsed state.
+ * folder headers put the folder's icon inline (like the pin) and add a hover
+ * 3-dot button that opens the folder menu. Clicking the label toggles the
+ * section's collapsed state.
  */
-function SectionHeader({ section, collapsed, deleting, onToggle, onOpenIconPicker, onRenameFolder, onDeleteFolder }) {
+function SectionHeader({ section, collapsed, menuOpen, onToggle, onOpenFolderMenu }) {
     const isFolder = section.kind === 'folder';
     return (
-        <div className={[styles.dayLabel, isFolder ? styles.folderHead : ''].filter(Boolean).join(' ')}>
-            {isFolder && (
-                <button
-                    type="button"
-                    className={styles.folderIconBtn}
-                    onClick={(e) => onOpenIconPicker(e.currentTarget.getBoundingClientRect())}
-                    title="Change folder icon"
-                    aria-label="Change folder icon"
-                    data-testid="recent-folder-icon"
-                >
-                    <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON}`} />
-                </button>
-            )}
+        <div className={[
+            styles.dayLabel,
+            isFolder ? styles.folderHead : '',
+            menuOpen ? styles.menuOpen : '',
+        ].filter(Boolean).join(' ')}>
             <button
                 type="button"
                 className={styles.sectionToggle}
@@ -490,35 +534,111 @@ function SectionHeader({ section, collapsed, deleting, onToggle, onOpenIconPicke
             >
                 <i className={`bi ${collapsed ? 'bi-chevron-right' : 'bi-chevron-down'} ${styles.chev}`} />
                 {section.kind === 'pinned' && <i className="bi bi-pin-angle-fill" />}
+                {isFolder && <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON} ${styles.folderInlineIcon}`} />}
                 <span className={styles.sectionName}>{section.label}</span>
-                {section.items.length > 0 && <span className={styles.sectionCount}>{section.items.length}</span>}
             </button>
+            {/* Count and the folder ⋮ share the trailing slot: on folder hover /
+                menu-open the count hides and the ⋮ takes its place, so counts
+                stay aligned across every section and nothing is left empty. */}
+            {section.items.length > 0 && <span className={styles.sectionCount}>{section.items.length}</span>}
             {isFolder && (
-                <div className={styles.folderActions}>
-                    <button
-                        type="button"
-                        className={styles.folderAction}
-                        onClick={onRenameFolder}
-                        title="Rename folder"
-                        aria-label="Rename folder"
-                        data-testid="recent-folder-rename"
-                    >
-                        <i className="bi bi-pencil" />
-                    </button>
-                    <ConfirmButton
-                        onConfirm={onDeleteFolder}
-                        label=""
-                        confirmLabel="Confirm?"
-                        icon="bi-trash3"
-                        disabled={deleting}
-                        className={styles.folderDelete}
-                        confirmClassName={styles.folderDeleteArmed}
-                        title="Delete folder"
-                        data-testid="recent-folder-delete"
-                    />
-                </div>
+                <button
+                    type="button"
+                    className={styles.folderMenuBtn}
+                    // Stop the mousedown from reaching the menu's outside-click
+                    // handler, so clicking an open menu's trigger toggles it shut
+                    // instead of closing-then-reopening.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onOpenFolderMenu(e.currentTarget.getBoundingClientRect()); }}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    title="Folder options"
+                    aria-label="Folder options"
+                    data-testid="recent-folder-menu-trigger"
+                >
+                    <i className="bi bi-three-dots-vertical" />
+                </button>
             )}
         </div>
+    );
+}
+
+/**
+ * The folder options menu, portaled to <body>. Collapses the folder's actions —
+ * change icon, rename, delete — behind one 3-dot trigger so the header stays
+ * uncluttered. Closes on outside click or Escape.
+ */
+function FolderMenu({ rect, onClose, onChangeIcon, onRename, onDelete }) {
+    const ref = useRef(null);
+    const [pos, setPos] = useState(null);
+
+    useLayoutEffect(() => {
+        const el = ref.current;
+        const height = el ? el.offsetHeight : 0;
+        const margin = 8;
+        const left = Math.max(margin, rect.right - MENU_WIDTH);
+        let top = rect.bottom + 4;
+        if (top + height + margin > window.innerHeight) {
+            top = Math.max(margin, rect.top - 4 - height);
+        }
+        setPos({ left, top });
+    }, [rect]);
+
+    useEffect(() => {
+        const onDown = (e) => {
+            if (ref.current?.contains(e.target)) return;
+            onClose();
+        };
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [onClose]);
+
+    return createPortal(
+        <div
+            ref={ref}
+            className={styles.menu}
+            role="menu"
+            data-testid="recent-folder-menu"
+            style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+        >
+            <button
+                type="button"
+                role="menuitem"
+                className={styles.menuItem}
+                onClick={onChangeIcon}
+                data-testid="recent-folder-menu-icon"
+            >
+                <i className="bi bi-grid-3x3-gap" />
+                Change icon
+            </button>
+            <button
+                type="button"
+                role="menuitem"
+                className={styles.menuItem}
+                onClick={onRename}
+                data-testid="recent-folder-menu-rename"
+            >
+                <i className="bi bi-pencil" />
+                Rename
+            </button>
+            <div className={styles.menuSep} />
+            <ConfirmButton
+                onConfirm={onDelete}
+                label="Delete"
+                confirmLabel="Confirm?"
+                icon="bi-trash3"
+                className={styles.menuDelete}
+                confirmClassName={styles.menuDeleteArmed}
+                data-testid="recent-folder-menu-delete"
+            />
+        </div>,
+        document.body,
     );
 }
 
