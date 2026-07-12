@@ -1,7 +1,7 @@
 """Folder registry — user-created groups for organizing conversations.
 
 Folders are pure metadata: the registry here stores the folder definitions
-(id, name, color, order) in a single JSON file under the conversations root,
+(id, name, icon, order) in a single JSON file under the conversations root,
 and each conversation records which folder it belongs to via a ``folder_id``
 in its own metadata.json. Nothing about a conversation moves on disk when it
 is filed into a folder.
@@ -116,9 +116,10 @@ def update_folder(
 def delete_folder(folder_id: str) -> bool:
     """Remove a folder from the registry. Returns False if it didn't exist.
 
-    This only deletes the folder definition; clearing the folder tag from the
-    conversations that referenced it is handled separately so those chats fall
-    back to the normal date-grouped listing.
+    This only deletes the folder definition. Clearing the ``folder_id`` from
+    the conversations that referenced it is left to the caller, which keeps
+    this registry independent of the conversation store; once cleared, those
+    chats fall back to the normal date-grouped listing.
     """
     raw = _read_raw()
     remaining = [f for f in raw if f.get("id") != folder_id]

@@ -213,8 +213,8 @@ class TestFolderRoutes:
         resp = await delete_folder_handler(_make_folder_request("nope", None))
         assert resp.status == 404
 
-    async def test_patch_session_files_into_folder(self, _conv_dir: Path) -> None:
-        """A valid folder_id on the session PATCH files the conversation."""
+    async def test_patch_conversation_files_into_folder(self, _conv_dir: Path) -> None:
+        """Filing a conversation via its PATCH endpoint sets its folder_id."""
         folder = create_folder("Work")
         _seed("c1")
         resp = await update_conversation_handler(
@@ -223,7 +223,7 @@ class TestFolderRoutes:
         assert resp.status == 204
         assert load_conversation_metadata("c1")["folder_id"] == folder.id
 
-    async def test_patch_session_unknown_folder_400(self, _conv_dir: Path) -> None:
+    async def test_patch_conversation_unknown_folder_400(self, _conv_dir: Path) -> None:
         """An unknown folder_id is rejected and nothing is written."""
         _seed("c1")
         resp = await update_conversation_handler(
@@ -232,7 +232,7 @@ class TestFolderRoutes:
         assert resp.status == 400
         assert "folder_id" not in load_conversation_metadata("c1")
 
-    async def test_patch_session_clears_folder(self, _conv_dir: Path) -> None:
+    async def test_patch_conversation_clears_folder(self, _conv_dir: Path) -> None:
         """A null folder_id removes the conversation from its folder."""
         folder = create_folder("Work")
         _seed("c1")
