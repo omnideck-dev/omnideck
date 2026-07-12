@@ -2,12 +2,12 @@ import { DEFAULT_FOLDER_ICON } from './conversationSections.js';
 import styles from './ConversationSectionHeader.module.css';
 
 /**
- * A collapsible section header. Pinned and date buckets show a label + count;
- * folder headers put the folder's icon inline (like the pin) and add a hover
- * 3-dot button that opens the folder menu. Clicking the label toggles the
- * section's collapsed state. The count and the folder ⋮ share the trailing
- * slot: on folder hover / menu-open the count hides and the ⋮ takes its place,
- * so counts stay aligned across every section with no reserved gap.
+ * A collapsible section header. Pinned and date buckets show just a label;
+ * folder headers put the folder's icon inline (like the pin) and add a 3-dot
+ * button that opens the folder menu. Clicking the label toggles the section's
+ * collapsed state. The folder ⋮ sits in the trailing slot, dimmed at rest so
+ * it stays discoverable (not a hover-only reveal) and solid on hover / focus /
+ * menu-open.
  */
 export default function ConversationSectionHeader({ section, collapsed, menuOpen, onToggle, onOpenFolderMenu }) {
     const isFolder = section.kind === 'folder';
@@ -29,7 +29,6 @@ export default function ConversationSectionHeader({ section, collapsed, menuOpen
                 {isFolder && <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON} ${styles.folderInlineIcon}`} />}
                 <span className={styles.sectionName}>{section.label}</span>
             </button>
-            {section.items.length > 0 && <span className={styles.sectionCount}>{section.items.length}</span>}
             {isFolder && (
                 <button
                     type="button"
