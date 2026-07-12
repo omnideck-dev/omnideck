@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import AudioIndicator from './AudioIndicator.jsx';
-import RecentConversations from './RecentConversations.jsx';
+import ConversationsPanel from './ConversationsPanel.jsx';
 import { useTheme } from '../contexts/Theme.jsx';
 import styles from './Sidebar.module.css';
 
@@ -115,7 +115,7 @@ export default function Sidebar({
             {collapsed ? (
                 <div className={styles.grow} />
             ) : (
-                <RecentConversations
+                <ConversationsPanel
                     onLoadConversation={onLoadConversation}
                     onNewConversation={onNewConversation}
                     activeConversationId={activeConversationId}

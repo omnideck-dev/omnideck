@@ -10,12 +10,14 @@ import pytest
 
 from conversations._store import (
     archive_conversation,
+    clear_folder_from_conversations,
     conversation_exists,
     delete_conversation,
     list_archived_conversations,
     list_conversations,
     load_conversation_metadata,
     load_conversation_profile,
+    save_conversation_folder,
     save_conversation_pinned,
     save_conversation_profile,
     save_conversation_title,
@@ -218,6 +220,54 @@ class TestArchiveConversation:
         archive_conversation("conv-1")
         assert delete_conversation("conv-1") is True
         assert list_archived_conversations() == []
+
+
+@pytest.mark.unit
+class TestConversationFolder:
+    """Filing conversations into folders via the folder_id metadata tag."""
+
+    def test_no_folder_by_default(self, _conv_dir: Path) -> None:
+        """A conversation has no folder unless one is set."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        assert list_conversations()[0].folder_id is None
+
+    def test_folder_id_round_trips_through_listing(self, _conv_dir: Path) -> None:
+        """A saved folder_id surfaces on the listing summary."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        assert list_conversations()[0].folder_id == "folder-abc"
+
+    def test_folder_clear_returns_to_none(self, _conv_dir: Path) -> None:
+        """Passing None removes the conversation from its folder."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        save_conversation_folder("conv-1", None)
+        assert list_conversations()[0].folder_id is None
+
+    def test_folder_preserves_other_metadata(self, _conv_dir: Path) -> None:
+        """Filing into a folder merges into existing metadata."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_folder("conv-1", "folder-abc")
+
+        meta = load_conversation_metadata("conv-1")
+        assert meta["title"] == "My Title"
+        assert meta["folder_id"] == "folder-abc"
+
+    def test_clear_folder_from_conversations(self, _conv_dir: Path) -> None:
+        """Clearing a folder unfiles exactly the conversations in it."""
+        for cid in ("conv-1", "conv-2", "conv-3"):
+            _seed_events_jsonl(_conv_dir, cid, [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        save_conversation_folder("conv-2", "folder-abc")
+        save_conversation_folder("conv-3", "folder-xyz")
+
+        cleared = clear_folder_from_conversations("folder-abc")
+        assert cleared == 2
+        by_id = {s.conversation_id: s for s in list_conversations()}
+        assert by_id["conv-1"].folder_id is None
+        assert by_id["conv-2"].folder_id is None
+        assert by_id["conv-3"].folder_id == "folder-xyz"
 
 
 @pytest.mark.unit

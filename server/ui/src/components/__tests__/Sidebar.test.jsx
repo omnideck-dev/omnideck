@@ -5,7 +5,7 @@ import Sidebar from '../Sidebar.jsx';
 import { ConversationsProvider } from '../../contexts/Conversations.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
 
-// The expanded sidebar renders RecentConversations (conversations context) and
+// The expanded sidebar renders ConversationsPanel (conversations context) and
 // reads the theme context for its toggle — so every render supplies both.
 const Wrapper = ({ children }) => (
     <ThemeProvider>

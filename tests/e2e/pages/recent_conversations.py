@@ -53,6 +53,22 @@ class RecentConversationItem:
         self.open_menu()
         self._page.get_by_test_id("recent-menu-archive").click()
 
+    def move_to_folder(self, folder_name: str) -> None:
+        """File the conversation into a folder via the menu's folder picker."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-move").click()
+        picker = self._page.get_by_test_id("recent-menu-folders")
+        picker.wait_for(state="visible")
+        picker.get_by_test_id("recent-menu-folder-option").filter(
+            has_text=folder_name,
+        ).first.click()
+
+    def remove_from_folder(self) -> None:
+        """Remove the conversation from its folder via the menu's folder picker."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-move").click()
+        self._page.get_by_test_id("recent-menu-folder-remove").click()
+
     def rename(self, new_name: str) -> None:
         """Rename the conversation via the menu's inline edit-in-place."""
         self.open_menu()
@@ -140,6 +156,19 @@ class RecentConversations:
         self.search.fill(query)
         self.items.first.click()
         return self
+
+    def create_folder(self, name: str) -> "RecentConversations":
+        """Create a folder via the new-folder button and inline name input."""
+        self.page.get_by_test_id("recent-new-folder").click()
+        field = self.page.get_by_test_id("recent-new-folder-input")
+        field.wait_for(state="visible")
+        field.fill(name)
+        field.press("Enter")
+        return self
+
+    def folder_section(self, name: str) -> Locator:
+        """Return the section element for a folder, located by its header name."""
+        return self.page.get_by_test_id("recent-section").filter(has_text=name)
 
     def item_by_id(self, conversation_id: str) -> RecentConversationItem:
         """Return a row by its conversation id — independent of list position.
