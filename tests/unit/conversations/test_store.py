@@ -9,14 +9,17 @@ from unittest.mock import patch
 import pytest
 
 from conversations._store import (
+    archive_conversation,
     conversation_exists,
     delete_conversation,
+    list_archived_conversations,
     list_conversations,
     load_conversation_metadata,
     load_conversation_profile,
     save_conversation_pinned,
     save_conversation_profile,
     save_conversation_title,
+    unarchive_conversation,
 )
 
 
@@ -149,6 +152,72 @@ class TestDeleteConversation:
     def test_delete_nonexistent(self, _conv_dir: Path) -> None:
         """Deleting a missing conversation returns False."""
         assert delete_conversation("nope") is False
+
+
+@pytest.mark.unit
+class TestArchiveConversation:
+    """Tests for archiving, restoring, and listing archived conversations."""
+
+    def test_archive_removes_from_active_list(self, _conv_dir: Path) -> None:
+        """An archived conversation drops out of the active listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        _seed_events_jsonl(_conv_dir, "conv-2", [{"role": "user", "content": "yo"}])
+        assert archive_conversation("conv-1") is True
+
+        active_ids = {s.conversation_id for s in list_conversations()}
+        assert active_ids == {"conv-2"}
+
+    def test_archived_appears_in_archived_list(self, _conv_dir: Path) -> None:
+        """An archived conversation surfaces in the archived listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+
+        archived = list_archived_conversations()
+        assert [s.conversation_id for s in archived] == ["conv-1"]
+        assert archived[0].first_message == "hi"
+
+    def test_archived_dir_not_listed_as_conversation(self, _conv_dir: Path) -> None:
+        """The reserved archive folder is never treated as a conversation."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        # The active list is empty even though the _archived dir exists on disk.
+        assert list_conversations() == []
+
+    def test_archive_preserves_metadata(self, _conv_dir: Path) -> None:
+        """Title and pinned flag travel with the archived conversation."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_pinned("conv-1", True)
+        archive_conversation("conv-1")
+
+        archived = list_archived_conversations()[0]
+        assert archived.title == "My Title"
+        assert archived.pinned is True
+
+    def test_unarchive_restores_to_active_list(self, _conv_dir: Path) -> None:
+        """Restoring moves a conversation back into the active listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        assert unarchive_conversation("conv-1") is True
+
+        assert [s.conversation_id for s in list_conversations()] == ["conv-1"]
+        assert list_archived_conversations() == []
+        assert conversation_exists("conv-1") is True
+
+    def test_archive_missing_returns_false(self, _conv_dir: Path) -> None:
+        """Archiving an unknown conversation returns False."""
+        assert archive_conversation("nope") is False
+
+    def test_unarchive_missing_returns_false(self, _conv_dir: Path) -> None:
+        """Restoring an unknown archived conversation returns False."""
+        assert unarchive_conversation("nope") is False
+
+    def test_delete_removes_archived_conversation(self, _conv_dir: Path) -> None:
+        """Delete also reaches conversations that have been archived."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        assert delete_conversation("conv-1") is True
+        assert list_archived_conversations() == []
 
 
 @pytest.mark.unit

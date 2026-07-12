@@ -2,8 +2,11 @@
 
 Endpoints:
     GET    /api/conversations/sessions                        — list summaries
+    GET    /api/conversations/archived                        — list archived summaries
     POST   /api/conversations/sessions/{id}/resume            — load history + preview state
     POST   /api/conversations/sessions/{id}/title             — generate + persist a title
+    POST   /api/conversations/sessions/{id}/archive           — archive a conversation
+    POST   /api/conversations/sessions/{id}/unarchive         — restore an archived one
     PATCH  /api/conversations/sessions/{id}                   — rename / pin a conversation
     PUT    /api/conversations/sessions/{id}/preview-state     — persist preview tabs
     POST   /api/conversations/sessions/{id}/preview-state/focus-file
@@ -18,15 +21,18 @@ from aiohttp import web
 from aiohttp.web import Request, Response
 
 from conversations import (
+    archive_conversation,
     conversation_exists,
     delete_conversation,
     generate_conversation_title,
+    list_archived_conversations,
     list_conversations,
     load_conversation_metadata,
     mark_file_focused,
     save_conversation_pinned,
     save_conversation_title,
     save_preview_state,
+    unarchive_conversation,
 )
 from server._conversation_cache import resume_conversation
 
@@ -48,6 +54,31 @@ async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
     found = delete_conversation(conversation_id)
+    if not found:
+        return web.json_response({"error": "Conversation not found"}, status=404)
+    return web.Response(status=204)
+
+
+async def list_archived_handler(_request: Request) -> Response:
+    """Return summaries of archived conversations for the archived panel."""
+    summaries = list_archived_conversations()
+    data = [s.model_dump() for s in summaries]
+    return web.json_response(data)
+
+
+async def archive_conversation_handler(request: Request) -> Response:
+    """Archive a conversation, moving it out of the active list."""
+    conversation_id = request.match_info["conversation_id"]
+    found = archive_conversation(conversation_id)
+    if not found:
+        return web.json_response({"error": "Conversation not found"}, status=404)
+    return web.Response(status=204)
+
+
+async def unarchive_conversation_handler(request: Request) -> Response:
+    """Restore an archived conversation back into the active list."""
+    conversation_id = request.match_info["conversation_id"]
+    found = unarchive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
     return web.Response(status=204)
@@ -186,8 +217,11 @@ def register_conversation_routes(app: web.Application) -> None:
     aiohttp matcher doesn't accidentally treat `sessions` as an id.
     """
     app.router.add_route("GET", "/api/conversations/sessions", list_conversations_handler)
+    app.router.add_route("GET", "/api/conversations/archived", list_archived_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/resume", resume_conversation_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/title", generate_title_handler)
+    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/archive", archive_conversation_handler)
+    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/unarchive", unarchive_conversation_handler)
     app.router.add_route("PUT", "/api/conversations/sessions/{conversation_id}/preview-state", save_preview_state_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/preview-state/focus-file", focus_file_handler)
     app.router.add_route("PATCH", "/api/conversations/sessions/{conversation_id}", update_conversation_handler)

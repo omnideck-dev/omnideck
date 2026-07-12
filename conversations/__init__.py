@@ -5,8 +5,10 @@ from ._events_log import EventsLogWriter, load_events_jsonl
 from ._models import ConversationSummary
 from ._terminal import TerminalWriter, load_terminal
 from ._store import (
+    archive_conversation,
     conversation_exists,
     delete_conversation,
+    list_archived_conversations,
     list_conversations,
     load_conversation_metadata,
     load_conversation_profile,
@@ -18,6 +20,7 @@ from ._store import (
     save_conversation_title,
     save_loaded_skills,
     save_preview_state,
+    unarchive_conversation,
 )
 from ._title_generation import generate_conversation_title
 
@@ -26,9 +29,11 @@ __all__ = [
     "ConversationSummary",
     "EventsLogWriter",
     "TerminalWriter",
+    "archive_conversation",
     "conversation_exists",
     "delete_conversation",
     "generate_conversation_title",
+    "list_archived_conversations",
     "list_conversations",
     "load_browser_tabs",
     "load_conversation_metadata",
@@ -43,4 +48,5 @@ __all__ = [
     "save_conversation_title",
     "save_loaded_skills",
     "save_preview_state",
+    "unarchive_conversation",
 ]

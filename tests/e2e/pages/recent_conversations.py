@@ -48,6 +48,11 @@ class RecentConversationItem:
         self.open_menu()
         self._page.get_by_test_id("recent-menu-pin").click()
 
+    def archive(self) -> None:
+        """Archive the conversation via the menu's Archive action."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-archive").click()
+
     def rename(self, new_name: str) -> None:
         """Rename the conversation via the menu's inline edit-in-place."""
         self.open_menu()
@@ -56,6 +61,35 @@ class RecentConversationItem:
         field.wait_for(state="visible")
         field.fill(new_name)
         self._page.get_by_test_id("recent-rename-save").click()
+
+
+class ArchivedConversationItem:
+    """A single row in the sidebar's Archived shelf.
+
+    Archived rows carry Restore and (two-tap) permanent Delete actions,
+    revealed on hover. Both are scoped to the row so multiple archived
+    conversations don't collide.
+    """
+
+    def __init__(self, locator: Locator, page: Page):
+        self._loc = locator
+        self._page = page
+
+    @property
+    def root(self) -> Locator:
+        return self._loc
+
+    def restore(self) -> None:
+        """Restore the conversation back into the active recents list."""
+        self._loc.hover()
+        self._loc.get_by_test_id("archived-restore").click()
+
+    def delete(self) -> None:
+        """Permanently delete via the click-twice-to-confirm Delete action."""
+        self._loc.hover()
+        delete = self._loc.get_by_test_id("archived-delete")
+        delete.click()  # arms
+        delete.click()  # confirms
 
 
 class RecentConversations:
@@ -128,3 +162,27 @@ class RecentConversations:
         return self.items.evaluate_all(
             "els => els.map(e => e.getAttribute('data-conversation-id'))"
         )
+
+    # -- Archived shelf -------------------------------------------------------
+
+    @property
+    def archived_toggle(self) -> Locator:
+        """The collapsible 'Archived' section header/toggle."""
+        return self.page.get_by_test_id("archived-toggle")
+
+    @property
+    def archived_items(self) -> Locator:
+        return self.page.get_by_test_id("archived-item")
+
+    def expand_archived(self) -> "RecentConversations":
+        """Open the Archived shelf, which lazily loads the archived list."""
+        if self.archived_toggle.get_attribute("aria-expanded") != "true":
+            self.archived_toggle.click()
+        return self
+
+    def archived_item_by_id(self, conversation_id: str) -> ArchivedConversationItem:
+        """Return an archived row by its conversation id."""
+        loc = self.page.locator(
+            f'[data-testid="archived-item"][data-conversation-id="{conversation_id}"]'
+        )
+        return ArchivedConversationItem(loc, self.page)

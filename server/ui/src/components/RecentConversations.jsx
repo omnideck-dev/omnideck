@@ -39,11 +39,19 @@ function _renameSeed(convo) {
  * 3-dot menu pins, renames, or deletes it.
  */
 export default function RecentConversations({ onLoadConversation, onNewConversation, activeConversationId }) {
-    const { items, setItems, loading, deleting, handleDelete } = useConversations();
+    const {
+        items, setItems, loading, deleting, handleDelete,
+        archiveConversation, unarchiveConversation,
+    } = useConversations();
     const [query, setQuery] = useState('');
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null
     const [renamingId, setRenamingId] = useState(null);
+    // Archived conversations are loaded lazily the first time the section is
+    // expanded, then kept current locally by restore/delete like the main list.
+    const [showArchived, setShowArchived] = useState(false);
+    const [archived, setArchived] = useState([]);
+    const [archivedLoaded, setArchivedLoaded] = useState(false);
 
     const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -117,6 +125,55 @@ export default function RecentConversations({ onLoadConversation, onNewConversat
         // Deleting the open conversation leaves nothing selected — start fresh.
         if (id === activeConversationId) onNewConversation?.();
     }, [handleDelete, closeMenu, activeConversationId, onNewConversation]);
+
+    const archiveConvo = useCallback(async (convo) => {
+        closeMenu();
+        const id = convo.conversation_id;
+        const removed = await archiveConversation(id);
+        // Mirror it into the archived list if that section is already loaded,
+        // so the count and rows stay current without a refetch.
+        if (removed && archivedLoaded) {
+            setArchived((prev) => (
+                prev.some((c) => c.conversation_id === id) ? prev : [removed, ...prev]
+            ));
+        }
+        // Archiving the open conversation leaves nothing selected — start fresh.
+        if (id === activeConversationId) onNewConversation?.();
+    }, [closeMenu, archiveConversation, archivedLoaded, activeConversationId, onNewConversation]);
+
+    const loadArchived = useCallback(async () => {
+        try {
+            const resp = await fetch('/api/conversations/archived');
+            if (resp.ok) setArchived(await resp.json());
+        } catch (_) {
+            // Leave the section empty on failure; toggling again retries.
+        } finally {
+            setArchivedLoaded(true);
+        }
+    }, []);
+
+    const toggleArchived = useCallback(() => {
+        setShowArchived((cur) => {
+            const next = !cur;
+            if (next && !archivedLoaded) loadArchived();
+            return next;
+        });
+    }, [archivedLoaded, loadArchived]);
+
+    const restoreArchived = useCallback((convo) => {
+        const id = convo.conversation_id;
+        setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
+        unarchiveConversation(convo);
+    }, [unarchiveConversation]);
+
+    const deleteArchived = useCallback(async (id) => {
+        await handleDelete(
+            id,
+            `/api/conversations/sessions/${id}`,
+            () => true, // the active list doesn't hold archived rows; nothing to filter
+        );
+        setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
+    }, [handleDelete]);
 
     const menuConvo = menu ? items.find((c) => c.conversation_id === menu.id) : null;
 
@@ -210,8 +267,90 @@ export default function RecentConversations({ onLoadConversation, onNewConversat
                     onClose={closeMenu}
                     onTogglePin={() => togglePin(menuConvo)}
                     onRename={() => { setRenamingId(menuConvo.conversation_id); closeMenu(); }}
+                    onArchive={() => archiveConvo(menuConvo)}
                     onDelete={() => deleteConversation(menuConvo.conversation_id)}
                 />
+            )}
+
+            <ArchivedSection
+                open={showArchived}
+                loaded={archivedLoaded}
+                items={archived}
+                deleting={deleting}
+                onToggle={toggleArchived}
+                onRestore={restoreArchived}
+                onDelete={deleteArchived}
+            />
+        </div>
+    );
+}
+
+/**
+ * Collapsible footer listing archived conversations. Hidden behind a toggle
+ * and loaded lazily on first open. Each row can be restored back into the
+ * recents or permanently deleted; archived rows are read-only otherwise
+ * (open a conversation by restoring it first).
+ */
+function ArchivedSection({ open, loaded, items, deleting, onToggle, onRestore, onDelete }) {
+    return (
+        <div className={styles.archived} data-testid="archived-section">
+            <button
+                type="button"
+                className={styles.archivedToggle}
+                onClick={onToggle}
+                aria-expanded={open}
+                data-testid="archived-toggle"
+            >
+                <i className={`bi ${open ? 'bi-chevron-down' : 'bi-chevron-right'}`} />
+                <i className="bi bi-archive" />
+                <span>Archived</span>
+                {loaded && items.length > 0 && (
+                    <span className={styles.archivedCount}>{items.length}</span>
+                )}
+            </button>
+            {open && (
+                <div className={styles.archivedList}>
+                    {loaded && items.length === 0 && (
+                        <div className={styles.empty} data-testid="archived-empty">
+                            No archived conversations
+                        </div>
+                    )}
+                    {items.map((convo) => {
+                        const id = convo.conversation_id;
+                        return (
+                            <div
+                                key={id}
+                                className={styles.archivedItem}
+                                title={_label(convo)}
+                                data-testid="archived-item"
+                                data-conversation-id={id}
+                            >
+                                <span className={styles.itemTitle}>{_label(convo)}</span>
+                                <button
+                                    type="button"
+                                    className={styles.archivedAction}
+                                    onClick={() => onRestore(convo)}
+                                    title="Restore conversation"
+                                    aria-label="Restore conversation"
+                                    data-testid="archived-restore"
+                                >
+                                    <i className="bi bi-arrow-counterclockwise" />
+                                </button>
+                                <ConfirmButton
+                                    onConfirm={() => onDelete(id)}
+                                    label=""
+                                    confirmLabel="Confirm?"
+                                    icon="bi-trash3"
+                                    disabled={deleting === id}
+                                    className={styles.archivedDelete}
+                                    confirmClassName={styles.archivedDeleteArmed}
+                                    title="Delete permanently"
+                                    data-testid="archived-delete"
+                                />
+                            </div>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );
@@ -222,7 +361,7 @@ export default function RecentConversations({ onLoadConversation, onNewConversat
  * clip it. Anchored under the trigger, right-aligned to it, flipping above
  * when there isn't room below. Closes on outside click or Escape.
  */
-function ConversationMenu({ convo, rect, deleting, onClose, onTogglePin, onRename, onDelete }) {
+function ConversationMenu({ convo, rect, deleting, onClose, onTogglePin, onRename, onArchive, onDelete }) {
     const ref = useRef(null);
     const [pos, setPos] = useState(null);
 
@@ -280,6 +419,16 @@ function ConversationMenu({ convo, rect, deleting, onClose, onTogglePin, onRenam
             >
                 <i className="bi bi-pencil" />
                 Rename
+            </button>
+            <button
+                type="button"
+                role="menuitem"
+                className={styles.menuItem}
+                onClick={onArchive}
+                data-testid="recent-menu-archive"
+            >
+                <i className="bi bi-archive" />
+                Archive
             </button>
             <div className={styles.menuSep} />
             <ConfirmButton
