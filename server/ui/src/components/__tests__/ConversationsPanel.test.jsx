@@ -43,6 +43,10 @@ function mockFetch(sessions = SESSIONS, folders = []) {
             }
             return Promise.resolve({ ok: true, json: () => Promise.resolve(folders) });
         }
+        // Archived loads on mount; keep it empty by default.
+        if (typeof url === 'string' && url.endsWith('/archived')) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
         // Everything else that mutates (rename/pin/folder PATCH, delete) is 204.
         if (method === 'DELETE' || method === 'PATCH') {
             return Promise.resolve({ ok: true, status: 204 });
@@ -55,6 +59,13 @@ function mockFetch(sessions = SESSIONS, folders = []) {
 async function openRowMenu(user, row) {
     await user.click(within(row).getByTestId('recent-menu-trigger'));
     return screen.getByTestId('recent-menu');
+}
+
+/** Open a folder header's 3-dot menu (by folder name) and return the menu. */
+async function openFolderMenu(user, folderName) {
+    const section = screen.getByText(folderName).closest('[data-testid="recent-section"]');
+    await user.click(within(section).getByTestId('recent-folder-menu-trigger'));
+    return screen.getByTestId('recent-folder-menu');
 }
 
 beforeEach(() => {
@@ -89,6 +100,19 @@ describe('ConversationsPanel', () => {
         await user.type(screen.getByTestId('recent-search'), 'snake');
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(1));
         expect(screen.getByText('snake game')).toBeInTheDocument();
+    });
+
+    it('searching shows a flat list with inline age and no section headers', async () => {
+        const user = userEvent.setup();
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Today')).toBeInTheDocument());
+
+        await user.type(screen.getByTestId('recent-search'), 'a');
+        await waitFor(() => expect(screen.queryByTestId('recent-section')).not.toBeInTheDocument());
+        // Every visible result carries an inline age stamp.
+        const rows = screen.getAllByTestId('recent-item');
+        expect(rows.length).toBeGreaterThan(0);
+        expect(screen.getAllByTestId('recent-item-age')).toHaveLength(rows.length);
     });
 
     it('shows a no-matches message when the search excludes everything', async () => {
@@ -287,7 +311,7 @@ describe('ConversationsPanel — archive', () => {
         await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
     });
 
-    it('lazily loads and restores archived conversations', async () => {
+    it('shows the archived count while collapsed, then reveals + restores on expand', async () => {
         const user = userEvent.setup();
         // The archived endpoint returns one conversation; everything else
         // behaves like the default mock.
@@ -313,8 +337,12 @@ describe('ConversationsPanel — archive', () => {
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
 
-        // The archived list isn't fetched until the section is expanded.
+        // The count shows on the collapsed header (loaded on mount), but the
+        // rows aren't rendered until the section is expanded.
+        const archivedSection = screen.getByTestId('archived-section');
+        await waitFor(() => expect(within(archivedSection).getByText('1')).toBeInTheDocument());
         expect(screen.queryByTestId('archived-item')).not.toBeInTheDocument();
+
         await user.click(screen.getByTestId('archived-toggle'));
         await waitFor(() => expect(screen.getByTestId('archived-item')).toBeInTheDocument());
         expect(screen.getByText('archived one')).toBeInTheDocument();
@@ -524,6 +552,27 @@ describe('ConversationsPanel — folders', () => {
         });
     });
 
+    it('unpins a pinned conversation when it is moved into a folder', async () => {
+        const user = userEvent.setup();
+        mockFetch([
+            { conversation_id: 'p1', title: 'pinned chat', started_at: isoAgo({ hours: 1 }), pinned: true },
+        ], FOLDERS);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Pinned')).toBeInTheDocument());
+
+        const row = screen.getByText('pinned chat').closest('[data-testid="recent-item"]');
+        const menu = await openRowMenu(user, row);
+        await user.click(within(menu).getByTestId('recent-menu-move'));
+        await user.click(screen.getByTestId('recent-menu-folder-option'));
+
+        // The row is filed and no longer pinned, so the Pinned section is gone
+        // and the row now lives under its folder.
+        await waitFor(() => expect(screen.queryByText('Pinned')).not.toBeInTheDocument());
+        const moved = screen.getByText('pinned chat').closest('[data-testid="recent-item"]');
+        expect(moved).toHaveAttribute('data-folder-id', 'f1');
+        expect(moved).toHaveAttribute('data-pinned', 'false');
+    });
+
     it('removes a conversation from its folder', async () => {
         const user = userEvent.setup();
         mockFetch([
@@ -566,13 +615,14 @@ describe('ConversationsPanel — folders', () => {
         await waitFor(() => expect(screen.getByText('Ideas')).toBeInTheDocument());
     });
 
-    it('renames a folder from its header', async () => {
+    it('renames a folder from the folder menu', async () => {
         const user = userEvent.setup();
         mockFetch(SESSIONS, FOLDERS);
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
 
-        await user.click(screen.getByTestId('recent-folder-rename'));
+        const menu = await openFolderMenu(user, 'Work');
+        await user.click(within(menu).getByTestId('recent-folder-menu-rename'));
         const input = screen.getByTestId('recent-folder-rename-input');
         await user.clear(input);
         await user.type(input, 'Job{Enter}');
@@ -587,7 +637,7 @@ describe('ConversationsPanel — folders', () => {
         await waitFor(() => expect(screen.getByText('Job')).toBeInTheDocument());
     });
 
-    it('deletes a folder and returns its chat to the date buckets', async () => {
+    it('deletes a folder from the folder menu and returns its chat to the date buckets', async () => {
         const user = userEvent.setup();
         mockFetch([
             { conversation_id: 'c1', title: 'in work', started_at: isoAgo({ hours: 1 }), folder_id: 'f1' },
@@ -595,9 +645,10 @@ describe('ConversationsPanel — folders', () => {
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
 
-        const del = screen.getByTestId('recent-folder-delete');
+        const menu = await openFolderMenu(user, 'Work');
+        const del = within(menu).getByTestId('recent-folder-menu-delete');
         await user.click(del); // arms
-        await user.click(screen.getByTestId('recent-folder-delete')); // confirms
+        await user.click(screen.getByTestId('recent-folder-menu-delete')); // confirms
 
         await waitFor(() => expect(screen.queryByText('Work')).not.toBeInTheDocument());
         expect(global.fetch).toHaveBeenCalledWith(
@@ -609,13 +660,14 @@ describe('ConversationsPanel — folders', () => {
         expect(row).toHaveAttribute('data-folder-id', '');
     });
 
-    it('picks a folder icon from the icon picker', async () => {
+    it('changes a folder icon via the folder menu → icon picker', async () => {
         const user = userEvent.setup();
         mockFetch(SESSIONS, FOLDERS);
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
 
-        await user.click(screen.getByTestId('recent-folder-icon'));
+        const menu = await openFolderMenu(user, 'Work');
+        await user.click(within(menu).getByTestId('recent-folder-menu-icon'));
         const picker = await screen.findByTestId('recent-icon-picker');
         await user.click(picker.querySelector('[data-icon="bi-star"]'));
 
@@ -626,6 +678,20 @@ describe('ConversationsPanel — folders', () => {
                 body: JSON.stringify({ icon: 'bi-star' }),
             }),
         );
+    });
+
+    it('closes the folder menu when its trigger is clicked again', async () => {
+        const user = userEvent.setup();
+        mockFetch(SESSIONS, FOLDERS);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
+
+        const section = screen.getByText('Work').closest('[data-testid="recent-section"]');
+        const trigger = within(section).getByTestId('recent-folder-menu-trigger');
+        await user.click(trigger);
+        expect(screen.getByTestId('recent-folder-menu')).toBeInTheDocument();
+        await user.click(trigger);
+        expect(screen.queryByTestId('recent-folder-menu')).not.toBeInTheDocument();
     });
 
     it('collapses a section and persists it to localStorage', async () => {

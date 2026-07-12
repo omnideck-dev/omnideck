@@ -1,0 +1,64 @@
+/* ── Section header (Pinned / folders / date buckets) ── */
+.dayLabel {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 6px 2px;
+}
+/* The clickable label that toggles the section collapsed/expanded. */
+.sectionToggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--font-code);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--text-tertiary);
+    text-align: left;
+}
+.sectionToggle:hover { color: var(--text-secondary); }
+.sectionToggle i { font-size: 9px; }
+.sectionToggle .chev { color: var(--text-tertiary); width: 9px; flex-shrink: 0; }
+.sectionName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* The folder's identity icon, inline right after the chevron (like the pin). */
+.sectionToggle .folderInlineIcon { font-size: 11px; flex-shrink: 0; }
+
+/* Folder 3-dot trigger. It lives permanently in the trailing slot, dimmed at
+ * rest so it stays discoverable (a hover-only reveal is invisible on touch and
+ * hard to find) without pulling the eye, and goes full-strength on hover /
+ * focus / while its menu is open. */
+.folderMenuBtn {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 13px;
+    opacity: 0.5;
+}
+.folderHead:hover .folderMenuBtn,
+.folderHead.menuOpen .folderMenuBtn,
+.folderMenuBtn:focus-visible { opacity: 1; }
+.folderMenuBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
+.folderHead.menuOpen .folderMenuBtn { color: var(--text-primary); }

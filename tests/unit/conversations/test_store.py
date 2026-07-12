@@ -254,6 +254,24 @@ class TestConversationFolder:
         assert meta["title"] == "My Title"
         assert meta["folder_id"] == "folder-abc"
 
+    def test_filing_into_folder_unpins(self, _conv_dir: Path) -> None:
+        """Filing a pinned conversation into a folder clears the pinned flag —
+        a folder and a pin are mutually exclusive homes."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        save_conversation_folder("conv-1", "folder-abc")
+
+        summary = list_conversations()[0]
+        assert summary.folder_id == "folder-abc"
+        assert summary.pinned is False
+
+    def test_removing_from_folder_leaves_pin_untouched(self, _conv_dir: Path) -> None:
+        """Clearing the folder (None) doesn't touch the pinned flag."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        save_conversation_folder("conv-1", None)
+        assert list_conversations()[0].pinned is True
+
     def test_clear_folder_from_conversations(self, _conv_dir: Path) -> None:
         """Clearing a folder unfiles exactly the conversations in it."""
         for cid in ("conv-1", "conv-2", "conv-3"):
