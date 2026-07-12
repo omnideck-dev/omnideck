@@ -229,6 +229,89 @@ describe('RecentConversations — delete', () => {
     });
 });
 
+describe('RecentConversations — archive', () => {
+    it('offers Archive in the per-row menu', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        expect(within(menu).getByTestId('recent-menu-archive')).toBeInTheDocument();
+    });
+
+    it('archives a conversation, removing it from the list and posting to the archive endpoint', async () => {
+        const user = userEvent.setup();
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(within(menu).getByTestId('recent-menu-archive'));
+
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/c1/archive',
+            expect.objectContaining({ method: 'POST' }),
+        );
+    });
+
+    it('opens a new conversation when the active one is archived', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        render(
+            <RecentConversations
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c1"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(within(menu).getByTestId('recent-menu-archive'));
+
+        await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
+    });
+
+    it('lazily loads and restores archived conversations', async () => {
+        const user = userEvent.setup();
+        // The archived endpoint returns one conversation; everything else
+        // behaves like the default mock.
+        global.fetch = vi.fn((url, opts) => {
+            const method = opts?.method;
+            if (typeof url === 'string' && url.endsWith('/archived')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([
+                        { conversation_id: 'a1', title: 'archived one', started_at: isoAgo({ days: 2 }) },
+                    ]),
+                });
+            }
+            if (method === 'DELETE' || method === 'PATCH' || method === 'POST') {
+                return Promise.resolve({ ok: true, status: 204 });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(SESSIONS) });
+        });
+
+        render(<RecentConversations onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        // The archived list isn't fetched until the section is expanded.
+        expect(screen.queryByTestId('archived-item')).not.toBeInTheDocument();
+        await user.click(screen.getByTestId('archived-toggle'));
+        await waitFor(() => expect(screen.getByTestId('archived-item')).toBeInTheDocument());
+        expect(screen.getByText('archived one')).toBeInTheDocument();
+
+        // Restoring moves it back into the recents and posts to unarchive.
+        await user.click(screen.getByTestId('archived-restore'));
+        await waitFor(() => expect(screen.queryByTestId('archived-item')).not.toBeInTheDocument());
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(5);
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/api/conversations/sessions/a1/unarchive',
+            expect.objectContaining({ method: 'POST' }),
+        );
+    });
+});
+
 describe('RecentConversations — pin', () => {
     it('pins a conversation into a Pinned section and persists it', async () => {
         const user = userEvent.setup();

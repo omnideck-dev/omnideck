@@ -9,9 +9,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import conversations._store as _store
-from conversations._store import load_conversation_metadata, save_conversation_title
+from conversations._store import (
+    conversation_exists,
+    list_archived_conversations,
+    load_conversation_metadata,
+    save_conversation_title,
+)
 from server._conversation_routes import (
+    archive_conversation_handler,
     generate_title_handler,
+    list_archived_handler,
+    unarchive_conversation_handler,
     update_conversation_handler,
 )
 
@@ -113,6 +121,47 @@ class TestUpdateConversation:
         _seed("c1")
         resp = await update_conversation_handler(_make_request("c1", {"title": 123}))
         assert resp.status == 400
+
+
+@pytest.mark.unit
+class TestArchiveRoutes:
+    """POST archive/unarchive and GET archived listing."""
+
+    async def test_archive_moves_conversation(self, _conv_dir: Path) -> None:
+        """Archiving succeeds and the conversation leaves the active store."""
+        _seed("c1")
+        resp = await archive_conversation_handler(_make_request("c1", None))
+        assert resp.status == 204
+        assert conversation_exists("c1") is False
+        assert [s.conversation_id for s in list_archived_conversations()] == ["c1"]
+
+    async def test_archive_missing_404(self, _conv_dir: Path) -> None:
+        """Archiving an unknown conversation is a 404."""
+        resp = await archive_conversation_handler(_make_request("ghost", None))
+        assert resp.status == 404
+
+    async def test_unarchive_restores_conversation(self, _conv_dir: Path) -> None:
+        """Restoring brings the conversation back into the active store."""
+        _seed("c1")
+        await archive_conversation_handler(_make_request("c1", None))
+        resp = await unarchive_conversation_handler(_make_request("c1", None))
+        assert resp.status == 204
+        assert conversation_exists("c1") is True
+        assert list_archived_conversations() == []
+
+    async def test_unarchive_missing_404(self, _conv_dir: Path) -> None:
+        """Restoring an unknown archived conversation is a 404."""
+        resp = await unarchive_conversation_handler(_make_request("ghost", None))
+        assert resp.status == 404
+
+    async def test_list_archived(self, _conv_dir: Path) -> None:
+        """The archived listing returns summaries of archived conversations."""
+        _seed("c1")
+        await archive_conversation_handler(_make_request("c1", None))
+        resp = await list_archived_handler(_make_request("", None))
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert [row["conversation_id"] for row in data] == ["c1"]
 
 
 @pytest.mark.unit
