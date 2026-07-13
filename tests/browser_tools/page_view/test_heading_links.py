@@ -33,3 +33,14 @@ async def test_plain_heading_unchanged(browser_session, servers):
     # A heading with no interactive child still shows as text and gets no ref.
     assert "Just a headline" in view
     assert find_ref(view, name="Just a headline") is None
+
+
+async def test_heading_content_is_not_duplicated(browser_session, servers):
+    tab = await browser_session.open(f"{servers.primary}/heading-links/page.html")
+    view = await browse_page(tab=tab)
+
+    # A heading holding a control used to print its whole text and then print the
+    # same words again while descending, so the agent saw each one twice.
+    assert view.count("omnideck-dev/omnideck") == 1
+    assert view.count("PLEASE") == 1
+    assert view.count("How Jay-Z pulled it off") == 1

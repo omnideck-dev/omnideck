@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>What counts as interactive</title></head>
+<body>
+  <!-- "Has an interactive descendant" was matched with a bare [role] selector in
+       some places and with no role selector at all in others. Both are wrong: a
+       non-interactive role is not something the agent can act on, and an aria
+       control is. -->
+
+  <!-- role="note" is not interactive: the paragraph must stay one block. -->
+  <p>Plain text with a <span role="note">noted phrase</span> inside it.</p>
+
+  <!-- A real link inside a paragraph must still be descended into. -->
+  <p>Read <a href="/docs">the docs</a> now.</p>
+
+  <!-- Inline-only container holding a non-interactive role: also one block. -->
+  <div><span>Inline start</span> <span role="note">and a noted bit</span> and the end.</div>
+
+  <!-- A tabbable wrapper around two ARIA buttons: each keeps its own ref. -->
+  <div tabindex="0" style="cursor:pointer"><span role="button">Alpha</span> <span role="button">Beta</span></div>
+
+  <!-- The same wrapper around two NATIVE buttons: already correct, pinned. -->
+  <div tabindex="0" style="cursor:pointer"><button>Gamma</button> <button>Delta</button></div>
+</body></html>
