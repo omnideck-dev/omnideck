@@ -457,6 +457,11 @@ _STRUCTURED_SNAPSHOT_JS = """
       const lvl = el.tagName.match(/H(\\d)/)?.[1] || '';
       const text = (el.innerText || '').trim();
       if (text) emit({ type: 'heading', depth: depth, name: text, level: parseInt(lvl) || null});
+      // A heading can wrap interactive content — an <h3> whose title is a link,
+      // an <h5> wrapping a button. Emit the heading for structure, then descend
+      // so the nested control still gets its own ref.
+      if (el.querySelector('a[href], button, input, select, textarea, [role]'))
+        walkChildren(el);
       return;
     }
 
