@@ -27,7 +27,7 @@ import imaplib
 import logging
 import re
 
-from integrations.brokers._common._email_body import (
+from integrations.brokers._email._mime import (
     MimePart,
     html_to_markdown,
     is_attachment,
