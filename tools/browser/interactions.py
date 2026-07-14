@@ -136,9 +136,11 @@ async def _format_result(
 ) -> str:
     """Format a BrowserInteractionResult as a page view string.
 
-    *page* is the tab the snapshot is taken from; its tab ID goes in
-    the header.  Parallel calls on different tabs each pass their own
-    page; nothing is read from any shared global page state.
+    *page* is the tab the tool was called on.  The snapshot comes from the
+    tab the action settled on, which is a different tab when the action
+    opened one; its tab ID goes in the header so the agent can keep using
+    it.  Parallel calls on different tabs each pass their own page; nothing
+    is read from any shared global page state.
     """
     if result.download is not None:
         _log_browser_panel(result, snapshot=None, tool_name=tool_name, resolution=resolution)
@@ -151,9 +153,10 @@ async def _format_result(
             truncated=False,
             downloaded_file=result.download,
         )
-    snapshot = await _build_snapshot(result.navigation_response, page=page)
+    target = result.page or page
+    snapshot = await _build_snapshot(result.navigation_response, page=target)
     browser = await get_browser()
-    tab_id = browser.tab_id_of(page)
+    tab_id = browser.tab_id_of(target)
     _log_browser_panel(result, snapshot=snapshot, tool_name=tool_name, resolution=resolution)
     return format_page_view(
         title=snapshot.title,

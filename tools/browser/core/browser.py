@@ -170,6 +170,10 @@ class BrowserInteractionResult(BaseModel):
     settle_timings: browser_waits.SettleTimings | None = None
     frame_transition: str | None = None
     action_ms: float = 0.0
+    # The tab the action settled on. Clicking a link that targets a new tab moves
+    # the agent to that tab, so callers must render it rather than the tab they
+    # started from — otherwise the click looks like it did nothing.
+    page: Page | None = None
 
 
 def _chrome_ua_metadata(version: str) -> tuple[str, dict]:
@@ -1210,6 +1214,7 @@ class Browser:
             download=download_info,
             settle_timings=settle_timings,
             frame_transition=frame_transition,
+            page=page,
         )
 
     async def _probe_file_url(self, new_page: Page, url: str) -> Page | None:
@@ -1221,8 +1226,8 @@ class Browser:
         the file if it's a non-HTML content-type, and appends a
         ``DownloadInfo`` to ``_pending_downloads``.
 
-        Returns the new page if a file was saved, or ``None`` to stay on the
-        original page.
+        Returns the new page if a file was saved, or ``None`` when the URL is
+        not a file.
         """
         from tools.browser.core._file_detection import (
             is_file_content_type,
@@ -1371,10 +1376,15 @@ class Browser:
             # silently handle file URLs without firing response or download
             # events.  Detect this by probing the new page's URL and fetch
             # the file directly via the API request context.
+            #
+            # When the probe says it isn't a file, the tab holds an ordinary page.
+            # Report that tab: the click moved the agent there, and answering with
+            # the page it clicked *from* makes the click look like it did nothing.
             if target_page is page and not self._pending_downloads:
                 new_url = getattr(new_page, "url", "")
                 if new_url and not new_url.startswith(("about:", "chrome:")):
-                    target_page = await self._probe_file_url(new_page, new_url) or page
+                    probed = await self._probe_file_url(new_page, new_url)
+                    target_page = probed or new_page
 
         # Clean up response listeners on new pages
         for np, listener in _np_listeners:
@@ -1398,6 +1408,8 @@ class Browser:
                 await target_page.close()
             except Exception:  # noqa: BLE001
                 pass
+            # That tab is gone; the agent is back where it clicked from.
+            result.page = page
 
         return result
 
