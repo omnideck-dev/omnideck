@@ -139,7 +139,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         assert finalize_args["page"] is new_page
         assert finalize_args["response"] is pdf_response
@@ -174,7 +174,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # Should switch to the new page since a download was detected
         assert finalize_args["page"] is new_page
@@ -202,7 +202,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # New tab with an HTML response should also be detected
         assert finalize_args["page"] is new_page
@@ -232,7 +232,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         assert finalize_args["page"] is old_page
         assert finalize_args["response"] is same_page_response
@@ -258,7 +258,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # No response or download on blank popup → stay on original page
         assert finalize_args["page"] is old_page
@@ -279,7 +279,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", return_value=BrowserInteractionResult()),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # The response listener should have been removed from the new page
         assert not new_page._listeners.get("response", [])

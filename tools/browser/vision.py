@@ -205,7 +205,7 @@ async def browser_visual_action(task: str, *, tab: str) -> str:
     try:
         result = await browser.perform_interaction(
             lambda: execute_action(response, page, view.frame),
-            page=page,
+            source_page=page,
         )
         return await _format_result(result, page, tool_name=_VISUAL_ACTION_TOOL_NAME)
     except BrowserToolError:

@@ -1,15 +1,7 @@
-"""Clicking a link that opens a new tab lands the agent on that tab.
-
-The browser layer worked out which tab the click settled on, but the result it
-handed back carried no page, so every interaction tool rendered the tab it had
-started from. Clicking a ``target="_blank"`` link came back as a byte-identical
-snapshot of the original page: to the agent the click did nothing, while a real
-tab sat open and unreachable behind it.
-"""
+"""Regression tests for interactions that open a new browser tab."""
 
 from __future__ import annotations
 
-import re
 from textwrap import dedent
 
 from tools.browser.interactions import click
@@ -39,13 +31,12 @@ async def test_click_returns_the_new_tab(browser_session, servers):
 async def test_new_tab_id_is_reported_and_addressable(browser_session, servers):
     tab, result = await _click_the_link(browser_session, servers)
 
-    # The header names the tab the agent has been moved to, so it can keep
-    # working there. That id has to resolve to the new tab, not the old one.
-    match = re.search(r"tab=(\d+)\]", result)
-    assert match is not None
-    new_tab = match.group(1)
-    assert new_tab != tab
-    assert page_body(await browse_page(tab=new_tab)) == _OPENED
+    # The fixture opens exactly one tab and the click opens exactly one more.
+    assert tab == "1"
+    # The header names the tab the agent was moved to, and that id resolves: the
+    # agent can keep working there.
+    assert "tab=2]" in result
+    assert page_body(await browse_page(tab="2")) == _OPENED
 
 
 async def test_original_tab_stays_open(browser_session, servers):
@@ -55,3 +46,21 @@ async def test_original_tab_stays_open(browser_session, servers):
     assert page_body(await browse_page(tab=tab)) == dedent("""\
         [h1] Original page
         [1] [link] Open the report""")
+
+
+async def test_screenshot_follows_the_new_tab(browser_session, servers, monkeypatch):
+    shots: list = []
+
+    async def _record(page) -> None:
+        shots.append(page)
+
+    monkeypatch.setattr("tools.browser.events._emit_screenshot", _record)
+
+    _tab, result = await _click_the_link(browser_session, servers)
+
+    # The screenshot the UI renders has to be the tab the agent was handed. If it
+    # still shot the tab the click started from, the agent would be reading tab 2
+    # while the preview showed tab 1.
+    assert shots
+    assert browser_session.browser.tab_id_of(shots[-1]) == 2
+    assert "tab=2]" in result

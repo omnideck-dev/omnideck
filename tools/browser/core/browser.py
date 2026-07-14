@@ -170,10 +170,10 @@ class BrowserInteractionResult(BaseModel):
     settle_timings: browser_waits.SettleTimings | None = None
     frame_transition: str | None = None
     action_ms: float = 0.0
-    # The tab the action settled on. Clicking a link that targets a new tab moves
-    # the agent to that tab, so callers must render it rather than the tab they
-    # started from — otherwise the click looks like it did nothing.
-    page: Page | None = None
+    # The tab the interaction finished on.  It is not always the tab it started
+    # from: clicking a link that targets a new tab leaves the agent in that tab.
+    # Callers render this one, or the click looks like it did nothing.
+    settled_page: Page | None = None
 
 
 def _chrome_ua_metadata(version: str) -> tuple[str, dict]:
@@ -937,7 +937,7 @@ class Browser:
                 # domcontentloaded. Fall through to settle/snapshot.
                 logger.debug("go_back timed out (SPA likely handled navigation client-side)")
 
-        return await self.perform_interaction(_back, page=page)
+        return await self.perform_interaction(_back, source_page=page)
 
     # Timeouts for individual shutdown steps.  These are generous enough for
     # well-behaved pages but prevent indefinite hangs when Chromium is stuck.
@@ -1214,11 +1214,11 @@ class Browser:
             download=download_info,
             settle_timings=settle_timings,
             frame_transition=frame_transition,
-            page=page,
+            settled_page=page,
         )
 
-    async def _probe_file_url(self, new_page: Page, url: str) -> Page | None:
-        """Probe a new tab's URL to check if it's a file download.
+    async def _probe_file_url(self, url: str) -> None:
+        """Record *url* as a pending download when it turns out to be a file.
 
         Chrome's PDF viewer extension (non-headless) can silently handle file
         URLs without firing Playwright response or download events.  This
@@ -1226,8 +1226,9 @@ class Browser:
         the file if it's a non-HTML content-type, and appends a
         ``DownloadInfo`` to ``_pending_downloads``.
 
-        Returns the new page if a file was saved, or ``None`` when the URL is
-        not a file.
+        The pending-download list is the whole signal; there is nothing to
+        return.  Whether or not the URL was a file, the tab holding it is where
+        the agent now is.
         """
         from tools.browser.core._file_detection import (
             is_file_content_type,
@@ -1250,20 +1251,19 @@ class Browser:
                     info.filename, info.content_type, info.size_bytes,
                 )
                 await api_resp.dispose()
-                return new_page
+                return
             await api_resp.dispose()
         except Exception:  # noqa: BLE001
             logger.debug("Failed to probe new tab URL: %s", url)
-        return None
 
     async def perform_interaction(
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        page: Page,
+        source_page: Page,
         wait_for_navigation: bool = True,
     ) -> BrowserInteractionResult:
-        """Perform an interaction on *page* and run the shared post-action pipeline.
+        """Perform an interaction on *source_page* and run the shared post-action pipeline.
 
         When *wait_for_navigation* is True (the default), briefly wait for a
         navigation the action may start a beat late — some sites dispatch a
@@ -1272,7 +1272,7 @@ class Browser:
         rather than the old one. Pass False for actions that never navigate
         (scroll, drag, fill) to skip the wait.
         """
-        initial_url = getattr(page, "url", "")
+        initial_url = getattr(source_page, "url", "")
 
         self._pending_downloads.clear()
         self._download_event.clear()
@@ -1282,14 +1282,14 @@ class Browser:
         # and capture their document responses so file downloads in new tabs
         # are detected properly.
         new_pages: list[Page] = []
-        new_page_responses: list[Response] = []
+        new_page_responses: dict[Page, list[Response]] = {}
         _np_listeners: list[tuple[Page, Callable[..., Any]]] = []
 
         _saw_download_response = False
 
         def _on_response(resp: Response) -> None:
             nonlocal _saw_download_response
-            if resp.frame == page.main_frame and resp.request.resource_type == "document":
+            if resp.frame == source_page.main_frame and resp.request.resource_type == "document":
                 captured_responses.append(resp)
             # Detect responses that will trigger a download event.  The
             # browser converts these to downloads asynchronously, so the
@@ -1300,10 +1300,11 @@ class Browser:
 
         def _on_new_page(new_page: Page) -> None:
             new_pages.append(new_page)
+            responses = new_page_responses.setdefault(new_page, [])
 
             def _on_np_response(resp: Response) -> None:
                 if resp.request.resource_type == "document":
-                    new_page_responses.append(resp)
+                    responses.append(resp)
 
             new_page.on("response", _on_np_response)
             _np_listeners.append((new_page, _on_np_response))
@@ -1315,13 +1316,13 @@ class Browser:
             # navigation — even if it dispatched a beat after the action
             # returned (some sites defer navigation in a JS click handler).
             try:
-                if req.is_navigation_request() and req.frame == page.main_frame:
+                if req.is_navigation_request() and req.frame == source_page.main_frame:
                     nav_started.set()
             except Exception:  # noqa: BLE001
                 pass
 
-        page.on("response", _on_response)
-        page.on("request", _on_request)
+        source_page.on("response", _on_response)
+        source_page.on("request", _on_request)
         self._context.on("page", _on_new_page)
 
         t0 = time.monotonic()
@@ -1344,16 +1345,16 @@ class Browser:
                         pass
             if nav_started.is_set():
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                    await source_page.wait_for_load_state("domcontentloaded", timeout=10_000)
                 except PlaywrightError:
                     pass
 
-        page.remove_listener("response", _on_response)
-        page.remove_listener("request", _on_request)
+        source_page.remove_listener("response", _on_response)
+        source_page.remove_listener("request", _on_request)
         self._context.remove_listener("page", _on_new_page)
 
         response = captured_responses[-1] if captured_responses else None
-        target_page = page
+        settled_page = source_page
 
         # If a new tab opened and the original page had no document response,
         # the click likely opened a file (PDF, etc.) in a new tab.  Wait for
@@ -1361,30 +1362,33 @@ class Browser:
         # _finalize_action can detect the file download.
         if new_pages and response is None:
             new_page = new_pages[-1]
-            if not new_page_responses:
+            # Only this popup's own responses.  The listener appends into this
+            # same list, so it stays current across the wait below.
+            popup_responses = new_page_responses.get(new_page, [])
+            if not popup_responses:
                 try:
                     await new_page.wait_for_load_state(
                         "domcontentloaded", timeout=10_000,
                     )
                 except (PlaywrightTimeoutError, PlaywrightError):
                     pass
-            if new_page_responses or self._pending_downloads or self._download_tasks:
-                target_page = new_page
-                response = new_page_responses[-1] if new_page_responses else None
+            if popup_responses or self._pending_downloads or self._download_tasks:
+                settled_page = new_page
+                response = popup_responses[-1] if popup_responses else None
 
             # Fallback: Chrome's PDF viewer extension (non-headless) can
             # silently handle file URLs without firing response or download
             # events.  Detect this by probing the new page's URL and fetch
             # the file directly via the API request context.
             #
-            # When the probe says it isn't a file, the tab holds an ordinary page.
-            # Report that tab: the click moved the agent there, and answering with
-            # the page it clicked *from* makes the click look like it did nothing.
-            if target_page is page and not self._pending_downloads:
+            # Probing records a download when the URL is a file.  Either way the
+            # agent is on the new tab now: answering with the page it clicked
+            # *from* is what made the click look like it did nothing.
+            if settled_page is source_page and not self._pending_downloads:
                 new_url = getattr(new_page, "url", "")
                 if new_url and not new_url.startswith(("about:", "chrome:")):
-                    probed = await self._probe_file_url(new_page, new_url)
-                    target_page = probed or new_page
+                    await self._probe_file_url(new_url)
+                    settled_page = new_page
 
         # Clean up response listeners on new pages
         for np, listener in _np_listeners:
@@ -1394,7 +1398,7 @@ class Browser:
                 pass
 
         result = await self._finalize_action(
-            target_page, response=response, initial_url=initial_url,
+            settled_page, response=response, initial_url=initial_url,
             saw_download_response=_saw_download_response,
         )
         result.action_ms = action_ms
@@ -1403,13 +1407,13 @@ class Browser:
         # agent returns to the original page.  Otherwise current_page() would
         # return the download tab (often about:blank) and subsequent tools
         # would fail with "Navigate to a page first."
-        if result.download and target_page is not page:
+        if result.download and settled_page is not source_page:
             try:
-                await target_page.close()
+                await settled_page.close()
             except Exception:  # noqa: BLE001
                 pass
-            # That tab is gone; the agent is back where it clicked from.
-            result.page = page
+            # That tab is gone; the agent is back where it started.
+            result.settled_page = source_page
 
         return result
 

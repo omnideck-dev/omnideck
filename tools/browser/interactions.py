@@ -32,7 +32,7 @@ from tools.browser.core.human import (
     human_type,
 )
 from tools.browser.core.page_view import PageView, build_page_view
-from tools.browser.events import emit_screenshot_after
+from tools.browser.events import emit_screenshot_after, set_settled_page
 
 # ---------------------------------------------------------------------------
 # Scroll budget tracking
@@ -129,19 +129,23 @@ async def _build_snapshot(
 
 async def _format_result(
     result: BrowserInteractionResult,
-    page: Page,
+    source_page: Page,
     *,
     tool_name: str = "",
     resolution: _LocatorResolution | None = None,
 ) -> str:
     """Format a BrowserInteractionResult as a page view string.
 
-    *page* is the tab the tool was called on.  The snapshot comes from the
-    tab the action settled on, which is a different tab when the action
-    opened one; its tab ID goes in the header so the agent can keep using
-    it.  Parallel calls on different tabs each pass their own page; nothing
-    is read from any shared global page state.
+    *source_page* is the tab the tool was called on.  The snapshot comes from
+    the tab the interaction settled on, which is a different tab when the
+    interaction opened one; its tab ID goes in the header so the agent can keep
+    working there.  Parallel calls on different tabs each pass their own page;
+    nothing is read from any shared global page state.
     """
+    page = result.settled_page or source_page
+    # The post-tool screenshot has to show the tab the agent was just handed, or
+    # the picture and the text disagree about where it is.
+    set_settled_page(page)
     if result.download is not None:
         _log_browser_panel(result, snapshot=None, tool_name=tool_name, resolution=resolution)
         return format_page_view(
@@ -153,10 +157,9 @@ async def _format_result(
             truncated=False,
             downloaded_file=result.download,
         )
-    target = result.page or page
-    snapshot = await _build_snapshot(result.navigation_response, page=target)
+    snapshot = await _build_snapshot(result.navigation_response, page=page)
     browser = await get_browser()
-    tab_id = browser.tab_id_of(target)
+    tab_id = browser.tab_id_of(page)
     _log_browser_panel(result, snapshot=snapshot, tool_name=tool_name, resolution=resolution)
     return format_page_view(
         title=snapshot.title,
@@ -241,7 +244,7 @@ async def click(selector: str, *, tab: str) -> str:
 
     try:
         result = await browser.perform_interaction(
-            lambda: human_click(view.frame, resolution.locator), page=page,
+            lambda: human_click(view.frame, resolution.locator), source_page=page,
         )
         return await _format_result(result, page, tool_name="click", resolution=resolution)
     except BrowserToolError as exc:
@@ -294,7 +297,7 @@ async def press_and_hold(
     try:
         result = await browser.perform_interaction(
             lambda: human_press_and_hold(view.frame, resolution.locator, duration_ms=clamped_duration),
-            page=page,
+            source_page=page,
             wait_for_navigation=False,
         )
         return await _format_result(result, page, tool_name="press_and_hold", resolution=resolution)
@@ -365,7 +368,7 @@ async def drag(
 
     try:
         browser_result = await browser.perform_interaction(
-            _perform_drag, page=page, wait_for_navigation=False,
+            _perform_drag, source_page=page, wait_for_navigation=False,
         )
     except BrowserToolError:
         raise
@@ -453,7 +456,7 @@ async def fill_field(
 
     try:
         result = await browser.perform_interaction(
-            _perform_fill, page=page, wait_for_navigation=False,
+            _perform_fill, source_page=page, wait_for_navigation=False,
         )
         return await _format_result(result, page, tool_name="fill_field", resolution=resolution)
     except BrowserToolError:
@@ -491,7 +494,7 @@ async def press_keys(keys: list[str], *, tab: str) -> str:
 
     try:
         result = await browser.perform_interaction(
-            lambda: human_press_keys(view.frame, keys), page=page,
+            lambda: human_press_keys(view.frame, keys), source_page=page,
         )
         return await _format_result(result, page, tool_name="press_keys")
     except BrowserToolError:
@@ -563,7 +566,7 @@ async def scroll_page(
     try:
         interaction_result = await browser.perform_interaction(
             lambda: human_scroll(view.frame, direction=direction, amount=amount),
-            page=page,
+            source_page=page,
             wait_for_navigation=False,
         )
     except BrowserToolError:
