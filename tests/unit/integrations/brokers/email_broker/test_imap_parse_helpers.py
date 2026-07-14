@@ -17,6 +17,7 @@ from integrations.brokers.email_broker._imap_client import (
     _collect_fetch_pairs,
     _decode_header,
     _decode_part_payload,
+    _extract_attachments,
     _extract_body_text,
     _find_part,
     _html_to_markdown,
@@ -289,18 +290,39 @@ def test_find_part_returns_none_when_missing() -> None:
 
 
 @pytest.mark.unit
-def test_extract_body_text_prefers_text_plain_in_multipart() -> None:
-    """When both plaintext and HTML alternatives exist, return the plaintext.
-
-    Plain is what the sender wrote; HTML often duplicates it with markup the
-    agent doesn't need.
-    """
+def test_extract_body_text_selects_last_supported_alternative() -> None:
+    """The sender's last supported alternative is the preferred version."""
     msg = EmailMessage()
     msg.set_content("plain version")
     msg.add_alternative("<p>html version</p>", subtype="html")
     out = _extract_body_text(msg)
-    assert "plain version" in out
-    assert "html version" not in out
+    assert "html version" in out
+    assert "plain version" not in out
+
+
+@pytest.mark.unit
+def test_extract_body_text_falls_back_when_preferred_alternative_is_empty() -> None:
+    """An empty preferred representation falls back to the previous one."""
+    msg = EmailMessage()
+    msg.set_content("plain fallback")
+    msg.add_alternative("<html><body></body></html>", subtype="html")
+    assert "plain fallback" in _extract_body_text(msg)
+
+
+@pytest.mark.unit
+def test_extract_body_text_ignores_attached_html() -> None:
+    """An HTML document attachment must not be mistaken for the body."""
+    msg = EmailMessage()
+    msg.set_content("actual body")
+    msg.add_attachment(
+        b"<p>attached document</p>",
+        maintype="text",
+        subtype="html",
+        filename="document.html",
+    )
+    out = _extract_body_text(msg)
+    assert "actual body" in out
+    assert "attached document" not in out
 
 
 @pytest.mark.unit
@@ -353,6 +375,28 @@ def test_extract_body_text_returns_empty_for_multipart_with_no_text_parts() -> N
     msg.make_mixed()
     msg.add_attachment(b"\x00\x01\x02", maintype="application", subtype="octet-stream", filename="blob.bin")
     assert _extract_body_text(msg) == ""
+
+
+@pytest.mark.unit
+def test_extract_attachments_skips_explicitly_inline_resources() -> None:
+    """Related images with filenames do not clutter the attachment list."""
+    msg = EmailMessage()
+    msg.make_related()
+    image = EmailMessage()
+    image.set_content(b"PNG", maintype="image", subtype="png", disposition="inline", filename="logo.png")
+    msg.attach(image)
+    assert _extract_attachments(msg) == []
+
+
+@pytest.mark.unit
+def test_extract_attachments_keeps_true_attachments() -> None:
+    """Parts marked as attachments remain available for download."""
+    msg = EmailMessage()
+    msg.add_attachment(b"PDF", maintype="application", subtype="pdf", filename="invoice.pdf")
+    attachments = _extract_attachments(msg)
+    assert len(attachments) == 1
+    assert attachments[0].filename == "invoice.pdf"
+    assert attachments[0].mime_type == "application/pdf"
 
 
 # ── _parse_header_hit ─────────────────────────────────────────────────────────

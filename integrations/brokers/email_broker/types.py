@@ -61,8 +61,7 @@ class Attachment(BaseModel):
 
     filename: str = ""
     """Original filename from ``Content-Disposition`` / ``Content-Type``
-    ``name=`` param. Empty if neither was set, which usually also means
-    the part wouldn't be classified as an attachment in the first place."""
+    ``name=`` param. Empty when an explicitly attached part has no name."""
 
     mime_type: str = ""
     """The part's MIME type (``application/pdf``, ``image/jpeg``, etc.)."""
@@ -75,11 +74,10 @@ class Attachment(BaseModel):
 class Message(BaseModel):
     """Full message body + envelope.
 
-    ``body_text`` is the best-effort plain-text rendering (MIME multipart
-    falls back to the ``text/plain`` part, or to a stripped ``text/html``
-    part when no plain alternative exists). ``attachments`` lists every
-    MIME part that carries a filename — agents pull the bytes out via the
-    separate ``fetch_attachment`` verb.
+    ``body_text`` is the best readable MIME representation. HTML is rendered
+    as Markdown, multipart alternatives honor the sender's preference, and
+    related resources are omitted. ``attachments`` contains downloadable
+    parts; agents pull their bytes via the separate ``fetch_attachment`` verb.
     """
 
     header: MessageHeader

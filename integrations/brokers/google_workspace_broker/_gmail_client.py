@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import base64
 import email.encoders
+import email.message
 import email.mime.base
 import email.mime.multipart
 import email.mime.text
 import logging
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+
+from integrations.brokers._common._email_body import MimePart, is_attachment, render_email_body
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,7 @@ class GmailClient:
         )
         payload = msg.get("payload", {})
         headers = _headers_dict(payload)
+        body_loader = partial(self._download_part_data, msg["id"])
         return {
             "header": {
                 "uid": msg["id"],
@@ -83,7 +89,7 @@ class GmailClient:
                 "subject": headers.get("Subject", ""),
                 "date": headers.get("Date", ""),
             },
-            "body_text": _extract_text_body(payload),
+            "body_text": _extract_text_body(payload, body_loader=body_loader),
             "attachments": _list_attachments(msg["id"], payload),
         }
 
@@ -91,16 +97,23 @@ class GmailClient:
         self, message_id: str, attachment_id: str,
     ) -> tuple[bytes, str, str]:
         """Download one attachment. Returns (bytes, filename, mime_type)."""
+        data = self._download_part_data(message_id, attachment_id)
+        filename, mime_type = self._find_attachment_meta(
+            message_id, attachment_id,
+        )
+        return data, filename, mime_type
+
+    def _download_part_data(self, message_id: str, attachment_id: str) -> bytes:
+        """Download bytes stored separately from a Gmail message payload."""
         resp = (
             self._service().users().messages().attachments()
             .get(userId="me", messageId=message_id, id=attachment_id)
             .execute()
         )
-        data = base64.urlsafe_b64decode(resp["data"])
-        filename, mime_type = self._find_attachment_meta(
-            message_id, attachment_id,
-        )
-        return data, filename, mime_type
+        data = _decode_base64url(resp["data"])
+        if data is None:
+            raise ValueError("Gmail returned invalid base64url part data")
+        return data
 
     def _find_attachment_meta(
         self, message_id: str, attachment_id: str,
@@ -250,19 +263,71 @@ def _headers_dict(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _extract_text_body(payload: dict[str, Any]) -> str:
-    """Best-effort plain-text body extraction from MIME parts."""
-    mime = payload.get("mimeType", "")
-    body_data = payload.get("body", {}).get("data")
+def _extract_text_body(
+    payload: dict[str, Any],
+    *,
+    body_loader: Callable[[str], bytes] | None = None,
+) -> str:
+    """Render the best readable body from a Gmail API MIME payload."""
+    return render_email_body(_gmail_payload_to_mime_part(payload, body_loader=body_loader))
 
-    if mime == "text/plain" and body_data:
-        return base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
 
-    for part in payload.get("parts", []):
-        result = _extract_text_body(part)
-        if result:
-            return result
+def _gmail_payload_to_mime_part(
+    payload: dict[str, Any],
+    *,
+    body_loader: Callable[[str], bytes] | None = None,
+) -> MimePart:
+    """Adapt a Gmail API message part to the provider-neutral MIME model."""
+    metadata = email.message.Message()
+    content_type_header = _part_header(payload, "Content-Type")
+    disposition_header = _part_header(payload, "Content-Disposition")
+    if content_type_header:
+        metadata["Content-Type"] = content_type_header
+    if disposition_header:
+        metadata["Content-Disposition"] = disposition_header
+
+    body_block = payload.get("body", {})
+    body_data = body_block.get("data")
+    body = _decode_base64url(body_data) if isinstance(body_data, str) else None
+    attachment_id = body_block.get("attachmentId")
+    lazy_body_loader: Callable[[], bytes] | None = None
+    if body is None and isinstance(attachment_id, str) and body_loader is not None:
+        lazy_body_loader = partial(body_loader, attachment_id)
+    related_start = metadata.get_param("start", header="content-type")
+    filename = payload.get("filename") or metadata.get_filename()
+    return MimePart(
+        content_type=str(payload.get("mimeType") or metadata.get_content_type()),
+        body=body,
+        body_loader=lazy_body_loader,
+        charset=metadata.get_content_charset(),
+        disposition=metadata.get_content_disposition(),
+        filename=str(filename) if filename else None,
+        content_id=_part_header(payload, "Content-ID") or None,
+        related_start=related_start if isinstance(related_start, str) else None,
+        children=tuple(
+            _gmail_payload_to_mime_part(part, body_loader=body_loader)
+            for part in payload.get("parts", [])
+            if isinstance(part, dict)
+        ),
+    )
+
+
+def _part_header(payload: dict[str, Any], wanted_name: str) -> str:
+    for header in payload.get("headers", []):
+        if (
+            isinstance(header, dict)
+            and str(header.get("name", "")).casefold() == wanted_name.casefold()
+        ):
+            return str(header.get("value", ""))
     return ""
+
+
+def _decode_base64url(data: str) -> bytes | None:
+    try:
+        padded = data + "=" * (-len(data) % 4)
+        return base64.b64decode(padded, altchars=b"-_", validate=True)
+    except (ValueError, TypeError):
+        return None
 
 
 def _list_attachments(
@@ -272,7 +337,7 @@ def _list_attachments(
     attachments: list[dict[str, Any]] = []
     for part in _walk_parts(payload):
         body = part.get("body", {})
-        if body.get("attachmentId") and part.get("filename"):
+        if body.get("attachmentId") and is_attachment(_gmail_payload_to_mime_part(part)):
             attachments.append({
                 "id": body["attachmentId"],
                 "filename": part.get("filename", ""),
