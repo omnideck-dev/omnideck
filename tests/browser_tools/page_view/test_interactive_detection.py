@@ -6,53 +6,39 @@ interactive" test was written several times over: some copies matched a bare
 ``[role]`` selector, which counts non-interactive roles like ``note`` and shreds
 ordinary prose; others matched no roles at all, which misses aria controls and
 lets a tabbable wrapper swallow them into a single unusable ref.
+
+This asserts the whole rendered view, so the text the agent actually reads is
+right here rather than inferred from a substring match.
 """
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from tools.browser.snapshot_tool import browse_page
 
-from .._helpers import find_ref
-
-_FIXTURE = "interactive-detection/page.html"
+from .._helpers import page_body
 
 
-async def test_non_interactive_role_does_not_split_prose(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/{_FIXTURE}")
+async def test_interactive_detection_view(browser_session, servers):
+    tab = await browser_session.open(f"{servers.primary}/interactive-detection/page.html")
     view = await browse_page(tab=tab)
 
-    # A role="note" span is not actionable, so the sentence stays whole rather
-    # than being broken into "Plain text with a" / "noted phrase" / "inside it.".
-    assert "Plain text with a noted phrase inside it." in view
-    assert "Inline start and a noted bit and the end." in view
-
-
-async def test_real_link_in_paragraph_still_gets_a_ref(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/{_FIXTURE}")
-    view = await browse_page(tab=tab)
-
-    assert find_ref(view, role="link", name="the docs") is not None
-
-
-async def test_wrapper_does_not_swallow_aria_controls(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/{_FIXTURE}")
-    view = await browse_page(tab=tab)
-
-    alpha = find_ref(view, role="button", name="Alpha")
-    beta = find_ref(view, role="button", name="Beta")
-    assert alpha is not None
-    assert beta is not None
-    # The wrapper used to take the only ref, named "Alpha Beta", leaving neither
-    # button clickable. Both names then resolve to that same ref.
-    assert alpha != beta
-
-
-async def test_wrapper_does_not_swallow_native_controls(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/{_FIXTURE}")
-    view = await browse_page(tab=tab)
-
-    gamma = find_ref(view, role="button", name="Gamma")
-    delta = find_ref(view, role="button", name="Delta")
-    assert gamma is not None
-    assert delta is not None
-    assert gamma != delta
+    # What each line pins:
+    #   1. A role="note" span is not actionable, so the sentence stays whole. It
+    #      came back as "Plain text with a" / "noted phrase" / "inside it." before.
+    #   2-4. A real link is still descended into and keeps its own ref.
+    #   5. An inline-only container holding a role="note" also stays one block.
+    #   6-7. A tabbable wrapper no longer swallows its two aria buttons. They used
+    #      to fuse into one ref named "Alpha Beta" that could click neither.
+    #   8-9. The same wrapper around native buttons keeps working, as it already did.
+    assert page_body(view) == dedent("""\
+        Plain text with a noted phrase inside it.
+        Read
+        [1] [link] the docs
+        now.
+        Inline start and a noted bit and the end.
+        [2] [button] Alpha
+        [3] [button] Beta
+        [4] [button] Gamma
+        [5] [button] Delta""")

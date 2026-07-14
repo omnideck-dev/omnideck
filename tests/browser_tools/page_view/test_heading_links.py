@@ -1,46 +1,40 @@
-"""Interactive elements nested inside headings (h1-h6) get their own ref.
+"""Interactive elements nested inside headings (h1-h6).
 
 The walker emitted a heading and returned without descending, so a link that is a
 heading's title (GitHub search, Wired) or a button wrapped in a heading
 (theuselessweb) was never assigned a ref and could not be clicked. Headings now
-descend when they hold interactive content, while still emitting the heading for
-structure.
+follow the same rule as paragraph-like blocks: hold something interactive and the
+walk descends into it, hold nothing interactive and the block is emitted whole.
+
+This asserts the entire rendered view, so the text the agent actually reads is
+right here rather than inferred from a substring match.
 """
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from tools.browser.snapshot_tool import browse_page
 
-from .._helpers import find_ref
+from .._helpers import page_body
 
 
-async def test_interactive_inside_headings_get_refs(browser_session, servers):
+async def test_heading_links_view(browser_session, servers):
     tab = await browser_session.open(f"{servers.primary}/heading-links/page.html")
     view = await browse_page(tab=tab)
 
-    # <h3><a>…</a></h3>: the title link (GitHub search results, Wired headlines).
-    assert find_ref(view, role="link", name="omnideck-dev/omnideck") is not None
-    # <h5><button>PLEASE</button></h5> (theuselessweb).
-    assert find_ref(view, role="button", name="PLEASE") is not None
-    # A link inside a heading that also has plain text around it.
-    assert find_ref(view, role="link", name="How Jay-Z pulled it off") is not None
-
-
-async def test_plain_heading_unchanged(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/heading-links/page.html")
-    view = await browse_page(tab=tab)
-
-    # A heading with no interactive child still shows as text and gets no ref.
-    assert "Just a headline" in view
-    assert find_ref(view, name="Just a headline") is None
-
-
-async def test_heading_content_is_not_duplicated(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/heading-links/page.html")
-    view = await browse_page(tab=tab)
-
-    # A heading holding a control used to print its whole text and then print the
-    # same words again while descending, so the agent saw each one twice.
-    assert view.count("omnideck-dev/omnideck") == 1
-    assert view.count("PLEASE") == 1
-    assert view.count("How Jay-Z pulled it off") == 1
+    # What each line pins:
+    #   1. An <h3> whose title is a link: the link carries the ref. The heading
+    #      used to print its text and then print the link again, so the agent saw
+    #      "omnideck-dev/omnideck" twice and could click neither copy.
+    #   2. A <button> wrapped in an <h5> now gets a ref.
+    #   3-4. A heading mixing text and a link keeps the text once and refs the link.
+    #   5. A heading with nothing interactive inside is untouched and keeps its
+    #      [h1] label.
+    assert page_body(view) == dedent("""\
+        [1] [link] omnideck-dev/omnideck
+        [2] [button] PLEASE
+        Latest:
+        [3] [link] How Jay-Z pulled it off
+        [h1] Just a headline
+        Some body text so the page isn't heading-only.""")
