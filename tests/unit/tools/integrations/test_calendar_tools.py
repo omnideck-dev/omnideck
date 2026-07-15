@@ -252,12 +252,45 @@ async def test_create_event_passes_optional_fields(monkeypatch: pytest.MonkeyPat
         description="Team lunch",
         location="Cafeteria",
         attendees=["alice@example.com", "bob@example.com"],
+        recurrence_rule="FREQ=WEEKLY;COUNT=4",
+        time_zone="America/Chicago",
     )
     assert captured["description"] == "Team lunch"
     assert captured["location"] == "Cafeteria"
     assert captured["attendees"] == ["alice@example.com", "bob@example.com"]
+    assert captured["recurrence_rule"] == "FREQ=WEEKLY;COUNT=4"
+    assert captured["time_zone"] == "America/Chicago"
     assert captured["calendar_ref"] == "primary"
     assert "calendar_id" not in captured
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_create_recurring_event_confirms_with_series_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_call(monkeypatch, result={
+        "event": {
+            "event_ref": "event-occurrence-1",
+            "series_ref": "series-1",
+            "summary": "Weekly sync",
+            "start": "2026-07-16T09:00:00-05:00",
+            "is_recurring": True,
+        },
+    })
+
+    out = await create_event(
+        "gw_work",
+        "primary",
+        "Weekly sync",
+        "2026-07-16T09:00:00-05:00",
+        "2026-07-16T09:30:00-05:00",
+        recurrence_rule="FREQ=WEEKLY;COUNT=4",
+        time_zone="America/Chicago",
+    )
+
+    assert "event-occurrence-1" in out
+    assert "series-1" in out
 
 
 @pytest.mark.unit
@@ -474,11 +507,18 @@ async def test_update_event_series_passes_series_ref(monkeypatch: pytest.MonkeyP
 
     out = await update_event_series(
         "gw_work", "series-1", summary="Weekly sync", location="Room 4",
+        recurrence_rule="FREQ=WEEKLY;COUNT=8", time_zone="America/Chicago",
     )
 
     assert captured == {
         "verb": "update_event_series",
-        "args": {"series_ref": "series-1", "summary": "Weekly sync", "location": "Room 4"},
+        "args": {
+            "series_ref": "series-1",
+            "summary": "Weekly sync",
+            "location": "Room 4",
+            "recurrence_rule": "FREQ=WEEKLY;COUNT=8",
+            "time_zone": "America/Chicago",
+        },
     }
     assert "series-1" in out
 

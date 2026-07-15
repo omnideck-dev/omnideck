@@ -291,10 +291,14 @@ class VerbDispatcher:
         description = _optional_str(args, "description")
         location = _optional_str(args, "location")
         attendees = _optional_str_list(args, "attendees")
+        recurrence_rule = _optional_str(args, "recurrence_rule") or None
+        time_zone = _optional_str(args, "time_zone") or None
         try:
             event = await self._caldav.create_event(
                 calendar_ref, summary, start, end,
                 description, location, attendees,
+                recurrence_rule=recurrence_rule,
+                time_zone=time_zone,
             )
         except ValueError as exc:
             raise RpcError("BAD_REQUEST", str(exc)) from exc
@@ -344,7 +348,7 @@ class VerbDispatcher:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         series_ref = _require_str(args, "series_ref")
         target = _decode_series_target(series_ref)
-        changes = _calendar_changes(args)
+        changes = _calendar_changes(args, include_recurrence=True)
         try:
             event = await self._caldav.update_event_series(
                 target.calendar_ref,
@@ -418,7 +422,9 @@ def _decode_series_target(value: str) -> CalendarTarget:
         raise RpcError("BAD_REQUEST", str(exc)) from exc
 
 
-def _calendar_changes(args: dict[str, Any]) -> dict[str, Any]:
+def _calendar_changes(
+    args: dict[str, Any], *, include_recurrence: bool = False,
+) -> dict[str, Any]:
     changes = {
         "summary": _optional_update_str(args, "summary"),
         "start": _optional_update_str(args, "start"),
@@ -427,6 +433,16 @@ def _calendar_changes(args: dict[str, Any]) -> dict[str, Any]:
         "location": _optional_update_str(args, "location"),
         "attendees": _optional_str_list(args, "attendees"),
     }
+    if include_recurrence:
+        changes["recurrence_rule"] = _optional_update_str(args, "recurrence_rule")
+        changes["time_zone"] = _optional_update_str(args, "time_zone")
+        if any(
+            isinstance(changes[field], str) and "T" in changes[field]
+            for field in ("start", "end")
+        ) and changes["time_zone"] is None:
+            raise RpcError(
+                "BAD_REQUEST", "time_zone is required when changing a timed recurring series",
+            )
     if not any(value is not None for value in changes.values()):
         raise RpcError("BAD_REQUEST", "update requires at least one field to change")
     return changes

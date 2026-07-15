@@ -20,16 +20,22 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import caldav
 import recurring_ical_events
 import requests.exceptions
 import urllib3.exceptions
 from caldav.lib import error as caldav_error
+from icalendar import Calendar as ICalendar
+from icalendar import Event as ICalendarEvent
+from icalendar import Timezone, vCalAddress
 
 from integrations.brokers.email_broker.types import Calendar, Event
+from integrations.calendar_recurrence import normalize_recurrence_rule, normalize_time_zone
 
 logger = logging.getLogger(__name__)
 
@@ -207,10 +213,16 @@ class CalDavClient:
         description: str = "",
         location: str = "",
         attendees: list[str] | None = None,
+        recurrence_rule: str | None = None,
+        time_zone: str | None = None,
     ) -> Event:
         """Create and return a VEVENT in ``calendar_url``."""
-        dtstart = _parse_event_time(start, "start")
-        dtend = _parse_event_time(end, "end")
+        recurrence = normalize_recurrence_rule(recurrence_rule)
+        zone_name = normalize_time_zone(time_zone)
+        if recurrence and "T" in start and zone_name is None:
+            raise ValueError("time_zone is required for a recurring timed event")
+        dtstart = _parse_event_time(start, "start", time_zone=zone_name)
+        dtend = _parse_event_time(end, "end", time_zone=zone_name)
         if isinstance(dtstart, datetime) != isinstance(dtend, datetime):
             msg = "start and end must both be datetimes or both be dates"
             raise ValueError(msg)
@@ -219,7 +231,7 @@ class CalDavClient:
 
         async with self._lock:
 
-            def _op(client: caldav.DAVClient, _principal: Any) -> Any:
+            def _op(client: caldav.DAVClient, principal: Any) -> Any:
                 cal = client.calendar(url=calendar_url)
                 properties: dict[str, Any] = {
                     "summary": summary,
@@ -231,11 +243,14 @@ class CalDavClient:
                 if location:
                     properties["location"] = location
                 if attendees:
-                    properties["attendee"] = [
-                        address if address.lower().startswith("mailto:")
-                        else f"mailto:{address}"
-                        for address in attendees
-                    ]
+                    organizer = _organizer_address(principal, self._username)
+                    if organizer is not None:
+                        properties["organizer"] = organizer
+                    properties["attendee"] = _attendee_addresses(attendees)
+                if recurrence:
+                    properties["rrule"] = recurrence
+                if zone_name or attendees or recurrence:
+                    return cal.add_event(ical=_build_icalendar(properties, zone_name))
                 return cal.add_event(**properties)
 
             raw = await asyncio.to_thread(self._with_reconnect, _op)
@@ -261,10 +276,20 @@ class CalDavClient:
         description: str | None = None,
         location: str | None = None,
         attendees: list[str] | None = None,
+        recurrence_rule: str | None = None,
+        time_zone: str | None = None,
     ) -> Event:
         """Update an exact occurrence, or a non-recurring VEVENT."""
-        parsed_start = _parse_event_time(start, "start") if start is not None else None
-        parsed_end = _parse_event_time(end, "end") if end is not None else None
+        recurrence = normalize_recurrence_rule(recurrence_rule)
+        zone_name = normalize_time_zone(time_zone)
+        if recurrence and start is not None and "T" in start and zone_name is None:
+            raise ValueError("time_zone is required when changing a timed recurrence")
+        parsed_start = (
+            _parse_event_time(start, "start", time_zone=zone_name) if start is not None else None
+        )
+        parsed_end = (
+            _parse_event_time(end, "end", time_zone=zone_name) if end is not None else None
+        )
 
         async with self._lock:
 
@@ -283,7 +308,15 @@ class CalDavClient:
                     description=description,
                     location=location,
                     attendees=attendees,
+                    organizer=(
+                        self._username
+                        if attendees is not None and "@" in self._username
+                        else None
+                    ),
+                    recurrence_rule=recurrence,
                 )
+                if zone_name:
+                    _ensure_timezone(resource, zone_name, parsed_start or parsed_end)
                 if recurrence_id is not None:
                     _merge_occurrence(resource, component, recurrence_id)
                 resource.save()
@@ -380,7 +413,9 @@ def _is_auth_failure(exc: Exception) -> bool:
     return "401" in text or "unauthorized" in text
 
 
-def _parse_event_time(value: str, field: str) -> date | datetime:
+def _parse_event_time(
+    value: str, field: str, *, time_zone: str | None = None,
+) -> date | datetime:
     """Parse an RFC 3339 datetime or an ISO date used by calendar tools."""
     try:
         if "T" not in value:
@@ -390,6 +425,8 @@ def _parse_event_time(value: str, field: str) -> date | datetime:
         raise ValueError(f"{field} must be an RFC 3339 datetime or ISO date") from exc
     if parsed.tzinfo is None:
         raise ValueError(f"{field} datetime must include a UTC offset")
+    if time_zone:
+        return parsed.astimezone(ZoneInfo(time_zone))
     return parsed.astimezone(UTC)
 
 
@@ -426,6 +463,80 @@ def _replace_ical_property(component: Any, field: str, value: Any) -> None:
         component.add(field, value)
 
 
+def _calendar_address(address: str) -> vCalAddress:
+    value = address if address.lower().startswith("mailto:") else f"mailto:{address}"
+    return vCalAddress(value)
+
+
+def _organizer_address(principal: Any, username: str) -> vCalAddress | None:
+    """Resolve the principal's scheduling address, with an email fallback."""
+    with contextlib.suppress(Exception):
+        address = principal.get_vcal_address()
+        if isinstance(address, vCalAddress):
+            return address
+    if "@" in username:
+        return _calendar_address(username)
+    return None
+
+
+def _attendee_addresses(attendees: list[str]) -> list[vCalAddress]:
+    addresses: list[vCalAddress] = []
+    for attendee in attendees:
+        address = _calendar_address(attendee)
+        address.params.update({
+            "CUTYPE": "INDIVIDUAL",
+            "PARTSTAT": "NEEDS-ACTION",
+            "ROLE": "REQ-PARTICIPANT",
+            "RSVP": "TRUE",
+        })
+        addresses.append(address)
+    return addresses
+
+
+def _build_icalendar(properties: dict[str, Any], time_zone: str | None) -> str:
+    """Build a VEVENT with VTIMEZONE for portable recurring local times."""
+    calendar = ICalendar()
+    calendar.add("prodid", "-//omnideck//calendar integration//EN")
+    calendar.add("version", "2.0")
+    if time_zone:
+        zone = ZoneInfo(time_zone)
+        start = properties["dtstart"]
+        start_date = start.date() if isinstance(start, datetime) else start
+        calendar.add_component(Timezone.from_tzinfo(
+            zone,
+            tzid=time_zone,
+            first_date=date(max(1, start_date.year - 1), 1, 1),
+            last_date=date(min(9998, start_date.year + 100), 12, 31),
+        ))
+    component = ICalendarEvent()
+    component.add("uid", str(uuid.uuid4()))
+    component.add("dtstamp", datetime.now(UTC))
+    for field, value in properties.items():
+        if isinstance(value, list):
+            for item in value:
+                component.add(field, item)
+        else:
+            component.add(field, value)
+    calendar.add_component(component)
+    return calendar.to_ical().decode("utf-8")
+
+
+def _ensure_timezone(
+    resource: Any, time_zone: str, event_time: date | datetime | None,
+) -> None:
+    """Add an IANA VTIMEZONE when a series update introduces that TZID."""
+    for component in resource.icalendar_instance.walk("VTIMEZONE"):
+        if str(component.get("tzid", "")) == time_zone:
+            return
+    year = event_time.year if event_time is not None else datetime.now(UTC).year
+    resource.icalendar_instance.add_component(Timezone.from_tzinfo(
+        ZoneInfo(time_zone),
+        tzid=time_zone,
+        first_date=date(max(1, year - 1), 1, 1),
+        last_date=date(min(9998, year + 100), 12, 31),
+    ))
+
+
 def _master_component(resource: Any) -> Any:
     """Return the recurrence master (or the sole non-recurring VEVENT)."""
     components = list(resource.icalendar_instance.walk("VEVENT"))
@@ -458,6 +569,8 @@ def _update_component(
     description: str | None,
     location: str | None,
     attendees: list[str] | None,
+    organizer: str | None,
+    recurrence_rule: str | None,
 ) -> None:
     updates: dict[str, Any] = {
         "summary": summary,
@@ -465,16 +578,15 @@ def _update_component(
         "dtend": end,
         "description": description,
         "location": location,
+        "rrule": recurrence_rule,
     }
     for field, value in updates.items():
         if value is not None:
             _replace_ical_property(component, field, value)
     if attendees is not None:
-        addresses = [
-            address if address.lower().startswith("mailto:") else f"mailto:{address}"
-            for address in attendees
-        ]
-        _replace_ical_property(component, "attendee", addresses)
+        _replace_ical_property(component, "attendee", _attendee_addresses(attendees))
+        if attendees and organizer and component.get("organizer") is None:
+            _replace_ical_property(component, "organizer", _calendar_address(organizer))
 
     if start is not None or end is not None:
         actual_start = _ical_value(component, "dtstart")

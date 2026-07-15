@@ -327,8 +327,14 @@ class VerbDispatcher:
         description = args.get("description") or None
         location = args.get("location") or None
         attendees = args.get("attendees") or None
+        recurrence_rule = args.get("recurrence_rule") or None
+        time_zone = args.get("time_zone") or None
         if attendees is not None and not isinstance(attendees, list):
             raise RpcError("BAD_REQUEST", "'attendees' must be a list of email addresses")
+        if recurrence_rule is not None and not isinstance(recurrence_rule, str):
+            raise RpcError("BAD_REQUEST", "'recurrence_rule' must be a string")
+        if time_zone is not None and not isinstance(time_zone, str):
+            raise RpcError("BAD_REQUEST", "'time_zone' must be a string")
         try:
             event = await _run_sync(
                 self._calendar.create_event,
@@ -336,7 +342,11 @@ class VerbDispatcher:
                 description=description,
                 location=location,
                 attendees=attendees,
+                recurrence_rule=recurrence_rule,
+                time_zone=time_zone,
             )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
         return {"event": _wire_event(event, calendar_ref)}
@@ -350,6 +360,8 @@ class VerbDispatcher:
                 self._calendar.update_event,
                 target.calendar_ref, target.event_id, **changes,
             )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
         return {"event": _wire_event(event, target.calendar_ref)}
@@ -368,12 +380,14 @@ class VerbDispatcher:
     async def _handle_update_event_series(self, args: dict[str, Any]) -> dict[str, Any]:
         series_ref = _require_str(args, "series_ref")
         target = _decode_google_ref(series_ref, series=True)
-        changes = _calendar_changes(args)
+        changes = _calendar_changes(args, include_recurrence=True)
         try:
             event = await _run_sync(
                 self._calendar.update_event,
                 target.calendar_ref, target.event_id, **changes,
             )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
         return {
@@ -606,7 +620,9 @@ def _decode_google_ref(value: str, *, series: bool) -> CalendarTarget:
         raise RpcError("BAD_REQUEST", str(exc)) from exc
 
 
-def _calendar_changes(args: dict[str, Any]) -> dict[str, Any]:
+def _calendar_changes(
+    args: dict[str, Any], *, include_recurrence: bool = False,
+) -> dict[str, Any]:
     changes = {
         "summary": args.get("summary") if "summary" in args else None,
         "start": args.get("start") if "start" in args else None,
@@ -615,7 +631,23 @@ def _calendar_changes(args: dict[str, Any]) -> dict[str, Any]:
         "location": args.get("location") if "location" in args else None,
         "attendees": args.get("attendees") if "attendees" in args else None,
     }
-    for field in ("summary", "start", "end", "description", "location"):
+    if include_recurrence:
+        changes["recurrence_rule"] = (
+            args.get("recurrence_rule") if "recurrence_rule" in args else None
+        )
+        changes["time_zone"] = args.get("time_zone") if "time_zone" in args else None
+        if any(
+            isinstance(changes[field], str) and "T" in changes[field]
+            for field in ("start", "end")
+        ) and changes["time_zone"] is None:
+            raise RpcError(
+                "BAD_REQUEST", "time_zone is required when changing a timed recurring series",
+            )
+    for field in (
+        "summary", "start", "end", "description", "location", "recurrence_rule", "time_zone",
+    ):
+        if field not in changes:
+            continue
         value = changes[field]
         if value is not None and not isinstance(value, str):
             raise RpcError("BAD_REQUEST", f"{field!r} must be a string")

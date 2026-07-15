@@ -21,6 +21,8 @@ async def update_event_series(
     description: str | None = None,
     location: str | None = None,
     attendees: list[str] | None = None,
+    recurrence_rule: str | None = None,
+    time_zone: str | None = None,
 ) -> str:
     """Update supplied fields across an entire recurring series."""
     args: dict[str, Any] = {"series_ref": series_ref}
@@ -31,10 +33,15 @@ async def update_event_series(
         "description": description,
         "location": location,
         "attendees": attendees,
+        "recurrence_rule": recurrence_rule,
+        "time_zone": time_zone,
     }
     args.update({key: value for key, value in changes.items() if value is not None})
     if len(args) == 1:
-        return "No fields to update — provide at least one of summary, start, end, description, location, or attendees."
+        return (
+            "No fields to update — provide at least one of summary, start, end, "
+            "description, location, attendees, recurrence_rule, or time_zone."
+        )
 
     app_sock = load_config().integrations.app_sock_path
     try:
@@ -69,10 +76,12 @@ def build_update_event_series_tool(integration_ids: Iterable[str]) -> Callable[.
         description: str | None = None,
         location: str | None = None,
         attendees: list[str] | None = None,
+        recurrence_rule: str | None = None,
+        time_zone: str | None = None,
     ) -> str:
         return await update_event_series(
             integration_id, series_ref, summary, start, end,
-            description, location, attendees,
+            description, location, attendees, recurrence_rule, time_zone,
         )
 
     _update_event_series.__name__ = update_event_series.__name__
@@ -88,6 +97,8 @@ def build_update_event_series_tool(integration_ids: Iterable[str]) -> Callable[.
         "    end: New series end time, RFC 3339 or date.\n"
         "    description: New description; empty clears it.\n"
         "    location: New location; empty clears it.\n"
-        "    attendees: New attendee email list (replaces existing).\n"
+        "    attendees: New attendee email list (replaces existing and notifies guests).\n"
+        "    recurrence_rule: New RFC 5545 recurrence rule, such as FREQ=WEEKLY;COUNT=8.\n"
+        "    time_zone: IANA zone when changing a timed recurrence schedule.\n"
     )
     return _update_event_series

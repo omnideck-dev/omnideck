@@ -17,9 +17,11 @@ Google Workspace and CalDAV integrations share one agent-facing calendar surface
 
 - `list_calendars` returns an opaque `calendar_ref` for each calendar.
 - `list_events` expands recurring events and returns an `event_ref` for the exact listed occurrence. Recurring rows also carry a `series_ref`.
-- `create_event` takes `calendar_ref` and returns the created event's `event_ref`.
+- `create_event` takes `calendar_ref` and returns the created event's `event_ref`. An optional RFC 5545 `recurrence_rule` creates a series and also returns `series_ref`; recurring timed events require an IANA `time_zone` so they remain at the intended local time across daylight-saving transitions.
 - `update_event` and `delete_event` take only `event_ref`; on recurring events they affect exactly one occurrence.
 - `update_event_series` and `delete_event_series` take only `series_ref` and affect the entire recurring series.
+
+Supplying `attendees` creates scheduling attendees rather than description metadata. Google requests guest notifications explicitly; CalDAV events include organizer and attendee scheduling properties so servers that implement CalDAV scheduling can deliver invitations and subsequent changes.
 
 Provider IDs, CalDAV hrefs, and `RECURRENCE-ID` values stay inside the opaque references. This keeps the tool choice explicit: occurrence tools cannot accidentally imply a whole-series mutation, and the agent never has to combine a calendar ID with an event ID itself.
 

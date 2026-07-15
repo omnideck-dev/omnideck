@@ -21,6 +21,8 @@ async def create_event(
     description: str = "",
     location: str = "",
     attendees: list[str] | None = None,
+    recurrence_rule: str = "",
+    time_zone: str = "",
 ) -> str:
     """Create a new event on a calendar.
 
@@ -33,7 +35,12 @@ async def create_event(
         end: End time — same format as start.
         description: Optional event description or notes.
         location: Optional location string.
-        attendees: Optional list of attendee email addresses.
+        attendees: Optional list of attendee email addresses. The calendar
+            provider is asked to deliver invitations.
+        recurrence_rule: Optional RFC 5545 recurrence rule, such as
+            ``FREQ=WEEKLY;COUNT=4``. Omit for a one-time event.
+        time_zone: IANA time zone such as ``America/Chicago``. Required for
+            recurring timed events; omit for recurring all-day events.
 
     Returns:
         A confirmation with the opaque event_ref and summary, or an error notice.
@@ -51,6 +58,10 @@ async def create_event(
         args["location"] = location
     if attendees:
         args["attendees"] = attendees
+    if recurrence_rule:
+        args["recurrence_rule"] = recurrence_rule
+    if time_zone:
+        args["time_zone"] = time_zone
     try:
         result = await broker_client.call(
             integration_id, "create_event", args, app_sock_path=app_sock,
@@ -67,9 +78,11 @@ async def create_event(
 
     event = result.get("event", {})
     event_ref = event.get("event_ref", "")
+    series_ref = event.get("series_ref", "")
     title = event.get("summary", summary)
     start_str = event.get("start", start)
-    return f"Created event '{title}' at {start_str} [event_ref: {event_ref}]."
+    series_tag = f" [series_ref: {series_ref}]" if series_ref else ""
+    return f"Created event '{title}' at {start_str} [event_ref: {event_ref}]{series_tag}."
 
 
 def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
@@ -86,10 +99,12 @@ def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         description: str = "",
         location: str = "",
         attendees: list[str] | None = None,
+        recurrence_rule: str = "",
+        time_zone: str = "",
     ) -> str:
         return await create_event(
             integration_id, calendar_ref, summary, start, end,
-            description, location, attendees,
+            description, location, attendees, recurrence_rule, time_zone,
         )
 
     _create_event.__name__ = create_event.__name__
@@ -105,8 +120,11 @@ def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
         "    end: End time, same format as start.\n"
         "    description: Optional event description.\n"
         "    location: Optional location string.\n"
-        "    attendees: Optional list of attendee email addresses.\n\n"
+        "    attendees: Optional attendee email addresses; the provider is asked to send invitations.\n"
+        "    recurrence_rule: Optional RFC 5545 rule without RRULE: prefix, "
+        "for example FREQ=WEEKLY;COUNT=4.\n"
+        "    time_zone: IANA zone such as America/Chicago; required for recurring timed events.\n\n"
         "Returns:\n"
-        "    Plain text — a confirmation with event_ref, or an error notice.\n"
+        "    Plain text — a confirmation with event_ref and, for recurring events, series_ref.\n"
     )
     return _create_event

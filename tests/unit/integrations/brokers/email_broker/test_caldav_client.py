@@ -54,6 +54,15 @@ class _StubCalendar:
 
     def add_event(self, **properties: Any) -> Any:
         self.added.append(properties)
+        if "ical" in properties:
+            calendar = ICalendar.from_ical(properties["ical"])
+            component = next(iter(calendar.walk("VEVENT")))
+            uid = str(component["uid"])
+            resource = _StubResource(
+                calendar, f"https://caldav.example/home/{uid}.ics",
+            )
+            self.resources[uid] = resource
+            return resource
         resource = _event_resource()
         component = next(iter(resource.icalendar_instance.walk("VEVENT")))
         component.clear()
@@ -89,8 +98,10 @@ class _StubDavClient:
         return self.stub_calendar
 
 
-def _connected_client(calendar: _StubCalendar) -> CalDavClient:
-    client = CalDavClient(url="https://caldav.example", username="u", password="p")
+def _connected_client(
+    calendar: _StubCalendar, *, username: str = "u",
+) -> CalDavClient:
+    client = CalDavClient(url="https://caldav.example", username=username, password="p")
     client._client = _StubDavClient(calendar)  # type: ignore[assignment]
     client._principal = object()
     return client
@@ -111,8 +122,7 @@ async def test_create_event_adds_vevent_and_returns_wire_event() -> None:
         ["alice@example.com", "mailto:bob@example.com"],
     )
 
-    assert event.model_dump() == {
-        "uid": "icloud-event-123",
+    assert event.model_dump(exclude={"uid", "href"}) == {
         "summary": "Project review",
         "start": "2026-07-15T14:00:00+00:00",
         "end": "2026-07-15T15:00:00+00:00",
@@ -120,21 +130,71 @@ async def test_create_event_adds_vevent_and_returns_wire_event() -> None:
         "description": "Review the release",
         "recurrence_id": "",
         "recurring": False,
-        "href": "https://caldav.example/home/icloud-event-123.ics",
     }
-    assert calendar.added == [{
-        "summary": "Project review",
-        "dtstart": datetime.fromisoformat("2026-07-15T14:00:00+00:00"),
-        "dtend": datetime.fromisoformat("2026-07-15T15:00:00+00:00"),
-        "description": "Review the release",
-        "location": "Room 4",
-        "attendee": ["mailto:alice@example.com", "mailto:bob@example.com"],
-    }]
-    payload = calendar.resources["icloud-event-123"].icalendar_instance.to_ical()
+    assert event.uid
+    assert event.href == f"https://caldav.example/home/{event.uid}.ics"
+    assert len(calendar.added) == 1
+    payload = calendar.added[0]["ical"].encode()
+    parsed = ICalendar.from_ical(payload)
+    component = next(iter(parsed.walk("VEVENT")))
+    attendees = component["attendee"]
+    if not isinstance(attendees, list):
+        attendees = [attendees]
+    assert [str(value) for value in attendees] == [
+        "mailto:alice@example.com", "mailto:bob@example.com",
+    ]
+    assert all(value.params["RSVP"] == "TRUE" for value in attendees)
     assert b"DTSTART:20260715T140000Z" in payload
     assert b"DTEND:20260715T150000Z" in payload
-    assert b"ATTENDEE:mailto:alice@example.com" in payload
-    assert b"ATTENDEE:mailto:bob@example.com" in payload
+    assert b"mailto:alice@example.com" in payload
+    assert b"mailto:bob@example.com" in payload
+
+
+@pytest.mark.asyncio
+async def test_create_recurring_event_emits_rrule_timezone_and_invites() -> None:
+    calendar = _StubCalendar()
+    client = _connected_client(calendar, username="organizer@example.com")
+
+    event = await client.create_event(
+        "https://caldav.example/home/",
+        "Weekly review",
+        "2026-07-16T09:00:00-05:00",
+        "2026-07-16T09:30:00-05:00",
+        attendees=["guest@example.com"],
+        recurrence_rule="RRULE:FREQ=WEEKLY;COUNT=4",
+        time_zone="America/Chicago",
+    )
+
+    payload = calendar.added[0]["ical"]
+    parsed = ICalendar.from_ical(payload)
+    component = next(iter(parsed.walk("VEVENT")))
+    attendee = component["attendee"]
+    assert event.recurring is True
+    assert event.start == "2026-07-16T09:00:00-05:00"
+    assert b"BEGIN:VTIMEZONE" in payload.encode()
+    assert b"DTSTART;TZID=America/Chicago:20260716T090000" in payload.encode()
+    assert b"RRULE:FREQ=WEEKLY;COUNT=4" in payload.encode()
+    assert str(component["organizer"]) == "mailto:organizer@example.com"
+    assert str(attendee) == "mailto:guest@example.com"
+    assert attendee.params["RSVP"] == "TRUE"
+    assert attendee.params["PARTSTAT"] == "NEEDS-ACTION"
+
+
+@pytest.mark.asyncio
+async def test_create_timed_recurrence_requires_iana_time_zone() -> None:
+    calendar = _StubCalendar()
+    client = _connected_client(calendar)
+
+    with pytest.raises(ValueError, match="time_zone is required"):
+        await client.create_event(
+            "https://caldav.example/home/",
+            "Weekly review",
+            "2026-07-16T09:00:00-05:00",
+            "2026-07-16T09:30:00-05:00",
+            recurrence_rule="FREQ=WEEKLY;COUNT=4",
+        )
+
+    assert calendar.added == []
 
 
 @pytest.mark.asyncio
@@ -384,11 +444,20 @@ async def test_series_operations_update_master_and_delete_resource() -> None:
         "icloud-event-123",
         href=resource.url,
         summary="All reviews",
+        start="2026-07-15T11:00:00-05:00",
+        end="2026-07-15T12:00:00-05:00",
+        recurrence_rule="FREQ=WEEKLY;COUNT=8",
+        time_zone="America/Chicago",
     )
     await client.delete_event_series(
         "https://caldav.example/home/", "icloud-event-123", href=resource.url,
     )
 
     assert event.summary == "All reviews"
+    assert event.start == "2026-07-15T11:00:00-05:00"
+    payload = resource.icalendar_instance.to_ical()
+    assert b"RRULE:FREQ=WEEKLY;COUNT=8" in payload
+    assert b"DTSTART;TZID=America/Chicago:20260715T110000" in payload
+    assert b"BEGIN:VTIMEZONE" in payload
     assert resource.save_calls == 1
     assert resource.delete_calls == 1
