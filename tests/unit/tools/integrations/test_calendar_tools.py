@@ -17,6 +17,7 @@ from tools.integrations.delete_event import delete_event
 from tools.integrations.delete_event_series import delete_event_series
 from tools.integrations.list_calendars import list_calendars
 from tools.integrations.list_events import list_events
+from tools.integrations.search_events import search_events
 from tools.integrations.update_event import update_event
 from tools.integrations.update_event_series import update_event_series
 
@@ -208,6 +209,81 @@ async def test_list_events_reports_generic_error(monkeypatch: pytest.MonkeyPatch
     _patch_call(monkeypatch, exc=broker_client.IntegrationError("upstream boom"))
     out = await list_events("icloud_personal", "https://x/")
     assert out == "Failed to list events for 'icloud_personal': upstream boom"
+
+
+# ── search_events ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_search_events_renders_occurrence_refs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Search results retain the exact-occurrence and whole-series references."""
+    _patch_call(
+        monkeypatch,
+        result={
+            "calendar_name": "Work",
+            "events": [{
+                "event_ref": "event-dentist",
+                "series_ref": "series-dentist",
+                "is_recurring": True,
+                "summary": "Dentist appointment",
+                "start": "2026-09-01T10:00:00-05:00",
+                "end": "2026-09-01T11:00:00-05:00",
+                "location": "Main Street Dental",
+            }],
+        },
+    )
+
+    out = await search_events("gw_work", "primary", "dentist")
+
+    assert out == (
+        "Matches for 'dentist' on 'Work' (1):\n"
+        "- 2026-09-01T10:00:00-05:00  Dentist appointment  "
+        "@ Main Street Dental  [recurring]  [event_ref: event-dentist]  "
+        "[series_ref: series-dentist]"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_search_events_passes_default_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tool searches the next year by default and forwards its query."""
+    captured: dict[str, Any] = {}
+
+    async def _capture(
+        integration_id: str,
+        verb: str,
+        args: dict,
+        *,
+        app_sock_path: str,
+    ) -> Any:
+        captured.update({"integration_id": integration_id, "verb": verb, "args": args})
+        return {"events": []}
+
+    monkeypatch.setattr(broker_client, "call", _capture)
+    out = await search_events("icloud_personal", "calendar-ref", "planning")
+
+    assert captured == {
+        "integration_id": "icloud_personal",
+        "verb": "search_events",
+        "args": {
+            "calendar_ref": "calendar-ref",
+            "query": "planning",
+            "days_forward": 365,
+            "days_back": 0,
+            "limit": 50,
+        },
+    }
+    assert out == "No events matching 'planning' on 'calendar-ref' in this range."
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_search_events_reports_generic_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Upstream search failures become a concise agent-facing message."""
+    _patch_call(monkeypatch, exc=broker_client.IntegrationError("upstream boom"))
+    out = await search_events("icloud_personal", "calendar-ref", "dentist")
+    assert out == "Failed to search events for 'icloud_personal': upstream boom"
 
 
 # ── create_event ─────────────────────────────────────────────────────────────

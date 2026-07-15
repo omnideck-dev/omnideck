@@ -19,9 +19,20 @@ class _Request:
 
 class _Events:
     def __init__(self) -> None:
+        self.list_calls: list[dict[str, Any]] = []
         self.insert_calls: list[dict[str, Any]] = []
         self.patch_calls: list[dict[str, Any]] = []
         self.delete_calls: list[dict[str, Any]] = []
+
+    def list(self, **kwargs: Any) -> _Request:
+        self.list_calls.append(kwargs)
+        return _Request({
+            "summary": "Work",
+            "items": [{
+                "id": "dentist-1",
+                "summary": "Dentist appointment",
+            }],
+        })
 
     def insert(self, **kwargs: Any) -> _Request:
         self.insert_calls.append(kwargs)
@@ -73,6 +84,40 @@ def test_create_recurring_event_sends_invites_and_timezone(
     assert call["body"]["start"]["timeZone"] == "America/Chicago"
     assert call["body"]["attendees"] == [{"email": "guest@example.com"}]
     assert result["id"] == "event-1"
+
+
+def test_search_events_uses_native_free_text_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Google's native q filter is combined with occurrence expansion and dates."""
+    client, events = _client(monkeypatch)
+
+    result, calendar_name = client.search_events(
+        "primary",
+        "  dentist  ",
+        days_forward=730,
+        days_back=30,
+        limit=20,
+    )
+
+    call = events.list_calls[0]
+    assert call["calendarId"] == "primary"
+    assert call["q"] == "dentist"
+    assert call["singleEvents"] is True
+    assert call["orderBy"] == "startTime"
+    assert call["maxResults"] == 20
+    assert result[0]["id"] == "dentist-1"
+    assert calendar_name == "Work"
+
+
+def test_search_events_rejects_empty_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty Google query is rejected before an API request is made."""
+    client, events = _client(monkeypatch)
+
+    with pytest.raises(ValueError, match="query must not be empty"):
+        client.search_events("primary", "   ")
+
+    assert events.list_calls == []
 
 
 def test_create_timed_recurrence_requires_timezone(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,6 +17,7 @@ Google Workspace and CalDAV integrations share one agent-facing calendar surface
 
 - `list_calendars` returns an opaque `calendar_ref` for each calendar.
 - `list_events` expands recurring events and returns an `event_ref` for the exact listed occurrence. Recurring rows also carry a `series_ref`.
+- `search_events` searches a calendar by text over a configurable date range and returns the same occurrence-aware references as `list_events`.
 - `create_event` takes `calendar_ref` and returns the created event's `event_ref`. An optional RFC 5545 `recurrence_rule` creates a series and also returns `series_ref`; recurring timed events require an IANA `time_zone` so they remain at the intended local time across daylight-saving transitions.
 - `update_event` and `delete_event` take only `event_ref`; on recurring events they affect exactly one occurrence.
 - `update_event_series` and `delete_event_series` take only `series_ref` and affect the entire recurring series.

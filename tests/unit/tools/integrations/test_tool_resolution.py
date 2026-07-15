@@ -69,6 +69,7 @@ def test_calendar_write_access_includes_occurrence_and_series_tools() -> None:
     assert names == {
         "list_calendars",
         "list_events",
+        "search_events",
         "create_event",
         "update_event",
         "delete_event",

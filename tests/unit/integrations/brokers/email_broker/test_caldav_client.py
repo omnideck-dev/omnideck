@@ -47,10 +47,18 @@ def _event_resource(
 
 class _StubCalendar:
     def __init__(self) -> None:
+        self.name = "Home"
+        self.url = "https://caldav.example/home/"
         self.added: list[dict[str, Any]] = []
         self.resources: dict[str, _StubResource] = {}
         self.event_by_url_calls: list[str] = []
+        self.search_calls: list[dict[str, Any]] = []
+        self.search_hits: list[_StubResource] = []
         self.reject_uid_report = False
+
+    def search(self, **kwargs: Any) -> list[_StubResource]:
+        self.search_calls.append(kwargs)
+        return self.search_hits
 
     def add_event(self, **properties: Any) -> Any:
         self.added.append(properties)
@@ -105,6 +113,42 @@ def _connected_client(
     client._client = _StubDavClient(calendar)  # type: ignore[assignment]
     client._principal = object()
     return client
+
+
+@pytest.mark.asyncio
+async def test_search_events_queries_text_fields_and_deduplicates_hits() -> None:
+    """CalDAV emulates OR across text fields without returning duplicate hits."""
+    calendar = _StubCalendar()
+    resource = _event_resource(summary="Dentist appointment")
+    calendar.search_hits = [resource]
+    client = _connected_client(calendar)
+
+    name, events = await client.search_events(
+        calendar.url,
+        "  dentist  ",
+        days_forward=365,
+        days_back=0,
+        limit=50,
+    )
+
+    assert name == "Home"
+    assert [event.summary for event in events] == ["Dentist appointment"]
+    assert [
+        next(field for field in ("summary", "description", "location") if field in call)
+        for call in calendar.search_calls
+    ] == ["summary", "description", "location"]
+    assert all(call["expand"] is True and call["event"] is True for call in calendar.search_calls)
+
+
+@pytest.mark.asyncio
+async def test_search_events_rejects_empty_query() -> None:
+    """An empty CalDAV query is rejected before a REPORT is sent."""
+    client = _connected_client(_StubCalendar())
+
+    with pytest.raises(ValueError, match="query must not be empty"):
+        await client.search_events(
+            "https://caldav.example/home/", "  ", 365, 0, 50,
+        )
 
 
 @pytest.mark.asyncio

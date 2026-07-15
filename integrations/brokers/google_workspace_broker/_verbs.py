@@ -46,6 +46,7 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     # Calendar (read)
     "list_calendars": (Capability.CALENDAR, Access.READ),
     "list_events": (Capability.CALENDAR, Access.READ),
+    "search_events": (Capability.CALENDAR, Access.READ),
     # Calendar (write)
     "create_event": (Capability.CALENDAR, Access.READ_WRITE),
     "update_event": (Capability.CALENDAR, Access.READ_WRITE),
@@ -122,6 +123,7 @@ class VerbDispatcher:
         if self._calendar is not None:
             self._handlers["list_calendars"] = self._handle_list_calendars
             self._handlers["list_events"] = self._handle_list_events
+            self._handlers["search_events"] = self._handle_search_events
             self._handlers["create_event"] = self._handle_create_event
             self._handlers["update_event"] = self._handle_update_event
             self._handlers["delete_event"] = self._handle_delete_event
@@ -315,6 +317,34 @@ class VerbDispatcher:
 
         events = [_wire_event(e, calendar_ref) for e in items]
         result: dict[str, Any] = {"events": events}
+        if cal_name:
+            result["calendar_name"] = cal_name
+        return result
+
+    async def _handle_search_events(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Search expanded occurrences while preserving opaque mutation refs."""
+        calendar_ref = _require_str(args, "calendar_ref")
+        query = _require_str(args, "query")
+        days_forward = _require_int(args, "days_forward", default=365)
+        days_back = _require_int(args, "days_back", default=0)
+        limit = _require_int(args, "limit", default=50)
+        try:
+            items, cal_name = await _run_sync(
+                self._calendar.search_events,
+                calendar_ref,
+                query,
+                days_forward=days_forward,
+                days_back=days_back,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except HttpError as exc:
+            raise _wrap_http_error(exc) from exc
+
+        result: dict[str, Any] = {
+            "events": [_wire_event(e, calendar_ref) for e in items],
+        }
         if cal_name:
             result["calendar_name"] = cal_name
         return result

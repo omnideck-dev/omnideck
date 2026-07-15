@@ -52,6 +52,44 @@ class CalendarClient:
         Returns (events, calendar_name) where calendar_name is the
         display name from the first page of results.
         """
+        return self._list_events(
+            calendar_id,
+            days_forward=days_forward,
+            days_back=days_back,
+            limit=limit,
+        )
+
+    def search_events(
+        self,
+        calendar_id: str,
+        query: str,
+        *,
+        days_forward: int = 365,
+        days_back: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Search a date range using Google Calendar's free-text query."""
+        query = query.strip()
+        if not query:
+            raise ValueError("query must not be empty")
+        return self._list_events(
+            calendar_id,
+            days_forward=days_forward,
+            days_back=days_back,
+            limit=limit,
+            query=query,
+        )
+
+    def _list_events(
+        self,
+        calendar_id: str,
+        *,
+        days_forward: int,
+        days_back: int,
+        limit: int,
+        query: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Run one paginated, occurrence-expanded Calendar events query."""
         now = datetime.now(UTC)
         time_min = (now - timedelta(days=days_back)).isoformat()
         time_max = (now + timedelta(days=days_forward)).isoformat()
@@ -61,19 +99,18 @@ class CalendarClient:
         page_token: str | None = None
         while len(results) < limit:
             page_size = min(limit - len(results), 250)
-            resp = (
-                self._service().events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=time_min,
-                    timeMax=time_max,
-                    maxResults=page_size,
-                    pageToken=page_token,
-                    singleEvents=True,
-                    orderBy="startTime",
-                )
-                .execute()
-            )
+            request = {
+                "calendarId": calendar_id,
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "maxResults": page_size,
+                "pageToken": page_token,
+                "singleEvents": True,
+                "orderBy": "startTime",
+            }
+            if query is not None:
+                request["q"] = query
+            resp = self._service().events().list(**request).execute()
             if cal_name is None:
                 cal_name = resp.get("summary")
             results.extend(resp.get("items", []))

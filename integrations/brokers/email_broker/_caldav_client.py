@@ -204,6 +204,58 @@ class CalDavClient:
             logger.info("list_events: skipped %d unparseable hit(s)", skipped)
         return name, events
 
+    async def search_events(
+        self,
+        calendar_url: str,
+        query: str,
+        days_forward: int,
+        days_back: int,
+        limit: int,
+    ) -> tuple[str, list[Event]]:
+        """Search event text over a date range and expand recurring hits."""
+        query = query.strip()
+        if not query:
+            raise ValueError("query must not be empty")
+        limit = max(1, min(limit, 200))
+        async with self._lock:
+
+            def _op(client: caldav.DAVClient, _principal: Any) -> tuple[str, list[Any]]:
+                cal = client.calendar(url=calendar_url)
+                name = _calendar_name(cal)
+                now = datetime.now(UTC)
+                start = now - timedelta(days=days_back)
+                end = now + timedelta(days=days_forward)
+                hits: list[Any] = []
+                # CalDAV property filters are combined with AND. Run one
+                # server-side substring query per useful text field to get OR
+                # semantics, then merge the occurrence-expanded results.
+                for field in ("summary", "description", "location"):
+                    hits.extend(cal.search(
+                        start=start,
+                        end=end,
+                        event=True,
+                        expand=True,
+                        **{field: query},
+                    ))
+                return name, hits
+
+            name, raw = await asyncio.to_thread(self._with_reconnect, _op)
+
+        events: list[Event] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for hit in raw:
+            event = _parse_event(hit)
+            if event is None:
+                continue
+            key = (event.uid, event.recurrence_id, event.start, event.href)
+            if key in seen:
+                continue
+            seen.add(key)
+            self._remember_event_url(event.uid, hit)
+            events.append(event)
+        events.sort(key=lambda event: event.start)
+        return name, events[:limit]
+
     async def create_event(
         self,
         calendar_url: str,

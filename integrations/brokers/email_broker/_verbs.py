@@ -68,6 +68,7 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     # Calendar (CalDAV)
     "list_calendars": (Capability.CALENDAR, Access.READ),
     "list_events": (Capability.CALENDAR, Access.READ),
+    "search_events": (Capability.CALENDAR, Access.READ),
     "create_event": (Capability.CALENDAR, Access.READ_WRITE),
     "update_event": (Capability.CALENDAR, Access.READ_WRITE),
     "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
@@ -119,6 +120,7 @@ class VerbDispatcher:
         if caldav is not None:
             self._handlers["list_calendars"] = self._handle_list_calendars
             self._handlers["list_events"] = self._handle_list_events
+            self._handlers["search_events"] = self._handle_search_events
             self._handlers["create_event"] = self._handle_create_event
             self._handlers["update_event"] = self._handle_update_event
             self._handlers["delete_event"] = self._handle_delete_event
@@ -275,6 +277,26 @@ class VerbDispatcher:
         name, events = await self._caldav.list_events(
             calendar_ref, days_forward, days_back, limit,
         )
+        return {
+            "calendar_name": name,
+            "events": [_wire_event(e, calendar_ref) for e in events],
+        }
+
+    async def _handle_search_events(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Search expanded occurrences identified by opaque mutation refs."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_ref = _require_str(args, "calendar_ref")
+        query = _require_str(args, "query")
+        days_forward = _require_int(args, "days_forward", default=365)
+        days_back = _require_int(args, "days_back", default=0)
+        limit = _require_int(args, "limit", default=50)
+        try:
+            name, events = await self._caldav.search_events(
+                calendar_ref, query, days_forward, days_back, limit,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
         return {
             "calendar_name": name,
             "events": [_wire_event(e, calendar_ref) for e in events],
