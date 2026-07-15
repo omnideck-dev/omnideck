@@ -97,6 +97,14 @@ async def _resolve_locator(
         )
         raise BrowserToolError(msg, tool=tool_name)
 
+    if count > 1:
+        msg = (
+            f"Ref {ref_num} matched {count} elements. "
+            "The page reference state is inconsistent — call browse_page() "
+            "to get a fresh snapshot with updated ref numbers."
+        )
+        raise BrowserToolError(msg, tool=tool_name)
+
     return _LocatorResolution(
         locator=locator.first,
         query=clean,

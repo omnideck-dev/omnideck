@@ -315,9 +315,17 @@ _STRUCTURED_SNAPSHOT_JS = """
   // ---- Ref counter ----
   let refCounter = 0;
 
-  // Clean up stale refs from previous snapshots
-  const stale = document.querySelectorAll('[data-ct-ref]');
-  for (let i = 0; i < stale.length; i++) stale[i].removeAttribute('data-ct-ref');
+  // Clean up exactly the elements stamped by the previous snapshot. Keeping
+  // direct element references covers shadow DOM without scanning the whole tree;
+  // detached elements remain safe to clean and are released when the registry
+  // is replaced below.
+  const refRegistryKey = Symbol.for('omnideck.browser.refElements');
+  const previousRefs = window[refRegistryKey];
+  if (Array.isArray(previousRefs)) {
+    for (const el of previousRefs) el.removeAttribute('data-ct-ref');
+  }
+  const currentRefs = [];
+  window[refRegistryKey] = currentRefs;
 
   // ---- Output ----
   const nodes = [];
@@ -428,6 +436,7 @@ _STRUCTURED_SNAPSHOT_JS = """
 
       refCounter++;
       el.setAttribute('data-ct-ref', String(refCounter));
+      currentRefs.push(el);
 
       const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || ''};
 
@@ -479,6 +488,7 @@ _STRUCTURED_SNAPSHOT_JS = """
       if (name && name.length < 80) {
         refCounter++;
         el.setAttribute('data-ct-ref', String(refCounter));
+        currentRefs.push(el);
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', name);
         emit({ type: 'interactive', depth: depth, ref: refCounter, role: 'button', name: name});
