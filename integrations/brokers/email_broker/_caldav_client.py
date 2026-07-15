@@ -32,13 +32,17 @@ from integrations.brokers.email_broker.types import Calendar, Event
 logger = logging.getLogger(__name__)
 
 # Errors that indicate the underlying HTTP connection has gone away —
-# server-side idle close, RST, half-closed TLS. caldav uses requests under
+# server-side idle close, RST, half-closed TLS. caldav uses niquests under
 # the hood, so the visible shapes are requests/urllib3 errors. Auth failures
 # stay in their own ``AuthorizationError`` branch — retrying those would
 # loop on a real credential rejection.
+#
+# ``Timeout`` is deliberately excluded: a timeout means the server is slow
+# to respond (e.g. iCloud's CalDAV REPORT with event expansion), not that
+# the connection is stale. Treating it as stale would trigger a pointless
+# reconnect+retry, doubling the wait before the error surfaces.
 _STALE_CONN_ERRORS: tuple[type[BaseException], ...] = (
     requests.exceptions.ConnectionError,
-    requests.exceptions.Timeout,
     urllib3.exceptions.ProtocolError,
 )
 
@@ -92,6 +96,12 @@ class CalDavClient:
             url=self._url,
             username=self._username,
             password=self._password,
+            # caldav delegates to niquests, which enforces a 30-second
+            # default read timeout when ``timeout`` is None. That is too
+            # short for iCloud's CalDAV REPORT (event search + expansion),
+            # which can take 30–60 seconds. Pass an explicit, generous
+            # timeout so slow REPORT responses are not cut off.
+            timeout=120,
         )
         # Resolving the principal exercises the auth path; if creds are
         # rejected this is where it surfaces.
@@ -163,8 +173,12 @@ class CalDavClient:
                 start = now - timedelta(days=days_back)
                 end = now + timedelta(days=days_forward)
                 # ``event=True`` filters out tasks/journals; ``expand=True``
-                # asks the server to materialize each recurrence into its
-                # own VEVENT so the parser doesn't need to walk RRULEs.
+                # enables recurrence expansion. In caldav 3.x the expansion
+                # is done client-side by default (via recurring-ical-events);
+                # the library may auto-switch to server-side expansion for
+                # servers that support it. Either way, each recurrence is
+                # materialized into its own VEVENT so the parser doesn't
+                # need to walk RRULEs.
                 hits = list(cal.search(
                     start=start, end=end, event=True, expand=True,
                 ))
