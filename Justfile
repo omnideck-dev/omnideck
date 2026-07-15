@@ -200,7 +200,7 @@ unit:
 
 # Run browser-tools tests (real headless Chrome against local fixture pages)
 test-browser-tools *args:
-    PYTHONPATH=. uv run pytest tests/browser_tools/ {{args}}
+    PYTHONPATH=. uv run pytest tests/browser_tools/ -n 4 {{args}}
 
 # Run tests matching a specific file or path
 test-file file:

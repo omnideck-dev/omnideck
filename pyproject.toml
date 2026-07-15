@@ -33,6 +33,7 @@ test = [
     "pytest-aiohttp",
     "pytest-watch",
     "pytest-playwright",
+    "pytest-xdist",
 ]
 dev = [
     "ruff",
