@@ -20,4 +20,11 @@
 
   <!-- The same wrapper around two NATIVE buttons: already correct, pinned. -->
   <div tabindex="0" style="cursor:pointer"><button>Gamma</button> <button>Delta</button></div>
+
+  <!-- A non-native interactive-role container must not hide the real control it
+       wraps. This mirrors DocSearch's named modal backdrop around its search form. -->
+  <div role="button" aria-labelledby="search-label">
+    <span id="search-label" hidden>Search</span>
+    <div><form><input type="search" placeholder="Search docs"></form></div>
+  </div>
 </body></html>

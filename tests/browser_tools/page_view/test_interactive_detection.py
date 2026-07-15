@@ -32,6 +32,8 @@ async def test_interactive_detection_view(browser_session, servers):
     #   6-7. A tabbable wrapper no longer swallows its two aria buttons. They used
     #      to fuse into one ref named "Alpha Beta" that could click neither.
     #   8-9. The same wrapper around native buttons keeps working, as it already did.
+    #   10. A named, non-native role="button" container steps aside for its real
+    #       search input instead of dropping the entire subtree.
     assert page_body(view) == dedent("""\
         Plain text with a noted phrase inside it.
         Read
@@ -41,4 +43,5 @@ async def test_interactive_detection_view(browser_session, servers):
         [2] [button] Alpha
         [3] [button] Beta
         [4] [button] Gamma
-        [5] [button] Delta""")
+        [5] [button] Delta
+        [6] [searchbox] Search docs""")

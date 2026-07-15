@@ -154,6 +154,13 @@ _STRUCTURED_SNAPSHOT_JS = """
     return el.querySelector(INTERACTIVE_SEL) !== null;
   }
 
+  function isNativeInteractiveElement(el) {
+    return el.matches(
+      'a[href], button, input, select, textarea, summary,'
+      + ' [contenteditable]:not([contenteditable="false"])'
+    );
+  }
+
   // ---- Accessible name ----
   function getName(el) {
     const al = el.getAttribute('aria-label');
@@ -407,13 +414,11 @@ _STRUCTURED_SNAPSHOT_JS = """
 
     // Interactive elements: stamp with ref, emit node data
     if (role && INTERACTIVE.has(role)) {
-      // A role="combobox" container (not a native <select> or <input>) that
-      // wraps the real text field — the React Autosuggest / Downshift / MUI
-      // Autocomplete pattern. The inner input is the actionable element, so
-      // make the container transparent: walk into it (exposing the input and
-      // any open suggestion list) instead of emitting the non-fillable div.
-      if (role === 'combobox' && el.tagName !== 'SELECT' && el.tagName !== 'INPUT'
-          && el.querySelector('input:not([type="hidden"]), textarea')) {
+      // Widget libraries sometimes put an interactive role on a container that
+      // wraps the real controls. Native controls are atomic, but a non-native
+      // ARIA wrapper must step aside or its early return hides every actionable
+      // descendant beneath it.
+      if (!isNativeInteractiveElement(el) && hasInteractive(el)) {
         walkChildren(el);
         return;
       }
