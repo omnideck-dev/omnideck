@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import caldav
+import recurring_ical_events
 import requests.exceptions
 import urllib3.exceptions
 from caldav.lib import error as caldav_error
@@ -108,7 +109,7 @@ class CalDavClient:
         """Run ``op(client, principal)``; reconnect+retry once on stale-conn errors.
 
         Caller must hold ``self._lock`` and must have awaited ``connect()``
-        first. iCloud closes idle DAV sessions after ~10–30 minutes; the
+        first. iCloud closes idle DAV sessions after ~10-30 minutes; the
         next request fails with a requests/urllib3 connection error. We
         rebuild the DAVClient + principal and retry once. A second failure
         propagates.
@@ -252,6 +253,8 @@ class CalDavClient:
         calendar_url: str,
         event_id: str,
         *,
+        recurrence_id: str | None = None,
+        href: str | None = None,
         summary: str | None = None,
         start: str | None = None,
         end: str | None = None,
@@ -259,7 +262,7 @@ class CalDavClient:
         location: str | None = None,
         attendees: list[str] | None = None,
     ) -> Event:
-        """Update supplied fields on the VEVENT identified by ``event_id``."""
+        """Update an exact occurrence, or a non-recurring VEVENT."""
         parsed_start = _parse_event_time(start, "start") if start is not None else None
         parsed_end = _parse_event_time(end, "end") if end is not None else None
 
@@ -267,45 +270,31 @@ class CalDavClient:
 
             def _op(client: caldav.DAVClient, _principal: Any) -> Any:
                 cal = client.calendar(url=calendar_url)
-                resource = self._get_event_resource(cal, event_id)
-                component = next(
-                    iter(resource.icalendar_instance.walk("VEVENT")), None,
+                resource = self._get_event_resource(cal, event_id, href)
+                if recurrence_id is None:
+                    component = _master_component(resource)
+                else:
+                    component = _occurrence_component(resource, recurrence_id)
+                _update_component(
+                    component,
+                    summary=summary,
+                    start=parsed_start,
+                    end=parsed_end,
+                    description=description,
+                    location=location,
+                    attendees=attendees,
                 )
-                if component is None:
-                    raise ValueError("CalDAV event does not contain a VEVENT")
-
-                updates: dict[str, Any] = {
-                    "summary": summary,
-                    "dtstart": parsed_start,
-                    "dtend": parsed_end,
-                    "description": description,
-                    "location": location,
-                }
-                for field, value in updates.items():
-                    if value is not None:
-                        _replace_ical_property(component, field, value)
-                if attendees is not None:
-                    addresses = [
-                        address if address.lower().startswith("mailto:")
-                        else f"mailto:{address}"
-                        for address in attendees
-                    ]
-                    _replace_ical_property(component, "attendee", addresses)
-
-                if parsed_start is not None or parsed_end is not None:
-                    actual_start = _ical_value(component, "dtstart")
-                    actual_end = _ical_value(component, "dtend")
-                    if actual_start is not None and actual_end is not None:
-                        _validate_event_range(actual_start, actual_end)
+                if recurrence_id is not None:
+                    _merge_occurrence(resource, component, recurrence_id)
                 resource.save()
-                return resource
+                return resource, component
 
             try:
-                raw = await asyncio.to_thread(self._with_reconnect, _op)
+                raw, component = await asyncio.to_thread(self._with_reconnect, _op)
             except caldav_error.NotFoundError as exc:
                 raise LookupError(f"event not found: {event_id}") from exc
 
-        event = _parse_event(raw)
+        event = _event_from_component(component, href=str(getattr(raw, "url", "")))
         if event is None:
             msg = "CalDAV server returned an event without a usable UID"
             raise RuntimeError(msg)
@@ -313,24 +302,60 @@ class CalDavClient:
         logger.info("update_event(%s): updated %s", calendar_url, event.uid)
         return event
 
-    async def delete_event(self, calendar_url: str, event_id: str) -> None:
-        """Delete the VEVENT identified by ``event_id`` from a calendar."""
+    async def delete_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        *,
+        recurrence_id: str | None = None,
+        href: str | None = None,
+    ) -> None:
+        """Delete an exact occurrence, or a non-recurring VEVENT."""
         async with self._lock:
 
             def _op(client: caldav.DAVClient, _principal: Any) -> None:
                 cal = client.calendar(url=calendar_url)
-                self._get_event_resource(cal, event_id).delete()
+                resource = self._get_event_resource(cal, event_id, href)
+                if recurrence_id is None:
+                    resource.delete()
+                    return
+                _exclude_occurrence(resource, recurrence_id)
+                resource.save()
 
             try:
                 await asyncio.to_thread(self._with_reconnect, _op)
             except caldav_error.NotFoundError as exc:
                 raise LookupError(f"event not found: {event_id}") from exc
-        self._event_urls.pop(event_id, None)
+        if recurrence_id is None:
+            self._event_urls.pop(event_id, None)
         logger.info("delete_event(%s): deleted %s", calendar_url, event_id)
 
-    def _get_event_resource(self, calendar: Any, event_id: str) -> Any:
+    async def update_event_series(
+        self,
+        calendar_url: str,
+        event_id: str,
+        *,
+        href: str | None = None,
+        **changes: Any,
+    ) -> Event:
+        """Update the master VEVENT for an entire recurring series."""
+        return await self.update_event(calendar_url, event_id, href=href, **changes)
+
+    async def delete_event_series(
+        self,
+        calendar_url: str,
+        event_id: str,
+        *,
+        href: str | None = None,
+    ) -> None:
+        """Delete an entire recurring series."""
+        await self.delete_event(calendar_url, event_id, href=href)
+
+    def _get_event_resource(
+        self, calendar: Any, event_id: str, href: str | None = None,
+    ) -> Any:
         """Load an event by cached href, falling back to a UID REPORT."""
-        event_url = self._event_urls.get(event_id)
+        event_url = href or self._event_urls.get(event_id)
         if event_url is not None:
             return calendar.event_by_url(event_url)
         return calendar.get_event_by_uid(event_id)
@@ -368,6 +393,16 @@ def _parse_event_time(value: str, field: str) -> date | datetime:
     return parsed.astimezone(UTC)
 
 
+def _parse_recurrence_id(value: str) -> date | datetime:
+    """Parse a provider recurrence key, including valid floating datetimes."""
+    try:
+        if "T" not in value:
+            return date.fromisoformat(value)
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("invalid CalDAV recurrence identity") from exc
+
+
 def _ical_value(component: Any, field: str) -> Any:
     value = component.get(field)
     return getattr(value, "dt", value)
@@ -389,6 +424,114 @@ def _replace_ical_property(component: Any, field: str, value: Any) -> None:
             component.add(field, item)
     else:
         component.add(field, value)
+
+
+def _master_component(resource: Any) -> Any:
+    """Return the recurrence master (or the sole non-recurring VEVENT)."""
+    components = list(resource.icalendar_instance.walk("VEVENT"))
+    component = next((item for item in components if item.get("recurrence-id") is None), None)
+    if component is None:
+        raise ValueError("CalDAV event does not contain a recurrence master")
+    return component
+
+
+def _occurrence_component(resource: Any, recurrence_id: str) -> Any:
+    """Return a stored exception or locally expand the requested occurrence."""
+    for component in resource.icalendar_instance.walk("VEVENT"):
+        if _ical_dt(component, "recurrence-id") == recurrence_id:
+            return component.copy()
+
+    target = _parse_recurrence_id(recurrence_id)
+    occurrences = recurring_ical_events.of(resource.icalendar_instance).at(target)
+    for component in occurrences:
+        if _ical_dt(component, "recurrence-id") == recurrence_id:
+            return component.copy()
+    raise LookupError(f"event occurrence not found: {recurrence_id}")
+
+
+def _update_component(
+    component: Any,
+    *,
+    summary: str | None,
+    start: date | datetime | None,
+    end: date | datetime | None,
+    description: str | None,
+    location: str | None,
+    attendees: list[str] | None,
+) -> None:
+    updates: dict[str, Any] = {
+        "summary": summary,
+        "dtstart": start,
+        "dtend": end,
+        "description": description,
+        "location": location,
+    }
+    for field, value in updates.items():
+        if value is not None:
+            _replace_ical_property(component, field, value)
+    if attendees is not None:
+        addresses = [
+            address if address.lower().startswith("mailto:") else f"mailto:{address}"
+            for address in attendees
+        ]
+        _replace_ical_property(component, "attendee", addresses)
+
+    if start is not None or end is not None:
+        actual_start = _ical_value(component, "dtstart")
+        actual_end = _ical_value(component, "dtend")
+        if actual_start is not None and actual_end is not None:
+            _validate_event_range(actual_start, actual_end)
+
+
+def _merge_occurrence(resource: Any, occurrence: Any, recurrence_id: str) -> None:
+    """Add or replace a RECURRENCE-ID exception in the master resource."""
+    components = resource.icalendar_instance.subcomponents
+    matches = [
+        index
+        for index, component in enumerate(components)
+        if getattr(component, "name", "") == "VEVENT"
+        and _ical_dt(component, "recurrence-id") == recurrence_id
+    ]
+    if len(matches) > 1:
+        raise ValueError("CalDAV event contains duplicate recurrence exceptions")
+    if matches:
+        components[matches[0]] = occurrence
+    else:
+        resource.icalendar_instance.add_component(occurrence)
+
+
+def _exclude_occurrence(resource: Any, recurrence_id: str) -> None:
+    """Delete one occurrence by removing its override and adding EXDATE."""
+    # Validate that the recurrence key actually materializes before mutating
+    # the master; an opaque but stale reference should fail visibly.
+    _occurrence_component(resource, recurrence_id)
+    master = _master_component(resource)
+    target = _parse_recurrence_id(recurrence_id)
+    components = resource.icalendar_instance.subcomponents
+    components[:] = [
+        component
+        for component in components
+        if not (
+            getattr(component, "name", "") == "VEVENT"
+            and _ical_dt(component, "recurrence-id") == recurrence_id
+        )
+    ]
+    if target not in _exdate_values(master):
+        master.add("exdate", target)
+
+
+def _exdate_values(component: Any) -> list[Any]:
+    properties = component.get("exdate", [])
+    if not isinstance(properties, list):
+        properties = [properties]
+    values: list[Any] = []
+    for prop in properties:
+        dts = getattr(prop, "dts", None)
+        if dts is not None:
+            values.extend(getattr(value, "dt", value) for value in dts)
+        else:
+            values.append(getattr(prop, "dt", prop))
+    return values
 
 
 def _calendar_name(cal: Any) -> str:
@@ -427,9 +570,15 @@ def _parse_event(hit: Any) -> Event | None:
     if vevent is None:
         return None
 
+    return _event_from_component(vevent, href=str(getattr(hit, "url", "")))
+
+
+def _event_from_component(vevent: Any, *, href: str = "") -> Event | None:
+    """Convert one VEVENT component to the broker's internal event shape."""
     uid = _ical_str(vevent, "uid")
     if not uid:
         return None
+    recurrence_id = _ical_dt(vevent, "recurrence-id")
     return Event(
         uid=uid,
         summary=_ical_str(vevent, "summary"),
@@ -437,6 +586,9 @@ def _parse_event(hit: Any) -> Event | None:
         end=_ical_dt(vevent, "dtend"),
         location=_ical_str(vevent, "location"),
         description=_ical_str(vevent, "description"),
+        recurrence_id=recurrence_id,
+        recurring=bool(recurrence_id or vevent.get("rrule") or vevent.get("rdate")),
+        href=href,
     )
 
 

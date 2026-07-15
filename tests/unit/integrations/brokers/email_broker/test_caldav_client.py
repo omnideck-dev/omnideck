@@ -118,6 +118,9 @@ async def test_create_event_adds_vevent_and_returns_wire_event() -> None:
         "end": "2026-07-15T15:00:00+00:00",
         "location": "Room 4",
         "description": "Review the release",
+        "recurrence_id": "",
+        "recurring": False,
+        "href": "https://caldav.example/home/icloud-event-123.ics",
     }
     assert calendar.added == [{
         "summary": "Project review",
@@ -271,3 +274,121 @@ async def test_created_event_deletes_by_href_without_icloud_uid_report() -> None
 
     assert resource.delete_calls == 1
     assert created.uid not in client._event_urls
+
+
+def _recurring_resource() -> _StubResource:
+    resource = _event_resource(
+        summary="Weekly review",
+        start="2026-07-15T09:00:00-05:00",
+        end="2026-07-15T10:00:00-05:00",
+    )
+    master = next(iter(resource.icalendar_instance.walk("VEVENT")))
+    master.add("rrule", {"freq": "weekly", "count": 4})
+    return resource
+
+
+@pytest.mark.asyncio
+async def test_update_recurring_occurrence_creates_exception_without_uid_report() -> None:
+    calendar = _StubCalendar()
+    resource = _recurring_resource()
+    calendar.resources["icloud-event-123"] = resource
+    calendar.reject_uid_report = True
+    client = _connected_client(calendar)
+
+    event = await client.update_event(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href=resource.url,
+        summary="One-off review",
+        start="2026-07-22T11:00:00-05:00",
+        end="2026-07-22T12:00:00-05:00",
+    )
+
+    components = list(resource.icalendar_instance.walk("VEVENT"))
+    assert len(components) == 2
+    assert str(components[0]["summary"]) == "Weekly review"
+    assert str(components[1]["summary"]) == "One-off review"
+    assert components[1]["recurrence-id"].dt == datetime.fromisoformat(
+        "2026-07-22T09:00:00-05:00",
+    )
+    assert event.summary == "One-off review"
+    assert event.start == "2026-07-22T16:00:00+00:00"
+    assert event.recurrence_id == "2026-07-22T09:00:00-05:00"
+    assert event.recurring is True
+    assert resource.save_calls == 1
+    assert calendar.event_by_url_calls == [resource.url]
+
+
+@pytest.mark.asyncio
+async def test_update_existing_recurring_exception_replaces_it() -> None:
+    calendar = _StubCalendar()
+    resource = _recurring_resource()
+    calendar.resources["icloud-event-123"] = resource
+    client = _connected_client(calendar)
+
+    await client.update_event(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href=resource.url,
+        summary="First edit",
+    )
+    event = await client.update_event(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href=resource.url,
+        location="Room 9",
+    )
+
+    components = list(resource.icalendar_instance.walk("VEVENT"))
+    assert len(components) == 2
+    assert str(components[1]["summary"]) == "First edit"
+    assert str(components[1]["location"]) == "Room 9"
+    assert event.location == "Room 9"
+    assert resource.save_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_recurring_occurrence_adds_exdate_and_keeps_series() -> None:
+    calendar = _StubCalendar()
+    resource = _recurring_resource()
+    calendar.resources["icloud-event-123"] = resource
+    client = _connected_client(calendar)
+
+    await client.delete_event(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href=resource.url,
+    )
+
+    assert resource.delete_calls == 0
+    assert resource.save_calls == 1
+    master = next(iter(resource.icalendar_instance.walk("VEVENT")))
+    assert master["exdate"].dts[0].dt == datetime.fromisoformat(
+        "2026-07-22T09:00:00-05:00",
+    )
+
+
+@pytest.mark.asyncio
+async def test_series_operations_update_master_and_delete_resource() -> None:
+    calendar = _StubCalendar()
+    resource = _recurring_resource()
+    calendar.resources["icloud-event-123"] = resource
+    client = _connected_client(calendar)
+
+    event = await client.update_event_series(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        href=resource.url,
+        summary="All reviews",
+    )
+    await client.delete_event_series(
+        "https://caldav.example/home/", "icloud-event-123", href=resource.url,
+    )
+
+    assert event.summary == "All reviews"
+    assert resource.save_calls == 1
+    assert resource.delete_calls == 1

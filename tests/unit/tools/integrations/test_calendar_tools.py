@@ -14,9 +14,11 @@ import pytest
 from integrations import broker_client
 from tools.integrations.create_event import create_event
 from tools.integrations.delete_event import delete_event
+from tools.integrations.delete_event_series import delete_event_series
 from tools.integrations.list_calendars import list_calendars
 from tools.integrations.list_events import list_events
 from tools.integrations.update_event import update_event
+from tools.integrations.update_event_series import update_event_series
 
 
 def _patch_call(monkeypatch: pytest.MonkeyPatch, *, result: Any = None, exc: Exception | None = None) -> None:
@@ -42,15 +44,15 @@ async def test_list_calendars_renders_each_calendar_with_url(monkeypatch: pytest
     _patch_call(
         monkeypatch,
         result={"calendars": [
-            {"name": "Home", "url": "https://caldav.icloud.com/123/calendars/home/"},
-            {"name": "Work", "url": "https://caldav.icloud.com/123/calendars/work/"},
+            {"name": "Home", "calendar_ref": "home-ref"},
+            {"name": "Work", "calendar_ref": "work-ref"},
         ]},
     )
     out = await list_calendars("icloud_personal")
     assert out == (
         "Calendars on 'icloud_personal':\n"
-        "- Home  —  https://caldav.icloud.com/123/calendars/home/\n"
-        "- Work  —  https://caldav.icloud.com/123/calendars/work/"
+        "- Home  [calendar_ref: home-ref]\n"
+        "- Work  [calendar_ref: work-ref]"
     )
 
 
@@ -71,12 +73,12 @@ async def test_list_calendars_substitutes_placeholder_for_missing_name(monkeypat
     """
     _patch_call(
         monkeypatch,
-        result={"calendars": [{"url": "https://caldav.icloud.com/123/calendars/x/"}]},
+        result={"calendars": [{"calendar_ref": "calendar-x"}]},
     )
     out = await list_calendars("icloud_personal")
     assert out == (
         "Calendars on 'icloud_personal':\n"
-        "- (unnamed)  —  https://caldav.icloud.com/123/calendars/x/"
+        "- (unnamed)  [calendar_ref: calendar-x]"
     )
 
 
@@ -112,14 +114,16 @@ async def test_list_events_renders_with_start_summary_and_location(monkeypatch: 
             "calendar_name": "Work",
             "events": [
                 {
-                    "uid": "abc",
+                    "event_ref": "event-abc",
                     "summary": "Standup",
                     "start": "2026-04-26T09:00:00+00:00",
                     "end": "2026-04-26T09:15:00+00:00",
                     "location": "Zoom",
                 },
                 {
-                    "uid": "def",
+                    "event_ref": "event-def",
+                    "series_ref": "series-def",
+                    "is_recurring": True,
                     "summary": "Lunch",
                     "start": "2026-04-26T12:30:00+00:00",
                     "end": "2026-04-26T13:30:00+00:00",
@@ -130,8 +134,9 @@ async def test_list_events_renders_with_start_summary_and_location(monkeypatch: 
     out = await list_events("icloud_personal", "https://caldav.icloud.com/123/calendars/work/")
     assert out == (
         "Events on 'Work' (2):\n"
-        "- 2026-04-26T09:00:00+00:00  Standup  @ Zoom  [id: abc]\n"
-        "- 2026-04-26T12:30:00+00:00  Lunch  [id: def]"
+        "- 2026-04-26T09:00:00+00:00  Standup  @ Zoom  [event_ref: event-abc]\n"
+        "- 2026-04-26T12:30:00+00:00  Lunch  [recurring]  "
+        "[event_ref: event-def]  [series_ref: series-def]"
     )
 
 
@@ -141,11 +146,11 @@ async def test_list_events_substitutes_placeholders(monkeypatch: pytest.MonkeyPa
     """Events missing summary or start (rare but possible) still render
     parseably so a malformed event doesn't break the whole list.
     """
-    _patch_call(monkeypatch, result={"calendar_name": "Home", "events": [{"uid": "x"}]})
+    _patch_call(monkeypatch, result={"calendar_name": "Home", "events": [{"event_ref": "event-x"}]})
     out = await list_events("icloud_personal", "https://x/")
     assert out == (
         "Events on 'Home' (1):\n"
-        "- (no start)  (no title)  [id: x]"
+        "- (no start)  (no title)  [event_ref: event-x]"
     )
 
 
@@ -213,7 +218,7 @@ async def test_list_events_reports_generic_error(monkeypatch: pytest.MonkeyPatch
 async def test_create_event_confirms_with_event_id(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, result={
         "event": {
-            "uid": "ev_abc123",
+            "event_ref": "event-abc123",
             "summary": "Team standup",
             "start": "2026-05-10T09:00:00-05:00",
             "end": "2026-05-10T09:30:00-05:00",
@@ -224,7 +229,7 @@ async def test_create_event_confirms_with_event_id(monkeypatch: pytest.MonkeyPat
         "gw_work", "primary", "Team standup",
         "2026-05-10T09:00:00-05:00", "2026-05-10T09:30:00-05:00",
     )
-    assert "ev_abc123" in out
+    assert "event-abc123" in out
     assert "Team standup" in out
 
 
@@ -237,7 +242,7 @@ async def test_create_event_passes_optional_fields(monkeypatch: pytest.MonkeyPat
         integration_id: str, verb: str, args: dict, *, app_sock_path: str,
     ) -> Any:
         captured.update(args)
-        return {"event": {"uid": "x", "summary": "s", "start": "", "end": "", "location": ""}}
+        return {"event": {"event_ref": "event-x", "summary": "s", "start": "", "end": "", "location": ""}}
 
     monkeypatch.setattr(broker_client, "call", _capture)
 
@@ -251,7 +256,7 @@ async def test_create_event_passes_optional_fields(monkeypatch: pytest.MonkeyPat
     assert captured["description"] == "Team lunch"
     assert captured["location"] == "Cafeteria"
     assert captured["attendees"] == ["alice@example.com", "bob@example.com"]
-    assert captured["calendar_url"] == "primary"
+    assert captured["calendar_ref"] == "primary"
     assert "calendar_id" not in captured
 
 
@@ -264,7 +269,7 @@ async def test_create_event_omits_empty_optional_fields(monkeypatch: pytest.Monk
         integration_id: str, verb: str, args: dict, *, app_sock_path: str,
     ) -> Any:
         captured.update(args)
-        return {"event": {"uid": "x", "summary": "s", "start": "", "end": "", "location": ""}}
+        return {"event": {"event_ref": "event-x", "summary": "s", "start": "", "end": "", "location": ""}}
 
     monkeypatch.setattr(broker_client, "call", _capture)
 
@@ -318,7 +323,7 @@ async def test_create_event_upstream_error(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_update_event_confirms_with_title(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, result={
         "event": {
-            "uid": "ev_abc123",
+            "event_ref": "event-abc123",
             "summary": "Updated standup",
             "start": "2026-05-10T09:00:00-05:00",
             "end": "2026-05-10T09:30:00-05:00",
@@ -326,10 +331,10 @@ async def test_update_event_confirms_with_title(monkeypatch: pytest.MonkeyPatch)
         },
     })
     out = await update_event(
-        "gw_work", "primary", "ev_abc123", summary="Updated standup",
+        "gw_work", "event-abc123", summary="Updated standup",
     )
     assert "Updated standup" in out
-    assert "ev_abc123" in out
+    assert "event-abc123" in out
 
 
 @pytest.mark.unit
@@ -341,12 +346,12 @@ async def test_update_event_passes_only_provided_fields(monkeypatch: pytest.Monk
         integration_id: str, verb: str, args: dict, *, app_sock_path: str,
     ) -> Any:
         captured.update(args)
-        return {"event": {"uid": "ev1", "summary": "x", "start": "", "end": "", "location": ""}}
+        return {"event": {"event_ref": "event-1", "summary": "x", "start": "", "end": "", "location": ""}}
 
     monkeypatch.setattr(broker_client, "call", _capture)
 
-    await update_event("gw_work", "primary", "ev1", location="Room 42")
-    assert captured["calendar_url"] == "primary"
+    await update_event("gw_work", "event-1", location="Room 42")
+    assert captured["event_ref"] == "event-1"
     assert "calendar_id" not in captured
     assert captured["location"] == "Room 42"
     assert "summary" not in captured
@@ -358,7 +363,7 @@ async def test_update_event_passes_only_provided_fields(monkeypatch: pytest.Monk
 @pytest.mark.asyncio
 async def test_update_event_no_fields_returns_message(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, result={})
-    out = await update_event("gw_work", "primary", "ev1")
+    out = await update_event("gw_work", "event-1")
     assert "No fields" in out
 
 
@@ -366,7 +371,7 @@ async def test_update_event_no_fields_returns_message(monkeypatch: pytest.Monkey
 @pytest.mark.asyncio
 async def test_update_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationNotConnected("gw_work"))
-    out = await update_event("gw_work", "primary", "ev1", summary="Changed")
+    out = await update_event("gw_work", "event-1", summary="Changed")
     assert "not connected" in out
 
 
@@ -374,7 +379,7 @@ async def test_update_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_update_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("gw_work"))
-    out = await update_event("gw_work", "primary", "ev1", summary="Changed")
+    out = await update_event("gw_work", "event-1", summary="Changed")
     assert "disabled" in out.lower()
 
 
@@ -387,12 +392,31 @@ async def test_update_event_attendees(monkeypatch: pytest.MonkeyPatch) -> None:
         integration_id: str, verb: str, args: dict, *, app_sock_path: str,
     ) -> Any:
         captured.update(args)
-        return {"event": {"uid": "ev1", "summary": "x", "start": "", "end": "", "location": ""}}
+        return {"event": {"event_ref": "event-1", "summary": "x", "start": "", "end": "", "location": ""}}
 
     monkeypatch.setattr(broker_client, "call", _capture)
 
-    await update_event("gw_work", "primary", "ev1", attendees=["alice@example.com"])
+    await update_event("gw_work", "event-1", attendees=["alice@example.com"])
     assert captured["attendees"] == ["alice@example.com"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_event_can_clear_optional_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _capture(
+        integration_id: str, verb: str, args: dict, *, app_sock_path: str,
+    ) -> Any:
+        captured.update(args)
+        return {"event": {"event_ref": "event-1", "summary": "x"}}
+
+    monkeypatch.setattr(broker_client, "call", _capture)
+
+    await update_event("gw_work", "event-1", description="", location="")
+
+    assert captured["description"] == ""
+    assert captured["location"] == ""
 
 
 # ── delete_event ─────────────────────────────────────────────────────────────
@@ -402,16 +426,16 @@ async def test_update_event_attendees(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_delete_event_confirms(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, result={"deleted": True})
-    out = await delete_event("gw_work", "primary", "ev_abc123")
+    out = await delete_event("gw_work", "event-abc123")
     assert "Deleted" in out
-    assert "ev_abc123" in out
+    assert "event-abc123" in out
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationNotConnected("gw_work"))
-    out = await delete_event("gw_work", "primary", "ev1")
+    out = await delete_event("gw_work", "event-1")
     assert "not connected" in out
 
 
@@ -419,7 +443,7 @@ async def test_delete_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_delete_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("gw_work"))
-    out = await delete_event("gw_work", "primary", "ev1")
+    out = await delete_event("gw_work", "event-1")
     assert "disabled" in out.lower()
 
 
@@ -427,5 +451,56 @@ async def test_delete_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> Non
 @pytest.mark.asyncio
 async def test_delete_event_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_call(monkeypatch, exc=broker_client.IntegrationError("not found"))
-    out = await delete_event("gw_work", "primary", "ev1")
+    out = await delete_event("gw_work", "event-1")
     assert "Failed" in out
+
+
+# ── recurring series ────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_event_series_passes_series_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _capture(
+        integration_id: str, verb: str, args: dict, *, app_sock_path: str,
+    ) -> Any:
+        captured["verb"] = verb
+        captured["args"] = args
+        return {"event": {"summary": "Weekly sync"}, "series_ref": "series-1"}
+
+    monkeypatch.setattr(broker_client, "call", _capture)
+
+    out = await update_event_series(
+        "gw_work", "series-1", summary="Weekly sync", location="Room 4",
+    )
+
+    assert captured == {
+        "verb": "update_event_series",
+        "args": {"series_ref": "series-1", "summary": "Weekly sync", "location": "Room 4"},
+    }
+    assert "series-1" in out
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_delete_event_series_passes_series_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _capture(
+        integration_id: str, verb: str, args: dict, *, app_sock_path: str,
+    ) -> Any:
+        captured["verb"] = verb
+        captured["args"] = args
+        return {"deleted": True}
+
+    monkeypatch.setattr(broker_client, "call", _capture)
+
+    out = await delete_event_series("gw_work", "series-1")
+
+    assert captured == {
+        "verb": "delete_event_series",
+        "args": {"series_ref": "series-1"},
+    }
+    assert "series-1" in out

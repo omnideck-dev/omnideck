@@ -9,7 +9,19 @@ An *integration* is a credentialed connection to an external service the agent c
 | iCloud | Email (IMAP + SMTP) + Calendar (CalDAV) | App-specific password |
 | Gmail | Email (IMAP + SMTP) | App-specific password |
 
-Each integration becomes one or more agent tools — `list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`, etc. The tools take an explicit `integration_id` argument (e.g. `"icloud_personal"` or `"gmail_work"`), so the agent picks which inbox to operate on per call.
+Each integration becomes one or more agent tools — `list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`, etc. The tools take an explicit `integration_id` argument (e.g. `"icloud_personal"` or `"gmail_work"`), so the agent picks which account to operate on per call.
+
+### Calendar tool contract
+
+Google Workspace and CalDAV integrations share one agent-facing calendar surface:
+
+- `list_calendars` returns an opaque `calendar_ref` for each calendar.
+- `list_events` expands recurring events and returns an `event_ref` for the exact listed occurrence. Recurring rows also carry a `series_ref`.
+- `create_event` takes `calendar_ref` and returns the created event's `event_ref`.
+- `update_event` and `delete_event` take only `event_ref`; on recurring events they affect exactly one occurrence.
+- `update_event_series` and `delete_event_series` take only `series_ref` and affect the entire recurring series.
+
+Provider IDs, CalDAV hrefs, and `RECURRENCE-ID` values stay inside the opaque references. This keeps the tool choice explicit: occurrence tools cannot accidentally imply a whole-series mutation, and the agent never has to combine a calendar ID with an event ID itself.
 
 ---
 
@@ -62,7 +74,7 @@ The agent never has read access to a credential — its UID can't open the vault
 
 ## Permissions model
 
-Every integration has a `write_allowed` flag. Default: **off**. Writes mean anything that mutates upstream state — `send_email`, `move_email`, future `flag_email`, future calendar `create_event` / `delete_event`.
+Every integration has a `write_allowed` flag. Default: **off**. Writes mean anything that mutates upstream state — `send_email`, `move_email`, and calendar create/update/delete operations.
 
 **Two layers** enforce this:
 

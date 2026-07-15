@@ -21,6 +21,7 @@ from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
 from tools.integrations.create_event import build_create_event_tool
 from tools.integrations.delete_event import build_delete_event_tool
+from tools.integrations.delete_event_series import build_delete_event_series_tool
 from tools.integrations.download_email_attachment import build_download_email_attachment_tool
 from tools.integrations.drive.create_folder import build_create_drive_folder_tool
 from tools.integrations.drive.export_file import build_export_drive_file_tool
@@ -41,6 +42,7 @@ from tools.integrations.read_email_message import build_read_email_message_tool
 from tools.integrations.search_email import build_search_email_tool
 from tools.integrations.send_email import build_send_email_tool
 from tools.integrations.update_event import build_update_event_tool
+from tools.integrations.update_event_series import build_update_event_series_tool
 
 if TYPE_CHECKING:
     from tools.integrations.types import RegisteredIntegration
@@ -70,7 +72,13 @@ _BUILDERS: dict[Capability, dict[Access, list[ToolBuilder]]] = {
     },
     Capability.CALENDAR: {
         Access.READ: [build_list_calendars_tool, build_list_events_tool],
-        Access.READ_WRITE: [build_create_event_tool, build_update_event_tool, build_delete_event_tool],
+        Access.READ_WRITE: [
+            build_create_event_tool,
+            build_update_event_tool,
+            build_delete_event_tool,
+            build_update_event_series_tool,
+            build_delete_event_series_tool,
+        ],
     },
     Capability.DRIVE: {
         Access.READ: [

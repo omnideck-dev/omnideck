@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 
 async def update_event(
     integration_id: str,
-    calendar_url: str,
-    event_id: str,
-    summary: str = "",
-    start: str = "",
-    end: str = "",
-    description: str = "",
-    location: str = "",
+    event_ref: str,
+    summary: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    description: str | None = None,
+    location: str | None = None,
     attendees: list[str] | None = None,
 ) -> str:
     """Update fields on an existing calendar event.
@@ -29,13 +28,12 @@ async def update_event(
 
     Args:
         integration_id: Identifier of the calendar integration.
-        calendar_url: URL of the calendar (from ``list_calendars``).
-        event_id: ID of the event to update (from ``list_events``).
-        summary: New event title (leave empty to keep current).
+        event_ref: Opaque exact-occurrence reference from ``list_events``.
+        summary: New event title (omit to keep current).
         start: New start time — RFC 3339 datetime or date string.
         end: New end time — same format as start.
-        description: New description (leave empty to keep current).
-        location: New location (leave empty to keep current).
+        description: New description (empty clears it; omit to keep current).
+        location: New location (empty clears it; omit to keep current).
         attendees: New attendee list — replaces the existing list entirely.
 
     Returns:
@@ -43,23 +41,22 @@ async def update_event(
     """
     app_sock = load_config().integrations.app_sock_path
     args: dict[str, Any] = {
-        "calendar_url": calendar_url,
-        "event_id": event_id,
+        "event_ref": event_ref,
     }
-    if summary:
+    if summary is not None:
         args["summary"] = summary
-    if start:
+    if start is not None:
         args["start"] = start
-    if end:
+    if end is not None:
         args["end"] = end
-    if description:
+    if description is not None:
         args["description"] = description
-    if location:
+    if location is not None:
         args["location"] = location
     if attendees is not None:
         args["attendees"] = attendees
 
-    if len(args) == 2:
+    if len(args) == 1:
         return "No fields to update — provide at least one of summary, start, end, description, location, or attendees."
 
     try:
@@ -72,13 +69,14 @@ async def update_event(
         return f"Writes are disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
-            "update_event(%r, %r) failed: %s", integration_id, event_id, exc,
+            "update_event(%r, %r) failed: %s", integration_id, event_ref, exc,
         )
         return f"Failed to update event via {integration_id!r}: {exc}"
 
     event = result.get("event", {})
-    title = event.get("summary", event_id)
-    return f"Updated event '{title}' (event ID: {event_id})."
+    title = event.get("summary") or "(no title)"
+    returned_ref = event.get("event_ref") or event_ref
+    return f"Updated event '{title}' [event_ref: {returned_ref}]."
 
 
 def build_update_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
@@ -88,30 +86,29 @@ def build_update_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     async def _update_event(
         integration_id: str,
-        calendar_url: str,
-        event_id: str,
-        summary: str = "",
-        start: str = "",
-        end: str = "",
-        description: str = "",
-        location: str = "",
+        event_ref: str,
+        summary: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
         attendees: list[str] | None = None,
     ) -> str:
         return await update_event(
-            integration_id, calendar_url, event_id,
+            integration_id, event_ref,
             summary, start, end, description, location, attendees,
         )
 
     _update_event.__name__ = update_event.__name__
     _update_event.__doc__ = (
         "Update an existing event on a connected calendar. Only supplied fields "
-        "are changed. Use list_events to get event IDs. "
+        "are changed. event_ref always targets exactly the listed occurrence; "
+        "use update_event_series for every occurrence. "
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"
         "    integration_id: Which integration the calendar belongs to.\n"
-        "    calendar_url: URL of the calendar (from list_calendars).\n"
-        "    event_id: ID of the event (from list_events).\n"
-        "    summary: New title (empty = keep current).\n"
+        "    event_ref: Opaque exact-occurrence reference from list_events.\n"
+        "    summary: New title (omit = keep current).\n"
         "    start: New start time, RFC 3339 or date.\n"
         "    end: New end time, RFC 3339 or date.\n"
         "    description: New description.\n"

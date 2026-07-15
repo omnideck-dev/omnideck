@@ -18,6 +18,11 @@ import pytest
 from integrations._rpc import RpcError
 from integrations.brokers.email_broker._verbs import VerbDispatcher
 from integrations.brokers.email_broker.types import Event, Mailbox, OutboundAttachment
+from integrations.calendar_refs import (
+    decode_event_ref,
+    encode_event_ref,
+    encode_series_ref,
+)
 from integrations.permissions import Access, Capability
 
 
@@ -114,22 +119,45 @@ class _StubCalDav:
         return Event(
             uid="icloud-event-123", summary=summary, start=start, end=end,
             description=description, location=location,
+            href="https://caldav.example/home/icloud-event-123.ics",
         )
 
     async def update_event(
         self,
         calendar_url: str,
         event_id: str,
+        recurrence_id: str | None = None,
+        href: str | None = None,
         **changes: object,
     ) -> Event:
-        self.update_calls.append((calendar_url, event_id, changes))
+        self.update_calls.append((calendar_url, event_id, recurrence_id, href, changes))
         return Event(
             uid=event_id,
             summary=str(changes.get("summary") or "Existing event"),
+            recurrence_id=recurrence_id or "",
+            recurring=recurrence_id is not None,
+            href=href or "",
         )
 
-    async def delete_event(self, calendar_url: str, event_id: str) -> None:
-        self.delete_calls.append((calendar_url, event_id))
+    async def delete_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        recurrence_id: str | None = None,
+        href: str | None = None,
+    ) -> None:
+        self.delete_calls.append((calendar_url, event_id, recurrence_id, href))
+
+    async def update_event_series(
+        self, calendar_url: str, event_id: str, href: str | None = None, **changes: object,
+    ) -> Event:
+        self.update_calls.append((calendar_url, event_id, None, href, changes))
+        return Event(uid=event_id, summary=str(changes.get("summary") or "Series"), recurring=True, href=href or "")
+
+    async def delete_event_series(
+        self, calendar_url: str, event_id: str, href: str | None = None,
+    ) -> None:
+        self.delete_calls.append((calendar_url, event_id, None, href))
 
 
 @pytest.mark.asyncio
@@ -142,7 +170,7 @@ async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Pa
     )  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch("create_event", {
-        "calendar_url": "https://caldav.icloud.com/123/calendars/home/",
+        "calendar_ref": "https://caldav.icloud.com/123/calendars/home/",
         "summary": "Project review",
         "start": "2026-07-15T09:00:00-05:00",
         "end": "2026-07-15T10:00:00-05:00",
@@ -151,14 +179,12 @@ async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Pa
         "attendees": ["alice@example.com"],
     })
 
-    assert result["event"] == {
-        "uid": "icloud-event-123",
-        "summary": "Project review",
-        "start": "2026-07-15T09:00:00-05:00",
-        "end": "2026-07-15T10:00:00-05:00",
-        "location": "Room 4",
-        "description": "Review the release",
-    }
+    assert result["event"]["summary"] == "Project review"
+    assert result["event"]["is_recurring"] is False
+    assert "uid" not in result["event"]
+    target = decode_event_ref(result["event"]["event_ref"], provider="caldav")
+    assert target.event_id == "icloud-event-123"
+    assert target.href == "https://caldav.example/home/icloud-event-123.ics"
     assert caldav.create_calls == [(
         "https://caldav.icloud.com/123/calendars/home/",
         "Project review",
@@ -181,7 +207,7 @@ async def test_dispatch_create_event_requires_calendar_write_access(tmp_path: Pa
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("create_event", {
-            "calendar_url": "https://caldav.example/home/",
+            "calendar_ref": "https://caldav.example/home/",
             "summary": "Denied",
             "start": "2026-07-15",
             "end": "2026-07-16",
@@ -200,9 +226,15 @@ async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path:
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
+    event_ref = encode_event_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
     result = await dispatcher.dispatch("update_event", {
-        "calendar_url": "https://caldav.example/home/",
-        "event_id": "icloud-event-123",
+        "event_ref": event_ref,
         "summary": "Updated review",
         "attendees": [],
     })
@@ -211,6 +243,8 @@ async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path:
     assert caldav.update_calls == [(
         "https://caldav.example/home/",
         "icloud-event-123",
+        "2026-07-22T09:00:00-05:00",
+        "https://caldav.example/home/icloud-event-123.ics",
         {
             "summary": "Updated review",
             "start": None,
@@ -233,8 +267,11 @@ async def test_dispatch_update_event_rejects_empty_update(tmp_path: Path) -> Non
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("update_event", {
-            "calendar_url": "https://caldav.example/home/",
-            "event_id": "icloud-event-123",
+            "event_ref": encode_event_ref(
+                provider="caldav",
+                calendar_ref="https://caldav.example/home/",
+                event_id="icloud-event-123",
+            ),
         })
 
     assert excinfo.value.code == "BAD_REQUEST"
@@ -250,15 +287,57 @@ async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
-    result = await dispatcher.dispatch("delete_event", {
-        "calendar_url": "https://caldav.example/home/",
-        "event_id": "icloud-event-123",
-    })
+    event_ref = encode_event_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
+    result = await dispatcher.dispatch("delete_event", {"event_ref": event_ref})
 
     assert result == {"deleted": True}
     assert caldav.delete_calls == [(
         "https://caldav.example/home/", "icloud-event-123",
+        "2026-07-22T09:00:00-05:00",
+        "https://caldav.example/home/icloud-event-123.ics",
     )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_series_verbs_target_master(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+    series_ref = encode_series_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
+
+    result = await dispatcher.dispatch(
+        "update_event_series", {"series_ref": series_ref, "summary": "All reviews"},
+    )
+    deleted = await dispatcher.dispatch("delete_event_series", {"series_ref": series_ref})
+
+    assert result["series_ref"] == series_ref
+    assert deleted == {"deleted": True}
+    assert caldav.update_calls[-1][:4] == (
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        None,
+        "https://caldav.example/home/icloud-event-123.ics",
+    )
+    assert caldav.delete_calls[-1] == (
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        None,
+        "https://caldav.example/home/icloud-event-123.ics",
+    )
 
 
 @pytest.mark.asyncio
