@@ -141,6 +141,26 @@ _STRUCTURED_SNAPSHOT_JS = """
     'option','treeitem'
   ]);
 
+  // Something the agent can act on: a native control, or an element carrying one
+  // of the interactive roles above. Matching a bare [role] would also count roles
+  // that do nothing (note, presentation, banner) and treat ordinary prose as if
+  // it held a control. Matching no role at all would miss aria controls and let a
+  // tabbable wrapper swallow them into a single ref.
+  const INTERACTIVE_SEL = 'a[href], button, input, select, textarea,'
+    + ' [contenteditable]:not([contenteditable="false"]),'
+    + [...INTERACTIVE].map(r => ' [role="' + r + '"]').join(',');
+
+  function hasInteractive(el) {
+    return el.querySelector(INTERACTIVE_SEL) !== null;
+  }
+
+  function isNativeInteractiveElement(el) {
+    return el.matches(
+      'a[href], button, input, select, textarea, summary,'
+      + ' [contenteditable]:not([contenteditable="false"])'
+    );
+  }
+
   // ---- Accessible name ----
   function getName(el) {
     const al = el.getAttribute('aria-label');
@@ -201,7 +221,7 @@ _STRUCTURED_SNAPSHOT_JS = """
   function isTextContainer(el) {
     if (el.shadowRoot) return false;
     if (el.children.length === 0) return false;
-    if (el.querySelector('a[href], button, input, select, textarea, [role]')) return false;
+    if (hasInteractive(el)) return false;
     for (const child of el.children) {
       if (!INLINE_TAGS.has(child.tagName)) return false;
     }
@@ -212,8 +232,8 @@ _STRUCTURED_SNAPSHOT_JS = """
   function isImplicitlyInteractive(el) {
     const tag = el.tagName;
     if (tag === 'BODY' || tag === 'HTML') return false;
-    if (el.querySelector('a[href], button, input, select, textarea')) return false;
-    if (el.shadowRoot && el.shadowRoot.querySelector('a[href], button, input, select, textarea')) return false;
+    if (hasInteractive(el)) return false;
+    if (el.shadowRoot && el.shadowRoot.querySelector(INTERACTIVE_SEL)) return false;
     const ti = el.getAttribute('tabindex');
     if (ti !== null && ti !== '-1') return true;
     const s = window.getComputedStyle(el);
@@ -305,6 +325,22 @@ _STRUCTURED_SNAPSHOT_JS = """
 
   function emit(node) { nodes.push(node); }
 
+  function clip(text) {
+    return text.length > 200 ? text.substring(0, 200) + '...' : text;
+  }
+
+  // Collapse a block into one node — unless it holds something interactive, in
+  // which case descend so the control gets its own ref. Doing both would print
+  // the block's words once as the block and again as its parts.
+  function collapseOrDescend(el, makeNode) {
+    if (hasInteractive(el)) {
+      walkChildren(el);
+      return;
+    }
+    const text = (el.innerText || '').trim();
+    if (text.length > 1) emit(makeNode(text));
+  }
+
   // Walk the child nodes of a container (element or shadow root).
   function walkChildren(container) {
     const hasMixed = container.childNodes.length > container.children.length;
@@ -313,7 +349,7 @@ _STRUCTURED_SNAPSHOT_JS = """
         if (child.nodeType === 3) {
           const text = child.textContent.trim();
           if (text.length > 1) {
-            emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
+            emit({ type: 'text', depth: depth, text: clip(text)});
           }
         } else if (child.nodeType === 1) {
           walkSlotOrElement(child);
@@ -335,7 +371,7 @@ _STRUCTURED_SNAPSHOT_JS = """
             if (node.nodeType === 3) {
               const text = node.textContent.trim();
               if (text.length > 1) {
-                emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
+                emit({ type: 'text', depth: depth, text: clip(text)});
               }
             } else if (node.nodeType === 1) {
               walk(node, false);
@@ -378,13 +414,11 @@ _STRUCTURED_SNAPSHOT_JS = """
 
     // Interactive elements: stamp with ref, emit node data
     if (role && INTERACTIVE.has(role)) {
-      // A role="combobox" container (not a native <select> or <input>) that
-      // wraps the real text field — the React Autosuggest / Downshift / MUI
-      // Autocomplete pattern. The inner input is the actionable element, so
-      // make the container transparent: walk into it (exposing the input and
-      // any open suggestion list) instead of emitting the non-fillable div.
-      if (role === 'combobox' && el.tagName !== 'SELECT' && el.tagName !== 'INPUT'
-          && el.querySelector('input:not([type="hidden"]), textarea')) {
+      // Widget libraries sometimes put an interactive role on a container that
+      // wraps the real controls. Native controls are atomic, but a non-native
+      // ARIA wrapper must step aside or its early return hides every actionable
+      // descendant beneath it.
+      if (!isNativeInteractiveElement(el) && hasInteractive(el)) {
         walkChildren(el);
         return;
       }
@@ -454,9 +488,12 @@ _STRUCTURED_SNAPSHOT_JS = """
 
     // Headings
     if (role === 'heading') {
-      const lvl = el.tagName.match(/H(\\d)/)?.[1] || '';
-      const text = (el.innerText || '').trim();
-      if (text) emit({ type: 'heading', depth: depth, name: text, level: parseInt(lvl) || null});
+      // A heading can wrap a control: an <h3> whose title is a link, an <h5>
+      // around a button. Then the control is what matters, not the label.
+      const lvl = parseInt(el.tagName.match(/H(\\d)/)?.[1]) || null;
+      collapseOrDescend(el, (text) => (
+        { type: 'heading', depth: depth, name: text, level: lvl}
+      ));
       return;
     }
 
@@ -481,22 +518,14 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (el.children.length === 0 && !el.shadowRoot) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
+        emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;
     }
 
     // Paragraph-like containers
     if (el.tagName === 'P' || el.tagName === 'BLOCKQUOTE' || el.tagName === 'FIGCAPTION') {
-      // Check for interactive children first — if present, recurse normally
-      if (el.querySelector('a[href], button, input, select, textarea, [role]')) {
-        walkChildren(el);
-        return;
-      }
-      const text = (el.innerText || '').trim();
-      if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
-      }
+      collapseOrDescend(el, (text) => ({ type: 'text', depth: depth, text: clip(text)}));
       return;
     }
 
@@ -504,7 +533,7 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (isTextContainer(el)) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text});
+        emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;
     }
