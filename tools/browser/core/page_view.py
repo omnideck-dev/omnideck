@@ -674,6 +674,12 @@ async def build_page_view(
             )
         except PlaywrightError as exc:  # pragma: no cover - defensive
             logger.warning("Failed to build annotated snapshot: %s", exc)
+            content = (
+                f"[Page content unavailable — snapshot failed: {view.url}]\n"
+                "The page may still be loading or changing. Try browse_page() again. "
+                "If the problem continues, use read_page() to read the page "
+                "without interactive refs."
+            )
 
     return PageView(
         title=view.title,
