@@ -7,7 +7,7 @@ resolution, and viewport clipping vs full_page.
 
 from __future__ import annotations
 
-from tools.browser.snapshot_tool import browse_page
+from tools.browser import browse_page, click
 
 from .._helpers import find_ref
 
@@ -20,6 +20,23 @@ async def test_shadow_dom_is_pierced(browser_session, servers):
     # + walker must surface them anyway.
     assert find_ref(view, role="button", name="Shadow button") is not None
     assert find_ref(view, role="textbox", name="Shadow field") is not None
+
+
+async def test_stale_shadow_refs_are_removed_before_renumbering(browser_session, servers):
+    """A newly assigned shadow ref must not collide with a stale hidden one."""
+    tab = await browser_session.open(f"{servers.primary}/shadow-ref-cleanup/page.html")
+    first_view = await browse_page(full_page=True, tab=tab)
+    assert find_ref(first_view, role="button", name="First action") is not None
+    switch_ref = find_ref(first_view, role="button", name="Switch actions")
+    assert switch_ref is not None
+
+    second_view = await click(switch_ref, tab=tab)
+    assert find_ref(second_view, role="button", name="First action") is None
+    current_ref = find_ref(second_view, role="button", name="Second action")
+    assert current_ref is not None
+
+    result = await click(current_ref, tab=tab)
+    assert "Second action clicked" in result
 
 
 async def test_implicit_interactivity(browser_session, servers):
