@@ -97,7 +97,7 @@ class _FakeBrowser:
     def resolve_tab(self, tab):
         return self._page
 
-    async def perform_interaction(self, action_fn, *, page=None):
+    async def perform_interaction(self, action_fn, *, source_page=None):
         from tools.browser.core.browser import BrowserInteractionResult
 
         await action_fn()

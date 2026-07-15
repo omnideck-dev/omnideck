@@ -22,6 +22,7 @@ import base64
 import logging
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
@@ -156,6 +157,20 @@ async def emit_tab_state() -> None:
 # ---------------------------------------------------------------------------
 
 
+# The tab the running interaction finished on.  An interaction does not always
+# end on the tab it was called with — clicking a link that targets a new tab
+# leaves the agent in that new tab — and the screenshot has to show where the
+# agent actually ended up, not where it started.  This is task-local, so
+# concurrent tool calls never see each other's value.
+_settled_page: ContextVar[Page | None] = ContextVar("browser_settled_page", default=None)
+
+
+def set_settled_page(page: Page | None) -> None:
+    """Record the tab the running interaction finished on."""
+    _settled_page.set(page)
+
+
+
 def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
     """Decorator that emits a browser screenshot after the wrapped tool runs.
 
@@ -171,23 +186,31 @@ def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
 
     @wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        result = await func(*args, **kwargs)
+        # Start clean so this call can only ever read a tab its own interaction
+        # settled on, never one left behind by an earlier call in this task.
+        token = _settled_page.set(None)
+        try:
+            result = await func(*args, **kwargs)
+            settled = _settled_page.get()
+        finally:
+            _settled_page.reset(token)
 
-        # Screenshot the tab the tool acted on, identified by the `tab`
-        # kwarg.  Tools that don't take a tab (new_tab, which creates one)
-        # emit their own screenshot explicitly; the decorator just skips
-        # them silently.
+        # Screenshot the tab the interaction finished on.  It reports that tab
+        # itself when it moved (a click that opened one); otherwise fall back to
+        # the `tab` kwarg the tool was called with.  Tools that don't take a tab
+        # (new_tab, which creates one) emit their own screenshot explicitly; the
+        # decorator just skips them silently.
         tab = kwargs.get("tab")
-        if tab is None:
+        if settled is None and tab is None:
             return result
         page = None
         try:
             browser = await get_browser()
-            page = browser.resolve_tab(tab)
+            page = settled if settled is not None else browser.resolve_tab(tab)
             if page is not None and not page.is_closed():
                 logger.debug(
                     "Post-tool screenshot for %s (tab=%s, page=%s)",
-                    func.__name__, tab, getattr(page, "url", "?"),
+                    func.__name__, browser.tab_id_of(page), getattr(page, "url", "?"),
                 )
                 await _emit_screenshot(page)
         except Exception:  # noqa: BLE001 - never fail the tool call
@@ -206,5 +229,6 @@ def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
 __all__ = [
     "emit_screenshot",
     "emit_screenshot_after",
+    "set_settled_page",
     "emit_tab_state",
 ]
