@@ -355,7 +355,7 @@ class TestGotoFileDetection:
         # _format_result calls get_browser from interactions module
         monkeypatch.setattr("tools.browser.interactions.get_browser", _get_browser)
 
-        async def _mock_build(view: object, response: object) -> PageView:
+        async def _mock_observe(*args: object, **kwargs: object) -> tuple[PageView, None]:
             return PageView(
                 title="Test",
                 url="https://example.com",
@@ -363,9 +363,9 @@ class TestGotoFileDetection:
                 content="[heading] Welcome",
                 viewport={"scroll_top": 0, "viewport_height": 768, "viewport_width": 1280, "document_height": 1000},
                 truncated=False,
-            )
+            ), None
 
-        monkeypatch.setattr("tools.browser.interactions.build_page_view", _mock_build)
+        monkeypatch.setattr("tools.browser.interactions.observe_page", _mock_observe)
 
         from tools.browser.navigation import goto
 

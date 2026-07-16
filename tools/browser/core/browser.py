@@ -83,12 +83,17 @@ class ActiveView(NamedTuple):
     interstitial (Cloudflare, …). The browser can't get past it, so ``frame``
     stays the main page and tools replace the view with ``challenge.banner`` to
     route the agent to fetch_url rather than entering the interstitial's frame.
+
+    ``generation`` increments whenever the main document or active dominant
+    frame navigates. An observation uses it to ensure its metadata, settled
+    document, and snapshot all came from the same relevant frame-tree state.
     """
 
     frame: Page | Frame
     title: str
     url: str
     challenge: ChallengeInfo | None = None
+    generation: int = 0
 
     @property
     def page(self) -> Page:
@@ -170,6 +175,7 @@ class BrowserInteractionResult(BaseModel):
     settle_timings: browser_waits.SettleTimings | None = None
     frame_transition: str | None = None
     action_ms: float = 0.0
+    navigation_wait_ms: float = 0.0
     # The tab the interaction finished on.  It is not always the tab it started
     # from: clicking a link that targets a new tab leaves the agent in that tab.
     # Callers render this one, or the click looks like it did nothing.
@@ -283,6 +289,7 @@ class Browser:
         # the page that raised it.
         self._challenges: dict[Page, ChallengeInfo] = {}
         self._tab_id_of: dict[Page, int] = {}
+        self._page_generations: dict[Page, int] = {}
         self._next_tab_id: int = 0
         self._pages_in_navigation: set[Page] = set()
         self._pending_downloads: list[DownloadInfo] = []
@@ -339,13 +346,22 @@ class Browser:
             return
         self._next_tab_id += 1
         self._tab_id_of[page] = self._next_tab_id
+        self._page_generations[page] = 0
         self._attach_download_listener(page)
+
+        def _on_frame_navigated(frame: Frame) -> None:
+            if frame != page.main_frame and frame is not self._dominant_frames.get(page):
+                return
+            self._page_generations[page] = self._page_generations.get(page, 0) + 1
+            self._invalidate_active_view(page)
 
         def _on_close(_p: Any) -> None:
             self._tab_id_of.pop(page, None)
+            self._page_generations.pop(page, None)
             self._pages_in_navigation.discard(page)
             self._invalidate_active_view(page)
 
+        page.on("framenavigated", _on_frame_navigated)
         page.on("close", _on_close)
 
     async def _handle_download(self, download: Any) -> None:
@@ -764,7 +780,13 @@ class Browser:
         except PlaywrightError:
             title = ""
 
-        return ActiveView(frame=frame, title=title, url=page.url, challenge=challenge)
+        return ActiveView(
+            frame=frame,
+            title=title,
+            url=page.url,
+            challenge=challenge,
+            generation=self._page_generations.get(page, 0),
+        )
 
     async def _resolve_active_frame(
         self, page: Page,
@@ -1069,15 +1091,14 @@ class Browser:
         flags that a ``Content-Disposition: attachment`` header was seen, so a
         download event may still be in flight.
 
-        Four phases:
+        Three phases:
 
         1. Downloads. Drain any captured download; if there is none but the
            response is a file content-type, save the body as a file.
 
-        2. Settle. If it was not a download, wait for the page to quiet, then
-           re-check for downloads that arrived during settle (same-tab
-           redirect-to-file chains) and honour a brief grace wait when an
-           attachment header was seen but its event has not fired yet.
+        2. Late downloads. Re-check events that arrived after the action and
+           honour a brief grace wait when an attachment header was seen but its
+           download event has not fired yet.
 
         3. View resolution — the part that updates the caches. Exactly one case
            applies:
@@ -1092,15 +1113,13 @@ class Browser:
              and let the next read re-resolve it — dominant-iframe detection
              deliberately skips fresh navigations.
            - otherwise (an in-page change, no navigation): re-run dominant-iframe
-             detection, and if the dominant frame changed, label the transition,
-             update the cache, and settle the newly-entered frame.
+             detection, and if the dominant frame changed, label the transition
+             and update the cache. Observation settles that resolved frame later.
 
-        4. Return the result: the response, any download, settle timings, and the
-           frame transition — a short label for the log panel, e.g.
+        3. Return the result: the response, any download, and the frame
+           transition — a short label for the log panel, e.g.
            ``"→ iframe <url>"`` or ``"→ cloudflare challenge"``.
         """
-        wait_cfg = load_config().tools.browser.waits
-
         # 1. Download detection
         download_info: DownloadInfo | None = None
 
@@ -1126,18 +1145,10 @@ class Browser:
                 except Exception:
                     logger.exception("Failed to save file from response")
 
-        # 2. Settle (skip if download — no page to settle)
-        settle_timings = None
+        # 2. Re-check for downloads that arrived after the action. Page
+        # stabilization now happens at the observation boundary, after the
+        # active frame has been resolved and immediately before its snapshot.
         if download_info is None:
-            try:
-                settle_timings = await browser_waits.wait_for_page_settle(page, waits=wait_cfg)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Page settle raised unexpectedly: %s", exc)
-
-            # Re-check for downloads that arrived during page settle.
-            # This catches same-tab redirect chains to PDFs (e.g. Bing
-            # click-through → prier.com/document.pdf) where the download
-            # event fires after the initial check but during settle.
             if self._download_tasks:
                 await asyncio.gather(*self._download_tasks, return_exceptions=True)
             late_downloads = self.drain_downloads()
@@ -1201,19 +1212,13 @@ class Browser:
                         else:
                             self._dominant_frames.pop(page, None)
 
-                    if dominant is not None and dominant != previous_frame:
-                        try:
-                            await dominant.wait_for_load_state("load", timeout=5000)
-                            await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
-                        except (PlaywrightTimeoutError, PlaywrightError):
-                            pass
                 except Exception:  # noqa: BLE001
                     logger.debug("Dominant frame detection failed; keeping current state")
 
         return BrowserInteractionResult(
             navigation_response=response,
             download=download_info,
-            settle_timings=settle_timings,
+            settle_timings=None,
             frame_transition=frame_transition,
             settled_page=page,
         )
@@ -1329,14 +1334,16 @@ class Browser:
         t0 = time.monotonic()
         await action()
         action_ms = (time.monotonic() - t0) * 1000
+        navigation_wait_ms = 0.0
 
         # Bridge the gap between the action returning and a navigation starting.
-        # wait_for_load_state("networkidle") in the settle below returns
-        # immediately on the already-idle old page if no navigation has begun
-        # yet, producing a stale snapshot. Wait briefly for a navigation to
-        # start, then for it to commit, so the settle runs against the new
-        # document. Only nav-capable actions that don't navigate pay the wait.
+        # A readiness wait on the old page would return immediately if no
+        # navigation has begun yet, producing a stale snapshot. Wait briefly
+        # for navigation to start, then for it to commit, so observation resolves
+        # the new document. Only nav-capable actions that do not navigate pay
+        # the grace period.
         if wait_for_navigation:
+            navigation_wait_started = time.monotonic()
             if not nav_started.is_set():
                 grace_ms = load_config().tools.browser.waits.post_action_nav_grace_ms
                 if grace_ms > 0:
@@ -1349,6 +1356,7 @@ class Browser:
                     await source_page.wait_for_load_state("domcontentloaded", timeout=10_000)
                 except PlaywrightError:
                     pass
+            navigation_wait_ms = (time.monotonic() - navigation_wait_started) * 1000
 
         source_page.remove_listener("response", _on_response)
         source_page.remove_listener("request", _on_request)
@@ -1406,6 +1414,7 @@ class Browser:
             saw_download_response=_saw_download_response,
         )
         result.action_ms = action_ms
+        result.navigation_wait_ms = navigation_wait_ms
 
         # If a download was captured from a new tab, close that tab so the
         # agent returns to the original page.  Otherwise current_page() would

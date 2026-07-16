@@ -10,12 +10,9 @@ from __future__ import annotations
 import contextvars
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from playwright.async_api import Error as PlaywrightError, Page
-
-if TYPE_CHECKING:
-    from playwright.async_api import Response
 
 from config import load_config
 from tools.browser.core import get_active_view, get_browser
@@ -31,7 +28,8 @@ from tools.browser.core.human import (
     human_scroll,
     human_type,
 )
-from tools.browser.core.page_view import PageView, build_page_view
+from tools.browser.core.observation import observe_page
+from tools.browser.core.page_view import PageView
 from tools.browser.events import emit_screenshot_after, set_settled_page
 
 # ---------------------------------------------------------------------------
@@ -70,6 +68,8 @@ def _log_browser_panel(
 
     if result.action_ms > 0:
         table.add_row("interaction", f"{result.action_ms:.0f}ms", "")
+    if result.navigation_wait_ms > 0:
+        table.add_row("navigation wait", f"{result.navigation_wait_ms:.0f}ms", "")
 
     settle = result.settle_timings
     if settle is not None:
@@ -85,7 +85,7 @@ def _log_browser_panel(
 
     settle_total = settle.total_ms if settle else 0
     snap_total = (snapshot.snapshot_js_ms + snapshot.snapshot_py_ms) if snapshot else 0
-    total_ms = result.action_ms + settle_total + snap_total
+    total_ms = result.action_ms + result.navigation_wait_ms + settle_total + snap_total
 
     url = snapshot.url if snapshot else ""
     display_url = url if len(url) <= 80 else url[:77] + "…"
@@ -117,14 +117,19 @@ def _log_browser_panel(
 
 
 async def _build_snapshot(
-    response: Response | None,
+    result: BrowserInteractionResult,
     *,
     page: Page,
 ) -> PageView:
     """Snapshot *page* into a ``PageView``."""
     browser = await get_browser()
-    view = await browser.active_view(page=page)
-    return await build_page_view(view, response)
+    snapshot, timings = await observe_page(
+        browser,
+        page,
+        result.navigation_response,
+    )
+    result.settle_timings = timings
+    return snapshot
 
 
 async def _format_result(
@@ -157,7 +162,7 @@ async def _format_result(
             truncated=False,
             downloaded_file=result.download,
         )
-    snapshot = await _build_snapshot(result.navigation_response, page=page)
+    snapshot = await _build_snapshot(result, page=page)
     browser = await get_browser()
     tab_id = browser.tab_id_of(page)
     _log_browser_panel(result, snapshot=snapshot, tool_name=tool_name, resolution=resolution)
@@ -576,7 +581,7 @@ async def scroll_page(
         raise BrowserToolError(f"Playwright error performing scroll: {exc}", tool="scroll_page") from exc
 
     # Build snapshot which includes viewport/scroll info
-    annotated = await _build_snapshot(None, page=page)  # Scroll never produces navigation
+    annotated = await _build_snapshot(interaction_result, page=page)
     _log_browser_panel(interaction_result, snapshot=annotated, tool_name="scroll_page")
 
     content = annotated.content

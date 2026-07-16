@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import logging
 
-from tools.browser.core import get_active_view, get_browser
+from tools.browser.core import get_active_view
 from tools.browser.core._formatting import format_page_view
 from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.page_view import build_page_view
+from tools.browser.core.observation import observe_page
 from tools.browser.events import emit_screenshot_after
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,15 @@ async def browse_page(
     page = view.page
 
     try:
-        pv = await build_page_view(view, None, scope=scope, full_page=full_page)
+        pv, _timings = await observe_page(
+            browser,
+            page,
+            None,
+            initial_view=view,
+            settle=False,
+            scope=scope,
+            full_page=full_page,
+        )
         return format_page_view(
             title=pv.title,
             url=pv.url,

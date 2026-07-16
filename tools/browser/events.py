@@ -179,9 +179,9 @@ def emit_screenshot_after[F: Callable[..., Any]](func: F) -> F:
     ``_emit_screenshot`` and publishes it to the UI.  The screenshot is NOT
     included in the tool's return value to avoid wasting context tokens.
 
-    All settling (network idle, DOM quiet, CSS animations) is handled by
-    ``wait_for_page_settle`` inside ``perform_interaction`` — this
-    decorator only captures the screenshot.
+    Page-load, DOM, font, and animation settling happens at the observation
+    boundary immediately before the tool returns — this decorator only captures
+    the screenshot.
     """
 
     @wraps(func)

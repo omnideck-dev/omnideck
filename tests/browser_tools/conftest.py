@@ -33,6 +33,7 @@ from urllib.parse import urlencode
 import pytest
 from aiohttp import web
 
+from tools.browser import new_tab
 from tools.browser.core.browser import Browser
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -129,9 +130,9 @@ class BrowserSession:
         self.browser = browser
 
     async def open(self, url: str) -> str:
-        """Open *url* in a new tab and return its stable tab id as a string."""
-        page = await self.browser.new_page()
-        await self.browser.navigate(url, page=page)
+        """Open *url* through the public tool and return its stable tab id."""
+        await new_tab(url)
+        page = self.browser.open_tabs()[-1]
         tab_id = self.browser.tab_id_of(page)
         assert tab_id is not None
         return str(tab_id)
@@ -161,7 +162,6 @@ async def browser_session(
     for target in (
         "tools.browser.core.browser.get_browser",
         "tools.browser.core.get_browser",
-        "tools.browser.snapshot_tool.get_browser",
         "tools.browser.interactions.get_browser",
         "tools.browser.read_content.get_browser",
         "tools.browser.events.get_browser",

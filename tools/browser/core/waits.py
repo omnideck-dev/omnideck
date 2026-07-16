@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 class SettleTimings:
     """Per-phase timing data from wait_for_page_settle."""
 
-    network_idle_ms: float = 0
-    network_idle_timed_out: bool = False
+    load_ms: float = 0
+    load_timed_out: bool = False
     font_ms: float = 0
     font_timed_out: bool = False
     dom_quiet_ms: float = 0
@@ -38,13 +38,13 @@ class SettleTimings:
 
     @property
     def total_ms(self) -> float:
-        return self.network_idle_ms + self.font_ms + self.dom_quiet_ms + self.animation_ms
+        return self.load_ms + self.font_ms + self.dom_quiet_ms + self.animation_ms
 
     @property
     def phases(self) -> list[tuple[str, float, bool]]:
         """Return (name, duration_ms, timed_out) for each phase."""
         return [
-            ("network idle", self.network_idle_ms, self.network_idle_timed_out),
+            ("page load", self.load_ms, self.load_timed_out),
             ("fonts", self.font_ms, self.font_timed_out),
             ("DOM quiet", self.dom_quiet_ms, self.dom_quiet_timed_out),
             ("animations", self.animation_ms, self.animation_timed_out),
@@ -60,14 +60,13 @@ async def wait_for_page_settle(
 
     Four phases run in sequence:
 
-    1. **Network idle** — waits for zero in-flight HTTP connections.
-       Resolves instantly if the network is already idle.  Pages with
-       persistent connections (SSE, long-polling) hit the timeout and
-       move on.
+    1. **Page load** — waits for the document's normal ``load`` lifecycle
+       event. This catches resources that affect rendering without blocking
+       on analytics, polling, and other background traffic after the useful
+       DOM is ready.
     2. **Web fonts** — ``document.fonts.ready`` ensures fonts are parsed
        and applied before we snapshot, preventing text reflow (FOUT).
-       Resolves near-instantly after networkidle since font HTTP
-       requests are already complete.
+       Resolves near-instantly when fonts are already complete.
     3. **DOM quiet** — a MutationObserver waits for a window of no
        significant mutations (ignores form-input value changes).  Also
        observes open shadow roots so web-component updates are caught.
@@ -80,16 +79,18 @@ async def wait_for_page_settle(
     """
     timings = SettleTimings()
     try:
-        # Phase 1: network idle
+        # Phase 1: document load. ``networkidle`` is deliberately avoided:
+        # it commonly spends seconds waiting for analytics and other background
+        # requests after the useful DOM has stopped changing.
         if hasattr(page, "wait_for_load_state"):
             t0 = time.monotonic()
             try:
                 await page.wait_for_load_state(
-                    "networkidle", timeout=waits.network_idle_timeout_ms,
+                    "load", timeout=waits.load_timeout_ms,
                 )
             except PlaywrightTimeoutError:
-                timings.network_idle_timed_out = True
-            timings.network_idle_ms = (time.monotonic() - t0) * 1000
+                timings.load_timed_out = True
+            timings.load_ms = (time.monotonic() - t0) * 1000
 
         if not hasattr(page, "evaluate"):
             return timings

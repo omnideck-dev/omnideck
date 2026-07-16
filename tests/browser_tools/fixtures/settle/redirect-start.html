@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Redirect start</title></head>
+<body>
+  <h1>Redirect start</h1>
+  <a id="continue">Continue</a>
+
+  <script>
+    const target = new URLSearchParams(location.search).get('target');
+    if (target) document.getElementById('continue').href = target;
+  </script>
+</body>
+</html>
