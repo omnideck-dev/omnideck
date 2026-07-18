@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 
-import styles from './FolderAppHost.module.css';
+import styles from './CustomAppHost.module.css';
 
 /** Trusted same-origin frame plus convenience bridges owned by Omnideck. */
-export default function FolderAppHost({
+export default function CustomAppHost({
     app,
     reloadSignal = 0,
     active = true,
@@ -51,7 +51,7 @@ export default function FolderAppHost({
             let responseMessage;
             try {
                 const response = await fetch(
-                    `/api/folder-apps/${encodeURIComponent(app.slug)}/invoke/${encodeURIComponent(message.action)}`,
+                    `/api/custom-apps/${encodeURIComponent(app.slug)}/invoke/${encodeURIComponent(message.action)}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -87,9 +87,9 @@ export default function FolderAppHost({
                 key={`${app.slug}-${reloadSignal}`}
                 ref={frameRef}
                 className={styles.frame}
-                src={`/api/folder-apps/${encodeURIComponent(app.slug)}/frame/`}
+                src={`/api/custom-apps/${encodeURIComponent(app.slug)}/frame/`}
                 title={app.title}
-                data-testid="folder-app-frame"
+                data-testid="custom-app-frame"
             />
         </div>
     );

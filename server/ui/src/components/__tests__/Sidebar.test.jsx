@@ -107,25 +107,25 @@ describe('Sidebar', () => {
         expect(onPanelToggle).toHaveBeenCalledWith('agents');
     });
 
-    it('shows the Apps panel only when folder apps are enabled', async () => {
+    it('shows the Apps panel only when Custom Apps are enabled', async () => {
         const user = userEvent.setup();
         const hidden = setup();
         expect(screen.queryByTestId('sidebar-nav-apps')).not.toBeInTheDocument();
         expect(hidden.onPanelToggle).not.toHaveBeenCalled();
 
         cleanup();
-        const { onPanelToggle } = setup({ folderAppsEnabled: true });
+        const { onPanelToggle } = setup({ customAppsEnabled: true });
         await user.click(screen.getByTestId('sidebar-nav-apps'));
         expect(onPanelToggle).toHaveBeenCalledWith('apps');
     });
 
     it('shows Home only when a custom app is docked', async () => {
         const user = userEvent.setup();
-        setup({ folderAppsEnabled: true });
+        setup({ customAppsEnabled: true });
         expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
 
         cleanup();
-        const { onPanelToggle } = setup({ folderAppsEnabled: true, homeAppEnabled: true });
+        const { onPanelToggle } = setup({ customAppsEnabled: true, homeAppEnabled: true });
         await user.click(screen.getByTestId('sidebar-nav-home'));
         expect(onPanelToggle).toHaveBeenCalledWith('home');
     });

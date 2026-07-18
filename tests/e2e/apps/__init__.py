@@ -1,1 +1,1 @@
-"""Folder-app end-to-end tests."""
+"""Custom App end-to-end tests."""

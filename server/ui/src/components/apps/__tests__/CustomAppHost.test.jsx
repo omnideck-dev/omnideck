@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import FolderAppHost from '../FolderAppHost.jsx';
+import CustomAppHost from '../CustomAppHost.jsx';
 
 const SAMPLE = { slug: 'text-lab', title: 'Text Lab' };
 
@@ -15,13 +15,13 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 test('runs the trusted app iframe without browser sandbox restrictions', () => {
-    render(<FolderAppHost app={SAMPLE} />);
-    expect(screen.getByTestId('folder-app-frame')).not.toHaveAttribute('sandbox');
+    render(<CustomAppHost app={SAMPLE} />);
+    expect(screen.getByTestId('custom-app-frame')).not.toHaveAttribute('sandbox');
 });
 
 test('forwards frame invocation messages to the selected app endpoint', async () => {
-    render(<FolderAppHost app={SAMPLE} />);
-    const frame = screen.getByTestId('folder-app-frame');
+    render(<CustomAppHost app={SAMPLE} />);
+    const frame = screen.getByTestId('custom-app-frame');
     const postMessage = vi.spyOn(frame.contentWindow, 'postMessage');
 
     window.dispatchEvent(new MessageEvent('message', {
@@ -31,7 +31,7 @@ test('forwards frame invocation messages to the selected app endpoint', async ()
     }));
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
-        '/api/folder-apps/text-lab/invoke/analyze',
+        '/api/custom-apps/text-lab/invoke/analyze',
         expect.objectContaining({ method: 'POST' }),
     ));
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith({
@@ -45,8 +45,8 @@ test('forwards frame invocation messages to the selected app endpoint', async ()
 
 test('ignores bridge messages after the frame navigates to another origin', () => {
     const onOpenChat = vi.fn();
-    render(<FolderAppHost app={SAMPLE} onOpenChat={onOpenChat} />);
-    const frame = screen.getByTestId('folder-app-frame');
+    render(<CustomAppHost app={SAMPLE} onOpenChat={onOpenChat} />);
+    const frame = screen.getByTestId('custom-app-frame');
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
@@ -60,8 +60,8 @@ test('ignores bridge messages after the frame navigates to another origin', () =
 test('allows an app to open chat or seed the composer without sending', () => {
     const onOpenChat = vi.fn();
     const onComposeChat = vi.fn();
-    render(<FolderAppHost app={SAMPLE} onOpenChat={onOpenChat} onComposeChat={onComposeChat} />);
-    const frame = screen.getByTestId('folder-app-frame');
+    render(<CustomAppHost app={SAMPLE} onOpenChat={onOpenChat} onComposeChat={onComposeChat} />);
+    const frame = screen.getByTestId('custom-app-frame');
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
@@ -80,8 +80,8 @@ test('allows an app to open chat or seed the composer without sending', () => {
 });
 
 test('downloads supported URLs and rejects executable URL schemes', () => {
-    render(<FolderAppHost app={SAMPLE} />);
-    const frame = screen.getByTestId('folder-app-frame');
+    render(<CustomAppHost app={SAMPLE} />);
+    const frame = screen.getByTestId('custom-app-frame');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
     window.dispatchEvent(new MessageEvent('message', {

@@ -12,12 +12,12 @@ export default function HomeView({ slug, onOpenApps, onHomeAppChange, onOpenApp 
         let cancelled = false;
         setLoading(true);
         setError('');
-        fetch('/api/folder-apps')
+        fetch('/api/custom-apps')
             .then(async (response) => {
                 const body = await response.json();
                 if (!response.ok) throw new Error(body.error?.message || 'Could not load Home app');
                 const app = (body.apps || []).find((candidate) => candidate.slug === slug);
-                if (!app) throw new Error(`The folder app “${slug}” could not be found.`);
+                if (!app) throw new Error(`The Custom App “${slug}” could not be found.`);
                 if (!cancelled) onOpenApp(app);
             })
             .catch((err) => { if (!cancelled) setError(err.message); })
@@ -26,7 +26,7 @@ export default function HomeView({ slug, onOpenApps, onHomeAppChange, onOpenApp 
     }, [slug, onOpenApp]);
 
     const removeFromHome = async () => {
-        const response = await fetch('/api/folder-apps/home', { method: 'DELETE' });
+        const response = await fetch('/api/custom-apps/home', { method: 'DELETE' });
         const body = await response.json();
         if (!response.ok) {
             setError(body.error?.message || 'Could not remove Home app');

@@ -17,7 +17,7 @@ import AgentsView from './components/agents/AgentsView.jsx';
 import ArtifactsHubView from './components/artifacts/ArtifactsHubView.jsx';
 import AppsView from './components/apps/AppsView.jsx';
 import HomeView from './components/apps/HomeView.jsx';
-import FolderAppWorkspace from './components/apps/FolderAppWorkspace.jsx';
+import CustomAppWorkspace from './components/apps/CustomAppWorkspace.jsx';
 import PreviewPanel from './components/PreviewPanel.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
@@ -88,18 +88,18 @@ function DesktopAppInner() {
 
     useEffect(() => {
         if (initialHomeAppliedRef.current || setupComplete !== true) return;
-        if (!features.folder_apps || !homeAppSlug) return;
+        if (!features.custom_apps || !homeAppSlug) return;
         initialHomeAppliedRef.current = true;
         setView('home');
-    }, [features.folder_apps, homeAppSlug, setupComplete]);
+    }, [features.custom_apps, homeAppSlug, setupComplete]);
 
     useEffect(() => {
-        if (features.folder_apps) return;
+        if (features.custom_apps) return;
         setWorkspaceApp(null);
         setWorkspaceActiveTab(null);
         setWorkspaceOrigin('apps');
         setView((current) => ['apps', 'home', 'workspace'].includes(current) ? 'chat' : current);
-    }, [features.folder_apps]);
+    }, [features.custom_apps]);
 
     const { addToast } = useToast();
 
@@ -680,7 +680,7 @@ function DesktopAppInner() {
                     onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
                     onPanelToggle={handlePanelToggle}
-                    folderAppsEnabled={features.folder_apps}
+                    customAppsEnabled={features.custom_apps}
                     homeAppEnabled={Boolean(homeAppSlug)}
                 />
 
@@ -706,7 +706,7 @@ function DesktopAppInner() {
                     {view === 'artifacts' && (
                         <ArtifactsHubView onOpenConversation={openArtifactInConversation} />
                     )}
-                    {view === 'apps' && features.folder_apps && (
+                    {view === 'apps' && features.custom_apps && (
                         <AppsView
                             homeAppSlug={homeAppSlug}
                             onHomeAppChange={handleHomeAppChange}
@@ -714,7 +714,7 @@ function DesktopAppInner() {
                             onOpenAppBesideChat={openAppBesideChat}
                         />
                     )}
-                    {view === 'home' && features.folder_apps && homeAppSlug && (
+                    {view === 'home' && features.custom_apps && homeAppSlug && (
                         <HomeView
                             slug={homeAppSlug}
                             onOpenApps={openAppsLibrary}
@@ -770,7 +770,7 @@ function DesktopAppInner() {
                     {workspaceSplit && <SplitHandle onDrag={preview.setSplitPosition} />}
 
                     {workspaceApp && (
-                        <FolderAppWorkspace
+                        <CustomAppWorkspace
                             app={workspaceApp}
                             visible={workspaceVisible}
                             layout={workspaceLayout}
@@ -786,7 +786,7 @@ function DesktopAppInner() {
                             onHomeAppChange={handleHomeAppChange}
                         >
                             {renderPreviewContent(workspaceActiveTab)}
-                        </FolderAppWorkspace>
+                        </CustomAppWorkspace>
                     )}
 
                     {/* Shared split handle + preview panel — visible alongside chat OR agent activity */}

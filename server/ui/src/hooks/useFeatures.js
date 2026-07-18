@@ -6,7 +6,7 @@ const DEFAULTS = {
     desktop: false,
     visual_grounding: false,
     custom_tools: false,
-    folder_apps: false,
+    custom_apps: false,
 };
 
 /**

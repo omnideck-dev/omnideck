@@ -2,14 +2,14 @@ import { useState } from 'react';
 
 import Button from '../primitives/Button.jsx';
 import PreviewPanel from '../PreviewPanel.jsx';
-import FolderAppHost from './FolderAppHost.jsx';
-import styles from './FolderAppWorkspace.module.css';
+import CustomAppHost from './CustomAppHost.jsx';
+import styles from './CustomAppWorkspace.module.css';
 
 /**
  * Shell-scoped app surface. It stays mounted while presentation changes
  * between full-space, hidden, and the shared chat/preview workspace.
  */
-export default function FolderAppWorkspace({
+export default function CustomAppWorkspace({
     app,
     visible,
     layout,
@@ -33,7 +33,7 @@ export default function FolderAppWorkspace({
 
     const toggleHome = async () => {
         setError('');
-        const response = await fetch('/api/folder-apps/home', isHome
+        const response = await fetch('/api/custom-apps/home', isHome
             ? { method: 'DELETE' }
             : {
                 method: 'PUT',
@@ -52,12 +52,12 @@ export default function FolderAppWorkspace({
     return (
         <div
             className={`${styles.workspace} ${isFull ? styles.full : styles.split} ${!visible ? styles.hidden : ''}`}
-            data-testid={origin === 'home' ? 'home-view' : 'folder-app-workspace'}
+            data-testid={origin === 'home' ? 'home-view' : 'custom-app-workspace'}
         >
             {isFull && (
                 <div className={styles.toolbar}>
                     {origin === 'apps' ? (
-                        <Button variant="ghost" onClick={onOpenApps} data-testid="folder-app-back">
+                        <Button variant="ghost" onClick={onOpenApps} data-testid="custom-app-back">
                             <i className="bi bi-arrow-left" /> Apps
                         </Button>
                     ) : null}
@@ -66,20 +66,20 @@ export default function FolderAppWorkspace({
                         <strong>{app.title}</strong>
                         {origin === 'home'
                             ? <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
-                            : <span className={styles.appKind}>Experimental folder app</span>}
+                            : <span className={styles.appKind}>Experimental Custom App</span>}
                     </div>
                     {origin === 'home' && (
                         <Button variant="ghost" onClick={onOpenApps} data-testid="home-open-apps">
                             <i className="bi bi-grid" /> Apps
                         </Button>
                     )}
-                    <Button variant="filled" onClick={onOpenChat} data-testid="folder-app-chat">
+                    <Button variant="filled" onClick={onOpenChat} data-testid="custom-app-chat">
                         <i className="bi bi-stars" /> Chat with Agent
                     </Button>
                     <Button
                         variant="ghost"
                         onClick={toggleHome}
-                        data-testid={origin === 'home' ? 'home-app-remove' : 'folder-app-home-toggle'}
+                        data-testid={origin === 'home' ? 'home-app-remove' : 'custom-app-home-toggle'}
                     >
                         <i className={`bi ${isHome ? 'bi-house-dash' : 'bi-house-add'}`} />
                         {isHome ? 'Remove from Home' : 'Set as Home'}
@@ -88,7 +88,7 @@ export default function FolderAppWorkspace({
                         variant="ghost"
                         onClick={() => setReloadSignal((value) => value + 1)}
                         title="Reload app files"
-                        data-testid={origin === 'home' ? 'home-app-reload' : 'folder-app-reload'}
+                        data-testid={origin === 'home' ? 'home-app-reload' : 'custom-app-reload'}
                     >
                         <i className="bi bi-arrow-clockwise" /> Reload
                     </Button>
@@ -107,13 +107,13 @@ export default function FolderAppWorkspace({
                         onClick={() => setReloadSignal((value) => value + 1)}
                         title="Reload app files"
                         aria-label="Reload app"
-                        data-testid="folder-app-tab-reload"
+                        data-testid="custom-app-tab-reload"
                     >
                         <i className="bi bi-arrow-clockwise" />
                     </Button>
                 ) : null}
             >
-                <FolderAppHost
+                <CustomAppHost
                     app={app}
                     reloadSignal={reloadSignal}
                     active={visible && activeTab === appTabId}

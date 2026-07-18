@@ -1,4 +1,4 @@
-"""Subprocess entry point for one experimental folder-app action."""
+"""Subprocess entry point for one experimental Custom App action."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class ActionError(Exception):
 
 def _load_actions(app_root: Path) -> dict[str, Any]:
     source = app_root / "app.py"
-    spec = importlib.util.spec_from_file_location("_omnideck_folder_app", source)
+    spec = importlib.util.spec_from_file_location("_omnideck_custom_app", source)
     if spec is None or spec.loader is None:
         raise ActionError("APP_LOAD_FAILED", "Could not load app.py.")
     module = importlib.util.module_from_spec(spec)

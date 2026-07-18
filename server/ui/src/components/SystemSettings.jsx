@@ -94,7 +94,7 @@ export default function SystemSettings() {
                 </div>
                 <div className={styles.settingInfo}>
                     <span className={styles.settingTitle}>Custom Apps</span>
-                    <span className={styles.settingDesc}>Discover and run folder-based apps from your Omnideck home directory.</span>
+                    <span className={styles.settingDesc}>Discover and run Custom Apps from your Omnideck home directory.</span>
                 </div>
                 <ToggleSwitch
                     checked={!!settings.custom_apps_enabled}

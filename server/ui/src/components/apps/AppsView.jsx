@@ -19,7 +19,7 @@ export default function AppsView({
     const loadApps = useCallback(() => {
         setLoading(true);
         setError('');
-        fetch('/api/folder-apps')
+        fetch('/api/custom-apps')
             .then(async (response) => {
                 const body = await response.json();
                 if (!response.ok) throw new Error(body.error?.message || 'Could not load apps');
@@ -40,7 +40,7 @@ export default function AppsView({
                     {!loading && <span className={styles.count}>· {apps.length}</span>}
                 </h1>
                 <span className={styles.rootHint}>Folders in ~/apps</span>
-                <Button variant="ghost" onClick={loadApps} data-testid="folder-apps-refresh">
+                <Button variant="ghost" onClick={loadApps} data-testid="custom-apps-refresh">
                     <i className="bi bi-arrow-clockwise" /> Refresh
                 </Button>
             </div>
@@ -49,7 +49,7 @@ export default function AppsView({
                 {!loading && !error && apps.length === 0 && (
                     <div className={styles.empty}>
                         <i className="bi bi-folder-plus" />
-                        <strong>No folder apps found</strong>
+                        <strong>No Custom Apps found</strong>
                         <span>Add a folder containing omnideck.json and web/index.html.</span>
                     </div>
                 )}
@@ -61,7 +61,7 @@ export default function AppsView({
                                     type="button"
                                     className={styles.card}
                                     onClick={() => onOpenApp(app)}
-                                    data-testid="folder-app-card"
+                                    data-testid="custom-app-card"
                                 >
                                     <div className={styles.cardIcon}><i className={`bi ${app.icon}`} /></div>
                                     <div className={styles.cardBody}>
@@ -81,7 +81,7 @@ export default function AppsView({
                                     variant="ghost"
                                     className={styles.besideChat}
                                     onClick={() => onOpenAppBesideChat(app)}
-                                    data-testid={`folder-app-open-split-${app.slug}`}
+                                    data-testid={`custom-app-open-split-${app.slug}`}
                                 >
                                     <i className="bi bi-layout-split" /> Open beside Chat
                                 </Button>

@@ -13,7 +13,7 @@ const SAMPLE = {
 
 beforeEach(() => {
     global.fetch = vi.fn((url, options = {}) => {
-        if (url === '/api/folder-apps' && !options.method) {
+        if (url === '/api/custom-apps' && !options.method) {
             return Promise.resolve({ ok: true, json: async () => ({ apps: [SAMPLE] }) });
         }
         return Promise.resolve({ ok: true, json: async () => ({ ok: true, home_app_slug: null }) });
@@ -38,7 +38,7 @@ test('resolves the configured app into the shell-level Home workspace', async ()
 
 test('recovers when the configured Home app no longer exists', async () => {
     global.fetch = vi.fn((url, options = {}) => {
-        if (url === '/api/folder-apps' && !options.method) {
+        if (url === '/api/custom-apps' && !options.method) {
             return Promise.resolve({ ok: true, json: async () => ({ apps: [] }) });
         }
         return Promise.resolve({ ok: true, json: async () => ({ ok: true, home_app_slug: null }) });
@@ -56,7 +56,7 @@ test('recovers when the configured Home app no longer exists', async () => {
 
     fireEvent.click(await screen.findByText('Use Chat as Home'));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
-        '/api/folder-apps/home', { method: 'DELETE' },
+        '/api/custom-apps/home', { method: 'DELETE' },
     ));
     expect(onHomeAppChange).toHaveBeenCalledWith(null);
     expect(onOpenApps).toHaveBeenCalledOnce();

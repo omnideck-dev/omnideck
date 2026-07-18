@@ -15,7 +15,7 @@ async def handle_features(_request: web.Request) -> web.Response:
         "desktop": features.desktop,
         "visual_grounding": features.visual_grounding,
         "custom_tools": features.custom_tools,
-        "folder_apps": custom_apps_enabled(),
+        "custom_apps": custom_apps_enabled(),
     })
 
 

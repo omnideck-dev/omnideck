@@ -1,4 +1,4 @@
-"""End-to-end coverage for the file-based app spike."""
+"""End-to-end coverage for Custom Apps."""
 
 import re
 
@@ -33,7 +33,7 @@ actions = {"analyze": analyze}
     <button id="ask-agent">Ask agent about this</button>
     <div id="status">Ready</div>
     <div id="metrics" hidden><span>Words</span> <strong id="words"></strong></div>
-    <script src="/api/folder-apps/sdk.js"></script>
+    <script src="/api/custom-apps/sdk.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
@@ -75,7 +75,7 @@ def installed_custom_app(page: Page):
         yield
     finally:
         page.request.put("/api/settings", data={"custom_apps_enabled": True})
-        page.request.delete("/api/folder-apps/home")
+        page.request.delete("/api/custom-apps/home")
         page.request.put("/api/settings", data={"custom_apps_enabled": False})
         container_exec(
             "import shutil\n"
@@ -85,7 +85,7 @@ def installed_custom_app(page: Page):
         )
 
 
-def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom_app) -> None:
+def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -> None:
     """The shell lists an installed app, opens its frame, and bridges an action."""
     page.request.put("/api/settings", data={"custom_apps_enabled": False})
     ChatView(page).goto()
@@ -104,8 +104,8 @@ def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom
     expect(page.get_by_test_id("apps-view")).to_be_visible()
     expect(page.get_by_text("Text Lab", exact=True)).to_be_visible()
 
-    page.get_by_test_id("folder-app-card").click()
-    frame = page.frame_locator('[data-testid="folder-app-frame"]')
+    page.get_by_test_id("custom-app-card").click()
+    frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
 
     # Trusted apps can use the existing container-home file route directly.
@@ -150,7 +150,7 @@ def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom
     expect(frame.locator("#text")).to_have_value(working_text)
 
     # Split-view tabs can reload frontend files without refreshing Omnideck.
-    page.get_by_test_id("folder-app-tab-reload").click()
+    page.get_by_test_id("custom-app-tab-reload").click()
     expect(frame.locator("#text")).to_have_value(
         "The simplest useful app should feel like a folder you can open."
     )
@@ -162,17 +162,17 @@ def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom
 
     # Reopen full-space before assigning it as Home.
     page.get_by_test_id("sidebar-nav-apps").click()
-    page.get_by_test_id("folder-app-card").click()
-    frame = page.frame_locator('[data-testid="folder-app-frame"]')
+    page.get_by_test_id("custom-app-card").click()
+    frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
 
     # Docking persists the app as Home; a full reload should land there.
-    page.get_by_test_id("folder-app-home-toggle").click()
-    expect(page.get_by_test_id("folder-app-home-toggle")).to_contain_text("Remove from Home")
+    page.get_by_test_id("custom-app-home-toggle").click()
+    expect(page.get_by_test_id("custom-app-home-toggle")).to_contain_text("Remove from Home")
     page.reload()
 
     expect(page.get_by_test_id("home-view")).to_be_visible()
-    home_frame = page.frame_locator('[data-testid="folder-app-frame"]')
+    home_frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(home_frame.get_by_role("heading", name="Text Lab")).to_be_visible()
 
     # Clear persisted state so this spike remains isolated from the rest of the suite.

@@ -33,7 +33,7 @@ from server._container_file_routes import register_container_file_routes
 from server._browser_control_routes import register_browser_control_routes
 from server._conversation_routes import register_conversation_routes
 from server._feature_routes import register_feature_routes
-from server._folder_app_routes import register_folder_app_routes
+from server._custom_app_routes import register_custom_app_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._model_routes import register_model_routes
@@ -368,8 +368,8 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
     # Feature flags
     register_feature_routes(app)
 
-    # Experimental file-based apps
-    register_folder_app_routes(app)
+    # Experimental Custom Apps
+    register_custom_app_routes(app)
 
     # Models + agents + providers
     register_model_routes(app)

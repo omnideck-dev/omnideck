@@ -15,7 +15,7 @@ const NAV = [
     { id: 'agents', icon: 'bi-robot', label: 'Agents' },
     { id: 'routines', icon: 'bi-bullseye', label: 'Routines' },
     { id: 'artifacts', icon: 'bi-collection', label: 'Artifacts' },
-    { id: 'apps', icon: 'bi-grid', label: 'Apps', feature: 'folderApps' },
+    { id: 'apps', icon: 'bi-grid', label: 'Apps', feature: 'customApps' },
 ];
 
 function _readCollapsed() {
@@ -43,7 +43,7 @@ export default function Sidebar({
     onOpenDesktop,
     onLoadConversation,
     activeConversationId,
-    folderAppsEnabled,
+    customAppsEnabled,
     homeAppEnabled,
 }) {
     const { dark, toggleTheme } = useTheme();
@@ -99,8 +99,8 @@ export default function Sidebar({
 
             <nav className={styles.nav}>
                 {NAV.filter((panel) => {
-                    if (panel.feature === 'folderApps') return folderAppsEnabled;
-                    if (panel.feature === 'homeApp') return folderAppsEnabled && homeAppEnabled;
+                    if (panel.feature === 'customApps') return customAppsEnabled;
+                    if (panel.feature === 'homeApp') return customAppsEnabled && homeAppEnabled;
                     return true;
                 }).map((panel) => {
                     const active = activePanel === panel.id;

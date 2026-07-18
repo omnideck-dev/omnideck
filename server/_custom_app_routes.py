@@ -1,4 +1,4 @@
-"""HTTP surface for experimental file-based apps."""
+"""HTTP surface for experimental Custom Apps."""
 
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 _APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
 _ACTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
-_RUNNER_PATH = Path(__file__).with_name("_folder_app_runner.py")
+_RUNNER_PATH = Path(__file__).with_name("_custom_app_runner.py")
 _MAX_RUNNER_OUTPUT = 1024 * 1024
 _RUNNER_TIMEOUT_SECONDS = 120.0
 
 
-class FolderAppManifest(BaseModel):
+class CustomAppManifest(BaseModel):
     """User-authored metadata that marks a folder as an app."""
 
     model_config = ConfigDict(extra="forbid")
@@ -70,12 +70,12 @@ class RunnerEnvelope(BaseModel):
 
 
 @dataclass(frozen=True)
-class FolderApp:
+class CustomApp:
     """A validated app folder discovered beneath an allowed root."""
 
     slug: str
     path: Path
-    manifest: FolderAppManifest
+    manifest: CustomAppManifest
 
     def to_dict(self) -> dict[str, str | bool]:
         """Return metadata safe to expose to the frontend."""
@@ -88,8 +88,8 @@ class FolderApp:
         }
 
 
-class FolderAppRuntimeError(Exception):
-    """A failure to locate or execute a folder app action."""
+class CustomAppRuntimeError(Exception):
+    """A failure to locate or execute a Custom App action."""
 
     def __init__(self, code: str, message: str, *, status: int) -> None:
         super().__init__(message)
@@ -97,17 +97,17 @@ class FolderAppRuntimeError(Exception):
         self.status = status
 
 
-def folder_app_roots() -> tuple[Path, ...]:
+def custom_app_roots() -> tuple[Path, ...]:
     """Return the user-owned Custom Apps root."""
     config = load_config()
     user = Path(config.virtual_computer.home_dir) / "apps"
     return (user,)
 
 
-def discover_folder_apps() -> list[FolderApp]:
+def discover_custom_apps() -> list[CustomApp]:
     """Discover valid direct-child app directories or directory symlinks."""
-    discovered: dict[str, FolderApp] = {}
-    for root in folder_app_roots():
+    discovered: dict[str, CustomApp] = {}
+    for root in custom_app_roots():
         if not root.is_dir():
             continue
         for candidate in root.iterdir():
@@ -116,7 +116,7 @@ def discover_folder_apps() -> list[FolderApp]:
             try:
                 app_path = candidate.resolve(strict=True)
             except (OSError, RuntimeError) as exc:
-                logger.warning("Ignoring unresolved folder app %s: %s", candidate.name, exc)
+                logger.warning("Ignoring unresolved Custom App %s: %s", candidate.name, exc)
                 continue
             if not app_path.is_dir():
                 continue
@@ -125,11 +125,11 @@ def discover_folder_apps() -> list[FolderApp]:
             if not manifest_path.is_file() or not frontend_path.is_file():
                 continue
             try:
-                manifest = FolderAppManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+                manifest = CustomAppManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
             except (OSError, ValidationError) as exc:
-                logger.warning("Ignoring invalid folder app %s: %s", candidate.name, exc)
+                logger.warning("Ignoring invalid Custom App %s: %s", candidate.name, exc)
                 continue
-            discovered[candidate.name] = FolderApp(
+            discovered[candidate.name] = CustomApp(
                 slug=candidate.name,
                 path=app_path,
                 manifest=manifest,
@@ -137,18 +137,18 @@ def discover_folder_apps() -> list[FolderApp]:
     return sorted(discovered.values(), key=lambda app: (app.manifest.title.casefold(), app.slug))
 
 
-def resolve_folder_app(slug: str) -> FolderApp | None:
+def resolve_custom_app(slug: str) -> CustomApp | None:
     """Resolve one currently valid app by slug."""
     if not _APP_SLUG.fullmatch(slug):
         return None
-    return next((app for app in discover_folder_apps() if app.slug == slug), None)
+    return next((app for app in discover_custom_apps() if app.slug == slug), None)
 
 
 def _feature_disabled() -> web.Response | None:
     if custom_apps_enabled():
         return None
     return web.json_response(
-        {"ok": False, "error": {"code": "FEATURE_DISABLED", "message": "Folder apps are disabled."}},
+        {"ok": False, "error": {"code": "FEATURE_DISABLED", "message": "Custom Apps are disabled."}},
         status=403,
     )
 
@@ -157,31 +157,31 @@ def _error_response(code: str, message: str, status: int) -> web.Response:
     return web.json_response({"ok": False, "error": {"code": code, "message": message}}, status=status)
 
 
-async def list_folder_apps_handler(_request: web.Request) -> web.Response:
-    """List every currently valid folder app."""
+async def list_custom_apps_handler(_request: web.Request) -> web.Response:
+    """List every currently valid Custom App."""
     if disabled := _feature_disabled():
         return disabled
     return web.json_response({
-        "apps": [app.to_dict() for app in discover_folder_apps()],
+        "apps": [app.to_dict() for app in discover_custom_apps()],
         "home_app_slug": load_settings().get("home_app_slug"),
     })
 
 
-async def set_home_folder_app_handler(request: web.Request) -> web.Response:
-    """Assign one currently valid folder app to the trusted Home slot."""
+async def set_home_custom_app_handler(request: web.Request) -> web.Response:
+    """Assign one currently valid Custom App to the trusted Home slot."""
     if disabled := _feature_disabled():
         return disabled
     try:
         payload = HomeAppRequest.model_validate_json(await request.text())
     except ValidationError:
-        return _error_response("VALIDATION_ERROR", "Expected a valid folder-app slug.", 400)
-    if resolve_folder_app(payload.slug) is None:
-        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+        return _error_response("VALIDATION_ERROR", "Expected a valid custom-app slug.", 400)
+    if resolve_custom_app(payload.slug) is None:
+        return _error_response("APP_NOT_FOUND", "Custom App not found.", 404)
     save_settings({"home_app_slug": payload.slug})
     return web.json_response({"ok": True, "home_app_slug": payload.slug})
 
 
-async def clear_home_folder_app_handler(_request: web.Request) -> web.Response:
+async def clear_home_custom_app_handler(_request: web.Request) -> web.Response:
     """Restore Chat as the default landing view."""
     if disabled := _feature_disabled():
         return disabled
@@ -189,7 +189,7 @@ async def clear_home_folder_app_handler(_request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "home_app_slug": None})
 
 
-async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
+async def custom_app_sdk_handler(_request: web.Request) -> web.Response:
     """Serve the tiny frame-to-shell invocation bridge."""
     if disabled := _feature_disabled():
         return disabled
@@ -212,7 +212,7 @@ async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
   window.omnideck = Object.freeze({
     invoke(action, args = {}) {
       return new Promise((resolve, reject) => {
-        const id = `folder-app-${Date.now()}-${++sequence}`;
+        const id = `custom-app-${Date.now()}-${++sequence}`;
         pending.set(id, { resolve, reject });
         window.parent.postMessage({ type: 'omnideck:invoke', id, action, args }, shellOrigin);
       });
@@ -238,13 +238,13 @@ async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
     )
 
 
-async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
+async def custom_app_frame_handler(request: web.Request) -> web.StreamResponse:
     """Serve one file from an app's frontend directory."""
     if disabled := _feature_disabled():
         return disabled
-    app = resolve_folder_app(request.match_info["slug"])
+    app = resolve_custom_app(request.match_info["slug"])
     if app is None:
-        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+        return _error_response("APP_NOT_FOUND", "Custom App not found.", 404)
 
     relative = request.match_info.get("path", "") or "index.html"
     if relative.endswith("/"):
@@ -262,12 +262,12 @@ async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(target, headers=headers)
 
 
-async def invoke_folder_app_action(app: FolderApp, action: str, args: dict[str, Any]) -> Any:
+async def invoke_custom_app_action(app: CustomApp, action: str, args: dict[str, Any]) -> Any:
     """Invoke one action in a fresh isolated-mode Python subprocess."""
     if not _ACTION_NAME.fullmatch(action):
-        raise FolderAppRuntimeError("ACTION_NOT_FOUND", "App action not found.", status=404)
+        raise CustomAppRuntimeError("ACTION_NOT_FOUND", "App action not found.", status=404)
     if not (app.path / "app.py").is_file():
-        raise FolderAppRuntimeError("APP_HAS_NO_ACTIONS", "This app has no backend actions.", status=404)
+        raise CustomAppRuntimeError("APP_HAS_NO_ACTIONS", "This app has no backend actions.", status=404)
 
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -294,7 +294,7 @@ async def invoke_folder_app_action(app: FolderApp, action: str, args: dict[str, 
         except ProcessLookupError:
             pass
         await process.wait()
-        raise FolderAppRuntimeError("ACTION_TIMEOUT", "App action exceeded its time limit.", status=504) from exc
+        raise CustomAppRuntimeError("ACTION_TIMEOUT", "App action exceeded its time limit.", status=504) from exc
     except asyncio.CancelledError:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -304,57 +304,57 @@ async def invoke_folder_app_action(app: FolderApp, action: str, args: dict[str, 
         raise
 
     if len(stdout) > _MAX_RUNNER_OUTPUT:
-        raise FolderAppRuntimeError("ACTION_RESULT_TOO_LARGE", "App action returned too much data.", status=500)
+        raise CustomAppRuntimeError("ACTION_RESULT_TOO_LARGE", "App action returned too much data.", status=500)
     if process.returncode != 0:
         detail = stderr.decode("utf-8", errors="replace").strip()[:500]
-        logger.warning("Folder app runner failed for %s/%s: %s", app.slug, action, detail)
-        raise FolderAppRuntimeError("ACTION_RUNNER_FAILED", "App action runner failed.", status=500)
+        logger.warning("Custom App runner failed for %s/%s: %s", app.slug, action, detail)
+        raise CustomAppRuntimeError("ACTION_RUNNER_FAILED", "App action runner failed.", status=500)
     try:
         envelope = RunnerEnvelope.model_validate_json(stdout)
     except ValidationError as exc:
-        logger.warning("Invalid folder app runner response for %s/%s: %s", app.slug, action, exc)
-        raise FolderAppRuntimeError("ACTION_PROTOCOL_ERROR", "App action returned an invalid response.", status=500) from exc
+        logger.warning("Invalid Custom App runner response for %s/%s: %s", app.slug, action, exc)
+        raise CustomAppRuntimeError("ACTION_PROTOCOL_ERROR", "App action returned an invalid response.", status=500) from exc
     if not envelope.ok:
         error = envelope.error or RunnerError(code="ACTION_FAILED", message="App action failed.")
         status = 404 if error.code == "ACTION_NOT_FOUND" else 400
-        raise FolderAppRuntimeError(error.code, error.message, status=status)
+        raise CustomAppRuntimeError(error.code, error.message, status=status)
     return envelope.result
 
 
-async def invoke_folder_app_handler(request: web.Request) -> web.Response:
-    """Validate and execute one public action from a folder app."""
+async def invoke_custom_app_handler(request: web.Request) -> web.Response:
+    """Validate and execute one public action from a Custom App."""
     if disabled := _feature_disabled():
         return disabled
-    app = resolve_folder_app(request.match_info["slug"])
+    app = resolve_custom_app(request.match_info["slug"])
     if app is None:
-        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+        return _error_response("APP_NOT_FOUND", "Custom App not found.", 404)
     try:
         payload = InvokeRequest.model_validate_json(await request.text())
     except ValidationError:
         return _error_response("VALIDATION_ERROR", "Expected a JSON object containing an args object.", 400)
     try:
-        result = await invoke_folder_app_action(app, request.match_info["action"], payload.args)
-    except FolderAppRuntimeError as exc:
+        result = await invoke_custom_app_action(app, request.match_info["action"], payload.args)
+    except CustomAppRuntimeError as exc:
         return _error_response(exc.code, str(exc), exc.status)
     return web.json_response({"ok": True, "result": result})
 
 
-def register_folder_app_routes(app: web.Application) -> None:
-    """Register the experimental folder-app routes."""
-    app.router.add_route("GET", "/api/folder-apps", list_folder_apps_handler)
-    app.router.add_route("PUT", "/api/folder-apps/home", set_home_folder_app_handler)
-    app.router.add_route("DELETE", "/api/folder-apps/home", clear_home_folder_app_handler)
-    app.router.add_route("GET", "/api/folder-apps/sdk.js", folder_app_sdk_handler)
-    app.router.add_route("GET", "/api/folder-apps/{slug}/frame/{path:.*}", folder_app_frame_handler)
-    app.router.add_route("POST", "/api/folder-apps/{slug}/invoke/{action}", invoke_folder_app_handler)
+def register_custom_app_routes(app: web.Application) -> None:
+    """Register the experimental custom-app routes."""
+    app.router.add_route("GET", "/api/custom-apps", list_custom_apps_handler)
+    app.router.add_route("PUT", "/api/custom-apps/home", set_home_custom_app_handler)
+    app.router.add_route("DELETE", "/api/custom-apps/home", clear_home_custom_app_handler)
+    app.router.add_route("GET", "/api/custom-apps/sdk.js", custom_app_sdk_handler)
+    app.router.add_route("GET", "/api/custom-apps/{slug}/frame/{path:.*}", custom_app_frame_handler)
+    app.router.add_route("POST", "/api/custom-apps/{slug}/invoke/{action}", invoke_custom_app_handler)
 
 
 __all__ = [
-    "FolderApp",
-    "FolderAppRuntimeError",
-    "discover_folder_apps",
-    "folder_app_roots",
-    "invoke_folder_app_action",
-    "register_folder_app_routes",
-    "resolve_folder_app",
+    "CustomApp",
+    "CustomAppRuntimeError",
+    "discover_custom_apps",
+    "custom_app_roots",
+    "invoke_custom_app_action",
+    "register_custom_app_routes",
+    "resolve_custom_app",
 ]

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import FolderAppWorkspace from '../FolderAppWorkspace.jsx';
+import CustomAppWorkspace from '../CustomAppWorkspace.jsx';
 
 const SAMPLE = {
     slug: 'text-lab',
@@ -31,12 +31,12 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 test('keeps the same iframe mounted when moving from full-space into a tab', () => {
-    const { rerender } = render(<FolderAppWorkspace {...baseProps} layout="full" />);
-    const frame = screen.getByTestId('folder-app-frame');
+    const { rerender } = render(<CustomAppWorkspace {...baseProps} layout="full" />);
+    const frame = screen.getByTestId('custom-app-frame');
     expect(screen.queryByTestId('preview-tab-bar')).not.toBeInTheDocument();
 
-    rerender(<FolderAppWorkspace {...baseProps} layout="split" />);
-    expect(screen.getByTestId('folder-app-frame')).toBe(frame);
+    rerender(<CustomAppWorkspace {...baseProps} layout="split" />);
+    expect(screen.getByTestId('custom-app-frame')).toBe(frame);
     expect(screen.getByTestId('preview-tab-app:text-lab')).toBeInTheDocument();
 });
 
@@ -44,23 +44,23 @@ test('opens the current chat and closes globally through trusted shell controls'
     const onOpenChat = vi.fn();
     const onCloseTab = vi.fn();
     const { rerender } = render(
-        <FolderAppWorkspace {...baseProps} layout="full" onOpenChat={onOpenChat} onCloseTab={onCloseTab} />,
+        <CustomAppWorkspace {...baseProps} layout="full" onOpenChat={onOpenChat} onCloseTab={onCloseTab} />,
     );
-    fireEvent.click(screen.getByTestId('folder-app-chat'));
+    fireEvent.click(screen.getByTestId('custom-app-chat'));
     expect(onOpenChat).toHaveBeenCalledOnce();
 
     rerender(
-        <FolderAppWorkspace {...baseProps} layout="split" onOpenChat={onOpenChat} onCloseTab={onCloseTab} />,
+        <CustomAppWorkspace {...baseProps} layout="split" onOpenChat={onOpenChat} onCloseTab={onCloseTab} />,
     );
     fireEvent.click(screen.getByTestId('close-tab-app:text-lab'));
     expect(onCloseTab).toHaveBeenCalledWith('app:text-lab');
 });
 
 test('reloads the app iframe from its split-view tab', () => {
-    render(<FolderAppWorkspace {...baseProps} layout="split" />);
-    const frame = screen.getByTestId('folder-app-frame');
+    render(<CustomAppWorkspace {...baseProps} layout="split" />);
+    const frame = screen.getByTestId('custom-app-frame');
 
-    fireEvent.click(screen.getByTestId('folder-app-tab-reload'));
+    fireEvent.click(screen.getByTestId('custom-app-tab-reload'));
 
-    expect(screen.getByTestId('folder-app-frame')).not.toBe(frame);
+    expect(screen.getByTestId('custom-app-frame')).not.toBe(frame);
 });

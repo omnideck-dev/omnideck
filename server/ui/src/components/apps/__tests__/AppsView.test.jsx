@@ -25,7 +25,7 @@ test('lists discovered apps and asks the shell to open one full-space', async ()
     render(<AppsView onOpenApp={onOpenApp} />);
     expect(await screen.findByText('Text Lab')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('folder-app-card'));
+    fireEvent.click(screen.getByTestId('custom-app-card'));
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
 });
 
@@ -33,7 +33,7 @@ test('can open an app directly beside the active chat', async () => {
     const onOpenAppBesideChat = vi.fn();
     render(<AppsView onOpenAppBesideChat={onOpenAppBesideChat} />);
 
-    fireEvent.click(await screen.findByTestId('folder-app-open-split-text-lab'));
+    fireEvent.click(await screen.findByTestId('custom-app-open-split-text-lab'));
     expect(onOpenAppBesideChat).toHaveBeenCalledWith(SAMPLE);
 });
 

@@ -12,7 +12,7 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_folder_apps_feature_comes_from_settings(monkeypatch, enabled: bool) -> None:
+async def test_custom_apps_feature_comes_from_settings(monkeypatch, enabled: bool) -> None:
     monkeypatch.setattr(
         "server._feature_routes.load_config",
         lambda: SimpleNamespace(features=SimpleNamespace(
@@ -32,6 +32,6 @@ async def test_folder_apps_feature_comes_from_settings(monkeypatch, enabled: boo
     try:
         response = await client.get("/api/features")
         assert response.status == 200
-        assert (await response.json())["folder_apps"] is enabled
+        assert (await response.json())["custom_apps"] is enabled
     finally:
         await client.close()

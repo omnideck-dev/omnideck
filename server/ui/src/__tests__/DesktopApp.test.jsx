@@ -118,10 +118,10 @@ vi.mock('../components/apps/HomeView.jsx', () => ({
     default: () => <div data-testid="home-view">Home</div>,
 }));
 
-vi.mock('../components/apps/FolderAppWorkspace.jsx', () => ({
+vi.mock('../components/apps/CustomAppWorkspace.jsx', () => ({
     default: ({ app, visible, layout, onOpenChat, onCloseTab, onComposeChat }) => (
         <div
-            data-testid="folder-app-workspace"
+            data-testid="custom-app-workspace"
             data-visible={visible ? 'true' : 'false'}
             data-layout={layout}
         >
@@ -348,7 +348,7 @@ describe('DesktopApp view transitions', () => {
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
         });
 
-        it('lands on a docked custom app when folder apps are enabled', async () => {
+        it('lands on a docked custom app when Custom Apps are enabled', async () => {
             globalThis.fetch = vi.fn((url) => {
                 if (url === '/api/settings') {
                     return Promise.resolve({
@@ -357,7 +357,7 @@ describe('DesktopApp view transitions', () => {
                     });
                 }
                 if (url === '/api/features') {
-                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ folder_apps: true }) });
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ custom_apps: true }) });
                 }
                 if (url === '/api/providers') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
@@ -387,7 +387,7 @@ describe('DesktopApp view transitions', () => {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ setup_complete: true }) });
                 }
                 if (url === '/api/features') {
-                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ folder_apps: true }) });
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ custom_apps: true }) });
                 }
                 if (url === '/api/providers') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
@@ -407,19 +407,19 @@ describe('DesktopApp view transitions', () => {
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
-            const workspace = screen.getByTestId('folder-app-workspace');
+            const workspace = screen.getByTestId('custom-app-workspace');
             expect(workspace).toHaveAttribute('data-layout', 'full');
             expect(workspace).toHaveAttribute('data-visible', 'true');
 
             fireEvent.click(screen.getByTestId('mock-workspace-chat'));
-            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
 
             fireEvent.click(screen.getByTestId('mock-workspace-close'));
-            expect(screen.queryByTestId('folder-app-workspace')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('custom-app-workspace')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
@@ -431,7 +431,7 @@ describe('DesktopApp view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             fireEvent.click(screen.getByTestId('mock-workspace-compose'));
 
-            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
             expect(setDraft).toHaveBeenCalledOnce();
             const updateDraft = setDraft.mock.calls[0][0];
             expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
