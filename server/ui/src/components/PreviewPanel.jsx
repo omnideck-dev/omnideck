@@ -9,6 +9,7 @@ export default function PreviewPanel({
     onTabChange,
     onCloseTab,
     hideTabs = false,
+    actions = null,
     children,
 }) {
     return (
@@ -45,6 +46,7 @@ export default function PreviewPanel({
                         );
                     })}
                 </div>
+                {actions && <div className={styles.tabActions}>{actions}</div>}
             </div>}
             <div className={styles.contentArea} data-testid="preview-content">
                 {children}

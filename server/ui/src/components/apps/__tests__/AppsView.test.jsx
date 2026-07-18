@@ -9,7 +9,6 @@ const SAMPLE = {
     description: 'Inspect and transform text.',
     icon: 'bi-fonts',
     has_actions: true,
-    editable: false,
 };
 
 beforeEach(() => {

@@ -20,7 +20,7 @@ def test_only_discovers_apps_from_the_user_home(tmp_path: Path, monkeypatch) -> 
     config = SimpleNamespace(virtual_computer=SimpleNamespace(home_dir=home))
     monkeypatch.setattr("server._folder_app_routes.load_config", lambda: config)
 
-    assert folder_app_roots() == ((home / "apps", True),)
+    assert folder_app_roots() == (home / "apps",)
 
 
 def _write_app(root: Path, slug: str = "example") -> Path:
@@ -46,7 +46,7 @@ async def folder_apps_client(tmp_path: Path, monkeypatch) -> TestClient:
     root = tmp_path / "apps"
     root.mkdir()
     _write_app(root)
-    monkeypatch.setattr("server._folder_app_routes.folder_app_roots", lambda: ((root, True),))
+    monkeypatch.setattr("server._folder_app_routes.folder_app_roots", lambda: (root,))
     settings_state = {"custom_apps_enabled": True, "home_app_slug": None}
     monkeypatch.setattr("server._folder_app_routes.custom_apps_enabled", lambda: True)
     monkeypatch.setattr("server._folder_app_routes.load_settings", lambda: dict(settings_state))
@@ -79,7 +79,6 @@ async def test_lists_valid_folder_apps(folder_apps_client: TestClient) -> None:
             "description": "A test folder app.",
             "icon": "bi-stars",
             "has_actions": True,
-            "editable": True,
         }],
     }
 
@@ -140,7 +139,7 @@ async def test_serves_frontend_and_invokes_python_action(folder_apps_client: Tes
     assert frame.status == 200
     assert await frame.text() == "<h1>Folder app</h1>"
     content_security_policy = frame.headers["Content-Security-Policy"]
-    assert content_security_policy.startswith("frame-ancestors http://")
+    assert content_security_policy == "frame-ancestors 'self'"
     assert "default-src" not in content_security_policy
 
     response = await folder_apps_client.post(
@@ -158,6 +157,7 @@ async def test_sdk_exposes_explicit_chat_bridge(folder_apps_client: TestClient) 
     assert "omnideck:chat-open" in source
     assert "omnideck:chat-compose" in source
     assert "omnideck:download" in source
+    assert "event.origin !== shellOrigin" in source
 
 
 async def test_rejects_invalid_action_arguments(folder_apps_client: TestClient) -> None:
@@ -179,7 +179,7 @@ async def test_feature_flag_blocks_every_surface(tmp_path: Path, monkeypatch) ->
     root = tmp_path / "apps"
     root.mkdir()
     _write_app(root)
-    monkeypatch.setattr("server._folder_app_routes.folder_app_roots", lambda: ((root, True),))
+    monkeypatch.setattr("server._folder_app_routes.folder_app_roots", lambda: (root,))
     monkeypatch.setattr("server._folder_app_routes.custom_apps_enabled", lambda: False)
     app = web.Application()
     register_folder_app_routes(app)

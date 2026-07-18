@@ -606,6 +606,9 @@ function DesktopAppInner() {
 
     const workspaceVisible = view === 'workspace' && Boolean(workspaceApp);
     const workspaceSplit = workspaceVisible && workspaceLayout === 'split';
+    const activeSidebarPanel = view === 'workspace'
+        ? (workspaceLayout === 'full' && workspaceOrigin === 'home' ? 'home' : null)
+        : (['settings', 'routines', 'artifacts', 'agents', 'apps', 'home'].includes(view) ? view : null);
 
     // Preview column rides alongside chat, or alongside an agent's detail view.
     const hasPreview = preview.tabs.length > 0
@@ -666,9 +669,7 @@ function DesktopAppInner() {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={view === 'workspace'
-                        ? workspaceOrigin
-                        : (['settings', 'routines', 'artifacts', 'agents', 'apps', 'home'].includes(view) ? view : null)}
+                    activePanel={activeSidebarPanel}
                     onNewConversation={newConversation}
                     audio={pendingAudio}
                     muted={muted}

@@ -31,6 +31,13 @@
     display: none; /* Chrome, Safari, Opera */
 }
 
+.tabActions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding-right: 8px;
+}
+
 /* Individual tab */
 .tab {
     display: flex;

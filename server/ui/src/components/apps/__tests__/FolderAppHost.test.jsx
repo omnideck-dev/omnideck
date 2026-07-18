@@ -26,6 +26,7 @@ test('forwards frame invocation messages to the selected app endpoint', async ()
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: { type: 'omnideck:invoke', id: 'request-1', action: 'analyze', args: { text: 'one two three' } },
     }));
 
@@ -39,7 +40,21 @@ test('forwards frame invocation messages to the selected app endpoint', async ()
         ok: true,
         result: { words: 3 },
         error: undefined,
-    }, '*'));
+    }, window.location.origin));
+});
+
+test('ignores bridge messages after the frame navigates to another origin', () => {
+    const onOpenChat = vi.fn();
+    render(<FolderAppHost app={SAMPLE} onOpenChat={onOpenChat} />);
+    const frame = screen.getByTestId('folder-app-frame');
+
+    window.dispatchEvent(new MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'https://example.com',
+        data: { type: 'omnideck:chat-open' },
+    }));
+
+    expect(onOpenChat).not.toHaveBeenCalled();
 });
 
 test('allows an app to open chat or seed the composer without sending', () => {
@@ -50,10 +65,12 @@ test('allows an app to open chat or seed the composer without sending', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: { type: 'omnideck:chat-open' },
     }));
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: { type: 'omnideck:chat-compose', text: 'Review this', context: { text: 'Draft' } },
     }));
 
@@ -69,6 +86,7 @@ test('downloads supported URLs and rejects executable URL schemes', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: {
             type: 'omnideck:download',
             url: './generated/image.png',
@@ -79,6 +97,7 @@ test('downloads supported URLs and rejects executable URL schemes', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: {
             type: 'omnideck:download',
             url: 'https://example.com/image.png',
@@ -89,6 +108,7 @@ test('downloads supported URLs and rejects executable URL schemes', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
         source: frame.contentWindow,
+        origin: window.location.origin,
         data: {
             type: 'omnideck:download',
             url: 'javascript:alert(1)',

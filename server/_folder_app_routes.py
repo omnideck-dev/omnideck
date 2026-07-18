@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
+import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,7 +76,6 @@ class FolderApp:
     slug: str
     path: Path
     manifest: FolderAppManifest
-    editable: bool
 
     def to_dict(self) -> dict[str, str | bool]:
         """Return metadata safe to expose to the frontend."""
@@ -84,7 +85,6 @@ class FolderApp:
             "description": self.manifest.description,
             "icon": self.manifest.icon,
             "has_actions": (self.path / "app.py").is_file(),
-            "editable": self.editable,
         }
 
 
@@ -97,17 +97,17 @@ class FolderAppRuntimeError(Exception):
         self.status = status
 
 
-def folder_app_roots() -> tuple[tuple[Path, bool], ...]:
+def folder_app_roots() -> tuple[Path, ...]:
     """Return the user-owned Custom Apps root."""
     config = load_config()
     user = Path(config.virtual_computer.home_dir) / "apps"
-    return ((user, True),)
+    return (user,)
 
 
 def discover_folder_apps() -> list[FolderApp]:
     """Discover valid direct-child app directories or directory symlinks."""
     discovered: dict[str, FolderApp] = {}
-    for root, editable in folder_app_roots():
+    for root in folder_app_roots():
         if not root.is_dir():
             continue
         for candidate in root.iterdir():
@@ -133,7 +133,6 @@ def discover_folder_apps() -> list[FolderApp]:
                 slug=candidate.name,
                 path=app_path,
                 manifest=manifest,
-                editable=editable,
             )
     return sorted(discovered.values(), key=lambda app: (app.manifest.title.casefold(), app.slug))
 
@@ -197,8 +196,10 @@ async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
     source = """(() => {
   let sequence = 0;
   const pending = new Map();
+  const shellOrigin = window.location.origin;
 
   window.addEventListener('message', (event) => {
+    if (event.source !== window.parent || event.origin !== shellOrigin) return;
     const message = event.data;
     if (!message || message.type !== 'omnideck:result') return;
     const request = pending.get(message.id);
@@ -213,19 +214,19 @@ async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
       return new Promise((resolve, reject) => {
         const id = `folder-app-${Date.now()}-${++sequence}`;
         pending.set(id, { resolve, reject });
-        window.parent.postMessage({ type: 'omnideck:invoke', id, action, args }, '*');
+        window.parent.postMessage({ type: 'omnideck:invoke', id, action, args }, shellOrigin);
       });
     },
     chat: Object.freeze({
       open() {
-        window.parent.postMessage({ type: 'omnideck:chat-open' }, '*');
+        window.parent.postMessage({ type: 'omnideck:chat-open' }, shellOrigin);
       },
       compose({ text = '', context = null } = {}) {
-        window.parent.postMessage({ type: 'omnideck:chat-compose', text, context }, '*');
+        window.parent.postMessage({ type: 'omnideck:chat-compose', text, context }, shellOrigin);
       },
     }),
     download({ url, filename = '' } = {}) {
-      window.parent.postMessage({ type: 'omnideck:download', url, filename }, '*');
+      window.parent.postMessage({ type: 'omnideck:download', url, filename }, shellOrigin);
     },
   });
 })();
@@ -253,11 +254,10 @@ async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
     if not target.is_relative_to(web_root) or not target.is_file():
         return _error_response("FILE_NOT_FOUND", "App file not found.", 404)
 
-    origin = f"{request.scheme}://{request.host}"
     headers = {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": f"frame-ancestors {origin}",
+        "Content-Security-Policy": "frame-ancestors 'self'",
     }
     return web.FileResponse(target, headers=headers)
 
@@ -289,9 +289,19 @@ async def invoke_folder_app_action(app: FolderApp, action: str, args: dict[str, 
             timeout=_RUNNER_TIMEOUT_SECONDS,
         )
     except TimeoutError as exc:
-        process.kill()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         await process.wait()
         raise FolderAppRuntimeError("ACTION_TIMEOUT", "App action exceeded its time limit.", status=504) from exc
+    except asyncio.CancelledError:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await process.wait()
+        raise
 
     if len(stdout) > _MAX_RUNNER_OUTPUT:
         raise FolderAppRuntimeError("ACTION_RESULT_TOO_LARGE", "App action returned too much data.", status=500)

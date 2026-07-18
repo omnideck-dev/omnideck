@@ -149,6 +149,12 @@ def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom
     expect(page.get_by_test_id("preview-tab-app:text-lab")).to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
+    # Split-view tabs can reload frontend files without refreshing Omnideck.
+    page.get_by_test_id("folder-app-tab-reload").click()
+    expect(frame.locator("#text")).to_have_value(
+        "The simplest useful app should feel like a folder you can open."
+    )
+
     # Closing the app removes its global tab and leaves Chat full-space.
     page.get_by_test_id("close-tab-app:text-lab").click()
     expect(page.get_by_test_id("preview-tab-app:text-lab")).not_to_be_visible()

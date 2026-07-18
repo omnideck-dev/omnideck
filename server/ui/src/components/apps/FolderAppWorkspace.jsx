@@ -101,6 +101,17 @@ export default function FolderAppWorkspace({
                 onTabChange={onTabChange}
                 onCloseTab={onCloseTab}
                 hideTabs={!visible || layout !== 'split'}
+                actions={activeTab === appTabId ? (
+                    <Button
+                        variant="ghost"
+                        onClick={() => setReloadSignal((value) => value + 1)}
+                        title="Reload app files"
+                        aria-label="Reload app"
+                        data-testid="folder-app-tab-reload"
+                    >
+                        <i className="bi bi-arrow-clockwise" />
+                    </Button>
+                ) : null}
             >
                 <FolderAppHost
                     app={app}

@@ -63,8 +63,9 @@ vi.mock('../components/AgentActivityView.jsx', () => ({
 }));
 
 vi.mock('../components/Sidebar.jsx', () => ({
-    default: ({ onPanelToggle, onNewConversation, onLoadConversation }) => (
+    default: ({ activePanel, onPanelToggle, onNewConversation, onLoadConversation }) => (
         <div data-testid="sidebar">
+            <span data-testid="sidebar-active-panel">{activePanel || 'chat'}</span>
             Sidebar
             <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
             <button data-testid="open-routines" onClick={() => onPanelToggle('routines')}>Routines</button>
@@ -435,6 +436,18 @@ describe('DesktopApp view transitions', () => {
             const updateDraft = setDraft.mock.calls[0][0];
             expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
             expect(updateDraft('')).toContain('"Draft"');
+        });
+
+        it('does not leave Apps highlighted after entering an app workspace', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('apps');
+
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
+
+            fireEvent.click(screen.getByTestId('mock-workspace-chat'));
+            expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
         });
     });
 

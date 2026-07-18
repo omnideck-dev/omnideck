@@ -70,7 +70,6 @@ export default function AppsView({
                                         <div className={styles.meta}>
                                             <span><i className="bi bi-folder2" /> {app.slug}</span>
                                             {app.has_actions && <span><i className="bi bi-filetype-py" /> Python</span>}
-                                            {!app.editable && <span><i className="bi bi-box-seam" /> Sample</span>}
                                             {app.slug === homeAppSlug && (
                                                 <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
                                             )}

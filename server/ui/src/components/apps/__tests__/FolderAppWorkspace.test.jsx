@@ -55,3 +55,12 @@ test('opens the current chat and closes globally through trusted shell controls'
     fireEvent.click(screen.getByTestId('close-tab-app:text-lab'));
     expect(onCloseTab).toHaveBeenCalledWith('app:text-lab');
 });
+
+test('reloads the app iframe from its split-view tab', () => {
+    render(<FolderAppWorkspace {...baseProps} layout="split" />);
+    const frame = screen.getByTestId('folder-app-frame');
+
+    fireEvent.click(screen.getByTestId('folder-app-tab-reload'));
+
+    expect(screen.getByTestId('folder-app-frame')).not.toBe(frame);
+});

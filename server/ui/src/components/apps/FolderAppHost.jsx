@@ -15,6 +15,7 @@ export default function FolderAppHost({
     useEffect(() => {
         const receiveMessage = async (event) => {
             if (event.source !== frameRef.current?.contentWindow) return;
+            if (event.origin !== window.location.origin) return;
             const message = event.data;
             if (!message || typeof message !== 'object') return;
 
@@ -73,7 +74,7 @@ export default function FolderAppHost({
                     error: { code: 'BRIDGE_ERROR', message: err.message || 'Could not invoke app action' },
                 };
             }
-            frameRef.current?.contentWindow?.postMessage(responseMessage, '*');
+            frameRef.current?.contentWindow?.postMessage(responseMessage, window.location.origin);
         };
 
         window.addEventListener('message', receiveMessage);
