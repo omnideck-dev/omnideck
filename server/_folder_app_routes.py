@@ -98,11 +98,10 @@ class FolderAppRuntimeError(Exception):
 
 
 def folder_app_roots() -> tuple[tuple[Path, bool], ...]:
-    """Return built-in and user-editable roots in override order."""
+    """Return the user-owned Custom Apps root."""
     config = load_config()
-    built_in = Path(__file__).parent.parent / "sample_apps"
     user = Path(config.virtual_computer.home_dir) / "apps"
-    return ((built_in, False), (user, True))
+    return ((user, True),)
 
 
 def discover_folder_apps() -> list[FolderApp]:

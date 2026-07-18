@@ -2,18 +2,91 @@
 
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
 from tests.e2e.pages import ChatView
 
 
-def test_sample_folder_app_opens_and_invokes_python(page: Page) -> None:
-    """The shell lists the sample, opens its frame, and bridges an action."""
+_TEST_APP_FILES = {
+    "omnideck.json": '''{"title":"Text Lab","description":"E2E fixture","icon":"bi-fonts"}''',
+    "app.py": '''import re
+
+def analyze(text: str):
+    words = re.findall(r"\\b[\\w'-]+\\b", text)
+    return {"words": len(words)}
+
+actions = {"analyze": analyze}
+''',
+    "web/index.html": '''<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Text Lab</title>
+    <link rel="stylesheet" href="app.css">
+  </head>
+  <body>
+    <h1>Text Lab</h1>
+    <textarea id="text">The simplest useful app should feel like a folder you can open.</textarea>
+    <button id="analyze">Analyze</button>
+    <button id="ask-agent">Ask agent about this</button>
+    <div id="status">Ready</div>
+    <div id="metrics" hidden><span>Words</span> <strong id="words"></strong></div>
+    <script src="/api/folder-apps/sdk.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+''',
+    "web/app.css": '''body { font-family: sans-serif; }''',
+    "web/app.js": '''const text = document.querySelector('#text');
+
+document.querySelector('#analyze').addEventListener('click', async () => {
+  const result = await window.omnideck.invoke('analyze', { text: text.value });
+  document.querySelector('#words').textContent = result.words;
+  document.querySelector('#metrics').hidden = false;
+  document.querySelector('#status').textContent = 'Analysis complete';
+});
+
+document.querySelector('#ask-agent').addEventListener('click', () => {
+  window.omnideck.chat.compose({
+    text: 'Help me improve this text while preserving its intent:',
+    context: { text: text.value },
+  });
+});
+''',
+}
+
+
+@pytest.fixture()
+def installed_custom_app(page: Page):
+    """Install Text Lab only for this test; it is not a packaged app."""
     container_exec(
-        "from pathlib import Path; "
+        "from pathlib import Path\n"
+        f"files = {_TEST_APP_FILES!r}\n"
+        "root = Path('/home/omnideck/apps/text-lab')\n"
+        "for name, content in files.items():\n"
+        "    path = root / name\n"
+        "    path.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    path.write_text(content, encoding='utf-8')\n"
         "Path('/home/omnideck/custom-app-alpha.txt').write_text('read from home', encoding='utf-8')"
     )
+    try:
+        yield
+    finally:
+        page.request.put("/api/settings", data={"custom_apps_enabled": True})
+        page.request.delete("/api/folder-apps/home")
+        page.request.put("/api/settings", data={"custom_apps_enabled": False})
+        container_exec(
+            "import shutil\n"
+            "from pathlib import Path\n"
+            "shutil.rmtree('/home/omnideck/apps/text-lab', ignore_errors=True)\n"
+            "Path('/home/omnideck/custom-app-alpha.txt').unlink(missing_ok=True)"
+        )
+
+
+def test_custom_folder_app_opens_and_invokes_python(page: Page, installed_custom_app) -> None:
+    """The shell lists an installed app, opens its frame, and bridges an action."""
     page.request.put("/api/settings", data={"custom_apps_enabled": False})
     ChatView(page).goto()
 

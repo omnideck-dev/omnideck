@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from server._folder_app_routes import register_folder_app_routes
+from server._folder_app_routes import folder_app_roots, register_folder_app_routes
 
 pytestmark = pytest.mark.unit
+
+
+def test_only_discovers_apps_from_the_user_home(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    config = SimpleNamespace(virtual_computer=SimpleNamespace(home_dir=home))
+    monkeypatch.setattr("server._folder_app_routes.load_config", lambda: config)
+
+    assert folder_app_roots() == ((home / "apps", True),)
 
 
 def _write_app(root: Path, slug: str = "example") -> Path:
