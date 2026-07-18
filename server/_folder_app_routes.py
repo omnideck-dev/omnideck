@@ -23,7 +23,7 @@ _APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
 _ACTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _RUNNER_PATH = Path(__file__).with_name("_folder_app_runner.py")
 _MAX_RUNNER_OUTPUT = 1024 * 1024
-_RUNNER_TIMEOUT_SECONDS = 8.0
+_RUNNER_TIMEOUT_SECONDS = 120.0
 
 
 class FolderAppManifest(BaseModel):
@@ -225,6 +225,9 @@ async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
         window.parent.postMessage({ type: 'omnideck:chat-compose', text, context }, '*');
       },
     }),
+    download({ url, filename = '' } = {}) {
+      window.parent.postMessage({ type: 'omnideck:download', url, filename }, '*');
+    },
   });
 })();
 """
@@ -258,7 +261,8 @@ async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
         "Content-Security-Policy": (
             "default-src 'none'; "
             f"script-src {origin}; style-src {origin} 'unsafe-inline'; "
-            f"img-src {origin} data:; font-src {origin}; connect-src 'none'; "
+            f"img-src {origin} data: blob:; media-src {origin} data: blob:; "
+            f"font-src {origin}; connect-src 'none'; "
             f"frame-ancestors {origin}; base-uri 'none'; form-action 'none'"
         ),
     }

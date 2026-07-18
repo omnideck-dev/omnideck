@@ -18,6 +18,24 @@ export default function FolderAppHost({
             const message = event.data;
             if (!message || typeof message !== 'object') return;
 
+            if (message.type === 'omnideck:download') {
+                if (typeof message.url !== 'string' || message.url.length > 4096) return;
+                if (typeof message.filename !== 'string' || message.filename.length > 255) return;
+                if (message.filename && /[\\/\0]/.test(message.filename)) return;
+                try {
+                    const url = new URL(message.url, frameRef.current.src);
+                    const appFiles = `/api/folder-apps/${encodeURIComponent(app.slug)}/frame/`;
+                    if (url.origin !== window.location.origin || !url.pathname.startsWith(appFiles)) return;
+                    const link = document.createElement('a');
+                    link.href = url.href;
+                    link.download = message.filename;
+                    link.rel = 'noopener';
+                    link.click();
+                } catch {
+                    // Ignore malformed or out-of-scope download URLs.
+                }
+                return;
+            }
             if (message.type === 'omnideck:chat-open') {
                 onOpenChat?.();
                 return;
@@ -71,7 +89,7 @@ export default function FolderAppHost({
                 className={styles.frame}
                 src={`/api/folder-apps/${encodeURIComponent(app.slug)}/frame/`}
                 title={app.title}
-                sandbox="allow-scripts"
+                sandbox="allow-scripts allow-downloads"
                 data-testid="folder-app-frame"
             />
         </div>

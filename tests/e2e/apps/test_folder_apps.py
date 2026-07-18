@@ -29,6 +29,14 @@ def test_sample_folder_app_opens_and_invokes_python(page: Page) -> None:
     page.get_by_test_id("folder-app-card").click()
     frame = page.frame_locator('[data-testid="folder-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+    # The app can ask the parent shell to download one of its own static files.
+    with page.expect_download() as download_info:
+        frame.locator("body").evaluate(
+            "() => window.omnideck.download({ url: './app.css', filename: 'text-lab.css' })"
+        )
+    assert download_info.value.suggested_filename == "text-lab.css"
+
     frame.get_by_role("button", name="Analyze").click()
 
     expect(frame.get_by_text("Analysis complete")).to_be_visible()

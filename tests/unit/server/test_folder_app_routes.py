@@ -129,6 +129,9 @@ async def test_serves_frontend_and_invokes_python_action(folder_apps_client: Tes
     frame = await folder_apps_client.get("/api/folder-apps/example/frame/")
     assert frame.status == 200
     assert await frame.text() == "<h1>Folder app</h1>"
+    content_security_policy = frame.headers["Content-Security-Policy"]
+    assert "img-src " in content_security_policy and "data: blob:" in content_security_policy
+    assert "media-src " in content_security_policy and "data: blob:" in content_security_policy
 
     response = await folder_apps_client.post(
         "/api/folder-apps/example/invoke/greet",
@@ -144,6 +147,7 @@ async def test_sdk_exposes_explicit_chat_bridge(folder_apps_client: TestClient) 
     source = await response.text()
     assert "omnideck:chat-open" in source
     assert "omnideck:chat-compose" in source
+    assert "omnideck:download" in source
 
 
 async def test_rejects_invalid_action_arguments(folder_apps_client: TestClient) -> None:

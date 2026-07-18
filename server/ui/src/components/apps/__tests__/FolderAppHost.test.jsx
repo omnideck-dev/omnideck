@@ -14,6 +14,14 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
+test('allows scripts and user-initiated downloads in the app sandbox', () => {
+    render(<FolderAppHost app={SAMPLE} />);
+    expect(screen.getByTestId('folder-app-frame')).toHaveAttribute(
+        'sandbox',
+        'allow-scripts allow-downloads',
+    );
+});
+
 test('forwards frame invocation messages to the selected app endpoint', async () => {
     render(<FolderAppHost app={SAMPLE} />);
     const frame = screen.getByTestId('folder-app-frame');
@@ -55,4 +63,30 @@ test('allows an app to open chat or seed the composer without sending', () => {
     expect(onOpenChat).toHaveBeenCalledOnce();
     expect(onComposeChat).toHaveBeenCalledWith({ text: 'Review this', context: { text: 'Draft' } });
     expect(global.fetch).not.toHaveBeenCalled();
+});
+
+test('downloads only files served by the current app', () => {
+    render(<FolderAppHost app={SAMPLE} />);
+    const frame = screen.getByTestId('folder-app-frame');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    window.dispatchEvent(new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+            type: 'omnideck:download',
+            url: './generated/image.png',
+            filename: 'image.png',
+        },
+    }));
+    expect(click).toHaveBeenCalledOnce();
+
+    window.dispatchEvent(new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+            type: 'omnideck:download',
+            url: 'https://example.com/image.png',
+            filename: 'image.png',
+        },
+    }));
+    expect(click).toHaveBeenCalledOnce();
 });
