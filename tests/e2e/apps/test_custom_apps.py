@@ -13,7 +13,7 @@ _TEST_APP_FILES = {
     "omnideck.json": '''{"title":"Text Lab","description":"E2E fixture","icon":"bi-fonts"}''',
     "app.py": '''import re
 
-from omnideck_apps import action
+from custom_apps import action
 
 @action
 def analyze(text: str):

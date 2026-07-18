@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from omnideck_apps import _get_action_name
+from custom_apps import _get_action_name
 
 _ACTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 

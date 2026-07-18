@@ -33,7 +33,7 @@ def _write_app(root: Path, slug: str = "example") -> Path:
     }), encoding="utf-8")
     (app / "web" / "index.html").write_text("<h1>Custom App</h1>", encoding="utf-8")
     (app / "app.py").write_text(
-        "from omnideck_apps import action\n\n"
+        "from custom_apps import action\n\n"
         "@action\n"
         "def greet(name: str):\n"
         "    return {'message': f'Hello, {name}!'}\n\n"
