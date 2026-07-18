@@ -18,6 +18,17 @@ my-app/
   app.py          # optional
 ```
 
+The direct child may also be a directory symlink. Omnideck uses the link name
+as the app slug, resolves the target, and validates the same structure there.
+This makes a separate app monorepo an optional source of truth without making
+that layout mandatory:
+
+```bash
+ln -s /home/omnideck/custom-apps-repo/my-app /home/omnideck/apps/my-app
+```
+
+Broken or looping links are ignored.
+
 `app.py` exports an `actions` dictionary whose values are normal Python
 functions. The frontend calls them with `window.omnideck.invoke(name, args)`.
 Each invocation loads the current files in a new Python subprocess, so edits

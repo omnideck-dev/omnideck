@@ -48,6 +48,7 @@ async def folder_apps_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr("server._folder_app_routes.save_settings", save_test_settings)
     app = web.Application()
     app["folder_apps_test_settings"] = settings_state
+    app["folder_apps_test_root"] = root
     register_folder_app_routes(app)
     client = TestClient(TestServer(app))
     await client.start_server()
@@ -71,6 +72,38 @@ async def test_lists_valid_folder_apps(folder_apps_client: TestClient) -> None:
             "editable": True,
         }],
     }
+
+
+async def test_loads_app_symlinked_from_monorepo(folder_apps_client: TestClient) -> None:
+    apps_root = folder_apps_client.app["folder_apps_test_root"]
+    monorepo = apps_root.parent / "custom-apps-repo"
+    monorepo.mkdir()
+    source = _write_app(monorepo, "source-app")
+    (apps_root / "linked-app").symlink_to(source, target_is_directory=True)
+
+    listed = await folder_apps_client.get("/api/folder-apps")
+    linked = next(app for app in (await listed.json())["apps"] if app["slug"] == "linked-app")
+    assert linked["title"] == "Example App"
+
+    frame = await folder_apps_client.get("/api/folder-apps/linked-app/frame/")
+    assert frame.status == 200
+    assert await frame.text() == "<h1>Folder app</h1>"
+
+    invoked = await folder_apps_client.post(
+        "/api/folder-apps/linked-app/invoke/greet",
+        json={"args": {"name": "Ada"}},
+    )
+    assert invoked.status == 200
+    assert await invoked.json() == {"ok": True, "result": {"message": "Hello, Ada!"}}
+
+
+async def test_ignores_broken_and_looping_app_symlinks(folder_apps_client: TestClient) -> None:
+    apps_root = folder_apps_client.app["folder_apps_test_root"]
+    (apps_root / "broken-app").symlink_to(apps_root.parent / "missing", target_is_directory=True)
+    (apps_root / "loop-app").symlink_to(apps_root / "loop-app", target_is_directory=True)
+
+    response = await folder_apps_client.get("/api/folder-apps")
+    assert [app["slug"] for app in (await response.json())["apps"]] == ["example"]
 
 
 async def test_sets_and_clears_home_app(folder_apps_client: TestClient) -> None:

@@ -106,16 +106,23 @@ def folder_app_roots() -> tuple[tuple[Path, bool], ...]:
 
 
 def discover_folder_apps() -> list[FolderApp]:
-    """Discover valid direct-child app folders without caching."""
+    """Discover valid direct-child app directories or directory symlinks."""
     discovered: dict[str, FolderApp] = {}
     for root, editable in folder_app_roots():
         if not root.is_dir():
             continue
         for candidate in root.iterdir():
-            if candidate.is_symlink() or not candidate.is_dir() or not _APP_SLUG.fullmatch(candidate.name):
+            if not _APP_SLUG.fullmatch(candidate.name):
                 continue
-            manifest_path = candidate / "omnideck.json"
-            frontend_path = candidate / "web" / "index.html"
+            try:
+                app_path = candidate.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                logger.warning("Ignoring unresolved folder app %s: %s", candidate.name, exc)
+                continue
+            if not app_path.is_dir():
+                continue
+            manifest_path = app_path / "omnideck.json"
+            frontend_path = app_path / "web" / "index.html"
             if not manifest_path.is_file() or not frontend_path.is_file():
                 continue
             try:
@@ -125,7 +132,7 @@ def discover_folder_apps() -> list[FolderApp]:
                 continue
             discovered[candidate.name] = FolderApp(
                 slug=candidate.name,
-                path=candidate.resolve(),
+                path=app_path,
                 manifest=manifest,
                 editable=editable,
             )
