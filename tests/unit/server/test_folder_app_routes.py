@@ -130,8 +130,8 @@ async def test_serves_frontend_and_invokes_python_action(folder_apps_client: Tes
     assert frame.status == 200
     assert await frame.text() == "<h1>Folder app</h1>"
     content_security_policy = frame.headers["Content-Security-Policy"]
-    assert "img-src " in content_security_policy and "data: blob:" in content_security_policy
-    assert "media-src " in content_security_policy and "data: blob:" in content_security_policy
+    assert content_security_policy.startswith("frame-ancestors http://")
+    assert "default-src" not in content_security_policy
 
     response = await folder_apps_client.post(
         "/api/folder-apps/example/invoke/greet",

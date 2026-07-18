@@ -258,13 +258,7 @@ async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
     headers = {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": (
-            "default-src 'none'; "
-            f"script-src {origin}; style-src {origin} 'unsafe-inline'; "
-            f"img-src {origin} data: blob:; media-src {origin} data: blob:; "
-            f"font-src {origin}; connect-src 'none'; "
-            f"frame-ancestors {origin}; base-uri 'none'; form-action 'none'"
-        ),
+        "Content-Security-Policy": f"frame-ancestors {origin}",
     }
     return web.FileResponse(target, headers=headers)
 

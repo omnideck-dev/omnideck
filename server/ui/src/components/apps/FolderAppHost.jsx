@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import styles from './FolderAppHost.module.css';
 
-/** Sandboxed frame plus the narrow action/chat bridge owned by Omnideck. */
+/** Trusted same-origin frame plus convenience bridges owned by Omnideck. */
 export default function FolderAppHost({
     app,
     reloadSignal = 0,
@@ -24,15 +24,14 @@ export default function FolderAppHost({
                 if (message.filename && /[\\/\0]/.test(message.filename)) return;
                 try {
                     const url = new URL(message.url, frameRef.current.src);
-                    const appFiles = `/api/folder-apps/${encodeURIComponent(app.slug)}/frame/`;
-                    if (url.origin !== window.location.origin || !url.pathname.startsWith(appFiles)) return;
+                    if (!['http:', 'https:', 'blob:', 'data:'].includes(url.protocol)) return;
                     const link = document.createElement('a');
                     link.href = url.href;
                     link.download = message.filename;
                     link.rel = 'noopener';
                     link.click();
                 } catch {
-                    // Ignore malformed or out-of-scope download URLs.
+                    // Ignore malformed or unsupported download URLs.
                 }
                 return;
             }
@@ -89,7 +88,6 @@ export default function FolderAppHost({
                 className={styles.frame}
                 src={`/api/folder-apps/${encodeURIComponent(app.slug)}/frame/`}
                 title={app.title}
-                sandbox="allow-scripts allow-downloads"
                 data-testid="folder-app-frame"
             />
         </div>

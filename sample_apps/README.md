@@ -36,9 +36,11 @@ take effect without registering or rebuilding the app. Actions may run for up
 to 120 seconds and should return JSON; write large outputs to app-owned files
 and return their URLs rather than encoding the files in the action result.
 
-App-hosted, `data:`, and `blob:` images, audio, and video are allowed. Apps may
-offer user-initiated downloads directly or ask the shell to download a file
-beneath their own `web/` directory:
+For the alpha, Custom App frontends are trusted same-origin pages without an
+iframe sandbox or resource CSP. Normal browser capabilities are available,
+including `fetch`, storage, inline scripts, external resources, forms, nested
+PDF frames, audio/video, popups, and downloads. Apps may download directly or
+use the shell convenience bridge:
 
 ```js
 window.omnideck.download({
@@ -46,6 +48,25 @@ window.omnideck.download({
   filename: 'example.png',
 });
 ```
+
+The trusted iframe can use Omnideck's existing container-home file route
+directly. It supports `GET`/`HEAD` for files beneath `/home/omnideck` and `PUT`
+for replacing an existing file:
+
+```js
+const response = await fetch('/home/omnideck/projects/example/notes.md');
+const text = await response.text();
+
+await fetch('/home/omnideck/projects/example/notes.md', {
+  method: 'PUT',
+  headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  body: updatedText,
+});
+```
+
+Images, audio, video, and PDFs can reference the same URLs directly. The route
+does not enumerate directories or create missing files; use `app.py` for file
+discovery and creation.
 
 An app can explicitly open the current conversation beside itself with
 `window.omnideck.chat.open()`, or seed the composer with
@@ -62,7 +83,7 @@ mounted when conversations change; browser, file, terminal, desktop, and
 generation tabs remain conversation-scoped. Closing the app tab discards its
 in-memory iframe state without deleting the app or changing its Home setting.
 
-This is a trusted-local-code experiment. The subprocess has a clean environment,
-an invocation timeout, and no in-process access to the Omnideck server, but it is
-not a filesystem or network sandbox. Keep the flag off for untrusted or imported
-apps.
+This is a trusted-local-code experiment on both sides of the iframe. The Python
+subprocess has a clean environment and an invocation timeout, but it is not a
+filesystem or network sandbox. The same-origin frontend can also access the
+Omnideck page and APIs. Keep the feature off for untrusted or imported apps.

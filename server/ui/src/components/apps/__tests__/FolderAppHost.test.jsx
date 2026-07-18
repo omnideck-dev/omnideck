@@ -14,12 +14,9 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
-test('allows scripts and user-initiated downloads in the app sandbox', () => {
+test('runs the trusted app iframe without browser sandbox restrictions', () => {
     render(<FolderAppHost app={SAMPLE} />);
-    expect(screen.getByTestId('folder-app-frame')).toHaveAttribute(
-        'sandbox',
-        'allow-scripts allow-downloads',
-    );
+    expect(screen.getByTestId('folder-app-frame')).not.toHaveAttribute('sandbox');
 });
 
 test('forwards frame invocation messages to the selected app endpoint', async () => {
@@ -65,7 +62,7 @@ test('allows an app to open chat or seed the composer without sending', () => {
     expect(global.fetch).not.toHaveBeenCalled();
 });
 
-test('downloads only files served by the current app', () => {
+test('downloads supported URLs and rejects executable URL schemes', () => {
     render(<FolderAppHost app={SAMPLE} />);
     const frame = screen.getByTestId('folder-app-frame');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -88,5 +85,15 @@ test('downloads only files served by the current app', () => {
             filename: 'image.png',
         },
     }));
-    expect(click).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledTimes(2);
+
+    window.dispatchEvent(new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+            type: 'omnideck:download',
+            url: 'javascript:alert(1)',
+            filename: 'image.png',
+        },
+    }));
+    expect(click).toHaveBeenCalledTimes(2);
 });

@@ -4,11 +4,16 @@ import re
 
 from playwright.sync_api import Page, expect
 
+from tests.e2e._helpers import container_exec
 from tests.e2e.pages import ChatView
 
 
 def test_sample_folder_app_opens_and_invokes_python(page: Page) -> None:
     """The shell lists the sample, opens its frame, and bridges an action."""
+    container_exec(
+        "from pathlib import Path; "
+        "Path('/home/omnideck/custom-app-alpha.txt').write_text('read from home', encoding='utf-8')"
+    )
     page.request.put("/api/settings", data={"custom_apps_enabled": False})
     ChatView(page).goto()
 
@@ -29,6 +34,21 @@ def test_sample_folder_app_opens_and_invokes_python(page: Page) -> None:
     page.get_by_test_id("folder-app-card").click()
     frame = page.frame_locator('[data-testid="folder-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+    # Trusted apps can use the existing container-home file route directly.
+    home_text = frame.locator("body").evaluate(
+        "async () => (await fetch('/home/omnideck/custom-app-alpha.txt')).text()"
+    )
+    assert home_text == "read from home"
+    write_status = frame.locator("body").evaluate(
+        """async () => (await fetch('/home/omnideck/custom-app-alpha.txt', {
+            method: 'PUT',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: 'written by app',
+        })).status"""
+    )
+    assert write_status == 200
+    assert page.request.get("/home/omnideck/custom-app-alpha.txt").text() == "written by app"
 
     # The app can ask the parent shell to download one of its own static files.
     with page.expect_download() as download_info:
