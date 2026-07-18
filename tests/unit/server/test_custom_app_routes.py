@@ -33,9 +33,12 @@ def _write_app(root: Path, slug: str = "example") -> Path:
     }), encoding="utf-8")
     (app / "web" / "index.html").write_text("<h1>Custom App</h1>", encoding="utf-8")
     (app / "app.py").write_text(
+        "from omnideck_apps import action\n\n"
+        "@action\n"
         "def greet(name: str):\n"
         "    return {'message': f'Hello, {name}!'}\n\n"
-        "actions = {'greet': greet}\n",
+        "def helper():\n"
+        "    return 'not exposed'\n",
         encoding="utf-8",
     )
     return app
@@ -168,6 +171,15 @@ async def test_rejects_invalid_action_arguments(custom_apps_client: TestClient) 
     assert response.status == 400
     body = await response.json()
     assert body["error"]["code"] == "INVALID_ARGUMENTS"
+
+
+async def test_does_not_expose_undecorated_functions(custom_apps_client: TestClient) -> None:
+    response = await custom_apps_client.post(
+        "/api/custom-apps/example/invoke/helper",
+        json={"args": {}},
+    )
+    assert response.status == 404
+    assert (await response.json())["error"]["code"] == "ACTION_NOT_FOUND"
 
 
 async def test_does_not_serve_files_outside_web_root(custom_apps_client: TestClient) -> None:

@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from omnideck_apps import _get_action_name
+
 _ACTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 
@@ -35,11 +37,17 @@ def _load_actions(app_root: Path) -> dict[str, Any]:
         spec.loader.exec_module(module)
     finally:
         sys.path.pop(0)
-    actions = getattr(module, "actions", None)
-    if not isinstance(actions, dict):
-        raise ActionError("APP_LOAD_FAILED", "app.py must export an actions dictionary.")
-    if not all(isinstance(name, str) and callable(action) for name, action in actions.items()):
-        raise ActionError("APP_LOAD_FAILED", "Every actions entry must map a string name to a function.")
+    actions: dict[str, Any] = {}
+    for value in vars(module).values():
+        name = _get_action_name(value)
+        if name is None:
+            continue
+        if not _ACTION_NAME.fullmatch(name):
+            raise ActionError("APP_LOAD_FAILED", "A decorated action has an invalid name.")
+        existing = actions.get(name)
+        if existing is not None and existing is not value:
+            raise ActionError("APP_LOAD_FAILED", f"Multiple actions are registered as {name!r}.")
+        actions[name] = value
     return actions
 
 

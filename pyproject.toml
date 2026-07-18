@@ -153,6 +153,7 @@ include = [
     "config*",
     "migrations*",
     "models*",
+    "omnideck_apps*",
     "repls*",
     "server*",
     "tasks*",

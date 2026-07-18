@@ -13,11 +13,12 @@ _TEST_APP_FILES = {
     "omnideck.json": '''{"title":"Text Lab","description":"E2E fixture","icon":"bi-fonts"}''',
     "app.py": '''import re
 
+from omnideck_apps import action
+
+@action
 def analyze(text: str):
     words = re.findall(r"\\b[\\w'-]+\\b", text)
     return {"words": len(words)}
-
-actions = {"analyze": analyze}
 ''',
     "web/index.html": '''<!doctype html>
 <html lang="en">
