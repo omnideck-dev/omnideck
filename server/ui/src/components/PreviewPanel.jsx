@@ -8,11 +8,12 @@ export default function PreviewPanel({
     activeTab,
     onTabChange,
     onCloseTab,
+    hideTabs = false,
     children,
 }) {
     return (
         <div className={styles.previewPanel} data-testid="preview-panel">
-            <div className={styles.tabBar} data-testid="preview-tab-bar">
+            {!hideTabs && <div className={styles.tabBar} data-testid="preview-tab-bar">
                 <div className={styles.tabList}>
                     {tabs.map((tab) => {
                         const isActive = tab.id === activeTab;
@@ -26,23 +27,25 @@ export default function PreviewPanel({
                             >
                                 <span className={styles.tabIcon}>{tab.icon}</span>
                                 <span className={styles.tabLabel}>{tab.label}</span>
-                                <span
-                                    className={styles.tabClose}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onCloseTab(tab.id);
-                                    }}
-                                    title="Close tab"
-                                    aria-label={`Close ${tab.label} tab`}
-                                    data-testid={`close-tab-${tab.testid || tab.id}`}
-                                >
-                                    ×
-                                </span>
+                                {tab.closable !== false && (
+                                    <span
+                                        className={styles.tabClose}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onCloseTab(tab.id);
+                                        }}
+                                        title="Close tab"
+                                        aria-label={`Close ${tab.label} tab`}
+                                        data-testid={`close-tab-${tab.testid || tab.id}`}
+                                    >
+                                        ×
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
                 </div>
-            </div>
+            </div>}
             <div className={styles.contentArea} data-testid="preview-content">
                 {children}
             </div>

@@ -1,0 +1,346 @@
+"""HTTP surface for experimental file-based apps."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from aiohttp import web
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from config import load_config
+from settings import custom_apps_enabled, load_settings, save_settings
+
+logger = logging.getLogger(__name__)
+
+_APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
+_ACTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_RUNNER_PATH = Path(__file__).with_name("_folder_app_runner.py")
+_MAX_RUNNER_OUTPUT = 1024 * 1024
+_RUNNER_TIMEOUT_SECONDS = 8.0
+
+
+class FolderAppManifest(BaseModel):
+    """User-authored metadata that marks a folder as an app."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=240)
+    icon: str = Field(default="bi-window", pattern=r"^bi-[a-z0-9-]+$")
+
+
+class InvokeRequest(BaseModel):
+    """Arguments supplied by an app frontend to one backend action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class HomeAppRequest(BaseModel):
+    """A request to assign one discovered app to the Home slot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str = Field(pattern=r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
+
+
+class RunnerError(BaseModel):
+    """Structured action failure emitted by the subprocess runner."""
+
+    code: str
+    message: str
+
+
+class RunnerEnvelope(BaseModel):
+    """One complete response emitted by the subprocess runner."""
+
+    ok: bool
+    result: Any = None
+    error: RunnerError | None = None
+
+
+@dataclass(frozen=True)
+class FolderApp:
+    """A validated app folder discovered beneath an allowed root."""
+
+    slug: str
+    path: Path
+    manifest: FolderAppManifest
+    editable: bool
+
+    def to_dict(self) -> dict[str, str | bool]:
+        """Return metadata safe to expose to the frontend."""
+        return {
+            "slug": self.slug,
+            "title": self.manifest.title,
+            "description": self.manifest.description,
+            "icon": self.manifest.icon,
+            "has_actions": (self.path / "app.py").is_file(),
+            "editable": self.editable,
+        }
+
+
+class FolderAppRuntimeError(Exception):
+    """A failure to locate or execute a folder app action."""
+
+    def __init__(self, code: str, message: str, *, status: int) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def folder_app_roots() -> tuple[tuple[Path, bool], ...]:
+    """Return built-in and user-editable roots in override order."""
+    config = load_config()
+    built_in = Path(__file__).parent.parent / "sample_apps"
+    user = Path(config.virtual_computer.home_dir) / "apps"
+    return ((built_in, False), (user, True))
+
+
+def discover_folder_apps() -> list[FolderApp]:
+    """Discover valid direct-child app folders without caching."""
+    discovered: dict[str, FolderApp] = {}
+    for root, editable in folder_app_roots():
+        if not root.is_dir():
+            continue
+        for candidate in root.iterdir():
+            if candidate.is_symlink() or not candidate.is_dir() or not _APP_SLUG.fullmatch(candidate.name):
+                continue
+            manifest_path = candidate / "omnideck.json"
+            frontend_path = candidate / "web" / "index.html"
+            if not manifest_path.is_file() or not frontend_path.is_file():
+                continue
+            try:
+                manifest = FolderAppManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, ValidationError) as exc:
+                logger.warning("Ignoring invalid folder app %s: %s", candidate.name, exc)
+                continue
+            discovered[candidate.name] = FolderApp(
+                slug=candidate.name,
+                path=candidate.resolve(),
+                manifest=manifest,
+                editable=editable,
+            )
+    return sorted(discovered.values(), key=lambda app: (app.manifest.title.casefold(), app.slug))
+
+
+def resolve_folder_app(slug: str) -> FolderApp | None:
+    """Resolve one currently valid app by slug."""
+    if not _APP_SLUG.fullmatch(slug):
+        return None
+    return next((app for app in discover_folder_apps() if app.slug == slug), None)
+
+
+def _feature_disabled() -> web.Response | None:
+    if custom_apps_enabled():
+        return None
+    return web.json_response(
+        {"ok": False, "error": {"code": "FEATURE_DISABLED", "message": "Folder apps are disabled."}},
+        status=403,
+    )
+
+
+def _error_response(code: str, message: str, status: int) -> web.Response:
+    return web.json_response({"ok": False, "error": {"code": code, "message": message}}, status=status)
+
+
+async def list_folder_apps_handler(_request: web.Request) -> web.Response:
+    """List every currently valid folder app."""
+    if disabled := _feature_disabled():
+        return disabled
+    return web.json_response({
+        "apps": [app.to_dict() for app in discover_folder_apps()],
+        "home_app_slug": load_settings().get("home_app_slug"),
+    })
+
+
+async def set_home_folder_app_handler(request: web.Request) -> web.Response:
+    """Assign one currently valid folder app to the trusted Home slot."""
+    if disabled := _feature_disabled():
+        return disabled
+    try:
+        payload = HomeAppRequest.model_validate_json(await request.text())
+    except ValidationError:
+        return _error_response("VALIDATION_ERROR", "Expected a valid folder-app slug.", 400)
+    if resolve_folder_app(payload.slug) is None:
+        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+    save_settings({"home_app_slug": payload.slug})
+    return web.json_response({"ok": True, "home_app_slug": payload.slug})
+
+
+async def clear_home_folder_app_handler(_request: web.Request) -> web.Response:
+    """Restore Chat as the default landing view."""
+    if disabled := _feature_disabled():
+        return disabled
+    save_settings({"home_app_slug": None})
+    return web.json_response({"ok": True, "home_app_slug": None})
+
+
+async def folder_app_sdk_handler(_request: web.Request) -> web.Response:
+    """Serve the tiny frame-to-shell invocation bridge."""
+    if disabled := _feature_disabled():
+        return disabled
+    source = """(() => {
+  let sequence = 0;
+  const pending = new Map();
+
+  window.addEventListener('message', (event) => {
+    const message = event.data;
+    if (!message || message.type !== 'omnideck:result') return;
+    const request = pending.get(message.id);
+    if (!request) return;
+    pending.delete(message.id);
+    if (message.ok) request.resolve(message.result);
+    else request.reject(new Error(message.error?.message || 'App action failed'));
+  });
+
+  window.omnideck = Object.freeze({
+    invoke(action, args = {}) {
+      return new Promise((resolve, reject) => {
+        const id = `folder-app-${Date.now()}-${++sequence}`;
+        pending.set(id, { resolve, reject });
+        window.parent.postMessage({ type: 'omnideck:invoke', id, action, args }, '*');
+      });
+    },
+    chat: Object.freeze({
+      open() {
+        window.parent.postMessage({ type: 'omnideck:chat-open' }, '*');
+      },
+      compose({ text = '', context = null } = {}) {
+        window.parent.postMessage({ type: 'omnideck:chat-compose', text, context }, '*');
+      },
+    }),
+  });
+})();
+"""
+    return web.Response(
+        text=source,
+        content_type="text/javascript",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+async def folder_app_frame_handler(request: web.Request) -> web.StreamResponse:
+    """Serve one file from an app's frontend directory."""
+    if disabled := _feature_disabled():
+        return disabled
+    app = resolve_folder_app(request.match_info["slug"])
+    if app is None:
+        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+
+    relative = request.match_info.get("path", "") or "index.html"
+    if relative.endswith("/"):
+        relative += "index.html"
+    web_root = (app.path / "web").resolve()
+    target = (web_root / relative).resolve()
+    if not target.is_relative_to(web_root) or not target.is_file():
+        return _error_response("FILE_NOT_FOUND", "App file not found.", 404)
+
+    origin = f"{request.scheme}://{request.host}"
+    headers = {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": (
+            "default-src 'none'; "
+            f"script-src {origin}; style-src {origin} 'unsafe-inline'; "
+            f"img-src {origin} data:; font-src {origin}; connect-src 'none'; "
+            f"frame-ancestors {origin}; base-uri 'none'; form-action 'none'"
+        ),
+    }
+    return web.FileResponse(target, headers=headers)
+
+
+async def invoke_folder_app_action(app: FolderApp, action: str, args: dict[str, Any]) -> Any:
+    """Invoke one action in a fresh isolated-mode Python subprocess."""
+    if not _ACTION_NAME.fullmatch(action):
+        raise FolderAppRuntimeError("ACTION_NOT_FOUND", "App action not found.", status=404)
+    if not (app.path / "app.py").is_file():
+        raise FolderAppRuntimeError("APP_HAS_NO_ACTIONS", "This app has no backend actions.", status=404)
+
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-I",
+        str(_RUNNER_PATH),
+        str(app.path),
+        action,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+        cwd=str(app.path),
+        env={"PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"},
+    )
+    request_bytes = json.dumps({"args": args}).encode("utf-8")
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(request_bytes),
+            timeout=_RUNNER_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise FolderAppRuntimeError("ACTION_TIMEOUT", "App action exceeded its time limit.", status=504) from exc
+
+    if len(stdout) > _MAX_RUNNER_OUTPUT:
+        raise FolderAppRuntimeError("ACTION_RESULT_TOO_LARGE", "App action returned too much data.", status=500)
+    if process.returncode != 0:
+        detail = stderr.decode("utf-8", errors="replace").strip()[:500]
+        logger.warning("Folder app runner failed for %s/%s: %s", app.slug, action, detail)
+        raise FolderAppRuntimeError("ACTION_RUNNER_FAILED", "App action runner failed.", status=500)
+    try:
+        envelope = RunnerEnvelope.model_validate_json(stdout)
+    except ValidationError as exc:
+        logger.warning("Invalid folder app runner response for %s/%s: %s", app.slug, action, exc)
+        raise FolderAppRuntimeError("ACTION_PROTOCOL_ERROR", "App action returned an invalid response.", status=500) from exc
+    if not envelope.ok:
+        error = envelope.error or RunnerError(code="ACTION_FAILED", message="App action failed.")
+        status = 404 if error.code == "ACTION_NOT_FOUND" else 400
+        raise FolderAppRuntimeError(error.code, error.message, status=status)
+    return envelope.result
+
+
+async def invoke_folder_app_handler(request: web.Request) -> web.Response:
+    """Validate and execute one public action from a folder app."""
+    if disabled := _feature_disabled():
+        return disabled
+    app = resolve_folder_app(request.match_info["slug"])
+    if app is None:
+        return _error_response("APP_NOT_FOUND", "Folder app not found.", 404)
+    try:
+        payload = InvokeRequest.model_validate_json(await request.text())
+    except ValidationError:
+        return _error_response("VALIDATION_ERROR", "Expected a JSON object containing an args object.", 400)
+    try:
+        result = await invoke_folder_app_action(app, request.match_info["action"], payload.args)
+    except FolderAppRuntimeError as exc:
+        return _error_response(exc.code, str(exc), exc.status)
+    return web.json_response({"ok": True, "result": result})
+
+
+def register_folder_app_routes(app: web.Application) -> None:
+    """Register the experimental folder-app routes."""
+    app.router.add_route("GET", "/api/folder-apps", list_folder_apps_handler)
+    app.router.add_route("PUT", "/api/folder-apps/home", set_home_folder_app_handler)
+    app.router.add_route("DELETE", "/api/folder-apps/home", clear_home_folder_app_handler)
+    app.router.add_route("GET", "/api/folder-apps/sdk.js", folder_app_sdk_handler)
+    app.router.add_route("GET", "/api/folder-apps/{slug}/frame/{path:.*}", folder_app_frame_handler)
+    app.router.add_route("POST", "/api/folder-apps/{slug}/invoke/{action}", invoke_folder_app_handler)
+
+
+__all__ = [
+    "FolderApp",
+    "FolderAppRuntimeError",
+    "discover_folder_apps",
+    "folder_app_roots",
+    "invoke_folder_app_action",
+    "register_folder_app_routes",
+    "resolve_folder_app",
+]

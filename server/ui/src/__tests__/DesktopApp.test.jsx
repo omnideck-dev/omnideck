@@ -10,11 +10,12 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQ
 // We only care about which panels / views are mounted, not their internals.
 
 vi.mock('../components/ChatPanel.jsx', () => ({
-    default: ({ turns, isStreaming, networkActivated, networkAgentCount, onOpenNetwork }) => (
+    default: ({ turns, isStreaming, networkActivated, networkAgentCount, onOpenNetwork, draft }) => (
         <div data-testid="chat-panel">
             Chat
             <span data-testid="chat-messages">{turns?.length || 0} messages</span>
             <span data-testid="chat-streaming">{isStreaming ? 'streaming' : 'idle'}</span>
+            <span data-testid="chat-draft">{draft}</span>
             {networkActivated && (
                 <button data-testid="network-indicator" onClick={onOpenNetwork}>
                     {networkAgentCount} agents
@@ -68,6 +69,7 @@ vi.mock('../components/Sidebar.jsx', () => ({
             <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
             <button data-testid="open-routines" onClick={() => onPanelToggle('routines')}>Routines</button>
             <button data-testid="open-agents" onClick={() => onPanelToggle('agents')}>Agents</button>
+            <button data-testid="open-apps" onClick={() => onPanelToggle('apps')}>Apps</button>
             <button data-testid="close-panel" onClick={() => onPanelToggle(null)}>Close panel</button>
             <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
             <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
@@ -95,6 +97,41 @@ vi.mock('../components/BrowserFullscreen.jsx', () => ({
 
 vi.mock('../components/SettingsPage.jsx', () => ({
     default: () => <div data-testid="settings-page">Settings</div>,
+}));
+
+vi.mock('../components/apps/AppsView.jsx', () => ({
+    default: ({ onOpenApp, onOpenAppBesideChat }) => (
+        <div data-testid="apps-view">
+            Apps
+            <button data-testid="mock-open-app-full" onClick={() => onOpenApp({
+                slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
+            })}>Open full</button>
+            <button data-testid="mock-open-app-split" onClick={() => onOpenAppBesideChat({
+                slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
+            })}>Open split</button>
+        </div>
+    ),
+}));
+
+vi.mock('../components/apps/HomeView.jsx', () => ({
+    default: () => <div data-testid="home-view">Home</div>,
+}));
+
+vi.mock('../components/apps/FolderAppWorkspace.jsx', () => ({
+    default: ({ app, visible, layout, onOpenChat, onCloseTab, onComposeChat }) => (
+        <div
+            data-testid="folder-app-workspace"
+            data-visible={visible ? 'true' : 'false'}
+            data-layout={layout}
+        >
+            {app.title}
+            <button data-testid="mock-workspace-chat" onClick={onOpenChat}>Chat with Agent</button>
+            <button data-testid="mock-workspace-compose" onClick={() => onComposeChat({
+                text: 'Review this', context: { text: 'Draft' },
+            })}>Compose</button>
+            <button data-testid="mock-workspace-close" onClick={() => onCloseTab(`app:${app.slug}`)}>Close</button>
+        </div>
+    ),
 }));
 
 vi.mock('../components/routines/RoutinesView.jsx', () => ({
@@ -308,6 +345,96 @@ describe('DesktopApp view transitions', () => {
         it('does not show activity view initially', async () => {
             await renderApp();
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
+        });
+
+        it('lands on a docked custom app when folder apps are enabled', async () => {
+            globalThis.fetch = vi.fn((url) => {
+                if (url === '/api/settings') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({ setup_complete: true, home_app_slug: 'text-lab' }),
+                    });
+                }
+                if (url === '/api/features') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ folder_apps: true }) });
+                }
+                if (url === '/api/providers') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+                }
+                if (url === '/api/profiles') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+                }
+                if (url.startsWith('/api/models')) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+                }
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+            });
+
+            await renderApp();
+            expect(await screen.findByTestId('home-view')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expect(screen.queryByTestId('home-view')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('shell-scoped custom app workspace', () => {
+        beforeEach(() => {
+            globalThis.fetch = vi.fn((url) => {
+                if (url === '/api/settings') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ setup_complete: true }) });
+                }
+                if (url === '/api/features') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ folder_apps: true }) });
+                }
+                if (url === '/api/providers') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+                }
+                if (url === '/api/profiles') {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+                }
+                if (url.startsWith('/api/models')) {
+                    return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
+                }
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+            });
+        });
+
+        it('moves a full app beside the current chat, survives New chat, and can close', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+
+            const workspace = screen.getByTestId('folder-app-workspace');
+            expect(workspace).toHaveAttribute('data-layout', 'full');
+            expect(workspace).toHaveAttribute('data-visible', 'true');
+
+            fireEvent.click(screen.getByTestId('mock-workspace-chat'));
+            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+
+            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
+            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+
+            fireEvent.click(screen.getByTestId('mock-workspace-close'));
+            expect(screen.queryByTestId('folder-app-workspace')).not.toBeInTheDocument();
+            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+        });
+
+        it('opens the current chat and seeds its composer from explicit app context', async () => {
+            const setDraft = vi.fn();
+            streamMock.value = { ...streamMock.makeDefault(), draft: '', setDraft };
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId('mock-workspace-compose'));
+
+            expect(screen.getByTestId('folder-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(setDraft).toHaveBeenCalledOnce();
+            const updateDraft = setDraft.mock.calls[0][0];
+            expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
+            expect(updateDraft('')).toContain('"Draft"');
         });
     });
 

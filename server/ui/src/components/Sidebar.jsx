@@ -11,9 +11,11 @@ const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 // network view is opened from the chat title-bar pill, not a nav item.
 // Memory and Custom Tools live under Settings, not in the nav.
 const NAV = [
+    { id: 'home', icon: 'bi-house-door', label: 'Home', feature: 'homeApp' },
     { id: 'agents', icon: 'bi-robot', label: 'Agents' },
     { id: 'routines', icon: 'bi-bullseye', label: 'Routines' },
     { id: 'artifacts', icon: 'bi-collection', label: 'Artifacts' },
+    { id: 'apps', icon: 'bi-grid', label: 'Apps', feature: 'folderApps' },
 ];
 
 function _readCollapsed() {
@@ -41,6 +43,8 @@ export default function Sidebar({
     onOpenDesktop,
     onLoadConversation,
     activeConversationId,
+    folderAppsEnabled,
+    homeAppEnabled,
 }) {
     const { dark, toggleTheme } = useTheme();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
@@ -94,7 +98,11 @@ export default function Sidebar({
             </div>
 
             <nav className={styles.nav}>
-                {NAV.map((panel) => {
+                {NAV.filter((panel) => {
+                    if (panel.feature === 'folderApps') return folderAppsEnabled;
+                    if (panel.feature === 'homeApp') return folderAppsEnabled && homeAppEnabled;
+                    return true;
+                }).map((panel) => {
                     const active = activePanel === panel.id;
                     return (
                         <button

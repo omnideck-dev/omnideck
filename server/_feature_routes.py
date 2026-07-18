@@ -3,6 +3,7 @@
 from aiohttp import web
 
 from config import load_config
+from settings import custom_apps_enabled
 
 
 async def handle_features(_request: web.Request) -> web.Response:
@@ -14,6 +15,7 @@ async def handle_features(_request: web.Request) -> web.Response:
         "desktop": features.desktop,
         "visual_grounding": features.visual_grounding,
         "custom_tools": features.custom_tools,
+        "folder_apps": custom_apps_enabled(),
     })
 
 
