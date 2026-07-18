@@ -84,62 +84,53 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
         }
     }, [draft, onDraftConsumed]);
 
-    const [fileData, setFileData] = useState(null);
-    const [filePreview, setFilePreview] = useState(null);
-    const [fileName, setFileName] = useState(null);
+    // Each entry: { base64, content_type, filename, preview } where preview is a
+    // data URL for images, null for other file types.
+    const [attachments, setAttachments] = useState([]);
 
     useEffect(() => {
         if (attachment) {
             const { base64, contentType = 'image/png', filename } = attachment;
-            const dataUrl = `data:${contentType};base64,${base64}`;
-            setFileData({ base64, content_type: contentType, filename: filename || null });
-            if (contentType.startsWith('image/')) {
-                setFilePreview(dataUrl);
-            } else {
-                setFilePreview(null);
-            }
-            setFileName(filename || null);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
+            const preview = contentType.startsWith('image/')
+                ? `data:${contentType};base64,${base64}`
+                : null;
+            setAttachments(prev => [...prev, { base64, content_type: contentType, filename: filename || null, preview }]);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     }, [attachment]);
 
-    const clearAttachment = () => {
-        setFileData(null);
-        setFilePreview(null);
-        setFileName(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+    const removeAttachment = (index) => {
+        setAttachments(prev => {
+            const next = prev.filter((_, i) => i !== index);
+            if (next.length === 0 && fileInputRef.current) fileInputRef.current.value = '';
+            return next;
+        });
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (stopRequested) return;
-        if (!message.trim() && !fileData) return;
-        onSend(message.trim(), fileData);
+        if (!message.trim() && !attachments.length) return;
+        onSend(message.trim(), attachments.length ? attachments : null);
         setMessage('');
-        clearAttachment();
+        setAttachments([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         setExpanded(false);
     };
 
     const handleFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) {
-            clearAttachment();
-            return;
-        }
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            const base64 = ev.target.result.split(',')[1];
-            setFileData({ base64, content_type: file.type, filename: file.name });
-            if (file.type.startsWith('image/')) {
-                setFilePreview(ev.target.result);
-            } else {
-                setFilePreview(null);
-            }
-            setFileName(file.name);
-        };
-        reader.readAsDataURL(file);
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const base64 = ev.target.result.split(',')[1];
+                const preview = file.type.startsWith('image/') ? ev.target.result : null;
+                setAttachments(prev => [...prev, { base64, content_type: file.type, filename: file.name, preview }]);
+            };
+            reader.readAsDataURL(file);
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handlePaste = (e) => {
@@ -154,17 +145,13 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                 reader.onload = (ev) => {
                     const base64 = ev.target.result.split(',')[1];
                     const name = `screenshot_${Date.now()}.png`;
-                    setFileData({ base64, content_type: file.type, filename: name });
-                    setFilePreview(ev.target.result);
-                    setFileName(name);
+                    setAttachments(prev => [...prev, { base64, content_type: file.type, filename: name, preview: ev.target.result }]);
                 };
                 reader.readAsDataURL(file);
                 return;
             }
         }
     };
-
-    const hasAttachment = filePreview || fileName;
 
     const textareaProps = {
         value: message,
@@ -187,14 +174,18 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
     return (
         <div className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}>
             <form className={styles.inputArea} onSubmit={handleSubmit}>
-                {hasAttachment && (
+                {attachments.length > 0 && (
                     <div className={styles.tray}>
-                        <AttachmentChip
-                            src={filePreview || undefined}
-                            filename={fileName}
-                            sizeBytes={fileData?.base64 ? _base64Bytes(fileData.base64) : undefined}
-                            onRemove={clearAttachment}
-                        />
+                        {attachments.map((att, i) => (
+                            <AttachmentChip
+                                key={i}
+                                src={att.preview || undefined}
+                                filename={att.filename}
+                                content_type={att.content_type}
+                                sizeBytes={att.base64 ? _base64Bytes(att.base64) : undefined}
+                                onRemove={() => removeAttachment(i)}
+                            />
+                        ))}
                     </div>
                 )}
                 <div className={styles.textareaWrapper}>
@@ -243,6 +234,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                             ref={fileInputRef}
                             type="file"
                             id="fileInput"
+                            multiple
                             style={{ display: 'none' }}
                             onClick={(e) => { e.target.value = ''; }}
                             onChange={handleFile}
@@ -265,7 +257,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                                 className={styles.sendButton}
                                 title="Send message"
                                 aria-label="Send message"
-                                disabled={!message.trim() && !fileData}
+                                disabled={!message.trim() && !attachments.length}
                             >
                                 <SendIcon />
                             </button>

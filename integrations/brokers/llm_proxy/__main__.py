@@ -53,6 +53,14 @@ _HOP_BY_HOP = frozenset({
 # request (which carries a placeholder) and inject the real key.
 _AUTH_HEADERS_TO_STRIP = frozenset({"authorization", "x-api-key"})
 
+# The proxy forwards whole LLM request bodies untouched. For a chat request
+# that body is the entire conversation transcript, which grows to many
+# megabytes on a long conversation. aiohttp's default cap is 1 MiB, small
+# enough to reject a normal long conversation before it ever reaches the
+# upstream. Disable the cap (0 = no limit) so the proxy stays transparent to
+# body size and lets the upstream API enforce the real request limits.
+_NO_REQUEST_BODY_LIMIT = 0
+
 
 def _make_auth_headers(provider: str, api_key: str) -> dict[str, str]:
     """Return the auth header(s) to inject for this provider."""
@@ -141,7 +149,7 @@ async def _run() -> int:
     if socket_path.exists() or socket_path.is_symlink():
         socket_path.unlink()
 
-    app = web.Application()
+    app = web.Application(client_max_size=_NO_REQUEST_BODY_LIMIT)
     app.router.add_route("*", "/{path_info:.*}", proxy_handler)
 
     runner = web.AppRunner(app, access_log=None)

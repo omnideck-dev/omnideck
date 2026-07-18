@@ -48,6 +48,27 @@ class RecentConversationItem:
         self.open_menu()
         self._page.get_by_test_id("recent-menu-pin").click()
 
+    def archive(self) -> None:
+        """Archive the conversation via the menu's Archive action."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-archive").click()
+
+    def move_to_folder(self, folder_name: str) -> None:
+        """File the conversation into a folder via the menu's folder picker."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-move").click()
+        picker = self._page.get_by_test_id("recent-menu-folders")
+        picker.wait_for(state="visible")
+        picker.get_by_test_id("recent-menu-folder-option").filter(
+            has_text=folder_name,
+        ).first.click()
+
+    def remove_from_folder(self) -> None:
+        """Remove the conversation from its folder via the menu's folder picker."""
+        self.open_menu()
+        self._page.get_by_test_id("recent-menu-move").click()
+        self._page.get_by_test_id("recent-menu-folder-remove").click()
+
     def rename(self, new_name: str) -> None:
         """Rename the conversation via the menu's inline edit-in-place."""
         self.open_menu()
@@ -56,6 +77,35 @@ class RecentConversationItem:
         field.wait_for(state="visible")
         field.fill(new_name)
         self._page.get_by_test_id("recent-rename-save").click()
+
+
+class ArchivedConversationItem:
+    """A single row in the sidebar's Archived shelf.
+
+    Archived rows carry Restore and (two-tap) permanent Delete actions,
+    revealed on hover. Both are scoped to the row so multiple archived
+    conversations don't collide.
+    """
+
+    def __init__(self, locator: Locator, page: Page):
+        self._loc = locator
+        self._page = page
+
+    @property
+    def root(self) -> Locator:
+        return self._loc
+
+    def restore(self) -> None:
+        """Restore the conversation back into the active recents list."""
+        self._loc.hover()
+        self._loc.get_by_test_id("archived-restore").click()
+
+    def delete(self) -> None:
+        """Permanently delete via the click-twice-to-confirm Delete action."""
+        self._loc.hover()
+        delete = self._loc.get_by_test_id("archived-delete")
+        delete.click()  # arms
+        delete.click()  # confirms
 
 
 class RecentConversations:
@@ -107,6 +157,49 @@ class RecentConversations:
         self.items.first.click()
         return self
 
+    def create_folder(self, name: str) -> "RecentConversations":
+        """Create a folder via the new-folder button and inline name input."""
+        self.page.get_by_test_id("recent-new-folder").click()
+        field = self.page.get_by_test_id("recent-new-folder-input")
+        field.wait_for(state="visible")
+        field.fill(name)
+        field.press("Enter")
+        return self
+
+    def folder_section(self, name: str) -> Locator:
+        """Return the section element for a folder, located by its header name."""
+        return self.page.get_by_test_id("recent-section").filter(has_text=name)
+
+    def open_folder_menu(self, name: str) -> Locator:
+        """Open a folder header's 3-dot options menu and return the menu."""
+        section = self.folder_section(name)
+        section.get_by_test_id("recent-folder-menu-trigger").click()
+        menu = self.page.get_by_test_id("recent-folder-menu")
+        menu.wait_for(state="visible")
+        return menu
+
+    def rename_folder(self, name: str, new_name: str) -> None:
+        """Rename a folder via its options menu."""
+        self.open_folder_menu(name).get_by_test_id("recent-folder-menu-rename").click()
+        field = self.page.get_by_test_id("recent-folder-rename-input")
+        field.wait_for(state="visible")
+        field.fill(new_name)
+        field.press("Enter")
+
+    def delete_folder(self, name: str) -> None:
+        """Delete a folder via its options menu (click-twice-to-confirm)."""
+        self.open_folder_menu(name)
+        delete = self.page.get_by_test_id("recent-folder-menu-delete")
+        delete.click()  # arms
+        delete.click()  # confirms
+
+    def change_folder_icon(self, name: str, icon_class: str) -> None:
+        """Change a folder's icon via its options menu and the icon picker."""
+        self.open_folder_menu(name).get_by_test_id("recent-folder-menu-icon").click()
+        picker = self.page.get_by_test_id("recent-icon-picker")
+        picker.wait_for(state="visible")
+        picker.locator(f'[data-icon="{icon_class}"]').click()
+
     def item_by_id(self, conversation_id: str) -> RecentConversationItem:
         """Return a row by its conversation id — independent of list position.
 
@@ -128,3 +221,27 @@ class RecentConversations:
         return self.items.evaluate_all(
             "els => els.map(e => e.getAttribute('data-conversation-id'))"
         )
+
+    # -- Archived shelf -------------------------------------------------------
+
+    @property
+    def archived_toggle(self) -> Locator:
+        """The collapsible 'Archived' section header/toggle."""
+        return self.page.get_by_test_id("archived-toggle")
+
+    @property
+    def archived_items(self) -> Locator:
+        return self.page.get_by_test_id("archived-item")
+
+    def expand_archived(self) -> "RecentConversations":
+        """Open the Archived shelf, which lazily loads the archived list."""
+        if self.archived_toggle.get_attribute("aria-expanded") != "true":
+            self.archived_toggle.click()
+        return self
+
+    def archived_item_by_id(self, conversation_id: str) -> ArchivedConversationItem:
+        """Return an archived row by its conversation id."""
+        loc = self.page.locator(
+            f'[data-testid="archived-item"][data-conversation-id="{conversation_id}"]'
+        )
+        return ArchivedConversationItem(loc, self.page)

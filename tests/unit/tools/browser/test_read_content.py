@@ -1,20 +1,23 @@
-"""Tests for the read_page browser tool and _filter_by_query helper."""
+"""Tests for the read_page browser tool and its chunking/search helpers."""
 
 from __future__ import annotations
-
-from typing import Any
 
 import pytest
 
 from tools.browser import BrowserToolError
-from tools.browser.read_content import _filter_by_query, _READ_BUDGET, read_page
+from tools.browser.read_content import (
+    _chunk_bounds,
+    _chunk_of,
+    _describe_chunks,
+    _search,
+    read_page,
+)
 from tests.unit.tools.browser.support.playwright_stubs import StubBrowser, StubPage
 
 
 def _make_fake_get_active_view(browser: StubBrowser):
     """Build a fake ``get_active_view`` that returns a stub browser + ActiveView."""
     async def _fake(tool_name: str, *, tab=None):
-        from tools.browser.core.browser import ActiveView
         from tools.browser.core.exceptions import BrowserToolError as BTE
         view = await browser.active_view()
         if view.url in {"", "about:blank"}:
@@ -41,133 +44,244 @@ class _ReadContentPage(StubPage):
         super().__init__(title=title, body_text="", url=url)
         self._html = html
 
-    async def evaluate(self, script: str, arg: Any = None) -> Any:
-        # Content root JS — return the stored HTML
-        if "querySelector" in script and "article" in script:
-            return self._html
-        # Viewport info query
-        if "scroll_top" in script and "scrollY" in script:
-            return {
-                "scroll_top": 0,
-                "viewport_height": 800,
-                "viewport_width": 1280,
-                "document_height": 2000,
-            }
-        return await super().evaluate(script, arg)
+    async def content(self) -> str:
+        return self._html
 
 
-class _NoSnapshotPage:
-    """Page stub with no screenshot capability; events decorator exits early."""
-
-
-class _NoSnapshotBrowser:
-    async def current_page(self) -> _NoSnapshotPage:
-        return _NoSnapshotPage()
-
-
-async def _no_snapshot_get_browser() -> _NoSnapshotBrowser:
-    return _NoSnapshotBrowser()
+def _patch_view(monkeypatch: pytest.MonkeyPatch, page: _ReadContentPage) -> None:
+    monkeypatch.setattr(
+        "tools.browser.read_content.get_active_view",
+        _make_fake_get_active_view(StubBrowser(page)),
+    )
 
 
 # ---------------------------------------------------------------------------
-# _filter_by_query — pure function tests
+# _chunk_bounds — pure function tests
 # ---------------------------------------------------------------------------
 
 
-class TestFilterByQuery:
-    """Tests for the line-level query filtering helper."""
+@pytest.mark.unit
+def test_chunk_bounds_short_content_is_one_chunk() -> None:
+    assert _chunk_bounds("hello") == [(0, 5)]
 
-    @pytest.mark.unit
-    def test_no_matches_returns_empty(self) -> None:
-        """Returns empty string and truncated=False when query not found."""
-        content = "Line one\nLine two\nLine three"
-        result, truncated = _filter_by_query(content, "missing")
-        assert result == ""
-        assert truncated is False
 
-    @pytest.mark.unit
-    def test_single_match_with_context(self) -> None:
-        """Returns matching line with surrounding context lines."""
-        lines = ["alpha", "beta", "gamma", "delta", "epsilon"]
-        content = "\n".join(lines)
-        result, truncated = _filter_by_query(content, "gamma")
+@pytest.mark.unit
+def test_chunk_bounds_empty_content_is_one_empty_chunk() -> None:
+    assert _chunk_bounds("") == [(0, 0)]
 
-        assert truncated is False
-        assert "gamma" in result
-        assert "beta" in result
-        assert "delta" in result
-        assert "alpha" not in result
 
-    @pytest.mark.unit
-    def test_case_insensitive_matching(self) -> None:
-        """Query matching is case-insensitive."""
-        content = "Hello World\nfoo bar\nGoodbye"
-        result, truncated = _filter_by_query(content, "hello")
-        assert "Hello World" in result
+@pytest.mark.unit
+def test_chunk_bounds_cover_content_exactly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chunks tile the content with no gap and no overlap."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 100)
+    content = "\n".join(f"line {i} " + "x" * 40 for i in range(20))
 
-    @pytest.mark.unit
-    def test_multiple_matches_grouped(self) -> None:
-        """Non-adjacent matches are separated by --- delimiters."""
-        lines = [
-            "match one here",
-            "unrelated A",
-            "unrelated B",
-            "unrelated C",
-            "unrelated D",
-            "match two here",
+    bounds = _chunk_bounds(content)
+
+    assert bounds[0][0] == 0
+    assert bounds[-1][1] == len(content)
+    for (_, prev_end), (next_start, _) in zip(bounds, bounds[1:]):
+        assert prev_end == next_start
+    assert "".join(content[s:e] for s, e in bounds) == content
+
+
+@pytest.mark.unit
+def test_chunk_bounds_break_on_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A chunk ends at a line break when the next line would overflow."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 30)
+    content = "aaaa\nbbbb\ncccc\ndddd\neeee\nffff\ngggg"
+
+    bounds = _chunk_bounds(content)
+
+    assert len(bounds) > 1
+    for start, end in bounds[:-1]:
+        assert end - start <= 30
+        assert content[end - 1] == "\n"
+
+
+@pytest.mark.unit
+def test_chunk_bounds_hard_split_a_long_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single line longer than the budget is split, since there's no break."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 10)
+    content = "x" * 25
+
+    bounds = _chunk_bounds(content)
+
+    assert bounds == [(0, 10), (10, 20), (20, 25)]
+
+
+# ---------------------------------------------------------------------------
+# _chunk_of and _describe_chunks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_chunk_of_maps_offsets_to_chunks() -> None:
+    bounds = [(0, 10), (10, 20), (20, 25)]
+
+    assert _chunk_of(0, bounds) == 1
+    assert _chunk_of(9, bounds) == 1
+    assert _chunk_of(10, bounds) == 2
+    assert _chunk_of(24, bounds) == 3
+
+
+@pytest.mark.unit
+def test_chunk_of_past_end_returns_last_chunk() -> None:
+    assert _chunk_of(999, [(0, 10), (10, 20)]) == 2
+
+
+@pytest.mark.unit
+def test_describe_chunks_reads_naturally() -> None:
+    assert _describe_chunks([3]) == "chunk 3"
+    assert _describe_chunks([3, 9]) == "chunks 3 and 9"
+    assert _describe_chunks([3, 9, 14]) == "chunks 3, 9 and 14"
+
+
+# ---------------------------------------------------------------------------
+# _search — pure function tests
+# ---------------------------------------------------------------------------
+
+
+def _search_text(content: str, query: str) -> str:
+    text, _ = _search(content, query, _chunk_bounds(content))
+    return text
+
+
+@pytest.mark.unit
+def test_search_no_matches_returns_empty() -> None:
+    text, capped = _search("Line one\nLine two", "missing", [(0, 17)])
+    assert text == ""
+    assert capped is False
+
+
+@pytest.mark.unit
+def test_search_returns_match_with_context() -> None:
+    content = "\n".join(["alpha", "beta", "gamma", "delta", "epsilon"])
+    text = _search_text(content, "gamma")
+
+    assert "gamma" in text
+    assert "beta" in text
+    assert "delta" in text
+    assert "alpha" not in text
+
+
+@pytest.mark.unit
+def test_search_is_case_insensitive() -> None:
+    assert "Hello World" in _search_text("Hello World\nfoo\nbye", "hello")
+
+
+@pytest.mark.unit
+def test_search_matches_all_words_in_any_order() -> None:
+    """A multi-word query matches a line holding every word, order aside."""
+    content = "\n".join(
+        [
+            "HTTP/2 extended persistent connections by multiplexing requests.",
+            "An unrelated line about caching.",
         ]
-        content = "\n".join(lines)
-        result, truncated = _filter_by_query(content, "match")
+    )
+    text = _search_text(content, "multiplexing HTTP/2")
 
-        assert "match one here" in result
-        assert "match two here" in result
-        assert "---" in result
+    assert "HTTP/2 extended persistent connections" in text
 
-    @pytest.mark.unit
-    def test_adjacent_matches_merged(self) -> None:
-        """Adjacent matches (within context range) are merged into one group."""
-        lines = ["alpha", "match A", "match B", "omega"]
-        content = "\n".join(lines)
-        result, truncated = _filter_by_query(content, "match")
 
-        assert "match A" in result
-        assert "match B" in result
-        assert "---" not in result
+@pytest.mark.unit
+def test_search_requires_every_word_present() -> None:
+    """A line missing one of the query words does not match."""
+    content = "\n".join(
+        [
+            "This line has multiplexing but not the protocol name.",
+            "This line has neither term of interest.",
+        ]
+    )
+    text, _ = _search(content, "multiplexing HTTP/2", _chunk_bounds(content))
 
-    @pytest.mark.unit
-    def test_header_shows_match_count(self) -> None:
-        """Result includes a header with match count and total char count."""
-        lines = ["match first", "a", "b", "c", "d", "match second"]
-        content = "\n".join(lines)
-        result, _ = _filter_by_query(content, "match")
+    assert text == ""
 
-        assert '[Filtered for "match"' in result
-        assert "2 match(es)" in result
 
-    @pytest.mark.unit
-    def test_pagination_returns_next_page(self) -> None:
-        """When filtered results exceed budget, page_number=2 gets the rest."""
-        lines = []
-        for i in range(200):
-            lines.append(f"match line {i} " + "x" * 200)
-            lines.extend([f"filler {i}a", f"filler {i}b", f"filler {i}c", f"filler {i}d"])
+@pytest.mark.unit
+def test_search_separates_distant_passages() -> None:
+    lines = ["match one", "a", "b", "c", "d", "match two"]
+    text = _search_text("\n".join(lines), "match")
 
-        content = "\n".join(lines)
-        page1, truncated1 = _filter_by_query(content, "match", page_number=1)
-        assert truncated1 is True
-        assert len(page1) > 0
+    assert "match one" in text
+    assert "match two" in text
+    assert "\n---\n" in text
 
-        page2, _ = _filter_by_query(content, "match", page_number=2)
-        assert len(page2) > 0
-        assert page1 != page2
 
-    @pytest.mark.unit
-    def test_page_past_end_returns_empty(self) -> None:
-        """Requesting a page number past available results returns empty."""
-        content = "one match here"
-        result, truncated = _filter_by_query(content, "match", page_number=99)
-        assert result == ""
-        assert truncated is False
+@pytest.mark.unit
+def test_search_merges_adjacent_matches() -> None:
+    text = _search_text("\n".join(["alpha", "match A", "match B", "omega"]), "match")
+
+    assert "match A" in text
+    assert "match B" in text
+    assert "\n---\n" not in text
+
+
+@pytest.mark.unit
+def test_search_header_reports_count_and_chunks() -> None:
+    content = "\n".join(["match first", "a", "b", "c", "d", "e", "match second"])
+
+    text = _search_text(content, "match")
+
+    assert '[Search "match" — 2 match(es) in chunk 1 of 1.]' in text
+    assert text.count("(chunk 1)") == 2
+
+
+@pytest.mark.unit
+def test_search_labels_passages_with_their_own_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two matches far apart are reported against different chunks."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 30)
+    content = "\n".join(["needle a"] + ["pad"] * 20 + ["needle b"])
+
+    text = _search_text(content, "needle")
+
+    assert "(chunk 1)" in text
+    assert "\n---\n" in text
+    assert "in chunks 1 and " in text
+
+
+@pytest.mark.unit
+def test_search_caps_passages_and_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A query matching everything is capped, not returned in full."""
+    monkeypatch.setattr("tools.browser.read_content._QUERY_MAX_PASSAGES", 3)
+    lines: list[str] = []
+    for i in range(20):
+        lines.extend([f"match {i}", "a", "b", "c", "d"])
+    content = "\n".join(lines)
+
+    text, capped = _search(content, "match", _chunk_bounds(content))
+
+    assert capped is True
+    assert "Showing the first 3." in text
+    assert "Narrow the query" in text
+    assert text.count("\n---\n") == 2
+
+
+@pytest.mark.unit
+def test_search_uncapped_result_says_nothing_about_narrowing() -> None:
+    content = "\n".join(["match one", "a", "b", "c", "d", "match two"])
+    text, capped = _search(content, "match", _chunk_bounds(content))
+
+    assert capped is False
+    assert "Narrow the query" not in text
+    assert "Read a chunk to see any of these matches in full." in text
+
+
+@pytest.mark.unit
+def test_search_respects_the_read_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Passages stop accumulating once the budget is spent."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 400)
+    lines: list[str] = []
+    for i in range(20):
+        lines.extend([f"match {i} " + "x" * 200, "a", "b", "c", "d"])
+    content = "\n".join(lines)
+
+    text, capped = _search(content, "match", _chunk_bounds(content))
+
+    assert capped is True
+    assert len(text) < 2000
 
 
 # ---------------------------------------------------------------------------
@@ -175,101 +289,120 @@ class TestFilterByQuery:
 # ---------------------------------------------------------------------------
 
 
-class TestReadPage:
-    """Tests for the read_page tool function."""
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_returns_string_with_markdown(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """read_page returns a formatted string with converted markdown content."""
-        page = _ReadContentPage(
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_returns_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """read_page returns a formatted string with converted markdown content."""
+    _patch_view(
+        monkeypatch,
+        _ReadContentPage(
             title="My Article",
             html="<body><h1>Title</h1><p>Some content here.</p></body>",
             url="https://example.test/article",
-        )
-        browser = StubBrowser(page)
+        ),
+    )
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(tab="1")
 
-        result = await read_page(tab="1")
+    assert "My Article" in result
+    assert "https://example.test/article" in result
+    assert "Title" in result
+    assert "Some content here" in result
 
-        assert isinstance(result, str)
-        assert "My Article" in result
-        assert "https://example.test/article" in result
-        assert "Title" in result
-        assert "Some content here" in result
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_truncation_on_long_content(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Content longer than _READ_BUDGET is truncated."""
-        long_body = "<p>" + ("word " * 10000) + "</p>"
-        page = _ReadContentPage(html=f"<body>{long_body}</body>")
-        browser = StubBrowser(page)
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_returns_whole_body_not_just_the_article(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Content outside a thin <article> is still returned."""
+    _patch_view(
+        monkeypatch,
+        _ReadContentPage(
+            html=(
+                "<body>"
+                "<article><h1>Just the headline</h1></article>"
+                "<main><p>The real content of the page lives here.</p></main>"
+                "</body>"
+            )
+        ),
+    )
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(tab="1")
 
-        result = await read_page(tab="1")
+    assert "Just the headline" in result
+    assert "The real content of the page lives here." in result
 
-        assert isinstance(result, str)
-        assert "truncated" in result
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_page_number_pagination(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """page_number=2 returns the second chunk of content."""
-        paragraphs = "".join(
-            f"<p>Paragraph number {i} with unique content.</p>" for i in range(2000)
-        )
-        page = _ReadContentPage(html=f"<body>{paragraphs}</body>")
-        browser = StubBrowser(page)
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_single_chunk_reports_one_of_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_view(monkeypatch, _ReadContentPage(html="<body><p>Short</p></body>"))
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(tab="1")
 
-        page1 = await read_page(page_number=1, tab="1")
-        page2 = await read_page(page_number=2, tab="1")
+    assert "[chunk 1/1 · 5 chars total]" in result
+    assert "Read on with chunk=" not in result
+    assert "truncated" not in result
 
-        assert isinstance(page1, str)
-        assert isinstance(page2, str)
-        assert "truncated" in page1
-        assert page1 != page2
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_page_number_past_end_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Requesting a page past the end raises BrowserToolError."""
-        page = _ReadContentPage(html="<body><p>Short</p></body>")
-        browser = StubBrowser(page)
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_long_content_is_chunked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Content longer than the budget reports more chunks and truncation."""
+    long_body = "<p>" + ("word " * 10000) + "</p>"
+    _patch_view(monkeypatch, _ReadContentPage(html=f"<body>{long_body}</body>"))
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(tab="1")
 
-        with pytest.raises(BrowserToolError, match="past the end"):
-            await read_page(page_number=99, tab="1")
+    assert "[chunk 1/3" in result
+    assert "Read on with chunk=2" in result
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_page_number_zero_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """page_number < 1 raises BrowserToolError."""
-        with pytest.raises(BrowserToolError, match="page_number must be 1"):
-            await read_page(page_number=0, tab="1")
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_query_filters_content(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """query parameter filters content to matching lines."""
-        page = _ReadContentPage(
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_chunk_two_differs_from_chunk_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paragraphs = "".join(
+        f"<p>Paragraph number {i} with unique content.</p>" for i in range(2000)
+    )
+    _patch_view(monkeypatch, _ReadContentPage(html=f"<body>{paragraphs}</body>"))
+
+    first = await read_page(chunk=1, tab="1")
+    second = await read_page(chunk=2, tab="1")
+
+    assert "[chunk 1/" in first
+    assert "[chunk 2/" in second
+    assert first != second
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_chunk_past_end_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_view(monkeypatch, _ReadContentPage(html="<body><p>Short</p></body>"))
+
+    with pytest.raises(BrowserToolError, match="past the end"):
+        await read_page(chunk=99, tab="1")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_chunk_zero_raises() -> None:
+    with pytest.raises(BrowserToolError, match="chunk must be 1"):
+        await read_page(chunk=0, tab="1")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_query_filters_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_view(
+        monkeypatch,
+        _ReadContentPage(
             html=(
                 "<body>"
                 "<p>Introduction paragraph</p>"
@@ -278,61 +411,88 @@ class TestReadPage:
                 "<p>See pricing details below.</p>"
                 "</body>"
             )
-        )
-        browser = StubBrowser(page)
+        ),
+    )
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(query="pricing", tab="1")
 
-        result = await read_page(query="pricing", tab="1")
+    assert '[Search "pricing"' in result
+    assert "pricing" in result.lower()
+    assert "(chunk 1)" in result
 
-        assert isinstance(result, str)
-        assert "pricing" in result.lower()
-        assert '[Filtered for "pricing"' in result
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_query_no_matches(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """query with no matches returns a 'no matches' message."""
-        page = _ReadContentPage(html="<body><p>Hello world</p></body>")
-        browser = StubBrowser(page)
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_query_searches_beyond_the_first_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A match late in a long page is found and located, not missed."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 200)
+    filler = "".join(f"<p>Filler paragraph {i}.</p>" for i in range(40))
+    _patch_view(
+        monkeypatch,
+        _ReadContentPage(html=f"<body>{filler}<p>The secret token.</p></body>"),
+    )
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(query="secret token", tab="1")
 
-        result = await read_page(query="nonexistent", tab="1")
+    assert "The secret token." in result
+    assert '[Search "secret token" — 1 match(es) in chunk ' in result
 
-        assert isinstance(result, str)
-        assert "No matches" in result
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_no_browser_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """read_page raises BrowserToolError when no browser is available."""
-        from tools.browser.core.exceptions import BrowserToolError as BTE
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_query_ignores_chunk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """query searches the whole page regardless of the chunk argument."""
+    monkeypatch.setattr("tools.browser.read_content._READ_BUDGET", 200)
+    filler = "".join(f"<p>Filler paragraph {i}.</p>" for i in range(40))
+    _patch_view(
+        monkeypatch,
+        _ReadContentPage(html=f"<body>{filler}<p>The secret token.</p></body>"),
+    )
 
-        async def _raise(tool_name: str, *, tab=None):
-            raise BTE("No open page to read", tool=tool_name)
+    from_first = await read_page(chunk=1, query="secret token", tab="1")
+    from_third = await read_page(chunk=3, query="secret token", tab="1")
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _raise)
+    assert from_first == from_third
 
-        with pytest.raises(BrowserToolError, match="No open page"):
-            await read_page(tab="1")
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_viewport_info_populated(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """read_page includes viewport metadata in the result."""
-        page = _ReadContentPage(html="<body><p>Content</p></body>")
-        browser = StubBrowser(page)
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_query_no_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_view(monkeypatch, _ReadContentPage(html="<body><p>Hello world</p></body>"))
 
-        monkeypatch.setattr("tools.browser.read_content.get_active_view", _make_fake_get_active_view(browser))
+    result = await read_page(query="nonexistent", tab="1")
 
-        result = await read_page(tab="1")
+    assert "no matches on this page" in result
+    assert "1 chunks" in result
 
-        assert isinstance(result, str)
-        assert "Viewport:" in result
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_no_browser_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.browser.core.exceptions import BrowserToolError as BTE
+
+    async def _raise(tool_name: str, *, tab=None):
+        raise BTE("No open page to read", tool=tool_name)
+
+    monkeypatch.setattr("tools.browser.read_content.get_active_view", _raise)
+
+    with pytest.raises(BrowserToolError, match="No open page"):
+        await read_page(tab="1")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_read_page_header_is_clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The header is one line: page, url, tab. No viewport, no empty status."""
+    _patch_view(monkeypatch, _ReadContentPage(html="<body><p>Content</p></body>"))
+
+    result = await read_page(tab="1")
+
+    first_line = result.splitlines()[0]
+    assert first_line.startswith("[Page: ")
+    assert first_line.endswith("| tab=1]")
+    assert "Viewport:" not in result
+    # No dangling empty status slot between the url and the tab segment.
+    assert " |  |" not in first_line

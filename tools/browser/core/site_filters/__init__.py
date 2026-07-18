@@ -2,8 +2,7 @@
 
 Pluggable filters that prune noise from known sites, letting the LLM
 focus on actionable content.  Each filter receives and returns a flat
-``list[DomNode]`` — the same interface used by ``_filter_viewport``
-and ``_filter_scope``.
+``list[DomNode]`` — the same shape the rest of the pipeline passes around.
 
 To add a new site filter, create a module in this package with a public
 ``filter_<site>(nodes)`` function, then register it in ``_SITE_FILTERS``.

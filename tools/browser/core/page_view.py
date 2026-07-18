@@ -141,6 +141,26 @@ _STRUCTURED_SNAPSHOT_JS = """
     'option','treeitem'
   ]);
 
+  // Something the agent can act on: a native control, or an element carrying one
+  // of the interactive roles above. Matching a bare [role] would also count roles
+  // that do nothing (note, presentation, banner) and treat ordinary prose as if
+  // it held a control. Matching no role at all would miss aria controls and let a
+  // tabbable wrapper swallow them into a single ref.
+  const INTERACTIVE_SEL = 'a[href], button, input, select, textarea,'
+    + ' [contenteditable]:not([contenteditable="false"]),'
+    + [...INTERACTIVE].map(r => ' [role="' + r + '"]').join(',');
+
+  function hasInteractive(el) {
+    return el.querySelector(INTERACTIVE_SEL) !== null;
+  }
+
+  function isNativeInteractiveElement(el) {
+    return el.matches(
+      'a[href], button, input, select, textarea, summary,'
+      + ' [contenteditable]:not([contenteditable="false"])'
+    );
+  }
+
   // ---- Accessible name ----
   function getName(el) {
     const al = el.getAttribute('aria-label');
@@ -201,7 +221,7 @@ _STRUCTURED_SNAPSHOT_JS = """
   function isTextContainer(el) {
     if (el.shadowRoot) return false;
     if (el.children.length === 0) return false;
-    if (el.querySelector('a[href], button, input, select, textarea, [role]')) return false;
+    if (hasInteractive(el)) return false;
     for (const child of el.children) {
       if (!INLINE_TAGS.has(child.tagName)) return false;
     }
@@ -212,8 +232,8 @@ _STRUCTURED_SNAPSHOT_JS = """
   function isImplicitlyInteractive(el) {
     const tag = el.tagName;
     if (tag === 'BODY' || tag === 'HTML') return false;
-    if (el.querySelector('a[href], button, input, select, textarea')) return false;
-    if (el.shadowRoot && el.shadowRoot.querySelector('a[href], button, input, select, textarea')) return false;
+    if (hasInteractive(el)) return false;
+    if (el.shadowRoot && el.shadowRoot.querySelector(INTERACTIVE_SEL)) return false;
     const ti = el.getAttribute('tabindex');
     if (ti !== null && ti !== '-1') return true;
     const s = window.getComputedStyle(el);
@@ -257,39 +277,31 @@ _STRUCTURED_SNAPSHOT_JS = """
     return null;
   }
 
-  function vpPos(el) {
-    if (fullPage) return 'in';
+  // Is this element itself on screen? Looks only at the element's own geometry,
+  // and says nothing about its descendants: a box does not bound its content,
+  // since out-of-flow (absolute / fixed) or overflow-scrolled children render
+  // outside it. So the walk never prunes a subtree on this answer — an off-screen
+  // element is still descended into, and each descendant is judged on its own
+  // rect. This only decides whether to emit THIS element.
+  function onScreen(el) {
+    if (fullPage) return true;
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) {
-      return (el.children.length > 0 || el.shadowRoot) ? 'clipped' : 'out';
-    }
-    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) {
-      if (el.children.length > 0 || el.shadowRoot) {
-        const os = window.getComputedStyle(el);
-        if (os.overflowY === 'visible' && el.scrollHeight > r.height + 1) {
-          if (r.top + el.scrollHeight > 0 && r.top < vh) return 'clipped';
-        }
-        if (os.overflowX === 'visible' && el.scrollWidth > r.width + 1) {
-          if (r.left + el.scrollWidth > 0 && r.left < vw) return 'clipped';
-        }
-      }
-      return 'out';
-    }
+    // Zero-area, or outside the viewport rectangle: not on screen itself.
+    if (!(r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw)) return false;
+    // On screen by coordinates, but scrolled out of a clipping ancestor's box.
     let ancestor = el.parentElement;
     while (ancestor && ancestor !== document.body) {
       const os = window.getComputedStyle(ancestor);
-      const ox = os.overflowX;
-      const oy = os.overflowY;
-      const clipX = ox === 'hidden' || ox === 'clip';
-      const clipY = oy === 'hidden' || oy === 'clip';
+      const clipX = os.overflowX === 'hidden' || os.overflowX === 'clip';
+      const clipY = os.overflowY === 'hidden' || os.overflowY === 'clip';
       if (clipX || clipY) {
         const ar = ancestor.getBoundingClientRect();
-        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return 'clipped';
-        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return 'clipped';
+        if (clipX && (r.right <= ar.left || r.left >= ar.right)) return false;
+        if (clipY && (r.bottom <= ar.top || r.top >= ar.bottom)) return false;
       }
       ancestor = ancestor.parentElement;
     }
-    return 'in';
+    return true;
   }
 
   const SKIP_ROLES = new Set(['separator']);
@@ -303,15 +315,39 @@ _STRUCTURED_SNAPSHOT_JS = """
   // ---- Ref counter ----
   let refCounter = 0;
 
-  // Clean up stale refs from previous snapshots
-  const stale = document.querySelectorAll('[data-ct-ref]');
-  for (let i = 0; i < stale.length; i++) stale[i].removeAttribute('data-ct-ref');
+  // Clean up exactly the elements stamped by the previous snapshot. Keeping
+  // direct element references covers shadow DOM without scanning the whole tree;
+  // detached elements remain safe to clean and are released when the registry
+  // is replaced below.
+  const refRegistryKey = Symbol.for('omnideck.browser.refElements');
+  const previousRefs = window[refRegistryKey];
+  if (Array.isArray(previousRefs)) {
+    for (const el of previousRefs) el.removeAttribute('data-ct-ref');
+  }
+  const currentRefs = [];
+  window[refRegistryKey] = currentRefs;
 
   // ---- Output ----
   const nodes = [];
   let depth = 0;
 
   function emit(node) { nodes.push(node); }
+
+  function clip(text) {
+    return text.length > 200 ? text.substring(0, 200) + '...' : text;
+  }
+
+  // Collapse a block into one node — unless it holds something interactive, in
+  // which case descend so the control gets its own ref. Doing both would print
+  // the block's words once as the block and again as its parts.
+  function collapseOrDescend(el, makeNode) {
+    if (hasInteractive(el)) {
+      walkChildren(el);
+      return;
+    }
+    const text = (el.innerText || '').trim();
+    if (text.length > 1) emit(makeNode(text));
+  }
 
   // Walk the child nodes of a container (element or shadow root).
   function walkChildren(container) {
@@ -321,7 +357,7 @@ _STRUCTURED_SNAPSHOT_JS = """
         if (child.nodeType === 3) {
           const text = child.textContent.trim();
           if (text.length > 1) {
-            emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: 'in' });
+            emit({ type: 'text', depth: depth, text: clip(text)});
           }
         } else if (child.nodeType === 1) {
           walkSlotOrElement(child);
@@ -343,7 +379,7 @@ _STRUCTURED_SNAPSHOT_JS = """
             if (node.nodeType === 3) {
               const text = node.textContent.trim();
               if (text.length > 1) {
-                emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: 'in' });
+                emit({ type: 'text', depth: depth, text: clip(text)});
               }
             } else if (node.nodeType === 1) {
               walk(node, false);
@@ -369,29 +405,28 @@ _STRUCTURED_SNAPSHOT_JS = """
       return;
     }
 
-    if (!isRoot) {
-      const vis = vpPos(el);
-      if (vis === 'out') return;
-      if (vis === 'clipped') {
-        for (const child of el.children) walk(child, false);
-        return;
-      }
+    if (!isRoot && !onScreen(el)) {
+      // Off screen itself, but its box may not bound its content: a descendant
+      // laid out of flow (absolute / fixed) or inside an overflow-scroll region
+      // can still be on screen. Descend and judge each child on its own rect
+      // rather than pruning the subtree. Off-screen descendants are likewise not
+      // emitted, so the visible result is unchanged; only content that was being
+      // lost behind a mis-measured wrapper now surfaces.
+      for (const child of el.children) walk(child, false);
+      return;
     }
 
-    const vp = isRoot ? 'in' : vpPos(el);
     const role = getRole(el);
 
     if (role && SKIP_ROLES.has(role)) return;
 
     // Interactive elements: stamp with ref, emit node data
     if (role && INTERACTIVE.has(role)) {
-      // A role="combobox" container (not a native <select> or <input>) that
-      // wraps the real text field — the React Autosuggest / Downshift / MUI
-      // Autocomplete pattern. The inner input is the actionable element, so
-      // make the container transparent: walk into it (exposing the input and
-      // any open suggestion list) instead of emitting the non-fillable div.
-      if (role === 'combobox' && el.tagName !== 'SELECT' && el.tagName !== 'INPUT'
-          && el.querySelector('input:not([type="hidden"]), textarea')) {
+      // Widget libraries sometimes put an interactive role on a container that
+      // wraps the real controls. Native controls are atomic, but a non-native
+      // ARIA wrapper must step aside or its early return hides every actionable
+      // descendant beneath it.
+      if (!isNativeInteractiveElement(el) && hasInteractive(el)) {
         walkChildren(el);
         return;
       }
@@ -401,8 +436,9 @@ _STRUCTURED_SNAPSHOT_JS = """
 
       refCounter++;
       el.setAttribute('data-ct-ref', String(refCounter));
+      currentRefs.push(el);
 
-      const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || '', viewport: vp };
+      const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || ''};
 
       if (role === 'combobox' || el.tagName === 'SELECT') {
         const sel = el.querySelector('option:checked,option[selected]');
@@ -452,35 +488,39 @@ _STRUCTURED_SNAPSHOT_JS = """
       if (name && name.length < 80) {
         refCounter++;
         el.setAttribute('data-ct-ref', String(refCounter));
+        currentRefs.push(el);
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', name);
-        emit({ type: 'interactive', depth: depth, ref: refCounter, role: 'button', name: name, viewport: vp });
+        emit({ type: 'interactive', depth: depth, ref: refCounter, role: 'button', name: name});
         return;
       }
     }
 
     // Headings
     if (role === 'heading') {
-      const lvl = el.tagName.match(/H(\\d)/)?.[1] || '';
-      const text = (el.innerText || '').trim();
-      if (text) emit({ type: 'heading', depth: depth, name: text, level: parseInt(lvl) || null, viewport: vp });
+      // A heading can wrap a control: an <h3> whose title is a link, an <h5>
+      // around a button. Then the control is what matters, not the label.
+      const lvl = parseInt(el.tagName.match(/H(\\d)/)?.[1]) || null;
+      collapseOrDescend(el, (text) => (
+        { type: 'heading', depth: depth, name: text, level: lvl}
+      ));
       return;
     }
 
     // Images
     if (role === 'img') {
       const alt = (el.getAttribute('alt') || el.getAttribute('aria-label') || '').trim();
-      if (alt) emit({ type: 'image', depth: depth, name: alt, viewport: vp });
+      if (alt) emit({ type: 'image', depth: depth, name: alt});
       return;
     }
 
     // Structural containers
     if (CONTAINER_TAGS.has(el.tagName)) {
-      emit({ type: 'container_start', depth: depth, tag: el.tagName.toLowerCase(), viewport: vp });
+      emit({ type: 'container_start', depth: depth, tag: el.tagName.toLowerCase()});
       depth++;
       walkChildren(el);
       depth--;
-      emit({ type: 'container_end', depth: depth, tag: el.tagName.toLowerCase(), viewport: vp });
+      emit({ type: 'container_end', depth: depth, tag: el.tagName.toLowerCase()});
       return;
     }
 
@@ -488,22 +528,14 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (el.children.length === 0 && !el.shadowRoot) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
+        emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;
     }
 
     // Paragraph-like containers
     if (el.tagName === 'P' || el.tagName === 'BLOCKQUOTE' || el.tagName === 'FIGCAPTION') {
-      // Check for interactive children first — if present, recurse normally
-      if (el.querySelector('a[href], button, input, select, textarea, [role]')) {
-        walkChildren(el);
-        return;
-      }
-      const text = (el.innerText || '').trim();
-      if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
-      }
+      collapseOrDescend(el, (text) => ({ type: 'text', depth: depth, text: clip(text)}));
       return;
     }
 
@@ -511,7 +543,7 @@ _STRUCTURED_SNAPSHOT_JS = """
     if (isTextContainer(el)) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
-        emit({ type: 'text', depth: depth, text: text.length > 200 ? text.substring(0, 200) + '...' : text, viewport: vp });
+        emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;
     }
@@ -586,7 +618,11 @@ async def build_page_view(
     truncated = False
     viewport_data: dict[str, int] | None = None
 
-    if _non_html:
+    # A blocked view renders as its banner, and a non-HTML file renders as a
+    # canned message. Neither can be snapshotted, so both skip the DOM walk.
+    if view.challenge:
+        content = view.challenge.banner
+    elif _non_html:
         _ext = view.url.split("?")[0].rsplit(".", 1)[-1].lower() if "." in view.url else "file"
         content = (
             f"[This is a {_ext.upper()} file, not a web page: {view.url}]\n"
@@ -622,7 +658,6 @@ async def build_page_view(
                 scope_query=scope,
                 budget=budget,
                 name_limit=MAX_NAME_LEN,
-                full_page=full_page,
             )
             t_py = time.monotonic()
 
@@ -639,6 +674,12 @@ async def build_page_view(
             )
         except PlaywrightError as exc:  # pragma: no cover - defensive
             logger.warning("Failed to build annotated snapshot: %s", exc)
+            content = (
+                f"[Page content unavailable — snapshot failed: {view.url}]\n"
+                "The page may still be loading or changing. Try browse_page() again. "
+                "If the problem continues, use read_page() to read the page "
+                "without interactive refs."
+            )
 
     return PageView(
         title=view.title,

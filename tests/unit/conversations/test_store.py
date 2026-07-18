@@ -9,14 +9,19 @@ from unittest.mock import patch
 import pytest
 
 from conversations._store import (
+    archive_conversation,
+    clear_folder_from_conversations,
     conversation_exists,
     delete_conversation,
+    list_archived_conversations,
     list_conversations,
     load_conversation_metadata,
     load_conversation_profile,
+    save_conversation_folder,
     save_conversation_pinned,
     save_conversation_profile,
     save_conversation_title,
+    unarchive_conversation,
 )
 
 
@@ -149,6 +154,138 @@ class TestDeleteConversation:
     def test_delete_nonexistent(self, _conv_dir: Path) -> None:
         """Deleting a missing conversation returns False."""
         assert delete_conversation("nope") is False
+
+
+@pytest.mark.unit
+class TestArchiveConversation:
+    """Tests for archiving, restoring, and listing archived conversations."""
+
+    def test_archive_removes_from_active_list(self, _conv_dir: Path) -> None:
+        """An archived conversation drops out of the active listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        _seed_events_jsonl(_conv_dir, "conv-2", [{"role": "user", "content": "yo"}])
+        assert archive_conversation("conv-1") is True
+
+        active_ids = {s.conversation_id for s in list_conversations()}
+        assert active_ids == {"conv-2"}
+
+    def test_archived_appears_in_archived_list(self, _conv_dir: Path) -> None:
+        """An archived conversation surfaces in the archived listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+
+        archived = list_archived_conversations()
+        assert [s.conversation_id for s in archived] == ["conv-1"]
+        assert archived[0].first_message == "hi"
+
+    def test_archived_dir_not_listed_as_conversation(self, _conv_dir: Path) -> None:
+        """The reserved archive folder is never treated as a conversation."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        # The active list is empty even though the _archived dir exists on disk.
+        assert list_conversations() == []
+
+    def test_archive_preserves_metadata(self, _conv_dir: Path) -> None:
+        """Title and pinned flag travel with the archived conversation."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_pinned("conv-1", True)
+        archive_conversation("conv-1")
+
+        archived = list_archived_conversations()[0]
+        assert archived.title == "My Title"
+        assert archived.pinned is True
+
+    def test_unarchive_restores_to_active_list(self, _conv_dir: Path) -> None:
+        """Restoring moves a conversation back into the active listing."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        assert unarchive_conversation("conv-1") is True
+
+        assert [s.conversation_id for s in list_conversations()] == ["conv-1"]
+        assert list_archived_conversations() == []
+        assert conversation_exists("conv-1") is True
+
+    def test_archive_missing_returns_false(self, _conv_dir: Path) -> None:
+        """Archiving an unknown conversation returns False."""
+        assert archive_conversation("nope") is False
+
+    def test_unarchive_missing_returns_false(self, _conv_dir: Path) -> None:
+        """Restoring an unknown archived conversation returns False."""
+        assert unarchive_conversation("nope") is False
+
+    def test_delete_removes_archived_conversation(self, _conv_dir: Path) -> None:
+        """Delete also reaches conversations that have been archived."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        archive_conversation("conv-1")
+        assert delete_conversation("conv-1") is True
+        assert list_archived_conversations() == []
+
+
+@pytest.mark.unit
+class TestConversationFolder:
+    """Filing conversations into folders via the folder_id metadata tag."""
+
+    def test_no_folder_by_default(self, _conv_dir: Path) -> None:
+        """A conversation has no folder unless one is set."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        assert list_conversations()[0].folder_id is None
+
+    def test_folder_id_round_trips_through_listing(self, _conv_dir: Path) -> None:
+        """A saved folder_id surfaces on the listing summary."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        assert list_conversations()[0].folder_id == "folder-abc"
+
+    def test_folder_clear_returns_to_none(self, _conv_dir: Path) -> None:
+        """Passing None removes the conversation from its folder."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        save_conversation_folder("conv-1", None)
+        assert list_conversations()[0].folder_id is None
+
+    def test_folder_preserves_other_metadata(self, _conv_dir: Path) -> None:
+        """Filing into a folder merges into existing metadata."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_title("conv-1", "My Title")
+        save_conversation_folder("conv-1", "folder-abc")
+
+        meta = load_conversation_metadata("conv-1")
+        assert meta["title"] == "My Title"
+        assert meta["folder_id"] == "folder-abc"
+
+    def test_filing_into_folder_unpins(self, _conv_dir: Path) -> None:
+        """Filing a pinned conversation into a folder clears the pinned flag —
+        a folder and a pin are mutually exclusive homes."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        save_conversation_folder("conv-1", "folder-abc")
+
+        summary = list_conversations()[0]
+        assert summary.folder_id == "folder-abc"
+        assert summary.pinned is False
+
+    def test_removing_from_folder_leaves_pin_untouched(self, _conv_dir: Path) -> None:
+        """Clearing the folder (None) doesn't touch the pinned flag."""
+        _seed_events_jsonl(_conv_dir, "conv-1", [{"role": "user", "content": "hi"}])
+        save_conversation_pinned("conv-1", True)
+        save_conversation_folder("conv-1", None)
+        assert list_conversations()[0].pinned is True
+
+    def test_clear_folder_from_conversations(self, _conv_dir: Path) -> None:
+        """Clearing a folder unfiles exactly the conversations in it."""
+        for cid in ("conv-1", "conv-2", "conv-3"):
+            _seed_events_jsonl(_conv_dir, cid, [{"role": "user", "content": "hi"}])
+        save_conversation_folder("conv-1", "folder-abc")
+        save_conversation_folder("conv-2", "folder-abc")
+        save_conversation_folder("conv-3", "folder-xyz")
+
+        cleared = clear_folder_from_conversations("folder-abc")
+        assert cleared == 2
+        by_id = {s.conversation_id: s for s in list_conversations()}
+        assert by_id["conv-1"].folder_id is None
+        assert by_id["conv-2"].folder_id is None
+        assert by_id["conv-3"].folder_id == "folder-xyz"
 
 
 @pytest.mark.unit

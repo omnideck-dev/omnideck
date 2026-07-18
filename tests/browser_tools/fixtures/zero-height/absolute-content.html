@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Zero-height wrappers, absolute content</title>
+  <style>
+    html, body { margin: 0; }
+    /* Like Quora's login: the wrapper chain collapses to height 0 because the
+       real content is taken out of normal flow (position: absolute), so it
+       contributes no scrollHeight. The DOM walk used to classify #root as
+       out-of-viewport and stop before reaching the form. */
+    #root { height: 0; }
+    #mid  { height: 0; }
+    .stage { position: absolute; top: 0; left: 0; width: 100%; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="mid">
+      <div class="stage">
+        <a href="/">Home</a>
+        <h1>Sign in</h1>
+        <input type="email" placeholder="Email address">
+        <input type="password" placeholder="Password">
+        <button>Log in</button>
+        <button>Sign up</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

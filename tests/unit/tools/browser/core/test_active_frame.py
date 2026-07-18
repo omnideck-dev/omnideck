@@ -242,14 +242,14 @@ async def test_active_frame_falls_back_on_detach() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_invalidate_dominant_frame() -> None:
-    """invalidate_dominant_frame(page) drops only that tab's entry."""
+async def test_invalidate_active_view() -> None:
+    """_invalidate_active_view(page) drops only that tab's entry."""
     page = _FakePage()
     other_page = _FakePage()
     browser = _make_browser(page)
     browser._dominant_frames[page] = _FakeFrame()  # type: ignore[index]
     browser._dominant_frames[other_page] = _FakeFrame()  # type: ignore[index]
-    browser.invalidate_dominant_frame(page)  # type: ignore[arg-type]
+    browser._invalidate_active_view(page)  # type: ignore[arg-type]
     assert page not in browser._dominant_frames
     assert other_page in browser._dominant_frames
 

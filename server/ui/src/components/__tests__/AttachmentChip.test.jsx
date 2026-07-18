@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import AttachmentChip from '../AttachmentChip.jsx';
@@ -11,15 +11,34 @@ describe('AttachmentChip', () => {
         const img = screen.getByTestId('attachment-image');
         expect(img).toHaveAttribute('src', DATA_URL);
         expect(img).toHaveAttribute('alt', 'shot.png');
+        // An image is a card too, not a bare thumbnail — it carries the filename.
+        expect(screen.getByTitle('shot.png')).toBeInTheDocument();
         expect(screen.queryByTestId('attachment-file')).not.toBeInTheDocument();
     });
 
     it('renders a file card when there is no src', () => {
         render(<AttachmentChip filename="report.pdf" />);
         expect(screen.getByTestId('attachment-file')).toBeInTheDocument();
-        expect(screen.getByText('report.pdf')).toBeInTheDocument();
+        expect(screen.getByTitle('report.pdf')).toBeInTheDocument();
         expect(screen.getByText('PDF')).toBeInTheDocument();
         expect(screen.queryByTestId('attachment-image')).not.toBeInTheDocument();
+    });
+
+    it('falls back to a type-icon card when a persisted image fails to load', () => {
+        render(<AttachmentChip src="/uploads/gone.png" filename="gone.png" content_type="image/png" />);
+        // Simulate the container path 404-ing on resume.
+        fireEvent.error(screen.getByTestId('attachment-image'));
+        expect(screen.queryByTestId('attachment-image')).not.toBeInTheDocument();
+        expect(screen.getByTestId('attachment-file')).toBeInTheDocument();
+        expect(screen.getByTitle('gone.png')).toBeInTheDocument();
+    });
+
+    it('middle-truncates a long filename but keeps the extension', () => {
+        render(<AttachmentChip filename="really_long_report_final_v2.xlsx" />);
+        // Full name is available on hover…
+        expect(screen.getByTitle('really_long_report_final_v2.xlsx')).toBeInTheDocument();
+        // …and the tail span keeps the extension so it is never clipped away.
+        expect(screen.getByText(/\.xlsx$/)).toBeInTheDocument();
     });
 
     it('shows the size in the file meta when sizeBytes is given', () => {

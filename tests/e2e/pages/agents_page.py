@@ -49,6 +49,11 @@ class ProfileList:
         """Inline duplicate from the list row."""
         self._row(profile_id).get_by_test_id("agent-duplicate").click()
 
+    def export(self, profile_id: str) -> None:
+        """Open the export-options dialog from the list row."""
+        self._row(profile_id).get_by_test_id("agent-export").click()
+        self.page.get_by_test_id("export-profile-modal").wait_for(state="visible")
+
 
 class ProfileBuilder:
     """The profile editor — edit/save/delete the selected agent."""
@@ -113,6 +118,12 @@ class ProfileBuilder:
 
     def duplicate(self) -> "ProfileBuilder":
         self.page.get_by_role("button", name="Duplicate").click()
+        return self
+
+    def export(self) -> "ProfileBuilder":
+        """Open the export-options dialog from the editor action bar."""
+        self.page.get_by_test_id("profile-export").click()
+        self.page.get_by_test_id("export-profile-modal").wait_for(state="visible")
         return self
 
     def delete(self) -> "ProfileBuilder":
@@ -183,4 +194,35 @@ class AgentsPage:
     def close(self) -> "AgentsPage":
         """Toggle the Agents nav entry to leave the view and return to chat."""
         self.page.get_by_role("button", name="Agents", exact=True).click()
+        return self
+
+    # ── Export options dialog ─────────────────────────────────────
+    @property
+    def export_dialog(self) -> Locator:
+        return self.page.get_by_test_id("export-profile-modal")
+
+    def set_export_include_skills(self, on: bool) -> "AgentsPage":
+        self._set_switch("export-include-skills", on)
+        return self
+
+    def set_export_include_model(self, on: bool) -> "AgentsPage":
+        self._set_switch("export-include-model", on)
+        return self
+
+    def _set_switch(self, testid: str, on: bool) -> None:
+        # The switch's real <input> is a 0×0, opacity:0 checkbox behind a
+        # decorative track; clicking it directly is unreliable. It's wrapped in
+        # a <label>, so toggle via the label — and only when state must change.
+        box = self.page.get_by_test_id(testid)
+        if box.is_checked() != on:
+            box.locator("xpath=ancestor::label[1]").click()
+
+    @property
+    def export_confirm(self) -> Locator:
+        return self.page.get_by_test_id("export-confirm")
+
+    # ── Import ────────────────────────────────────────────────────
+    def import_file(self, path: str) -> "AgentsPage":
+        """Feed a pack file to the hidden import input (no OS dialog)."""
+        self.page.get_by_test_id("agents-import-input").set_input_files(path)
         return self

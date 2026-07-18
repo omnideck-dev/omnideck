@@ -678,7 +678,7 @@ class StubBrowser:
             title = "Test Page"
         return ActiveView(frame=frame, title=title, url=self._page.url)
 
-    def invalidate_dominant_frame(self, page: Any) -> None:
+    def _invalidate_active_view(self, page: Any) -> None:
         self._dominant_frames.pop(page, None)
 
     async def new_page(self) -> StubPage:
@@ -696,7 +696,7 @@ class StubBrowser:
     async def navigate(self, url: str, *, page: Any = None) -> Any:
         from tools.browser.core.browser import BrowserInteractionResult
         target = page if page is not None else self._page
-        self.invalidate_dominant_frame(target)
+        self._invalidate_active_view(target)
         await target.goto(url)
         return BrowserInteractionResult(
             navigation_response=None,
@@ -709,13 +709,13 @@ class StubBrowser:
         async def _back() -> None:
             await self._page.go_back(wait_until="domcontentloaded")
 
-        return await self.perform_interaction(_back, page=page)
+        return await self.perform_interaction(_back, source_page=page)
 
     async def perform_interaction(
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        page: Any = None,
+        source_page: Any = None,
     ) -> Any:
         """Match Browser.perform return contract for tests."""
         await action()

@@ -1,0 +1,111 @@
+.recent {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Search + new-folder ─────────────────────────────── */
+/* The search box and the new-folder button share a row above the list. */
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: var(--sp-3) var(--sp-2) var(--sp-1);
+}
+/* SearchInput brings its own visuals; it just needs to flex to fill the row. */
+.search {
+    flex: 1;
+    min-width: 0;
+}
+.newFolderBtn {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+}
+[data-theme="dark"] .newFolderBtn { background: var(--elevated); }
+.newFolderBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Scrollable list ─────────────────────────────────── */
+.list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-1) var(--sp-2) var(--sp-2);
+}
+.list::-webkit-scrollbar { width: 5px; }
+.list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
+
+/* Inline folder-rename row (glyph + input); the input itself comes from the
+ * inline-editors module. */
+.folderRename { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; }
+.folderGlyph { flex-shrink: 0; color: var(--text-secondary); font-size: 12px; width: 14px; text-align: center; }
+
+/* ── Conversation row ────────────────────────────────── */
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 30px;
+    padding: 0 var(--sp-1) 0 10px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+}
+.item:hover { background: var(--accent-muted); color: var(--text-primary); }
+.item.active { background: var(--accent-muted); color: var(--text-primary); }
+.item:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+
+.itemTitle {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Slim relative-age stamp shown on search-result rows. */
+.itemAge {
+    flex: none;
+    font-family: var(--font-code);
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+}
+
+/* 3-dot menu trigger — hidden until the row is hovered or its menu is open. */
+.menuBtn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    flex-shrink: 0;
+    opacity: 0;
+    font-size: 13px;
+}
+.item:hover .menuBtn,
+.item.menuOpen .menuBtn,
+.menuBtn:focus-visible { opacity: 1; }
+.menuBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
+.item.menuOpen .menuBtn { color: var(--text-primary); }
+
+.empty {
+    padding: var(--sp-3) 10px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}

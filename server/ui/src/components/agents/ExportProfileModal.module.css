@@ -1,0 +1,48 @@
+.title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: var(--sp-2);
+}
+
+.body {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: var(--sp-4);
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-3) 0;
+    cursor: pointer;
+}
+
+.row + .row {
+    border-top: 1px solid var(--border);
+}
+
+.rowText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rowLabel {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.rowHint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    margin-top: var(--sp-5);
+}

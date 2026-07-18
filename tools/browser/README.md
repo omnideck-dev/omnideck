@@ -316,7 +316,7 @@ Two-phase approach for `<select>` elements:
 |------|------|-------------|
 | `browse_page(scope, full_page)` | `snapshot_tool.py` | Annotated `[ref] [role] name` snapshot, no side effects |
 | `open_url(url)` | `page.py` | Navigates + returns snapshot with status_code |
-| `read_page(page_number, query)` | `read_content.py` | Full markdown via html2text, 20K char pagination, optional query filtering |
+| `read_page(chunk, query)` | `read_content.py` | Whole page as markdown via html2text, 20K-char line-snapped chunks, optional query search that reports which chunk each match is in |
 | `save_page_content(filename)` | `save_content.py` | Saves page as markdown file |
 
 ### Vision Tools (`vision.py`)

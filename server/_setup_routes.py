@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -34,6 +35,12 @@ class _CompleteBody(BaseModel):
     vision_model: str | None = None
     context_window: int | None = None
     default_agent: str = "omnideck"
+
+
+async def handle_defaults(_request: web.Request) -> web.Response:
+    """Return setup-time defaults derived from the server environment."""
+    ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+    return web.json_response({"ollama_host": ollama_host or None})
 
 
 async def handle_complete(request: web.Request) -> web.Response:
@@ -94,4 +101,5 @@ async def handle_complete(request: web.Request) -> web.Response:
 
 def register_setup_routes(app: web.Application) -> None:
     """Register setup API routes."""
+    app.router.add_route("GET", "/api/setup/defaults", handle_defaults)
     app.router.add_route("POST", "/api/setup/complete", handle_complete)

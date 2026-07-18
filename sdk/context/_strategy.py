@@ -8,7 +8,7 @@ from typing import Protocol
 
 from rich.console import Console
 
-from sdk.providers import get_provider
+from sdk.providers import ProviderError, get_provider
 from rich.panel import Panel
 from rich.text import Text
 
@@ -213,6 +213,22 @@ class ContextStrategy(Protocol):
         ...
 
 
+def _compaction_error_message(model: str, detail: str) -> str:
+    """Build the user-facing message for a compaction failure.
+
+    Compaction runs after a model call. When it fails, the conversation keeps
+    growing toward its limit, so the failure is raised rather than swallowed
+    and reaches the user through the turn's normal error path.
+    """
+    return (
+        f"This conversation is long enough that it needs to be summarized to "
+        f"keep going, but that step failed: the compaction model '{model}' "
+        f"{detail}. Open Settings and make sure the correct compaction model is "
+        f"configured and its provider is available (a valid key with remaining "
+        f"quota), then send your message again."
+    )
+
+
 class LLMCompactionStrategy:
     """Summarizes old conversation history when context fills up.
 
@@ -300,17 +316,30 @@ class LLMCompactionStrategy:
             summary, model_name = await self._summarize(
                 compactable, prior_summary,
             )
-        except TimeoutError:
+        except TimeoutError as exc:
             logger.warning(
-                "LLMCompactionStrategy: compaction timed out after %ds, skipping",
+                "LLMCompactionStrategy: compaction timed out after %ds",
                 _CALL_TIMEOUT,
             )
             await _unload_model(resolved_model)
-            return
-        except Exception:
-            logger.exception("LLMCompactionStrategy: LLM call failed, skipping compaction")
+            raise ProviderError(
+                _compaction_error_message(resolved_model, f"timed out after {_CALL_TIMEOUT}s"),
+                retryable=True,
+            ) from exc
+        except ProviderError as exc:
+            logger.warning("LLMCompactionStrategy: summarizer call failed: %s", exc)
             await _unload_model(resolved_model)
-            return
+            raise ProviderError(
+                _compaction_error_message(resolved_model, f"failed: {exc}"),
+                retryable=exc.retryable,
+                status_code=exc.status_code,
+            ) from exc
+        except Exception as exc:
+            logger.exception("LLMCompactionStrategy: compaction failed")
+            await _unload_model(resolved_model)
+            raise ProviderError(
+                _compaction_error_message(resolved_model, "failed with an unexpected error"),
+            ) from exc
         elapsed = _time.monotonic() - t0
 
         # If the agent received multiple distinct user messages, the first

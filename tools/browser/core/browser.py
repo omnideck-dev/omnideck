@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict
 
 import tools.browser.core.waits as browser_waits
 from config import load_config
+from tools.browser.core._challenge import ChallengeInfo, detect_challenge
 from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core._file_detection import DownloadInfo
 
@@ -54,18 +55,40 @@ PageOrFrame = Page | Frame
 
 
 class ActiveView(NamedTuple):
-    """Snapshot of the current browser view for tools to operate on.
+    """The resolved view a tool should operate on for one tab.
 
-    Tools should call ``Browser.active_view()`` instead of ``current_page()``
-    or ``active_frame()`` directly.  The ``frame`` is whichever context the
-    tool should interact with (iframe if dominant, otherwise the main page).
-    ``title`` and ``url`` always come from the main page so the agent sees
-    a consistent identity regardless of iframes.
+    A tab is not a single document. It is a frame tree: the top-level page is
+    the root frame, and it may contain iframes. So "the page" is ambiguous —
+    the content the agent cares about sometimes lives in an iframe that fills
+    the viewport (an embedded app, a doc viewer, a payment widget). The active
+    view is the one answer to "which frame do tools read from and act on right
+    now", resolved once and cached, so every tool agrees instead of each
+    re-deciding. Tools get it from ``active_view()`` and never resolve frames
+    themselves.
+
+    ``frame`` is that context. It is the ``Page`` when the top document is the
+    target, or a ``Frame`` when a dominant iframe is. The two are
+    interchangeable for content operations — a ``Page`` delegates ``evaluate`` /
+    ``click`` / ``query_selector`` to its own main frame — so a tool acts on
+    either without caring which it got. ``page`` recovers the owning ``Page``
+    when a caller needs the tab-level methods a ``Frame`` lacks (title,
+    viewport, dialogs).
+
+    ``title`` and ``url`` always come from the main page, never from ``frame``.
+    When the active frame is an iframe its own url is usually an embed or CDN
+    origin the agent never navigated to; pinning identity to the main page
+    keeps "what page am I on" stable while the interaction target may be nested.
+
+    ``challenge`` is set when the tab is an anti-bot "Verify you are human"
+    interstitial (Cloudflare, …). The browser can't get past it, so ``frame``
+    stays the main page and tools replace the view with ``challenge.banner`` to
+    route the agent to fetch_url rather than entering the interstitial's frame.
     """
 
     frame: Page | Frame
     title: str
     url: str
+    challenge: ChallengeInfo | None = None
 
     @property
     def page(self) -> Page:
@@ -147,6 +170,10 @@ class BrowserInteractionResult(BaseModel):
     settle_timings: browser_waits.SettleTimings | None = None
     frame_transition: str | None = None
     action_ms: float = 0.0
+    # The tab the interaction finished on.  It is not always the tab it started
+    # from: clicking a link that targets a new tab leaves the agent in that tab.
+    # Callers render this one, or the click looks like it did nothing.
+    settled_page: Page | None = None
 
 
 def _chrome_ua_metadata(version: str) -> tuple[str, dict]:
@@ -250,6 +277,11 @@ class Browser:
         #     viewer stub or a fresh page — old frame is gone)
         #   - the cached frame becomes detached (checked at read time)
         self._dominant_frames: dict[Page, Frame] = {}
+        # Tabs currently behind an anti-bot interstitial, mapped to the detected
+        # challenge (vendor + banner). Cleared whenever the page changes
+        # (navigation, tab close, URL change) so a stale banner never outlives
+        # the page that raised it.
+        self._challenges: dict[Page, ChallengeInfo] = {}
         self._tab_id_of: dict[Page, int] = {}
         self._next_tab_id: int = 0
         self._pages_in_navigation: set[Page] = set()
@@ -259,7 +291,7 @@ class Browser:
         self._download_tasks: set[asyncio.Task[None]] = set()
         self._download_event: asyncio.Event = asyncio.Event()
 
-        # Track every page the context creates (programmatic, popup, or
+        # Track every page the context creates (opened by us, by a link, or
         # target=_blank) the moment it exists: stable tab id + download + close.
         self._context.on("page", self._track_page)
 
@@ -295,9 +327,10 @@ class Browser:
         """Assign a stable tab ID and attach download + close handlers.
 
         Registered as the context ``page`` listener, so it fires for every page
-        — programmatic, popup, or ``target=_blank`` — the moment it's created,
-        before any other ``page`` listener runs. That means popup/link tabs get
-        a stable ID and are visible to anything mirroring the tab set, not only
+        — opened by us, or by the site itself via ``target=_blank`` or
+        ``window.open`` — the moment it's created, before any other ``page``
+        listener runs. That means a tab the site opens gets a stable ID and is
+        visible to anything mirroring the tab set, not only
         tabs opened via ``new_page``. Guards against double-tracking the same
         page (re-entry is a no-op).
         """
@@ -311,7 +344,7 @@ class Browser:
         def _on_close(_p: Any) -> None:
             self._tab_id_of.pop(page, None)
             self._pages_in_navigation.discard(page)
-            self._dominant_frames.pop(page, None)
+            self._invalidate_active_view(page)
 
         page.on("close", _on_close)
 
@@ -411,7 +444,6 @@ class Browser:
             # natural screen >= window >= viewport relationship a real browser
             # has. (Works without a window manager, unlike --start-maximized.)
             "--window-size=1920,1080",
-            "--enable-automation=false",
             "--disable-session-crashed-bubble",
             "--hide-crash-restore-bubble",
             "--webrtc-ip-handling-policy=disable_non_proxied_udp",
@@ -429,6 +461,11 @@ class Browser:
         launch_kwargs: dict[str, Any] = dict(
             headless=headless,
             args=chrome_args,
+            # Playwright adds --enable-automation by default, which turns on
+            # Chrome's automation mode (infobar + automation-mode behaviours a
+            # bot detector can key on). Drop it; navigator.webdriver is already
+            # suppressed by --disable-blink-features=AutomationControlled.
+            ignore_default_args=["--enable-automation"],
         )
         # Google Chrome is amd64-only on Linux.  On arm64, omit the
         # channel so Playwright uses its bundled Chromium instead.
@@ -610,13 +647,13 @@ class Browser:
         # The context "page" event (handled by _track_page) assigns the tab id
         # and attaches the download + close handlers as the page is created.
         # Viewport is inherited from the context's default (set once at creation)
-        # so every tab — programmatic, popup, or link — is the same size, like
+        # so every tab — opened by us or by the site — is the same size, like
         # tabs in a real browser window; don't re-roll a per-tab viewport here.
         page = await self._context.new_page()
         return page
 
     def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:
-        """Register *callback* to fire for each new page (tab or popup) opened.
+        """Register *callback* to fire for each new tab opened.
 
         Lets a caller react when the context spawns a tab — e.g. to keep a
         chosen tab in the foreground — without reaching into the context.
@@ -691,13 +728,16 @@ class Browser:
                 return cached
         return page
 
-    def invalidate_dominant_frame(self, page: Page) -> None:
-        """Drop the cached dominant iframe for *page*, if any.
+    def _invalidate_active_view(self, page: Page) -> None:
+        """Drop the cached active view for *page* — its dominant iframe and any
+        challenge state.
 
-        Call before a navigation on that tab (the new DOM won't share
-        the old iframe) or whenever the cache should be re-evaluated.
+        Call before a navigation on that tab (the new DOM won't share the old
+        iframe), on tab close, or whenever the cached view should be dropped and
+        re-resolved.
         """
         self._dominant_frames.pop(page, None)
+        self._challenges.pop(page, None)
 
     async def active_view(self, page: Page) -> ActiveView:
         """Return an ``ActiveView`` for tools to operate on.
@@ -708,24 +748,45 @@ class Browser:
         cached = self._dominant_frames.get(page)
         if cached is not None and not cached.is_detached():
             frame: Page | Frame = cached
+            challenge = self._challenges.get(page)
         else:
             self._dominant_frames.pop(page, None)
-            try:
-                dominant = await self._detect_dominant_frame(page)
-                if dominant is not None:
-                    self._dominant_frames[page] = dominant
-                    frame = dominant
-                else:
-                    frame = page
-            except Exception:  # noqa: BLE001 - detection is best-effort
-                frame = page
+            frame, challenge = await self._resolve_active_frame(page)
+            if isinstance(frame, Frame):
+                self._dominant_frames[page] = frame
+            if challenge is not None:
+                self._challenges[page] = challenge
+            else:
+                self._challenges.pop(page, None)
 
         try:
             title = await page.title()
         except PlaywrightError:
             title = ""
 
-        return ActiveView(frame=frame, title=title, url=page.url)
+        return ActiveView(frame=frame, title=title, url=page.url, challenge=challenge)
+
+    async def _resolve_active_frame(
+        self, page: Page,
+    ) -> tuple[Page | Frame, ChallengeInfo | None]:
+        """Decide which frame tools operate on and whether an interstitial blocks it.
+
+        An anti-bot interstitial takes priority: when one blocks the page the
+        browser can't get past it, so the main page stays the active view and
+        callers surface the challenge banner. Otherwise the largest content
+        iframe wins, else the page.
+        """
+        # detect_challenge is total — it swallows any detector error itself —
+        # so it needs no guard here.
+        challenge = await detect_challenge(page)
+        if challenge is not None:
+            return page, challenge
+
+        try:
+            dominant = await self._detect_dominant_frame(page)
+        except Exception:  # noqa: BLE001 - detection is best-effort
+            dominant = None
+        return (dominant if dominant is not None else page), None
 
     # Minimum fraction of viewport area an iframe must cover to become dominant.
     _DOMINANT_FRAME_THRESHOLD = 0.25
@@ -836,7 +897,7 @@ class Browser:
         self._pages_in_navigation.add(page)
         # Any cached dominant iframe belongs to the old DOM; drop it
         # so the post-nav settle re-detects against the new one.
-        self.invalidate_dominant_frame(page)
+        self._invalidate_active_view(page)
         self._pending_downloads.clear()
         initial_url = getattr(page, "url", "")
         try:
@@ -877,7 +938,7 @@ class Browser:
                 # domcontentloaded. Fall through to settle/snapshot.
                 logger.debug("go_back timed out (SPA likely handled navigation client-side)")
 
-        return await self.perform_interaction(_back, page=page)
+        return await self.perform_interaction(_back, source_page=page)
 
     # Timeouts for individual shutdown steps.  These are generous enough for
     # well-behaved pages but prevent indefinite hangs when Chromium is stuck.
@@ -995,7 +1056,49 @@ class Browser:
         initial_url: str,
         saw_download_response: bool = False,
     ) -> BrowserInteractionResult:
-        """Shared post-action pipeline: downloads, settle, iframe detection, logging."""
+        """Resolve a tab's new state after a navigation or interaction.
+
+        This is the shared pipeline run after anything changes the page. It
+        decides what happened (a download, a challenge, a new document, or an
+        in-page frame change), updates the per-tab caches accordingly, and
+        returns the result both the navigate and interaction paths hand back.
+
+        *initial_url* is the tab's url before the action; comparing it to the
+        settled url tells whether the action navigated. *response* is the
+        navigation response when there was one, else None. *saw_download_response*
+        flags that a ``Content-Disposition: attachment`` header was seen, so a
+        download event may still be in flight.
+
+        Four phases:
+
+        1. Downloads. Drain any captured download; if there is none but the
+           response is a file content-type, save the body as a file.
+
+        2. Settle. If it was not a download, wait for the page to quiet, then
+           re-check for downloads that arrived during settle (same-tab
+           redirect-to-file chains) and honour a brief grace wait when an
+           attachment header was seen but its event has not fired yet.
+
+        3. View resolution — the part that updates the caches. Exactly one case
+           applies:
+           - download: clear the cached view; the page may be a file-viewer stub
+             with no real DOM to resolve.
+           - challenge: an anti-bot interstitial is up. Cache it, drop any
+             dominant frame (tools never act inside the interstitial), and label
+             the transition the first time it appears. The response is passed to
+             detection so header-only variants are caught here, where the header
+             still exists.
+           - navigated with no challenge: a fresh document. Clear the cached view
+             and let the next read re-resolve it — dominant-iframe detection
+             deliberately skips fresh navigations.
+           - otherwise (an in-page change, no navigation): re-run dominant-iframe
+             detection, and if the dominant frame changed, label the transition,
+             update the cache, and settle the newly-entered frame.
+
+        4. Return the result: the response, any download, settle timings, and the
+           frame transition — a short label for the log panel, e.g.
+           ``"→ iframe <url>"`` or ``"→ cloudflare challenge"``.
+        """
         wait_cfg = load_config().tools.browser.waits
 
         # 1. Download detection
@@ -1060,49 +1163,63 @@ class Browser:
                     download_info.filename,
                 )
 
-        # 3. Iframe detection (skip if download — page may be a PDF viewer stub)
-        # Operates on this tab's dominant-frame slot only; other tabs'
-        # cached frames are untouched.
+        # 3. Iframe / challenge detection (skip if download — page may be a
+        # PDF viewer stub). Operates on this tab's dominant-frame slot only;
+        # other tabs' cached frames are untouched.
         frame_transition: str | None = None
         final_url = getattr(page, "url", initial_url)
         navigated = bool(initial_url and final_url and final_url != initial_url)
 
         if download_info is not None:
-            self._dominant_frames.pop(page, None)
-        elif navigated:
-            self._dominant_frames.pop(page, None)
+            self._invalidate_active_view(page)
         else:
-            try:
-                previous_frame = self._dominant_frames.get(page)
-                dominant = await self._detect_dominant_frame(page)
-                if dominant != previous_frame:
-                    if dominant is not None:
-                        frame_transition = f"→ iframe {dominant.url}"
-                    elif previous_frame is not None:
-                        frame_transition = "→ main page"
-                    if dominant is not None:
-                        self._dominant_frames[page] = dominant
-                    else:
-                        self._dominant_frames.pop(page, None)
+            # Detect before the dominant-iframe path so a challenge wins; the
+            # response lets header-only variants be caught here.
+            challenge = await detect_challenge(page, response)
+            if challenge is not None:
+                # Don't enter the interstitial's frame; the banner replaces the
+                # view and routes the agent to fetch_url.
+                was_challenge = page in self._challenges
+                self._challenges[page] = challenge
+                self._dominant_frames.pop(page, None)
+                if not was_challenge:
+                    frame_transition = f"→ {challenge.vendor} challenge"
+            elif navigated:
+                self._invalidate_active_view(page)
+            else:
+                self._challenges.pop(page, None)
+                try:
+                    previous_frame = self._dominant_frames.get(page)
+                    dominant = await self._detect_dominant_frame(page)
+                    if dominant != previous_frame:
+                        if dominant is not None:
+                            frame_transition = f"→ iframe {dominant.url}"
+                        elif previous_frame is not None:
+                            frame_transition = "→ main page"
+                        if dominant is not None:
+                            self._dominant_frames[page] = dominant
+                        else:
+                            self._dominant_frames.pop(page, None)
 
-                if dominant is not None and dominant != previous_frame:
-                    try:
-                        await dominant.wait_for_load_state("load", timeout=5000)
-                        await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
-                    except (PlaywrightTimeoutError, PlaywrightError):
-                        pass
-            except Exception:  # noqa: BLE001
-                logger.debug("Dominant frame detection failed; keeping current state")
+                    if dominant is not None and dominant != previous_frame:
+                        try:
+                            await dominant.wait_for_load_state("load", timeout=5000)
+                            await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
+                        except (PlaywrightTimeoutError, PlaywrightError):
+                            pass
+                except Exception:  # noqa: BLE001
+                    logger.debug("Dominant frame detection failed; keeping current state")
 
         return BrowserInteractionResult(
             navigation_response=response,
             download=download_info,
             settle_timings=settle_timings,
             frame_transition=frame_transition,
+            settled_page=page,
         )
 
-    async def _probe_file_url(self, new_page: Page, url: str) -> Page | None:
-        """Probe a new tab's URL to check if it's a file download.
+    async def _probe_file_url(self, url: str) -> None:
+        """Record *url* as a pending download when it turns out to be a file.
 
         Chrome's PDF viewer extension (non-headless) can silently handle file
         URLs without firing Playwright response or download events.  This
@@ -1110,8 +1227,9 @@ class Browser:
         the file if it's a non-HTML content-type, and appends a
         ``DownloadInfo`` to ``_pending_downloads``.
 
-        Returns the new page if a file was saved, or ``None`` to stay on the
-        original page.
+        The pending-download list is the whole signal; there is nothing to
+        return.  Whether or not the URL was a file, the tab holding it is where
+        the agent now is.
         """
         from tools.browser.core._file_detection import (
             is_file_content_type,
@@ -1134,20 +1252,19 @@ class Browser:
                     info.filename, info.content_type, info.size_bytes,
                 )
                 await api_resp.dispose()
-                return new_page
+                return
             await api_resp.dispose()
         except Exception:  # noqa: BLE001
             logger.debug("Failed to probe new tab URL: %s", url)
-        return None
 
     async def perform_interaction(
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        page: Page,
+        source_page: Page,
         wait_for_navigation: bool = True,
     ) -> BrowserInteractionResult:
-        """Perform an interaction on *page* and run the shared post-action pipeline.
+        """Perform an interaction on *source_page* and run the shared post-action pipeline.
 
         When *wait_for_navigation* is True (the default), briefly wait for a
         navigation the action may start a beat late — some sites dispatch a
@@ -1156,24 +1273,24 @@ class Browser:
         rather than the old one. Pass False for actions that never navigate
         (scroll, drag, fill) to skip the wait.
         """
-        initial_url = getattr(page, "url", "")
+        initial_url = getattr(source_page, "url", "")
 
         self._pending_downloads.clear()
         self._download_event.clear()
         captured_responses: list[Response] = []
 
-        # Track pages opened during this interaction (popups / target=_blank)
-        # and capture their document responses so file downloads in new tabs
+        # Track tabs the interaction opens (target=_blank, window.open) and
+        # capture their document responses, so file downloads in new tabs
         # are detected properly.
         new_pages: list[Page] = []
-        new_page_responses: list[Response] = []
+        responses_by_new_page: dict[Page, list[Response]] = {}
         _np_listeners: list[tuple[Page, Callable[..., Any]]] = []
 
         _saw_download_response = False
 
         def _on_response(resp: Response) -> None:
             nonlocal _saw_download_response
-            if resp.frame == page.main_frame and resp.request.resource_type == "document":
+            if resp.frame == source_page.main_frame and resp.request.resource_type == "document":
                 captured_responses.append(resp)
             # Detect responses that will trigger a download event.  The
             # browser converts these to downloads asynchronously, so the
@@ -1184,10 +1301,11 @@ class Browser:
 
         def _on_new_page(new_page: Page) -> None:
             new_pages.append(new_page)
+            responses = responses_by_new_page.setdefault(new_page, [])
 
             def _on_np_response(resp: Response) -> None:
                 if resp.request.resource_type == "document":
-                    new_page_responses.append(resp)
+                    responses.append(resp)
 
             new_page.on("response", _on_np_response)
             _np_listeners.append((new_page, _on_np_response))
@@ -1199,13 +1317,13 @@ class Browser:
             # navigation — even if it dispatched a beat after the action
             # returned (some sites defer navigation in a JS click handler).
             try:
-                if req.is_navigation_request() and req.frame == page.main_frame:
+                if req.is_navigation_request() and req.frame == source_page.main_frame:
                     nav_started.set()
             except Exception:  # noqa: BLE001
                 pass
 
-        page.on("response", _on_response)
-        page.on("request", _on_request)
+        source_page.on("response", _on_response)
+        source_page.on("request", _on_request)
         self._context.on("page", _on_new_page)
 
         t0 = time.monotonic()
@@ -1228,23 +1346,26 @@ class Browser:
                         pass
             if nav_started.is_set():
                 try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                    await source_page.wait_for_load_state("domcontentloaded", timeout=10_000)
                 except PlaywrightError:
                     pass
 
-        page.remove_listener("response", _on_response)
-        page.remove_listener("request", _on_request)
+        source_page.remove_listener("response", _on_response)
+        source_page.remove_listener("request", _on_request)
         self._context.remove_listener("page", _on_new_page)
 
         response = captured_responses[-1] if captured_responses else None
-        target_page = page
+        settled_page = source_page
 
-        # If a new tab opened and the original page had no document response,
-        # the click likely opened a file (PDF, etc.) in a new tab.  Wait for
-        # the new page to finish its navigation, then use its response so
-        # _finalize_action can detect the file download.
+        # A click can open a tab.  When the source page never navigated itself
+        # (no document response of its own), that tab is where the agent now is,
+        # so work out what landed in it: an ordinary page, which is simply where
+        # it went, or a file, which is a download.
         if new_pages and response is None:
             new_page = new_pages[-1]
+            # Only this tab's own responses.  The listener appends into this
+            # same list, so it stays current across the wait below.
+            new_page_responses = responses_by_new_page.get(new_page, [])
             if not new_page_responses:
                 try:
                     await new_page.wait_for_load_state(
@@ -1252,18 +1373,26 @@ class Browser:
                     )
                 except (PlaywrightTimeoutError, PlaywrightError):
                     pass
+            # The tab announced what it is — a document response, or a download
+            # already under way.  Either way the agent is in it.
             if new_page_responses or self._pending_downloads or self._download_tasks:
-                target_page = new_page
+                settled_page = new_page
                 response = new_page_responses[-1] if new_page_responses else None
 
-            # Fallback: Chrome's PDF viewer extension (non-headless) can
-            # silently handle file URLs without firing response or download
-            # events.  Detect this by probing the new page's URL and fetch
-            # the file directly via the API request context.
-            if target_page is page and not self._pending_downloads:
+            # Nothing announced itself, which does not mean nothing happened.
+            # Chrome's PDF viewer (non-headless) renders a file in the new tab
+            # while firing neither a response nor a download event, so the only
+            # way to know is to fetch the URL ourselves; the probe records a
+            # download when it turns out to be a file.
+            #
+            # Whichever it was, the agent is in the new tab.  Answering with the
+            # tab it clicked *from* is what used to make the click look like it
+            # did nothing.
+            if settled_page is source_page and not self._pending_downloads:
                 new_url = getattr(new_page, "url", "")
                 if new_url and not new_url.startswith(("about:", "chrome:")):
-                    target_page = await self._probe_file_url(new_page, new_url) or page
+                    await self._probe_file_url(new_url)
+                    settled_page = new_page
 
         # Clean up response listeners on new pages
         for np, listener in _np_listeners:
@@ -1273,7 +1402,7 @@ class Browser:
                 pass
 
         result = await self._finalize_action(
-            target_page, response=response, initial_url=initial_url,
+            settled_page, response=response, initial_url=initial_url,
             saw_download_response=_saw_download_response,
         )
         result.action_ms = action_ms
@@ -1282,11 +1411,13 @@ class Browser:
         # agent returns to the original page.  Otherwise current_page() would
         # return the download tab (often about:blank) and subsequent tools
         # would fail with "Navigate to a page first."
-        if result.download and target_page is not page:
+        if result.download and settled_page is not source_page:
             try:
-                await target_page.close()
+                await settled_page.close()
             except Exception:  # noqa: BLE001
                 pass
+            # That tab is gone; the agent is back where it started.
+            result.settled_page = source_page
 
         return result
 

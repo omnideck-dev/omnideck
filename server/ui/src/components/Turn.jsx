@@ -27,29 +27,29 @@ function _iterationToEntries(iter) {
 }
 
 /**
- * Split a user_prompt's attachments list into the {images, files} shape
- * the UserMessage component expects. Two shapes arrive here:
- *  - optimistic pending: ``{kind: 'image', src}`` (FE base64 data URL
- *    so the thumbnail shows before the round-trip completes) and
- *    ``{filename, content_type}`` for non-image previews.
- *  - persisted SSE/log: ``{filename, content_type, path}``. ``path`` is
- *    served by the container_file_handler route, so it works directly
- *    as an ``<img src>``.
+ * Normalize a user_prompt's attachments into the ordered
+ * ``{src, filename, content_type}`` shape UserMessage renders, preserving
+ * upload order across images and files. Two shapes arrive here:
+ *  - optimistic pending: ``{kind: 'image', src}`` (FE base64 data URL so the
+ *    thumbnail shows before the round-trip completes) and ``{filename,
+ *    content_type}`` for non-image previews.
+ *  - persisted SSE/log: ``{filename, content_type, path}``. ``path`` is served
+ *    by the container_file_handler route, so it works directly as an
+ *    ``<img src>``.
  */
-function _splitAttachments(attachments) {
-    const images = [];
-    const files = [];
+function _normalizeAttachments(attachments) {
+    const out = [];
     for (const a of (attachments || [])) {
         if (!a) continue;
         if (a.kind === 'image' && a.src) {
-            images.push(a.src);
+            out.push({ src: a.src, filename: a.filename, content_type: a.content_type });
         } else if (a.path && a.content_type && a.content_type.startsWith('image/')) {
-            images.push(a.path);
-        } else if (a.filename) {
-            files.push({ filename: a.filename, content_type: a.content_type });
+            out.push({ src: a.path, filename: a.filename, content_type: a.content_type });
+        } else if (a.filename || a.content_type) {
+            out.push({ src: null, filename: a.filename, content_type: a.content_type });
         }
     }
-    return { images, files };
+    return out;
 }
 
 function _fileOutputToEntry(fo) {
@@ -134,14 +134,12 @@ export default function Turn({
         <div data-testid="turn" data-turn-id={turn.id}>
             {items.map((item, i) => {
                 if (item.kind === 'user') {
-                    const { images, files } = _splitAttachments(item.child.attachments);
                     return (
                         <Message
                             key={`u-${item.child.id}`}
                             role="user"
                             content={item.child.content}
-                            images={images}
-                            files={files}
+                            attachments={_normalizeAttachments(item.child.attachments)}
                         />
                     );
                 }

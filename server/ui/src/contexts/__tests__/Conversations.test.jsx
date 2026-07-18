@@ -29,6 +29,9 @@ function mockFetch() {
         if (typeof url === 'string' && url.endsWith('/title')) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({ title: 'Generated Title' }) });
         }
+        if (typeof url === 'string' && url.endsWith('/folders')) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
         return Promise.resolve({ ok: true, json: () => Promise.resolve(SESSIONS) });
     });
 }

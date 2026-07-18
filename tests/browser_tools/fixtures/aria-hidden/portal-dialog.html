@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Portal dialog</title>
+<style>html,body{margin:0} #__primerPortalRoot__{height:0;width:100%;overflow:visible}</style></head>
+<body>
+  <div id="app">
+    <h1>Docs</h1>
+    <button>Open menu</button>
+  </div>
+  <!-- Like GitHub Docs: search overlay rendered into a height-0 portal root,
+       the dialog itself is position:fixed so it contributes no scrollHeight. -->
+  <div id="__primerPortalRoot__">
+    <div>
+      <div role="dialog" aria-modal="true"
+           style="position:fixed;top:20px;left:20px;width:600px;height:400px;background:#fff">
+        <input type="search" aria-label="Search docs" placeholder="Search docs">
+        <button>Close</button>
+      </div>
+    </div>
+  </div>
+</body></html>

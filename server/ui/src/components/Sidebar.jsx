@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import AudioIndicator from './AudioIndicator.jsx';
-import RecentConversations from './RecentConversations.jsx';
+import ConversationsPanel from './ConversationsPanel.jsx';
+import { useTheme } from '../contexts/Theme.jsx';
 import styles from './Sidebar.module.css';
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
@@ -31,8 +32,6 @@ function _readCollapsed() {
 export default function Sidebar({
     activePanel,
     onPanelToggle,
-    dark,
-    onToggleTheme,
     onNewConversation,
     audio,
     muted,
@@ -43,6 +42,7 @@ export default function Sidebar({
     onLoadConversation,
     activeConversationId,
 }) {
+    const { dark, toggleTheme } = useTheme();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
 
     const toggleCollapsed = useCallback(() => {
@@ -115,7 +115,7 @@ export default function Sidebar({
             {collapsed ? (
                 <div className={styles.grow} />
             ) : (
-                <RecentConversations
+                <ConversationsPanel
                     onLoadConversation={onLoadConversation}
                     onNewConversation={onNewConversation}
                     activeConversationId={activeConversationId}
@@ -125,7 +125,7 @@ export default function Sidebar({
             <div className={styles.footer}>
                 <button
                     className={`${styles.iconBtn} ${!dark ? styles.themeOn : ''}`}
-                    onClick={onToggleTheme}
+                    onClick={toggleTheme}
                     title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
                     aria-label="Toggle theme"
                     data-testid="sidebar-theme-toggle"

@@ -9,20 +9,37 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import conversations._store as _store
-from conversations._store import load_conversation_metadata, save_conversation_title
+from conversations._folders import create_folder, list_folders
+from conversations._store import (
+    conversation_exists,
+    list_archived_conversations,
+    load_conversation_metadata,
+    save_conversation_title,
+)
 from server._conversation_routes import (
+    archive_conversation_handler,
+    create_folder_handler,
+    delete_folder_handler,
     generate_title_handler,
+    list_archived_handler,
+    list_folders_handler,
+    unarchive_conversation_handler,
     update_conversation_handler,
+    update_folder_handler,
 )
 
 
 @pytest.fixture()
 def _conv_dir(tmp_path: Path, monkeypatch) -> Path:
-    """Point the conversation store at a temp directory."""
+    """Point the conversation store and folder registry at a temp directory."""
     conv_dir = tmp_path / "conversations"
     monkeypatch.setattr(
         "conversations._store._get_conversations_dir",
         lambda: conv_dir,
+    )
+    monkeypatch.setattr(
+        "conversations._folders._folders_path",
+        lambda: conv_dir / "_folders.json",
     )
     return conv_dir
 
@@ -31,6 +48,14 @@ def _make_request(conversation_id: str, json_body) -> MagicMock:
     """Build a minimal aiohttp.web.Request-ish double."""
     req = MagicMock()
     req.match_info = {"conversation_id": conversation_id}
+    req.json = AsyncMock(return_value=json_body)
+    return req
+
+
+def _make_folder_request(folder_id: str, json_body) -> MagicMock:
+    """Build a request double whose match_info carries a folder_id."""
+    req = MagicMock()
+    req.match_info = {"folder_id": folder_id}
     req.json = AsyncMock(return_value=json_body)
     return req
 
@@ -113,6 +138,151 @@ class TestUpdateConversation:
         _seed("c1")
         resp = await update_conversation_handler(_make_request("c1", {"title": 123}))
         assert resp.status == 400
+
+
+@pytest.mark.unit
+class TestFolderRoutes:
+    """Folder CRUD endpoints and folder_id on the conversation PATCH."""
+
+    async def test_create_folder(self, _conv_dir: Path) -> None:
+        """Creating a folder returns 201 with the created folder."""
+        resp = await create_folder_handler(_make_folder_request("", {"name": "Work"}))
+        assert resp.status == 201
+        body = json.loads(resp.body)
+        assert body["name"] == "Work"
+        assert body["id"]
+        assert [f.name for f in list_folders()] == ["Work"]
+
+    async def test_create_folder_blank_name_400(self, _conv_dir: Path) -> None:
+        """A blank folder name is rejected."""
+        resp = await create_folder_handler(_make_folder_request("", {"name": "  "}))
+        assert resp.status == 400
+
+    async def test_list_folders(self, _conv_dir: Path) -> None:
+        """The listing returns created folders."""
+        create_folder("Work")
+        create_folder("Play")
+        resp = await list_folders_handler(_make_folder_request("", None))
+        assert resp.status == 200
+        assert [f["name"] for f in json.loads(resp.body)] == ["Work", "Play"]
+
+    async def test_update_folder_renames(self, _conv_dir: Path) -> None:
+        """Renaming a folder persists the new name."""
+        folder = create_folder("Draft")
+        resp = await update_folder_handler(
+            _make_folder_request(folder.id, {"name": "Final"}),
+        )
+        assert resp.status == 200
+        assert json.loads(resp.body)["name"] == "Final"
+
+    async def test_update_folder_missing_404(self, _conv_dir: Path) -> None:
+        """Updating an unknown folder is a 404."""
+        resp = await update_folder_handler(_make_folder_request("nope", {"name": "x"}))
+        assert resp.status == 404
+
+    async def test_update_folder_sets_icon(self, _conv_dir: Path) -> None:
+        """A valid bootstrap icon class is persisted."""
+        folder = create_folder("Work")
+        resp = await update_folder_handler(
+            _make_folder_request(folder.id, {"icon": "bi-briefcase"}),
+        )
+        assert resp.status == 200
+        assert json.loads(resp.body)["icon"] == "bi-briefcase"
+
+    async def test_update_folder_bad_icon_400(self, _conv_dir: Path) -> None:
+        """A value that isn't a bootstrap icon class is rejected."""
+        folder = create_folder("Work")
+        resp = await update_folder_handler(
+            _make_folder_request(folder.id, {"icon": "bi-x' onload=alert(1)"}),
+        )
+        assert resp.status == 400
+
+    async def test_delete_folder_unfiles_members(self, _conv_dir: Path) -> None:
+        """Deleting a folder removes it and clears it from member conversations."""
+        folder = create_folder("Work")
+        _seed("c1")
+        _store.save_conversation_folder("c1", folder.id)
+
+        resp = await delete_folder_handler(_make_folder_request(folder.id, None))
+        assert resp.status == 204
+        assert list_folders() == []
+        assert load_conversation_metadata("c1")["folder_id"] is None
+
+    async def test_delete_folder_missing_404(self, _conv_dir: Path) -> None:
+        """Deleting an unknown folder is a 404."""
+        resp = await delete_folder_handler(_make_folder_request("nope", None))
+        assert resp.status == 404
+
+    async def test_patch_conversation_files_into_folder(self, _conv_dir: Path) -> None:
+        """Filing a conversation via its PATCH endpoint sets its folder_id."""
+        folder = create_folder("Work")
+        _seed("c1")
+        resp = await update_conversation_handler(
+            _make_request("c1", {"folder_id": folder.id}),
+        )
+        assert resp.status == 204
+        assert load_conversation_metadata("c1")["folder_id"] == folder.id
+
+    async def test_patch_conversation_unknown_folder_400(self, _conv_dir: Path) -> None:
+        """An unknown folder_id is rejected and nothing is written."""
+        _seed("c1")
+        resp = await update_conversation_handler(
+            _make_request("c1", {"folder_id": "ghost"}),
+        )
+        assert resp.status == 400
+        assert "folder_id" not in load_conversation_metadata("c1")
+
+    async def test_patch_conversation_clears_folder(self, _conv_dir: Path) -> None:
+        """A null folder_id removes the conversation from its folder."""
+        folder = create_folder("Work")
+        _seed("c1")
+        _store.save_conversation_folder("c1", folder.id)
+        resp = await update_conversation_handler(
+            _make_request("c1", {"folder_id": None}),
+        )
+        assert resp.status == 204
+        assert load_conversation_metadata("c1")["folder_id"] is None
+
+
+@pytest.mark.unit
+class TestArchiveRoutes:
+    """POST archive/unarchive and GET archived listing."""
+
+    async def test_archive_moves_conversation(self, _conv_dir: Path) -> None:
+        """Archiving succeeds and the conversation leaves the active store."""
+        _seed("c1")
+        resp = await archive_conversation_handler(_make_request("c1", None))
+        assert resp.status == 204
+        assert conversation_exists("c1") is False
+        assert [s.conversation_id for s in list_archived_conversations()] == ["c1"]
+
+    async def test_archive_missing_404(self, _conv_dir: Path) -> None:
+        """Archiving an unknown conversation is a 404."""
+        resp = await archive_conversation_handler(_make_request("ghost", None))
+        assert resp.status == 404
+
+    async def test_unarchive_restores_conversation(self, _conv_dir: Path) -> None:
+        """Restoring brings the conversation back into the active store."""
+        _seed("c1")
+        await archive_conversation_handler(_make_request("c1", None))
+        resp = await unarchive_conversation_handler(_make_request("c1", None))
+        assert resp.status == 204
+        assert conversation_exists("c1") is True
+        assert list_archived_conversations() == []
+
+    async def test_unarchive_missing_404(self, _conv_dir: Path) -> None:
+        """Restoring an unknown archived conversation is a 404."""
+        resp = await unarchive_conversation_handler(_make_request("ghost", None))
+        assert resp.status == 404
+
+    async def test_list_archived(self, _conv_dir: Path) -> None:
+        """The archived listing returns summaries of archived conversations."""
+        _seed("c1")
+        await archive_conversation_handler(_make_request("c1", None))
+        resp = await list_archived_handler(_make_request("", None))
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert [row["conversation_id"] for row in data] == ["c1"]
 
 
 @pytest.mark.unit

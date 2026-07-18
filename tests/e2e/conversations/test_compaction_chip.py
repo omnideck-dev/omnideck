@@ -154,9 +154,9 @@ def test_compaction_chip_expands_and_shows_stats(page: Page):
         expect(panel).not_to_be_visible()
         chip.click()
         expect(panel).to_be_visible()
-        expect(panel).to_contain_text("20.0k")
-        expect(panel).to_contain_text("8.0k")
-        expect(panel).to_contain_text("saved 12.0k (60%)")
+        expect(panel).to_contain_text("20k")
+        expect(panel).to_contain_text("8k")
+        expect(panel).to_contain_text("saved 12k (60%)")
         expect(panel).to_contain_text("0 tool calls")
         expect(panel).to_contain_text("13 tokens")
         expect(panel).to_contain_text(
