@@ -19,23 +19,6 @@ export default function CustomAppHost({
             const message = event.data;
             if (!message || typeof message !== 'object') return;
 
-            if (message.type === 'omnideck:download') {
-                if (typeof message.url !== 'string' || message.url.length > 4096) return;
-                if (typeof message.filename !== 'string' || message.filename.length > 255) return;
-                if (message.filename && /[\\/\0]/.test(message.filename)) return;
-                try {
-                    const url = new URL(message.url, frameRef.current.src);
-                    if (!['http:', 'https:', 'blob:', 'data:'].includes(url.protocol)) return;
-                    const link = document.createElement('a');
-                    link.href = url.href;
-                    link.download = message.filename;
-                    link.rel = 'noopener';
-                    link.click();
-                } catch {
-                    // Ignore malformed or unsupported download URLs.
-                }
-                return;
-            }
             if (message.type === 'omnideck:chat-open') {
                 onOpenChat?.();
                 return;

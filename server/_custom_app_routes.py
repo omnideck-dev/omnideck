@@ -225,9 +225,6 @@ async def custom_app_sdk_handler(_request: web.Request) -> web.Response:
         window.parent.postMessage({ type: 'omnideck:chat-compose', text, context }, shellOrigin);
       },
     }),
-    download({ url, filename = '' } = {}) {
-      window.parent.postMessage({ type: 'omnideck:download', url, filename }, shellOrigin);
-    },
   });
 })();
 """

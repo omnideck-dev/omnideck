@@ -159,7 +159,7 @@ async def test_sdk_exposes_explicit_chat_bridge(custom_apps_client: TestClient) 
     source = await response.text()
     assert "omnideck:chat-open" in source
     assert "omnideck:chat-compose" in source
-    assert "omnideck:download" in source
+    assert "omnideck:download" not in source
     assert "event.origin !== shellOrigin" in source
 
 

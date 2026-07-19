@@ -209,11 +209,6 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     assert write_status == 200
     assert page.request.get("/home/omnideck/custom-app-alpha.txt").text() == "written by app"
 
-    # The app can ask the parent shell to download one of its own static files.
-    with page.expect_download() as download_info:
-        frame.locator("body").evaluate("() => window.omnideck.download({ url: './app.css', filename: 'text-lab.css' })")
-    assert download_info.value.suggested_filename == "text-lab.css"
-
     frame.get_by_role("button", name="Analyze").click()
 
     expect(frame.get_by_text("Analysis complete")).to_be_visible()
