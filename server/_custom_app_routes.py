@@ -259,7 +259,7 @@ async def custom_app_web_handler(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(target, headers=headers)
 
 
-async def invoke_custom_app_action(app: CustomApp, action: str, args: dict[str, Any]) -> Any:
+async def _invoke_custom_app_action(app: CustomApp, action: str, args: dict[str, Any]) -> Any:
     """Invoke one action in a fresh isolated-mode Python subprocess."""
     if not _ACTION_NAME.fullmatch(action):
         raise CustomAppRuntimeError("ACTION_NOT_FOUND", "App action not found.", status=404)
@@ -318,7 +318,7 @@ async def invoke_custom_app_action(app: CustomApp, action: str, args: dict[str, 
     return envelope.result
 
 
-async def invoke_custom_app_handler(request: web.Request) -> web.Response:
+async def invoke_custom_app_action_handler(request: web.Request) -> web.Response:
     """Validate and execute one public action from a Custom App."""
     if disabled := _feature_disabled():
         return disabled
@@ -330,7 +330,7 @@ async def invoke_custom_app_handler(request: web.Request) -> web.Response:
     except ValidationError:
         return _error_response("VALIDATION_ERROR", "Expected a JSON object containing an args object.", 400)
     try:
-        result = await invoke_custom_app_action(app, request.match_info["action"], payload.args)
+        result = await _invoke_custom_app_action(app, request.match_info["action"], payload.args)
     except CustomAppRuntimeError as exc:
         return _error_response(exc.code, str(exc), exc.status)
     return web.json_response({"ok": True, "result": result})
@@ -343,7 +343,7 @@ def register_custom_app_routes(app: web.Application) -> None:
     app.router.add_route("DELETE", "/api/custom-apps/home", clear_home_custom_app_handler)
     app.router.add_route("GET", "/api/custom-apps/sdk.js", custom_app_sdk_handler)
     app.router.add_route("GET", "/api/custom-apps/{slug}/web/{path:.*}", custom_app_web_handler)
-    app.router.add_route("POST", "/api/custom-apps/{slug}/invoke/{action}", invoke_custom_app_handler)
+    app.router.add_route("POST", "/api/custom-apps/{slug}/invoke/{action}", invoke_custom_app_action_handler)
 
 
 __all__ = [
@@ -351,7 +351,6 @@ __all__ = [
     "CustomAppRuntimeError",
     "discover_custom_apps",
     "custom_app_roots",
-    "invoke_custom_app_action",
     "register_custom_app_routes",
     "resolve_custom_app",
 ]
