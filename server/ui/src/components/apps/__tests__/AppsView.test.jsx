@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
 
 import AppsView from '../AppsView.jsx';
 
@@ -11,19 +11,10 @@ const SAMPLE = {
     has_actions: true,
 };
 
-beforeEach(() => {
-    global.fetch = vi.fn(() => Promise.resolve({
-        ok: true,
-        json: async () => ({ apps: [SAMPLE], home_app_slug: null }),
-    }));
-});
-
-afterEach(() => vi.restoreAllMocks());
-
-test('lists discovered apps and asks the shell to open one full-space', async () => {
+test('lists discovered apps and asks the shell to open one full-space', () => {
     const onOpenApp = vi.fn();
-    render(<AppsView onOpenApp={onOpenApp} />);
-    expect(await screen.findByText('Text Lab')).toBeInTheDocument();
+    render(<AppsView apps={[SAMPLE]} onOpenApp={onOpenApp} />);
+    expect(screen.getByText('Text Lab')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Custom Apps/ })).toBeInTheDocument();
     expect(screen.queryByText('text-lab')).not.toBeInTheDocument();
     expect(screen.queryByText('Python')).not.toBeInTheDocument();
@@ -32,34 +23,26 @@ test('lists discovered apps and asks the shell to open one full-space', async ()
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
 });
 
-test('can open an app directly beside the active chat', async () => {
+test('can open an app directly beside the active chat', () => {
     const onOpenAppBesideChat = vi.fn();
-    render(<AppsView onOpenAppBesideChat={onOpenAppBesideChat} />);
+    render(<AppsView apps={[SAMPLE]} onOpenAppBesideChat={onOpenAppBesideChat} />);
 
-    fireEvent.click(await screen.findByTestId('custom-app-open-split-text-lab'));
+    fireEvent.click(screen.getByTestId('custom-app-open-split-text-lab'));
     expect(onOpenAppBesideChat).toHaveBeenCalledWith(SAMPLE);
 });
 
-test('synchronizes the persisted Home slug with the shell', async () => {
-    global.fetch = vi.fn(() => Promise.resolve({
-        ok: true,
-        json: async () => ({ apps: [SAMPLE], home_app_slug: 'text-lab' }),
-    }));
-    const onHomeAppChange = vi.fn();
-    render(<AppsView homeAppSlug={null} onHomeAppChange={onHomeAppChange} />);
+test('asks the catalog owner to refresh', () => {
+    const onRefresh = vi.fn();
+    render(<AppsView apps={[SAMPLE]} onRefresh={onRefresh} />);
 
-    await waitFor(() => expect(onHomeAppChange).toHaveBeenCalledWith('text-lab'));
+    fireEvent.click(screen.getByTestId('custom-apps-refresh'));
+    expect(onRefresh).toHaveBeenCalledOnce();
 });
 
-test('keeps the empty state focused on Custom Apps rather than implementation details', async () => {
-    global.fetch = vi.fn(() => Promise.resolve({
-        ok: true,
-        json: async () => ({ apps: [], home_app_slug: null }),
-    }));
-
+test('keeps the empty state focused on Custom Apps rather than implementation details', () => {
     render(<AppsView />);
 
-    expect(await screen.findByText('No Custom Apps yet')).toBeInTheDocument();
+    expect(screen.getByText('No Custom Apps yet')).toBeInTheDocument();
     expect(screen.getByText('Ask your Omnideck agent to build one for you.')).toBeInTheDocument();
     expect(screen.queryByText(/folder|omnideck\.json|web\/index|~\/apps/i)).not.toBeInTheDocument();
 });

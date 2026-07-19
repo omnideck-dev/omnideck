@@ -79,7 +79,21 @@ vi.mock('../components/Sidebar.jsx', () => ({
 }));
 
 vi.mock('../components/PreviewPanel.jsx', () => ({
-    default: ({ children }) => <div data-testid="preview-panel">{children}</div>,
+    default: ({ children, tabs = [], onCloseTab, actions }) => (
+        <div data-testid="preview-panel">
+            {tabs.map((tab) => (
+                <button
+                    key={tab.id}
+                    data-testid={`close-tab-${tab.id}`}
+                    onClick={() => onCloseTab?.(tab.id)}
+                >
+                    Close {tab.label}
+                </button>
+            ))}
+            {actions}
+            {children}
+        </div>
+    ),
 }));
 
 vi.mock('../components/SplitHandle.jsx', () => ({
@@ -114,23 +128,13 @@ vi.mock('../components/apps/AppsView.jsx', () => ({
     ),
 }));
 
-vi.mock('../components/apps/HomeView.jsx', () => ({
-    default: () => <div data-testid="home-view">Home</div>,
-}));
-
-vi.mock('../components/apps/CustomAppWorkspace.jsx', () => ({
-    default: ({ app, visible, layout, onOpenChat, onCloseTab, onComposeChat }) => (
-        <div
-            data-testid="custom-app-workspace"
-            data-visible={visible ? 'true' : 'false'}
-            data-layout={layout}
-        >
+vi.mock('../components/apps/CustomAppHost.jsx', () => ({
+    default: ({ app, active, onComposeChat }) => (
+        <div data-testid="custom-app-frame" data-active={active ? 'true' : 'false'}>
             {app.title}
-            <button data-testid="mock-workspace-chat" onClick={onOpenChat}>Chat with Agent</button>
             <button data-testid="mock-workspace-compose" onClick={() => onComposeChat({
                 text: 'Review this', context: { text: 'Draft' },
             })}>Compose</button>
-            <button data-testid="mock-workspace-close" onClick={() => onCloseTab(`app:${app.slug}`)}>Close</button>
         </div>
     ),
 }));
@@ -359,6 +363,15 @@ describe('DesktopApp view transitions', () => {
                 if (url === '/api/features') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ custom_apps: true }) });
                 }
+                if (url === '/api/custom-apps') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            apps: [{ slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' }],
+                            home_app_slug: 'text-lab',
+                        }),
+                    });
+                }
                 if (url === '/api/providers') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
                 }
@@ -376,7 +389,7 @@ describe('DesktopApp view transitions', () => {
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.queryByTestId('home-view')).not.toBeInTheDocument();
+            expect(screen.getByTestId('home-view')).toHaveAttribute('data-layout', 'split');
         });
     });
 
@@ -411,14 +424,14 @@ describe('DesktopApp view transitions', () => {
             expect(workspace).toHaveAttribute('data-layout', 'full');
             expect(workspace).toHaveAttribute('data-visible', 'true');
 
-            fireEvent.click(screen.getByTestId('mock-workspace-chat'));
+            fireEvent.click(screen.getByTestId('custom-app-chat'));
             expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
 
-            fireEvent.click(screen.getByTestId('mock-workspace-close'));
+            fireEvent.click(screen.getByTestId('close-tab-app:text-lab'));
             expect(screen.queryByTestId('custom-app-workspace')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
@@ -446,7 +459,7 @@ describe('DesktopApp view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
 
-            fireEvent.click(screen.getByTestId('mock-workspace-chat'));
+            fireEvent.click(screen.getByTestId('custom-app-chat'));
             expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
         });
     });

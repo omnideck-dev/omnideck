@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useState } from 'react';
-
 import Button from '../primitives/Button.jsx';
 import styles from './AppsView.module.css';
 
@@ -7,31 +5,14 @@ const NOOP = () => {};
 
 /** Custom App library. The shell owns every open app and its iframe. */
 export default function AppsView({
+    apps = [],
+    loading = false,
+    error = '',
     homeAppSlug = null,
-    onHomeAppChange = NOOP,
+    onRefresh = NOOP,
     onOpenApp = NOOP,
     onOpenAppBesideChat = NOOP,
 }) {
-    const [apps, setApps] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-
-    const loadApps = useCallback(() => {
-        setLoading(true);
-        setError('');
-        fetch('/api/custom-apps')
-            .then(async (response) => {
-                const body = await response.json();
-                if (!response.ok) throw new Error('Could not load Custom Apps');
-                setApps(body.apps || []);
-                if (body.home_app_slug !== homeAppSlug) onHomeAppChange(body.home_app_slug || null);
-            })
-            .catch((err) => setError(err.message))
-            .finally(() => setLoading(false));
-    }, [homeAppSlug, onHomeAppChange]);
-
-    useEffect(() => { loadApps(); }, [loadApps]);
-
     return (
         <div className={styles.view} data-testid="apps-view">
             <div className={styles.toolbar}>
@@ -39,7 +20,7 @@ export default function AppsView({
                     <i className="bi bi-grid" /> Custom Apps
                     {!loading && <span className={styles.count}>· {apps.length}</span>}
                 </h1>
-                <Button variant="ghost" onClick={loadApps} data-testid="custom-apps-refresh">
+                <Button variant="ghost" onClick={onRefresh} data-testid="custom-apps-refresh">
                     <i className="bi bi-arrow-clockwise" /> Refresh
                 </Button>
             </div>
