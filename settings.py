@@ -8,6 +8,7 @@ wizard or the settings page).
 import json
 import logging
 import os
+import re
 import tempfile
 import urllib.parse
 from pathlib import Path
@@ -27,6 +28,9 @@ _SETTINGS_FILE = "settings.json"
 # so a fresh install's settings.json is born with every key here. Adding a key
 # here only affects new installs — existing installs need a migration to write
 # the new key onto their already-persisted file.
+#
+# Settings use flat, prefixed keys so PUT updates can be shallow partial merges.
+# Dictionary values such as *_options are replaced atomically.
 _DEFAULTS: dict[str, Any] = {
     "setup_complete": False,
     "default_agent": "omnideck",
@@ -52,7 +56,12 @@ _DEFAULTS: dict[str, Any] = {
     },
     "title_provider": "",
     "title_model": "",
+    "custom_apps_enabled": False,
+    # Custom App shown as Home; None keeps Chat as Home.
+    "home_app_slug": None,
 }
+
+_APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
 
 # Metadata service IPs that must never be reachable via user-supplied URLs.
 _BLOCKED_HOSTS = {"169.254.169.254", "fd00:ec2::254", "metadata.google.internal"}
@@ -89,6 +98,15 @@ class SettingsUpdate(BaseModel):
     compaction_options: dict[str, Any] | None = None
     title_provider: str | None = None
     title_model: str | None = None
+    custom_apps_enabled: bool | None = None
+    home_app_slug: str | None = None
+
+    @field_validator("home_app_slug")
+    @classmethod
+    def _validate_home_app_slug(cls, value: str | None) -> str | None:
+        if value is not None and not _APP_SLUG.fullmatch(value):
+            raise ValueError("home_app_slug must be a lowercase app slug")
+        return value
 
     @field_validator("direct_providers")
     @classmethod
@@ -159,4 +177,9 @@ def save_settings(data: dict[str, Any]) -> dict[str, Any]:
     return current
 
 
-__all__ = ["load_settings", "save_settings", "SettingsUpdate"]
+def custom_apps_enabled() -> bool:
+    """Return whether the user has enabled the experimental Custom Apps feature."""
+    return load_settings().get("custom_apps_enabled", False) is True
+
+
+__all__ = ["custom_apps_enabled", "load_settings", "save_settings", "SettingsUpdate"]

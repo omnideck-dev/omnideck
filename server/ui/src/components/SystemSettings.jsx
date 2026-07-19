@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAppData } from '../contexts/AppData.jsx';
 import styles from './SystemSettings.module.css';
 import ModelPicker from './ModelPicker.jsx';
 import PackageIcon from './icons/PackageIcon';
@@ -8,6 +9,7 @@ import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 
 export default function SystemSettings() {
+    const { refreshFeatures } = useAppData();
     const [providers, setProviders] = useState([]);
     const [profiles, setProfiles] = useState([]);
     const [settings, setSettings] = useState({ default_agent: 'omnideck' });
@@ -38,6 +40,7 @@ export default function SystemSettings() {
     }, []);
 
     const updateSetting = useCallback(async (key, value) => {
+        const previousValue = settings[key];
         setSettings((prev) => ({ ...prev, [key]: value }));
         try {
             const res = await fetch('/api/settings', {
@@ -48,11 +51,14 @@ export default function SystemSettings() {
             if (res.ok) {
                 const updated = await res.json();
                 setSettings(updated);
+                if (key === 'custom_apps_enabled') await refreshFeatures();
+                return;
             }
         } catch {
-            // silent
+            // Restore the server-backed value below.
         }
-    }, []);
+        setSettings((prev) => ({ ...prev, [key]: previousValue }));
+    }, [refreshFeatures, settings]);
 
     // Update a (provider, model) pair atomically so they always stay in sync.
     const updateProviderModel = useCallback(async (providerKey, modelKey, provider, model) => {
@@ -79,6 +85,30 @@ export default function SystemSettings() {
 
     return (
         <div className={styles.container}>
+            {/* Experimental */}
+            <div className={styles.sectionLabel}>Experimental</div>
+
+            <label className={styles.settingRow} data-testid="custom-apps-toggle">
+                <div className={styles.settingIcon}>
+                    <PackageIcon />
+                </div>
+                <div className={styles.settingInfo}>
+                    <span className={styles.settingTitle}>Custom Apps</span>
+                    <span className={styles.settingDesc}>
+                        Custom Apps let your Omnideck agents build and run personalized apps for you. Only use Custom Apps you trust.
+                    </span>
+                </div>
+                <ToggleSwitch
+                    checked={!!settings.custom_apps_enabled}
+                    onChange={(e) => updateSetting('custom_apps_enabled', e.target.checked)}
+                    aria-label="Custom Apps"
+                />
+            </label>
+
+            <div className={styles.note}>
+                Experimental features are early access and may change, break, or be removed without notice. Backward compatibility is not guaranteed.
+            </div>
+
             {/* Default Agent */}
             <div className={styles.sectionLabel}>Default Agent</div>
 
