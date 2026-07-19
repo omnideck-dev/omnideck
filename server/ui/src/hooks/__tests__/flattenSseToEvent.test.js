@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { _flattenSseToEvent } from '../useStreamingChat.js';
+import { normalizeLiveEvent } from '../../features/conversation/events/normalizeEvent.js';
 
-describe('_flattenSseToEvent', () => {
+describe('normalizeLiveEvent', () => {
     it('returns null for missing payload', () => {
-        expect(_flattenSseToEvent(null)).toBeNull();
-        expect(_flattenSseToEvent(undefined)).toBeNull();
-        expect(_flattenSseToEvent({})).toBeNull();
-        expect(_flattenSseToEvent({ payload: null })).toBeNull();
+        expect(normalizeLiveEvent(null)).toBeNull();
+        expect(normalizeLiveEvent(undefined)).toBeNull();
+        expect(normalizeLiveEvent({})).toBeNull();
+        expect(normalizeLiveEvent({ payload: null })).toBeNull();
     });
 
     it('flattens an iteration SSE message into events.jsonl shape', () => {
@@ -25,7 +25,7 @@ describe('_flattenSseToEvent', () => {
                 tool_calls: [{ id: 'tc1', name: 'shell' }],
             },
         };
-        const out = _flattenSseToEvent(sse);
+        const out = normalizeLiveEvent(sse);
         expect(out).toMatchObject({
             id: 'evt_abc',
             type: 'iteration',
@@ -46,13 +46,13 @@ describe('_flattenSseToEvent', () => {
             timestamp: '2026-05-31T12:00:00',
             payload: { type: 'agent_started', agent_id: 'root.test.1' },
         };
-        const out = _flattenSseToEvent(sse);
+        const out = normalizeLiveEvent(sse);
         expect(out.id).toMatch(/^live_/);
     });
 
     it('synthesizes timestamp when missing', () => {
         const sse = { payload: { type: 'agent_completed' } };
-        const out = _flattenSseToEvent(sse);
+        const out = normalizeLiveEvent(sse);
         expect(out.timestamp).toBeTypeOf('string');
         expect(out.timestamp.length).toBeGreaterThan(0);
     });
@@ -63,7 +63,7 @@ describe('_flattenSseToEvent', () => {
             conversation_id: 'c1', timestamp: '2026-01-01',
             payload: { type: 'tool_result', tool_call_id: 'tc1', tool_name: 'shell', content: 'ok' },
         };
-        const out = _flattenSseToEvent(sse);
+        const out = normalizeLiveEvent(sse);
         expect(out.tool_call_id).toBe('tc1');
         expect(out.tool_name).toBe('shell');
         expect(out.agent_id).toBe('a1');
@@ -81,7 +81,7 @@ describe('_flattenSseToEvent', () => {
                 is_nudge: true,
             },
         };
-        const out = _flattenSseToEvent(sse);
+        const out = normalizeLiveEvent(sse);
         expect(out.content).toBe('do the thing');
         expect(out.attachments).toHaveLength(1);
         expect(out.is_nudge).toBe(true);
