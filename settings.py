@@ -54,6 +54,7 @@ _DEFAULTS: dict[str, Any] = {
     "title_provider": "",
     "title_model": "",
     "custom_apps_enabled": False,
+    # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
 }
 
