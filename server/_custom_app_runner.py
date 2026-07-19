@@ -89,16 +89,22 @@ def _emit(payload: dict[str, Any]) -> None:
 
 def main() -> None:
     """Load one action, execute it, and emit exactly one JSON envelope."""
+    # The server starts this script as: runner.py <app directory> <action name>.
+    # sys.argv includes the script path, so exactly three entries are required.
     if len(sys.argv) != 3:
         _emit({"ok": False, "error": {"code": "RUNNER_USAGE", "message": "Invalid runner arguments."}})
         return
     app_root = Path(sys.argv[1]).resolve()
     action_name = sys.argv[2]
     try:
+        # Action arguments arrive as a JSON object over stdin.
         raw = json.loads(sys.stdin.read())
         args = raw.get("args")
         if not isinstance(args, dict):
             raise ActionError("INVALID_ARGUMENTS", "args must be an object.")
+
+        # stdout carries the runner's machine-readable response. Capture app
+        # prints so they cannot corrupt that single JSON envelope.
         captured_stdout = io.StringIO()
         captured_stderr = io.StringIO()
         with contextlib.redirect_stdout(captured_stdout), contextlib.redirect_stderr(captured_stderr):
