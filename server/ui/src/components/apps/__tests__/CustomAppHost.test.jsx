@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import CustomAppHost from '../CustomAppHost.jsx';
@@ -57,6 +57,23 @@ test('ignores bridge messages after the frame navigates to another origin', () =
     }));
 
     expect(onOpenChat).not.toHaveBeenCalled();
+});
+
+test('pins the outer frame to the app entry document while allowing hash routing', () => {
+    render(<CustomAppHost app={SAMPLE} />);
+    const frame = screen.getByTestId('custom-app-frame');
+
+    frame.src = '/api/custom-apps/text-lab/web/#files';
+    fireEvent.load(frame);
+    expect(frame).toHaveAttribute('src', '/api/custom-apps/text-lab/web/#files');
+
+    frame.src = '/home/omnideck/report.pdf';
+    fireEvent.load(frame);
+    expect(frame).toHaveAttribute('src', '/api/custom-apps/text-lab/web/');
+
+    frame.src = 'https://example.com/';
+    fireEvent.load(frame);
+    expect(frame).toHaveAttribute('src', '/api/custom-apps/text-lab/web/');
 });
 
 test('allows an app to open chat or seed the composer without sending', () => {

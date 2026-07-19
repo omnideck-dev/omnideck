@@ -171,6 +171,39 @@ def test_custom_app_opening_matrix_home(page: Page, installed_custom_app) -> Non
     expect(frame.locator("#text")).to_have_value(working_text)
 
 
+def test_custom_app_keeps_file_views_inside_the_app_frame(
+    page: Page, installed_custom_app
+) -> None:
+    """Apps may embed home files, but may not replace their outer document with one."""
+    _open_custom_apps_library(page)
+    page.get_by_test_id("custom-app-card").click()
+
+    frame_element = page.get_by_test_id("custom-app-frame")
+    frame = page.frame_locator('[data-testid="custom-app-frame"]')
+    expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+    frame.locator("body").evaluate(
+        """body => {
+            const fileView = document.createElement('iframe');
+            fileView.id = 'file-view';
+            fileView.src = '/home/omnideck/custom-app-alpha.txt';
+            body.append(fileView);
+        }"""
+    )
+    expect(frame.frame_locator("#file-view").locator("body")).to_contain_text("read from home")
+    expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+    # Replacing the outer app document is reverted, even for a same-origin file.
+    frame_element.evaluate("frame => { frame.src = '/home/omnideck/custom-app-alpha.txt'; }")
+    expect(frame_element).to_have_attribute("src", "/api/custom-apps/text-lab/web/")
+    expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+    # An opaque external document is reverted by the same guard.
+    frame_element.evaluate("frame => { frame.src = 'data:text/html,external'; }")
+    expect(frame_element).to_have_attribute("src", "/api/custom-apps/text-lab/web/")
+    expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
+
+
 def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -> None:
     """The shell lists an installed app, opens its frame, and bridges an action."""
     page.request.put("/api/settings", data={"custom_apps_enabled": False})

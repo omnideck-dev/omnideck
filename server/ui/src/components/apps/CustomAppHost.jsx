@@ -11,6 +11,24 @@ export default function CustomAppHost({
     onComposeChat,
 }) {
     const frameRef = useRef(null);
+    const appUrl = `/api/custom-apps/${encodeURIComponent(app.slug)}/web/`;
+
+    // Keep the host frame on the app entry document. Apps may render files or
+    // nested frames inside that document; only replacement of the host is undone.
+    const restoreAppEntryAfterNavigation = () => {
+        const frame = frameRef.current;
+        if (!frame) return;
+        try {
+            const loadedUrl = new URL(frame.contentWindow.location.href);
+            const entryUrl = new URL(appUrl, window.location.href);
+            loadedUrl.hash = '';
+            entryUrl.hash = '';
+            if (loadedUrl.href === entryUrl.href) return;
+        } catch {
+            // Cross-origin frame locations are intentionally unreadable.
+        }
+        frame.src = appUrl;
+    };
 
     useEffect(() => {
         const receiveMessage = async (event) => {
@@ -73,7 +91,8 @@ export default function CustomAppHost({
                 key={`${app.slug}-${reloadSignal}`}
                 ref={frameRef}
                 className={styles.frame}
-                src={`/api/custom-apps/${encodeURIComponent(app.slug)}/web/`}
+                src={appUrl}
+                onLoad={restoreAppEntryAfterNavigation}
                 title={app.title}
                 data-testid="custom-app-frame"
             />
