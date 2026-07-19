@@ -3,7 +3,7 @@ import styles from './AppsView.module.css';
 
 const NOOP = () => {};
 
-/** Custom App library. The shell owns every open app and its iframe. */
+/** Lists discovered Custom Apps; opening and presentation are handled by DesktopApp. */
 export default function AppsView({
     apps = [],
     loading = false,
