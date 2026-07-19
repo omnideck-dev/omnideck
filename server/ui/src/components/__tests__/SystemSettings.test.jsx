@@ -53,6 +53,8 @@ describe('SystemSettings custom apps toggle', () => {
         });
 
         const toggle = await screen.findByRole('switch', { name: 'Custom Apps' });
+        expect(screen.getByText(/Custom Apps allow Omnideck to build and run trusted local web apps/)).toBeInTheDocument();
+        expect(screen.getByText(/Backward compatibility is not guaranteed/)).toBeInTheDocument();
         expect(toggle).not.toBeChecked();
         await act(async () => {
             fireEvent.click(toggle);

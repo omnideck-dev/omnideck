@@ -94,7 +94,9 @@ export default function SystemSettings() {
                 </div>
                 <div className={styles.settingInfo}>
                     <span className={styles.settingTitle}>Custom Apps</span>
-                    <span className={styles.settingDesc}>Discover and run Custom Apps from your Omnideck home directory.</span>
+                    <span className={styles.settingDesc}>
+                        Custom Apps allow Omnideck to build and run trusted local web apps with optional Python backends. Only use apps you trust.
+                    </span>
                 </div>
                 <ToggleSwitch
                     checked={!!settings.custom_apps_enabled}
@@ -104,7 +106,7 @@ export default function SystemSettings() {
             </label>
 
             <div className={styles.note}>
-                Custom Apps can run trusted local Python code. Only install apps you trust.
+                Experimental features are early access and may change, break, or be removed without notice. Backward compatibility is not guaranteed.
             </div>
 
             {/* Default Agent */}
