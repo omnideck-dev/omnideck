@@ -15,6 +15,8 @@ export default function CustomAppHost({
     useEffect(() => {
         const receiveMessage = async (event) => {
             if (event.source !== frameRef.current?.contentWindow) return;
+            // The WindowProxy survives iframe navigation, so also reject messages
+            // after the app navigates its frame to an external origin.
             if (event.origin !== window.location.origin) return;
             const message = event.data;
             if (!message || typeof message !== 'object') return;
