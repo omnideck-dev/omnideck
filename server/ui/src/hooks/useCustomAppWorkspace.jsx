@@ -53,7 +53,10 @@ function reducer(state, action) {
     }
 }
 
-/** Shell-scoped Custom App session and its adapter over conversation preview tabs. */
+/**
+ * Keeps one user-opened Custom App mounted across shell navigation until
+ * it is closed or replaced, and combines it with conversation preview tabs.
+ */
 export default function useCustomAppWorkspace({
     preview,
     setDraft,
