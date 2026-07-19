@@ -28,6 +28,9 @@ _SETTINGS_FILE = "settings.json"
 # so a fresh install's settings.json is born with every key here. Adding a key
 # here only affects new installs — existing installs need a migration to write
 # the new key onto their already-persisted file.
+#
+# Settings use flat, prefixed keys so PUT updates can be shallow partial merges.
+# Dictionary values such as *_options are replaced atomically.
 _DEFAULTS: dict[str, Any] = {
     "setup_complete": False,
     "default_agent": "omnideck",
