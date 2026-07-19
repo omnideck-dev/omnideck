@@ -24,6 +24,9 @@ test('lists discovered apps and asks the shell to open one full-space', async ()
     const onOpenApp = vi.fn();
     render(<AppsView onOpenApp={onOpenApp} />);
     expect(await screen.findByText('Text Lab')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Custom Apps/ })).toBeInTheDocument();
+    expect(screen.queryByText('text-lab')).not.toBeInTheDocument();
+    expect(screen.queryByText('Python')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('custom-app-card'));
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
@@ -46,4 +49,17 @@ test('synchronizes the persisted Home slug with the shell', async () => {
     render(<AppsView homeAppSlug={null} onHomeAppChange={onHomeAppChange} />);
 
     await waitFor(() => expect(onHomeAppChange).toHaveBeenCalledWith('text-lab'));
+});
+
+test('keeps the empty state focused on Custom Apps rather than implementation details', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({
+        ok: true,
+        json: async () => ({ apps: [], home_app_slug: null }),
+    }));
+
+    render(<AppsView />);
+
+    expect(await screen.findByText('No Custom Apps yet')).toBeInTheDocument();
+    expect(screen.getByText('Ask your Omnideck agent to build one for you.')).toBeInTheDocument();
+    expect(screen.queryByText(/folder|omnideck\.json|web\/index|~\/apps/i)).not.toBeInTheDocument();
 });

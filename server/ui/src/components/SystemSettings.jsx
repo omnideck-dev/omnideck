@@ -95,7 +95,7 @@ export default function SystemSettings() {
                 <div className={styles.settingInfo}>
                     <span className={styles.settingTitle}>Custom Apps</span>
                     <span className={styles.settingDesc}>
-                        Custom Apps allow Omnideck to build and run trusted local web apps with optional Python backends. Only use apps you trust.
+                        Custom Apps let your Omnideck agents build and run personalized apps for you. Only use Custom Apps you trust.
                     </span>
                 </div>
                 <ToggleSwitch

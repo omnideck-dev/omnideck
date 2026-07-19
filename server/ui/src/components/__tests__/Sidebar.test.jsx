@@ -115,6 +115,7 @@ describe('Sidebar', () => {
 
         cleanup();
         const { onPanelToggle } = setup({ customAppsEnabled: true });
+        expect(screen.getByText('Custom Apps')).toBeInTheDocument();
         await user.click(screen.getByTestId('sidebar-nav-apps'));
         expect(onPanelToggle).toHaveBeenCalledWith('apps');
     });

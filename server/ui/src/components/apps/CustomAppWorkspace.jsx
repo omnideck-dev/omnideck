@@ -58,7 +58,7 @@ export default function CustomAppWorkspace({
                 <div className={styles.toolbar}>
                     {origin === 'apps' ? (
                         <Button variant="ghost" onClick={onOpenApps} data-testid="custom-app-back">
-                            <i className="bi bi-arrow-left" /> Apps
+                            <i className="bi bi-arrow-left" /> Custom Apps
                         </Button>
                     ) : null}
                     <div className={styles.identity}>
@@ -70,7 +70,7 @@ export default function CustomAppWorkspace({
                     </div>
                     {origin === 'home' && (
                         <Button variant="ghost" onClick={onOpenApps} data-testid="home-open-apps">
-                            <i className="bi bi-grid" /> Apps
+                            <i className="bi bi-grid" /> Custom Apps
                         </Button>
                     )}
                     <Button variant="filled" onClick={onOpenChat} data-testid="custom-app-chat">
@@ -87,7 +87,7 @@ export default function CustomAppWorkspace({
                     <Button
                         variant="ghost"
                         onClick={() => setReloadSignal((value) => value + 1)}
-                        title="Reload app files"
+                        title="Reload Custom App"
                         data-testid={origin === 'home' ? 'home-app-reload' : 'custom-app-reload'}
                     >
                         <i className="bi bi-arrow-clockwise" /> Reload
@@ -105,7 +105,7 @@ export default function CustomAppWorkspace({
                     <Button
                         variant="ghost"
                         onClick={() => setReloadSignal((value) => value + 1)}
-                        title="Reload app files"
+                        title="Reload Custom App"
                         aria-label="Reload app"
                         data-testid="custom-app-tab-reload"
                     >

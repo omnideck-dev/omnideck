@@ -5,7 +5,7 @@ import styles from './AppsView.module.css';
 
 const NOOP = () => {};
 
-/** File-based app library. The shell owns every open app and its iframe. */
+/** Custom App library. The shell owns every open app and its iframe. */
 export default function AppsView({
     homeAppSlug = null,
     onHomeAppChange = NOOP,
@@ -22,7 +22,7 @@ export default function AppsView({
         fetch('/api/custom-apps')
             .then(async (response) => {
                 const body = await response.json();
-                if (!response.ok) throw new Error(body.error?.message || 'Could not load apps');
+                if (!response.ok) throw new Error('Could not load Custom Apps');
                 setApps(body.apps || []);
                 if (body.home_app_slug !== homeAppSlug) onHomeAppChange(body.home_app_slug || null);
             })
@@ -36,10 +36,9 @@ export default function AppsView({
         <div className={styles.view} data-testid="apps-view">
             <div className={styles.toolbar}>
                 <h1 className={styles.title}>
-                    <i className="bi bi-grid" /> Apps
+                    <i className="bi bi-grid" /> Custom Apps
                     {!loading && <span className={styles.count}>· {apps.length}</span>}
                 </h1>
-                <span className={styles.rootHint}>Folders in ~/apps</span>
                 <Button variant="ghost" onClick={loadApps} data-testid="custom-apps-refresh">
                     <i className="bi bi-arrow-clockwise" /> Refresh
                 </Button>
@@ -48,9 +47,9 @@ export default function AppsView({
                 {error && <div className={styles.error}>{error}</div>}
                 {!loading && !error && apps.length === 0 && (
                     <div className={styles.empty}>
-                        <i className="bi bi-folder-plus" />
-                        <strong>No Custom Apps found</strong>
-                        <span>Add a folder containing omnideck.json and web/index.html.</span>
+                        <i className="bi bi-grid" />
+                        <strong>No Custom Apps yet</strong>
+                        <span>Ask your Omnideck agent to build one for you.</span>
                     </div>
                 )}
                 {apps.length > 0 && (
@@ -66,14 +65,12 @@ export default function AppsView({
                                     <div className={styles.cardIcon}><i className={`bi ${app.icon}`} /></div>
                                     <div className={styles.cardBody}>
                                         <strong>{app.title}</strong>
-                                        <p>{app.description || 'A file-based Omnideck app.'}</p>
-                                        <div className={styles.meta}>
-                                            <span><i className="bi bi-folder2" /> {app.slug}</span>
-                                            {app.has_actions && <span><i className="bi bi-filetype-py" /> Python</span>}
-                                            {app.slug === homeAppSlug && (
+                                        <p>{app.description || 'A Custom App built for Omnideck.'}</p>
+                                        {app.slug === homeAppSlug && (
+                                            <div className={styles.meta}>
                                                 <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
                                     <i className={`bi bi-chevron-right ${styles.chevron}`} />
                                 </button>

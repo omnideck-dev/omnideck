@@ -15,7 +15,7 @@ const NAV = [
     { id: 'agents', icon: 'bi-robot', label: 'Agents' },
     { id: 'routines', icon: 'bi-bullseye', label: 'Routines' },
     { id: 'artifacts', icon: 'bi-collection', label: 'Artifacts' },
-    { id: 'apps', icon: 'bi-grid', label: 'Apps', feature: 'customApps' },
+    { id: 'apps', icon: 'bi-grid', label: 'Custom Apps', feature: 'customApps' },
 ];
 
 function _readCollapsed() {
