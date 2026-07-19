@@ -235,7 +235,7 @@ async def custom_app_sdk_handler(_request: web.Request) -> web.Response:
     )
 
 
-async def custom_app_frame_handler(request: web.Request) -> web.StreamResponse:
+async def custom_app_web_handler(request: web.Request) -> web.StreamResponse:
     """Serve one file from an app's frontend directory."""
     if disabled := _feature_disabled():
         return disabled
@@ -342,7 +342,7 @@ def register_custom_app_routes(app: web.Application) -> None:
     app.router.add_route("PUT", "/api/custom-apps/home", set_home_custom_app_handler)
     app.router.add_route("DELETE", "/api/custom-apps/home", clear_home_custom_app_handler)
     app.router.add_route("GET", "/api/custom-apps/sdk.js", custom_app_sdk_handler)
-    app.router.add_route("GET", "/api/custom-apps/{slug}/frame/{path:.*}", custom_app_frame_handler)
+    app.router.add_route("GET", "/api/custom-apps/{slug}/web/{path:.*}", custom_app_web_handler)
     app.router.add_route("POST", "/api/custom-apps/{slug}/invoke/{action}", invoke_custom_app_handler)
 
 

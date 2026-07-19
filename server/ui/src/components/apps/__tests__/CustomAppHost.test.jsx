@@ -16,7 +16,9 @@ afterEach(() => vi.restoreAllMocks());
 
 test('runs the trusted app iframe without browser sandbox restrictions', () => {
     render(<CustomAppHost app={SAMPLE} />);
-    expect(screen.getByTestId('custom-app-frame')).not.toHaveAttribute('sandbox');
+    const frame = screen.getByTestId('custom-app-frame');
+    expect(frame).not.toHaveAttribute('sandbox');
+    expect(frame).toHaveAttribute('src', '/api/custom-apps/text-lab/web/');
 });
 
 test('forwards frame invocation messages to the selected app endpoint', async () => {

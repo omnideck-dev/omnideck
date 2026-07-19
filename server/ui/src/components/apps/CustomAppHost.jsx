@@ -66,11 +66,12 @@ export default function CustomAppHost({
 
     return (
         <div className={`${styles.frameWell} ${!active ? styles.hidden : ''}`}>
+            {/* This same-origin URL serves the app's web/index.html and its relative assets. */}
             <iframe
                 key={`${app.slug}-${reloadSignal}`}
                 ref={frameRef}
                 className={styles.frame}
-                src={`/api/custom-apps/${encodeURIComponent(app.slug)}/frame/`}
+                src={`/api/custom-apps/${encodeURIComponent(app.slug)}/web/`}
                 title={app.title}
                 data-testid="custom-app-frame"
             />

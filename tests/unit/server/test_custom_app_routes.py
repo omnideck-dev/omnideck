@@ -97,9 +97,9 @@ async def test_loads_app_symlinked_from_monorepo(custom_apps_client: TestClient)
     linked = next(app for app in (await listed.json())["apps"] if app["slug"] == "linked-app")
     assert linked["title"] == "Example App"
 
-    frame = await custom_apps_client.get("/api/custom-apps/linked-app/frame/")
-    assert frame.status == 200
-    assert await frame.text() == "<h1>Custom App</h1>"
+    web_response = await custom_apps_client.get("/api/custom-apps/linked-app/web/")
+    assert web_response.status == 200
+    assert await web_response.text() == "<h1>Custom App</h1>"
 
     invoked = await custom_apps_client.post(
         "/api/custom-apps/linked-app/invoke/greet",
@@ -138,10 +138,10 @@ async def test_rejects_missing_home_app(custom_apps_client: TestClient) -> None:
 
 
 async def test_serves_frontend_and_invokes_python_action(custom_apps_client: TestClient) -> None:
-    frame = await custom_apps_client.get("/api/custom-apps/example/frame/")
-    assert frame.status == 200
-    assert await frame.text() == "<h1>Custom App</h1>"
-    content_security_policy = frame.headers["Content-Security-Policy"]
+    web_response = await custom_apps_client.get("/api/custom-apps/example/web/")
+    assert web_response.status == 200
+    assert await web_response.text() == "<h1>Custom App</h1>"
+    content_security_policy = web_response.headers["Content-Security-Policy"]
     assert content_security_policy == "frame-ancestors 'self'"
     assert "default-src" not in content_security_policy
 
@@ -183,7 +183,7 @@ async def test_does_not_expose_undecorated_functions(custom_apps_client: TestCli
 
 
 async def test_does_not_serve_files_outside_web_root(custom_apps_client: TestClient) -> None:
-    response = await custom_apps_client.get("/api/custom-apps/example/frame/../app.py")
+    response = await custom_apps_client.get("/api/custom-apps/example/web/../app.py")
     assert response.status == 404
 
 
@@ -199,8 +199,8 @@ async def test_feature_flag_blocks_every_surface(tmp_path: Path, monkeypatch) ->
     await client.start_server()
     try:
         list_response = await client.get("/api/custom-apps")
-        frame_response = await client.get("/api/custom-apps/example/frame/")
+        web_response = await client.get("/api/custom-apps/example/web/")
         invoke_response = await client.post("/api/custom-apps/example/invoke/greet", json={"args": {"name": "Ada"}})
-        assert {list_response.status, frame_response.status, invoke_response.status} == {403}
+        assert {list_response.status, web_response.status, invoke_response.status} == {403}
     finally:
         await client.close()
