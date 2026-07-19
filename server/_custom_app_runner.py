@@ -27,16 +27,25 @@ class ActionError(Exception):
 
 
 def _load_actions(app_root: Path) -> dict[str, Any]:
+    """Import app.py and return the functions it exposes with @action."""
+    # Load app.py directly because each Custom App is discovered by directory,
+    # not installed as a Python package.
     source = app_root / "app.py"
     spec = importlib.util.spec_from_file_location("_omnideck_custom_app", source)
     if spec is None or spec.loader is None:
         raise ActionError("APP_LOAD_FAILED", "Could not load app.py.")
     module = importlib.util.module_from_spec(spec)
+
+    # Let app.py import sibling modules while it is being loaded, then remove
+    # the temporary path so it cannot affect the rest of the runner.
     sys.path.insert(0, str(app_root))
     try:
         spec.loader.exec_module(module)
     finally:
         sys.path.pop(0)
+
+    # The decorator marks callable functions with their public action name.
+    # Scan the loaded module and build the frontend-callable registry.
     actions: dict[str, Any] = {}
     for value in vars(module).values():
         name = _get_action_name(value)
