@@ -78,7 +78,7 @@ vi.mock('../components/Sidebar.jsx', () => ({
     ),
 }));
 
-vi.mock('../components/PreviewPanel.jsx', () => ({
+vi.mock('../components/TabbedPane.jsx', () => ({
     default: ({ children, tabs = [], onCloseTab, actions }) => (
         <div data-testid="preview-panel">
             {tabs.map((tab) => (

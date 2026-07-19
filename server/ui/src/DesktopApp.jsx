@@ -22,8 +22,8 @@ import CustomAppToolbar, {
     CustomAppReloadAction,
 } from './components/apps/CustomAppToolbar.jsx';
 import HomeAppUnavailable from './components/apps/HomeAppUnavailable.jsx';
-import PreviewPanel from './components/PreviewPanel.jsx';
-import WorkspacePane from './components/WorkspacePane.jsx';
+import TabbedPane from './components/TabbedPane.jsx';
+import CustomAppLayout from './components/CustomAppLayout.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
@@ -710,7 +710,7 @@ function DesktopAppInner() {
                     {workspaceSplit && <SplitHandle onDrag={preview.setSplitPosition} />}
 
                     {customApps.app && (
-                        <WorkspacePane
+                        <CustomAppLayout
                             visible={workspaceVisible}
                             layout={customApps.layout}
                             testId={customApps.origin === 'home' ? 'home-view' : 'custom-app-workspace'}
@@ -726,23 +726,27 @@ function DesktopAppInner() {
                                 />
                             )}
                             banner={<CustomAppError message={customApps.error} />}
-                            tabs={customApps.tabs}
-                            activeTab={customApps.activeTab}
-                            onTabChange={customApps.selectTab}
-                            onCloseTab={customApps.closeTab}
-                            tabActions={customApps.activeTab === customApps.appTabId
-                                ? <CustomAppReloadAction onReload={customApps.reload} />
-                                : null}
                         >
-                            <CustomAppHost
-                                app={customApps.app}
-                                reloadSignal={customApps.reloadSignal}
-                                active={customApps.activeTab === customApps.appTabId}
-                                onOpenChat={customApps.openChat}
-                                onComposeChat={customApps.composeInChat}
-                            />
-                            {renderPreviewContent(customApps.activeTab)}
-                        </WorkspacePane>
+                            <TabbedPane
+                                tabs={customApps.tabs}
+                                activeTab={customApps.activeTab}
+                                onTabChange={customApps.selectTab}
+                                onCloseTab={customApps.closeTab}
+                                hideTabs={!workspaceVisible || customApps.layout !== 'split'}
+                                actions={customApps.activeTab === customApps.appTabId
+                                    ? <CustomAppReloadAction onReload={customApps.reload} />
+                                    : null}
+                            >
+                                <CustomAppHost
+                                    app={customApps.app}
+                                    reloadSignal={customApps.reloadSignal}
+                                    active={customApps.activeTab === customApps.appTabId}
+                                    onOpenChat={customApps.openChat}
+                                    onComposeChat={customApps.composeInChat}
+                                />
+                                {renderPreviewContent(customApps.activeTab)}
+                            </TabbedPane>
+                        </CustomAppLayout>
                     )}
 
                     {/* Shared split handle + preview panel — visible alongside chat OR agent activity */}
@@ -750,14 +754,14 @@ function DesktopAppInner() {
                         <>
                             <SplitHandle onDrag={preview.setSplitPosition} />
                             <div className={styles.previewColumn}>
-                                <PreviewPanel
+                                <TabbedPane
                                     tabs={preview.tabs}
                                     activeTab={preview.activeTab}
                                     onTabChange={preview.setActiveTab}
                                     onCloseTab={preview.closeTab}
                                 >
                                     {renderPreviewContent(preview.activeTab)}
-                                </PreviewPanel>
+                                </TabbedPane>
                             </div>
                         </>
                     )}

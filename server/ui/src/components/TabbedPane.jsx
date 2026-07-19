@@ -1,9 +1,7 @@
-import styles from './PreviewPanel.module.css';
+import styles from './TabbedPane.module.css';
 
-/**
- * The unified right panel with tab bar and content area.
- */
-export default function PreviewPanel({
+/** A tab strip and the content selected by its caller. */
+export default function TabbedPane({
     tabs,
     activeTab,
     onTabChange,
@@ -13,7 +11,7 @@ export default function PreviewPanel({
     children,
 }) {
     return (
-        <div className={styles.previewPanel} data-testid="preview-panel">
+        <div className={styles.tabbedPane} data-testid="preview-panel">
             {!hideTabs && <div className={styles.tabBar} data-testid="preview-tab-bar">
                 <div className={styles.tabList}>
                     {tabs.map((tab) => {
