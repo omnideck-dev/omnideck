@@ -3,8 +3,13 @@ import {
     CONVERSATION_EVENT_TYPES as EVENT,
     isRootAgentEvent,
 } from '../features/conversation/events/eventTypes.js';
+import { getAgentEventActions } from '../features/conversation/events/agentEventHandler.js';
+import { applyConversationEvent } from '../features/conversation/events/applyConversationEvent.js';
 import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
+import { runOneTimeEventActions } from '../features/conversation/events/oneTimeEventActions.js';
 import { projectTurns } from '../features/conversation/events/projectTurns.js';
+import { handleSessionEvent } from '../features/conversation/events/sessionEventHandler.js';
+import { getWorkspaceEventActions } from '../features/conversation/events/workspaceEventHandler.js';
 import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
 import { streamChatTurn } from '../features/conversation/transport/chatClient.js';
 import useStreamStall from './useStreamStall.js';
@@ -16,112 +21,8 @@ function _uuid() {
     );
 }
 
-/**
- * Handle non-text events that arrive on the stream (screenshots,
- * terminal output, agent lifecycle, tool calls, etc.).
- *
- * Each event type maps to a callback that DesktopApp provided.
- * Text tokens are handled separately in the main loop — this
- * function only deals with "something happened" events.
- */
-function _handleStreamEvent(data, callbacks) {
-    const payload = data.payload;
-    if (!payload) return;
-
-    const { type } = payload;
-    const agentId = data.agent_id || null;
-
-    // Content and turn_end are handled in the main loop, not here.
-    if (type === 'content' || type === 'turn_end') return;
-
-    // Agent started/finished → adds or updates a node in the agent tree
-    if (type === 'agent_started' || type === 'agent_completed') {
-        if (callbacks.onAgentEvent) callbacks.onAgentEvent(payload);
-    }
-
-    // Browser screenshot → shows in preview panel and as card thumbnail
-    if (type === 'browser_screenshot') {
-        callbacks.onBrowserSnapshot({
-            url: payload.url,
-            title: payload.title,
-            screenshot: payload.screenshot,
-            tabId: payload.tab_id ?? null,
-            openTabIds: payload.open_tab_ids ?? null,
-            agentId,
-        });
-    }
-
-    // Terminal output → shows in terminal panel
-    if (type === 'terminal_output') {
-        callbacks.onTerminalOutput({ ...payload, agentId });
-    }
-
-    // New custom tool was created → refresh the tools panel
-    if (type === 'tool_created') {
-        callbacks.onToolCreated();
-    }
-
-    // Tool side-effects (memory refresh, etc.) fire from the iteration
-    // event below — every tool call the model planned is on
-    // iteration.tool_calls, which is the single source of truth.
-
-    if (type === 'audio_playback') {
-        callbacks.onAudioPlayback({
-            key: Date.now(),
-            src: `data:${payload.content_type};base64,${payload.content}`,
-        });
-    }
-
-    if (type === 'desktop_active') {
-        callbacks.onDesktopActive(agentId);
-    }
-
-    if (type === 'generation_preview') {
-        callbacks.onGenerationPreview({ ...payload, agentId });
-    }
-
-    if (type === 'file_output') {
-        if (callbacks.onAgentFileOutput) {
-            callbacks.onAgentFileOutput({ ...payload, agentId });
-        }
-    }
-
-    // Context usage → agent card badges (iteration count, context fill)
-    if (type === 'context_usage') {
-        if (callbacks.onAgentContextUsage && agentId) {
-            callbacks.onAgentContextUsage({
-                agentId,
-                iteration: payload.iteration || null,
-                maxIterations: payload.max_iterations || null,
-                contextUsage: {
-                    context_used: payload.context_used,
-                    context_limit: payload.context_limit,
-                    fill_ratio: payload.fill_ratio,
-                    compaction_threshold: payload.compaction_threshold,
-                },
-            });
-        }
-    }
-}
-
 // Resume-path equivalent of the backend's _summarize_arguments cap.
 const _MAX_ARG_LEN = 64;
-
-// Event types that get appended to ``events`` (matches backend's
-// _PERSISTED_TYPES in conversations/_events_log.py). Content deltas and
-// transient bookkeeping types are excluded — they update other state
-// (inflightIteration) instead.
-const _PERSISTED_EVENT_TYPES = new Set([
-    'agent_started',
-    'agent_completed',
-    'user_message',
-    'iteration',
-    'tool_result',
-    'compaction',
-    'file_output',
-    'spawn_requested',
-    'error',
-]);
 
 /**
  * Normalize a stored tool-call's arguments into a display string map.
@@ -338,11 +239,11 @@ export function _mergeFileOutputs(uiMessages, events) {
  * array on the assistant message (~60fps via requestAnimationFrame).
  * Sub-agent tokens go to the agent reducer for the network/detail views.
  */
-export default function useStreamingChat(callbacks) {
+export default function useStreamingChat(callbacks = {}) {
     // ── Unified state for chat rendering ───────────────────────────────
-    // ``events`` is the source of truth: persisted-shape event records
-    // (matching events.jsonl). Both resume and live append to this same
-    // array. ChatMessages renders by calling projectTurns(events).
+    // ``events`` is the source of truth for the open conversation's
+    // transcript: resume seeds saved canonical records and live handling
+    // retains the canonical records needed by projectTurns.
     //
     // ``inflightIteration`` holds the iteration currently being streamed
     // — content deltas update its content/thinking in real-time; once
@@ -491,20 +392,91 @@ export default function useStreamingChat(callbacks) {
             // everything in arrival order and flush once per animation
             // frame (~60fps). React 18 batches the dispatches into one
             // render, and the reducer merges consecutive same-type entries.
-            const pending = [];
+            const pendingAgentActions = [];
 
             const flush = () => {
                 agentRafId = null;
-                for (const op of pending) {
-                    op.callback(op.args);
+                for (const action of pendingAgentActions.splice(0)) {
+                    try {
+                        callbacks.onAgentAction?.(action);
+                    } catch {
+                        // One failed reducer dispatch must not drop later
+                        // activity that was already queued.
+                    }
                 }
-                pending.length = 0;
             };
 
             const scheduleFlush = () => {
                 if (agentRafId === null) {
                     agentRafId = requestAnimationFrame(flush);
                 }
+            };
+
+            const sessionActions = {
+                retainEvent: (event) => setEvents((prev) => [...prev, event]),
+                confirmUserMessage: () => setPendingUserPrompt(null),
+                finalizeIteration: () => setInflightIteration(null),
+                updateInProgressIteration: (event) => {
+                    setInflightIteration((prev) => accumulateLiveIteration(
+                        prev,
+                        event.agent_id,
+                        event.depth,
+                        event.content,
+                        event.thinking,
+                    ));
+                },
+                setRootAgent: (event) => {
+                    rootAgentIdRef.current = event.agent_id;
+                    setMessages((prev) => {
+                        const i = prev.length - 1;
+                        if (i < 0 || prev[i].id !== assistantId) return prev;
+                        const updated = [...prev];
+                        updated[i] = { ...updated[i], agentId: event.agent_id, streaming: true };
+                        return updated;
+                    });
+                },
+                finishTurn: () => {
+                    if (agentRafId !== null) {
+                        cancelAnimationFrame(agentRafId);
+                        agentRafId = null;
+                    }
+                    flush();
+                    setMessages((prev) => {
+                        const i = prev.length - 1;
+                        if (i < 0 || prev[i].id !== assistantId) return prev;
+                        const updated = [...prev];
+                        updated[i] = { ...updated[i], streaming: false, placeholder: false };
+                        return updated;
+                    });
+                    setInflightIteration(null);
+                    setPendingUserPrompt(null);
+                },
+            };
+
+            const stateHandlers = {
+                session: (event) => handleSessionEvent(event, sessionActions),
+                agent: (event) => {
+                    const { immediate, ordered } = getAgentEventActions(event);
+                    for (const action of immediate) {
+                        try {
+                            callbacks.onAgentAction?.(action);
+                        } catch {
+                            // Keep later actions and state owners independent.
+                        }
+                    }
+                    if (ordered.length === 0 || !callbacks.onAgentAction) return;
+                    pendingAgentActions.push(...ordered);
+                    scheduleFlush();
+                },
+                workspace: (event) => {
+                    for (const action of getWorkspaceEventActions(event)) {
+                        try {
+                            callbacks.onWorkspaceAction?.(action);
+                        } catch {
+                            // Workspace failures do not affect session or agent state.
+                        }
+                    }
+                },
             };
 
             for await (const data of streamChatTurn({
@@ -515,181 +487,16 @@ export default function useStreamingChat(callbacks) {
                 signal: controller.signal,
             })) {
                 try {
-                    const payload = data.payload;
-                    const eventType = payload?.type;
-
-                    _handleStreamEvent(data, callbacks);
-
-                    // ── Update the unified events / inflight state ──
-                    // Persisted events (matches backend's
-                    // _PERSISTED_TYPES) get pushed to the events
-                    // array so projectTurns sees them.
-                    if (eventType && _PERSISTED_EVENT_TYPES.has(eventType)) {
-                        const flat = normalizeLiveEvent(data);
-                        if (flat) {
-                            setEvents((prev) => [...prev, flat]);
-                            if (eventType === 'user_message') {
-                                // Backend confirmed our user input;
-                                // clear the optimistic synthetic turn.
-                                setPendingUserPrompt(null);
-                            }
-                            if (eventType === 'iteration') {
-                                // Final iteration arrived; clear the
-                                // streaming placeholder and replay the
-                                // model-planned tool calls into the
-                                // per-agent activity log. The dispatch
-                                // goes through the RAF queue so it
-                                // interleaves correctly with the
-                                // streaming content / thinking deltas
-                                // already in flight for this iteration.
-                                setInflightIteration(null);
-                                if (data.agent_id && callbacks.onActivityEntry) {
-                                    for (const tc of (payload.tool_calls || [])) {
-                                        if (tc?.name === 'remember' || tc?.name === 'forget') {
-                                            callbacks.onMemoryChanged?.();
-                                        }
-                                        pending.push({
-                                            callback: callbacks.onActivityEntry,
-                                            args: {
-                                                agentId: data.agent_id,
-                                                entry: {
-                                                    type: 'tool_call',
-                                                    name: tc.name,
-                                                    arguments: tc.arguments || null,
-                                                    timestamp: Date.now(),
-                                                },
-                                            },
-                                        });
-                                    }
-                                    scheduleFlush();
-                                }
-                            }
-                        }
-                    }
-                    if (eventType === 'content' && data.agent_id) {
-                        setInflightIteration((prev) => accumulateLiveIteration(
-                            prev, data.agent_id, data.depth,
-                            payload.content, payload.thinking,
-                        ));
-                    }
-
-                    // Set agentId on the assistant message so the chat
-                    // view can look up this agent's activityLog.
-                    if (payload?.type === EVENT.AGENT_STARTED && isRootAgentEvent(payload)) {
-                        rootAgentIdRef.current = payload.agent_id;
-                        setMessages((prev) => {
-                            const i = prev.length - 1;
-                            if (i < 0 || prev[i].id !== assistantId) return prev;
-                            const updated = [...prev];
-                            updated[i] = { ...updated[i], agentId: payload.agent_id, streaming: true };
-                            return updated;
-                        });
-                    }
-
-                    if (payload?.type === 'content' && data.agent_id && callbacks.onAgentContent) {
-                        const contentField = payload.content || '';
-                        const hasResponse = contentField.length > 0;
-                        const hasThinking = typeof payload.thinking === 'string' && payload.thinking.length > 0;
-                        if (hasResponse || hasThinking) {
-                            pending.push({
-                                callback: callbacks.onAgentContent,
-                                args: {
-                                    agentId: data.agent_id,
-                                    content: hasResponse ? contentField : null,
-                                    thinking: hasThinking ? payload.thinking : null,
-                                },
-                            });
-                            scheduleFlush();
-                        }
-                    }
-
-                    if (payload?.type === 'spawn_requested' && data.agent_id && callbacks.onActivityEntry) {
-                        pending.push({
-                            callback: callbacks.onActivityEntry,
-                            args: {
-                                agentId: data.agent_id,
-                                entry: {
-                                    type: 'spawn_requested',
-                                    correlationId: payload.correlation_id,
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        });
-                        scheduleFlush();
-                    }
-
-                    if (payload?.type === 'file_output' && data.agent_id && callbacks.onActivityEntry) {
-                        pending.push({
-                            callback: callbacks.onActivityEntry,
-                            args: {
-                                agentId: data.agent_id,
-                                entry: { type: 'file_output', ...payload, timestamp: Date.now() },
-                            },
-                        });
-                        scheduleFlush();
-                    }
-
-                    // Compaction → activity-rail marker. Main chat shows
-                    // depth-0 compactions as chips; this surfaces a
-                    // sub-agent's own compaction in its activity view.
-                    if (payload?.type === 'compaction' && data.agent_id && callbacks.onActivityEntry) {
-                        pending.push({
-                            callback: callbacks.onActivityEntry,
-                            args: {
-                                agentId: data.agent_id,
-                                entry: {
-                                    type: 'compaction',
-                                    stats: payload.stats || null,
-                                    summaryText: payload.summary_text || null,
-                                    userIntentSummary: payload.user_intent_summary || null,
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        });
-                        scheduleFlush();
-                    }
-
-                    // Error → for a sub-agent (depth>0) it surfaces in
-                    // that agent's activity view; a root error (depth 0)
-                    // renders in the main chat via the events log above.
-                    if (payload?.type === 'error' && (data.depth ?? 0) > 0
-                        && data.agent_id && callbacks.onActivityEntry) {
-                        pending.push({
-                            callback: callbacks.onActivityEntry,
-                            args: {
-                                agentId: data.agent_id,
-                                entry: {
-                                    type: 'error',
-                                    message: payload.message || 'An error occurred.',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        });
-                        scheduleFlush();
-                    }
-
-                    // Turn end — flush and mark done
-                    if (payload?.type === 'turn_end') {
-                        if (agentRafId !== null) {
-                            cancelAnimationFrame(agentRafId);
-                            agentRafId = null;
-                        }
-                        flush();
-                        setMessages((prev) => {
-                            const i = prev.length - 1;
-                            if (i < 0 || prev[i].id !== assistantId) return prev;
-                            const updated = [...prev];
-                            updated[i] = { ...updated[i], streaming: false, placeholder: false };
-                            return updated;
-                        });
-                        // Defensive: at end of turn, any unfinalized
-                        // in-flight iteration is stale.
-                        setInflightIteration(null);
-                        setPendingUserPrompt(null);
+                    const event = normalizeLiveEvent(data);
+                    if (!event) continue;
+                    applyConversationEvent(event, stateHandlers);
+                    try {
+                        runOneTimeEventActions(event, callbacks);
+                    } catch {
+                        // A one-time UI action cannot interrupt event delivery.
                     }
                 } catch {
-                    // Preserve the existing per-record isolation: one event
-                    // handler failure must not stop delivery of later records.
+                    // Malformed records must not stop later stream records.
                 }
             }
             // Stream ended — flush any remaining buffered entries

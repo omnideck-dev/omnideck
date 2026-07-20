@@ -13,7 +13,7 @@
  * buffer separate means resumed conversations and finalized live events still
  * use the same deterministic transcript builder.
  *
- * Sub-agent deltas are excluded: this buffer drives the root chat bubble;
+ * Sub-agent deltas are excluded: this buffer drives the root conversation;
  * sub-agent content belongs in the agent activity view's per-agent log. The
  * buffer resets when the finalized iteration event arrives.
  */
