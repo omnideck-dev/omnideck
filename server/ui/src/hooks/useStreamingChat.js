@@ -1,4 +1,11 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isRootAgentEvent,
+} from '../features/conversation/events/eventTypes.js';
+import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
+import { projectTurns } from '../features/conversation/events/projectTurns.js';
+import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
 import useStreamStall from './useStreamStall.js';
 
 function _uuid() {
@@ -130,50 +137,6 @@ const _PERSISTED_EVENT_TYPES = new Set([
 ]);
 
 /**
- * Reducer for inflightIteration on a content delta. The inflight holds
- * the thinking + content the model has streamed for the current
- * iteration; it's cleared as soon as the iteration event arrives.
- *
- * Sub-agent (depth>0) deltas are dropped entirely: this state drives the
- * main chat bubble, and sub-agent output belongs in the agent activity
- * view's per-agent activityLog instead.
- */
-export function _reduceInflightOnContent(prev, agentId, depth, content, thinking) {
-    if ((depth ?? 0) > 0) return prev;
-    const c = content || '';
-    const th = thinking || '';
-    if (!c && !th) return prev;
-    if (!prev || prev.agentId !== agentId) {
-        return { agentId, content: c, thinking: th };
-    }
-    return {
-        agentId: prev.agentId,
-        content: prev.content + c,
-        thinking: prev.thinking + th,
-    };
-}
-
-/**
- * Flatten an SSE message ({payload, agent_id, agent_name, timestamp, depth})
- * into the events.jsonl shape that ``_buildTurns`` expects.
- */
-export function _flattenSseToEvent(data) {
-    const payload = data?.payload;
-    if (!payload || typeof payload !== 'object') return null;
-    const { type, ...rest } = payload;
-    return {
-        id: data.id || `live_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        type,
-        timestamp: data.timestamp || new Date().toISOString(),
-        conversation_id: data.conversation_id || null,
-        agent_id: data.agent_id || null,
-        agent_name: data.agent_name || null,
-        depth: data.depth ?? 0,
-        ...rest,
-    };
-}
-
-/**
  * Normalize a stored tool-call's arguments into a display string map.
  * History stores them as a JSON string (or object); live events arrive
  * pre-summarized by the backend, so this only runs on the resume path.
@@ -198,156 +161,6 @@ function _summarizeToolArgs(raw) {
         out[key] = text.length > _MAX_ARG_LEN ? `${text.slice(0, _MAX_ARG_LEN - 1)}…` : text;
     }
     return Object.keys(out).length > 0 ? out : null;
-}
-
-/**
- * Build a list of Turn objects from the raw events.jsonl-shaped event log.
- *
- * One Turn per root `agent_started` event. Each Turn has an ordered
- * `children[]` of UI items (kind ∈ {'user_prompt', 'iteration',
- * 'tool_result', 'file_output', 'compaction', 'error'}).
- * Compaction children are repositioned so each
- * sits right before the iteration referenced by its `keptFromId` —
- * matching what the strategy actually drew as the
- * summarized/preserved boundary.
- *
- * Sub-agent events (agent_started with parent_agent_id) are skipped at
- * the top level — they're for the network view, not the chat.
- */
-export function _buildTurns(events) {
-    if (!Array.isArray(events)) return [];
-    const turns = [];
-    let currentTurn = null;
-
-    for (const ev of events) {
-        if (!ev) continue;
-        const t = ev.type;
-
-        if (t === 'agent_started' && !ev.parent_agent_id) {
-            currentTurn = {
-                id: `turn_${turns.length}`,
-                agentId: ev.agent_id,
-                children: [],
-            };
-            turns.push(currentTurn);
-            continue;
-        }
-        // sub-agent lifecycle + non-chat metadata: ignore
-        if (t === 'agent_started') continue;
-        if (t === 'agent_completed') continue;
-        if (t === 'context_usage') continue;
-
-        if (!currentTurn) {
-            // A root error with no turn yet means the turn failed before
-            // the agent ever started (setup failure) — synthesize a turn
-            // so the error still shows in the chat instead of being
-            // dropped with the rest of the orphan events.
-            if (t === 'error' && (ev.depth ?? 0) === 0) {
-                currentTurn = {
-                    id: `turn_${turns.length}`,
-                    agentId: ev.agent_id || null,
-                    children: [],
-                };
-                turns.push(currentTurn);
-            } else {
-                continue;
-            }
-        }
-
-        // Everything from a sub-agent (depth>0) lives in the agent
-        // activity view, not the main chat. Without this filter the
-        // sub-agent's instruction user_message would render as a user
-        // bubble in the conversation.
-        if ((ev.depth ?? 0) > 0) continue;
-
-        if (t === 'user_message') {
-            currentTurn.children.push({
-                kind: 'user_prompt',
-                id: ev.id,
-                content: ev.content || '',
-                attachments: ev.attachments || [],
-                isNudge: !!ev.is_nudge,
-            });
-        } else if (t === 'iteration') {
-            currentTurn.children.push({
-                kind: 'iteration',
-                id: ev.id,
-                iterationIndex: ev.iteration_index,
-                content: ev.content || '',
-                thinking: ev.thinking || '',
-                toolCalls: (ev.tool_calls || []).map((tc) => ({
-                    id: tc.id,
-                    name: tc.name,
-                    arguments: tc.arguments,
-                })),
-            });
-        } else if (t === 'tool_result') {
-            currentTurn.children.push({
-                kind: 'tool_result',
-                id: ev.id,
-                toolCallId: ev.tool_call_id,
-                toolName: ev.tool_name,
-                content: ev.content || '',
-            });
-        } else if (t === 'file_output') {
-            currentTurn.children.push({
-                kind: 'file_output',
-                id: ev.id,
-                filename: ev.filename,
-                contentType: ev.content_type,
-                path: ev.path || null,
-                timestamp: ev.timestamp,
-            });
-        } else if (t === 'compaction') {
-            currentTurn.children.push({
-                kind: 'compaction',
-                id: ev.id,
-                summaryText: ev.summary_text || '',
-                userIntentSummary: ev.user_intent_summary || '',
-                stats: ev.stats || null,
-                agentId: ev.agent_id || null,
-                timestamp: ev.timestamp || null,
-                keptFromId: ev.kept_from_id || null,
-            });
-        } else if (t === 'spawn_requested') {
-            currentTurn.children.push({
-                kind: 'spawn_requested',
-                id: ev.id,
-                correlationId: ev.correlation_id || null,
-            });
-        } else if (t === 'error') {
-            currentTurn.children.push({
-                kind: 'error',
-                id: ev.id,
-                message: ev.message || 'An error occurred.',
-            });
-        }
-    }
-
-    // Reposition compactions: each chip belongs right before the
-    // iteration whose id matches its keptFromId. The strategy emits the
-    // compaction event AFTER the kept iteration in the log; the chip's
-    // semantic place is BEFORE that iteration.
-    for (const turn of turns) {
-        const children = turn.children;
-        const compactions = children.filter((c) => c.kind === 'compaction');
-        for (const comp of compactions) {
-            if (!comp.keptFromId) continue;
-            const targetIdx = children.findIndex(
-                (c) => c.kind === 'iteration' && c.id === comp.keptFromId,
-            );
-            if (targetIdx < 0) continue;
-            const currentIdx = children.indexOf(comp);
-            if (currentIdx < 0 || currentIdx === targetIdx - 1) continue;
-            children.splice(currentIdx, 1);
-            const newTargetIdx = currentIdx < targetIdx
-                ? targetIdx - 1
-                : targetIdx;
-            children.splice(newTargetIdx, 0, comp);
-        }
-    }
-
-    return turns;
 }
 
 /**
@@ -445,7 +258,7 @@ export function _mergeCompactions(uiMessages, events) {
     const turnIdxByEventId = new Map();
     let curTurnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             curTurnIdx += 1;
         }
         if (ev?.id) turnIdxByEventId.set(ev.id, curTurnIdx);
@@ -511,7 +324,7 @@ export function _mergeFileOutputs(uiMessages, events) {
     const assistants = uiMessages.filter((m) => m.role === 'assistant');
     let turnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             turnIdx += 1;
             continue;
         }
@@ -542,7 +355,7 @@ export default function useStreamingChat(callbacks) {
     // ── Unified state for chat rendering ───────────────────────────────
     // ``events`` is the source of truth: persisted-shape event records
     // (matching events.jsonl). Both resume and live append to this same
-    // array. ChatMessages renders by calling _buildTurns(events).
+    // array. ChatMessages renders by calling projectTurns(events).
     //
     // ``inflightIteration`` holds the iteration currently being streamed
     // — content deltas update its content/thinking in real-time; once
@@ -747,9 +560,9 @@ export default function useStreamingChat(callbacks) {
                         // ── Update the unified events / inflight state ──
                         // Persisted events (matches backend's
                         // _PERSISTED_TYPES) get pushed to the events
-                        // array so _buildTurns sees them.
+                        // array so projectTurns sees them.
                         if (eventType && _PERSISTED_EVENT_TYPES.has(eventType)) {
-                            const flat = _flattenSseToEvent(data);
+                            const flat = normalizeLiveEvent(data);
                             if (flat) {
                                 setEvents((prev) => [...prev, flat]);
                                 if (eventType === 'user_message') {
@@ -791,7 +604,7 @@ export default function useStreamingChat(callbacks) {
                             }
                         }
                         if (eventType === 'content' && data.agent_id) {
-                            setInflightIteration((prev) => _reduceInflightOnContent(
+                            setInflightIteration((prev) => accumulateLiveIteration(
                                 prev, data.agent_id, data.depth,
                                 payload.content, payload.thinking,
                             ));
@@ -799,7 +612,7 @@ export default function useStreamingChat(callbacks) {
 
                         // Set agentId on the assistant message so the chat
                         // view can look up this agent's activityLog.
-                        if (payload?.type === 'agent_started' && !payload.parent_agent_id) {
+                        if (payload?.type === EVENT.AGENT_STARTED && isRootAgentEvent(payload)) {
                             rootAgentIdRef.current = payload.agent_id;
                             setMessages((prev) => {
                                 const i = prev.length - 1;
@@ -1064,7 +877,7 @@ export default function useStreamingChat(callbacks) {
                 tool_calls: [],
             }];
         }
-        const baseTurns = _buildTurns(augmented);
+        const baseTurns = projectTurns(augmented);
         if (pendingUserPrompt) {
             return [...baseTurns, {
                 id: `_pending_${pendingUserPrompt.id || 'turn'}`,

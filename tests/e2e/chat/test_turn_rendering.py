@@ -40,9 +40,9 @@ def _sse_envelope(payload: dict, agent_id: str, *, ts: str | None = None,
                   depth: int = 0) -> dict:
     """Wrap a payload in the SSE envelope shape the FE expects.
 
-    The FE's ``_flattenSseToEvent`` reads ``payload`` + the sibling
+    The FE's ``normalizeLiveEvent`` reads ``payload`` + the sibling
     metadata fields (agent_id, agent_name, timestamp, depth) and flattens
-    them back into the flat events.jsonl shape that ``_buildTurns``
+    them back into the flat events.jsonl shape that ``projectTurns``
     consumes.
     """
     return {

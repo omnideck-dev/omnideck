@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isRootAgentEvent,
+} from './features/conversation/events/eventTypes.js';
 import ChatPanel from './components/ChatPanel.jsx';
 import BrowserPreview from './components/BrowserPreview.jsx';
 import DesktopPreview from './components/DesktopPreview.jsx';
@@ -228,7 +232,7 @@ function DesktopAppInner() {
             // live turn.
             let lastRootAgentId = null;
             for (const ev of events) {
-                if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+                if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
                     lastRootAgentId = ev.agent_id;
                 }
             }

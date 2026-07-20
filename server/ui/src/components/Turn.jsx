@@ -1,4 +1,8 @@
 import React from 'react';
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    TRANSCRIPT_ITEM_KINDS as ITEM,
+} from '../features/conversation/events/eventTypes.js';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
 import Callout from './primitives/Callout.jsx';
@@ -95,25 +99,25 @@ export default function Turn({
     };
 
     for (const child of turn.children) {
-        if (child.kind === 'user_prompt') {
+        if (child.kind === ITEM.USER_PROMPT) {
             flushAssistant();
             items.push({ kind: 'user', child });
-        } else if (child.kind === 'compaction') {
+        } else if (child.kind === ITEM.COMPACTION) {
             flushAssistant();
             items.push({ kind: 'compaction', child });
-        } else if (child.kind === 'error') {
+        } else if (child.kind === ITEM.ERROR) {
             flushAssistant();
             items.push({ kind: 'error', child });
-        } else if (child.kind === 'iteration') {
+        } else if (child.kind === ITEM.ITERATION) {
             if (entries === null) entries = [];
             entries.push(..._iterationToEntries(child));
-        } else if (child.kind === 'file_output') {
+        } else if (child.kind === ITEM.FILE_OUTPUT) {
             if (entries === null) entries = [];
             entries.push(_fileOutputToEntry(child));
-        } else if (child.kind === 'spawn_requested') {
+        } else if (child.kind === ITEM.SPAWN_REQUESTED) {
             if (entries === null) entries = [];
             entries.push({
-                type: 'spawn_requested',
+                type: EVENT.SPAWN_REQUESTED,
                 correlationId: child.correlationId,
             });
         }
