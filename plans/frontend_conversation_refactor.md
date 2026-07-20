@@ -141,7 +141,7 @@ the conversation hook.
 
 ```text
 Live /api/chat response
-    → conversationClient (request + JSONL transport)
+    → conversationStream (request + JSONL transport)
     → normalizeLiveEvent
     ───────────────────────────────────────┐
                                            │
@@ -229,32 +229,33 @@ validated bridge may call navigation commands such as `openArtifact(id)`.
 
 ### Stage 2 — Extract the conversation stream client
 
-**Status: Next**
+**Status: Complete**
 
 Create a small transport module under
 `server/ui/src/features/conversation/transport/`.
 
-- [ ] Move `/api/chat` request construction out of `useStreamingChat`.
-- [ ] Keep removal of UI-only attachment preview data at the transport
+- [x] Move `/api/chat` request construction out of `useStreamingChat`.
+- [x] Keep removal of UI-only attachment preview data at the transport
       boundary.
-- [ ] Move `fetch`, abort-signal wiring, `TextDecoder`, JSONL buffering, and
+- [x] Move `fetch`, abort-signal wiring, `TextDecoder`, JSONL buffering, and
       parsing into the client.
-- [ ] Expose an async stream of raw envelopes; do not normalize or interpret
+- [x] Expose an async stream of raw envelopes; do not normalize or interpret
       event types in the client.
-- [ ] Preserve ordering, malformed-line behavior, abort behavior, and missing
+- [x] Preserve ordering, malformed-line behavior, abort behavior, and missing
       response-body behavior.
-- [ ] Add unit tests for request shape, arbitrary chunk boundaries, multiple
+- [x] Add unit tests for request shape, arbitrary chunk boundaries, multiple
       records per chunk, split UTF-8 input, malformed lines, empty bodies,
       network failures, and aborts.
-- [ ] Leave all React state updates, event handling, frame batching, and effects
+- [x] Leave all React state updates, event handling, frame batching, and effects
       in their current locations for this stage.
 
-**Completion signal:** `useStreamingChat` contains no `/api/chat` fetch,
-`getReader`, `TextDecoder`, JSONL buffer, or stream-level `JSON.parse` logic.
+**Completion signal:** `useStreamingChat` contains no turn-start `/api/chat`
+fetch, `getReader`, `TextDecoder`, JSONL buffer, or stream-level `JSON.parse`
+logic.
 
 ### Stage 3 — Separate event application from live-only effects
 
-**Status: Pending**
+**Status: Next**
 
 - [ ] Move the per-event switch out of the transport/session hook.
 - [ ] Split event interpretation into narrow transcript, agent, workspace, and
