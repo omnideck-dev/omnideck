@@ -1,7 +1,11 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isRootAgentEvent,
+} from '../features/conversation/events/eventTypes.js';
 import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
 import { projectTurns } from '../features/conversation/events/projectTurns.js';
-import { reduceInflightContent } from '../features/conversation/events/reduceInflight.js';
+import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
 import useStreamStall from './useStreamStall.js';
 
 function _uuid() {
@@ -254,7 +258,7 @@ export function _mergeCompactions(uiMessages, events) {
     const turnIdxByEventId = new Map();
     let curTurnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             curTurnIdx += 1;
         }
         if (ev?.id) turnIdxByEventId.set(ev.id, curTurnIdx);
@@ -320,7 +324,7 @@ export function _mergeFileOutputs(uiMessages, events) {
     const assistants = uiMessages.filter((m) => m.role === 'assistant');
     let turnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             turnIdx += 1;
             continue;
         }
@@ -600,7 +604,7 @@ export default function useStreamingChat(callbacks) {
                             }
                         }
                         if (eventType === 'content' && data.agent_id) {
-                            setInflightIteration((prev) => reduceInflightContent(
+                            setInflightIteration((prev) => accumulateLiveIteration(
                                 prev, data.agent_id, data.depth,
                                 payload.content, payload.thinking,
                             ));
@@ -608,7 +612,7 @@ export default function useStreamingChat(callbacks) {
 
                         // Set agentId on the assistant message so the chat
                         // view can look up this agent's activityLog.
-                        if (payload?.type === 'agent_started' && !payload.parent_agent_id) {
+                        if (payload?.type === EVENT.AGENT_STARTED && isRootAgentEvent(payload)) {
                             rootAgentIdRef.current = payload.agent_id;
                             setMessages((prev) => {
                                 const i = prev.length - 1;

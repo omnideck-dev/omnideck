@@ -1,6 +1,20 @@
 /**
- * Flatten a live stream message into the persisted event shape used by the
- * conversation projections.
+ * Flatten a live stream envelope into the same top-level shape stored in
+ * events.jsonl and consumed by the transcript builder.
+ *
+ * The wire protocol keeps event-specific fields under `payload` and transport
+ * metadata beside it:
+ *
+ *     { agent_id: 'root.1', depth: 0,
+ *       payload: { type: 'iteration', content: 'Hello' } }
+ *
+ * The normalized record lifts the payload fields next to that metadata:
+ *
+ *     { agent_id: 'root.1', depth: 0,
+ *       type: 'iteration', content: 'Hello', ... }
+ *
+ * Live events without an id or timestamp receive UI-local fallbacks. Resumed
+ * events are already flat, so they do not pass through this function.
  */
 export function normalizeLiveEvent(data) {
     const payload = data?.payload;
