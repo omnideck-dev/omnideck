@@ -141,7 +141,7 @@ the conversation hook.
 
 ```text
 Live /api/chat response
-    → conversationStream (request + JSONL transport)
+    → chatClient (POST /api/chat + JSONL transport)
     → normalizeLiveEvent
     ───────────────────────────────────────┐
                                            │
@@ -227,7 +227,7 @@ validated bridge may call navigation commands such as `openArtifact(id)`.
 - [x] Add direct unit coverage with no compatibility exports.
 - [x] Run the full UI suite, production build, and full end-to-end suite.
 
-### Stage 2 — Extract the conversation stream client
+### Stage 2 — Extract the chat transport client
 
 **Status: Complete**
 

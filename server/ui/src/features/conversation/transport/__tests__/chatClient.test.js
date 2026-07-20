@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { streamConversationTurn } from '../conversationStream.js';
+import { streamChatTurn } from '../chatClient.js';
 
 const encoder = new TextEncoder();
 
@@ -29,7 +29,7 @@ async function collect(stream) {
     return records;
 }
 
-describe('streamConversationTurn', () => {
+describe('streamChatTurn', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('posts the turn request and removes UI-only attachment previews', async () => {
@@ -42,7 +42,7 @@ describe('streamConversationTurn', () => {
             preview: 'blob:local-preview',
         }];
 
-        await collect(streamConversationTurn({
+        await collect(streamChatTurn({
             message: '',
             attachments,
             profileId: 'profile-1',
@@ -73,7 +73,7 @@ describe('streamConversationTurn', () => {
     it('omits optional request fields when they are not supplied', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ body: null });
 
-        await collect(streamConversationTurn({ message: 'hello' }));
+        await collect(streamChatTurn({ message: 'hello' }));
 
         const [, init] = fetchSpy.mock.calls[0];
         expect(JSON.parse(init.body)).toEqual({ message: 'hello' });
@@ -90,7 +90,7 @@ describe('streamConversationTurn', () => {
             body: bodyFromChunks(oneByteChunks),
         });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([expected]);
     });
 
@@ -102,7 +102,7 @@ describe('streamConversationTurn', () => {
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([first, second]);
     });
 
@@ -114,7 +114,7 @@ describe('streamConversationTurn', () => {
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([first, second]);
     });
 
@@ -124,14 +124,14 @@ describe('streamConversationTurn', () => {
             body: bodyFromChunks([encoder.encode(JSON.stringify(record))]),
         });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([]);
     });
 
     it('completes without records when the response has no body', async () => {
         vi.spyOn(global, 'fetch').mockResolvedValue({ body: null });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([]);
     });
 
@@ -139,7 +139,7 @@ describe('streamConversationTurn', () => {
         const error = new TypeError('network unavailable');
         vi.spyOn(global, 'fetch').mockRejectedValue(error);
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .rejects.toBe(error);
     });
 
@@ -147,7 +147,7 @@ describe('streamConversationTurn', () => {
         const error = new Error('stream disconnected');
         vi.spyOn(global, 'fetch').mockResolvedValue({ body: bodyThatFails(error) });
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .rejects.toBe(error);
     });
 
@@ -156,7 +156,7 @@ describe('streamConversationTurn', () => {
         error.name = 'AbortError';
         vi.spyOn(global, 'fetch').mockRejectedValue(error);
 
-        await expect(collect(streamConversationTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ message: 'hello' })))
             .rejects.toBe(error);
     });
 });

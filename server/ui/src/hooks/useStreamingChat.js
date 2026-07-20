@@ -6,7 +6,7 @@ import {
 import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
 import { projectTurns } from '../features/conversation/events/projectTurns.js';
 import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
-import { streamConversationTurn } from '../features/conversation/transport/conversationStream.js';
+import { streamChatTurn } from '../features/conversation/transport/chatClient.js';
 import useStreamStall from './useStreamStall.js';
 
 function _uuid() {
@@ -332,7 +332,7 @@ export function _mergeFileOutputs(uiMessages, events) {
  * Manages the streaming chat connection with the backend.
  *
  * Coordinates the active conversation session around the raw envelopes yielded
- * by the conversation stream client.
+ * by the chat transport client.
  *
  * Root agent tokens are buffered and flushed into an ordered entries[]
  * array on the assistant message (~60fps via requestAnimationFrame).
@@ -507,7 +507,7 @@ export default function useStreamingChat(callbacks) {
                 }
             };
 
-            for await (const data of streamConversationTurn({
+            for await (const data of streamChatTurn({
                 message,
                 attachments,
                 profileId,

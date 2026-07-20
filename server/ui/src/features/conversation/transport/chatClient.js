@@ -23,7 +23,7 @@ function buildTurnRequest(message, attachments, profileId, conversationId) {
  * order; blank and malformed complete lines are ignored, matching the existing
  * stream behavior.
  */
-export async function* streamConversationTurn({
+export async function* streamChatTurn({
     message,
     attachments,
     profileId,
