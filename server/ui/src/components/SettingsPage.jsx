@@ -23,7 +23,6 @@ const ALL_TABS = [
 
 export default function SettingsPage({
     initialTab = 'skills',
-    memoryRefreshSignal = 0,
     toolsRefreshSignal = 0,
 }) {
     const { features } = useAppData();
@@ -34,14 +33,11 @@ export default function SettingsPage({
     const [activeTab, setActiveTab] = useState(initialTab);
     const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
     const Active = active.Component;
-    // Only the Memory and Custom Tools tabs need the refresh signal —
-    // bumped by agent-side remember/forget and tool_created events. Other
-    // tabs ignore the prop.
-    const tabProps = active.id === 'memory'
-        ? { refreshSignal: memoryRefreshSignal }
-        : active.id === 'tools'
-            ? { refreshSignal: toolsRefreshSignal }
-            : {};
+    // The Custom Tools tab refetches after a tool_created event. Other tabs
+    // fetch through their normal mount and local mutation paths.
+    const tabProps = active.id === 'tools'
+        ? { refreshSignal: toolsRefreshSignal }
+        : {};
     return (
         <div className={styles.page}>
             <nav className={styles.tabBar}>

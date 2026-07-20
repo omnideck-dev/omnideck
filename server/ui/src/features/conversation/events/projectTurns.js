@@ -74,7 +74,7 @@ export function projectTurns(events) {
         // Everything from a sub-agent (depth>0) lives in the agent
         // activity view, not the main chat. Without this filter the
         // sub-agent's instruction user_message would render as a user
-        // bubble in the conversation.
+        // item in the conversation.
         if (isSubAgentEvent(ev)) continue;
 
         if (t === EVENT.USER_MESSAGE) {

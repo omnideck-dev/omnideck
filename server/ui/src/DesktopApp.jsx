@@ -59,7 +59,6 @@ function DesktopAppInner() {
     // detail is a sub-state of 'network', keyed off selectedAgentId in the
     // agent reducer — not a separate value here.
     const [view, setView] = useState('chat'); // 'chat' | full-screen panel | 'network'
-    const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
     const [muted, setMuted] = useState(false);
@@ -113,22 +112,18 @@ function DesktopAppInner() {
     const _pendingActiveTabRef = useRef(null);
 
     // ── Stream callbacks ──────────────────────────────────────────────
-    // Called by useStreamingChat when events arrive from the backend.
-    // Preview events dispatch once to the agent reducer — no dual state.
+    // Called by useStreamingChat after canonical events have been translated
+    // into reducer actions. Workspace actions still enter the agent reducer
+    // until the workspace owner is extracted in a later stage.
     //
     // Created once via useRef — the streaming hook keeps a stable reference
     // and doesn't restart on re-render. All callbacks use dispatch/setState
     // updaters which are stable across renders. Do NOT read state variables
     // directly in these callbacks — they would capture a stale closure.
     const _callbacks = useRef({
-        onBrowserSnapshot: (snapshot) => {
-            agentDispatch({ type: 'UPDATE_BROWSER_SNAPSHOT', agentId: snapshot.agentId, snapshot });
-        },
-        onTerminalOutput: (event) => {
-            agentDispatch({ type: 'UPDATE_TERMINAL', agentId: event.agentId, event });
-        },
+        onAgentAction: agentDispatch,
+        onWorkspaceAction: agentDispatch,
         onToolCreated: () => setToolsRefreshSignal((s) => s + 1),
-        onMemoryChanged: () => setMemoryRefreshSignal((s) => s + 1),
         onAudioPlayback: (audio) => setPendingAudio(audio),
         onNudgeSent: (result) => {
             if (result.ok) {
@@ -138,54 +133,6 @@ function DesktopAppInner() {
             } else {
                 addToast(result.error || 'Could not send nudge', { type: 'error' });
             }
-        },
-        onDesktopActive: (agentId) => {
-            agentDispatch({ type: 'UPDATE_DESKTOP_ACTIVE', agentId });
-        },
-        onGenerationPreview: (event) => {
-            agentDispatch({ type: 'UPDATE_GENERATION_PREVIEW', agentId: event.agentId, preview: event });
-        },
-        // When an agent starts or finishes, add/update it in the tree.
-        onAgentEvent: (event) => {
-            if (event.type === 'agent_started') {
-                agentDispatch({
-                    type: 'AGENT_STARTED',
-                    agentId: event.agent_id,
-                    agentName: event.agent_name,
-                    parentAgentId: event.parent_agent_id || null,
-                    instruction: event.instruction,
-                    correlationId: event.correlation_id || null,
-                    timestamp: Date.now(),
-                });
-            } else if (event.type === 'agent_completed') {
-                agentDispatch({
-                    type: 'AGENT_COMPLETED',
-                    agentId: event.agent_id,
-                    status: event.status,
-                });
-            }
-        },
-        // Sub-agent text tokens, batched ~60x/sec. We merge content and
-        // thinking in one update so they don't get jumbled together.
-        onAgentContent: ({ agentId, content, thinking }) => {
-            agentDispatch({
-                type: 'APPEND_STREAM_CHUNK',
-                agentId,
-                content: content || null,
-                thinking: thinking || null,
-            });
-        },
-        // Agent context usage (iteration + context window fill)
-        onAgentContextUsage: ({ agentId, iteration, maxIterations, contextUsage }) => {
-            agentDispatch({ type: 'UPDATE_ITERATION', agentId, iteration, maxIterations, contextUsage });
-        },
-        // Agent file output — activity log entry is buffered by
-        // useStreamingChat, this callback handles any side effects.
-        onAgentFileOutput: () => {},
-        // Buffered activity log entry (tool call, file output) — dispatched
-        // by useStreamingChat in correct chronological order.
-        onActivityEntry: ({ agentId, entry }) => {
-            agentDispatch({ type: 'APPEND_ACTIVITY', agentId, entry });
         },
         // A previously-saved conversation just finished loading. Replay
         // the persisted events through useAgentState so the network
@@ -626,14 +573,11 @@ function DesktopAppInner() {
                     {/* Settings page — full view when settings icon clicked */}
                     {view === 'settings' && (
                         <SettingsPage
-                            memoryRefreshSignal={memoryRefreshSignal}
                             toolsRefreshSignal={toolsRefreshSignal}
                         />
                     )}
-                    {/* memoryRefreshSignal and toolsRefreshSignal are bumped
-                     * by streaming events (remember/forget, tool_created)
-                     * so the corresponding Settings tabs refetch on next
-                     * open. */}
+                    {/* toolsRefreshSignal is bumped by tool_created events so
+                     * the Custom Tools tab refetches on next open. */}
 
                     {/* Routines view — self-contained, owns its own routines state */}
                     {view === 'routines' && <RoutinesView onComposeInChat={composeInNewChat} />}

@@ -7,7 +7,7 @@ import { mergeTerminalEvent } from '../utils/agentUtils.js';
  * browser screenshots, terminal output, etc.
  *
  * Data arrives here via:
- *   backend stream → useStreamingChat → DesktopApp callbacks → dispatch
+ *   backend stream → canonical event handlers → reducer actions → dispatch
  *
  * The tree builds up as agent_started events arrive and updates as
  * content tokens, tool calls, and screenshots flow in.

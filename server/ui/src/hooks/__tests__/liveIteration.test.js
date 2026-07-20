@@ -31,7 +31,7 @@ describe('accumulateLiveIteration', () => {
 
     it('drops sub-agent content (depth>0) so it does not flash in the main chat', () => {
         // Sub-agent deltas drive the per-agent activity log via
-        // APPEND_STREAM_CHUNK, not the chat's inflight bubble.
+        // APPEND_STREAM_CHUNK, not the conversation's in-progress Turn.
         const prev = { agentId: AGENT, content: 'root work', thinking: '' };
         expect(accumulateLiveIteration(prev, 'root.test.1.research.1', 1, 'sub work', 'sub thinking')).toBe(prev);
     });
