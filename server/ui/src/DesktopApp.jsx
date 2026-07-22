@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
-import {
-    CONVERSATION_EVENT_TYPES as EVENT,
-    isRootAgentEvent,
-} from './features/conversation/events/eventTypes.js';
+import { getConversationRestorePlan } from './features/conversation/events/conversationRestore.js';
 import ChatPanel from './components/ChatPanel.jsx';
 import BrowserPreview from './components/BrowserPreview.jsx';
 import DesktopPreview from './components/DesktopPreview.jsx';
@@ -34,7 +31,6 @@ import BrowserFullscreen from './components/BrowserFullscreen.jsx';
 import useBrowserTabs from './hooks/useBrowserTabs.js';
 // useModelSettings removed — replaced by profile-based configuration
 import useStreamingChat from './hooks/useStreamingChat.js';
-import { replayEventsToAgentState } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
 import useCustomAppsCatalog from './hooks/useCustomAppsCatalog.js';
 import useCustomAppWorkspace from './hooks/useCustomAppWorkspace.jsx';
@@ -144,66 +140,13 @@ function DesktopAppInner() {
             // selector and outgoing requests reflect it. Null falls back to the
             // default — covers conversations saved before profiles were tracked.
             setConvProfile(profileId || null);
+            const restore = getConversationRestorePlan({
+                events, browserTabs, terminal, previewState,
+            });
             agentDispatch({ type: 'RESET' });
-            replayEventsToAgentState(events, agentDispatch);
-
-            // Panel state restores from the bounded sidecars — screenshots
-            // and terminal transcripts aren't in the event log.
-            for (const tab of (browserTabs || [])) {
-                if (!tab?.agent_id) continue;
-                agentDispatch({
-                    type: 'UPDATE_BROWSER_SNAPSHOT',
-                    agentId: tab.agent_id,
-                    snapshot: {
-                        url: tab.url,
-                        title: tab.title,
-                        screenshot: tab.screenshot,
-                        tabId: tab.tab_id ?? null,
-                        agentId: tab.agent_id,
-                    },
-                });
-            }
-            for (const [termAgentId, entries] of Object.entries(terminal || {})) {
-                for (const entry of (entries || [])) {
-                    agentDispatch({
-                        type: 'UPDATE_TERMINAL',
-                        agentId: termAgentId,
-                        event: entry,
-                    });
-                }
-            }
-
-            // The latest root agent's id is where re-opened preview tabs
-            // (saved by the user before the page reload) need to land,
-            // so the per-turn carry-over keeps them visible on the next
-            // live turn.
-            let lastRootAgentId = null;
-            for (const ev of events) {
-                if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
-                    lastRootAgentId = ev.agent_id;
-                }
-            }
-            if (!lastRootAgentId) {
-                _pendingActiveTabRef.current = null;
-                return;
-            }
-
-            // Restore the open tabs straight from the saved paths — independent
-            // of the event log, so a file opened from another conversation (or
-            // one whose file_output isn't in this conversation's replay) still
-            // reopens. Rendering keys off the filename extension downstream.
-            const openPaths = Array.isArray(previewState?.open_files)
-                ? previewState.open_files
-                : [];
-            for (const path of openPaths) {
-                if (typeof path !== 'string' || !path) continue;
-                const item = { type: 'file_output', filename: path.split('/').pop() || path, path };
-                agentDispatch({ type: 'OPEN_FILE', agentId: lastRootAgentId, item });
-            }
-
-            _pendingActiveTabRef.current = typeof previewState?.active_tab === 'string'
-                ? previewState.active_tab
-                : null;
+            for (const action of restore.agentActions) agentDispatch(action);
+            for (const action of restore.workspaceActions) agentDispatch(action);
+            _pendingActiveTabRef.current = restore.activeTab;
         },
         // A brand-new conversation just started its first turn — let the
         // conversations store add the row and generate its title.

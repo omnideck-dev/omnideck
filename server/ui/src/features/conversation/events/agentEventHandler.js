@@ -83,14 +83,17 @@ export function getAgentEventActions(event) {
             break;
         }
         case EVENT.ITERATION:
-            for (const toolCall of (event.tool_calls || [])) {
-                ordered.push(activityAction(agentId, {
-                    type: 'tool_call',
+            ordered.push({
+                type: 'FINALIZE_AGENT_ITERATION',
+                agentId,
+                content: event.content || null,
+                thinking: event.thinking || null,
+                toolCalls: event.tool_calls.map((toolCall) => ({
                     name: toolCall.name,
                     arguments: toolCall.arguments || null,
-                    timestamp,
-                }));
-            }
+                })),
+                timestamp,
+            });
             break;
         case EVENT.SPAWN_REQUESTED:
             ordered.push(activityAction(agentId, {

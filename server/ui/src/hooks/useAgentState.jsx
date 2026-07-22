@@ -37,6 +37,7 @@ function _makeAgent(id, name, parentId, instruction, startedAt, correlationId = 
         startedAt,               // for elapsed time display
         instruction: instruction || '',
         activityLog: [],         // everything the agent did: thinking, content, tool calls
+        inflightActivityStart: null, // first temporary text entry for the current iteration
         // Latest screenshot per tab id.  Each open tab is one entry; the
         // BrowserPreview renders a thumbnail rail when there's more than
         // one and owns which one is shown in the main area (local state).
@@ -136,6 +137,7 @@ function _agentReducer(state, action) {
             const agent = state.agents[agentId];
             if (!agent) return state;
             let log = [...agent.activityLog];
+            const inflightActivityStart = agent.inflightActivityStart ?? log.length;
 
             const mergeOrAppend = (type, key, text) => {
                 if (!text) return;
@@ -155,7 +157,40 @@ function _agentReducer(state, action) {
                 ...state,
                 agents: {
                     ...state.agents,
-                    [agentId]: { ...agent, activityLog: log },
+                    [agentId]: { ...agent, activityLog: log, inflightActivityStart },
+                },
+            };
+        }
+
+        // Replace the temporary streamed text for this iteration with the
+        // backend's finalized record. On restore there is no temporary text,
+        // so the same action simply appends the finalized entries.
+        case 'FINALIZE_AGENT_ITERATION': {
+            const { agentId, content, thinking, toolCalls, timestamp } = action;
+            const agent = state.agents[agentId];
+            if (!agent) return state;
+            const log = agent.inflightActivityStart === null
+                ? [...agent.activityLog]
+                : agent.activityLog.slice(0, agent.inflightActivityStart);
+            if (thinking) log.push({ type: 'thinking', thinking, timestamp });
+            if (content) log.push({ type: 'content', content, timestamp });
+            for (const toolCall of (toolCalls || [])) {
+                log.push({
+                    type: 'tool_call',
+                    name: toolCall.name,
+                    arguments: toolCall.arguments || null,
+                    timestamp,
+                });
+            }
+            return {
+                ...state,
+                agents: {
+                    ...state.agents,
+                    [agentId]: {
+                        ...agent,
+                        activityLog: log,
+                        inflightActivityStart: null,
+                    },
                 },
             };
         }

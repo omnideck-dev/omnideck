@@ -302,31 +302,31 @@ branches.
 
 ### Stage 4 — Define the restore contract and unify event interpretation
 
-**Status: Pending**
+**Status: Complete**
 
 - [x] Add compiler-checked frontend types for canonical conversation events,
       derived from or validated against the Pydantic event models in
       `sdk/events/_models.py` rather than maintained as an unrelated schema.
 - [x] Define frontend-owned action unions for the agent and workspace reducers.
-- [ ] Make backend persistence the single durability policy; do not claim the
+- [x] Make backend persistence the single durability policy; do not claim the
       frontend's in-memory retention set mirrors it.
-- [ ] Have the resume API return the saved canonical events needed to rebuild
+- [x] Have the resume API return the saved canonical events needed to rebuild
       the UI without maintaining a second, silently drifting replay allowlist.
-- [ ] Decide and test the intended behavior of `error`, `tool_created`, and
+- [x] Decide and test the intended behavior of `error`, `tool_created`, and
       `context_usage`: errors should survive when they belong in the saved
       transcript, restored tool events must not repeat one-time work, and agent
       context state must have an explicit restore policy.
-- [ ] Feed restored records through the same transcript and agent action rules
+- [x] Feed restored records through the same transcript and agent action rules
       used by finalized live records.
-- [ ] Replace `_replayEvents` and remove duplicate event-to-agent action rules.
-- [ ] Restore browser and terminal snapshots plus preview metadata through
+- [x] Replace `_replayEvents` and remove duplicate event-to-agent action rules.
+- [x] Restore browser and terminal snapshots plus preview metadata through
       explicit workspace restore actions.
-- [ ] Keep the restore path from invoking the one-time action runner.
-- [ ] Add backend contract coverage for persistence and the resume payload
+- [x] Keep the restore path from invoking the one-time action runner.
+- [x] Add backend contract coverage for persistence and the resume payload
       rather than asserting that backend and frontend type sets are equal.
-- [ ] Add shared fixtures that are applied once as live input and once as
+- [x] Add shared fixtures that are applied once as live input and once as
       restored input.
-- [ ] Assert equivalent final transcript, agent graph, activity ordering, and
+- [x] Assert equivalent final transcript, agent graph, activity ordering, and
       restorable workspace state.
 
 The core invariant is:

@@ -77,6 +77,66 @@ const GENERATION_PREVIEW = {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('useAgentState reducer', () => {
+    describe('finalized agent iterations', () => {
+        const finalIteration = {
+            type: 'FINALIZE_AGENT_ITERATION',
+            agentId: 'root-1',
+            thinking: 'final reasoning',
+            content: 'final answer',
+            toolCalls: [{ name: 'shell', arguments: { cmd: 'pwd' } }],
+            timestamp: 1234,
+        };
+
+        it('replaces temporary streamed text with the finalized iteration', () => {
+            const { getState, dispatch } = renderWithProvider();
+
+            dispatch(agentStarted('root-1'));
+            dispatch({
+                type: 'APPEND_STREAM_CHUNK',
+                agentId: 'root-1',
+                thinking: 'partial ',
+                content: null,
+            });
+            dispatch({
+                type: 'APPEND_STREAM_CHUNK',
+                agentId: 'root-1',
+                thinking: 'reasoning',
+                content: 'partial answer',
+            });
+            dispatch(finalIteration);
+
+            expect(getState().agents['root-1'].activityLog).toEqual([
+                { type: 'thinking', thinking: 'final reasoning', timestamp: 1234 },
+                { type: 'content', content: 'final answer', timestamp: 1234 },
+                {
+                    type: 'tool_call',
+                    name: 'shell',
+                    arguments: { cmd: 'pwd' },
+                    timestamp: 1234,
+                },
+            ]);
+            expect(getState().agents['root-1'].inflightActivityStart).toBeNull();
+        });
+
+        it('appends the same finalized iteration when restoring without streamed text', () => {
+            const { getState, dispatch } = renderWithProvider();
+
+            dispatch(agentStarted('root-1'));
+            dispatch(finalIteration);
+
+            expect(getState().agents['root-1'].activityLog).toEqual([
+                { type: 'thinking', thinking: 'final reasoning', timestamp: 1234 },
+                { type: 'content', content: 'final answer', timestamp: 1234 },
+                {
+                    type: 'tool_call',
+                    name: 'shell',
+                    arguments: { cmd: 'pwd' },
+                    timestamp: 1234,
+                },
+            ]);
+        });
+    });
+
     // ── Preview carryover across turns ──────────────────────────────
 
     describe('preview carryover between turns', () => {

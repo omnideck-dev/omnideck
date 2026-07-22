@@ -95,20 +95,6 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
-# browser_screenshot / terminal_output are absent: panel state isn't in
-# the event log; it comes back via the browser_tabs / terminal sidecars.
-_REPLAY_EVENT_TYPES: frozenset[str] = frozenset({
-    "agent_started",
-    "agent_completed",
-    "user_message",
-    "iteration",
-    "tool_result",
-    "file_output",
-    "spawn_requested",
-    "compaction",
-})
-
-
 async def resume_conversation(conversation_id: str) -> dict | None:
     """Load a conversation's history derived from events.jsonl.
 
@@ -116,8 +102,9 @@ async def resume_conversation(conversation_id: str) -> dict | None:
         messages: the conversation transcript derived from the event log
             via ``build_transcript_view`` (user-facing, not the compacted
             LLM view).
-        events: subset of the event log replayed to restore structural
-            state (agent lifecycle, file outputs).
+        events: complete persisted canonical event log. The frontend decides
+            which state models each event contributes to; this API does not
+            maintain a second event-type allowlist.
         browser_tabs: latest browser snapshot per tab from the sidecar,
             so the preview panel restores without replaying screenshots.
         terminal: per-agent terminal transcripts from the sidecar (the
@@ -129,26 +116,24 @@ async def resume_conversation(conversation_id: str) -> dict | None:
     Returns None when no events are present — conversations created before
     the events-first cutover have no replay source and cannot be opened.
     """
+    # Disk is the durability contract for resume. The in-memory history keeps
+    # only what the active LLM view needs and is deliberately not a second
+    # persistence policy.
+    events = load_events_jsonl(conversation_id)
+    if not events:
+        return None
+
     if conversation_id in _conversations:
         _conversations.move_to_end(conversation_id)
-        history = _conversations[conversation_id]
     else:
-        loaded = load_events_jsonl(conversation_id)
-        if not loaded:
-            return None
-        history = await _hydrate(conversation_id, loaded)
-
-    events = history.recorded_events
-    replay_events = [
-        e for e in events if e.get("type") in _REPLAY_EVENT_TYPES
-    ]
+        await _hydrate(conversation_id, events)
 
     # Transcript view: the conversation as it happened, not the
     # post-compaction LLM view. The frontend draws compaction chips itself.
     transcript = build_transcript_view(events)
     return {
         "messages": transcript,
-        "events": replay_events,
+        "events": events,
         "browser_tabs": load_browser_tabs(conversation_id),
         "terminal": load_terminal(conversation_id),
         "preview_state": load_preview_state(conversation_id),

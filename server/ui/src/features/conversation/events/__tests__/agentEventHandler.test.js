@@ -73,26 +73,23 @@ describe('getAgentEventActions', () => {
         }]);
 
         expect(getAgentEventActions(event('iteration', {
+            content: 'complete answer',
+            thinking: 'complete reasoning',
             tool_calls: [
                 { name: 'shell', arguments: { cmd: 'ls' } },
                 { name: 'browser', arguments: null },
             ],
-        })).ordered).toEqual([
-            {
-                type: 'APPEND_ACTIVITY',
-                agentId: 'agent-1',
-                entry: {
-                    type: 'tool_call', name: 'shell', arguments: { cmd: 'ls' }, timestamp: TIME,
-                },
-            },
-            {
-                type: 'APPEND_ACTIVITY',
-                agentId: 'agent-1',
-                entry: {
-                    type: 'tool_call', name: 'browser', arguments: null, timestamp: TIME,
-                },
-            },
-        ]);
+        })).ordered).toEqual([{
+            type: 'FINALIZE_AGENT_ITERATION',
+            agentId: 'agent-1',
+            content: 'complete answer',
+            thinking: 'complete reasoning',
+            toolCalls: [
+                { name: 'shell', arguments: { cmd: 'ls' } },
+                { name: 'browser', arguments: null },
+            ],
+            timestamp: TIME,
+        }]);
     });
 
     it('builds ordered activity records', () => {

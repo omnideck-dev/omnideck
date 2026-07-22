@@ -12,6 +12,7 @@ from conversations._events_log import EventsLogWriter, _serialize_event
 from sdk.events import (
     AgentEvent,
     ContentPayload,
+    ErrorPayload,
     IterationPayload,
     IterationToolCall,
     ToolCallPayload,
@@ -98,6 +99,21 @@ def test_writer_creates_conversation_directory(_conv_dir: Path):
     writer = EventsLogWriter("test-conv")
     writer.handle_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="x")))
     assert (_conv_dir / "events.jsonl").exists()
+
+
+def test_writer_persists_user_visible_errors(_conv_dir: Path):
+    """A resumed transcript can show the failure that ended its turn."""
+    writer = EventsLogWriter("test-conv")
+    writer.handle_event(AgentEvent(payload=ErrorPayload(
+        type="error", message="provider unavailable", retryable=True,
+    )))
+
+    (row,) = [
+        json.loads(line)
+        for line in (_conv_dir / "events.jsonl").read_text().splitlines()
+    ]
+    assert row["type"] == "error"
+    assert row["message"] == "provider unavailable"
 
 
 def test_writer_skips_transient_event_types(_conv_dir: Path):
