@@ -120,13 +120,13 @@ vi.mock('../components/SettingsPage.jsx', () => ({
 }));
 
 vi.mock('../components/apps/AppsView.jsx', () => ({
-    default: ({ onOpenApp, onOpenAppBesideChat }) => (
+    default: ({ onOpenApp, onOpenAppInDock }) => (
         <div data-testid="apps-view">
             Apps
             <button data-testid="mock-open-app-full" onClick={() => onOpenApp({
                 slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
             })}>Open full</button>
-            <button data-testid="mock-open-app-split" onClick={() => onOpenAppBesideChat({
+            <button data-testid="mock-open-app-docked" onClick={() => onOpenAppInDock({
                 slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
             })}>Open split</button>
         </div>
@@ -338,6 +338,24 @@ describe('DesktopApp view transitions', () => {
     // ── Simple chat view (no sub-agents, no previews) ───────────────
 
     describe('simple chat view', () => {
+        it('keeps the desktop unmounted until setup is complete', async () => {
+            globalThis.fetch = vi.fn((url) => {
+                if (url === '/api/settings') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({ setup_complete: false }),
+                    });
+                }
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+            });
+
+            await renderApp();
+
+            expect(screen.getByTestId('setup-wizard')).toBeInTheDocument();
+            expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
+        });
+
         it('shows chat panel on initial render', async () => {
             await renderApp();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
@@ -390,11 +408,11 @@ describe('DesktopApp view transitions', () => {
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.getByTestId('home-view')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
         });
     });
 
-    describe('shell-scoped custom app workspace', () => {
+    describe('desktop Custom App dock', () => {
         beforeEach(() => {
             globalThis.fetch = vi.fn((url) => {
                 if (url === '/api/settings') {
@@ -421,19 +439,19 @@ describe('DesktopApp view transitions', () => {
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
-            const workspace = screen.getByTestId('custom-app-workspace');
-            expect(workspace).toHaveAttribute('data-layout', 'full');
-            expect(workspace).toHaveAttribute('data-visible', 'true');
+            const customApp = screen.getByTestId('desktop-dock');
+            expect(customApp).toHaveAttribute('data-layout', 'expanded');
+            expect(customApp).toHaveAttribute('data-visible', 'true');
 
             fireEvent.click(screen.getByTestId('custom-app-chat'));
-            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
 
-            fireEvent.click(screen.getByTestId('close-tab-app:text-lab'));
-            expect(screen.queryByTestId('custom-app-workspace')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByTestId('close-tab-custom-app:text-lab'));
+            expect(screen.queryByTestId('desktop-dock')).not.toBeInTheDocument();
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
         });
 
@@ -445,11 +463,53 @@ describe('DesktopApp view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             fireEvent.click(screen.getByTestId('mock-workspace-compose'));
 
-            expect(screen.getByTestId('custom-app-workspace')).toHaveAttribute('data-layout', 'split');
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
             expect(setDraft).toHaveBeenCalledOnce();
             const updateDraft = setDraft.mock.calls[0][0];
             expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
             expect(updateDraft('')).toContain('"Draft"');
+        });
+
+        it('moves a docked app back to expanded presentation', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-docked'));
+
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            fireEvent.click(screen.getByTestId('custom-app-expand'));
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'expanded');
+
+            fireEvent.click(screen.getByTestId('custom-app-close'));
+            expect(screen.queryByTestId('desktop-dock')).not.toBeInTheDocument();
+        });
+
+        it('keeps the Custom App mounted while another desktop page hides it', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+
+            const frame = screen.getByTestId('custom-app-frame');
+            fireEvent.click(screen.getByTestId('open-settings'));
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-visible', 'false');
+            expect(frame).toBeInTheDocument();
+            expect(frame).toHaveAttribute('data-active', 'false');
+
+            fireEvent.click(screen.getByTestId('close-panel'));
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+        });
+
+        it('keeps the Custom App docked when loading a conversation', async () => {
+            const loadConversation = vi.fn(() => true);
+            streamMock.value = { ...streamMock.makeDefault(), loadConversation };
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-docked'));
+
+            await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
+
+            expect(loadConversation).toHaveBeenCalledWith('conv-1');
+            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
         });
 
         it('does not leave Apps highlighted after entering an app workspace', async () => {

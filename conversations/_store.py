@@ -238,27 +238,6 @@ def load_preview_state(conversation_id: str) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
-def mark_file_focused(conversation_id: str, path: str) -> dict[str, Any]:
-    """Mark a file as the open, active tab in a conversation's preview state.
-
-    Merges into any existing state: adds ``path`` to ``open_files`` if absent
-    and sets ``active_tab`` to ``file:<path>``, leaving the other panel flags
-    untouched. Pre-focusing a file this way lets the normal resume path restore
-    it as the active tab when the conversation is reopened. Returns the merged
-    state.
-    """
-    state = load_preview_state(conversation_id)
-    open_files = state.get("open_files")
-    if not isinstance(open_files, list):
-        open_files = []
-    if path not in open_files:
-        open_files.append(path)
-    state["open_files"] = open_files
-    state["active_tab"] = f"file:{path}"
-    save_preview_state(conversation_id, state)
-    return state
-
-
 # -- Conversation listing, archiving, and deletion -----------------------------
 
 def _summarize_conversation(entry: Path) -> ConversationSummary | None:

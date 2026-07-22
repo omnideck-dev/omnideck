@@ -68,7 +68,7 @@
     padding-bottom: 54px;
 }
 
-.besideChat {
+.openInDock {
     position: absolute;
     right: var(--sp-4);
     bottom: var(--sp-3);

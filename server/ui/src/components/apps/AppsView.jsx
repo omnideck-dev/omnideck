@@ -3,7 +3,7 @@ import styles from './AppsView.module.css';
 
 const NOOP = () => {};
 
-/** Lists discovered Custom Apps; opening and presentation are handled by DesktopApp. */
+/** Lists discovered Custom Apps; the desktop owns opening and presentation. */
 export default function AppsView({
     apps = [],
     loading = false,
@@ -11,7 +11,7 @@ export default function AppsView({
     homeAppSlug = null,
     onRefresh = NOOP,
     onOpenApp = NOOP,
-    onOpenAppBesideChat = NOOP,
+    onOpenAppInDock = NOOP,
 }) {
     return (
         <div className={styles.view} data-testid="apps-view">
@@ -57,11 +57,11 @@ export default function AppsView({
                                 </button>
                                 <Button
                                     variant="ghost"
-                                    className={styles.besideChat}
-                                    onClick={() => onOpenAppBesideChat(app)}
-                                    data-testid={`custom-app-open-split-${app.slug}`}
+                                    className={styles.openInDock}
+                                    onClick={() => onOpenAppInDock(app)}
+                                    data-testid={`custom-app-open-docked-${app.slug}`}
                                 >
-                                    <i className="bi bi-layout-split" /> Open beside Chat
+                                    <i className="bi bi-layout-sidebar-inset-reverse" /> Open in Dock
                                 </Button>
                             </div>
                         ))}

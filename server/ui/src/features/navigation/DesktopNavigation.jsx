@@ -73,14 +73,21 @@ export function DesktopNavigationProvider({ children }) {
     );
     const openApps = useCallback(() => open({ kind: 'apps' }), [open]);
     const openHome = useCallback(() => open({ kind: 'home' }), [open]);
-    const openWorkspace = useCallback(() => open({ kind: 'workspace' }), [open]);
+    const openCustomApp = useCallback(
+        (appSlug) => open({ kind: 'custom-app', appSlug }),
+        [open],
+    );
 
-    const openConversation = useCallback(async (conversationId) => {
+    const openConversation = useCallback(async (conversationId, { artifactId = null } = {}) => {
         if (conversationId !== activeConversationId) {
             const loaded = await loadConversation(conversationId);
             if (!loaded) return false;
         }
-        open({ kind: 'chat', conversationId }, { replace: false });
+        open({
+            kind: 'chat',
+            conversationId,
+            ...(artifactId ? { artifactId } : {}),
+        }, { replace: false });
         return true;
     }, [activeConversationId, loadConversation, open]);
 
@@ -109,7 +116,7 @@ export function DesktopNavigationProvider({ children }) {
         openArtifacts,
         openApps,
         openHome,
-        openWorkspace,
+        openCustomApp,
         goBack,
         resetToChat,
     }), [
@@ -124,7 +131,7 @@ export function DesktopNavigationProvider({ children }) {
         openNetwork,
         openRoutines,
         openSettings,
-        openWorkspace,
+        openCustomApp,
         resetToChat,
     ]);
 

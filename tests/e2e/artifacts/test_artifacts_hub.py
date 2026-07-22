@@ -120,30 +120,29 @@ def test_missing_artifact_can_be_pruned(page: Page):
         purge(page, name)
 
 
-# ── open in conversation: focus-write + resume restores the file ────────
+# ── open in conversation: navigation intent resolves the artifact ──────
 
 
 def test_open_in_conversation_restores_focused_file(page: Page):
-    """Opening an artifact from the hub loads its conversation with the file restored.
+    """Opening an artifact loads its conversation and resolves its file preview.
 
-    The open action focuses the file, navigates to the source conversation, and the
-    resumed conversation shows it as a preview tab — rebuilt from the saved
-    preview_state path alone, so it restores even on a warm-resumed conversation
-    whose in-memory log dropped the file_output event.
+    The open action carries the artifact ID as navigation intent. Once the source
+    conversation loads, the desktop resolves that ID and opens its file in the
+    shared dock without pre-writing the conversation's saved preview state.
     """
     nonce = time.time_ns()
     name = f"hubopen_{nonce}.md"
     produce(page, (f"{VC_HOME}/{name}", "# open me\n\nfrom the hub"))
     try:
         # Switch to a new conversation so the artifact's conversation is no
-        # longer active — exercises the focus-write + resume path.
+        # longer active — exercises conversation loading plus intent resolution.
         ChatView(page).goto().new_conversation()
 
         hub = ArtifactsHub(page).goto()
         hub.select(name)
         page.get_by_test_id("artifact-open-conversation").click()
 
-        # The source conversation resumes with the file restored as a preview tab.
+        # The source conversation loads with the artifact file open in the dock.
         expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
     finally:
         purge(page, name)

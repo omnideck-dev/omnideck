@@ -23,13 +23,10 @@ export default function useWorkspacePreview({
     const agentState = useAgentState();
     const workspaceState = useWorkspaceState();
     const workspaceDispatch = useWorkspaceDispatch();
-    const { activeTab, splitPosition, fullscreenItem } = workspaceState.presentation;
+    const { activeTab, fullscreenItem } = workspaceState.presentation;
 
     const setActiveTab = useCallback((nextActiveTab) => {
         workspaceDispatch({ type: 'SELECT_PREVIEW_TAB', activeTab: nextActiveTab });
-    }, [workspaceDispatch]);
-    const setSplitPosition = useCallback((position) => {
-        workspaceDispatch({ type: 'SET_PREVIEW_SPLIT_POSITION', position });
     }, [workspaceDispatch]);
     const setFullscreenItem = useCallback((item) => {
         workspaceDispatch({ type: 'SET_FULLSCREEN_ITEM', item });
@@ -188,8 +185,6 @@ export default function useWorkspacePreview({
             tabs,
             activeTab,
             setActiveTab,
-            splitPosition,
-            setSplitPosition,
             fullscreenItem,
             setFullscreenItem,
             activeFile,

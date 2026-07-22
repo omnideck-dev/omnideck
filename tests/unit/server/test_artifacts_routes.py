@@ -11,6 +11,7 @@ import pytest
 from artifacts import record_artifact
 from server._artifacts_routes import (
     delete_artifact_handler,
+    get_artifact_handler,
     list_artifacts_handler,
     prune_missing_handler,
 )
@@ -100,6 +101,21 @@ async def test_reconcile_marks_missing(vc_home: Path) -> None:
     resp = await list_artifacts_handler(_request())
     statuses = {a["filename"]: a["status"] for a in _body(resp)["artifacts"]}
     assert statuses == {"here.md": "present", "gone.md": "missing"}
+
+
+# ── GET /api/artifacts/{id} ──────────────────────────────────────────────────
+
+async def test_get_one(vc_home: Path) -> None:
+    _seed(vc_home, "c1", "one.md")
+    artifact_id = _body(await list_artifacts_handler(_request()))["artifacts"][0]["id"]
+    resp = await get_artifact_handler(_request(match={"artifact_id": artifact_id}))
+    assert _body(resp)["filename"] == "one.md"
+    assert _body(resp)["status"] == "present"
+
+
+async def test_get_unknown_id_returns_404(vc_home: Path) -> None:
+    resp = await get_artifact_handler(_request(match={"artifact_id": "nope"}))
+    assert resp.status == 404
 
 
 # ── DELETE /api/artifacts/{id} ────────────────────────────────────────────────

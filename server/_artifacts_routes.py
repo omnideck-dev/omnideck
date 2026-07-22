@@ -3,6 +3,7 @@
 Endpoints:
     GET    /api/artifacts                      — list artifacts (optionally one
                                                  conversation), reconciled against disk
+    GET    /api/artifacts/{id}                 — get one artifact by stable id
     DELETE /api/artifacts/{id}                 — remove one entry; ?delete_file=true
                                                  also unlinks the file
     POST   /api/artifacts/prune-missing        — drop every entry whose file is gone
@@ -17,7 +18,7 @@ import logging
 from aiohttp import web
 from aiohttp.web import Request, Response
 
-from artifacts import delete_artifact, list_artifacts, prune_missing, reconcile
+from artifacts import delete_artifact, get_artifact, list_artifacts, prune_missing, reconcile
 from conversations import conversation_exists, load_conversation_metadata
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,16 @@ async def delete_artifact_handler(request: Request) -> Response:
     return web.Response(status=204)
 
 
+async def get_artifact_handler(request: Request) -> Response:
+    """Return one artifact with the same live overlays as the collection."""
+    artifact = get_artifact(request.match_info["artifact_id"])
+    if artifact is None:
+        return web.json_response({"error": "Artifact not found"}, status=404)
+    view = reconcile([artifact])[0]
+    view.conversation_title = _title_resolver()(view.conversation_id)
+    return web.json_response(view.model_dump())
+
+
 async def prune_missing_handler(request: Request) -> Response:
     """Drop entries whose file no longer exists (optionally one conversation)."""
     conversation_id = request.query.get("conversation_id")
@@ -90,6 +101,7 @@ def register_artifacts_routes(app: web.Application) -> None:
     """
     app.router.add_route("GET", "/api/artifacts", list_artifacts_handler)
     app.router.add_route("POST", "/api/artifacts/prune-missing", prune_missing_handler)
+    app.router.add_route("GET", "/api/artifacts/{artifact_id}", get_artifact_handler)
     app.router.add_route("DELETE", "/api/artifacts/{artifact_id}", delete_artifact_handler)
 
 

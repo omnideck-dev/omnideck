@@ -2,15 +2,15 @@ import AgentActivityView from '../../components/AgentActivityView.jsx';
 import AgentNetwork from '../../components/AgentNetwork.jsx';
 import ChatPanel from '../../components/ChatPanel.jsx';
 import styles from '../../App.module.css';
-import PreviewPanel from '../workspace/PreviewPanel.jsx';
-import PersistentCustomAppLayer from '../customApps/PersistentCustomAppLayer.jsx';
+import DesktopDock from './DesktopDock.jsx';
 
 export default function MainSurface({
     view,
     selectedAgentId,
-    hasPreview,
-    workspaceVisible,
-    workspaceSplit,
+    dockVisible,
+    dockExpanded,
+    includeCustomAppInDock,
+    dock,
     preview,
     browser,
     customApps,
@@ -36,7 +36,7 @@ export default function MainSurface({
             {view === 'network' && selectedAgentId && (
                 <div
                     className={styles.chatColumn}
-                    style={{ width: hasPreview ? `${preview.splitPosition}%` : '100%' }}
+                    style={{ width: dockVisible ? `${dock.splitPosition}%` : '100%' }}
                 >
                     <AgentActivityView
                         agentId={selectedAgentId}
@@ -51,10 +51,10 @@ export default function MainSurface({
 
             {/* Keep the conversation mounted while another surface is visible. */}
             <div
-                className={`${styles.chatColumn} ${view !== 'chat' && !workspaceSplit ? styles.hidden : ''}`}
+                className={`${styles.chatColumn} ${view !== 'chat' ? styles.hidden : ''}`}
                 style={{
-                    width: (hasPreview && view === 'chat') || workspaceSplit
-                        ? `${preview.splitPosition}%`
+                    width: dockVisible && !dockExpanded
+                        ? `${dock.splitPosition}%`
                         : '100%',
                 }}
             >
@@ -80,14 +80,16 @@ export default function MainSurface({
                 />
             </div>
 
-            <PersistentCustomAppLayer
+            <DesktopDock
+                visible={dockVisible}
+                expanded={dockExpanded}
+                includeCustomApp={includeCustomAppInDock}
+                dock={dock}
                 customApps={customApps}
-                visible={workspaceVisible}
                 preview={preview}
                 browser={browser}
+                actions={actions}
             />
-
-            {hasPreview && <PreviewPanel preview={preview} browser={browser} />}
         </>
     );
 }

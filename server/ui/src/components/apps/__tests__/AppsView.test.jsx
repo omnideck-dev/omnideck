@@ -11,7 +11,7 @@ const SAMPLE = {
     has_actions: true,
 };
 
-test('lists discovered apps and asks the shell to open one full-space', () => {
+test('lists discovered apps and asks the shell to open one expanded', () => {
     const onOpenApp = vi.fn();
     render(<AppsView apps={[SAMPLE]} onOpenApp={onOpenApp} />);
     expect(screen.getByText('Text Lab')).toBeInTheDocument();
@@ -23,12 +23,12 @@ test('lists discovered apps and asks the shell to open one full-space', () => {
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
 });
 
-test('can open an app directly beside the active chat', () => {
-    const onOpenAppBesideChat = vi.fn();
-    render(<AppsView apps={[SAMPLE]} onOpenAppBesideChat={onOpenAppBesideChat} />);
+test('can open an app directly in the dock', () => {
+    const onOpenAppInDock = vi.fn();
+    render(<AppsView apps={[SAMPLE]} onOpenAppInDock={onOpenAppInDock} />);
 
-    fireEvent.click(screen.getByTestId('custom-app-open-split-text-lab'));
-    expect(onOpenAppBesideChat).toHaveBeenCalledWith(SAMPLE);
+    fireEvent.click(screen.getByTestId('custom-app-open-docked-text-lab'));
+    expect(onOpenAppInDock).toHaveBeenCalledWith(SAMPLE);
 });
 
 test('asks the catalog owner to refresh', () => {

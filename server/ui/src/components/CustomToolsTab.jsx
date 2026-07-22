@@ -1,5 +1,5 @@
 import TrashIcon from './icons/TrashIcon.jsx';
-import useListPanel from '../hooks/useListPanel.js';
+import { useCustomToolsCatalog } from '../features/customTools/CustomToolsCatalog.jsx';
 import styles from './CustomToolsTab.module.css';
 
 function _badgeLabel(tool) {
@@ -18,29 +18,24 @@ function _badgeClass(label) {
  * type badge, name, description, delete. Visible only when the feature
  * flag is on (the tab registry filters by features.custom_tools).
  */
-export default function CustomToolsTab({ refreshSignal }) {
+export default function CustomToolsTab() {
     const {
-        items: tools, loading,
-        deleting, handleDelete,
-    } = useListPanel('/api/custom-tools', { refreshSignal });
-
-    const onDelete = (name) => {
-        handleDelete(name, `/api/custom-tools/${encodeURIComponent(name)}`, (t) => t.name !== name);
-    };
+        customTools, loading, deleting, deleteCustomTool,
+    } = useCustomToolsCatalog();
 
     return (
         <div className={styles.tab} data-testid="custom-tools-tab">
             <div className={styles.header}>
                 <span className={styles.title}>Custom Tools</span>
                 <span className={styles.count} data-testid="custom-tools-count">
-                    {loading ? '' : `${tools.length} ${tools.length === 1 ? 'tool' : 'tools'}`}
+                    {loading ? '' : `${customTools.length} ${customTools.length === 1 ? 'tool' : 'tools'}`}
                 </span>
             </div>
             {loading && <p className={styles.empty}>Loading…</p>}
-            {!loading && tools.length === 0 && (
+            {!loading && customTools.length === 0 && (
                 <p className={styles.empty}>No custom tools defined.</p>
             )}
-            {!loading && tools.length > 0 && (
+            {!loading && customTools.length > 0 && (
                 <table className={styles.table}>
                     <thead>
                         <tr>
@@ -51,7 +46,7 @@ export default function CustomToolsTab({ refreshSignal }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {tools.map((tool) => {
+                        {customTools.map((tool) => {
                             const label = _badgeLabel(tool);
                             return (
                                 <tr key={tool.id} data-testid="custom-tools-row" data-tool-name={tool.name}>
@@ -64,7 +59,7 @@ export default function CustomToolsTab({ refreshSignal }) {
                                         <button
                                             type="button"
                                             className={styles.iconBtn}
-                                            onClick={() => onDelete(tool.name)}
+                                            onClick={() => deleteCustomTool(tool.name)}
                                             disabled={deleting === tool.name}
                                             title="Delete tool"
                                             data-testid="custom-tools-delete"

@@ -3,39 +3,35 @@ import styles from './CustomAppToolbar.module.css';
 
 export default function CustomAppToolbar({
     app,
-    origin,
     isHome,
     onOpenApps,
     onOpenChat,
+    onClose,
     onToggleHome,
     onReload,
 }) {
     return (
         <div className={styles.toolbar}>
-            {origin === 'apps' ? (
-                <Button variant="ghost" onClick={onOpenApps} data-testid="custom-app-back">
-                    <i className="bi bi-arrow-left" /> Custom Apps
-                </Button>
-            ) : null}
+            <Button variant="ghost" onClick={onOpenApps} data-testid="custom-app-back">
+                <i className="bi bi-arrow-left" /> Custom Apps
+            </Button>
             <div className={styles.identity}>
                 <i className={`bi ${app.icon}`} />
                 <strong>{app.title}</strong>
-                {origin === 'home'
+                {isHome
                     ? <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
                     : <span className={styles.appKind}>Experimental Custom App</span>}
             </div>
-            {origin === 'home' && (
-                <Button variant="ghost" onClick={onOpenApps} data-testid="home-open-apps">
-                    <i className="bi bi-grid" /> Custom Apps
-                </Button>
-            )}
             <Button variant="filled" onClick={onOpenChat} data-testid="custom-app-chat">
                 <i className="bi bi-stars" /> Chat with Agent
+            </Button>
+            <Button variant="ghost" onClick={onClose} data-testid="custom-app-close">
+                <i className="bi bi-x-lg" /> Close
             </Button>
             <Button
                 variant="ghost"
                 onClick={onToggleHome}
-                data-testid={origin === 'home' ? 'home-app-remove' : 'custom-app-home-toggle'}
+                data-testid="custom-app-home-toggle"
             >
                 <i className={`bi ${isHome ? 'bi-house-dash' : 'bi-house-add'}`} />
                 {isHome ? 'Remove from Home' : 'Set as Home'}
@@ -44,7 +40,7 @@ export default function CustomAppToolbar({
                 variant="ghost"
                 onClick={onReload}
                 title="Reload Custom App"
-                data-testid={origin === 'home' ? 'home-app-reload' : 'custom-app-reload'}
+                data-testid="custom-app-reload"
             >
                 <i className="bi bi-arrow-clockwise" /> Reload
             </Button>
@@ -63,6 +59,23 @@ export function CustomAppReloadAction({ onReload }) {
         >
             <i className="bi bi-arrow-clockwise" />
         </Button>
+    );
+}
+
+export function CustomAppDockActions({ onExpand, onReload }) {
+    return (
+        <>
+            <Button
+                variant="ghost"
+                onClick={onExpand}
+                title="Expand Custom App"
+                aria-label="Expand Custom App"
+                data-testid="custom-app-expand"
+            >
+                <i className="bi bi-arrows-angle-expand" />
+            </Button>
+            <CustomAppReloadAction onReload={onReload} />
+        </>
     );
 }
 

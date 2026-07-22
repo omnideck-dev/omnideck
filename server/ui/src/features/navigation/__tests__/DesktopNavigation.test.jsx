@@ -83,6 +83,20 @@ describe('DesktopNavigationProvider', () => {
         });
     });
 
+    it('carries an artifact as serializable conversation navigation intent', async () => {
+        const { result } = renderHook(useDesktopNavigation, { wrapper });
+
+        await act(async () => result.current.openConversation('conversation-2', {
+            artifactId: 'artifact-3',
+        }));
+
+        expect(result.current.destination).toEqual({
+            kind: 'chat',
+            conversationId: 'conversation-2',
+            artifactId: 'artifact-3',
+        });
+    });
+
     it('keeps the current destination when conversation loading fails', async () => {
         session.loadConversation.mockResolvedValue(false);
         const { result } = renderHook(useDesktopNavigation, { wrapper });

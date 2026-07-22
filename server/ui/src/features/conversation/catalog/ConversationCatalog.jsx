@@ -143,17 +143,6 @@ export function ConversationCatalogProvider({ children }) {
         });
     }, [setItems]);
 
-    // Persist a file as the open + active tab in a conversation's preview state
-    // so reopening that conversation restores it. Conversation-scoped; doesn't
-    // touch the in-memory list.
-    const focusFileInConversation = useCallback(async (conversationId, path) => {
-        await fetch(`/api/conversations/sessions/${conversationId}/preview-state/focus-file`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path }),
-        });
-    }, []);
-
     // Archive a conversation: drop it from the active list optimistically and
     // move it into the archive on the server. Archiving is the reversible
     // alternative to delete — the conversation can be restored from the
@@ -196,7 +185,6 @@ export function ConversationCatalogProvider({ children }) {
     const value = {
         ...panel,
         addStartedConversation,
-        focusFileInConversation,
         archiveConversation,
         unarchiveConversation,
         folders,
