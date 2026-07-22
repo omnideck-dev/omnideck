@@ -11,12 +11,6 @@ import { streamChatTurn } from '../features/conversation/transport/chatClient.js
 import useStreamStall from './useStreamStall.js';
 
 /**
- * @typedef {object} ConversationStateAction
- * @property {string} type
- * @property {string|null} [agentId]
- */
-
-/**
  * @typedef {object} ConversationLoadData
  * @property {string} conversationId
  * @property {Array<object>} events
@@ -28,8 +22,8 @@ import useStreamStall from './useStreamStall.js';
 
 /**
  * @typedef {object} StreamingChatCallbacks
- * @property {(action: ConversationStateAction) => void} [onAgentAction]
- * @property {(action: ConversationStateAction) => void} [onWorkspaceAction]
+ * @property {(action: import('../features/conversation/events/frontendTypes').AgentAction) => void} [onAgentAction]
+ * @property {(action: import('../features/conversation/events/frontendTypes').WorkspaceAction) => void} [onWorkspaceAction]
  * @property {() => void} [onToolCreated]
  * @property {(audio: {key: number, src: string}) => void} [onAudioPlayback]
  * @property {(result: {ok: boolean, message?: string, status?: number, error?: string}) => void} [onNudgeSent]

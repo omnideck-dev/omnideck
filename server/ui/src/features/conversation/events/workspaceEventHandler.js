@@ -1,5 +1,9 @@
 import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
 
+/**
+ * @param {import('./conversationEvents.generated').ConversationEvent} event
+ * @returns {Record<string, unknown>}
+ */
 function eventDetails(event) {
     const {
         id: _id,
@@ -13,7 +17,12 @@ function eventDetails(event) {
     return details;
 }
 
-/** Convert one canonical event into workspace reducer actions. */
+/**
+ * Convert one canonical event into workspace reducer actions.
+ *
+ * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @returns {Array<import('./frontendTypes').WorkspaceAction>}
+ */
 export function getWorkspaceEventActions(event) {
     if (!event?.type) return [];
     const agentId = event.agent_id || null;
@@ -44,7 +53,20 @@ export function getWorkspaceEventActions(event) {
             return [{
                 type: 'UPDATE_GENERATION_PREVIEW',
                 agentId,
-                preview: { ...eventDetails(event), agentId },
+                preview: {
+                    type: event.type,
+                    gen_id: event.gen_id,
+                    media_type: event.media_type,
+                    status: event.status,
+                    step: event.step,
+                    total_steps: event.total_steps,
+                    preview: event.preview,
+                    message: event.message,
+                    output: event.output,
+                    output_content_type: event.output_content_type,
+                    output_path: event.output_path,
+                    agentId,
+                },
             }];
         default:
             return [];

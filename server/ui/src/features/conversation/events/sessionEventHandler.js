@@ -5,6 +5,7 @@ import {
 
 // Records retained by the open frontend session so it can build Turns. This
 // is a UI policy, not the backend's separate durability policy.
+/** @type {Set<import('./conversationEvents.generated').ConversationEvent['type']>} */
 const RETAINED_SESSION_EVENT_TYPES = new Set([
     EVENT.AGENT_STARTED,
     EVENT.AGENT_COMPLETED,
@@ -17,29 +18,34 @@ const RETAINED_SESSION_EVENT_TYPES = new Set([
     EVENT.ERROR,
 ]);
 
-/** Apply a canonical event to state owned by the open conversation session. */
-export function handleSessionEvent(event, actions = {}) {
+/**
+ * Apply a canonical event to state owned by the open conversation session.
+ *
+ * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @param {import('./frontendTypes').SessionEventCommands} commands
+ */
+export function handleSessionEvent(event, commands = {}) {
     if (!event?.type) return;
 
     if (RETAINED_SESSION_EVENT_TYPES.has(event.type)) {
-        actions.retainEvent?.(event);
+        commands.retainEvent?.(event);
     }
 
     switch (event.type) {
         case EVENT.USER_MESSAGE:
-            actions.confirmUserMessage?.();
+            commands.confirmUserMessage?.();
             break;
         case EVENT.ITERATION:
-            actions.finalizeIteration?.();
+            commands.finalizeIteration?.();
             break;
         case EVENT.CONTENT:
-            if (event.agent_id) actions.updateInProgressIteration?.(event);
+            if (event.agent_id) commands.updateInProgressIteration?.(event);
             break;
         case EVENT.AGENT_STARTED:
-            if (event.agent_id && isRootAgentEvent(event)) actions.setRootAgent?.(event);
+            if (event.agent_id && isRootAgentEvent(event)) commands.setRootAgent?.(event);
             break;
         case EVENT.TURN_END:
-            actions.finishTurn?.();
+            commands.finishTurn?.();
             break;
         default:
             break;

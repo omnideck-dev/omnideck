@@ -304,10 +304,10 @@ branches.
 
 **Status: Pending**
 
-- [ ] Add compiler-checked frontend types for canonical conversation events,
+- [x] Add compiler-checked frontend types for canonical conversation events,
       derived from or validated against the Pydantic event models in
       `sdk/events/_models.py` rather than maintained as an unrelated schema.
-- [ ] Define frontend-owned action unions for the agent and workspace reducers.
+- [x] Define frontend-owned action unions for the agent and workspace reducers.
 - [ ] Make backend persistence the single durability policy; do not claim the
       frontend's in-memory retention set mirrors it.
 - [ ] Have the resume API return the saved canonical events needed to rebuild
