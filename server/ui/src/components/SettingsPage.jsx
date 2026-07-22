@@ -23,7 +23,6 @@ const ALL_TABS = [
 
 export default function SettingsPage({
     initialTab = 'skills',
-    toolsRefreshSignal = 0,
 }) {
     const { features } = useAppData();
     const tabs = useMemo(
@@ -33,11 +32,6 @@ export default function SettingsPage({
     const [activeTab, setActiveTab] = useState(initialTab);
     const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
     const Active = active.Component;
-    // The Custom Tools tab refetches after a tool_created event. Other tabs
-    // fetch through their normal mount and local mutation paths.
-    const tabProps = active.id === 'tools'
-        ? { refreshSignal: toolsRefreshSignal }
-        : {};
     return (
         <div className={styles.page}>
             <nav className={styles.tabBar}>
@@ -53,7 +47,7 @@ export default function SettingsPage({
                 ))}
             </nav>
             <div className={styles.content}>
-                <Active {...tabProps} />
+                <Active />
             </div>
         </div>
     );

@@ -16,7 +16,6 @@ const INITIAL_STATE = {
     restoredActiveTab: null,
     presentation: {
         activeTab: null,
-        splitPosition: 40,
         fullscreenItem: null,
     },
 };
@@ -163,13 +162,6 @@ function workspaceReducer(state, action) {
             return {
                 ...state,
                 presentation: { ...state.presentation, activeTab: action.activeTab },
-            };
-
-        case 'SET_PREVIEW_SPLIT_POSITION':
-            if (state.presentation.splitPosition === action.position) return state;
-            return {
-                ...state,
-                presentation: { ...state.presentation, splitPosition: action.position },
             };
 
         case 'SET_FULLSCREEN_ITEM':

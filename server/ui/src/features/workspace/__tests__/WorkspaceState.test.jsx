@@ -194,16 +194,14 @@ describe('WorkspaceProvider', () => {
         expect(getState().byAgentId['root-1'].generationPreview).toBeNull();
     });
 
-    it('owns preview selection, split size, and fullscreen presentation', () => {
+    it('owns workspace preview selection and fullscreen presentation', () => {
         const { getState, dispatch } = renderWithProvider();
         const file = { filename: 'report.md', path: '/tmp/report.md' };
         dispatch({ type: 'SELECT_PREVIEW_TAB', activeTab: 'browser' });
-        dispatch({ type: 'SET_PREVIEW_SPLIT_POSITION', position: 55 });
         dispatch({ type: 'SET_FULLSCREEN_ITEM', item: { kind: 'file', file } });
 
         expect(getState().presentation).toEqual({
             activeTab: 'browser',
-            splitPosition: 55,
             fullscreenItem: { kind: 'file', file },
         });
     });
@@ -218,7 +216,6 @@ describe('WorkspaceProvider', () => {
             restoredActiveTab: null,
             presentation: {
                 activeTab: null,
-                splitPosition: 40,
                 fullscreenItem: null,
             },
         });

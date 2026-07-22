@@ -115,22 +115,13 @@
     overflow: hidden;
 }
 
-/* Preview column — right side, fills remaining space */
-.previewColumn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-width: 320px;
-}
-
 /* Chat column — left side */
 .chatColumn {
     min-width: 320px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* width is set inline via splitPosition state, defaults to 100% when no preview */
+    /* width is set by the desktop dock, and defaults to 100% when the dock is hidden */
 }
 
 .hidden {

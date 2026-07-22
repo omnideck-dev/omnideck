@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CustomToolsTab from '../CustomToolsTab.jsx';
+import { CustomToolsCatalogProvider } from '../../features/customTools/CustomToolsCatalog.jsx';
 
 const _mockTools = [
     {
@@ -23,6 +24,14 @@ function _ok(body) {
 }
 function _noContent() {
     return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
+}
+
+function renderTab() {
+    return render(
+        <CustomToolsCatalogProvider>
+            <CustomToolsTab />
+        </CustomToolsCatalogProvider>,
+    );
 }
 
 describe('CustomToolsTab', () => {
@@ -49,7 +58,7 @@ describe('CustomToolsTab', () => {
     });
 
     it('renders one row per tool with name and description', async () => {
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
         expect(screen.getByText('fetch_page')).toBeInTheDocument();
         expect(screen.getByText('Fetch a URL and return text')).toBeInTheDocument();
@@ -58,7 +67,7 @@ describe('CustomToolsTab', () => {
     });
 
     it('shows the right badge label per tool type/language', async () => {
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
         const fetchRow = document.querySelector('[data-tool-name="fetch_page"]');
         const lsRow = document.querySelector('[data-tool-name="ls_home"]');
@@ -71,11 +80,13 @@ describe('CustomToolsTab', () => {
 
     it('deletes a tool and removes its row', async () => {
         const user = userEvent.setup();
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
 
         const row = document.querySelector('[data-tool-name="ls_home"]');
-        await user.click(row.querySelector('[data-testid="custom-tools-delete"]'));
+        await act(async () => {
+            await user.click(row.querySelector('[data-testid="custom-tools-delete"]'));
+        });
 
         await waitFor(() => expect(screen.queryByText('ls_home')).not.toBeInTheDocument());
         const delCall = _calls.find((c) => c.url === '/api/custom-tools/ls_home' && c.init?.method === 'DELETE');
@@ -84,7 +95,7 @@ describe('CustomToolsTab', () => {
 
     it('shows the empty state when there are no tools', async () => {
         global.fetch = vi.fn(() => _ok([]));
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByText('No custom tools defined.')).toBeInTheDocument());
         expect(screen.queryByTestId('custom-tools-row')).not.toBeInTheDocument();
     });

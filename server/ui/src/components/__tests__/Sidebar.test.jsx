@@ -120,7 +120,7 @@ describe('Sidebar', () => {
         expect(onPanelToggle).toHaveBeenCalledWith('apps');
     });
 
-    it('shows Home only when a custom app is docked', async () => {
+    it('shows Home only when a Home Custom App is configured', async () => {
         const user = userEvent.setup();
         setup({ customAppsEnabled: true });
         expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();

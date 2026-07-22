@@ -133,6 +133,11 @@ def list_artifacts(conversation_id: str | None = None) -> list[ArtifactEntry]:
     return entries
 
 
+def get_artifact(artifact_id: str) -> ArtifactEntry | None:
+    """Return one indexed artifact by its stable id."""
+    return load_index().artifacts.get(artifact_id)
+
+
 def reconcile(entries: list[ArtifactEntry]) -> list[ArtifactView]:
     """Overlay live on-disk status onto entries. Pure — never mutates the store."""
     return [

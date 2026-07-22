@@ -9,6 +9,7 @@ import {
 const harness = vi.hoisted(() => ({
     callbacks: null,
     addStartedConversation: vi.fn(),
+    refreshCustomTools: vi.fn(),
     controller: {
         activeConversationId: 'conversation-1',
         turns: [],
@@ -41,6 +42,10 @@ vi.mock('../../catalog/ConversationCatalog.jsx', () => ({
 
 vi.mock('../../../../components/ToastProvider.jsx', () => ({
     useToast: () => ({ addToast: vi.fn() }),
+}));
+
+vi.mock('../../../customTools/CustomToolsCatalog.jsx', () => ({
+    useCustomToolsCatalog: () => ({ refreshCustomTools: harness.refreshCustomTools }),
 }));
 
 const {
@@ -155,5 +160,11 @@ describe('ConversationSessionProvider', () => {
         const started = { conversationId: 'conversation-2', firstMessage: 'hello' };
         act(() => harness.callbacks.onConversationStarted(started));
         expect(harness.addStartedConversation).toHaveBeenCalledWith(started);
+    });
+
+    it('refreshes the Custom Tools owner after a tool-created event', () => {
+        renderSession();
+        act(() => harness.callbacks.onToolCreated());
+        expect(harness.refreshCustomTools).toHaveBeenCalledOnce();
     });
 });

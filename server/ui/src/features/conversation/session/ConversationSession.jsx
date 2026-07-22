@@ -11,6 +11,7 @@ import { useAgentDispatch } from '../../agent/AgentState.jsx';
 import useConversationSessionController from './useConversationSessionController.js';
 import { useWorkspaceDispatch } from '../../workspace/WorkspaceState.jsx';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
+import { useCustomToolsCatalog } from '../../customTools/CustomToolsCatalog.jsx';
 
 const ConversationSessionStateContext = createContext(null);
 const ConversationSessionCommandsContext = createContext(null);
@@ -19,15 +20,15 @@ export function ConversationSessionProvider({ children }) {
     const agentDispatch = useAgentDispatch();
     const workspaceDispatch = useWorkspaceDispatch();
     const { addStartedConversation } = useConversationCatalog();
+    const { refreshCustomTools } = useCustomToolsCatalog();
     const { addToast } = useToast();
     const [conversationProfileId, setConversationProfileId] = useState(null);
-    const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
 
     const callbacks = useMemo(() => ({
         onAgentAction: agentDispatch,
         onWorkspaceAction: workspaceDispatch,
-        onToolCreated: () => setToolsRefreshSignal((signal) => signal + 1),
+        onToolCreated: refreshCustomTools,
         onAudioPlayback: setPendingAudio,
         onNudgeSent: (result) => {
             if (result.ok) {
@@ -53,7 +54,7 @@ export function ConversationSessionProvider({ children }) {
             workspaceDispatch({ type: 'RESTORE_ACTIVE_TAB', activeTab: restore.activeTab });
         },
         onConversationStarted: addStartedConversation,
-    }), [addStartedConversation, addToast, agentDispatch, workspaceDispatch]);
+    }), [addStartedConversation, addToast, agentDispatch, refreshCustomTools, workspaceDispatch]);
 
     const session = useConversationSessionController(callbacks);
 
@@ -75,7 +76,6 @@ export function ConversationSessionProvider({ children }) {
         stopRequested: session.stopRequested,
         stalled: session.stalled,
         conversationProfileId,
-        toolsRefreshSignal,
         pendingAudio,
     }), [
         conversationProfileId,
@@ -86,7 +86,6 @@ export function ConversationSessionProvider({ children }) {
         session.stalled,
         session.stopRequested,
         session.turns,
-        toolsRefreshSignal,
     ]);
 
     const commands = useMemo(() => ({
