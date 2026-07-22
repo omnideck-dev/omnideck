@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { applyConversationEvent } from '../applyConversationEvent.js';
 
 describe('applyConversationEvent', () => {
-    it('gives the same canonical event to each state owner', () => {
+    it('gives the same canonical event to each state handler', () => {
         const event = { id: 'event-1', type: 'agent_started' };
         const handlers = {
             session: vi.fn(),
@@ -17,7 +17,7 @@ describe('applyConversationEvent', () => {
         expect(handlers.workspace).toHaveBeenCalledWith(event);
     });
 
-    it('isolates one owner failure from the other owners', () => {
+    it('isolates one handler failure from the other handlers', () => {
         const error = new Error('session unavailable');
         const handlers = {
             session: vi.fn(() => { throw error; }),
@@ -26,7 +26,7 @@ describe('applyConversationEvent', () => {
         };
 
         expect(applyConversationEvent({ type: 'content' }, handlers)).toEqual([
-            { owner: 'session', error },
+            { handlerName: 'session', error },
         ]);
         expect(handlers.agent).toHaveBeenCalledTimes(1);
         expect(handlers.workspace).toHaveBeenCalledTimes(1);
