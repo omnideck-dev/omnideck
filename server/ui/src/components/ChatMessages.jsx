@@ -1,12 +1,12 @@
 import Turn from './Turn.jsx';
 import StarterPrompts from './StarterPrompts.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
-import { useAgentState } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatMessages.module.css';
 
 /**
  * Scrollable chat view. Renders a list of ``<Turn>`` components — one
- * per turn — driven by ``turns`` computed inside ``useStreamingChat``
+ * per turn — driven by ``turns`` from the conversation session
  * from a unified events array (resume + live SSE) plus the in-flight
  * iteration buffer and the optimistic user prompt.
  */

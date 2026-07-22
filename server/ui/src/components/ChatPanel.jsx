@@ -5,7 +5,7 @@ import ContextMeter from './ContextMeter.jsx';
 import { formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
 import ArtifactsDrawer from './artifacts/ArtifactsDrawer.jsx';
-import { useAgentState } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
 /**

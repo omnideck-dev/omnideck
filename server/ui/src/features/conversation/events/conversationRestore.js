@@ -1,4 +1,4 @@
-import { getAgentEventActions } from './agentEventHandler.js';
+import { getConversationEventActions } from './conversationEventActions.js';
 import { CONVERSATION_EVENT_TYPES as EVENT, isRootAgentEvent } from './eventTypes.js';
 
 /** @param {string|null|undefined} timestamp */
@@ -10,7 +10,7 @@ function eventTime(timestamp) {
 /**
  * Build the reducer actions needed to restore one saved conversation.
  *
- * Persisted conversation events use the same agent event handler as the live
+ * Persisted conversation events use the same agent event actions as the live
  * stream. Browser, terminal, and open-file state is restored explicitly from
  * its bounded sidecars because it is workspace state, not conversation history.
  *
@@ -30,8 +30,9 @@ export function getConversationRestorePlan(data) {
     for (const event of events) {
         if (!event?.type) continue;
 
-        const { immediate, ordered } = getAgentEventActions(event);
-        agentActions.push(...immediate, ...ordered);
+        const actions = getConversationEventActions(event);
+        agentActions.push(...actions.agent.immediate, ...actions.agent.ordered);
+        workspaceActions.push(...actions.workspace);
 
         const agentId = event.agent_id || null;
         if (event.type === EVENT.AGENT_STARTED && agentId) {

@@ -9,7 +9,7 @@ vi.mock('../ChatInput.jsx', () => ({ default: () => <div data-testid="chat-input
 
 // ChatPanel reads the root agent from the agent-state context; drive it here.
 const { agentState } = vi.hoisted(() => ({ agentState: { value: { rootId: null, agents: {} } } }));
-vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => agentState.value }));
+vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => agentState.value }));
 
 beforeEach(() => { agentState.value = { rootId: null, agents: {} }; });
 

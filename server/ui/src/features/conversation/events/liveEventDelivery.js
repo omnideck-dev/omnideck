@@ -1,8 +1,5 @@
-import { getAgentEventActions } from './agentEventHandler.js';
-import { applyConversationEvent } from './applyConversationEvent.js';
+import { getConversationEventActions } from './conversationEventActions.js';
 import { runOneTimeEventActions } from './oneTimeEventActions.js';
-import { handleSessionEvent } from './sessionEventHandler.js';
-import { getWorkspaceEventActions } from './workspaceEventHandler.js';
 
 /**
  * Connect canonical live events to the three state owners and the actions that
@@ -13,7 +10,7 @@ import { getWorkspaceEventActions } from './workspaceEventHandler.js';
  * @returns {import('./frontendTypes').LiveEventDelivery}
  */
 export function createLiveEventDelivery({
-    sessionActions = {},
+    onSessionAction,
     onAgentAction,
     onWorkspaceAction,
     oneTimeActions = {},
@@ -45,23 +42,26 @@ export function createLiveEventDelivery({
         frameId = null;
     };
 
-    const handlers = {
+    return {
         /** @param {import('./conversationEvents.generated').ConversationEvent} event */
-        session: (event) => handleSessionEvent(event, {
-            ...sessionActions,
-            // A completed turn must expose all activity that arrived before it.
-            finishTurn: () => {
-                cancelScheduledFlush();
-                flushAgentActions();
-                sessionActions.finishTurn?.();
-            },
-        }),
-        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
-        agent: (event) => {
-            const { immediate, ordered } = getAgentEventActions(event);
+        deliver(event) {
+            const actions = getConversationEventActions(event);
+
+            for (const action of actions.session) {
+                // A completed turn must expose all preceding agent activity.
+                if (action.type === 'FINISH_TURN') {
+                    cancelScheduledFlush();
+                    flushAgentActions();
+                }
+                try {
+                    onSessionAction?.(action);
+                } catch {
+                    // Keep later actions and state owners independent.
+                }
+            }
 
             // Lifecycle and context state should be visible immediately.
-            for (const action of immediate) {
+            for (const action of actions.agent.immediate) {
                 try {
                     onAgentAction?.(action);
                 } catch {
@@ -69,29 +69,20 @@ export function createLiveEventDelivery({
                 }
             }
 
-            // Ordered activity populates the agent model for both the root
-            // agent and sub-agents. The root transcript is built separately by
-            // session state from the same canonical events.
-            if (ordered.length === 0 || !onAgentAction) return;
-            pendingAgentActions.push(...ordered);
-            scheduleAgentFlush();
-        },
-        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
-        workspace: (event) => {
-            for (const action of getWorkspaceEventActions(event)) {
+            // Text and activity retain arrival order across animation frames.
+            if (onAgentAction && actions.agent.ordered.length > 0) {
+                pendingAgentActions.push(...actions.agent.ordered);
+                scheduleAgentFlush();
+            }
+
+            for (const action of actions.workspace) {
                 try {
                     onWorkspaceAction?.(action);
                 } catch {
                     // A broken preview must not interrupt other event handling.
                 }
             }
-        },
-    };
 
-    return {
-        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
-        deliver(event) {
-            applyConversationEvent(event, handlers);
             try {
                 runOneTimeEventActions(event, oneTimeActions);
             } catch {

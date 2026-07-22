@@ -69,6 +69,7 @@ export type AgentAction =
     | { type: 'APPEND_ACTIVITY'; agentId: string; entry: AgentActivityEntry };
 
 export type WorkspaceAction =
+    | { type: 'WORKSPACE_AGENT_STARTED'; agentId: string; parentAgentId: string | null }
     | {
         type: 'UPDATE_BROWSER_SNAPSHOT';
         agentId: string | null;
@@ -100,7 +101,18 @@ export type WorkspaceAction =
             filename: string;
             path: string;
         };
-    };
+    }
+    | { type: 'CLEAR_BROWSER_TABS'; agentId: string }
+    | { type: 'CLEAR_TERMINAL'; agentId: string }
+    | { type: 'CLEAR_DESKTOP'; agentId: string }
+    | { type: 'CLEAR_GENERATION_PREVIEW'; agentId: string }
+    | { type: 'CLOSE_FILE'; agentId: string; fileKey: string }
+    | { type: 'RESTORE_ACTIVE_TAB'; activeTab: string | null }
+    | { type: 'CONSUME_RESTORED_ACTIVE_TAB' }
+    | { type: 'SELECT_PREVIEW_TAB'; activeTab: string | null }
+    | { type: 'SET_PREVIEW_SPLIT_POSITION'; position: number }
+    | { type: 'SET_FULLSCREEN_ITEM'; item: unknown | null }
+    | { type: 'RESET' };
 
 export type ConversationRestoreData = {
     events?: Array<ConversationEvent>;
@@ -124,19 +136,21 @@ export type ConversationRestorePlan = {
     activeTab: string | null;
 };
 
-export type SessionEventCommands = {
-    retainEvent?: (event: ConversationEvent) => void;
-    confirmUserMessage?: () => void;
-    finalizeIteration?: () => void;
-    updateInProgressIteration?: (event: ConversationEvent) => void;
-    setRootAgent?: (event: ConversationEvent) => void;
-    finishTurn?: () => void;
-};
+export type SessionAction =
+    | { type: 'RETAIN_EVENT'; event: ConversationEvent }
+    | { type: 'CONFIRM_USER_MESSAGE' }
+    | { type: 'FINALIZE_ITERATION' }
+    | { type: 'UPDATE_IN_PROGRESS_ITERATION'; event: ConversationEvent }
+    | { type: 'SET_ROOT_AGENT'; agentId: string }
+    | { type: 'FINISH_TURN' };
 
-export type EventHandlers = {
-    session?: (event: ConversationEvent) => void;
-    agent?: (event: ConversationEvent) => void;
-    workspace?: (event: ConversationEvent) => void;
+export type ConversationEventActions = {
+    session: Array<SessionAction>;
+    agent: {
+        immediate: Array<AgentAction>;
+        ordered: Array<AgentAction>;
+    };
+    workspace: Array<WorkspaceAction>;
 };
 
 export type OneTimeEventActions = {
@@ -205,7 +219,7 @@ export type ConversationTurn = {
 };
 
 export type LiveEventDeliveryOptions = {
-    sessionActions?: SessionEventCommands;
+    onSessionAction?: (action: SessionAction) => void;
     onAgentAction?: (action: AgentAction) => void;
     onWorkspaceAction?: (action: WorkspaceAction) => void;
     oneTimeActions?: OneTimeEventActions;

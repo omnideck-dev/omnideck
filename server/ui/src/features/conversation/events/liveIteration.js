@@ -8,7 +8,7 @@
  *     null + { content: 'Hel' } + { content: 'lo' }
  *       => { content: 'Hello', thinking: '' }
  *
- * useStreamingChat temporarily appends that accumulated value as an
+ * The conversation session temporarily appends that accumulated value as an
  * iteration-shaped record before calling projectTurns. Keeping this live-only
  * buffer separate means resumed conversations and finalized live events still
  * use the same deterministic transcript builder.

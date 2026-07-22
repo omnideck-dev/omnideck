@@ -29,10 +29,45 @@ backend classes or separate network channels.
 - **One-time action:** Work triggered only when an event arrives live, such as
   playing audio or refreshing a resource list. Restoring saved events must not
   repeat it.
-- **Event delivery:** Giving one canonical event to the session, agent, and
-  workspace handlers. Live delivery additionally runs one-time actions.
+- **Event action plan:** The session, agent, and workspace reducer actions
+  built from one canonical event. Live delivery additionally runs one-time
+  actions.
 
 The same conversation event may contribute to more than one model. For
 example, root-agent output updates both the transcript and the root agent's
 activity, while sub-agent output updates agent activity but does not appear as
 root transcript output.
+
+## Ownership and flow
+
+`ConversationCatalogProvider` owns conversation lists and list mutations.
+`ConversationSessionProvider` owns the open conversation and its commands.
+`AgentProvider` owns the agent graph and activity. `WorkspaceProvider` owns
+browser, terminal, file, generation, desktop, and preview presentation state.
+`DesktopNavigationProvider` owns a serializable destination and named
+navigation commands. `DesktopApp` only assembles these owners and the desktop
+shell.
+
+Live data follows this path:
+
+```text
+/api/chat
+  → chatClient (request and JSONL stream)
+  → normalizeLiveEvent (canonical conversation event)
+  → getConversationEventActions
+      ├── session reducer actions
+      ├── agent reducer actions
+      └── workspace reducer actions
+  → one-time actions (live delivery only)
+```
+
+Restoration reads saved canonical events and calls the same
+`getConversationEventActions` function. Saved browser and terminal snapshots
+and preview metadata become explicit workspace restore actions. Restoration
+does not run one-time actions.
+
+Desktop features navigate through commands such as `openConversation`,
+`openAgent`, and `openSettings`. The destination contains stable IDs rather
+than feature objects. There is no URL synchronization yet; a future router can
+implement the same destination and command interface without changing feature
+components.

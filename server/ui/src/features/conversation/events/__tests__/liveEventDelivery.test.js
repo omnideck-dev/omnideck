@@ -63,7 +63,9 @@ describe('createLiveEventDelivery', () => {
         const order = [];
         const delivery = createLiveEventDelivery({
             onAgentAction: () => order.push('agent activity'),
-            sessionActions: { finishTurn: () => order.push('turn finished') },
+            onSessionAction: (action) => {
+                if (action.type === 'FINISH_TURN') order.push('turn finished');
+            },
             requestFrame: frame.requestFrame,
             cancelFrame: frame.cancelFrame,
         });

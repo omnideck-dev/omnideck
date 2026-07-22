@@ -2,14 +2,14 @@ import { cleanup, render as _render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
-import { ConversationsProvider } from '../../contexts/Conversations.jsx';
+import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
 
 // The expanded sidebar renders ConversationsPanel (conversations context) and
 // reads the theme context for its toggle — so every render supplies both.
 const Wrapper = ({ children }) => (
     <ThemeProvider>
-        <ConversationsProvider>{children}</ConversationsProvider>
+        <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
     </ThemeProvider>
 );
 const render = (ui, options) => _render(ui, { wrapper: Wrapper, ...options });

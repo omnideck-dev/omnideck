@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAgentState, useAgentDispatch } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
 import BackButton from './BackButton.jsx';
 import { formatElapsed, formatAgentName } from '../utils/agentUtils.js';
@@ -30,10 +30,16 @@ function _buildBreadcrumb(agents, agentId) {
  *
  * The nudge bar at the bottom sends to the currently viewed agent.
  */
-export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = false }) {
-    const { agents, selectedAgentId } = useAgentState();
-    const dispatch = useAgentDispatch();
-    const agent = selectedAgentId ? agents[selectedAgentId] : null;
+export default function AgentActivityView({
+    agentId,
+    onBack,
+    onSelectAgent,
+    onNudge,
+    onPreview,
+    nudgeDisabled = false,
+}) {
+    const { agents } = useAgentState();
+    const agent = agentId ? agents[agentId] : null;
     const [instructionOpen, setInstructionOpen] = useState(false);
 
     const { ref: scrollRef, onScroll: handleScroll, resetScroll } = useAutoScroll(
@@ -44,19 +50,18 @@ export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = 
     // Reset scroll lock when switching agents
     useEffect(() => {
         resetScroll();
-    }, [selectedAgentId, resetScroll]);
+    }, [agentId, resetScroll]);
 
     if (!agent) return null;
 
-    const breadcrumb = _buildBreadcrumb(agents, selectedAgentId);
+    const breadcrumb = _buildBreadcrumb(agents, agentId);
     const spawnedAgents = agent.childIds.map((id) => agents[id]).filter(Boolean);
-    const selectAgent = (agentId) => dispatch({ type: 'SELECT_AGENT', agentId });
 
     return (
         <div className={styles.container} data-testid="agent-activity-view">
             {/* Crumb bar — back + breadcrumb, full width */}
             <div className={styles.crumbBar}>
-                <BackButton label="Agents" onClick={() => dispatch({ type: 'SELECT_AGENT', agentId: null })} />
+                <BackButton label="Agents" onClick={onBack} />
                 <span className={styles.breadcrumb}>
                     {breadcrumb.map((a, i) => (
                         <span key={a.id}>
@@ -122,7 +127,7 @@ export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = 
                     <ActivityRail
                         entries={agent.activityLog}
                         spawnedAgents={spawnedAgents}
-                        onSelectAgent={selectAgent}
+                        onSelectAgent={onSelectAgent}
                         onPreview={onPreview}
                     />
                 </div>
@@ -139,7 +144,7 @@ export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = 
                     onKeyDown={(e) => {
                         if (nudgeDisabled) return;
                         if (e.key === 'Enter' && e.target.value.trim()) {
-                            if (onNudge) onNudge(e.target.value.trim(), selectedAgentId);
+                            if (onNudge) onNudge(e.target.value.trim(), agentId);
                             e.target.value = '';
                         }
                     }}

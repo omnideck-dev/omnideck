@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import { AgentStateProvider, useAgentDispatch } from '../../hooks/useAgentState.jsx';
+import { AgentProvider, useAgentDispatch } from '../../features/agent/AgentState.jsx';
 import AgentActivityView from '../AgentActivityView.jsx';
-import { act } from 'react';
+import { act, useState } from 'react';
 
 // ── Mock child components that are hard to render in jsdom ───────────
 
@@ -17,14 +17,24 @@ function renderView(props = {}) {
     let dispatch;
 
     function Harness() {
+        const [agentId, setAgentId] = useState(props.agentId ?? 'a1');
         dispatch = useAgentDispatch();
-        return <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} {...props} />;
+        return (
+            <AgentActivityView
+                agentId={agentId}
+                onBack={() => setAgentId(null)}
+                onSelectAgent={setAgentId}
+                onNudge={vi.fn()}
+                onPreview={vi.fn()}
+                {...props}
+            />
+        );
     }
 
     const result = render(
-        <AgentStateProvider>
+        <AgentProvider>
             <Harness />
-        </AgentStateProvider>,
+        </AgentProvider>,
     );
 
     return {
@@ -42,7 +52,6 @@ function startAgent(dispatch, id, { name = 'omnideck', parent = null, instructio
         instruction,
         timestamp: Date.now(),
     });
-    dispatch({ type: 'SELECT_AGENT', agentId: id });
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -50,9 +59,9 @@ function startAgent(dispatch, id, { name = 'omnideck', parent = null, instructio
 describe('AgentActivityView', () => {
     it('renders nothing when no agent is selected', () => {
         const { container } = render(
-            <AgentStateProvider>
+            <AgentProvider>
                 <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} />
-            </AgentStateProvider>,
+            </AgentProvider>,
         );
         expect(container.innerHTML).toBe('');
     });
@@ -147,7 +156,6 @@ describe('AgentActivityView', () => {
                 type: 'AGENT_STARTED', agentId: 'c2', agentName: 'code_expert',
                 parentAgentId: 'a1', instruction: '', correlationId: 'c-2', timestamp: Date.now(),
             });
-            dispatch({ type: 'SELECT_AGENT', agentId: 'a1' });
         }
 
         it('renders an inline spawn card for the agent\'s sub-agents', () => {
