@@ -217,7 +217,7 @@ describe('useStreamingChat stream delivery', () => {
             'AGENT_STARTED',
             'APPEND_STREAM_CHUNK',
             'spawn_requested',
-            'tool_call',
+            'FINALIZE_AGENT_ITERATION',
             'file_output',
             'compaction',
         ]);

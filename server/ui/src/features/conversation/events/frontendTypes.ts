@@ -7,6 +7,8 @@ import type {
 } from './conversationEvents.generated';
 
 export type AgentActivityEntry =
+    | { type: 'thinking'; thinking: string; timestamp: number }
+    | { type: 'content'; content: string; timestamp: number }
     | { type: 'tool_call'; name: string; arguments: Record<string, unknown> | null; timestamp: number }
     | { type: 'spawn_requested'; correlationId: string; timestamp: number }
     | ({ type: 'file_output'; timestamp: number } & Omit<FileOutputPayload, 'type'>)
@@ -53,6 +55,17 @@ export type AgentAction =
         content: string | null;
         thinking: string | null;
     }
+    | {
+        type: 'FINALIZE_AGENT_ITERATION';
+        agentId: string;
+        content: string | null;
+        thinking: string | null;
+        toolCalls: Array<{
+            name: string;
+            arguments: Record<string, unknown> | null;
+        }>;
+        timestamp: number;
+    }
     | { type: 'APPEND_ACTIVITY'; agentId: string; entry: AgentActivityEntry };
 
 export type WorkspaceAction =
@@ -78,7 +91,38 @@ export type WorkspaceAction =
         type: 'UPDATE_GENERATION_PREVIEW';
         agentId: string | null;
         preview: GenerationPreviewPayload & { agentId: string | null };
+    }
+    | {
+        type: 'OPEN_FILE';
+        agentId: string;
+        item: {
+            type: 'file_output';
+            filename: string;
+            path: string;
+        };
     };
+
+export type ConversationRestoreData = {
+    events?: Array<ConversationEvent>;
+    browserTabs?: Array<{
+        agent_id: string | null;
+        url: string;
+        title: string;
+        screenshot: string | null;
+        tab_id: string | null;
+    }>;
+    terminal?: Record<string, Array<Record<string, unknown>>>;
+    previewState?: {
+        open_files?: Array<string>;
+        active_tab?: string | null;
+    };
+};
+
+export type ConversationRestorePlan = {
+    agentActions: Array<AgentAction>;
+    workspaceActions: Array<WorkspaceAction>;
+    activeTab: string | null;
+};
 
 export type SessionEventCommands = {
     retainEvent?: (event: ConversationEvent) => void;
