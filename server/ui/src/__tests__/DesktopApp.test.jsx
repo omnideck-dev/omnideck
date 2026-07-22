@@ -1,6 +1,5 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentStateProvider, useAgentState, useAgentDispatch } from '../hooks/useAgentState.jsx';
 import { AppDataProvider } from '../contexts/AppData.jsx';
 
 // Minimal 1x1 transparent PNG
@@ -50,16 +49,22 @@ vi.mock('../components/GenerationPreview.jsx', () => ({
 }));
 
 vi.mock('../components/AgentNetwork.jsx', () => ({
-    default: ({ onClose }) => (
+    default: ({ onClose, onSelectAgent }) => (
         <div data-testid="agent-network">
             Network Graph
+            <button data-testid="network-select-agent" onClick={() => onSelectAgent('s1')}>Select</button>
             {onClose && <button data-testid="network-close" onClick={onClose}>Close</button>}
         </div>
     ),
 }));
 
 vi.mock('../components/AgentActivityView.jsx', () => ({
-    default: () => <div data-testid="agent-activity-view">Activity View</div>,
+    default: ({ onBack }) => (
+        <div data-testid="agent-activity-view">
+            Activity View
+            <button data-testid="activity-back" onClick={onBack}>Back</button>
+        </div>
+    ),
 }));
 
 vi.mock('../components/Sidebar.jsx', () => ({
@@ -187,13 +192,12 @@ vi.mock('../hooks/useAgentProfiles.js', () => ({
 // Reset to defaults in beforeEach.
 const streamMock = vi.hoisted(() => {
     const makeDefault = () => ({
-        messages: [],
         turns: [],
         isStreaming: false,
         sendMessage: () => {},
         sendNudge: () => {},
         stopGeneration: () => {},
-        loadConversation: () => {},
+        loadConversation: () => true,
         newConversation: () => {},
         activeConversationId: null,
         savePreviewState: () => {},
@@ -201,7 +205,7 @@ const streamMock = vi.hoisted(() => {
     return { makeDefault, value: makeDefault() };
 });
 
-vi.mock('../hooks/useStreamingChat.js', () => ({
+vi.mock('../features/conversation/session/useConversationSessionController.js', () => ({
     default: () => streamMock.value,
 }));
 
@@ -226,38 +230,11 @@ vi.mock('../components/ToastProvider.jsx', () => ({
 // Dynamic import so vi.mock calls are hoisted before it runs.
 const { default: DesktopApp } = await import('../DesktopApp.jsx');
 
-/**
- * DesktopApp wraps itself in AgentStateProvider, so we render it
- * directly and reach in via a side-channel to dispatch state changes.
- *
- * We render a companion Inspector inside the same provider to get
- * dispatch. DesktopApp creates its own provider though, so we need
- * to work around that — we'll dispatch from outside by re-rendering.
- *
- * Actually, DesktopApp creates its own AgentStateProvider internally.
- * So we need to access the dispatch from inside. We do this by
- * intercepting the useAgentDispatch calls via the mock system.
- */
-
-// We'll capture dispatch from inside DesktopApp by patching into the
-// AgentStateProvider. Instead, let's test the view logic by directly
-// testing the inner component with a provider we control.
-
-/**
- * Since DesktopApp creates its own provider, we test the view selection
- * logic by rendering DesktopApp and using the stream callbacks to drive
- * state changes. The mocked useStreamingChat gives us access to the
- * callbacks that DesktopApp passes to it.
- *
- * Alternatively, we can test the layout logic more directly by
- * extracting the state→view mapping. But to keep it end-to-end,
- * we'll capture the dispatch from inside the component tree.
- */
-
 let capturedDispatch = null;
+let capturedWorkspaceDispatch = null;
 
-// Re-mock useAgentState hooks to capture dispatch
-vi.mock('../hooks/useAgentState.jsx', async (importOriginal) => {
+// Capture agent actions from inside the app's provider.
+vi.mock('../features/agent/AgentState.jsx', async (importOriginal) => {
     const actual = await importOriginal();
     return {
         ...actual,
@@ -269,8 +246,21 @@ vi.mock('../hooks/useAgentState.jsx', async (importOriginal) => {
     };
 });
 
+vi.mock('../features/workspace/WorkspaceState.jsx', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        useWorkspaceDispatch: () => {
+            const dispatch = actual.useWorkspaceDispatch();
+            capturedWorkspaceDispatch = dispatch;
+            return dispatch;
+        },
+    };
+});
+
 async function renderApp() {
     capturedDispatch = null;
+    capturedWorkspaceDispatch = null;
     let result;
     await act(async () => {
         result = render(
@@ -281,7 +271,17 @@ async function renderApp() {
     });
 
     const dispatch = (action) => {
-        act(() => capturedDispatch(action));
+        act(() => {
+            capturedDispatch(action);
+            const workspaceAction = action.type === 'AGENT_STARTED'
+                ? {
+                    type: 'WORKSPACE_AGENT_STARTED',
+                    agentId: action.agentId,
+                    parentAgentId: action.parentAgentId,
+                }
+                : action;
+            capturedWorkspaceDispatch(workspaceAction);
+        });
     };
 
     return { dispatch, ...result };
@@ -314,6 +314,7 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
 describe('DesktopApp view transitions', () => {
     beforeEach(() => {
         capturedDispatch = null;
+        capturedWorkspaceDispatch = null;
         streamMock.value = streamMock.makeDefault();
         // Mock the fetches DesktopApp's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
@@ -656,33 +657,23 @@ describe('DesktopApp view transitions', () => {
             startRoot(dispatch, 'r1');
             startSubAgent(dispatch, 's1', 'r1');
 
-            // Open network first, then select agent
+            // Open network first, then select an agent through the feature UI.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
 
             expect(screen.getByTestId('agent-activity-view')).toBeInTheDocument();
         });
 
-        it('does not show activity view when agent is selected but network is closed', async () => {
-            const { dispatch } = await renderApp();
-            startRoot(dispatch, 'r1');
-            startSubAgent(dispatch, 's1', 'r1');
-
-            // Select without opening network — should not show activity view
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
-            expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
-        });
-
-        it('returns to network view when selection is cleared', async () => {
+        it('returns to network view from agent activity', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             startSubAgent(dispatch, 's1', 'r1');
 
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             expect(screen.getByTestId('agent-activity-view')).toBeInTheDocument();
 
-            dispatch({ type: 'SELECT_AGENT', agentId: null });
+            act(() => fireEvent.click(screen.getByTestId('activity-back')));
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
         });
@@ -876,7 +867,7 @@ describe('DesktopApp view transitions', () => {
 
             // Drill into the sub-agent — preview follows it.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
         });
 
@@ -897,7 +888,7 @@ describe('DesktopApp view transitions', () => {
 
             // Drill into the sub-agent, then bounce out to settings and back.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
@@ -940,12 +931,12 @@ describe('DesktopApp view transitions', () => {
             expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
 
             // 5. Select sub-agent → detail view
-            dispatch({ type: 'SELECT_AGENT', agentId: 's1' });
+            act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             expect(screen.getByTestId('agent-activity-view')).toBeInTheDocument();
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
 
-            // 6. Deselect → back to network
-            dispatch({ type: 'SELECT_AGENT', agentId: null });
+            // 6. Back → network
+            act(() => fireEvent.click(screen.getByTestId('activity-back')));
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
 

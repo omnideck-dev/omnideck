@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAgentEventActions } from '../agentEventHandler.js';
+import { getAgentEventActions } from '../agentEventActions.js';
 import { getConversationRestorePlan } from '../conversationRestore.js';
 import { normalizeLiveEvent } from '../normalizeEvent.js';
 import { projectTurns } from '../projectTurns.js';
@@ -36,7 +36,7 @@ function asLiveEnvelope(savedEvent) {
 }
 
 describe('getConversationRestorePlan', () => {
-    it('uses the canonical agent event handler for a complete saved conversation', () => {
+    it('uses the canonical agent event actions for a complete saved conversation', () => {
         const events = [
             event('agent_started', {
                 parent_agent_id: null,
@@ -155,6 +155,11 @@ describe('getConversationRestorePlan', () => {
         });
 
         expect(restore.workspaceActions).toEqual([
+            {
+                type: 'WORKSPACE_AGENT_STARTED',
+                agentId: 'root-1',
+                parentAgentId: null,
+            },
             {
                 type: 'UPDATE_BROWSER_SNAPSHOT',
                 agentId: 'root-1',

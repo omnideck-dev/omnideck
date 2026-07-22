@@ -10,7 +10,7 @@ import styles from './AgentCard.module.css';
  *
  * Memoized — only re-renders when something visible changes.
  */
-function AgentCard({ agent, onClick }) {
+function AgentCard({ agent, workspace, onClick }) {
     const toolCallCount = agent.activityLog
         ? agent.activityLog.filter((e) => e.type === 'tool_call').length
         : 0;
@@ -35,8 +35,8 @@ function AgentCard({ agent, onClick }) {
                 // at a glance.  Top of the stack is whichever tab most
                 // recently got a new snapshot — that's what the agent was
                 // last doing.
-                const tabs = agent.browserTabs || {};
-                const lastKey = agent.lastBrowserTabId;
+                const tabs = workspace?.browserTabs || {};
+                const lastKey = workspace?.lastBrowserTabId;
                 const withScreens = Object.entries(tabs).filter(([, s]) => s?.screenshot);
                 // Pull the most-recently-updated tab to the front; siblings
                 // sit behind it in tab-id order so the back of the stack is
@@ -109,8 +109,7 @@ export default memo(AgentCard, (prev, next) => {
     return (
         a.status === b.status &&
         a.childIds.length === b.childIds.length &&
-        a.browserTabs === b.browserTabs &&
-        a.lastBrowserTabId === b.lastBrowserTabId &&
+        prev.workspace === next.workspace &&
         a.startedAt === b.startedAt &&
         a.activityLog.length === b.activityLog.length
     );

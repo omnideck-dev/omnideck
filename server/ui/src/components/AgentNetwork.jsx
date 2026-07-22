@@ -1,7 +1,8 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import AgentCard from './AgentCard.jsx';
 import BackButton from './BackButton.jsx';
-import { useAgentState, useAgentDispatch } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
+import { useWorkspaceState } from '../features/workspace/WorkspaceState.jsx';
 import styles from './AgentNetwork.module.css';
 
 /**
@@ -78,16 +79,16 @@ function _drawConnectors(containerEl, svgEl, agents) {
  * The tree layout and line drawing only recalculate when agents are
  * added/removed. A 1-second timer updates elapsed times on running cards.
  */
-export default function AgentNetwork({ onClose, agentCount: agentCountProp }) {
+export default function AgentNetwork({ onClose, onSelectAgent, agentCount: agentCountProp }) {
     const { agents } = useAgentState();
-    const dispatch = useAgentDispatch();
+    const { byAgentId: workspaces } = useWorkspaceState();
     const containerRef = useRef(null);
     const svgRef = useRef(null);
     const [tick, setTick] = useState(0);
 
     const handleSelect = useCallback((agentId) => {
-        dispatch({ type: 'SELECT_AGENT', agentId });
-    }, [dispatch]);
+        onSelectAgent?.(agentId);
+    }, [onSelectAgent]);
 
     // Only changes when agents are added/removed (not on every status update)
     const topoKey = useMemo(() => {
@@ -174,7 +175,11 @@ export default function AgentNetwork({ onClose, agentCount: agentCountProp }) {
                                 <div key={depth} className={styles.level}>
                                     {level.map((agentId) => (
                                         <div key={agentId} data-agent-id={agentId} className={styles.nodeWrap}>
-                                            <AgentCard agent={agents[agentId]} onClick={handleSelect} />
+                                            <AgentCard
+                                                agent={agents[agentId]}
+                                                workspace={workspaces[agentId]}
+                                                onClick={handleSelect}
+                                            />
                                         </div>
                                     ))}
                                 </div>
