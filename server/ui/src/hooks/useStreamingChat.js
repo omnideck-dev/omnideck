@@ -3,16 +3,39 @@ import {
     CONVERSATION_EVENT_TYPES as EVENT,
     isRootAgentEvent,
 } from '../features/conversation/events/eventTypes.js';
-import { getAgentEventActions } from '../features/conversation/events/agentEventHandler.js';
-import { applyConversationEvent } from '../features/conversation/events/applyConversationEvent.js';
+import { createLiveEventDelivery } from '../features/conversation/events/liveEventDelivery.js';
 import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
-import { runOneTimeEventActions } from '../features/conversation/events/oneTimeEventActions.js';
 import { projectTurns } from '../features/conversation/events/projectTurns.js';
-import { handleSessionEvent } from '../features/conversation/events/sessionEventHandler.js';
-import { getWorkspaceEventActions } from '../features/conversation/events/workspaceEventHandler.js';
 import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
 import { streamChatTurn } from '../features/conversation/transport/chatClient.js';
 import useStreamStall from './useStreamStall.js';
+
+/**
+ * @typedef {object} ConversationStateAction
+ * @property {string} type
+ * @property {string|null} [agentId]
+ */
+
+/**
+ * @typedef {object} ConversationLoadData
+ * @property {string} conversationId
+ * @property {Array<object>} events
+ * @property {Array<object>} browserTabs
+ * @property {Object<string, Array<object>>} terminal
+ * @property {object} previewState
+ * @property {string|null} profileId
+ */
+
+/**
+ * @typedef {object} StreamingChatCallbacks
+ * @property {(action: ConversationStateAction) => void} [onAgentAction]
+ * @property {(action: ConversationStateAction) => void} [onWorkspaceAction]
+ * @property {() => void} [onToolCreated]
+ * @property {(audio: {key: number, src: string}) => void} [onAudioPlayback]
+ * @property {(result: {ok: boolean, message?: string, status?: number, error?: string}) => void} [onNudgeSent]
+ * @property {(conversation: {conversationId: string, firstMessage: string}) => void} [onConversationStarted]
+ * @property {(conversation: ConversationLoadData) => void} [onConversationLoaded]
+ */
 
 function _uuid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -235,9 +258,11 @@ export function _mergeFileOutputs(uiMessages, events) {
  * Coordinates the active conversation session around the raw envelopes yielded
  * by the chat transport client.
  *
- * Root agent tokens are buffered and flushed into an ordered entries[]
- * array on the assistant message (~60fps via requestAnimationFrame).
- * Sub-agent tokens go to the agent reducer for the network/detail views.
+ * Root agent output updates the open transcript. Agent activity for both the
+ * root and sub-agents is delivered to the agent model in animation-frame
+ * batches for the network and detail views.
+ *
+ * @param {StreamingChatCallbacks} callbacks
  */
 export default function useStreamingChat(callbacks = {}) {
     // ── Unified state for chat rendering ───────────────────────────────
@@ -373,9 +398,10 @@ export default function useStreamingChat(callbacks = {}) {
             attachments: pendingAttachments,
         });
 
-        // IDs for pending animation frame flushes. Declared here so the
-        // finally block can cancel them if the stream errors or aborts.
-        let agentRafId = null;
+        // Created per request because its session actions close over this
+        // turn's assistant placeholder. The finally block cancels it if the
+        // stream errors or aborts.
+        let liveEventDelivery = null;
         try {
             const controller = new AbortController();
             abortControllerRef.current = controller;
@@ -387,31 +413,9 @@ export default function useStreamingChat(callbacks = {}) {
             // rendered identically to the agent activity view.
             const assistantId = placeholderId;
 
-            // ── Activity log buffering ────────────────────────────────
-            // Events arrive faster than React can render. We queue
-            // everything in arrival order and flush once per animation
-            // frame (~60fps). React 18 batches the dispatches into one
-            // render, and the reducer merges consecutive same-type entries.
-            const pendingAgentActions = [];
-
-            const flush = () => {
-                agentRafId = null;
-                for (const action of pendingAgentActions.splice(0)) {
-                    try {
-                        callbacks.onAgentAction?.(action);
-                    } catch {
-                        // One failed reducer dispatch must not drop later
-                        // activity that was already queued.
-                    }
-                }
-            };
-
-            const scheduleFlush = () => {
-                if (agentRafId === null) {
-                    agentRafId = requestAnimationFrame(flush);
-                }
-            };
-
+            // Translate the session handler's commands into this hook's React
+            // state. The event handler does not know about setters or the
+            // assistant placeholder created for this request.
             const sessionActions = {
                 retainEvent: (event) => setEvents((prev) => [...prev, event]),
                 confirmUserMessage: () => setPendingUserPrompt(null),
@@ -436,11 +440,6 @@ export default function useStreamingChat(callbacks = {}) {
                     });
                 },
                 finishTurn: () => {
-                    if (agentRafId !== null) {
-                        cancelAnimationFrame(agentRafId);
-                        agentRafId = null;
-                    }
-                    flush();
                     setMessages((prev) => {
                         const i = prev.length - 1;
                         if (i < 0 || prev[i].id !== assistantId) return prev;
@@ -453,31 +452,12 @@ export default function useStreamingChat(callbacks = {}) {
                 },
             };
 
-            const stateHandlers = {
-                session: (event) => handleSessionEvent(event, sessionActions),
-                agent: (event) => {
-                    const { immediate, ordered } = getAgentEventActions(event);
-                    for (const action of immediate) {
-                        try {
-                            callbacks.onAgentAction?.(action);
-                        } catch {
-                            // Keep later actions and state owners independent.
-                        }
-                    }
-                    if (ordered.length === 0 || !callbacks.onAgentAction) return;
-                    pendingAgentActions.push(...ordered);
-                    scheduleFlush();
-                },
-                workspace: (event) => {
-                    for (const action of getWorkspaceEventActions(event)) {
-                        try {
-                            callbacks.onWorkspaceAction?.(action);
-                        } catch {
-                            // Workspace failures do not affect session or agent state.
-                        }
-                    }
-                },
-            };
+            liveEventDelivery = createLiveEventDelivery({
+                sessionActions,
+                onAgentAction: callbacks.onAgentAction,
+                onWorkspaceAction: callbacks.onWorkspaceAction,
+                oneTimeActions: callbacks,
+            });
 
             for await (const data of streamChatTurn({
                 message,
@@ -489,18 +469,14 @@ export default function useStreamingChat(callbacks = {}) {
                 try {
                     const event = normalizeLiveEvent(data);
                     if (!event) continue;
-                    applyConversationEvent(event, stateHandlers);
-                    try {
-                        runOneTimeEventActions(event, callbacks);
-                    } catch {
-                        // A one-time UI action cannot interrupt event delivery.
-                    }
+                    liveEventDelivery.deliver(event);
                 } catch {
                     // Malformed records must not stop later stream records.
                 }
             }
-            // Stream ended — flush any remaining buffered entries
-            flush();
+            // The transport can close without a turn_end record. Preserve any
+            // agent activity that was still waiting for the next frame.
+            liveEventDelivery.flush();
         } catch (err) {
             if (err.name === 'AbortError') return;
             // Replace the placeholder (or append) with an error message
@@ -521,7 +497,7 @@ export default function useStreamingChat(callbacks = {}) {
                 return [...prev, errorMsg];
             });
         } finally {
-            if (agentRafId !== null) cancelAnimationFrame(agentRafId);
+            liveEventDelivery?.cancel();
             abortControllerRef.current = null;
             setIsStreaming(false);
             setStopRequested(false);
