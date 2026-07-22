@@ -4,6 +4,9 @@ import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
  * Run work that should happen once when a canonical event arrives live.
  *
  * Restoring saved state never calls this function.
+ *
+ * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @param {import('./frontendTypes').OneTimeEventActions} actions
  */
 export function runOneTimeEventActions(event, actions = {}) {
     if (!event?.type) return;

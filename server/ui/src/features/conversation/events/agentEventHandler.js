@@ -1,10 +1,16 @@
 import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
 
+/** @param {import('./conversationEvents.generated').ConversationEvent} event */
 function eventTime(event) {
     const timestamp = Date.parse(event.timestamp);
     return Number.isFinite(timestamp) ? timestamp : Date.now();
 }
 
+/**
+ * @param {string} agentId
+ * @param {import('./frontendTypes').AgentActivityEntry} entry
+ * @returns {import('./frontendTypes').AgentAction}
+ */
 function activityAction(agentId, entry) {
     return { type: 'APPEND_ACTIVITY', agentId, entry };
 }
@@ -14,9 +20,14 @@ function activityAction(agentId, entry) {
  *
  * Immediate actions update lifecycle and context metadata. Ordered actions
  * enter the animation-frame queue so streamed activity retains arrival order.
+ *
+ * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @returns {{immediate: Array<import('./frontendTypes').AgentAction>, ordered: Array<import('./frontendTypes').AgentAction>}}
  */
 export function getAgentEventActions(event) {
+    /** @type {Array<import('./frontendTypes').AgentAction>} */
     const immediate = [];
+    /** @type {Array<import('./frontendTypes').AgentAction>} */
     const ordered = [];
     if (!event?.type) return { immediate, ordered };
 
@@ -31,7 +42,7 @@ export function getAgentEventActions(event) {
                 agentId,
                 agentName: event.agent_name,
                 parentAgentId: event.parent_agent_id || null,
-                instruction: event.instruction,
+                instruction: event.instruction ?? null,
                 correlationId: event.correlation_id || null,
                 timestamp,
             });

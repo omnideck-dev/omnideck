@@ -8,6 +8,9 @@ import { getWorkspaceEventActions } from './workspaceEventHandler.js';
  * Connect canonical live events to the three state owners and the actions that
  * must run only once. Agent text and activity are queued until the next frame
  * so their arrival order is preserved without rendering for every event.
+ *
+ * @param {import('./frontendTypes').LiveEventDeliveryOptions} options
+ * @returns {import('./frontendTypes').LiveEventDelivery}
  */
 export function createLiveEventDelivery({
     sessionActions = {},
@@ -17,7 +20,9 @@ export function createLiveEventDelivery({
     requestFrame = requestAnimationFrame,
     cancelFrame = cancelAnimationFrame,
 } = {}) {
+    /** @type {Array<import('./frontendTypes').AgentAction>} */
     const pendingAgentActions = [];
+    /** @type {number|null} */
     let frameId = null;
 
     const flushAgentActions = () => {
@@ -41,6 +46,7 @@ export function createLiveEventDelivery({
     };
 
     const handlers = {
+        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
         session: (event) => handleSessionEvent(event, {
             ...sessionActions,
             // A completed turn must expose all activity that arrived before it.
@@ -50,6 +56,7 @@ export function createLiveEventDelivery({
                 sessionActions.finishTurn?.();
             },
         }),
+        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
         agent: (event) => {
             const { immediate, ordered } = getAgentEventActions(event);
 
@@ -69,6 +76,7 @@ export function createLiveEventDelivery({
             pendingAgentActions.push(...ordered);
             scheduleAgentFlush();
         },
+        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
         workspace: (event) => {
             for (const action of getWorkspaceEventActions(event)) {
                 try {
@@ -81,6 +89,7 @@ export function createLiveEventDelivery({
     };
 
     return {
+        /** @param {import('./conversationEvents.generated').ConversationEvent} event */
         deliver(event) {
             applyConversationEvent(event, handlers);
             try {
