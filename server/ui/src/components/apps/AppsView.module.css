@@ -47,7 +47,7 @@
     padding: var(--sp-4);
 }
 
-.cardShell { position: relative; }
+.cardContainer { position: relative; }
 
 .card {
     position: relative;

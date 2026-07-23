@@ -27,7 +27,7 @@ import useDesktopDock from './useDesktopDock.jsx';
 import styles from '../../App.module.css';
 
 /** Coordinates desktop destinations without owning feature data. */
-export default function DesktopShell() {
+export default function Desktop() {
     const agentState = useAgentState();
     const { destination } = useDesktopNavigationState();
     const navigation = useDesktopNavigationCommands();
@@ -186,7 +186,7 @@ export default function DesktopShell() {
     };
 
     return (
-        <div className={styles.appShell}>
+        <div className={styles.desktop}>
             <div className={styles.bodyRow}>
                 <Sidebar
                     activePanel={activeSidebarPanel}

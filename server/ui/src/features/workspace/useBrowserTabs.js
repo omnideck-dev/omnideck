@@ -8,7 +8,7 @@ import useBrowserControl from './useBrowserControl.js';
  * list during takeover, falling back to the agent's screenshot-fed list) and
  * the selected-tab state that drives which tab is foregrounded and screencast.
  * Selection feeds back into the control channel, so both live here to keep that
- * loop in one place instead of in the app shell.
+ * loop in one place instead of in the desktop component.
  *
  * Returns the control object, the merged tab list, and the selection state.
  */

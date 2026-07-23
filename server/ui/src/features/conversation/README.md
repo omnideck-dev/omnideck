@@ -45,8 +45,7 @@ root transcript output.
 `AgentProvider` owns the agent graph and activity. `WorkspaceProvider` owns
 browser, terminal, file, generation, desktop, and preview presentation state.
 `DesktopNavigationProvider` owns a serializable destination and named
-navigation commands. `DesktopApp` only assembles these owners and the desktop
-shell.
+navigation commands. `App` assembles setup, these state owners, and `Desktop`.
 
 Live data follows this path:
 
