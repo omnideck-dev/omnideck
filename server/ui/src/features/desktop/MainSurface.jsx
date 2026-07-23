@@ -1,6 +1,5 @@
-import AgentActivityView from '../../components/AgentActivityView.jsx';
-import AgentNetwork from '../../components/AgentNetwork.jsx';
 import ChatPanel from '../../components/ChatPanel.jsx';
+import AgentNetworkView from '../agent/AgentNetworkView.jsx';
 import styles from '../../App.module.css';
 import DesktopDock from './DesktopDock.jsx';
 
@@ -14,7 +13,6 @@ export default function MainSurface({
     preview,
     browser,
     customApps,
-    agentState,
     agentCounts,
     session,
     selectedProfileId,
@@ -23,24 +21,18 @@ export default function MainSurface({
 }) {
     return (
         <>
-            {view === 'network' && !selectedAgentId && (
-                <div className={styles.networkArea}>
-                    <AgentNetwork
-                        onClose={actions.closeNetwork}
-                        onSelectAgent={actions.selectAgent}
-                        agentCount={agentCounts.total}
-                    />
-                </div>
-            )}
-
-            {view === 'network' && selectedAgentId && (
+            {view === 'network' && (
                 <div
-                    className={styles.chatColumn}
-                    style={{ width: dockVisible ? `${dock.splitPosition}%` : '100%' }}
+                    className={selectedAgentId ? styles.chatColumn : styles.networkArea}
+                    style={selectedAgentId
+                        ? { width: dockVisible ? `${dock.splitPosition}%` : '100%' }
+                        : undefined}
                 >
-                    <AgentActivityView
-                        agentId={selectedAgentId}
-                        onBack={actions.openNetwork}
+                    <AgentNetworkView
+                        selectedAgentId={selectedAgentId}
+                        agentCounts={agentCounts}
+                        onClose={actions.closeNetwork}
+                        onOpenOverview={actions.openNetwork}
                         onSelectAgent={actions.selectAgent}
                         onNudge={session.sendNudge}
                         onPreview={actions.openPreview}
@@ -65,7 +57,6 @@ export default function MainSurface({
                     onStop={session.stopGeneration}
                     isStreaming={session.isStreaming}
                     stopRequested={session.stopRequested}
-                    networkActivated={agentState.networkActivated}
                     networkAgentCount={agentCounts.total}
                     networkRunningCount={agentCounts.running}
                     onOpenNetwork={actions.openNetwork}

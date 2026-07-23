@@ -70,7 +70,7 @@ describe('AgentActivityView', () => {
         const { dispatch } = renderView();
         startAgent(dispatch, 'a1', { instruction: 'Go to example.com' });
 
-        expect(screen.getAllByText('Omnideck')).toHaveLength(2); // breadcrumb + title
+        expect(screen.getByText('Omnideck')).toBeInTheDocument();
         expect(screen.getByText('Go to example.com')).toBeInTheDocument();
     });
 

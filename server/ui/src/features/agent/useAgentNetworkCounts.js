@@ -8,6 +8,8 @@ export default function useAgentNetworkCounts() {
     return useMemo(() => {
         let total = 0;
         let running = 0;
+        let complete = 0;
+        let error = 0;
         for (const agent of Object.values(agents)) {
             if (agent.parentId !== null || agent.childIds.length === 0) continue;
             const queue = [agent.id];
@@ -17,9 +19,11 @@ export default function useAgentNetworkCounts() {
                 if (!node) continue;
                 total += 1;
                 if (node.status === 'running') running += 1;
+                else if (node.status === 'success') complete += 1;
+                else if (node.status === 'error') error += 1;
                 queue.push(...node.childIds);
             }
         }
-        return { total, running };
+        return { total, running, complete, error };
     }, [agents]);
 }

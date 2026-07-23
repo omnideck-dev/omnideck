@@ -110,7 +110,7 @@ describe('agent state', () => {
         expect(getState().agents['root-2'].contextUsage).toEqual(second);
     });
 
-    it('builds the agent graph and activates the network for sub-agents', () => {
+    it('builds the agent graph for sub-agents', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(agentStarted('root-1'));
         dispatch(agentStarted('child-1', { name: 'researcher', parentAgentId: 'root-1' }));
@@ -118,7 +118,6 @@ describe('agent state', () => {
         expect(getState().rootId).toBe('root-1');
         expect(getState().agents['root-1'].childIds).toEqual(['child-1']);
         expect(getState().agents['child-1'].parentId).toBe('root-1');
-        expect(getState().networkActivated).toBe(true);
     });
 
     it('follows a new root without resetting network history', () => {
@@ -128,7 +127,7 @@ describe('agent state', () => {
         dispatch(agentStarted('root-2'));
 
         expect(getState().rootId).toBe('root-2');
-        expect(getState().networkActivated).toBe(true);
+        expect(getState().agents['root-1'].childIds).toEqual(['child-1']);
     });
 
     it('records persisted completion time and status', () => {
@@ -157,7 +156,6 @@ describe('agent state', () => {
         expect(getState()).toEqual({
             agents: {},
             rootId: null,
-            networkActivated: false,
         });
     });
 });

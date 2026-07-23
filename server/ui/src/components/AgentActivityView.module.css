@@ -6,31 +6,6 @@
     flex: 1;
 }
 
-/* Crumb bar — own row, sits at the very top of the view */
-.crumbBar {
-    height: var(--header-height);
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: 0 var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    letter-spacing: 0.02em;
-}
-
-.breadcrumb {
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    letter-spacing: 0.04em;
-}
-.breadcrumbCurrent {
-    color: var(--text-secondary);
-}
-
 /* Agent name row — status dot + name in brand mono + meta in code mono */
 .agentBar {
     padding: var(--sp-3) var(--sp-4);
