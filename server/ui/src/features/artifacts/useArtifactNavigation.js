@@ -21,7 +21,7 @@ export default function useArtifactNavigation({
                 return response.json();
             })
             .then((artifact) => {
-                navigation.openChat(destination.conversationId, { replace: true });
+                navigation.openChat(destination.conversationId);
                 openWorkspacePreview({
                     filename: artifact.filename,
                     content_type: artifact.content_type,
@@ -31,7 +31,7 @@ export default function useArtifactNavigation({
             .catch((error) => {
                 if (error.name === 'AbortError') return;
                 onError();
-                navigation.openChat(destination.conversationId, { replace: true });
+                navigation.openChat(destination.conversationId);
             });
         return () => controller.abort();
     }, [destination, navigation, onError, openWorkspacePreview]);

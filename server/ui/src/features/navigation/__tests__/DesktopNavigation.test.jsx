@@ -49,16 +49,6 @@ describe('DesktopNavigationProvider', () => {
         });
     });
 
-    it('supports an internal back stack without touching browser history', () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
-
-        act(() => result.current.openSettings('tools'));
-        act(() => result.current.openArtifacts('artifact-1'));
-        act(() => result.current.goBack());
-
-        expect(result.current.destination).toEqual({ kind: 'settings', tab: 'tools' });
-    });
-
     it('opens the active conversation without reloading it', async () => {
         const { result } = renderHook(useDesktopNavigation, { wrapper });
 

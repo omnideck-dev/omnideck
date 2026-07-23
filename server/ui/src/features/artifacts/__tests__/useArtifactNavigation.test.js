@@ -63,7 +63,7 @@ describe('useArtifactNavigation', () => {
         expect(globalThis.fetch).toHaveBeenCalledWith('/api/artifacts/artifact-1', {
             signal: expect.any(AbortSignal),
         });
-        expect(navigation.openChat).toHaveBeenCalledWith('conversation-2', { replace: true });
+        expect(navigation.openChat).toHaveBeenCalledWith('conversation-2');
         expect(globalThis.fetch).not.toHaveBeenCalledWith(
             expect.stringContaining('preview-state'),
             expect.anything(),
