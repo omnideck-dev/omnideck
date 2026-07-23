@@ -13,7 +13,6 @@ import { createContext, useContext, useReducer } from 'react';
 const _INITIAL_STATE = {
     agents: {},             // all agent nodes, keyed by ID
     rootId: null,           // the top-level agent
-    networkActivated: false, // true once any sub-agent appears; stays true for the conversation
 };
 
 /**
@@ -84,9 +83,6 @@ function _agentReducer(state, action) {
                 // Each turn creates a fresh root span with a new ID, so the
                 // simple chat view needs to follow the latest one.
                 rootId: parentAgentId ? state.rootId : agentId,
-                // Once a sub-agent appears, network view stays active for the
-                // rest of the conversation. Only RESET clears this.
-                networkActivated: state.networkActivated || !!parentAgentId,
             };
         }
 

@@ -54,12 +54,12 @@ describe('ChatPanel title bar', () => {
         expect(screen.getByTestId('chat-turns')).toHaveTextContent('1 turn');
     });
 
-    it('shows the network indicator only once the network is activated', () => {
-        renderPanel({ networkActivated: false });
+    it('shows the network indicator only when the conversation has an agent network', () => {
+        renderPanel({ networkAgentCount: 0 });
         expect(screen.queryByTestId('network-indicator')).not.toBeInTheDocument();
         render(
             <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
-                networkActivated networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
+                networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
         );
         expect(screen.getByTestId('network-indicator')).toHaveTextContent('3 agents');
     });

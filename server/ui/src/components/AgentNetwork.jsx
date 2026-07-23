@@ -1,6 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import AgentCard from './AgentCard.jsx';
-import BackButton from './BackButton.jsx';
 import { useAgentState } from '../features/agent/AgentState.jsx';
 import { useWorkspaceState } from '../features/workspace/WorkspaceState.jsx';
 import styles from './AgentNetwork.module.css';
@@ -79,7 +78,7 @@ function _drawConnectors(containerEl, svgEl, agents) {
  * The tree layout and line drawing only recalculate when agents are
  * added/removed. A 1-second timer updates elapsed times on running cards.
  */
-export default function AgentNetwork({ onClose, onSelectAgent, agentCount: agentCountProp }) {
+export default function AgentNetwork({ onSelectAgent, runningCount = 0 }) {
     const { agents } = useAgentState();
     const { byAgentId: workspaces } = useWorkspaceState();
     const containerRef = useRef(null);
@@ -114,21 +113,6 @@ export default function AgentNetwork({ onClose, onSelectAgent, agentCount: agent
 
     // Build per-root trees for layout (memoized on topology)
     const trees = useMemo(() => _buildTrees(agents), [topoKey]); // eslint-disable-line react-hooks/exhaustive-deps
-    // Count only agents visible in the rendered trees (not childless roots
-    // from past turns, which are filtered out of the graph).
-    const { agentCount, runningCount, completeCount, errorCount } = useMemo(() => {
-        const visibleIds = new Set(trees.flat(2));
-        let running = 0, complete = 0, error = 0;
-        for (const id of visibleIds) {
-            const a = agents[id];
-            if (!a) continue;
-            if (a.status === 'running') running++;
-            else if (a.status === 'success') complete++;
-            else if (a.status === 'error') error++;
-        }
-        return { agentCount: visibleIds.size, runningCount: running, completeCount: complete, errorCount: error };
-    }, [trees, agents]);
-
     // Update elapsed time every second for running agents
     useEffect(() => {
         if (runningCount === 0) return;
@@ -136,35 +120,8 @@ export default function AgentNetwork({ onClose, onSelectAgent, agentCount: agent
         return () => clearInterval(id);
     }, [runningCount]);
 
-    const displayCount = agentCountProp != null ? agentCountProp : agentCount;
-
     return (
         <div className={styles.container} data-testid="agent-network">
-            <div className={styles.header}>
-                {onClose && <BackButton label="Chat" onClick={onClose} />}
-                <h2 className={styles.title}>Agent Network</h2>
-                <span className={styles.count}>{displayCount} agent{displayCount !== 1 ? 's' : ''}</span>
-                <div className={styles.legend}>
-                    {runningCount > 0 && (
-                        <span className={styles.legendItem}>
-                            <span className={`${styles.legendDot} ${styles.running}`} />
-                            running
-                        </span>
-                    )}
-                    {completeCount > 0 && (
-                        <span className={styles.legendItem}>
-                            <span className={`${styles.legendDot} ${styles.success}`} />
-                            complete
-                        </span>
-                    )}
-                    {errorCount > 0 && (
-                        <span className={styles.legendItem}>
-                            <span className={`${styles.legendDot} ${styles.error}`} />
-                            error
-                        </span>
-                    )}
-                </div>
-            </div>
             <div className={styles.graphArea}>
                 <div className={styles.graphContent} ref={containerRef}>
                     <svg className={styles.connectors} ref={svgRef} />

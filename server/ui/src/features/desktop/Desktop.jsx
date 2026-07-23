@@ -6,7 +6,6 @@ import {
 import { useAppData } from '../../contexts/AppData.jsx';
 import Sidebar from '../../components/Sidebar.jsx';
 import { useToast } from '../../components/ToastProvider.jsx';
-import { useAgentState } from '../agent/AgentState.jsx';
 import useAgentNetworkCounts from '../agent/useAgentNetworkCounts.js';
 import { useAppSettings } from '../app/AppSettings.jsx';
 import useArtifactNavigation from '../artifacts/useArtifactNavigation.js';
@@ -28,7 +27,6 @@ import styles from '../../App.module.css';
 
 /** Coordinates desktop destinations without owning feature data. */
 export default function Desktop() {
-    const agentState = useAgentState();
     const { destination } = useDesktopNavigationState();
     const navigation = useDesktopNavigationCommands();
     const view = destination.kind;
@@ -226,7 +224,6 @@ export default function Desktop() {
                         preview={preview}
                         browser={browser}
                         customApps={customApps}
-                        agentState={agentState}
                         agentCounts={agentCounts}
                         session={{
                             turns,

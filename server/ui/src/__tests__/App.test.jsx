@@ -9,13 +9,13 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQ
 // We only care about which panels / views are mounted, not their internals.
 
 vi.mock('../components/ChatPanel.jsx', () => ({
-    default: ({ turns, isStreaming, networkActivated, networkAgentCount, onOpenNetwork, draft }) => (
+    default: ({ turns, isStreaming, networkAgentCount, onOpenNetwork, draft }) => (
         <div data-testid="chat-panel">
             Chat
             <span data-testid="chat-messages">{turns?.length || 0} messages</span>
             <span data-testid="chat-streaming">{isStreaming ? 'streaming' : 'idle'}</span>
             <span data-testid="chat-draft">{draft}</span>
-            {networkActivated && (
+            {networkAgentCount > 0 && (
                 <button data-testid="network-indicator" onClick={onOpenNetwork}>
                     {networkAgentCount} agents
                 </button>
@@ -48,21 +48,22 @@ vi.mock('../components/GenerationPreview.jsx', () => ({
         : null,
 }));
 
-vi.mock('../components/AgentNetwork.jsx', () => ({
-    default: ({ onClose, onSelectAgent }) => (
+vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
+    default: ({
+        selectedAgentId,
+        onClose,
+        onOpenOverview,
+        onSelectAgent,
+    }) => selectedAgentId ? (
+        <div data-testid="agent-activity-view">
+            Activity View
+            <button data-testid="activity-back" onClick={onOpenOverview}>Back</button>
+        </div>
+    ) : (
         <div data-testid="agent-network">
             Network Graph
             <button data-testid="network-select-agent" onClick={() => onSelectAgent('s1')}>Select</button>
-            {onClose && <button data-testid="network-close" onClick={onClose}>Close</button>}
-        </div>
-    ),
-}));
-
-vi.mock('../components/AgentActivityView.jsx', () => ({
-    default: ({ onBack }) => (
-        <div data-testid="agent-activity-view">
-            Activity View
-            <button data-testid="activity-back" onClick={onBack}>Back</button>
+            <button data-testid="network-close" onClick={onClose}>Close</button>
         </div>
     ),
 }));
