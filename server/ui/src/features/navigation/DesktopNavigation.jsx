@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useReducer } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import {
     useConversationSessionCommands,
     useConversationSessionState,
@@ -11,51 +11,27 @@ function sameDestination(left, right) {
         && leftKeys.every((key) => left[key] === right[key]);
 }
 
-function reducer(state, action) {
-    switch (action.type) {
-        case 'OPEN':
-            if (sameDestination(state.destination, action.destination)) return state;
-            return {
-                destination: action.destination,
-                backStack: action.replace
-                    ? state.backStack
-                    : [...state.backStack, state.destination],
-            };
-        case 'BACK':
-            if (state.backStack.length === 0) {
-                return { ...state, destination: action.fallback };
-            }
-            return {
-                destination: state.backStack[state.backStack.length - 1],
-                backStack: state.backStack.slice(0, -1),
-            };
-        case 'RESET':
-            return {
-                destination: action.destination,
-                backStack: [],
-            };
-        default:
-            return state;
-    }
-}
-
 const DesktopNavigationStateContext = createContext(null);
 const DesktopNavigationCommandsContext = createContext(null);
 
 export function DesktopNavigationProvider({ children }) {
     const { activeConversationId } = useConversationSessionState();
     const { loadConversation } = useConversationSessionCommands();
-    const [state, dispatch] = useReducer(reducer, activeConversationId, (conversationId) => ({
-        destination: { kind: 'chat', conversationId: conversationId || null },
-        backStack: [],
+    const [destination, setDestination] = useState(() => ({
+        kind: 'chat',
+        conversationId: activeConversationId || null,
     }));
 
-    const open = useCallback((destination, options = {}) => {
-        dispatch({ type: 'OPEN', destination, replace: !!options.replace });
+    const open = useCallback((nextDestination) => {
+        setDestination((currentDestination) => (
+            sameDestination(currentDestination, nextDestination)
+                ? currentDestination
+                : nextDestination
+        ));
     }, []);
 
-    const openChat = useCallback((conversationId = activeConversationId, options) => {
-        open({ kind: 'chat', conversationId: conversationId || null }, options);
+    const openChat = useCallback((conversationId = activeConversationId) => {
+        open({ kind: 'chat', conversationId: conversationId || null });
     }, [activeConversationId, open]);
     const openNetwork = useCallback((agentId = null) => {
         open({ kind: 'network', conversationId: activeConversationId || null, agentId });
@@ -87,23 +63,9 @@ export function DesktopNavigationProvider({ children }) {
             kind: 'chat',
             conversationId,
             ...(artifactId ? { artifactId } : {}),
-        }, { replace: false });
+        });
         return true;
     }, [activeConversationId, loadConversation, open]);
-
-    const goBack = useCallback(() => {
-        dispatch({
-            type: 'BACK',
-            fallback: { kind: 'chat', conversationId: activeConversationId || null },
-        });
-    }, [activeConversationId]);
-
-    const resetToChat = useCallback((conversationId = activeConversationId) => {
-        dispatch({
-            type: 'RESET',
-            destination: { kind: 'chat', conversationId: conversationId || null },
-        });
-    }, [activeConversationId]);
 
     const commands = useMemo(() => ({
         openChat,
@@ -117,10 +79,7 @@ export function DesktopNavigationProvider({ children }) {
         openApps,
         openHome,
         openCustomApp,
-        goBack,
-        resetToChat,
     }), [
-        goBack,
         openAgent,
         openAgents,
         openApps,
@@ -132,8 +91,8 @@ export function DesktopNavigationProvider({ children }) {
         openRoutines,
         openSettings,
         openCustomApp,
-        resetToChat,
     ]);
+    const state = useMemo(() => ({ destination }), [destination]);
 
     return (
         <DesktopNavigationStateContext.Provider value={state}>

@@ -105,7 +105,7 @@ export default function DesktopShell() {
 
     const newConversation = useCallback(async (options) => {
         const conversationId = await startNewConversation(options);
-        navigation.resetToChat(conversationId);
+        navigation.openChat(conversationId);
         if (customApps.isOpen) dock.showCustomApp(customApps.openApp.slug);
         return conversationId;
     }, [customApps.isOpen, customApps.openApp, dock.showCustomApp, navigation, startNewConversation]);
