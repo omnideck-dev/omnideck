@@ -2,8 +2,8 @@ import SetupWizard from '../../components/SetupWizard.jsx';
 import { useAppData } from '../../contexts/AppData.jsx';
 import { useAppSettings } from './AppSettings.jsx';
 
-/** Holds the setup gate outside the desktop shell. */
-export default function AppBootstrap({ children }) {
+/** Shows setup until the application has the state needed to open the desktop. */
+export default function SetupGate({ children }) {
     const { profilesHook } = useAppData();
     const { setupComplete, finishSetup } = useAppSettings();
 

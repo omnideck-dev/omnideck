@@ -90,7 +90,7 @@
 
 /* ── New multi-agent layout ───────────────────────────────────── */
 
-.appShell {
+.desktop {
     display: flex;
     flex-direction: column;
     height: 100vh;

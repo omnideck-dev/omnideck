@@ -6,7 +6,7 @@ import { AgentProvider } from '../agent/AgentState.jsx';
 import { CustomToolsCatalogProvider } from '../customTools/CustomToolsCatalog.jsx';
 import { CustomAppsProvider } from '../customApps/CustomApps.jsx';
 
-export default function AppProviders({ children }) {
+export default function AppStateProviders({ children }) {
     return (
         <AgentProvider>
             <WorkspaceProvider>

@@ -1,9 +1,16 @@
-import DesktopApp from './DesktopApp.jsx';
+import AppStateProviders from './features/app/AppStateProviders.jsx';
+import SetupGate from './features/app/SetupGate.jsx';
+import { AppSettingsProvider } from './features/app/AppSettings.jsx';
+import Desktop from './features/desktop/Desktop.jsx';
 
-// Theme now lives in <ThemeProvider> at the app root; the shell just renders
-// the desktop layout.
-function App() {
-    return <DesktopApp />;
+export default function App() {
+    return (
+        <AppSettingsProvider>
+            <SetupGate>
+                <AppStateProviders>
+                    <Desktop />
+                </AppStateProviders>
+            </SetupGate>
+        </AppSettingsProvider>
+    );
 }
-
-export default App;

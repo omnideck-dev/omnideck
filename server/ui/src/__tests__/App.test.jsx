@@ -228,7 +228,7 @@ vi.mock('../components/ToastProvider.jsx', () => ({
 
 // ── Import after mocks ──────────────────────────────────────────────
 // Dynamic import so vi.mock calls are hoisted before it runs.
-const { default: DesktopApp } = await import('../DesktopApp.jsx');
+const { default: App } = await import('../App.jsx');
 
 let capturedDispatch = null;
 let capturedWorkspaceDispatch = null;
@@ -265,7 +265,7 @@ async function renderApp() {
     await act(async () => {
         result = render(
             <AppDataProvider>
-                <DesktopApp />
+                <App />
             </AppDataProvider>,
         );
     });
@@ -311,12 +311,12 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
 
 // ─────────────────────────────────────────────────────────────────────
 
-describe('DesktopApp view transitions', () => {
+describe('App view transitions', () => {
     beforeEach(() => {
         capturedDispatch = null;
         capturedWorkspaceDispatch = null;
         streamMock.value = streamMock.makeDefault();
-        // Mock the fetches DesktopApp's children make on mount so the setup
+        // Mock the fetches App's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
             if (url === '/api/settings') {
@@ -865,7 +865,7 @@ describe('DesktopApp view transitions', () => {
                 ...streamMock.makeDefault(),
                 isStreaming: true,
                 // Events-first chat renders from `turns` (not `messages`),
-                // which is what DesktopApp passes to ChatPanel.
+                // which is what Desktop passes to ChatPanel.
                 turns: [{ id: 't1' }, { id: 't2' }],
                 stopGeneration,
             };

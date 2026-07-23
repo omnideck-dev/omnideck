@@ -36,7 +36,7 @@ export default function AppsView({
                 {apps.length > 0 && (
                     <div className={styles.grid}>
                         {apps.map((app) => (
-                            <div key={app.slug} className={styles.cardShell}>
+                            <div key={app.slug} className={styles.cardContainer}>
                                 <button
                                     type="button"
                                     className={styles.card}
