@@ -3,8 +3,9 @@
 # Dev model:
 #   - `just build` builds the container image from the current source.
 #     Rebuild only when container/Dockerfile or baked-in deps change.
-#   - `just dev` starts a long-running dev container, syncs source into it,
-#     builds the UI, and launches the app. State lives at ~/.omnideck/.
+#   - `just dev` starts a long-running dev container, syncs and reinstalls the
+#     Python source, builds the UI, and launches the app. State lives at
+#     ~/.omnideck/.
 #   - `just restart-app` / `just rebuild-ui` sync the latest source and
 #     bounce the relevant bit. No bind mount on /opt/omnideck — the
 #     container can't write into your repo.
@@ -148,6 +149,7 @@ dev:
         echo "ℹ️  Container already running"
     fi
     just _sync-src {{_ctr}}
+    just _install-python {{_ctr}}
     just _ui-build {{_ctr}}
     just _bounce-services {{_ctr}}
     just _wait-ready 8080
@@ -159,6 +161,7 @@ restart-app:
     set -euo pipefail
     just _require-running
     just _sync-src {{_ctr}}
+    just _install-python {{_ctr}}
     just _bounce-services {{_ctr}}
     just _wait-ready 8080
     echo "✅ App restarted"
@@ -200,7 +203,7 @@ unit:
 
 # Run browser-tools tests (real headless Chrome against local fixture pages)
 test-browser-tools *args:
-    PYTHONPATH=. uv run pytest tests/browser_tools/ {{args}}
+    PYTHONPATH=. uv run pytest tests/browser_tools/ -n 4 {{args}}
 
 # Run tests matching a specific file or path
 test-file file:
@@ -438,6 +441,12 @@ _sync-src ctr:
         --exclude='test-results' \
         -cf - . | docker exec -i {{ctr}} tar -xf - -C /opt/omnideck
     @echo "📦 Source synced into {{ctr}}"
+
+# Refresh the editable install after source sync so newly added top-level
+# packages and pyproject changes are immediately importable in isolated Python.
+_install-python ctr:
+    @docker exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
+    @echo "🐍 Python package refreshed in {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container
 # image ships no Node, so the build happens here and only the static assets are

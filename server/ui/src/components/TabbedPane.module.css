@@ -1,4 +1,4 @@
-.previewPanel {
+.tabbedPane {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -29,6 +29,13 @@
 
 .tabList::-webkit-scrollbar {
     display: none; /* Chrome, Safari, Opera */
+}
+
+.tabActions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding-right: 8px;
 }
 
 /* Individual tab */

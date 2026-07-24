@@ -33,6 +33,7 @@ test = [
     "pytest-aiohttp",
     "pytest-watch",
     "pytest-playwright",
+    "pytest-xdist",
 ]
 dev = [
     "ruff",
@@ -152,6 +153,7 @@ include = [
     "config*",
     "migrations*",
     "models*",
+    "custom_apps*",
     "repls*",
     "server*",
     "tasks*",

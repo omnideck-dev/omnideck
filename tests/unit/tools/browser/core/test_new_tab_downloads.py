@@ -1,4 +1,9 @@
-"""Tests for detecting file downloads in popup / target=_blank tabs."""
+"""Downloads and ordinary pages that arrive in a tab the site opened.
+
+A click can open a tab (``target="_blank"``, ``window.open``).  What lands in
+it is either a file, which is a download, or an ordinary page, which is simply
+where the agent now is.
+"""
 
 from __future__ import annotations
 
@@ -31,6 +36,9 @@ class FakePage(EventEmitterStub):
     def is_closed(self) -> bool:
         return self._closed
 
+    async def close(self) -> None:
+        self._closed = True
+
     async def set_viewport_size(self, size: dict[str, int]) -> None:
         return None
 
@@ -51,8 +59,8 @@ class FakeContext(EventEmitterStub):
         self.emit("page", page)
         return page
 
-    def add_popup(self, page: FakePage) -> None:
-        """Simulate a popup page being created by a click (target=_blank)."""
+    def open_tab(self, page: FakePage) -> None:
+        """Simulate a click opening a tab (target=_blank)."""
         self.pages.append(page)
         self.emit("page", page)
 
@@ -78,18 +86,18 @@ def _fake_response(
 
 @pytest.mark.unit
 class TestContextPageHandler:
-    """Verify that popup pages get download listeners immediately."""
+    """Verify that tabs the site opens get download listeners immediately."""
 
-    def test_popup_gets_download_listener(self) -> None:
-        """A page created by a popup should have a download listener attached."""
+    def test_new_tab_gets_download_listener(self) -> None:
+        """A tab opened by a click should have a download listener attached."""
         ctx = FakeContext([FakePage()])
         browser = _make_browser(ctx)
 
-        popup = FakePage(url="https://example.com/file.pdf")
-        ctx.add_popup(popup)
+        new_page = FakePage(url="https://example.com/file.pdf")
+        ctx.open_tab(new_page)
 
         # The download listener registers the page id in the tracking set
-        assert id(popup) in browser._download_listener_pages
+        assert id(new_page) in browser._download_listener_pages
 
     def test_existing_pages_not_auto_attached(self) -> None:
         """Pages that existed before Browser init don't get auto-attached."""
@@ -109,7 +117,7 @@ class TestContextPageHandler:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestPerformInteractionPopup:
+class TestPerformInteractionNewTab:
     """Verify that perform_interaction detects files opened in new tabs."""
 
     async def test_pdf_in_new_tab_detected_via_response(self) -> None:
@@ -124,7 +132,7 @@ class TestPerformInteractionPopup:
         # The action simulates a click that opens a new tab.
         # The new page fires a document response with application/pdf.
         async def fake_click() -> None:
-            ctx.add_popup(new_page)
+            ctx.open_tab(new_page)
             # Simulate the new page firing a response event
             new_page.emit("response", pdf_response)
 
@@ -139,7 +147,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         assert finalize_args["page"] is new_page
         assert finalize_args["response"] is pdf_response
@@ -160,7 +168,7 @@ class TestPerformInteractionPopup:
         )
 
         async def fake_click() -> None:
-            ctx.add_popup(new_page)
+            ctx.open_tab(new_page)
             # Simulate a download being captured (as --disable-pdf-viewer does)
             browser._pending_downloads.append(download_info)
 
@@ -174,7 +182,7 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # Should switch to the new page since a download was detected
         assert finalize_args["page"] is new_page
@@ -189,7 +197,7 @@ class TestPerformInteractionPopup:
         new_page = FakePage(url="https://example.com/other")
 
         async def fake_click() -> None:
-            ctx.add_popup(new_page)
+            ctx.open_tab(new_page)
             new_page.emit("response", html_response)
 
         finalize_args: dict[str, Any] = {}
@@ -202,14 +210,83 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # New tab with an HTML response should also be detected
         assert finalize_args["page"] is new_page
         assert finalize_args["response"] is html_response
 
+    async def test_html_in_new_tab_switches_even_with_no_response(self) -> None:
+        """A new tab whose document response was never seen is still where the agent is.
+
+        The listener attaches when the tab is created, so a response that lands
+        outside that window is missed.  That is the case that used to fall back to
+        the page the click started from, leaving the agent staring at an unchanged
+        snapshot while the real content sat in a tab it was never told about.
+        """
+        old_page = FakePage(url="https://example.com")
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx)
+
+        new_page = FakePage(url="https://example.com/other")
+
+        async def fake_click() -> None:
+            ctx.open_tab(new_page)  # no response ever emitted
+
+        finalize_args: dict[str, Any] = {}
+
+        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
+            finalize_args["page"] = page
+            return BrowserInteractionResult()
+
+        probe = AsyncMock(return_value=None)
+        with (
+            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
+            patch.object(browser, "_probe_file_url", probe),
+        ):
+            await browser.perform_interaction(fake_click, source_page=old_page)
+
+        # Probed for a file, found none, and stayed on the new tab regardless.
+        probe.assert_awaited_once()
+        assert finalize_args["page"] is new_page
+
+    async def test_download_in_new_tab_returns_the_agent_to_the_source(self) -> None:
+        """A file downloaded in a new tab closes it and hands the agent back."""
+        old_page = FakePage(url="https://example.com")
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx)
+
+        new_page = FakePage(url="https://example.com/report.pdf")
+        pdf_response = _fake_response(content_type="application/pdf")
+
+        async def fake_click() -> None:
+            ctx.open_tab(new_page)
+            new_page.emit("response", pdf_response)
+
+        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
+            result = BrowserInteractionResult(
+                download=DownloadInfo(
+                    path="/tmp/report.pdf",
+                    content_type="application/pdf",
+                    size_bytes=1024,
+                    filename="report.pdf",
+                ),
+            )
+            # What the real _finalize_action records: the tab it settled on.
+            result.settled_page = page
+            return result
+
+        with patch.object(browser, "_finalize_action", side_effect=capture_finalize):
+            result = await browser.perform_interaction(fake_click, source_page=old_page)
+
+        # The new tab was the settled tab, but a download closes it.  The result has
+        # to name the tab the agent is actually on now, or the snapshot and the
+        # screenshot would both chase a dead tab.
+        assert new_page.is_closed()
+        assert result.settled_page is old_page
+
     async def test_no_new_tab_uses_original_page(self) -> None:
-        """Normal click without a popup stays on the original page."""
+        """A click that opens no tab stays on the original page."""
         old_page = FakePage(url="https://example.com")
         ctx = FakeContext([old_page])
         browser = _make_browser(ctx)
@@ -232,13 +309,13 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         assert finalize_args["page"] is old_page
         assert finalize_args["response"] is same_page_response
 
     async def test_new_tab_about_blank_stays_on_original(self) -> None:
-        """Popup to about:blank with no response stays on the original page."""
+        """A new tab left at about:blank with no response stays on the original page."""
         old_page = FakePage(url="https://example.com")
         ctx = FakeContext([old_page])
         browser = _make_browser(ctx)
@@ -246,8 +323,8 @@ class TestPerformInteractionPopup:
         blank_page = FakePage(url="about:blank")
 
         async def fake_click() -> None:
-            ctx.add_popup(blank_page)
-            # No response, no download — just an empty popup
+            ctx.open_tab(blank_page)
+            # No response, no download — just an empty tab
 
         finalize_args: dict[str, Any] = {}
 
@@ -258,9 +335,9 @@ class TestPerformInteractionPopup:
         with (
             patch.object(browser, "_finalize_action", side_effect=capture_finalize),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
-        # No response or download on blank popup → stay on original page
+        # No response or download on a blank tab → stay on the original page
         assert finalize_args["page"] is old_page
 
     async def test_response_listeners_cleaned_up(self) -> None:
@@ -273,13 +350,13 @@ class TestPerformInteractionPopup:
         pdf_response = _fake_response(content_type="application/pdf")
 
         async def fake_click() -> None:
-            ctx.add_popup(new_page)
+            ctx.open_tab(new_page)
             new_page.emit("response", pdf_response)
 
         with (
             patch.object(browser, "_finalize_action", return_value=BrowserInteractionResult()),
         ):
-            await browser.perform_interaction(fake_click, page=old_page)
+            await browser.perform_interaction(fake_click, source_page=old_page)
 
         # The response listener should have been removed from the new page
         assert not new_page._listeners.get("response", [])

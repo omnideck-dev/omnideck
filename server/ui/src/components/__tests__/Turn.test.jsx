@@ -361,7 +361,7 @@ describe('Turn with mid-turn compaction', () => {
     it('lands the chip at the start of a turn when keptFromId is the first iteration', () => {
         // Common case: keep_recent_groups=2 with exactly 2 past
         // iterations of the current turn → keptFromId points at the
-        // first iteration, _buildTurns emits compaction before iter1.
+        // first iteration, projectTurns emits compaction before iter1.
         const turn = _t([
             { kind: 'user_prompt', id: 'u', content: 'go', attachments: [], isNudge: false },
             { kind: 'compaction', id: 'c1', summaryText: 'prior turns summarized', userIntentSummary: '', stats: null, timestamp: '2026-01-01T00:00:00' },

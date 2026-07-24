@@ -1,4 +1,4 @@
-import { render as _render, screen } from '@testing-library/react';
+import { cleanup, render as _render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
@@ -105,6 +105,30 @@ describe('Sidebar', () => {
         expect(screen.getByText('Agents')).toBeInTheDocument();
         await user.click(screen.getByTestId('sidebar-nav-agents'));
         expect(onPanelToggle).toHaveBeenCalledWith('agents');
+    });
+
+    it('shows the Apps panel only when Custom Apps are enabled', async () => {
+        const user = userEvent.setup();
+        const hidden = setup();
+        expect(screen.queryByTestId('sidebar-nav-apps')).not.toBeInTheDocument();
+        expect(hidden.onPanelToggle).not.toHaveBeenCalled();
+
+        cleanup();
+        const { onPanelToggle } = setup({ customAppsEnabled: true });
+        expect(screen.getByText('Custom Apps')).toBeInTheDocument();
+        await user.click(screen.getByTestId('sidebar-nav-apps'));
+        expect(onPanelToggle).toHaveBeenCalledWith('apps');
+    });
+
+    it('shows Home only when a custom app is docked', async () => {
+        const user = userEvent.setup();
+        setup({ customAppsEnabled: true });
+        expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
+
+        cleanup();
+        const { onPanelToggle } = setup({ customAppsEnabled: true, homeAppEnabled: true });
+        await user.click(screen.getByTestId('sidebar-nav-home'));
+        expect(onPanelToggle).toHaveBeenCalledWith('home');
     });
 
     it('opens settings from the footer', async () => {

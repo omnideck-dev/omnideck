@@ -12,7 +12,8 @@ from integrations.brokers.google_workspace_broker._gmail_client import (
     _extract_text_body,
     _list_attachments,
 )
-from integrations.brokers.google_workspace_broker._verbs import _flatten_contact, _flatten_event
+from integrations.brokers.google_workspace_broker._verbs import _flatten_contact, _wire_event
+from integrations.calendar_refs import decode_event_ref, decode_series_ref
 
 
 @pytest.mark.unit
@@ -25,13 +26,18 @@ def test_flatten_timed_event() -> None:
         "end": {"dateTime": "2026-05-05T09:15:00-04:00", "timeZone": "America/New_York"},
         "location": "Zoom",
     }
-    assert _flatten_event(raw) == {
-        "uid": "abc123",
+    event = _wire_event(raw, "primary")
+    assert event == {
+        "event_ref": event["event_ref"],
         "summary": "Standup",
         "start": "2026-05-05T09:00:00-04:00",
         "end": "2026-05-05T09:15:00-04:00",
         "location": "Zoom",
+        "description": "",
+        "is_recurring": False,
     }
+    target = decode_event_ref(event["event_ref"], provider="google")
+    assert (target.calendar_ref, target.event_id) == ("primary", "abc123")
 
 
 @pytest.mark.unit
@@ -43,24 +49,30 @@ def test_flatten_all_day_event() -> None:
         "start": {"date": "2026-05-25"},
         "end": {"date": "2026-05-26"},
     }
-    assert _flatten_event(raw) == {
-        "uid": "def456",
+    event = _wire_event(raw, "primary")
+    assert event == {
+        "event_ref": event["event_ref"],
         "summary": "Company Holiday",
         "start": "2026-05-25",
         "end": "2026-05-26",
         "location": "",
+        "description": "",
+        "is_recurring": False,
     }
 
 
 @pytest.mark.unit
 def test_flatten_minimal_event() -> None:
     """An event missing most fields still produces a complete dict."""
-    assert _flatten_event({"id": "x"}) == {
-        "uid": "x",
+    event = _wire_event({"id": "x"}, "primary")
+    assert event == {
+        "event_ref": event["event_ref"],
         "summary": "",
         "start": "",
         "end": "",
         "location": "",
+        "description": "",
+        "is_recurring": False,
     }
 
 
@@ -73,9 +85,30 @@ def test_flatten_prefers_datetime_over_date() -> None:
         "start": {"dateTime": "2026-05-05T10:00:00Z", "date": "2026-05-05"},
         "end": {"dateTime": "2026-05-05T11:00:00Z", "date": "2026-05-05"},
     }
-    flat = _flatten_event(raw)
+    flat = _wire_event(raw, "primary")
     assert flat["start"] == "2026-05-05T10:00:00Z"
     assert flat["end"] == "2026-05-05T11:00:00Z"
+
+
+@pytest.mark.unit
+def test_wire_recurring_occurrence_has_exact_and_series_refs() -> None:
+    raw = {
+        "id": "occurrence-123",
+        "recurringEventId": "series-456",
+        "summary": "Weekly sync",
+        "start": {"dateTime": "2026-05-05T10:00:00Z"},
+        "end": {"dateTime": "2026-05-05T11:00:00Z"},
+        "originalStartTime": {"dateTime": "2026-05-05T10:00:00Z"},
+    }
+
+    event = _wire_event(raw, "work@example.com")
+
+    exact = decode_event_ref(event["event_ref"], provider="google")
+    series = decode_series_ref(event["series_ref"], provider="google")
+    assert event["is_recurring"] is True
+    assert exact.event_id == "occurrence-123"
+    assert series.event_id == "series-456"
+    assert exact.calendar_ref == series.calendar_ref == "work@example.com"
 
 
 # ── Gmail helpers ──────────────────────────────────────────────────────────

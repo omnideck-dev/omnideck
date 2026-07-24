@@ -13,8 +13,8 @@ const AppDataContext = createContext(null);
 
 export function AppDataProvider({ children }) {
     const profilesHook = useAgentProfiles();
-    const features = useFeatures();
-    const value = { profilesHook, features };
+    const { features, refresh: refreshFeatures } = useFeatures();
+    const value = { profilesHook, features, refreshFeatures };
     return (
         <AppDataContext.Provider value={value}>
             {children}
@@ -22,7 +22,7 @@ export function AppDataProvider({ children }) {
     );
 }
 
-/** Returns ``{profilesHook, features}``. Throws if used outside the provider. */
+/** Returns shared profile and feature state. Throws if used outside the provider. */
 export function useAppData() {
     const value = useContext(AppDataContext);
     if (value === null) {

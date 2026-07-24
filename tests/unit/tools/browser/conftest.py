@@ -54,7 +54,7 @@ class _SimpleBrowser:
         async def _back() -> None:
             await page.go_back(wait_until="domcontentloaded")
 
-        return await self.perform_interaction(_back, page=page)
+        return await self.perform_interaction(_back, source_page=page)
 
     def open_tabs(self) -> list[Any]:
         return [self._page]
@@ -69,10 +69,11 @@ class _SimpleBrowser:
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        page: Any = None,
+        source_page: Any = None,
         wait_for_navigation: bool = True,
     ) -> BrowserInteractionResult:
         """Mimic Browser.perform for tests without requiring Playwright."""
+        page = source_page
         if page is None:
             page = await self.current_page()
         await action()

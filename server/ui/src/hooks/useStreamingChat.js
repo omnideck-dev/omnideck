@@ -1,4 +1,12 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isRootAgentEvent,
+} from '../features/conversation/events/eventTypes.js';
+import { normalizeLiveEvent } from '../features/conversation/events/normalizeEvent.js';
+import { projectTurns } from '../features/conversation/events/projectTurns.js';
+import { accumulateLiveIteration } from '../features/conversation/events/liveIteration.js';
+import { streamChatTurn } from '../features/conversation/transport/chatClient.js';
 import useStreamStall from './useStreamStall.js';
 
 function _uuid() {
@@ -6,20 +14,6 @@ function _uuid() {
     return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
         (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16),
     );
-}
-
-/**
- * Build the request body for /api/chat.
- * Strips the UI-only `preview` field from each attachment before sending.
- */
-function _buildRequestBody(message, attachments, profileId, conversationId) {
-    const body = { message: message || '(uploaded file)' };
-    if (conversationId) body.conversation_id = conversationId;
-    if (attachments?.length) {
-        body.data = attachments.map(({ preview: _preview, ...rest }) => rest);
-    }
-    if (profileId) body.profile_id = profileId;
-    return body;
 }
 
 /**
@@ -130,50 +124,6 @@ const _PERSISTED_EVENT_TYPES = new Set([
 ]);
 
 /**
- * Reducer for inflightIteration on a content delta. The inflight holds
- * the thinking + content the model has streamed for the current
- * iteration; it's cleared as soon as the iteration event arrives.
- *
- * Sub-agent (depth>0) deltas are dropped entirely: this state drives the
- * main chat bubble, and sub-agent output belongs in the agent activity
- * view's per-agent activityLog instead.
- */
-export function _reduceInflightOnContent(prev, agentId, depth, content, thinking) {
-    if ((depth ?? 0) > 0) return prev;
-    const c = content || '';
-    const th = thinking || '';
-    if (!c && !th) return prev;
-    if (!prev || prev.agentId !== agentId) {
-        return { agentId, content: c, thinking: th };
-    }
-    return {
-        agentId: prev.agentId,
-        content: prev.content + c,
-        thinking: prev.thinking + th,
-    };
-}
-
-/**
- * Flatten an SSE message ({payload, agent_id, agent_name, timestamp, depth})
- * into the events.jsonl shape that ``_buildTurns`` expects.
- */
-export function _flattenSseToEvent(data) {
-    const payload = data?.payload;
-    if (!payload || typeof payload !== 'object') return null;
-    const { type, ...rest } = payload;
-    return {
-        id: data.id || `live_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        type,
-        timestamp: data.timestamp || new Date().toISOString(),
-        conversation_id: data.conversation_id || null,
-        agent_id: data.agent_id || null,
-        agent_name: data.agent_name || null,
-        depth: data.depth ?? 0,
-        ...rest,
-    };
-}
-
-/**
  * Normalize a stored tool-call's arguments into a display string map.
  * History stores them as a JSON string (or object); live events arrive
  * pre-summarized by the backend, so this only runs on the resume path.
@@ -198,156 +148,6 @@ function _summarizeToolArgs(raw) {
         out[key] = text.length > _MAX_ARG_LEN ? `${text.slice(0, _MAX_ARG_LEN - 1)}…` : text;
     }
     return Object.keys(out).length > 0 ? out : null;
-}
-
-/**
- * Build a list of Turn objects from the raw events.jsonl-shaped event log.
- *
- * One Turn per root `agent_started` event. Each Turn has an ordered
- * `children[]` of UI items (kind ∈ {'user_prompt', 'iteration',
- * 'tool_result', 'file_output', 'compaction', 'error'}).
- * Compaction children are repositioned so each
- * sits right before the iteration referenced by its `keptFromId` —
- * matching what the strategy actually drew as the
- * summarized/preserved boundary.
- *
- * Sub-agent events (agent_started with parent_agent_id) are skipped at
- * the top level — they're for the network view, not the chat.
- */
-export function _buildTurns(events) {
-    if (!Array.isArray(events)) return [];
-    const turns = [];
-    let currentTurn = null;
-
-    for (const ev of events) {
-        if (!ev) continue;
-        const t = ev.type;
-
-        if (t === 'agent_started' && !ev.parent_agent_id) {
-            currentTurn = {
-                id: `turn_${turns.length}`,
-                agentId: ev.agent_id,
-                children: [],
-            };
-            turns.push(currentTurn);
-            continue;
-        }
-        // sub-agent lifecycle + non-chat metadata: ignore
-        if (t === 'agent_started') continue;
-        if (t === 'agent_completed') continue;
-        if (t === 'context_usage') continue;
-
-        if (!currentTurn) {
-            // A root error with no turn yet means the turn failed before
-            // the agent ever started (setup failure) — synthesize a turn
-            // so the error still shows in the chat instead of being
-            // dropped with the rest of the orphan events.
-            if (t === 'error' && (ev.depth ?? 0) === 0) {
-                currentTurn = {
-                    id: `turn_${turns.length}`,
-                    agentId: ev.agent_id || null,
-                    children: [],
-                };
-                turns.push(currentTurn);
-            } else {
-                continue;
-            }
-        }
-
-        // Everything from a sub-agent (depth>0) lives in the agent
-        // activity view, not the main chat. Without this filter the
-        // sub-agent's instruction user_message would render as a user
-        // bubble in the conversation.
-        if ((ev.depth ?? 0) > 0) continue;
-
-        if (t === 'user_message') {
-            currentTurn.children.push({
-                kind: 'user_prompt',
-                id: ev.id,
-                content: ev.content || '',
-                attachments: ev.attachments || [],
-                isNudge: !!ev.is_nudge,
-            });
-        } else if (t === 'iteration') {
-            currentTurn.children.push({
-                kind: 'iteration',
-                id: ev.id,
-                iterationIndex: ev.iteration_index,
-                content: ev.content || '',
-                thinking: ev.thinking || '',
-                toolCalls: (ev.tool_calls || []).map((tc) => ({
-                    id: tc.id,
-                    name: tc.name,
-                    arguments: tc.arguments,
-                })),
-            });
-        } else if (t === 'tool_result') {
-            currentTurn.children.push({
-                kind: 'tool_result',
-                id: ev.id,
-                toolCallId: ev.tool_call_id,
-                toolName: ev.tool_name,
-                content: ev.content || '',
-            });
-        } else if (t === 'file_output') {
-            currentTurn.children.push({
-                kind: 'file_output',
-                id: ev.id,
-                filename: ev.filename,
-                contentType: ev.content_type,
-                path: ev.path || null,
-                timestamp: ev.timestamp,
-            });
-        } else if (t === 'compaction') {
-            currentTurn.children.push({
-                kind: 'compaction',
-                id: ev.id,
-                summaryText: ev.summary_text || '',
-                userIntentSummary: ev.user_intent_summary || '',
-                stats: ev.stats || null,
-                agentId: ev.agent_id || null,
-                timestamp: ev.timestamp || null,
-                keptFromId: ev.kept_from_id || null,
-            });
-        } else if (t === 'spawn_requested') {
-            currentTurn.children.push({
-                kind: 'spawn_requested',
-                id: ev.id,
-                correlationId: ev.correlation_id || null,
-            });
-        } else if (t === 'error') {
-            currentTurn.children.push({
-                kind: 'error',
-                id: ev.id,
-                message: ev.message || 'An error occurred.',
-            });
-        }
-    }
-
-    // Reposition compactions: each chip belongs right before the
-    // iteration whose id matches its keptFromId. The strategy emits the
-    // compaction event AFTER the kept iteration in the log; the chip's
-    // semantic place is BEFORE that iteration.
-    for (const turn of turns) {
-        const children = turn.children;
-        const compactions = children.filter((c) => c.kind === 'compaction');
-        for (const comp of compactions) {
-            if (!comp.keptFromId) continue;
-            const targetIdx = children.findIndex(
-                (c) => c.kind === 'iteration' && c.id === comp.keptFromId,
-            );
-            if (targetIdx < 0) continue;
-            const currentIdx = children.indexOf(comp);
-            if (currentIdx < 0 || currentIdx === targetIdx - 1) continue;
-            children.splice(currentIdx, 1);
-            const newTargetIdx = currentIdx < targetIdx
-                ? targetIdx - 1
-                : targetIdx;
-            children.splice(newTargetIdx, 0, comp);
-        }
-    }
-
-    return turns;
 }
 
 /**
@@ -445,7 +245,7 @@ export function _mergeCompactions(uiMessages, events) {
     const turnIdxByEventId = new Map();
     let curTurnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             curTurnIdx += 1;
         }
         if (ev?.id) turnIdxByEventId.set(ev.id, curTurnIdx);
@@ -511,7 +311,7 @@ export function _mergeFileOutputs(uiMessages, events) {
     const assistants = uiMessages.filter((m) => m.role === 'assistant');
     let turnIdx = -1;
     for (const ev of events) {
-        if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+        if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
             turnIdx += 1;
             continue;
         }
@@ -531,8 +331,8 @@ export function _mergeFileOutputs(uiMessages, events) {
 /**
  * Manages the streaming chat connection with the backend.
  *
- * POSTs to /api/chat and reads the response as a stream of JSON lines.
- * Each line is either a text token or an event (screenshot, tool call, etc.).
+ * Coordinates the active conversation session around the raw envelopes yielded
+ * by the chat transport client.
  *
  * Root agent tokens are buffered and flushed into an ordered entries[]
  * array on the assistant message (~60fps via requestAnimationFrame).
@@ -542,7 +342,7 @@ export default function useStreamingChat(callbacks) {
     // ── Unified state for chat rendering ───────────────────────────────
     // ``events`` is the source of truth: persisted-shape event records
     // (matching events.jsonl). Both resume and live append to this same
-    // array. ChatMessages renders by calling _buildTurns(events).
+    // array. ChatMessages renders by calling projectTurns(events).
     //
     // ``inflightIteration`` holds the iteration currently being streamed
     // — content deltas update its content/thinking in real-time; once
@@ -654,7 +454,7 @@ export default function useStreamingChat(callbacks) {
             };
         });
 
-        // Add user message + a placeholder "Thinking..." bubble to the
+        // Add user message + a placeholder "Thinking..." assistant entry to the
         // legacy messages list (still used by ChatPanel's turnCount and
         // by the agent activity rail).
         const placeholderId = Math.random().toString(36).slice(2);
@@ -672,8 +472,6 @@ export default function useStreamingChat(callbacks) {
             attachments: pendingAttachments,
         });
 
-        const body = _buildRequestBody(message, attachments, profileId, conversationIdRef.current);
-
         // IDs for pending animation frame flushes. Declared here so the
         // finally block can cancel them if the stream errors or aborts.
         let agentRafId = null;
@@ -682,19 +480,6 @@ export default function useStreamingChat(callbacks) {
             abortControllerRef.current = controller;
             setIsStreaming(true);
             setStopRequested(false);
-
-            const resp = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-                signal: controller.signal,
-            });
-            if (!resp.body) return;
-
-            // ── Read the JSONL stream ────────────────────────────────
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
 
             // ── Single message per turn ─────────────────────────────
             // One assistant message with an ordered entries[] array,
@@ -722,198 +507,189 @@ export default function useStreamingChat(callbacks) {
                 }
             };
 
-            // ── Process JSONL lines ────────────────────────────────
-            // The backend streams one JSON object per line (JSONL).
-            // reader.read() gives us arbitrary byte chunks, so we
-            // accumulate into a buffer and extract complete lines
-            // (up to each \n) one at a time.
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                let idx;
-                while ((idx = buffer.indexOf('\n')) !== -1) {
-                    const line = buffer.slice(0, idx).trim();
-                    buffer = buffer.slice(idx + 1);
-                    if (!line) continue;
-                    try {
-                        const data = JSON.parse(line);
+            for await (const data of streamChatTurn({
+                message,
+                attachments,
+                profileId,
+                conversationId: conversationIdRef.current,
+                signal: controller.signal,
+            })) {
+                try {
+                    const payload = data.payload;
+                    const eventType = payload?.type;
 
-                        const payload = data.payload;
-                        const eventType = payload?.type;
+                    _handleStreamEvent(data, callbacks);
 
-                        _handleStreamEvent(data, callbacks);
-
-                        // ── Update the unified events / inflight state ──
-                        // Persisted events (matches backend's
-                        // _PERSISTED_TYPES) get pushed to the events
-                        // array so _buildTurns sees them.
-                        if (eventType && _PERSISTED_EVENT_TYPES.has(eventType)) {
-                            const flat = _flattenSseToEvent(data);
-                            if (flat) {
-                                setEvents((prev) => [...prev, flat]);
-                                if (eventType === 'user_message') {
-                                    // Backend confirmed our user input;
-                                    // clear the optimistic synthetic turn.
-                                    setPendingUserPrompt(null);
-                                }
-                                if (eventType === 'iteration') {
-                                    // Final iteration arrived; clear the
-                                    // streaming placeholder and replay the
-                                    // model-planned tool calls into the
-                                    // per-agent activity log. The dispatch
-                                    // goes through the RAF queue so it
-                                    // interleaves correctly with the
-                                    // streaming content / thinking deltas
-                                    // already in flight for this iteration.
-                                    setInflightIteration(null);
-                                    if (data.agent_id && callbacks.onActivityEntry) {
-                                        for (const tc of (payload.tool_calls || [])) {
-                                            if (tc?.name === 'remember' || tc?.name === 'forget') {
-                                                callbacks.onMemoryChanged?.();
-                                            }
-                                            pending.push({
-                                                callback: callbacks.onActivityEntry,
-                                                args: {
-                                                    agentId: data.agent_id,
-                                                    entry: {
-                                                        type: 'tool_call',
-                                                        name: tc.name,
-                                                        arguments: tc.arguments || null,
-                                                        timestamp: Date.now(),
-                                                    },
-                                                },
-                                            });
+                    // ── Update the unified events / inflight state ──
+                    // Persisted events (matches backend's
+                    // _PERSISTED_TYPES) get pushed to the events
+                    // array so projectTurns sees them.
+                    if (eventType && _PERSISTED_EVENT_TYPES.has(eventType)) {
+                        const flat = normalizeLiveEvent(data);
+                        if (flat) {
+                            setEvents((prev) => [...prev, flat]);
+                            if (eventType === 'user_message') {
+                                // Backend confirmed our user input;
+                                // clear the optimistic synthetic turn.
+                                setPendingUserPrompt(null);
+                            }
+                            if (eventType === 'iteration') {
+                                // Final iteration arrived; clear the
+                                // streaming placeholder and replay the
+                                // model-planned tool calls into the
+                                // per-agent activity log. The dispatch
+                                // goes through the RAF queue so it
+                                // interleaves correctly with the
+                                // streaming content / thinking deltas
+                                // already in flight for this iteration.
+                                setInflightIteration(null);
+                                if (data.agent_id && callbacks.onActivityEntry) {
+                                    for (const tc of (payload.tool_calls || [])) {
+                                        if (tc?.name === 'remember' || tc?.name === 'forget') {
+                                            callbacks.onMemoryChanged?.();
                                         }
-                                        scheduleFlush();
+                                        pending.push({
+                                            callback: callbacks.onActivityEntry,
+                                            args: {
+                                                agentId: data.agent_id,
+                                                entry: {
+                                                    type: 'tool_call',
+                                                    name: tc.name,
+                                                    arguments: tc.arguments || null,
+                                                    timestamp: Date.now(),
+                                                },
+                                            },
+                                        });
                                     }
+                                    scheduleFlush();
                                 }
                             }
                         }
-                        if (eventType === 'content' && data.agent_id) {
-                            setInflightIteration((prev) => _reduceInflightOnContent(
-                                prev, data.agent_id, data.depth,
-                                payload.content, payload.thinking,
-                            ));
-                        }
-
-                        // Set agentId on the assistant message so the chat
-                        // view can look up this agent's activityLog.
-                        if (payload?.type === 'agent_started' && !payload.parent_agent_id) {
-                            rootAgentIdRef.current = payload.agent_id;
-                            setMessages((prev) => {
-                                const i = prev.length - 1;
-                                if (i < 0 || prev[i].id !== assistantId) return prev;
-                                const updated = [...prev];
-                                updated[i] = { ...updated[i], agentId: payload.agent_id, streaming: true };
-                                return updated;
-                            });
-                        }
-
-                        if (payload?.type === 'content' && data.agent_id && callbacks.onAgentContent) {
-                            const contentField = payload.content || '';
-                            const hasResponse = contentField.length > 0;
-                            const hasThinking = typeof payload.thinking === 'string' && payload.thinking.length > 0;
-                            if (hasResponse || hasThinking) {
-                                pending.push({
-                                    callback: callbacks.onAgentContent,
-                                    args: {
-                                        agentId: data.agent_id,
-                                        content: hasResponse ? contentField : null,
-                                        thinking: hasThinking ? payload.thinking : null,
-                                    },
-                                });
-                                scheduleFlush();
-                            }
-                        }
-
-                        if (payload?.type === 'spawn_requested' && data.agent_id && callbacks.onActivityEntry) {
-                            pending.push({
-                                callback: callbacks.onActivityEntry,
-                                args: {
-                                    agentId: data.agent_id,
-                                    entry: {
-                                        type: 'spawn_requested',
-                                        correlationId: payload.correlation_id,
-                                        timestamp: Date.now(),
-                                    },
-                                },
-                            });
-                            scheduleFlush();
-                        }
-
-                        if (payload?.type === 'file_output' && data.agent_id && callbacks.onActivityEntry) {
-                            pending.push({
-                                callback: callbacks.onActivityEntry,
-                                args: {
-                                    agentId: data.agent_id,
-                                    entry: { type: 'file_output', ...payload, timestamp: Date.now() },
-                                },
-                            });
-                            scheduleFlush();
-                        }
-
-                        // Compaction → activity-rail marker. Main chat shows
-                        // depth-0 compactions as chips; this surfaces a
-                        // sub-agent's own compaction in its activity view.
-                        if (payload?.type === 'compaction' && data.agent_id && callbacks.onActivityEntry) {
-                            pending.push({
-                                callback: callbacks.onActivityEntry,
-                                args: {
-                                    agentId: data.agent_id,
-                                    entry: {
-                                        type: 'compaction',
-                                        stats: payload.stats || null,
-                                        summaryText: payload.summary_text || null,
-                                        userIntentSummary: payload.user_intent_summary || null,
-                                        timestamp: Date.now(),
-                                    },
-                                },
-                            });
-                            scheduleFlush();
-                        }
-
-                        // Error → for a sub-agent (depth>0) it surfaces in
-                        // that agent's activity view; a root error (depth 0)
-                        // renders in the main chat via the events log above.
-                        if (payload?.type === 'error' && (data.depth ?? 0) > 0
-                            && data.agent_id && callbacks.onActivityEntry) {
-                            pending.push({
-                                callback: callbacks.onActivityEntry,
-                                args: {
-                                    agentId: data.agent_id,
-                                    entry: {
-                                        type: 'error',
-                                        message: payload.message || 'An error occurred.',
-                                        timestamp: Date.now(),
-                                    },
-                                },
-                            });
-                            scheduleFlush();
-                        }
-
-                        // Turn end — flush and mark done
-                        if (payload?.type === 'turn_end') {
-                            if (agentRafId !== null) {
-                                cancelAnimationFrame(agentRafId);
-                                agentRafId = null;
-                            }
-                            flush();
-                            setMessages((prev) => {
-                                const i = prev.length - 1;
-                                if (i < 0 || prev[i].id !== assistantId) return prev;
-                                const updated = [...prev];
-                                updated[i] = { ...updated[i], streaming: false, placeholder: false };
-                                return updated;
-                            });
-                            // Defensive: at end of turn, any unfinalized
-                            // in-flight iteration is stale.
-                            setInflightIteration(null);
-                            setPendingUserPrompt(null);
-                        }
-                    } catch (e) {
-                        // ignore parse errors for partial/incomplete lines
                     }
+                    if (eventType === 'content' && data.agent_id) {
+                        setInflightIteration((prev) => accumulateLiveIteration(
+                            prev, data.agent_id, data.depth,
+                            payload.content, payload.thinking,
+                        ));
+                    }
+
+                    // Set agentId on the assistant message so the chat
+                    // view can look up this agent's activityLog.
+                    if (payload?.type === EVENT.AGENT_STARTED && isRootAgentEvent(payload)) {
+                        rootAgentIdRef.current = payload.agent_id;
+                        setMessages((prev) => {
+                            const i = prev.length - 1;
+                            if (i < 0 || prev[i].id !== assistantId) return prev;
+                            const updated = [...prev];
+                            updated[i] = { ...updated[i], agentId: payload.agent_id, streaming: true };
+                            return updated;
+                        });
+                    }
+
+                    if (payload?.type === 'content' && data.agent_id && callbacks.onAgentContent) {
+                        const contentField = payload.content || '';
+                        const hasResponse = contentField.length > 0;
+                        const hasThinking = typeof payload.thinking === 'string' && payload.thinking.length > 0;
+                        if (hasResponse || hasThinking) {
+                            pending.push({
+                                callback: callbacks.onAgentContent,
+                                args: {
+                                    agentId: data.agent_id,
+                                    content: hasResponse ? contentField : null,
+                                    thinking: hasThinking ? payload.thinking : null,
+                                },
+                            });
+                            scheduleFlush();
+                        }
+                    }
+
+                    if (payload?.type === 'spawn_requested' && data.agent_id && callbacks.onActivityEntry) {
+                        pending.push({
+                            callback: callbacks.onActivityEntry,
+                            args: {
+                                agentId: data.agent_id,
+                                entry: {
+                                    type: 'spawn_requested',
+                                    correlationId: payload.correlation_id,
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        });
+                        scheduleFlush();
+                    }
+
+                    if (payload?.type === 'file_output' && data.agent_id && callbacks.onActivityEntry) {
+                        pending.push({
+                            callback: callbacks.onActivityEntry,
+                            args: {
+                                agentId: data.agent_id,
+                                entry: { type: 'file_output', ...payload, timestamp: Date.now() },
+                            },
+                        });
+                        scheduleFlush();
+                    }
+
+                    // Compaction → activity-rail marker. Main chat shows
+                    // depth-0 compactions as chips; this surfaces a
+                    // sub-agent's own compaction in its activity view.
+                    if (payload?.type === 'compaction' && data.agent_id && callbacks.onActivityEntry) {
+                        pending.push({
+                            callback: callbacks.onActivityEntry,
+                            args: {
+                                agentId: data.agent_id,
+                                entry: {
+                                    type: 'compaction',
+                                    stats: payload.stats || null,
+                                    summaryText: payload.summary_text || null,
+                                    userIntentSummary: payload.user_intent_summary || null,
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        });
+                        scheduleFlush();
+                    }
+
+                    // Error → for a sub-agent (depth>0) it surfaces in
+                    // that agent's activity view; a root error (depth 0)
+                    // renders in the main chat via the events log above.
+                    if (payload?.type === 'error' && (data.depth ?? 0) > 0
+                        && data.agent_id && callbacks.onActivityEntry) {
+                        pending.push({
+                            callback: callbacks.onActivityEntry,
+                            args: {
+                                agentId: data.agent_id,
+                                entry: {
+                                    type: 'error',
+                                    message: payload.message || 'An error occurred.',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        });
+                        scheduleFlush();
+                    }
+
+                    // Turn end — flush and mark done
+                    if (payload?.type === 'turn_end') {
+                        if (agentRafId !== null) {
+                            cancelAnimationFrame(agentRafId);
+                            agentRafId = null;
+                        }
+                        flush();
+                        setMessages((prev) => {
+                            const i = prev.length - 1;
+                            if (i < 0 || prev[i].id !== assistantId) return prev;
+                            const updated = [...prev];
+                            updated[i] = { ...updated[i], streaming: false, placeholder: false };
+                            return updated;
+                        });
+                        // Defensive: at end of turn, any unfinalized
+                        // in-flight iteration is stale.
+                        setInflightIteration(null);
+                        setPendingUserPrompt(null);
+                    }
+                } catch {
+                    // Preserve the existing per-record isolation: one event
+                    // handler failure must not stop delivery of later records.
                 }
             }
             // Stream ended — flush any remaining buffered entries
@@ -946,7 +722,7 @@ export default function useStreamingChat(callbacks) {
             // drop), any half-streamed iteration is no longer
             // meaningful. The pending user prompt stays visible:
             // the user's input was sent and may even have been
-            // accepted, so yanking the bubble would be misleading.
+            // accepted, so removing the pending message would be misleading.
             // The SSE user_message handler clears it on confirmation,
             // and the next sendMessage replaces it.
             setInflightIteration(null);
@@ -1064,7 +840,7 @@ export default function useStreamingChat(callbacks) {
                 tool_calls: [],
             }];
         }
-        const baseTurns = _buildTurns(augmented);
+        const baseTurns = projectTurns(augmented);
         if (pendingUserPrompt) {
             return [...baseTurns, {
                 id: `_pending_${pendingUserPrompt.id || 'turn'}`,

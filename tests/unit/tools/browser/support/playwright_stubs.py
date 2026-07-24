@@ -709,13 +709,13 @@ class StubBrowser:
         async def _back() -> None:
             await self._page.go_back(wait_until="domcontentloaded")
 
-        return await self.perform_interaction(_back, page=page)
+        return await self.perform_interaction(_back, source_page=page)
 
     async def perform_interaction(
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        page: Any = None,
+        source_page: Any = None,
     ) -> Any:
         """Match Browser.perform return contract for tests."""
         await action()
