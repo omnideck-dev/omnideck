@@ -1,0 +1,12 @@
+.layout {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--canvas);
+}
+
+.full { flex: 1; }
+.split { flex: 1; min-width: 320px; }
+.hidden { display: none; }

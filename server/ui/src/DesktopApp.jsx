@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isRootAgentEvent,
+} from './features/conversation/events/eventTypes.js';
 import ChatPanel from './components/ChatPanel.jsx';
 import BrowserPreview from './components/BrowserPreview.jsx';
 import DesktopPreview from './components/DesktopPreview.jsx';
@@ -15,7 +19,15 @@ import Sidebar from './components/Sidebar.jsx';
 import RoutinesView from './components/routines/RoutinesView.jsx';
 import AgentsView from './components/agents/AgentsView.jsx';
 import ArtifactsHubView from './components/artifacts/ArtifactsHubView.jsx';
-import PreviewPanel from './components/PreviewPanel.jsx';
+import AppsView from './components/apps/AppsView.jsx';
+import CustomAppHost from './components/apps/CustomAppHost.jsx';
+import CustomAppToolbar, {
+    CustomAppError,
+    CustomAppReloadAction,
+} from './components/apps/CustomAppToolbar.jsx';
+import HomeAppUnavailable from './components/apps/HomeAppUnavailable.jsx';
+import TabbedPane from './components/TabbedPane.jsx';
+import CustomAppLayout from './components/CustomAppLayout.jsx';
 import SplitHandle from './components/SplitHandle.jsx';
 import FilePreview from './components/FilePreview.jsx';
 import BrowserFullscreen from './components/BrowserFullscreen.jsx';
@@ -24,6 +36,8 @@ import useBrowserTabs from './hooks/useBrowserTabs.js';
 import useStreamingChat from './hooks/useStreamingChat.js';
 import { replayEventsToAgentState } from './hooks/_replayEvents.js';
 import usePreviewState from './hooks/usePreviewState.jsx';
+import useCustomAppsCatalog from './hooks/useCustomAppsCatalog.js';
+import useCustomAppWorkspace from './hooks/useCustomAppWorkspace.jsx';
 import { AgentStateProvider, useAgentState, useAgentDispatch } from './hooks/useAgentState.jsx';
 import { useToast } from './components/ToastProvider.jsx';
 import styles from './App.module.css';
@@ -44,12 +58,18 @@ function DesktopAppInner() {
     // chat or panel switch can't leave a stale view stacked underneath. Agent
     // detail is a sub-state of 'network', keyed off selectedAgentId in the
     // agent reducer — not a separate value here.
-    const [view, setView] = useState('chat'); // 'chat' | 'settings' | 'routines' | 'network'
+    const [view, setView] = useState('chat'); // 'chat' | full-screen panel | 'network'
     const [memoryRefreshSignal, setMemoryRefreshSignal] = useState(0);
     const [toolsRefreshSignal, setToolsRefreshSignal] = useState(0);
     const [pendingAudio, setPendingAudio] = useState(null);
     const [muted, setMuted] = useState(false);
     const [userDesktopOpen, setUserDesktopOpen] = useState(false);
+    const [homeAppSlug, setHomeAppSlug] = useState(null);
+    const initialHomeAppliedRef = useRef(false);
+    const handleHomeAppChange = useCallback((slug) => {
+        initialHomeAppliedRef.current = true;
+        setHomeAppSlug(slug);
+    }, []);
     const { profilesHook, features } = useAppData();
     const { addStartedConversation, focusFileInConversation } = useConversations();
 
@@ -73,6 +93,7 @@ function DesktopAppInner() {
         fetch('/api/settings').then(r => r.json()).then(data => {
             setSetupComplete(data.setup_complete || false);
             if (data.default_agent) setDefaultProfileId(data.default_agent);
+            if (data.home_app_slug) setHomeAppSlug(data.home_app_slug);
         }).catch(() => setSetupComplete(false));
     }, []);
 
@@ -81,6 +102,11 @@ function DesktopAppInner() {
     // Preview follows the selected agent only while its detail view is up
     // (network view); in chat/settings/routines it tracks the root conversation.
     const preview = usePreviewState(view === 'network');
+    const customAppsCatalog = useCustomAppsCatalog({
+        enabled: features.custom_apps,
+        homeAppSlug,
+        onHomeAppChange: handleHomeAppChange,
+    });
 
     // Holds the active-tab id the resume callback wants to apply once
     // usePreviewState has the new root in scope. Synced in an effect below.
@@ -206,7 +232,7 @@ function DesktopAppInner() {
             // live turn.
             let lastRootAgentId = null;
             for (const ev of events) {
-                if (ev?.type === 'agent_started' && !ev.parent_agent_id) {
+                if (ev?.type === EVENT.AGENT_STARTED && isRootAgentEvent(ev)) {
                     lastRootAgentId = ev.agent_id;
                 }
             }
@@ -252,6 +278,49 @@ function DesktopAppInner() {
         setDraft,
         savePreviewState,
     } = useStreamingChat(_callbacks);
+
+    const customApps = useCustomAppWorkspace({
+        preview,
+        setDraft,
+        setView,
+        homeAppSlug,
+        onHomeAppChange: handleHomeAppChange,
+    });
+
+    useEffect(() => {
+        if (initialHomeAppliedRef.current || setupComplete !== true) return;
+        if (!features.custom_apps || !homeAppSlug) return;
+        initialHomeAppliedRef.current = true;
+        setView('home');
+    }, [features.custom_apps, homeAppSlug, setupComplete]);
+
+    useEffect(() => {
+        if (!features.custom_apps || !['apps', 'home'].includes(view)) return;
+        customAppsCatalog.refresh();
+    }, [customAppsCatalog.refresh, features.custom_apps, view]);
+
+    useEffect(() => {
+        if (view !== 'home' || !customAppsCatalog.loaded) return;
+        if (!homeAppSlug) {
+            customApps.openApps();
+            return;
+        }
+        const app = customAppsCatalog.findBySlug(homeAppSlug);
+        if (app) customApps.openHome(app);
+    }, [
+        customApps.openHome,
+        customApps.openApps,
+        customAppsCatalog.findBySlug,
+        customAppsCatalog.loaded,
+        homeAppSlug,
+        view,
+    ]);
+
+    useEffect(() => {
+        if (features.custom_apps) return;
+        customApps.reset();
+        setView((current) => ['apps', 'home', 'workspace'].includes(current) ? 'chat' : current);
+    }, [customApps.reset, features.custom_apps]);
 
     // The browser side channel + tab model, shared by the inline and fullscreen
     // views. Control (input) is only allowed while no turn is active.
@@ -348,9 +417,10 @@ function DesktopAppInner() {
         // Surface the chat — otherwise a panel/network view stays stacked on
         // top and the new conversation is invisible. RESET clears the agent
         // tree and any selection.
-        setView('chat');
+        if (customApps.isOpen) customApps.openChat();
+        else setView('chat');
         agentDispatch({ type: 'RESET' });
-    }, [chatNewConversation, preview.reset, agentDispatch]);
+    }, [chatNewConversation, preview.reset, customApps.isOpen, customApps.openChat, agentDispatch]);
 
     // Open a fresh chat with the composer pre-seeded (e.g. composing a routine
     // from the routines view). The chat state seeds the draft in the same batch
@@ -359,7 +429,8 @@ function DesktopAppInner() {
 
     // Loading a conversation has to surface the chat too, same as newConversation.
     const handleLoadConversation = useCallback((conversationId) => {
-        setView('chat');
+        if (customApps.isOpen) customApps.openChat();
+        else setView('chat');
         // Clicking the already-active conversation (e.g. from a sub-agent's
         // activity view) is just navigation back to its chat — don't re-resume
         // it, which would refetch, RESET the agent tree, and clobber any live
@@ -369,7 +440,7 @@ function DesktopAppInner() {
             return undefined;
         }
         return loadConversation(conversationId);
-    }, [loadConversation, activeConversationId, agentDispatch]);
+    }, [loadConversation, activeConversationId, agentDispatch, customApps.isOpen, customApps.openChat]);
 
     // Open an artifact's source conversation with that file focused. Persist the
     // focus into preview_state first, then either open the file immediately (if
@@ -385,21 +456,29 @@ function DesktopAppInner() {
             // just won't be pre-opened.
         }
         if (conversationId === activeConversationId) {
-            setView('chat');
-            preview.openFile({ filename, content_type: contentType, path });
+            customApps.openPreview({ filename, content_type: contentType, path });
+            if (!customApps.isOpen) setView('chat');
             return;
         }
         handleLoadConversation(conversationId);
-    }, [activeConversationId, handleLoadConversation, preview, focusFileInConversation]);
+    }, [
+        activeConversationId,
+        customApps.isOpen,
+        customApps.openPreview,
+        handleLoadConversation,
+        focusFileInConversation,
+    ]);
 
     // ── Which layout to show ───────────────────────────────────────────
-    // `view` picks exactly one of: chat, settings, routines, network. Each is a
+    // `view` picks exactly one shell surface. The workspace surface has its own
+    // full/split presentation state while the app iframe stays mounted. Each is a
     // full replacement of the main column, so they're mutually exclusive by
     // construction — no view can stay stacked under another.
     //
     //   chat (default) — chat + preview panels. Always shows the root agent's
     //     conversation. When sub-agents spawn, a network indicator appears so
     //     the user can navigate to the network.
+    //   workspace — a full app, or chat + a global app/conversation-preview rail.
     //   settings / routines — full-screen panels opened from the sidebar.
     //   network — full-screen agent graph. Click a card to drill into an
     //     agent's detail view (network + selectedAgentId); close to return
@@ -439,8 +518,8 @@ function DesktopAppInner() {
     }, [agentDispatch]);
 
     const handleCloseNetwork = useCallback(() => {
-        setView('chat');
-    }, []);
+        customApps.restoreChat();
+    }, [customApps.restoreChat]);
 
     // Drill straight into a sub-agent's activity view — e.g. from a
     // SpawnCard row in the chat.
@@ -451,12 +530,61 @@ function DesktopAppInner() {
 
     // Sidebar nav (settings/routines). A null panel means toggle back to chat.
     const handlePanelToggle = useCallback((panel) => {
-        setView(panel || 'chat');
-    }, []);
+        if (!panel) {
+            customApps.restoreChat();
+            return;
+        }
+        setView(panel);
+    }, [customApps.restoreChat]);
+
+    const openPreviewFromChat = useCallback((item) => {
+        customApps.openPreview(item);
+    }, [customApps.openPreview]);
+
+    const workspaceVisible = view === 'workspace' && customApps.isOpen;
+    const workspaceSplit = workspaceVisible && customApps.layout === 'split';
+    const activeSidebarPanel = view === 'workspace'
+        ? (customApps.layout === 'full' && customApps.origin === 'home' ? 'home' : null)
+        : (['settings', 'routines', 'artifacts', 'agents', 'apps', 'home'].includes(view) ? view : null);
 
     // Preview column rides alongside chat, or alongside an agent's detail view.
     const hasPreview = preview.tabs.length > 0
+        && !workspaceVisible
         && (view === 'chat' || (view === 'network' && !!agentState.selectedAgentId));
+
+    const renderPreviewContent = (activeTab) => (
+        <>
+            {activeTab === 'browser' && preview.browserTabsList.length > 0 && (
+                <BrowserPreview
+                    tabs={browser.tabs}
+                    selectedId={browser.selectedTabId}
+                    onSelectTab={browser.setSelectedTabId}
+                    onFullscreen={() => preview.setFullscreenItem({ kind: 'browser' })}
+                    control={browser.control}
+                    inputActive={preview.fullscreenItem?.kind !== 'browser'}
+                />
+            )}
+            {activeTab?.startsWith('file:') && (() => {
+                const fileKey = activeTab.slice(5);
+                const file = preview.openFiles.find(f => (f.path || f.filename) === fileKey);
+                return file ? (
+                    <FilePreview
+                        item={file}
+                        onFullscreen={() => preview.setFullscreenItem({ kind: 'file', file })}
+                    />
+                ) : null;
+            })()}
+            {activeTab === 'terminal' && preview.terminalLines.length > 0 && (
+                <TerminalPanel lines={preview.terminalLines} />
+            )}
+            {activeTab === 'desktop' && preview.desktopActive && (
+                <DesktopPreview visible />
+            )}
+            {activeTab === 'generation' && preview.generationPreview && (
+                <GenerationPreview preview={preview.generationPreview} />
+            )}
+        </>
+    );
 
     // Show setup wizard if setup is not complete
     if (setupComplete === false) {
@@ -478,7 +606,7 @@ function DesktopAppInner() {
             <div className={styles.bodyRow}>
                 {/* Navigation sidebar */}
                 <Sidebar
-                    activePanel={['settings', 'routines', 'artifacts', 'agents'].includes(view) ? view : null}
+                    activePanel={activeSidebarPanel}
                     onNewConversation={newConversation}
                     audio={pendingAudio}
                     muted={muted}
@@ -489,6 +617,8 @@ function DesktopAppInner() {
                     onLoadConversation={handleLoadConversation}
                     activeConversationId={activeConversationId}
                     onPanelToggle={handlePanelToggle}
+                    customAppsEnabled={features.custom_apps}
+                    homeAppEnabled={Boolean(homeAppSlug)}
                 />
 
                 {/* Main content area */}
@@ -513,6 +643,29 @@ function DesktopAppInner() {
                     {view === 'artifacts' && (
                         <ArtifactsHubView onOpenConversation={openArtifactInConversation} />
                     )}
+                    {view === 'apps' && features.custom_apps && (
+                        <AppsView
+                            apps={customAppsCatalog.apps}
+                            loading={!customAppsCatalog.loaded || customAppsCatalog.loading}
+                            error={customAppsCatalog.error}
+                            homeAppSlug={homeAppSlug}
+                            onRefresh={customAppsCatalog.refresh}
+                            onOpenApp={customApps.openFull}
+                            onOpenAppBesideChat={customApps.openBesideChat}
+                        />
+                    )}
+                    {view === 'home'
+                        && features.custom_apps
+                        && homeAppSlug
+                        && customAppsCatalog.loaded
+                        && !customAppsCatalog.findBySlug(homeAppSlug) && (
+                        <HomeAppUnavailable
+                            message={customApps.error || customAppsCatalog.error
+                                || `No Custom App named “${homeAppSlug}” was found.`}
+                            onOpenApps={customApps.openApps}
+                            onClearHome={customApps.clearUnavailableHome}
+                        />
+                    )}
 
                     {view === 'network' && !agentState.selectedAgentId && (
                         <div className={styles.networkArea}>
@@ -526,15 +679,15 @@ function DesktopAppInner() {
                              style={{ width: hasPreview ? `${preview.splitPosition}%` : '100%' }}>
                             <AgentActivityView
                                 onNudge={sendNudge}
-                                onPreview={preview.openFile}
+                                onPreview={openPreviewFromChat}
                                 nudgeDisabled={stopRequested}
                             />
                         </div>
                     )}
 
                     {/* Chat — always mounted, hidden when another view is active */}
-                    <div className={`${styles.chatColumn} ${view !== 'chat' ? styles.hidden : ''}`}
-                         style={{ width: hasPreview && view === 'chat' ? `${preview.splitPosition}%` : '100%' }}>
+                    <div className={`${styles.chatColumn} ${view !== 'chat' && !workspaceSplit ? styles.hidden : ''}`}
+                         style={{ width: (hasPreview && view === 'chat') || workspaceSplit ? `${preview.splitPosition}%` : '100%' }}>
                         <ChatPanel
                             turns={turns}
                             stalled={stalled}
@@ -551,54 +704,68 @@ function DesktopAppInner() {
                             selectedProfileId={selectedProfileId}
                             onProfileChange={handleProfileChange}
                             profileRefreshSignal={profilesHook.revision}
-                            onPreview={preview.openFile}
+                            onPreview={openPreviewFromChat}
                             conversationId={activeConversationId}
                             draft={draft}
                             onDraftChange={setDraft}
                         />
                     </div>
 
+                    {workspaceSplit && <SplitHandle onDrag={preview.setSplitPosition} />}
+
+                    {customApps.app && (
+                        <CustomAppLayout
+                            visible={workspaceVisible}
+                            layout={customApps.layout}
+                            testId={customApps.origin === 'home' ? 'home-view' : 'custom-app-workspace'}
+                            toolbar={(
+                                <CustomAppToolbar
+                                    app={customApps.app}
+                                    origin={customApps.origin}
+                                    isHome={customApps.isHome}
+                                    onOpenApps={customApps.openApps}
+                                    onOpenChat={customApps.openChat}
+                                    onToggleHome={customApps.toggleHome}
+                                    onReload={customApps.reload}
+                                />
+                            )}
+                            banner={<CustomAppError message={customApps.error} />}
+                        >
+                            <TabbedPane
+                                tabs={customApps.tabs}
+                                activeTab={customApps.activeTab}
+                                onTabChange={customApps.selectTab}
+                                onCloseTab={customApps.closeTab}
+                                hideTabs={!workspaceVisible || customApps.layout !== 'split'}
+                                actions={customApps.activeTab === customApps.appTabId
+                                    ? <CustomAppReloadAction onReload={customApps.reload} />
+                                    : null}
+                            >
+                                <CustomAppHost
+                                    app={customApps.app}
+                                    reloadSignal={customApps.reloadSignal}
+                                    active={customApps.activeTab === customApps.appTabId}
+                                    onOpenChat={customApps.openChat}
+                                    onComposeChat={customApps.composeInChat}
+                                />
+                                {renderPreviewContent(customApps.activeTab)}
+                            </TabbedPane>
+                        </CustomAppLayout>
+                    )}
+
                     {/* Shared split handle + preview panel — visible alongside chat OR agent activity */}
                     {hasPreview && (
                         <>
                             <SplitHandle onDrag={preview.setSplitPosition} />
                             <div className={styles.previewColumn}>
-                                <PreviewPanel
+                                <TabbedPane
                                     tabs={preview.tabs}
                                     activeTab={preview.activeTab}
                                     onTabChange={preview.setActiveTab}
                                     onCloseTab={preview.closeTab}
                                 >
-                                    {preview.activeTab === 'browser' && preview.browserTabsList.length > 0 && (
-                                        <BrowserPreview
-                                            tabs={browser.tabs}
-                                            selectedId={browser.selectedTabId}
-                                            onSelectTab={browser.setSelectedTabId}
-                                            onFullscreen={() => preview.setFullscreenItem({ kind: 'browser' })}
-                                            control={browser.control}
-                                            inputActive={preview.fullscreenItem?.kind !== 'browser'}
-                                        />
-                                    )}
-                                    {preview.activeTab?.startsWith('file:') && (() => {
-                                        const fileKey = preview.activeTab.slice(5);
-                                        const file = preview.openFiles.find(f => (f.path || f.filename) === fileKey);
-                                        return file ? (
-                                            <FilePreview
-                                                item={file}
-                                                onFullscreen={() => preview.setFullscreenItem({ kind: 'file', file })}
-                                            />
-                                        ) : null;
-                                    })()}
-                                    {preview.activeTab === 'terminal' && preview.terminalLines.length > 0 && (
-                                        <TerminalPanel lines={preview.terminalLines} />
-                                    )}
-                                    {preview.activeTab === 'desktop' && preview.desktopActive && (
-                                        <DesktopPreview visible />
-                                    )}
-                                    {preview.activeTab === 'generation' && preview.generationPreview && (
-                                        <GenerationPreview preview={preview.generationPreview} />
-                                    )}
-                                </PreviewPanel>
+                                    {renderPreviewContent(preview.activeTab)}
+                                </TabbedPane>
                             </div>
                         </>
                     )}

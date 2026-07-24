@@ -94,8 +94,7 @@ class Calendar(BaseModel):
     """Display name of the calendar (e.g. ``"Home"``, ``"Work"``)."""
 
     url: str
-    """Server URL for the collection — opaque identifier the agent passes
-    back into ``list_events`` to scope a query."""
+    """Server URL for the collection, wrapped as calendar_ref at the wire boundary."""
 
 
 class Event(BaseModel):
@@ -123,6 +122,15 @@ class Event(BaseModel):
 
     description: str = ""
     """Free-form description / body."""
+
+    recurrence_id: str = ""
+    """Provider recurrence key for this occurrence; never exposed directly to agents."""
+
+    recurring: bool = False
+    """Whether this record belongs to a recurring series."""
+
+    href: str = ""
+    """CalDAV resource URL used internally to avoid UID-only REPORTs."""
 
 
 # (filename, mime_type, raw bytes). The verb layer is the one that knows
