@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — walkthrough</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--font-brand:'Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;height:100%;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+.deck{display:flex;height:100vh;overflow:hidden;}
+
+/* left rail (index) */
+.rail{width:256px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;}
+.railHd{padding:var(--sp-4);border-bottom:1px solid var(--border);}
+.railHd .brand{font-family:var(--font-brand);font-size:12px;letter-spacing:.06em;color:var(--accent);}
+.railHd .t{font-size:15px;font-weight:600;margin-top:3px;}
+.railHd .s{font-size:11.5px;color:var(--text-tertiary);margin-top:2px;}
+.list{flex:1;overflow-y:auto;padding:var(--sp-2);}
+.item{display:flex;gap:10px;padding:9px 10px;border-radius:var(--radius-md);cursor:pointer;position:relative;}
+.item:hover{background:var(--accent-muted);}
+.item.on{background:var(--accent-muted);}
+.item.on::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--accent);border-radius:var(--radius-full);}
+.item .num{width:20px;height:20px;flex-shrink:0;border-radius:var(--radius-full);background:var(--elevated);border:1px solid var(--border);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-family:var(--font-brand);font-size:10px;}
+.item.on .num{background:var(--accent);border-color:var(--accent);color:#fff;}
+.item .it{font-size:12.5px;font-weight:600;line-height:1.3;}
+.item.on .it{color:var(--accent);}
+.item .is{font-size:11px;color:var(--text-tertiary);margin-top:1px;line-height:1.35;}
+.railFt{padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border);display:flex;align-items:center;gap:var(--sp-2);}
+.iconBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);cursor:pointer;}
+.iconBtn:hover{border-color:var(--border-strong);color:var(--text-primary);}
+.railFt .sp{flex:1;}
+.kbd{font-family:var(--font-brand);font-size:9px;color:var(--text-tertiary);}
+
+/* stage */
+.stage{flex:1;display:flex;flex-direction:column;min-width:0;}
+.bar{height:50px;flex-shrink:0;display:flex;align-items:center;gap:var(--sp-3);padding:0 var(--sp-4);border-bottom:1px solid var(--border);background:var(--canvas);}
+.title{font-size:14px;font-weight:600;}
+.sub{font-size:12px;color:var(--text-tertiary);}
+.counter{font-family:var(--font-brand);font-size:11px;color:var(--text-tertiary);}
+.bar .sp{flex:1;}
+.nav{display:inline-flex;align-items:center;gap:6px;}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 var(--sp-3);border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;}
+.btn:hover{border-color:var(--border-strong);color:var(--text-primary);}
+.btn:disabled{opacity:.4;cursor:default;}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;}
+.open{font-size:11.5px;color:var(--accent);text-decoration:none;display:inline-flex;align-items:center;gap:5px;}
+.frameWrap{flex:1;position:relative;background:var(--surface);min-height:0;}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:none;background:var(--canvas);}
+.note{flex-shrink:0;border-top:1px solid var(--border);background:var(--canvas);padding:10px var(--sp-4);font-size:12px;color:var(--text-secondary);line-height:1.5;display:flex;gap:8px;}
+.note i{color:var(--accent);margin-top:1px;}
+</style>
+</head>
+<body>
+<div class="deck">
+  <aside class="rail">
+    <div class="railHd"><div class="brand">OMNIDECK</div><div class="t">Workflows</div><div class="s">design walkthrough · click or use ← →</div></div>
+    <div class="list" id="list"></div>
+    <div class="railFt"><button class="iconBtn" id="themeBtn" title="Theme"><i class="bi bi-sun"></i></button><span class="sp"></span><span class="kbd">← →</span></div>
+  </aside>
+  <div class="stage">
+    <div class="bar">
+      <div><div class="title" id="title">—</div></div>
+      <span class="counter" id="counter"></span>
+      <a class="open" id="open" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Open full</a>
+      <span class="sp"></span>
+      <div class="nav">
+        <button class="btn" id="prev"><i class="bi bi-chevron-left"></i> Prev</button>
+        <button class="btn accent" id="next">Next <i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+    <div class="frameWrap"><iframe id="frame" title="slide"></iframe></div>
+    <div class="note"><i class="bi bi-info-circle"></i><span id="note"></span></div>
+  </div>
+</div>
+<script>
+  const slides = [
+    {file:'index.html', title:'1 · Where Workflows live', sub:'the shell',
+     note:'Workflows sits in the left rail next to Goals. First run shows three ways to start (scratch · assistant · example). Selecting a workflow opens its overview — flow preview, triggers, integrations, recent runs. Tabs are just Overview / Runs; Build opens full-screen.'},
+    {file:'builder.html', title:'2 · The builder', sub:'full-screen canvas',
+     note:'“Open builder” is a full-screen takeover with a breadcrumb back. Blank canvas → add your first step; the trigger is the start node on the canvas. Leaving with unsaved changes prompts.'},
+    {file:'step-builder.html', title:'3 · Configure a step', sub:'interactive — click a node',
+     note:'Click any step to open its editor in the right inspector — the same editor used everywhere (step-config is the full catalog). Testing happens in the Dry run (slide 6). This is the canonical Client email triage workflow.'},
+    {file:'step-config.html', title:'4 · Every step type & its options', sub:'full configurator per step',
+     note:'Each step type’s full inspector. Pickers open as dropdowns anchored to the control; the right side shows only detached output (test results) or notes. Test only where it makes sense. All examples are the one triage workflow.'},
+    {file:'data-picker.html', title:'5 · What data is in scope', sub:'references & scope',
+     note:'When you include data into an agent or map it into a tool, the picker shows everything in scope at that point — trigger data + upstream steps + the per-item item (if the step runs per item) + run context. Branch siblings and downstream steps are excluded; scope depends on the trigger.'},
+    {file:'dry-run.html', title:'6 · Dry run', sub:'step through · edit outputs live',
+     note:'Testing IS dry-running. Press Dry run and it walks the steps one click at a time; the seed is just step 1 (the trigger). Each step shows its output, editable in place before you advance — edit a value to steer the flow (flip priority → the branch goes the other way). Selecting any node opens its editor; you can change config and Re-run that step, or step Back. Branch shows its route; Approval pauses for Approve/Reject; write tools preview the call (not fired) unless you flip “run for real”.'},
+    {file:'assistant-experience.html', title:'7 · Assistant — the whole workflow', sub:'describe → it drafts the plan',
+     note:'The workflow-level assistant: describe a workflow → it drafts a plan → ghosted preview on the canvas + change list in the panel → Apply, then verify with a Dry run. The drafted plan is the canonical triage workflow (Set due dates code step, per-item Create task, Label “triaged” on the normal path — no Loop). It also grows an existing flow with a one-change preview — and frame 5 shows a step edit asked through the panel. The pending change lives on the workflow: EDIT badge on the node, change card in the panel; any open step editor renders the pending value in its fields (same state the in-editor ✦ shows, slide 8). Apply in the panel = Keep in the editor.'},
+    {file:'inline-assistant.html', title:'8 · Assistant — inline in a step', sub:'per-step help, in context',
+     note:'Each step editor that can have the assistant, shown as the real inspector. One ✦ Assistant button per editor header; it opens a strip docked under the header, above the fields. The answer lands in the editor’s own fields, tinted violet until you Keep (or Undo) — no separate assistant view. Sections: Code (writes the code with @-references from scope) · API trigger (picks the request, calls the API, fills the paths — click a field to override via the same tree picker) · Email trigger (builds Only-when conditions) · Agent (instruction + context + shape as one coherent set) · Tool (tool, per-item mode, mappings) · Branch (paths + rules).'},
+  ];
+  const listEl=document.getElementById('list'), frame=document.getElementById('frame'),
+        titleEl=document.getElementById('title'), counter=document.getElementById('counter'),
+        noteEl=document.getElementById('note'), openEl=document.getElementById('open'),
+        prevB=document.getElementById('prev'), nextB=document.getElementById('next');
+  let i=0;
+  slides.forEach((s,idx)=>{
+    const d=document.createElement('div'); d.className='item';
+    d.innerHTML=`<span class="num">${idx+1}</span><div><div class="it">${s.title.replace(/^\d+ · /,'')}</div><div class="is">${s.sub}</div></div>`;
+    d.onclick=()=>go(idx); listEl.appendChild(d);
+  });
+  function go(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    const s=slides[i];
+    frame.src=s.file; titleEl.textContent=s.title; counter.textContent=`${i+1} / ${slides.length}`;
+    noteEl.textContent=s.note; openEl.href=s.file;
+    prevB.disabled=i===0; nextB.disabled=i===slides.length-1;
+    [...listEl.children].forEach((c,idx)=>c.classList.toggle('on',idx===i));
+  }
+  prevB.onclick=()=>go(i-1); nextB.onclick=()=>go(i+1);
+  document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')go(i+1);if(e.key==='ArrowLeft')go(i-1);});
+  const root=document.documentElement,tb=document.getElementById('themeBtn');
+  tb.onclick=()=>{const d=root.getAttribute('data-theme')==='dark';root.setAttribute('data-theme',d?'light':'dark');tb.querySelector('i').className=d?'bi bi-sun':'bi bi-moon-stars';};
+  go(0);
+</script>
+</body>
+</html>

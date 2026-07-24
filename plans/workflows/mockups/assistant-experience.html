@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workflows — Assistant experience</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--canvas:#f8f9fb;--surface:#eef0f5;--elevated:#fff;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--border:#e2e8f0;--border-subtle:#f1f5f9;--border-strong:#cbd5e1;--accent:#2563eb;--accent-hover:#1d4ed8;--accent-muted:rgba(37,99,235,.08);--accent-glow:rgba(37,99,235,.15);--success:#16a34a;--success-muted:rgba(22,163,74,.08);--warning:#d97706;--warning-muted:rgba(217,119,6,.08);--danger:#dc2626;--danger-muted:rgba(220,38,38,.08);--shadow-sm:0 1px 2px rgba(15,23,42,.05);--shadow-md:0 2px 8px rgba(15,23,42,.08);--shadow-lg:0 4px 16px rgba(15,23,42,.10);--radius-sm:4px;--radius-md:6px;--radius-lg:8px;--radius-xl:12px;--radius-full:999px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--font-brand:'Roboto Mono','Consolas',monospace;--font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--font-code:'JetBrains Mono','Consolas',monospace;}
+[data-theme="dark"]{--canvas:#0c0e14;--surface:#151821;--elevated:#1e2130;--text-primary:#e8ecf4;--text-secondary:#8892a8;--text-tertiary:#4a5168;--border:#252a3a;--border-subtle:#1a1e2a;--border-strong:#363d52;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-muted:rgba(59,130,246,.12);--accent-glow:rgba(59,130,246,.2);--success:#4ade80;--success-muted:rgba(74,222,128,.12);--warning:#fbbf24;--warning-muted:rgba(251,191,36,.12);--danger:#f87171;--danger-muted:rgba(248,113,113,.12);--shadow-sm:0 1px 2px rgba(0,0,0,.3);--shadow-md:0 2px 8px rgba(0,0,0,.4);--shadow-lg:0 4px 16px rgba(0,0,0,.5);}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;}
+body{background:var(--surface);font-family:var(--font-body);color:var(--text-primary);-webkit-font-smoothing:antialiased;font-size:13px;}
+::-webkit-scrollbar{width:8px;height:8px;}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--radius-full);}
+.flowpage{max-width:1380px;margin:0 auto;padding:var(--sp-8) var(--sp-6) 64px;display:flex;flex-direction:column;gap:var(--sp-8);}
+.pageHd{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2);}
+.pageHd h1{font-size:18px;font-weight:600;margin:0;}.pageHd .sub{font-size:12.5px;color:var(--text-secondary);}
+.themeToggle{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);font-size:12px;cursor:pointer;}
+.screen{display:flex;flex-direction:column;gap:var(--sp-3);}
+.caption{display:flex;align-items:flex-start;gap:var(--sp-3);}
+.capNum{width:24px;height:24px;flex-shrink:0;border-radius:var(--radius-full);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-brand);font-size:11px;font-weight:600;margin-top:1px;}
+.capTitle{font-family:var(--font-brand);font-size:12px;letter-spacing:.04em;font-weight:600;}
+.capDesc{font-size:12px;color:var(--text-secondary);max-width:98ch;line-height:1.5;}
+.device{height:680px;border:1px solid var(--border-strong);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-lg);background:var(--canvas);position:relative;}
+
+.app{display:flex;flex-direction:column;height:100%;}
+.topbar{height:46px;flex-shrink:0;display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-3) 0 var(--sp-2);border-bottom:1px solid var(--border);background:var(--canvas);}
+.back{width:32px;height:32px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:14px;}
+.crumb{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-tertiary);}
+.crumb .mark{font-family:var(--font-brand);font-size:12px;font-weight:600;color:var(--accent);margin-right:4px;}
+.crumb a{color:var(--text-secondary);}.crumb .cur{color:var(--text-primary);font-weight:600;}.crumb i{font-size:10px;}
+.spacer{flex:1;}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 var(--sp-3);border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn.asstToggle{border-color:var(--accent);color:var(--accent);background:var(--accent-muted);}
+.btn.asstToggle.on{background:var(--accent);color:#fff;}
+
+.workspace{flex:1;display:flex;min-height:0;}
+.palette{width:128px;flex-shrink:0;border-right:1px solid var(--border);background:var(--canvas);padding:var(--sp-3);display:flex;flex-direction:column;gap:6px;}
+.palHd{font-family:var(--font-brand);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:2px;}
+.palItem{display:flex;align-items:center;gap:7px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);font-size:11.5px;font-weight:500;cursor:grab;}
+.palItem .pIc{width:16px;height:16px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;}
+.canvasWrap{flex:1;position:relative;overflow:hidden;}
+.canvasWrap::before{content:'';position:absolute;inset:0;background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:20px 20px;opacity:.6;}
+.canvasInner{position:absolute;inset:0;padding:var(--sp-6) var(--sp-5);overflow:auto;}
+.flow{display:flex;align-items:center;position:relative;z-index:1;}
+.node{position:relative;display:flex;flex-direction:column;gap:3px;width:118px;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-lg);padding:9px 10px;box-shadow:var(--shadow-sm);cursor:pointer;}
+.node.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow),var(--shadow-md);}
+.node.proposed{border:1.5px dashed var(--accent);background:var(--accent-muted);box-shadow:none;}
+.node .nType{display:flex;align-items:center;gap:5px;font-family:var(--font-code);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.node .nName{font-size:12px;font-weight:600;}.node .nMeta{font-size:10px;color:var(--text-tertiary);}
+.node .nIcon{width:15px;height:15px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+.n-trigger .nIcon{background:#7c3aed;}.n-trigger{border-top:2px solid #7c3aed;}
+.n-agent .nIcon{background:var(--accent);}.n-agent{border-top:2px solid var(--accent);}
+.n-tool .nIcon{background:var(--success);}.n-tool{border-top:2px solid var(--success);}
+.n-branch .nIcon{background:var(--warning);}.n-branch{border-top:2px solid var(--warning);}
+.n-approval .nIcon{background:#db2777;}.n-approval{border-top:2px solid #db2777;}
+.n-code .nIcon{background:#0e7490;}.n-code{border-top:2px solid #0e7490;}
+.perItem{position:absolute;top:-8px;left:9px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;font-family:var(--font-code);font-size:8px;background:#0891b2;color:#fff;border:2px solid var(--canvas);border-radius:var(--radius-full);padding:0 5px 0 3px;}
+.newBadge{position:absolute;top:-8px;left:-6px;font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:1px 5px;}
+.conn{width:24px;height:2px;background:var(--border-strong);flex-shrink:0;}
+.conn.dashed{background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 9px);}
+.branchCol{display:flex;flex-direction:column;gap:12px;}
+.branchRow{display:flex;align-items:center;}
+.branchLbl{font-family:var(--font-code);font-size:8.5px;padding:1px 5px;border-radius:var(--radius-full);margin-right:5px;}
+.branchLbl.up{background:var(--danger-muted);color:var(--danger);}.branchLbl.norm{background:var(--surface);color:var(--text-secondary);}
+
+
+/* Assistant panel (Option B) */
+.asstPanel{width:330px;flex-shrink:0;border-left:1px solid var(--border);background:var(--canvas);display:flex;flex-direction:column;}
+.apHd{display:flex;align-items:center;gap:8px;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
+.apHd .ttl{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;}
+.apHd .ttl i{color:var(--accent);}
+.apHd .x{margin-left:auto;color:var(--text-tertiary);cursor:pointer;font-size:14px;}
+.apBody{flex:1;overflow-y:auto;padding:var(--sp-4);display:flex;flex-direction:column;}
+.apFoot{padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border);}
+.msg{font-size:11.5px;line-height:1.5;border-radius:var(--radius-md);padding:7px 10px;margin-bottom:8px;max-width:92%;}
+.msg.user{background:var(--surface);border:1px solid var(--border);color:var(--text-primary);margin-left:auto;}
+.msg.ai{background:transparent;color:var(--text-secondary);padding:0 2px;}
+.asstInput{display:flex;align-items:center;gap:var(--sp-2);height:34px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);padding:0 6px 0 10px;}
+.asstInput input{flex:1;border:none;background:transparent;outline:none;font:inherit;font-size:12px;}
+.asstInput .send{width:26px;height:26px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;}
+
+/* Preview-to-apply card */
+.preview{border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--elevated);overflow:hidden;margin-bottom:10px;box-shadow:var(--shadow-sm);}
+.pvHd{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--accent-muted);font-size:11px;font-weight:600;color:var(--accent);}
+.pvHd .cnt{margin-left:auto;font-family:var(--font-brand);font-size:9px;color:var(--text-tertiary);}
+.pvList{padding:8px 10px;display:flex;flex-direction:column;gap:5px;}
+.pvRow{display:flex;align-items:center;gap:7px;font-size:11px;}
+.pvRow .op{width:14px;text-align:center;font-weight:700;}
+.pvRow.add .op{color:var(--success);}
+.pvRow.edit .op{color:var(--warning);}
+.pvRow .chip{display:inline-flex;align-items:center;gap:4px;}
+.pvRow .chip .ic{width:14px;height:14px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;}
+/* inline before/after inside a change card */
+.pvDiff{margin:2px 10px 8px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;font-size:11px;line-height:1.5;}
+.pvDiff .row{padding:6px 9px;}
+.pvDiff .old{background:var(--danger-muted);color:var(--text-secondary);}
+.pvDiff .new{background:var(--success-muted);color:var(--text-primary);border-top:1px solid var(--border-subtle);}
+.pvDiff .tag{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.04em;margin-right:6px;opacity:.7;}
+.pvActions{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border-subtle);}
+.pvActions .grow{flex:1;}
+.pvBtn{height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--elevated);color:var(--text-secondary);font-size:11.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+.pvBtn.apply{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pvBtn.ghost{border-color:transparent;color:var(--text-tertiary);}
+
+
+/* step editor (inspector) — coexists with the panel */
+.inspector{width:280px;flex-shrink:0;border-left:1px solid var(--border);background:var(--elevated);display:flex;flex-direction:column;}
+.insHd{display:flex;align-items:center;gap:8px;padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--border);}
+.insHd .insIcon{width:22px;height:22px;border-radius:var(--radius-sm);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;}
+.insType{font-family:var(--font-brand);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);}
+.insName{font-size:12.5px;font-weight:600;}
+.asstBtn{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--accent);font-size:11px;font-weight:500;cursor:pointer;}
+.insBody{flex:1;overflow-y:auto;padding:var(--sp-4);}
+.field{margin-bottom:var(--sp-4);}
+.fieldLabel{font-family:var(--font-brand);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:5px;}
+.textarea{width:100%;min-height:54px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);padding:7px 9px;font-size:12px;line-height:1.5;}
+.pending{border-color:rgba(37,99,235,.45) !important;background:var(--accent-muted) !important;}
+.editBadge{position:absolute;top:-8px;left:-6px;font-family:var(--font-brand);font-size:8px;letter-spacing:.04em;background:var(--warning);color:#fff;border-radius:var(--radius-sm);padding:1px 5px;}
+
+.zoom{position:absolute;right:var(--sp-4);bottom:var(--sp-4);display:flex;flex-direction:column;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);z-index:3;}
+.zoom button{width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);border:none;background:none;cursor:pointer;border-bottom:1px solid var(--border-subtle);}
+.zoom button:last-child{border-bottom:none;}
+
+/* ── Overview shell (transition frame) ── */
+.shell{display:flex;height:100%;}
+.rail2{width:44px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;}
+.rail2 .brand{height:46px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border);width:100%;font-family:var(--font-brand);font-size:13px;font-weight:600;color:var(--accent);}
+.rail2 .rb{width:30px;height:30px;margin-top:var(--sp-2);display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);color:var(--text-tertiary);font-size:15px;position:relative;}
+.rail2 .rb.active{background:var(--accent-muted);color:var(--accent);}
+.rail2 .rb.active::before{content:'';position:absolute;left:-7px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:var(--radius-full);}
+.listPane2{width:280px;flex-shrink:0;border-right:1px solid var(--border);background:var(--canvas);}
+.lp2Hd{display:flex;align-items:center;gap:8px;padding:var(--sp-4) var(--sp-4) var(--sp-3);}
+.lp2Hd .t{font-size:15px;font-weight:600;flex:1;}
+.lp2New{display:flex;align-items:center;justify-content:center;gap:7px;margin:0 var(--sp-4) var(--sp-3);height:32px;border:none;border-radius:var(--radius-md);background:var(--accent);color:#fff;font-size:12px;font-weight:600;width:calc(100% - 32px);}
+.lp2Item{padding:9px 14px;border-bottom:1px solid var(--border);border-left:2px solid transparent;}
+.lp2Item .nm{font-size:.82rem;font-weight:600;}
+.lp2Item .mt{font-family:var(--font-brand);font-size:.65rem;color:var(--text-tertiary);opacity:.7;margin-top:3px;}
+.detail2{flex:1;display:flex;align-items:center;justify-content:center;padding:var(--sp-6);overflow-y:auto;}
+.qs{max-width:440px;width:100%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-2);}
+.qsIcon{width:52px;height:52px;border-radius:var(--radius-xl);background:var(--accent-muted);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:23px;}
+.qsTitle{font-size:18px;font-weight:600;}
+.qsDesc{font-size:12.5px;color:var(--text-secondary);line-height:1.6;margin-bottom:var(--sp-1);}
+.optLabel{width:100%;text-align:left;font-size:11.5px;font-weight:600;color:var(--text-secondary);margin-top:var(--sp-4);margin-bottom:var(--sp-1);display:flex;align-items:center;gap:8px;}
+.optLabel::after{content:'';flex:1;height:1px;background:var(--border);}
+.optLabel.hot{color:var(--accent);}
+.wideBtn{width:100%;height:36px;border:1px solid var(--border);background:var(--elevated);border-radius:var(--radius-md);color:var(--text-secondary);font-size:12.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;}
+.aiBox2{width:100%;background:var(--elevated);border:2px solid var(--accent);border-radius:var(--radius-xl);box-shadow:0 0 0 4px var(--accent-glow);padding:9px 9px 9px 14px;display:flex;align-items:center;gap:10px;text-align:left;}
+.aiBox2 .spark{color:var(--accent);}
+.aiBox2 .txt{flex:1;font-size:12.5px;color:var(--text-primary);}
+.aiBox2 .cursor{display:inline-block;width:1.5px;height:14px;background:var(--accent);vertical-align:-2px;margin-left:1px;}
+.aiBox2 .send{width:30px;height:30px;flex-shrink:0;border-radius:var(--radius-md);background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;}
+.kbd{font-family:var(--font-brand);font-size:9px;color:var(--text-tertiary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1px 5px;margin-top:var(--sp-3);}
+.exMini{display:flex;gap:6px;width:100%;}
+.exMini .ex{flex:1;display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--elevated);font-size:11px;font-weight:600;color:var(--text-secondary);}
+.exMini .ex .ic{width:16px;height:16px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;}
+
+/* ── Drafting state ── */
+.drafting{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-3);z-index:2;}
+.drafting .dIco{width:46px;height:46px;border-radius:var(--radius-xl);background:var(--accent-muted);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:20px;}
+.drafting .dT{font-size:13px;font-weight:600;}
+.drafting .dS{font-size:11.5px;color:var(--text-tertiary);}
+.ghostSkel{display:flex;align-items:center;opacity:.45;margin-bottom:var(--sp-4);}
+.ghostSkel .gn{width:84px;height:46px;border:1.5px dashed var(--border-strong);border-radius:var(--radius-lg);}
+.ghostSkel .gc{width:22px;height:2px;background:var(--border-strong);}
+.thinkRow{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-secondary);}
+.thinkDots{display:inline-flex;gap:3px;}
+.thinkDots span{width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.55;}
+</style>
+</head>
+<body>
+<div class="flowpage">
+  <div class="pageHd"><h1>Workflows — assistant experience</h1><span class="sub">conversational, scoped, and changes are previewed before they apply</span><button class="themeToggle" id="themeBtn"><i class="bi bi-sun"></i> Theme</button></div>
+
+  <!-- ════════ 1 — On the overview: "Let the assistant help" ════════ -->
+  <div class="screen">
+    <div class="caption"><span class="capNum">1</span><div><div class="capTitle">ON THE OVERVIEW — “LET THE ASSISTANT HELP”</div><div class="capDesc">The describe box on the empty panel <b>is</b> the first turn of the assistant. The user types their goal here; submitting creates a new workflow and takes over full-screen into the builder — the text carries straight into the chat (it isn’t re-asked).</div></div></div>
+    <div class="device"><div class="shell">
+      <div class="rail2"><div class="brand">O9</div><div class="rb"><i class="bi bi-bullseye"></i></div><div class="rb active"><i class="bi bi-diagram-3"></i></div></div>
+      <div class="listPane2">
+        <div class="lp2Hd"><span class="t">Workflows</span></div>
+        <button class="lp2New"><i class="bi bi-plus-lg"></i> New workflow</button>
+        <div class="lp2Item"><div class="nm">Client email triage</div><div class="mt">WATCH · 5 MIN</div></div>
+        <div class="lp2Item"><div class="nm">Morning briefing</div><div class="mt">WEEKDAYS 7AM</div></div>
+        <div class="lp2Item"><div class="nm">Meeting notes → tasks</div><div class="mt">RUN BY HAND</div></div>
+      </div>
+      <div class="detail2">
+        <div class="qs">
+          <div class="qsIcon"><i class="bi bi-diagram-3"></i></div>
+          <div class="qsTitle">Select a workflow — or start a new one</div>
+          <div class="qsDesc">Pick one on the left to view it, or start a new workflow:</div>
+          <div class="optLabel">Start from scratch</div>
+          <button class="wideBtn"><i class="bi bi-easel2"></i> Open a blank canvas</button>
+          <div class="optLabel hot">Let the assistant help</div>
+          <div class="aiBox2"><i class="bi bi-stars spark"></i><span class="txt">when a client emails, triage it: create tasks from any action items, and draft a reply for urgent ones to approve before sending<span class="cursor"></span></span><button class="send"><i class="bi bi-arrow-up"></i></button></div>
+          <span class="kbd">↵ opens the builder with the assistant</span>
+          <div class="optLabel">Start from an example</div>
+          <div class="exMini"><div class="ex"><span class="ic" style="background:#7c3aed"><i class="bi bi-newspaper"></i></span> Morning briefing</div><div class="ex"><span class="ic" style="background:#2563eb"><i class="bi bi-envelope"></i></span> Email triage</div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ════════ 2 — Builder opens: assistant is drafting ════════ -->
+  <div class="screen">
+    <div class="caption"><span class="capNum">2</span><div><div class="capTitle">BUILDER OPENS — ASSISTANT IS DRAFTING</div><div class="capDesc">Submitting takes over full-screen into the builder with the assistant panel open and the prompt already sent. The canvas shows a brief drafting state while the plan is generated — then it becomes the preview in the next frame.</div></div></div>
+    <div class="device"><div class="app">
+      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Untitled workflow</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
+      <div class="workspace">
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="canvasWrap">
+          <div class="drafting">
+            <div class="ghostSkel"><div class="gn"></div><div class="gc"></div><div class="gn"></div><div class="gc"></div><div class="gn"></div></div>
+            <div class="dIco"><i class="bi bi-stars"></i></div>
+            <div class="dT">Drafting your workflow…</div>
+            <div class="dS">laying out steps from your description</div>
+          </div>
+        </div>
+        <div class="asstPanel">
+          <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
+          <div class="apBody">
+            <div class="msg user">when a client emails, triage it: create tasks from any action items, and draft a reply for urgent ones to approve before sending</div>
+            <div class="msg ai"><span class="thinkRow"><i class="bi bi-stars" style="color:var(--accent)"></i> Drafting a plan <span class="thinkDots"><span></span><span></span><span></span></span></span></div>
+          </div>
+          <div class="apFoot"><div class="asstInput"><input placeholder="Working…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ════════ 3 — Build from a prompt (proposed plan preview) ════════ -->
+  <div class="screen">
+    <div class="caption"><span class="capNum">3</span><div><div class="capTitle">THE ASSISTANT RETURNS A PLAN — PREVIEW</div><div class="capDesc">The drafted plan lands as a <b>preview</b> — ghosted steps on the canvas + a change list in the chat. Nothing is real until you Apply; then walk it on a real email with a <b>Dry run</b>.</div></div></div>
+    <div class="device"><div class="app">
+      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Untitled workflow</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
+      <div class="workspace">
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="canvasWrap"><div class="canvasInner"><div class="flow">
+          <div class="node n-trigger proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch</div></div>
+          <div class="conn dashed"></div>
+          <div class="node n-agent proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
+          <div class="conn dashed"></div>
+          <div class="node n-code proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
+          <div class="conn dashed"></div>
+          <div class="node n-tool proposed"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
+          <div class="conn dashed"></div>
+          <div class="node n-branch proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
+          <div class="conn dashed"></div>
+          <div class="branchCol">
+            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent proposed"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn dashed"></div><div class="node n-approval proposed"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div><div class="conn dashed"></div><div class="node n-tool proposed"><div class="nType"><span class="nIcon"><i class="bi bi-send"></i></span> Tool</div><div class="nName">Send reply</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool proposed"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div></div>
+          </div>
+        </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
+        <div class="asstPanel">
+          <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
+          <div class="apBody">
+            <div class="msg user">when a client emails, triage it: create tasks from any action items, and draft a reply for urgent ones to approve before sending</div>
+            <div class="msg ai">Here’s a plan — review the proposed steps on the canvas, then apply. Emails that aren’t urgent just get labeled <b>triaged</b>:</div>
+            <div class="preview">
+              <div class="pvHd"><i class="bi bi-eye"></i> Proposed workflow <span class="cnt">9 steps</span></div>
+              <div class="pvList">
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#7c3aed"><i class="bi bi-broadcast"></i></span> On Client Email · work Gmail</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Triage</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code · Set due dates</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-calendar-plus"></i></span> Tool · Create task — per item · Calendar</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch · Urgent?</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Draft reply</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval · Review</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-send"></i></span> Tool · Send reply · work Gmail</span></div>
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-tag"></i></span> Tool · Label “triaged”</span></div>
+              </div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
+            </div>
+          </div>
+          <div class="apFoot"><div class="asstInput"><input placeholder="Refine the plan, or ask for changes…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ════════ 2 — Add a step (preview a single change) ════════ -->
+  <div class="screen">
+    <div class="caption"><span class="capNum">4</span><div><div class="capTitle">GROW AN EXISTING FLOW — PREVIEW A SINGLE CHANGE</div><div class="capDesc">Ask for one change to a built workflow. The assistant shows exactly what it will do — the new step appears ghosted in place, the chat lists the diff — and you Apply it. Existing steps stay solid; only the proposal is dashed.</div></div></div>
+    <div class="device"><div class="app">
+      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
+      <div class="workspace">
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="palItem"><span class="pIc" style="background:#db2777"><i class="bi bi-person-check"></i></span> Approval</div></div>
+        <div class="canvasWrap"><div class="canvasInner"><div class="flow">
+          <div class="node n-trigger"><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch · 5m</div></div>
+          <div class="conn"></div>
+          <div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
+          <div class="conn"></div>
+          <div class="node n-code"><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
+          <div class="conn"></div>
+          <div class="node n-tool"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
+          <div class="conn"></div>
+          <div class="node n-branch"><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
+          <div class="conn"></div>
+          <div class="branchCol">
+            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn"></div><div class="node n-approval"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div><div class="conn"></div><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-send"></i></span> Tool</div><div class="nName">Send reply</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div><div class="conn dashed"></div><div class="node n-tool proposed"><span class="newBadge">NEW</span><div class="nType"><span class="nIcon"><i class="bi bi-table"></i></span> Tool</div><div class="nName">Append row</div><div class="nMeta">Sheets</div></div></div>
+          </div>
+        </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
+        <div class="asstPanel">
+          <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
+          <div class="apBody">
+            <div class="msg user">also log the normal ones to a spreadsheet</div>
+            <div class="msg ai">I’ll add a Tool step on the normal path:</div>
+            <div class="preview">
+              <div class="pvHd"><i class="bi bi-eye"></i> Proposed change <span class="cnt">1 change</span></div>
+              <div class="pvList">
+                <div class="pvRow add"><span class="op">+</span> <span class="chip"><span class="ic" style="background:var(--success)"><i class="bi bi-table"></i></span> Tool · Append row → Google Sheets</span></div>
+                <div class="pvRow" style="color:var(--text-tertiary);font-size:10.5px;padding-left:21px">on the <b style="color:var(--text-secondary)">normal</b> branch, after Label “triaged”</div>
+              </div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
+            </div>
+            <div class="msg ai">Want me to map which fields go into the row?</div>
+          </div>
+          <div class="apFoot"><div class="asstInput"><input placeholder="Ask anything…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ════════ 5 — Ask the panel to edit a step ════════ -->
+  <div class="screen">
+    <div class="caption"><span class="capNum">5</span><div><div class="capTitle">ASK THE PANEL TO EDIT A STEP</div><div class="capDesc">Name a step in the panel and the change comes back as a one-change preview <b>with the before/after right in the card</b> — you can read and Apply it without opening anything. The node gets an <b>EDIT</b> badge, and if the step’s editor is open (as here) it shows the pending value in its fields too. Apply in the panel = Keep in the editor (slide 8): one pending state, shown wherever you’re looking.</div></div></div>
+    <div class="device"><div class="app">
+      <div class="topbar"><button class="back"><i class="bi bi-arrow-left"></i></button><div class="crumb"><span class="mark">O9</span><a>Workflows</a><i class="bi bi-chevron-right"></i><span class="cur">Client email triage</span></div><div class="spacer"></div><button class="btn"><i class="bi bi-magic"></i> Dry run</button><button class="btn asstToggle on"><i class="bi bi-stars"></i> Assistant</button><button class="btn accent"><i class="bi bi-check-lg"></i> Save</button></div>
+      <div class="workspace">
+        <div class="palette"><div class="palHd">Add step</div><div class="palItem"><span class="pIc" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent</div><div class="palItem"><span class="pIc" style="background:var(--success)"><i class="bi bi-wrench"></i></span> Tool</div><div class="palItem"><span class="pIc" style="background:#0e7490"><i class="bi bi-code-slash"></i></span> Code</div><div class="palItem"><span class="pIc" style="background:var(--warning)"><i class="bi bi-signpost-split"></i></span> Branch</div></div>
+        <div class="canvasWrap"><div class="canvasInner"><div class="flow">
+          <div class="node n-trigger"><div class="nType"><span class="nIcon"><i class="bi bi-broadcast"></i></span> Trigger</div><div class="nName">On Client Email</div><div class="nMeta">Watch · 5m</div></div>
+          <div class="conn"></div>
+          <div class="node n-agent selected"><span class="editBadge">EDIT</span><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Triage</div><div class="nMeta">classify</div></div>
+          <div class="conn"></div>
+          <div class="node n-code"><div class="nType"><span class="nIcon"><i class="bi bi-code-slash"></i></span> Code</div><div class="nName">Set due dates</div></div>
+          <div class="conn"></div>
+          <div class="node n-tool"><span class="perItem"><i class="bi bi-arrow-repeat"></i> per item</span><div class="nType"><span class="nIcon"><i class="bi bi-calendar-plus"></i></span> Tool</div><div class="nName">Create task</div><div class="nMeta">Calendar</div></div>
+          <div class="conn"></div>
+          <div class="node n-branch"><div class="nType"><span class="nIcon"><i class="bi bi-signpost-split"></i></span> Branch</div><div class="nName">Urgent?</div></div>
+          <div class="conn"></div>
+          <div class="branchCol">
+            <div class="branchRow"><span class="branchLbl up">URGENT</span><div class="node n-agent"><div class="nType"><span class="nIcon"><i class="bi bi-robot"></i></span> Agent</div><div class="nName">Draft reply</div></div><div class="conn"></div><div class="node n-approval"><div class="nType"><span class="nIcon"><i class="bi bi-person-check"></i></span> Approval</div><div class="nName">Review</div></div></div>
+            <div class="branchRow"><span class="branchLbl norm">NORMAL</span><div class="node n-tool"><div class="nType"><span class="nIcon"><i class="bi bi-tag"></i></span> Tool</div><div class="nName">Label “triaged”</div></div></div>
+          </div>
+        </div></div><div class="zoom"><button><i class="bi bi-plus-lg"></i></button><button><i class="bi bi-dash-lg"></i></button></div></div>
+        <div class="inspector">
+          <div class="insHd"><span class="insIcon"><i class="bi bi-robot"></i></span><div><div class="insType">Agent step</div><div class="insName">Triage</div></div><button class="asstBtn"><i class="bi bi-stars"></i></button></div>
+          <div class="insBody">
+            <div class="field"><div class="fieldLabel">Instruction</div><div class="textarea pending">Read the client’s email. Mark “urgent” only if the sender asks for a reply today or names a deadline; otherwise “normal.” Set a one-line summary, the client name, and any action items with due dates.</div></div>
+            <div class="field"><div class="fieldLabel">Agent profile</div><div class="textarea" style="min-height:0;padding:7px 9px">Triage</div></div>
+          </div>
+        </div>
+        <div class="asstPanel">
+          <div class="apHd"><div class="ttl"><i class="bi bi-stars"></i> Assistant</div><i class="bi bi-x-lg x"></i></div>
+          <div class="apBody">
+            <div class="msg user">make Triage stricter — only “urgent” if they ask for a reply today or name a deadline</div>
+            <div class="msg ai">I’ll tighten <b>Triage</b>’s instruction:</div>
+            <div class="preview">
+              <div class="pvHd"><i class="bi bi-eye"></i> Proposed change <span class="cnt">1 change</span></div>
+              <div class="pvList">
+                <div class="pvRow edit"><span class="op">~</span> <span class="chip"><span class="ic" style="background:var(--accent)"><i class="bi bi-robot"></i></span> Agent · Triage — instruction</span></div>
+              </div>
+              <div class="pvDiff">
+                <div class="row old"><span class="tag">WAS</span>Read the client’s email. Set priority (urgent if it needs a reply today or names a deadline)…</div>
+                <div class="row new"><span class="tag">NOW</span>Read the client’s email. Mark “urgent” only if the sender asks for a reply today or names a deadline; otherwise “normal.”…</div>
+              </div>
+              <div class="pvActions"><button class="pvBtn ghost">Discard</button><div class="grow"></div><button class="pvBtn apply"><i class="bi bi-check-lg"></i> Apply</button></div>
+            </div>
+          </div>
+          <div class="apFoot"><div class="asstInput"><input placeholder="Ask anything…" /><button class="send"><i class="bi bi-arrow-up"></i></button></div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+<script>const r=document.documentElement,b=document.getElementById('themeBtn');b.onclick=()=>{const d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');b.querySelector('i').className=d?'bi bi-sun':'bi bi-moon-stars';};</script>
+</body>
+</html>
