@@ -597,6 +597,32 @@ describe('App view transitions', () => {
             expectSurfaceActive('apps-view', 'left');
         });
 
+        it('floats a tab and docks the same mounted app in a pane again', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+
+            const frame = screen.getByTestId('custom-app-frame');
+            const surfaceHost = surfaceHostFor('custom-app-frame');
+            fireEvent.click(screen.getByTestId(
+                'float-surface-custom-app:text-lab',
+            ));
+
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+            expect(surfaceHostFor('custom-app-frame')).toBe(surfaceHost);
+            expect(surfaceHost).toHaveAttribute('data-floating', 'true');
+            expect(surfaceHost).toHaveAttribute('data-pane-id', 'floating');
+            expectSurfaceActive('apps-view', 'left');
+
+            fireEvent.click(screen.getByTestId(
+                'dock-surface-custom-app:text-lab-right',
+            ));
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+            expect(surfaceHostFor('custom-app-frame')).toBe(surfaceHost);
+            expect(surfaceHost).toHaveAttribute('data-floating', 'false');
+            expectSurfaceActive('custom-app-frame', 'right');
+        });
+
         it('keeps the Custom App mounted while another tab is selected', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));

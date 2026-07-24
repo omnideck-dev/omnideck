@@ -2,6 +2,7 @@ import { DESKTOP_PANE_IDS } from './desktopWindowReducer.js';
 
 const TAB = 'tab';
 const FULLSCREEN = 'fullscreen';
+const FLOATING = 'floating';
 const MENU = 'menu';
 
 function action({
@@ -10,7 +11,7 @@ function action({
     ariaLabel = label,
     icon,
     execute,
-    placements = [TAB, FULLSCREEN, MENU],
+    placements = [TAB, FULLSCREEN, FLOATING, MENU],
     testid,
     disabled = false,
     separatorBefore = false,
@@ -29,7 +30,7 @@ function action({
 }
 
 /**
- * One command model shared by tab chrome, full-screen chrome, and tab menus.
+ * One command model shared by tab, floating, full-screen, and menu chrome.
  *
  * Placement operations are generic. Feature owners contribute only the
  * commands their surface kind supports.
@@ -38,25 +39,54 @@ export function createDesktopSurfaceActions({
     surface,
     paneId,
     pane,
+    floating = false,
     commands,
 }) {
     const surfaceKey = surface.testid || surface.id;
     const targetPaneId = paneId === DESKTOP_PANE_IDS.LEFT
         ? DESKTOP_PANE_IDS.RIGHT
         : DESKTOP_PANE_IDS.LEFT;
-    const surfaceIndex = pane.surfaceIds.indexOf(surface.id);
-    const otherClosable = pane.surfaces.some(
+    const surfaceIndex = pane?.surfaceIds.indexOf(surface.id) ?? -1;
+    const otherClosable = pane?.surfaces.some(
         (candidate) => (
             candidate.id !== surface.id
             && candidate.closable !== false
         ),
-    );
-    const closableToRight = pane.surfaces
+    ) || false;
+    const closableToRight = (pane?.surfaces || [])
         .slice(surfaceIndex + 1)
         .some((candidate) => candidate.closable !== false);
 
-    const actions = [
-        action({
+    const actions = [];
+    if (floating) {
+        actions.push(
+            action({
+                id: 'dock-left',
+                label: 'Dock in left pane',
+                ariaLabel: `Dock ${surface.label} in left pane`,
+                icon: 'bi-box-arrow-left',
+                execute: () => commands.moveSurface(
+                    surface.id,
+                    DESKTOP_PANE_IDS.LEFT,
+                ),
+                placements: [FLOATING],
+                testid: `dock-surface-${surfaceKey}-left`,
+            }),
+            action({
+                id: 'dock-right',
+                label: 'Dock in right pane',
+                ariaLabel: `Dock ${surface.label} in right pane`,
+                icon: 'bi-box-arrow-right',
+                execute: () => commands.moveSurface(
+                    surface.id,
+                    DESKTOP_PANE_IDS.RIGHT,
+                ),
+                placements: [FLOATING],
+                testid: `dock-surface-${surfaceKey}-right`,
+            }),
+        );
+    } else {
+        actions.push(action({
             id: 'move',
             label: `Move to ${targetPaneId} pane`,
             ariaLabel: `Move ${surface.label} to ${targetPaneId} pane`,
@@ -65,17 +95,28 @@ export function createDesktopSurfaceActions({
                 : 'bi-box-arrow-right',
             execute: () => commands.moveSurface(surface.id, targetPaneId),
             testid: `move-surface-${surfaceKey}-${targetPaneId}`,
-        }),
+        }));
+        actions.push(action({
+            id: 'float',
+            label: 'Open as floating window',
+            ariaLabel: `Open ${surface.label} as a floating window`,
+            icon: 'bi-window-stack',
+            execute: () => commands.floatSurface(surface.id),
+            placements: [TAB, MENU],
+            testid: `float-surface-${surfaceKey}`,
+        }));
+    }
+    actions.push(
         action({
             id: 'fullscreen',
             label: 'Enter full screen',
             ariaLabel: `Show ${surface.label} full screen`,
             icon: 'bi-arrows-fullscreen',
             execute: () => commands.enterFullscreen(surface.id),
-            placements: [TAB, MENU],
+            placements: floating ? [FLOATING] : [TAB, MENU],
             testid: `maximize-surface-${surfaceKey}`,
         }),
-    ];
+    );
 
     if (surface.kind === 'custom-app') {
         actions.push(action({
@@ -105,13 +146,18 @@ export function createDesktopSurfaceActions({
     if (surface.closable !== false) {
         actions.push(action({
             id: 'close',
-            label: 'Close tab',
+            label: floating ? 'Close window' : 'Close tab',
             icon: 'bi-x-lg',
             execute: () => commands.closeSurface(paneId, surface.id),
-            placements: [MENU],
+            placements: floating ? [FLOATING] : [MENU],
+            testid: floating
+                ? `close-floating-surface-${surfaceKey}`
+                : undefined,
             separatorBefore: true,
         }));
     }
+    if (floating) return actions;
+
     actions.push(
         action({
             id: 'close-others',
@@ -137,5 +183,6 @@ export function createDesktopSurfaceActions({
 export const DESKTOP_ACTION_PLACEMENTS = {
     TAB,
     FULLSCREEN,
+    FLOATING,
     MENU,
 };

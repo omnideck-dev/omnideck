@@ -24,6 +24,7 @@ const CHAT = {
 function commands() {
     return {
         moveSurface: vi.fn(),
+        floatSurface: vi.fn(),
         enterFullscreen: vi.fn(),
         reloadCustomApp: vi.fn(),
         openArtifactConversation: vi.fn(),
@@ -91,6 +92,41 @@ describe('desktop surface actions', () => {
         expect(screen.getByTestId(
             'reload-surface-custom-app:text-lab',
         )).toBeInTheDocument();
+    });
+
+    it('offers floating placement from a tab and dock commands from window chrome', () => {
+        const { commandSet, items } = actions();
+        items.find((item) => item.id === 'float').execute();
+        expect(commandSet.floatSurface).toHaveBeenCalledWith(CUSTOM_APP.id);
+
+        const floatingItems = createDesktopSurfaceActions({
+            surface: CUSTOM_APP,
+            paneId: null,
+            pane: null,
+            floating: true,
+            commands: commandSet,
+        });
+        render(
+            <DesktopSurfaceActionBar
+                actions={floatingItems}
+                placement={DESKTOP_ACTION_PLACEMENTS.FLOATING}
+            />,
+        );
+
+        fireEvent.click(screen.getByTestId(
+            'dock-surface-custom-app:text-lab-left',
+        ));
+        fireEvent.click(screen.getByTestId(
+            'dock-surface-custom-app:text-lab-right',
+        ));
+        expect(commandSet.moveSurface).toHaveBeenCalledWith(
+            CUSTOM_APP.id,
+            DESKTOP_PANE_IDS.LEFT,
+        );
+        expect(commandSet.moveSurface).toHaveBeenCalledWith(
+            CUSTOM_APP.id,
+            DESKTOP_PANE_IDS.RIGHT,
+        );
     });
 
     it('provides bulk close commands with contextual enablement', () => {

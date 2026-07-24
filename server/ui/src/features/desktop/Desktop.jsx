@@ -55,6 +55,13 @@ function fallbackSurface(model, paneId, closingSurfaceId) {
 }
 
 function activeExecutionSurface(model) {
+    const focusedFloatingSurface = model.focusedFloatingSurfaceId
+        ? model.surfacesById[model.focusedFloatingSurfaceId]
+        : null;
+    if (focusedFloatingSurface?.kind === 'conversation-execution') {
+        return focusedFloatingSurface;
+    }
+
     const focusedPane = model.focusedPaneId
         ? model.panes[model.focusedPaneId]
         : null;
@@ -330,10 +337,14 @@ export default function Desktop() {
             kind: 'artifacts',
             conversationId,
         });
-        windowManager.commands.openSurface(surface, paneId);
+        windowManager.commands.openSurface(
+            surface,
+            paneId || preferredPaneId(),
+        );
         navigation.openDestination(surface.destination);
     }, [
         navigation,
+        preferredPaneId,
         windowManager.commands.openSurface,
     ]);
 
@@ -372,15 +383,43 @@ export default function Desktop() {
     const handleCloseSurface = useCallback((paneId, surfaceId) => {
         const surface = windowManager.model.surfacesById[surfaceId];
         if (!surface) return;
-        const wasActive = windowManager.model.panes[paneId].activeSurfaceId === surfaceId;
+        const wasActive = Boolean(
+            paneId
+            && windowManager.model.panes[paneId]?.activeSurfaceId === surfaceId,
+        );
         const fallback = wasActive
             ? fallbackSurface(windowManager.model, paneId, surfaceId)
+            : null;
+        const floatingFallback = !paneId && surface.destination
+            ? [
+                ...windowManager.model.floatingWindows
+                    .filter((window) => window.surfaceId !== surfaceId)
+                    .sort((left, right) => right.zIndex - left.zIndex)
+                    .map((window) => (
+                        windowManager.model.surfacesById[window.surfaceId]
+                    )),
+                ...[
+                    windowManager.model.focusedPaneId,
+                    DESKTOP_PANE_IDS.LEFT,
+                    DESKTOP_PANE_IDS.RIGHT,
+                ]
+                    .filter((candidate, index, all) => (
+                        candidate && all.indexOf(candidate) === index
+                    ))
+                    .map((candidate) => {
+                        const activeSurfaceId = windowManager.model
+                            .panes[candidate].activeSurfaceId;
+                        return windowManager.model.surfacesById[activeSurfaceId];
+                    }),
+            ].find((candidate) => candidate?.destination)
             : null;
 
         closeManagedSurface(surface);
 
         if (wasActive) {
             if (fallback?.destination) navigation.openDestination(fallback.destination);
+        } else if (floatingFallback?.destination) {
+            navigation.openDestination(floatingFallback.destination);
         }
     }, [
         closeManagedSurface,
@@ -400,6 +439,29 @@ export default function Desktop() {
         navigation,
         windowManager.commands.moveSurface,
         windowManager.model,
+    ]);
+
+    const handleFloatSurface = useCallback((surfaceId) => {
+        const surface = windowManager.model.surfacesById[surfaceId];
+        if (!surface) return;
+        windowManager.commands.floatSurface(surfaceId);
+        if (surface.destination) {
+            navigation.openDestination(surface.destination);
+        }
+    }, [
+        navigation,
+        windowManager.commands.floatSurface,
+        windowManager.model.surfacesById,
+    ]);
+
+    const handleFocusSurface = useCallback((surfaceId) => {
+        const surface = windowManager.model.surfacesById[surfaceId];
+        if (surface?.destination) {
+            navigation.openDestination(surface.destination);
+        }
+    }, [
+        navigation,
+        windowManager.model.surfacesById,
     ]);
 
     const handleEnterFullscreen = useCallback((surfaceId) => {
@@ -486,6 +548,7 @@ export default function Desktop() {
 
     const surfaceActionCommands = useMemo(() => ({
         moveSurface: handleMoveSurface,
+        floatSurface: handleFloatSurface,
         enterFullscreen: handleEnterFullscreen,
         reloadCustomApp: customAppSurfaces.reloadApp,
         openArtifactConversation: openArtifactInConversation,
@@ -494,6 +557,7 @@ export default function Desktop() {
         closeSurfacesToRight: handleCloseSurfacesToRight,
     }), [
         customAppSurfaces.reloadApp,
+        handleFloatSurface,
         handleCloseOtherSurfaces,
         handleCloseSurface,
         handleCloseSurfacesToRight,
@@ -501,11 +565,12 @@ export default function Desktop() {
         handleMoveSurface,
         openArtifactInConversation,
     ]);
-    const getSurfaceActions = useCallback((surface, paneId) => (
+    const getSurfaceActions = useCallback((surface, paneId, options = {}) => (
         createDesktopSurfaceActions({
             surface,
             paneId,
-            pane: windowManager.model.panes[paneId],
+            pane: paneId ? windowManager.model.panes[paneId] : null,
+            floating: options.floating,
             commands: surfaceActionCommands,
         })
     ), [
@@ -561,6 +626,7 @@ export default function Desktop() {
                         model={windowManager.model}
                         commands={windowManager.commands}
                         onSelectSurface={handleSelectSurface}
+                        onFocusSurface={handleFocusSurface}
                         onCloseSurface={handleCloseSurface}
                         getSurfaceActions={getSurfaceActions}
                         renderSurface={(surface, { active, paneId }) => (

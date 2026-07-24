@@ -217,4 +217,75 @@ describe('desktopWindowReducer', () => {
         expect(state.focusedPaneId).toBe(DESKTOP_PANE_IDS.LEFT);
         expect(state.fullscreenSurfaceId).toBe(APP.id);
     });
+
+    it('floats one surface without recreating it and docks it back into either pane', () => {
+        const placed = reduce([
+            {
+                type: 'OPEN_SURFACE',
+                surface: APP,
+                paneId: DESKTOP_PANE_IDS.RIGHT,
+            },
+        ]);
+        const registeredApp = placed.surfacesById[APP.id];
+        const floating = desktopWindowReducer(placed, {
+            type: 'FLOAT_SURFACE',
+            surfaceId: APP.id,
+            bounds: {
+                x: 90,
+                y: 70,
+                width: 640,
+                height: 420,
+            },
+        });
+
+        expect(floating.panes.right.surfaceIds).not.toContain(APP.id);
+        expect(floating.floatingWindowsBySurfaceId[APP.id]).toMatchObject({
+            x: 90,
+            y: 70,
+            width: 640,
+            height: 420,
+        });
+        expect(floating.focusedFloatingSurfaceId).toBe(APP.id);
+        expect(floating.surfacesById[APP.id]).toBe(registeredApp);
+
+        const docked = desktopWindowReducer(floating, {
+            type: 'MOVE_SURFACE',
+            surfaceId: APP.id,
+            paneId: DESKTOP_PANE_IDS.LEFT,
+        });
+        expect(docked.floatingWindowsBySurfaceId[APP.id]).toBeUndefined();
+        expect(docked.panes.left.activeSurfaceId).toBe(APP.id);
+        expect(docked.surfacesById[APP.id]).toBe(registeredApp);
+    });
+
+    it('persists floating resize bounds and can enter full screen in place', () => {
+        const floating = reduce([
+            {
+                type: 'OPEN_SURFACE',
+                surface: APP,
+                paneId: DESKTOP_PANE_IDS.RIGHT,
+            },
+            {
+                type: 'FLOAT_SURFACE',
+                surfaceId: APP.id,
+            },
+            {
+                type: 'UPDATE_FLOATING_BOUNDS',
+                surfaceId: APP.id,
+                bounds: { x: 120, y: 80, width: 880, height: 560 },
+            },
+            {
+                type: 'ENTER_FULLSCREEN',
+                surfaceId: APP.id,
+            },
+        ]);
+
+        expect(floating.floatingWindowsBySurfaceId[APP.id]).toMatchObject({
+            x: 120,
+            y: 80,
+            width: 880,
+            height: 560,
+        });
+        expect(floating.fullscreenSurfaceId).toBe(APP.id);
+    });
 });

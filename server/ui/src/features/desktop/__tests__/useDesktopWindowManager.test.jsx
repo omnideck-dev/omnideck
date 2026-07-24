@@ -117,4 +117,32 @@ describe('useDesktopWindowManager', () => {
         expect(result.current.model.panes.right.activeSurfaceId).toBe(APP.id);
         expect(result.current.model.splitRatio).toBe(64);
     });
+
+    it('presents floating windows through the same manager model', () => {
+        const { result } = renderHook(() => useDesktopWindowManager({
+            initialSurface: CHAT,
+        }));
+        act(() => {
+            result.current.commands.openSurface(
+                APP,
+                DESKTOP_PANE_IDS.RIGHT,
+            );
+            result.current.commands.floatSurface(APP.id, {
+                x: 80,
+                y: 60,
+                width: 640,
+                height: 420,
+            });
+        });
+
+        expect(result.current.model.panes.right.surfaceIds).not.toContain(APP.id);
+        expect(result.current.model.floatingWindowsBySurfaceId[APP.id])
+            .toMatchObject({
+                x: 80,
+                y: 60,
+                width: 640,
+                height: 420,
+            });
+        expect(result.current.model.surfacesById[APP.id]).toBe(APP);
+    });
 });

@@ -14,7 +14,7 @@ class FilePreview:
     @property
     def content(self) -> Locator:
         return self.page.locator(
-            "[data-surface-id][data-pane-id='right'][data-active='true']"
+            "[data-surface-kind='artifact-file'][data-active='true']"
         )
 
     @property
@@ -61,10 +61,16 @@ class FilePreview:
     def open_fullscreen(self) -> "FullscreenPreview":
         from .fullscreen_preview import FullscreenPreview
 
-        pane_id = self.content.get_attribute("data-pane-id")
-        self.page.get_by_test_id(
-            f"desktop-pane-{pane_id}-tab-bar"
-        ).locator("[data-testid^='maximize-surface-']").click()
+        surface_id = self.content.get_attribute("data-surface-id")
+        assert surface_id
+        host = self.page.locator(f'[data-surface-id="{surface_id}"]')
+        pane_id = host.get_attribute("data-pane-id")
+        if pane_id == "floating":
+            host.locator("[data-testid^='maximize-surface-']").click()
+        else:
+            self.page.get_by_test_id(
+                f"desktop-pane-{pane_id}-tab-bar"
+            ).locator("[data-testid^='maximize-surface-']").click()
         self.page.wait_for_timeout(300)
         return FullscreenPreview(self.page)
 

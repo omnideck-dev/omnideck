@@ -7,7 +7,7 @@ from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
 from tests.e2e._protocol import bash, say
-from tests.e2e.pages import ChatView, RecentConversations
+from tests.e2e.pages import ChatView, DesktopWindows, RecentConversations
 
 _TEST_APP_FILES = {
     "omnideck.json": """{"title":"Text Lab","description":"E2E fixture","icon":"bi-fonts"}""",
@@ -138,7 +138,7 @@ def _expect_app_beside_chat(page: Page) -> None:
     )
     expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
     expect(
-        page.locator("[data-surface-id='destination:chat']")
+        page.locator("[data-surface-id='destination:conversation']")
     ).to_have_attribute("data-pane-id", "left")
     expect(
         page.locator("[data-surface-id='custom-app:text-lab']")
@@ -186,6 +186,15 @@ def test_custom_app_moves_left_to_right_and_back_without_losing_state(
     expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
+    desktop = DesktopWindows(page)
+    desktop.float("custom-app:text-lab")
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-floating", "true")
+    expect(frame.locator("#text")).to_have_value(working_text)
+    page.get_by_test_id("dock-surface-custom-app:text-lab-left").click()
+    expect(frame.locator("#text")).to_have_value(working_text)
+
     page.get_by_test_id("close-surface-tab-custom-app:text-lab").click()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(0)
     expect(page.get_by_test_id("apps-view")).to_be_visible()
@@ -221,22 +230,56 @@ def test_custom_app_stays_mounted_while_other_left_tabs_are_selected(
     expect(frame.locator("#text")).to_have_value(working_text)
 
 
-def test_custom_app_transitions_from_bridge_open_and_compose(
+def test_inactive_custom_app_reload_is_a_per_tab_action(
     page: Page, installed_custom_app
 ) -> None:
-    """Both Custom App bridge commands move a left app into the right pane."""
+    """A tab menu can reload an inactive app without navigating away."""
+    _open_custom_apps_library(page)
+    page.get_by_test_id("custom-app-card").click()
+    frame = page.frame_locator('[data-testid="custom-app-frame"]')
+    frame.locator("#text").fill("reload this inactive app")
+
+    page.get_by_test_id("sidebar-settings").click()
+    expect(page.get_by_test_id("settings-page")).to_be_visible()
+
+    desktop = DesktopWindows(page)
+    menu = desktop.open_tab_menu("custom-app:text-lab")
+    menu.get_by_test_id("tab-context-action-reload").click()
+
+    expect(page.get_by_test_id("settings-page")).to_be_visible()
+    expect(desktop.active_surface("left")).to_have_attribute(
+        "data-surface-id", "destination:settings"
+    )
+    expect(frame.locator("#text")).to_have_value(
+        "The simplest useful app should feel like a folder you can open."
+    )
+
+
+def test_custom_app_bridge_selects_chat_without_moving_the_app(
+    page: Page, installed_custom_app
+) -> None:
+    """App bridge commands select retained Chat while leaving placement alone."""
     _open_custom_apps_library(page)
     page.get_by_test_id("custom-app-card").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
 
     frame.get_by_role("button", name="Open chat").click()
-    _expect_app_beside_chat(page)
+    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "left")
+    expect(page.get_by_test_id("desktop-window-layout")).to_have_attribute(
+        "data-split", "false"
+    )
 
-    page.get_by_test_id("move-surface-custom-app:text-lab-left").click()
+    page.get_by_test_id("surface-tab-custom-app:text-lab").click()
     working_text = "Bridge compose state"
     frame.locator("#text").fill(working_text)
     frame.get_by_role("button", name="Ask agent about this").click()
-    _expect_app_beside_chat(page)
+    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "left")
     expect(ChatView(page).composer).to_have_value(re.compile(re.escape(working_text)))
 
 
@@ -274,9 +317,10 @@ def test_custom_app_and_workspace_previews_share_the_right_tab_stack(
     page.get_by_test_id("custom-app-card").click()
     page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
-    working_text = "State survives workspace preview selection."
+    working_text = "State survives another tab being selected."
     frame.locator("#text").fill(working_text)
 
+    page.get_by_test_id("surface-tab-destination:conversation").click()
     ChatView(page).send(bash('echo "custom-app-surface"')).wait_streaming()
     expect(page.get_by_test_id("surface-tab-terminal")).to_be_visible()
     expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
@@ -347,6 +391,7 @@ def test_right_pane_custom_app_survives_new_conversation_and_closes(
     page.get_by_test_id("custom-app-card").click()
     page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
+    page.get_by_test_id("surface-tab-destination:conversation").click()
     _expect_app_beside_chat(page)
 
     working_text = "Right-pane state survives a new conversation."
@@ -484,17 +529,17 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     expect(page.locator("textarea").first).to_have_value(re.compile(re.escape(working_text)))
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    # A new conversation clears workspace previews, not the open Custom App.
+    # A new conversation closes execution views, not the open Custom App.
     page.get_by_test_id("sidebar-new-chat").click()
     expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    # The app tab owns its reload action; the pane has no global app action.
-    page.get_by_test_id("reload-surface-custom-app:text-lab").click()
+    # The app owns its reload command even while its tab is inactive.
+    DesktopWindows(page).choose_tab_action("custom-app:text-lab", "reload")
     expect(frame.locator("#text")).to_have_value("The simplest useful app should feel like a folder you can open.")
 
     # Closing the app removes its surface tab and leaves Chat active.
-    page.get_by_test_id("close-surface-tab-custom-app:text-lab").click()
+    DesktopWindows(page).choose_tab_action("custom-app:text-lab", "close")
     expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).not_to_be_visible()
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
 

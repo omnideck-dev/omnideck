@@ -15,7 +15,7 @@ function paneModel(pane, surfacesById) {
     };
 }
 
-/** Owns placement and focus for two equivalent desktop surface stacks. */
+/** Owns placement and focus across pane stacks and floating windows. */
 export default function useDesktopWindowManager({
     initialSurface = null,
     initialWindowState = null,
@@ -49,6 +49,15 @@ export default function useDesktopWindowManager({
     }, []);
     const moveSurface = useCallback((surfaceId, paneId) => {
         dispatch({ type: 'MOVE_SURFACE', surfaceId, paneId });
+    }, []);
+    const floatSurface = useCallback((surfaceId, bounds = null) => {
+        dispatch({ type: 'FLOAT_SURFACE', surfaceId, bounds });
+    }, []);
+    const focusFloatingSurface = useCallback((surfaceId) => {
+        dispatch({ type: 'FOCUS_FLOATING_SURFACE', surfaceId });
+    }, []);
+    const updateFloatingBounds = useCallback((surfaceId, bounds) => {
+        dispatch({ type: 'UPDATE_FLOATING_BOUNDS', surfaceId, bounds });
     }, []);
     const selectSurface = useCallback((paneId, surfaceId) => {
         dispatch({ type: 'SELECT_SURFACE', paneId, surfaceId });
@@ -90,7 +99,12 @@ export default function useDesktopWindowManager({
         },
         surfaces: Object.values(state.surfacesById),
         surfacesById: state.surfacesById,
+        floatingWindows: Object.values(
+            state.floatingWindowsBySurfaceId || {},
+        ),
+        floatingWindowsBySurfaceId: state.floatingWindowsBySurfaceId || {},
         focusedPaneId: state.focusedPaneId,
+        focusedFloatingSurfaceId: state.focusedFloatingSurfaceId || null,
         splitRatio: state.splitRatio,
         fullscreenSurfaceId: state.fullscreenSurfaceId,
         pendingFocus: state.pendingFocus,
@@ -101,6 +115,9 @@ export default function useDesktopWindowManager({
         registerSurfaces,
         reconcileSurfaceGroup,
         moveSurface,
+        floatSurface,
+        focusFloatingSurface,
+        updateFloatingBounds,
         selectSurface,
         closeSurface,
         requestSurfaceFocus,
@@ -110,6 +127,8 @@ export default function useDesktopWindowManager({
     }), [
         closeSurface,
         enterFullscreen,
+        floatSurface,
+        focusFloatingSurface,
         moveSurface,
         openSurface,
         reconcileSurfaceGroup,
@@ -118,6 +137,7 @@ export default function useDesktopWindowManager({
         selectSurface,
         setSplitRatio,
         setFullscreenSurface,
+        updateFloatingBounds,
     ]);
 
     return { model, commands };

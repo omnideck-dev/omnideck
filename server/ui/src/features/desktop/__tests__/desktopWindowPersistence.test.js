@@ -36,6 +36,15 @@ const APP = {
     },
     closable: true,
 };
+const SETTINGS = {
+    id: 'destination:settings',
+    kind: 'settings',
+    group: 'destination',
+    label: 'Settings',
+    icon: 'bi-gear',
+    destination: { kind: 'settings', tab: null },
+    closable: true,
+};
 
 function model() {
     return {
@@ -126,5 +135,36 @@ describe('desktop window persistence', () => {
         expect(restored.focusedPaneId).toBe('left');
         expect(restored.splitRatio).toBe(90);
         expect(restored.fullscreenSurfaceId).toBeNull();
+    });
+
+    it('restores floating window placement, bounds, focus, and stacking', () => {
+        const desktop = model();
+        desktop.surfacesById[SETTINGS.id] = SETTINGS;
+        desktop.floatingWindows = [{
+            surfaceId: SETTINGS.id,
+            x: 104,
+            y: 72,
+            width: 840,
+            height: 540,
+            zIndex: 4,
+        }];
+        desktop.focusedFloatingSurfaceId = SETTINGS.id;
+        saveDesktopWindowSnapshot(
+            desktop,
+            SETTINGS.destination,
+        );
+
+        const restored = loadDesktopWindowSnapshot().windowState;
+        expect(restored.floatingWindowsBySurfaceId[SETTINGS.id]).toEqual({
+            surfaceId: SETTINGS.id,
+            x: 104,
+            y: 72,
+            width: 840,
+            height: 540,
+            zIndex: 4,
+        });
+        expect(restored.focusedFloatingSurfaceId).toBe(SETTINGS.id);
+        expect(restored.floatingZCounter).toBe(4);
+        expect(restored.surfacesById[SETTINGS.id]).toEqual(SETTINGS);
     });
 });

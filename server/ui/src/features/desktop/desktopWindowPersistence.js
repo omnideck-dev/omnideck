@@ -1,4 +1,7 @@
-import { DESKTOP_PANE_IDS } from './desktopWindowReducer.js';
+import {
+    DEFAULT_FLOATING_WINDOW_BOUNDS,
+    DESKTOP_PANE_IDS,
+} from './desktopWindowReducer.js';
 
 export const DESKTOP_WINDOW_STORAGE_KEY = 'omnideck_desktop_window_v1';
 const SNAPSHOT_VERSION = 1;
@@ -70,6 +73,48 @@ function restoredPane(rawPane, surfacesById, usedSurfaceIds) {
     };
 }
 
+function restoredFloatingWindows(
+    rawWindows,
+    surfacesById,
+    usedSurfaceIds,
+) {
+    if (!Array.isArray(rawWindows)) return {};
+    return Object.fromEntries(rawWindows.flatMap((rawWindow, index) => {
+        const surfaceId = rawWindow?.surfaceId;
+        if (
+            typeof surfaceId !== 'string'
+            || !surfacesById[surfaceId]
+            || usedSurfaceIds.has(surfaceId)
+        ) {
+            return [];
+        }
+        usedSurfaceIds.add(surfaceId);
+        const numberOr = (value, fallback) => (
+            Number.isFinite(value) ? value : fallback
+        );
+        return [[surfaceId, {
+            surfaceId,
+            x: Math.max(0, numberOr(
+                rawWindow.x,
+                DEFAULT_FLOATING_WINDOW_BOUNDS.x + (index * 24),
+            )),
+            y: Math.max(0, numberOr(
+                rawWindow.y,
+                DEFAULT_FLOATING_WINDOW_BOUNDS.y + (index * 24),
+            )),
+            width: Math.max(320, numberOr(
+                rawWindow.width,
+                DEFAULT_FLOATING_WINDOW_BOUNDS.width,
+            )),
+            height: Math.max(220, numberOr(
+                rawWindow.height,
+                DEFAULT_FLOATING_WINDOW_BOUNDS.height,
+            )),
+            zIndex: Math.max(1, numberOr(rawWindow.zIndex, index + 1)),
+        }]];
+    }));
+}
+
 function restoreWindowState(rawWindow) {
     if (!isRecord(rawWindow) || !isRecord(rawWindow.panes)) return null;
     const storedSurfaces = Array.isArray(rawWindow.surfaces)
@@ -93,6 +138,11 @@ function restoreWindowState(rawWindow) {
             usedSurfaceIds,
         ),
     };
+    const floatingWindowsBySurfaceId = restoredFloatingWindows(
+        rawWindow.floatingWindows,
+        surfacesById,
+        usedSurfaceIds,
+    );
     const placedSurfacesById = Object.fromEntries(
         [...usedSurfaceIds].map((surfaceId) => [
             surfaceId,
@@ -117,11 +167,24 @@ function restoreWindowState(rawWindow) {
     const fullscreenSurfaceId = usedSurfaceIds.has(rawWindow.fullscreenSurfaceId)
         ? rawWindow.fullscreenSurfaceId
         : null;
+    const focusedFloatingSurfaceId = Boolean(
+        floatingWindowsBySurfaceId[rawWindow.focusedFloatingSurfaceId],
+    )
+        ? rawWindow.focusedFloatingSurfaceId
+        : null;
+    const floatingZCounter = Math.max(
+        0,
+        ...Object.values(floatingWindowsBySurfaceId)
+            .map((floatingWindow) => floatingWindow.zIndex),
+    );
 
     return {
         panes,
         surfacesById: placedSurfacesById,
+        floatingWindowsBySurfaceId,
         focusedPaneId,
+        focusedFloatingSurfaceId,
+        floatingZCounter,
         splitRatio,
         fullscreenSurfaceId,
         pendingFocus: null,
@@ -155,7 +218,14 @@ export function saveDesktopWindowSnapshot(model, navigationDestination) {
     if (typeof localStorage === 'undefined') return;
     try {
         const placedSurfaceIds = new Set(
-            PANE_IDS.flatMap((paneId) => model.panes[paneId].surfaceIds),
+            [
+                ...PANE_IDS.flatMap(
+                    (paneId) => model.panes[paneId].surfaceIds,
+                ),
+                ...(model.floatingWindows || []).map(
+                    (floatingWindow) => floatingWindow.surfaceId,
+                ),
+            ],
         );
         const surfaces = [...placedSurfaceIds]
             .map((surfaceId) => model.surfacesById[surfaceId])
@@ -174,8 +244,10 @@ export function saveDesktopWindowSnapshot(model, navigationDestination) {
                         activeSurfaceId: model.panes[DESKTOP_PANE_IDS.RIGHT].activeSurfaceId,
                     },
                 },
+                floatingWindows: model.floatingWindows || [],
                 surfaces,
                 focusedPaneId: model.focusedPaneId,
+                focusedFloatingSurfaceId: model.focusedFloatingSurfaceId,
                 splitRatio: model.splitRatio,
                 fullscreenSurfaceId: model.fullscreenSurfaceId,
             },

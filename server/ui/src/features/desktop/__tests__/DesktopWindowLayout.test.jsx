@@ -5,6 +5,8 @@ import {
     within,
 } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
+import { createDesktopSurfaceActions } from '../desktopSurfaceActions.js';
+import { DESKTOP_PANE_IDS } from '../desktopWindowReducer.js';
 
 vi.mock('../../../components/SplitHandle.jsx', () => ({
     default: ({ onDrag, className }) => (
@@ -29,6 +31,7 @@ function model({
     rightIds = [APP.id],
     leftActive = CHAT.id,
     rightActive = APP.id,
+    floatingWindow = null,
 } = {}) {
     const surfacesById = { [CHAT.id]: CHAT, [APP.id]: APP };
     const pane = (surfaceIds, activeSurfaceId) => ({
@@ -43,6 +46,10 @@ function model({
         },
         surfaces: [CHAT, APP],
         surfacesById,
+        floatingWindowsBySurfaceId: floatingWindow
+            ? { [floatingWindow.surfaceId]: floatingWindow }
+            : {},
+        focusedFloatingSurfaceId: floatingWindow?.surfaceId || null,
         splitRatio: 40,
         fullscreenSurfaceId: null,
     };
@@ -147,4 +154,105 @@ it('keeps one keyed surface host while its placement changes', () => {
 
     expect(screen.getByText('Text Lab content').parentElement).toBe(appHost);
     expect(appHost).toHaveAttribute('data-pane-id', 'left');
+});
+
+it('keeps the keyed surface host while it floats and exposes window chrome', () => {
+    const floatSurface = vi.fn();
+    const moveSurface = vi.fn();
+    const focusFloatingSurface = vi.fn();
+    const updateFloatingBounds = vi.fn();
+    const baseModel = model();
+    const props = {
+        commands: {
+            setSplitRatio: vi.fn(),
+            setFullscreenSurface: vi.fn(),
+            focusFloatingSurface,
+            updateFloatingBounds,
+        },
+        onSelectSurface: vi.fn(),
+        onFocusSurface: vi.fn(),
+        onCloseSurface: vi.fn(),
+        getSurfaceActions: (surface, paneId, options) => (
+            createDesktopSurfaceActions({
+                surface,
+                paneId,
+                pane: paneId ? baseModel.panes[paneId] : null,
+                floating: options?.floating,
+                commands: {
+                    moveSurface,
+                    floatSurface,
+                    enterFullscreen: vi.fn(),
+                    reloadCustomApp: vi.fn(),
+                    closeSurface: vi.fn(),
+                    closeOtherSurfaces: vi.fn(),
+                    closeSurfacesToRight: vi.fn(),
+                },
+            })
+        ),
+        renderSurface: (surface) => <div>{surface.label} content</div>,
+    };
+    const { rerender } = render(
+        <DesktopWindowLayout model={baseModel} {...props} />,
+    );
+    const appHost = screen.getByText('Text Lab content').parentElement;
+    const floatingWindow = {
+        surfaceId: APP.id,
+        x: 80,
+        y: 64,
+        width: 600,
+        height: 400,
+        zIndex: 1,
+    };
+
+    rerender(
+        <DesktopWindowLayout
+            model={model({
+                rightIds: [],
+                rightActive: null,
+                floatingWindow,
+            })}
+            {...props}
+        />,
+    );
+
+    expect(screen.getByText('Text Lab content').parentElement).toBe(appHost);
+    expect(appHost).toHaveAttribute('data-pane-id', 'floating');
+    expect(appHost).toHaveAttribute('data-floating', 'true');
+    expect(appHost).toHaveStyle({
+        left: '80px',
+        top: '64px',
+        width: '600px',
+        height: '400px',
+    });
+    const floatingHeader = screen.getByTestId(
+        `floating-surface-header-${APP.id}`,
+    );
+    expect(within(floatingHeader).getByText('Text Lab')).toBeInTheDocument();
+    const pointerEvent = (type, properties) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        for (const [key, value] of Object.entries(properties)) {
+            Object.defineProperty(event, key, { value });
+        }
+        fireEvent(floatingHeader, event);
+    };
+    pointerEvent('pointerdown', {
+        button: 0,
+        pointerId: 1,
+        clientX: 100,
+        clientY: 90,
+    });
+    pointerEvent('pointermove', {
+        pointerId: 1,
+        clientX: 140,
+        clientY: 120,
+    });
+    expect(focusFloatingSurface).toHaveBeenCalledWith(APP.id);
+    expect(updateFloatingBounds).toHaveBeenCalledWith(APP.id, {
+        x: 120,
+        y: 94,
+    });
+    fireEvent.click(screen.getByTestId(
+        `dock-surface-${APP.id}-left`,
+    ));
+    expect(moveSurface).toHaveBeenCalledWith(APP.id, DESKTOP_PANE_IDS.LEFT);
 });

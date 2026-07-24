@@ -19,6 +19,7 @@ from .routines_view import RoutinesView
 from .agents_page import AgentsPage
 from .settings_page import SettingsPage
 from .sidebar import Sidebar
+from .desktop_windows import DesktopWindows
 
 __all__ = [
     "ChatView",
@@ -34,4 +35,5 @@ __all__ = [
     "AgentsPage",
     "SettingsPage",
     "Sidebar",
+    "DesktopWindows",
 ]

@@ -17,7 +17,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e.artifacts._helpers import VC_HOME, delete_file, file_exists, produce, purge
-from tests.e2e.pages import ArtifactsHub, ChatView, PreviewPanel
+from tests.e2e.pages import ArtifactsHub, ChatView, DesktopWindows, PreviewPanel
 
 
 # ── read-only group: one shared pair of produced artifacts ──────────────
@@ -70,6 +70,26 @@ def test_search_filters_to_matching_artifact(page: Page, produced):
     hub.search(produced["md"])
     expect(hub.card(produced["md"])).to_be_visible()
     expect(hub.card(produced["html"])).to_have_count(0)
+
+
+def test_fullscreen_chrome_does_not_cover_hub_controls(page: Page):
+    """Shared fullscreen chrome reserves its own row above full-width controls."""
+    hub = ArtifactsHub(page).goto()
+    desktop = DesktopWindows(page)
+    desktop.maximize("destination:artifacts")
+
+    fullscreen_header = page.get_by_test_id(
+        "fullscreen-surface-header-destination:artifacts"
+    )
+    expect(fullscreen_header).to_be_visible()
+    expect(page.get_by_test_id("artifacts-search")).to_be_visible()
+
+    header_box = fullscreen_header.bounding_box()
+    search_box = page.get_by_test_id("artifacts-search").bounding_box()
+    assert header_box and search_box
+    assert search_box["y"] >= header_box["y"] + header_box["height"]
+
+    desktop.restore("destination:artifacts")
 
 
 # ── delete: present file, opting into disk deletion ─────────────────────
@@ -127,8 +147,8 @@ def test_open_in_conversation_restores_focused_file(page: Page):
     """Opening an artifact loads its conversation and resolves its file preview.
 
     The open action carries the artifact ID as navigation intent. Once the source
-    conversation loads, the desktop resolves that ID and opens its file in the
-    shared dock without pre-writing the conversation's saved preview state.
+    conversation loads, the desktop resolves that ID and opens its durable file
+    tab without writing conversation-owned placement state.
     """
     nonce = time.time_ns()
     name = f"hubopen_{nonce}.md"
@@ -142,7 +162,7 @@ def test_open_in_conversation_restores_focused_file(page: Page):
         hub.select(name)
         page.get_by_test_id("artifact-open-conversation").click()
 
-        # The source conversation loads with the artifact file open in the dock.
+        # The source conversation loads with the artifact file open as a tab.
         expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
     finally:
         purge(page, name)

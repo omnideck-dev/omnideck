@@ -1,6 +1,6 @@
-"""E2E tests for preview panel tab lifecycle.
+"""E2E tests for Browser, Terminal, and artifact tab lifecycle.
 
-Verifies that preview tabs appear when content arrives, can be switched
+Verifies that output surfaces appear in a normal pane stack, can be switched
 between, and close cleanly.
 
 Uses a single conversation to avoid redundant LLM calls.
@@ -53,13 +53,13 @@ def preview_page(browser, browser_context_args):
 # ── Tab appearance ──────────────────────────────────────────────────
 
 
-def test_preview_panel_visible(preview_page: Page):
-    """Preview panel should be mounted when tabs exist."""
+def test_output_pane_visible(preview_page: Page):
+    """The second pane is mounted when output tabs exist."""
     expect(ChatView(preview_page).preview.root).to_be_visible()
 
 
 def test_split_handle_visible(preview_page: Page):
-    """Split handle should be visible when preview panel is open."""
+    """The split handle is visible when both panes contain tabs."""
     expect(ChatView(preview_page).preview.split_handle).to_be_visible()
 
 
@@ -103,8 +103,8 @@ def test_close_tab(preview_page: Page):
     assert preview.tabs.count() == initial_count - 1
 
 
-def test_close_all_tabs_hides_preview(preview_page: Page):
-    """After closing all tabs, the preview panel and split handle vanish."""
+def test_close_all_tabs_hides_second_pane(preview_page: Page):
+    """After closing all its tabs, the second pane and divider disappear."""
     preview = ChatView(preview_page).preview
     preview.close_all_tabs()
 

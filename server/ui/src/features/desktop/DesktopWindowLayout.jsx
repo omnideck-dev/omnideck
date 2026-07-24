@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 
 import SplitHandle from '../../components/SplitHandle.jsx';
 import DesktopPane from './DesktopPane.jsx';
-import DesktopSurfaceActionBar from './DesktopSurfaceActionBar.jsx';
-import { DESKTOP_ACTION_PLACEMENTS } from './desktopSurfaceActions.js';
+import DesktopSurfaceHost from './DesktopSurfaceHost.jsx';
 import { DESKTOP_PANE_IDS } from './desktopWindowReducer.js';
 import styles from './DesktopWindowLayout.module.css';
 
@@ -14,7 +13,8 @@ function paneContainingSurface(panes, surfaceId) {
 }
 
 /**
- * Renders two equivalent tab stacks over one stable surface layer.
+ * Renders two equivalent tab stacks and floating windows over one stable
+ * surface layer.
  *
  * Every registered surface has one keyed host. Moving it changes its grid
  * column instead of its React parent, preserving iframe and component state.
@@ -23,6 +23,7 @@ export default function DesktopWindowLayout({
     model,
     commands,
     onSelectSurface,
+    onFocusSurface,
     onCloseSurface,
     getSurfaceActions,
     renderSurface,
@@ -106,77 +107,29 @@ export default function DesktopWindowLayout({
 
             {model.surfaces.map((surface) => {
                 const paneId = paneContainingSurface(model.panes, surface.id);
-                const active = Boolean(
+                const activeInPane = Boolean(
                     paneId && model.panes[paneId].activeSurfaceId === surface.id,
                 );
+                const floatingWindow = model.floatingWindowsBySurfaceId?.[
+                    surface.id
+                ] || null;
                 const fullscreen = model.fullscreenSurfaceId === surface.id;
                 return (
-                    <div
+                    <DesktopSurfaceHost
                         key={surface.id}
-                        className={[
-                            styles.surfaceHost,
-                            paneId === DESKTOP_PANE_IDS.LEFT ? styles.leftSurface : '',
-                            paneId === DESKTOP_PANE_IDS.RIGHT ? styles.rightSurface : '',
-                            active ? styles.activeSurface : styles.hiddenSurface,
-                            fullscreen ? styles.fullscreenSurface : '',
-                        ].filter(Boolean).join(' ')}
-                        data-testid={`desktop-surface-${surface.testid || surface.id}`}
-                        data-surface-id={surface.id}
-                        data-surface-kind={surface.kind}
-                        data-surface-owner-id={surface.agentId || surface.resourceId || ''}
-                        data-surface-resource-id={surface.resourceId || ''}
-                        data-pane-id={paneId || 'hidden'}
-                        data-active={active ? 'true' : 'false'}
-                        data-fullscreen={fullscreen ? 'true' : 'false'}
-                        data-maximized={fullscreen ? 'true' : 'false'}
-                    >
-                        <header
-                            className={[
-                                styles.fullscreenHeader,
-                                fullscreen ? styles.fullscreenHeaderVisible : '',
-                            ].filter(Boolean).join(' ')}
-                            aria-hidden={!fullscreen}
-                            data-testid={`fullscreen-surface-header-${surface.testid || surface.id}`}
-                        >
-                            {fullscreen && (
-                                <>
-                                    <div className={styles.fullscreenIdentity}>
-                                        <span className={styles.fullscreenIcon}>
-                                            {surface.iconElement || (
-                                                <i className={`bi ${surface.icon || 'bi-window'}`} />
-                                            )}
-                                        </span>
-                                        <span
-                                            className={styles.fullscreenTitle}
-                                            title={surface.label}
-                                        >
-                                            {surface.label}
-                                        </span>
-                                    </div>
-                                    <div className={styles.fullscreenActions}>
-                                        <DesktopSurfaceActionBar
-                                            actions={getSurfaceActions?.(
-                                                surface,
-                                                paneId,
-                                            ) || []}
-                                            placement={DESKTOP_ACTION_PLACEMENTS.FULLSCREEN}
-                                        />
-                                        <button
-                                            type="button"
-                                            className={styles.restoreSurface}
-                                            onClick={() => commands.setFullscreenSurface(null)}
-                                            title="Exit full screen"
-                                            aria-label="Exit full screen"
-                                            data-testid={`restore-surface-${surface.testid || surface.id}`}
-                                        >
-                                            <i className="bi bi-fullscreen-exit" />
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </header>
-                        {renderSurface(surface, { active, paneId })}
-                    </div>
+                        surface={surface}
+                        paneId={paneId}
+                        activeInPane={activeInPane}
+                        floatingWindow={floatingWindow}
+                        focusedFloating={
+                            model.focusedFloatingSurfaceId === surface.id
+                        }
+                        fullscreen={fullscreen}
+                        commands={commands}
+                        onFocusSurface={onFocusSurface}
+                        getSurfaceActions={getSurfaceActions}
+                        renderSurface={renderSurface}
+                    />
                 );
             })}
         </div>

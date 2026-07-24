@@ -21,12 +21,16 @@ def _fixture_page():
 
 
 def test_browser_snapshot_appears(page: Page):
-    """Browsing produces a browser preview tab — Chrome launched successfully."""
+    """Browsing opens a companion tab without replacing the root Chat view."""
     chat = ChatView(page).goto().new_conversation()
     # A cold Chromium launch in the container is the slow path here, well
     # beyond the default turn budget.
     chat.send(open_url("https://example.com")).wait_streaming(timeout=30_000)
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
+    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(
+        page.locator("[data-surface-resource-id='browser']")
+    ).to_have_attribute("data-pane-id", "right")
 
 
 def test_agent_close_tab_reflected_in_ui(page: Page):
@@ -48,9 +52,8 @@ def test_agent_close_tab_reflected_in_ui(page: Page):
     expect(bc.tab(2)).not_to_be_visible()
 
 
-def test_agent_close_last_tab_hides_preview(page: Page):
-    """Closing the only tab clears the preview — the live channel's authoritative
-    empty wins over the now-stale agent screenshot list."""
+def test_agent_close_last_tab_clears_content_but_keeps_desktop_tab(page: Page):
+    """Remote tab closure clears Browser data, not user-owned window placement."""
     chat = ChatView(page).goto().new_conversation()
     chat.send(open_fixture("idle")).wait_streaming(timeout=30_000)
     chat.preview.browser_tab.wait_for(state="visible", timeout=10_000)
@@ -60,6 +63,7 @@ def test_agent_close_last_tab_hides_preview(page: Page):
 
     chat.send(call_tool("close_tab", tab="1")).wait_streaming(timeout=20_000)
     expect(page.get_by_test_id("browser-preview")).not_to_be_visible()
-    # The data-plane reconcile prunes the agent tab record too, so the Browser
-    # tab leaves the bar (not just the live preview).
-    expect(chat.preview.browser_tab).not_to_be_visible()
+    expect(chat.preview.browser_tab).to_be_visible()
+
+    page.get_by_test_id("close-surface-tab-browser").click()
+    expect(chat.preview.browser_tab).to_have_count(0)
