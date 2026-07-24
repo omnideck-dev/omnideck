@@ -18,6 +18,14 @@ from integrations.brokers.google_workspace_broker._calendar_client import Calend
 from integrations.brokers.google_workspace_broker._contacts_client import ContactsClient
 from integrations.brokers.google_workspace_broker._drive_client import DriveClient, _run_sync
 from integrations.brokers.google_workspace_broker._gmail_client import GmailClient
+from integrations.calendar_refs import (
+    CalendarTarget,
+    InvalidCalendarRef,
+    decode_event_ref,
+    decode_series_ref,
+    encode_event_ref,
+    encode_series_ref,
+)
 from integrations.permissions import Access, Capability, Permissions
 
 logger = logging.getLogger(__name__)
@@ -38,10 +46,13 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     # Calendar (read)
     "list_calendars": (Capability.CALENDAR, Access.READ),
     "list_events": (Capability.CALENDAR, Access.READ),
+    "search_events": (Capability.CALENDAR, Access.READ),
     # Calendar (write)
     "create_event": (Capability.CALENDAR, Access.READ_WRITE),
     "update_event": (Capability.CALENDAR, Access.READ_WRITE),
     "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
+    "update_event_series": (Capability.CALENDAR, Access.READ_WRITE),
+    "delete_event_series": (Capability.CALENDAR, Access.READ_WRITE),
     # Email (Gmail, read)
     "list_mailboxes": (Capability.EMAIL, Access.READ),
     "list_messages": (Capability.EMAIL, Access.READ),
@@ -112,9 +123,12 @@ class VerbDispatcher:
         if self._calendar is not None:
             self._handlers["list_calendars"] = self._handle_list_calendars
             self._handlers["list_events"] = self._handle_list_events
+            self._handlers["search_events"] = self._handle_search_events
             self._handlers["create_event"] = self._handle_create_event
             self._handlers["update_event"] = self._handle_update_event
             self._handlers["delete_event"] = self._handle_delete_event
+            self._handlers["update_event_series"] = self._handle_update_event_series
+            self._handlers["delete_event_series"] = self._handle_delete_event_series
         if self._gmail is not None:
             self._handlers["list_mailboxes"] = self._handle_list_mailboxes
             self._handlers["list_messages"] = self._handle_list_messages
@@ -279,21 +293,21 @@ class VerbDispatcher:
             raise _wrap_http_error(exc) from exc
 
         calendars = [
-            {"name": c.get("summary", "(unnamed)"), "url": c["id"]}
+            {"name": c.get("summary", "(unnamed)"), "calendar_ref": c["id"]}
             for c in items
             if "id" in c
         ]
         return {"calendars": calendars}
 
     async def _handle_list_events(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_str(args, "calendar_url")
+        calendar_ref = _require_str(args, "calendar_ref")
         days_forward = _require_int(args, "days_forward", default=30)
         days_back = _require_int(args, "days_back", default=0)
         limit = _require_int(args, "limit", default=50)
         try:
             items, cal_name = await _run_sync(
                 self._calendar.list_events,
-                calendar_id,
+                calendar_ref,
                 days_forward=days_forward,
                 days_back=days_back,
                 limit=limit,
@@ -301,72 +315,122 @@ class VerbDispatcher:
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
 
-        events = [_flatten_event(e) for e in items]
+        events = [_wire_event(e, calendar_ref) for e in items]
         result: dict[str, Any] = {"events": events}
         if cal_name:
             result["calendar_name"] = cal_name
         return result
 
+    async def _handle_search_events(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Search expanded occurrences while preserving opaque mutation refs."""
+        calendar_ref = _require_str(args, "calendar_ref")
+        query = _require_str(args, "query")
+        days_forward = _require_int(args, "days_forward", default=365)
+        days_back = _require_int(args, "days_back", default=0)
+        limit = _require_int(args, "limit", default=50)
+        try:
+            items, cal_name = await _run_sync(
+                self._calendar.search_events,
+                calendar_ref,
+                query,
+                days_forward=days_forward,
+                days_back=days_back,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except HttpError as exc:
+            raise _wrap_http_error(exc) from exc
+
+        result: dict[str, Any] = {
+            "events": [_wire_event(e, calendar_ref) for e in items],
+        }
+        if cal_name:
+            result["calendar_name"] = cal_name
+        return result
+
     async def _handle_create_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_str(args, "calendar_id")
+        calendar_ref = _require_str(args, "calendar_ref")
         summary = _require_str(args, "summary")
         start = _require_str(args, "start")
         end = _require_str(args, "end")
         description = args.get("description") or None
         location = args.get("location") or None
         attendees = args.get("attendees") or None
+        recurrence_rule = args.get("recurrence_rule") or None
+        time_zone = args.get("time_zone") or None
         if attendees is not None and not isinstance(attendees, list):
             raise RpcError("BAD_REQUEST", "'attendees' must be a list of email addresses")
+        if recurrence_rule is not None and not isinstance(recurrence_rule, str):
+            raise RpcError("BAD_REQUEST", "'recurrence_rule' must be a string")
+        if time_zone is not None and not isinstance(time_zone, str):
+            raise RpcError("BAD_REQUEST", "'time_zone' must be a string")
         try:
             event = await _run_sync(
                 self._calendar.create_event,
-                calendar_id, summary, start, end,
+                calendar_ref, summary, start, end,
                 description=description,
                 location=location,
                 attendees=attendees,
+                recurrence_rule=recurrence_rule,
+                time_zone=time_zone,
             )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
-        return {"event": _flatten_event(event)}
+        return {"event": _wire_event(event, calendar_ref)}
 
     async def _handle_update_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_str(args, "calendar_id")
-        event_id = _require_str(args, "event_id")
-        summary = args.get("summary") or None
-        start = args.get("start") or None
-        end = args.get("end") or None
-        description = args.get("description")
-        location = args.get("location")
-        attendees = args.get("attendees")
-        if attendees is not None and not isinstance(attendees, list):
-            raise RpcError("BAD_REQUEST", "'attendees' must be a list of email addresses")
-        has_update = any(
-            v is not None
-            for v in (summary, start, end, description, location, attendees)
-        )
-        if not has_update:
-            raise RpcError("BAD_REQUEST", "update requires at least one field to change")
+        event_ref = _require_str(args, "event_ref")
+        target = _decode_google_ref(event_ref, series=False)
+        changes = _calendar_changes(args)
         try:
             event = await _run_sync(
                 self._calendar.update_event,
-                calendar_id, event_id,
-                summary=summary,
-                start=start,
-                end=end,
-                description=description,
-                location=location,
-                attendees=attendees,
+                target.calendar_ref, target.event_id, **changes,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except HttpError as exc:
+            raise _wrap_http_error(exc) from exc
+        return {"event": _wire_event(event, target.calendar_ref)}
+
+    async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        event_ref = _require_str(args, "event_ref")
+        target = _decode_google_ref(event_ref, series=False)
+        try:
+            await _run_sync(
+                self._calendar.delete_event, target.calendar_ref, target.event_id,
             )
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
-        return {"event": _flatten_event(event)}
+        return {"deleted": True}
 
-    async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        calendar_id = _require_str(args, "calendar_id")
-        event_id = _require_str(args, "event_id")
+    async def _handle_update_event_series(self, args: dict[str, Any]) -> dict[str, Any]:
+        series_ref = _require_str(args, "series_ref")
+        target = _decode_google_ref(series_ref, series=True)
+        changes = _calendar_changes(args, include_recurrence=True)
+        try:
+            event = await _run_sync(
+                self._calendar.update_event,
+                target.calendar_ref, target.event_id, **changes,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except HttpError as exc:
+            raise _wrap_http_error(exc) from exc
+        return {
+            "event": _wire_event(event, target.calendar_ref),
+            "series_ref": series_ref,
+        }
+
+    async def _handle_delete_event_series(self, args: dict[str, Any]) -> dict[str, Any]:
+        series_ref = _require_str(args, "series_ref")
+        target = _decode_google_ref(series_ref, series=True)
         try:
             await _run_sync(
-                self._calendar.delete_event, calendar_id, event_id,
+                self._calendar.delete_event, target.calendar_ref, target.event_id,
             )
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
@@ -548,17 +612,84 @@ def _write_download(dir_path: Path, payload: bytes, filename: str) -> Path:
     return dest
 
 
-def _flatten_event(e: dict[str, Any]) -> dict[str, Any]:
-    """Flatten a Google Calendar event to the shape the agent tools expect."""
+def _wire_event(e: dict[str, Any], calendar_ref: str) -> dict[str, Any]:
+    """Flatten a Google event while hiding provider IDs behind opaque refs."""
     start_block = e.get("start", {})
     end_block = e.get("end", {})
-    return {
-        "uid": e.get("id", ""),
+    event_id = e.get("id", "")
+    series_id = e.get("recurringEventId")
+    is_recurring = bool(series_id or e.get("recurrence"))
+    result: dict[str, Any] = {
+        "event_ref": encode_event_ref(
+            provider="google",
+            calendar_ref=calendar_ref,
+            event_id=event_id,
+        ),
         "summary": e.get("summary", ""),
         "start": start_block.get("dateTime") or start_block.get("date", ""),
         "end": end_block.get("dateTime") or end_block.get("date", ""),
         "location": e.get("location", ""),
+        "description": e.get("description", ""),
+        "is_recurring": is_recurring,
     }
+    if is_recurring:
+        result["series_ref"] = encode_series_ref(
+            provider="google",
+            calendar_ref=calendar_ref,
+            event_id=series_id or event_id,
+        )
+    return result
+
+
+def _decode_google_ref(value: str, *, series: bool) -> CalendarTarget:
+    try:
+        if series:
+            return decode_series_ref(value, provider="google")
+        return decode_event_ref(value, provider="google")
+    except InvalidCalendarRef as exc:
+        raise RpcError("BAD_REQUEST", str(exc)) from exc
+
+
+def _calendar_changes(
+    args: dict[str, Any], *, include_recurrence: bool = False,
+) -> dict[str, Any]:
+    changes = {
+        "summary": args.get("summary") if "summary" in args else None,
+        "start": args.get("start") if "start" in args else None,
+        "end": args.get("end") if "end" in args else None,
+        "description": args.get("description") if "description" in args else None,
+        "location": args.get("location") if "location" in args else None,
+        "attendees": args.get("attendees") if "attendees" in args else None,
+    }
+    if include_recurrence:
+        changes["recurrence_rule"] = (
+            args.get("recurrence_rule") if "recurrence_rule" in args else None
+        )
+        changes["time_zone"] = args.get("time_zone") if "time_zone" in args else None
+        if any(
+            isinstance(changes[field], str) and "T" in changes[field]
+            for field in ("start", "end")
+        ) and changes["time_zone"] is None:
+            raise RpcError(
+                "BAD_REQUEST", "time_zone is required when changing a timed recurring series",
+            )
+    for field in (
+        "summary", "start", "end", "description", "location", "recurrence_rule", "time_zone",
+    ):
+        if field not in changes:
+            continue
+        value = changes[field]
+        if value is not None and not isinstance(value, str):
+            raise RpcError("BAD_REQUEST", f"{field!r} must be a string")
+    attendees = changes["attendees"]
+    if attendees is not None and (
+        not isinstance(attendees, list)
+        or any(not isinstance(address, str) for address in attendees)
+    ):
+        raise RpcError("BAD_REQUEST", "'attendees' must be a list of email addresses")
+    if not any(value is not None for value in changes.values()):
+        raise RpcError("BAD_REQUEST", "update requires at least one field to change")
+    return changes
 
 
 def _flatten_contact(person: dict[str, Any]) -> dict[str, Any]:
