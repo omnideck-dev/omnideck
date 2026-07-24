@@ -6,6 +6,7 @@ import base64
 
 import pytest
 
+from integrations.brokers.google_workspace_broker import _gmail_client
 from integrations.brokers.google_workspace_broker._gmail_client import (
     _decode_base64url,
     _extract_text_body,
@@ -262,6 +263,27 @@ def test_list_attachments_collects_from_parts() -> None:
         "mime_type": "image/png",
         "size": 512,
     }
+
+
+@pytest.mark.unit
+def test_list_attachments_does_not_build_body_trees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Attachment classification parses only the current part's metadata."""
+    payload = {
+        "mimeType": "multipart/mixed",
+        "parts": [
+            {
+                "mimeType": "application/pdf",
+                "filename": "report.pdf",
+                "body": {"attachmentId": "att_abc", "size": 2048},
+            },
+        ],
+    }
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("body tree construction is unnecessary")
+
+    monkeypatch.setattr(_gmail_client, "_gmail_payload_to_mime_part", fail_if_called)
+    assert len(_list_attachments("msg1", payload)) == 1
 
 
 @pytest.mark.unit

@@ -105,6 +105,41 @@ def test_both_backends_honor_multipart_related_start_parameter() -> None:
 
 
 @pytest.mark.unit
+def test_both_backends_fall_back_when_related_default_root_is_not_renderable() -> None:
+    """Malformed image-first related messages still expose their HTML body."""
+    raw = (
+        b'Content-Type: multipart/related; boundary="related"\r\n\r\n'
+        b"--related\r\nContent-Type: image/png\r\nContent-ID: <logo>\r\n"
+        b'Content-Disposition: inline; filename="logo.png"\r\n\r\nPNG\r\n'
+        b"--related\r\nContent-Type: text/html; charset=utf-8\r\nContent-ID: <body>\r\n\r\n"
+        b"<p>Fallback body</p>\r\n--related--\r\n"
+    )
+    gmail = {
+        "mimeType": "multipart/related",
+        "parts": [
+            {
+                "mimeType": "image/png",
+                "filename": "logo.png",
+                "headers": [
+                    {"name": "Content-ID", "value": "<logo>"},
+                    {
+                        "name": "Content-Disposition",
+                        "value": 'inline; filename="logo.png"',
+                    },
+                ],
+                "body": {"data": _b64(b"PNG")},
+            },
+            {
+                "mimeType": "text/html",
+                "headers": [{"name": "Content-ID", "value": "<body>"}],
+                "body": {"data": _b64(b"<p>Fallback body</p>")},
+            },
+        ],
+    }
+    _assert_same_body(raw, gmail, "Fallback body")
+
+
+@pytest.mark.unit
 def test_both_backends_decode_declared_charset() -> None:
     text = "café receipt"
     encoded = text.encode("iso-8859-1")

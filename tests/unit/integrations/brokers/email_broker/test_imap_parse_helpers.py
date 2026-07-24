@@ -16,11 +16,8 @@ import pytest
 from integrations.brokers.email_broker._imap_client import (
     _collect_fetch_pairs,
     _decode_header,
-    _decode_part_payload,
     _extract_attachments,
     _extract_body_text,
-    _find_part,
-    _html_to_markdown,
     _normalize_date,
     _parse_header_hit,
 )
@@ -167,124 +164,6 @@ def test_normalize_date_returns_input_unchanged_when_unparseable() -> None:
     assert _normalize_date(weird) == weird
 
 
-# ── _html_to_markdown ─────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_html_to_markdown_preserves_link_text_and_url() -> None:
-    """Links must round-trip as ``[text](url)`` — for confirmation /
-    unsubscribe / invoice links, losing the URL would defeat the point of
-    showing the email to the agent.
-    """
-    html = '<p>Click <a href="https://example.com/confirm">here</a> to confirm.</p>'
-    out = _html_to_markdown(html)
-    # ``protect_links=True`` wraps the URL in angle brackets — valid GFM,
-    # keeps URLs from getting split if anything downstream rewraps lines.
-    assert "[here](<https://example.com/confirm>)" in out
-
-
-@pytest.mark.unit
-def test_html_to_markdown_drops_style_and_script_content() -> None:
-    """``<style>`` and ``<script>`` bodies are CSS / JS noise — the agent
-    should see neither the tags nor what's between them.
-    """
-    html = (
-        "<html><head><style>.x { color: red; }</style></head>"
-        "<body><script>alert('hi')</script><p>Real body.</p></body></html>"
-    )
-    out = _html_to_markdown(html)
-    assert "Real body." in out
-    assert "color: red" not in out
-    assert "alert" not in out
-
-
-@pytest.mark.unit
-def test_html_to_markdown_decodes_html_entities() -> None:
-    """Entities like ``&amp;`` / ``&nbsp;`` / ``&#8212;`` must come out as
-    real characters rather than literal entity strings, otherwise the agent
-    sees ``Q&amp;A`` instead of ``Q&A``.
-    """
-    html = "<p>Q&amp;A &mdash; tips &nbsp;and tricks</p>"
-    out = _html_to_markdown(html)
-    assert "Q&A" in out
-    assert "&amp;" not in out
-    assert "&mdash;" not in out
-
-
-@pytest.mark.unit
-def test_html_to_markdown_renders_lists_as_markdown() -> None:
-    """Bullet lists should survive as ``* item`` lines — preserves structure
-    so the agent can summarize per-item rather than treating the email as
-    one wall of text.
-    """
-    html = "<ul><li>first</li><li>second</li><li>third</li></ul>"
-    out = _html_to_markdown(html)
-    assert "first" in out
-    assert "second" in out
-    assert "third" in out
-    # html2text emits ``  * `` for unordered list items.
-    assert "* first" in out
-
-
-@pytest.mark.unit
-def test_html_to_markdown_returns_empty_for_empty_input() -> None:
-    """Empty in → empty out (after the trailing-whitespace strip)."""
-    assert _html_to_markdown("") == ""
-
-
-# ── _decode_part_payload ──────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_decode_part_payload_decodes_utf8_text_part() -> None:
-    """A UTF-8 ``text/plain`` part must round-trip its content untouched."""
-    msg = EmailMessage()
-    msg.set_content("héllo world", charset="utf-8")
-    assert _decode_part_payload(msg) == "héllo world\n"
-
-
-@pytest.mark.unit
-def test_decode_part_payload_falls_back_to_utf8_for_unknown_charset() -> None:
-    """If a part declares a bogus charset, the helper falls back to utf-8
-    with ``errors="replace"`` rather than raising — the agent gets best-effort
-    text instead of a hard failure on weird mail.
-    """
-    msg = EmailMessage()
-    msg.set_content("plain ascii")
-    # Force a charset that Python doesn't know about.
-    msg.replace_header("Content-Type", 'text/plain; charset="x-bogus"')
-    out = _decode_part_payload(msg)
-    assert "plain ascii" in out
-
-
-# ── _find_part ────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_find_part_returns_matching_leaf() -> None:
-    """``walk()`` visits both the multipart container and its leaves;
-    ``_find_part`` should skip the container and return only a leaf with
-    the matching content-type.
-    """
-    msg = EmailMessage()
-    msg.set_content("plain version")
-    msg.add_alternative("<p>html version</p>", subtype="html")
-
-    plain = _find_part(msg, "text/plain")
-    html = _find_part(msg, "text/html")
-    assert plain is not None and "plain version" in plain.get_content()
-    assert html is not None and "html version" in html.get_content()
-
-
-@pytest.mark.unit
-def test_find_part_returns_none_when_missing() -> None:
-    """Looking for a content-type the message doesn't contain returns None,
-    not an exception — caller decides what to do (fall back to HTML, etc.).
-    """
-    msg = EmailMessage()
-    msg.set_content("plain only")
-    assert _find_part(msg, "text/html") is None
-
 
 # ── _extract_body_text ────────────────────────────────────────────────────────
 
@@ -397,6 +276,26 @@ def test_extract_attachments_keeps_true_attachments() -> None:
     assert len(attachments) == 1
     assert attachments[0].filename == "invoice.pdf"
     assert attachments[0].mime_type == "application/pdf"
+
+
+@pytest.mark.unit
+def test_extract_attachments_decodes_payload_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Attachment classification reads headers without decoding the body."""
+    msg = EmailMessage()
+    msg.add_attachment(b"PDF", maintype="application", subtype="pdf", filename="invoice.pdf")
+    attachment = next(msg.iter_attachments())
+    original_get_payload = attachment.get_payload
+    decode_calls = 0
+
+    def counting_get_payload(index: int | None = None, *, decode: bool = False):  # noqa: ANN202
+        nonlocal decode_calls
+        if decode:
+            decode_calls += 1
+        return original_get_payload(index, decode=decode)
+
+    monkeypatch.setattr(attachment, "get_payload", counting_get_payload)
+    assert len(_extract_attachments(msg)) == 1
+    assert decode_calls == 1
 
 
 # ── _parse_header_hit ─────────────────────────────────────────────────────────

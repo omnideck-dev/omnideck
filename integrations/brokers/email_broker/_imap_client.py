@@ -29,7 +29,6 @@ import re
 
 from integrations.brokers._email._mime import (
     MimePart,
-    html_to_markdown,
     is_attachment,
     render_email_body,
 )
@@ -573,8 +572,7 @@ def _extract_attachments(msg: _email.message.Message) -> list[Attachment]:
     """
     out: list[Attachment] = []
     for part_path, part in _walk_with_paths(msg):
-        mime_part = _message_to_mime_part(part)
-        if not is_attachment(mime_part):
+        if not is_attachment(part.get_content_disposition(), part.get_filename()):
             continue
         payload = part.get_payload(decode=True)
         size = len(payload) if isinstance(payload, bytes) else 0
@@ -619,26 +617,3 @@ def _message_to_mime_part(msg: _email.message.Message) -> MimePart:
         related_start=related_start if isinstance(related_start, str) else None,
         children=children,
     )
-
-
-def _find_part(msg: _email.message.Message, content_type: str) -> _email.message.Message | None:
-    for part in msg.walk():
-        if part.get_content_type() == content_type and not part.is_multipart():
-            return part
-    return None
-
-
-def _decode_part_payload(part: _email.message.Message) -> str:
-    raw = part.get_payload(decode=True) or b""
-    if not isinstance(raw, bytes):
-        return ""
-    charset = part.get_content_charset() or "utf-8"
-    try:
-        return raw.decode(charset, errors="replace")
-    except LookupError:
-        return raw.decode("utf-8", errors="replace")
-
-
-def _html_to_markdown(text: str) -> str:
-    """Compatibility wrapper around the shared HTML renderer."""
-    return html_to_markdown(text)

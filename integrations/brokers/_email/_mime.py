@@ -12,6 +12,10 @@ _MAX_MIME_DEPTH = 50
 _DIRECTLY_RENDERABLE_TYPES = frozenset({"text/plain", "text/html", "text/markdown"})
 
 
+class BodyUnavailableError(Exception):
+    """The selected representation could not be loaded or decoded."""
+
+
 @dataclass(frozen=True, slots=True)
 class MimePart:
     """Normalized subset of a MIME part needed to render an email body."""
@@ -38,12 +42,12 @@ def render_email_body(root: MimePart) -> str:
     return (_render_part(root, depth=0) or "").strip()
 
 
-def is_attachment(part: MimePart) -> bool:
-    """Return whether ``part`` should be exposed as an attachment."""
-    disposition = (part.disposition or "").casefold()
-    if disposition == "attachment":
+def is_attachment(disposition: str | None, filename: str | None) -> bool:
+    """Classify a part as an attachment using MIME metadata only."""
+    normalized_disposition = (disposition or "").casefold()
+    if normalized_disposition == "attachment":
         return True
-    return bool(part.filename and disposition != "inline")
+    return bool(filename and normalized_disposition != "inline")
 
 
 def html_to_markdown(text: str) -> str:
@@ -62,7 +66,7 @@ def html_to_markdown(text: str) -> str:
 
 
 def _render_part(part: MimePart, *, depth: int) -> str | None:
-    if depth > _MAX_MIME_DEPTH or is_attachment(part):
+    if depth > _MAX_MIME_DEPTH or is_attachment(part.disposition, part.filename):
         return None
 
     content_type = part.content_type.casefold()
@@ -74,10 +78,11 @@ def _render_part(part: MimePart, *, depth: int) -> str | None:
         return None
 
     if content_type == "multipart/related":
-        root = _related_root(part)
-        if root is None:
-            return None
-        return _render_part(root, depth=depth + 1)
+        for candidate in _related_candidates(part):
+            rendered = _render_part(candidate, depth=depth + 1)
+            if rendered and rendered.strip():
+                return rendered
+        return None
 
     if content_type.startswith("multipart/") or content_type == "message/rfc822":
         rendered_children = [
@@ -90,7 +95,10 @@ def _render_part(part: MimePart, *, depth: int) -> str | None:
     if content_type not in _DIRECTLY_RENDERABLE_TYPES:
         return None
 
-    decoded = _decode_body(part)
+    try:
+        decoded = _decode_body(part)
+    except BodyUnavailableError:
+        return None
     if not decoded.strip():
         return None
     if content_type == "text/html":
@@ -98,13 +106,37 @@ def _render_part(part: MimePart, *, depth: int) -> str | None:
     return decoded
 
 
-def _related_root(part: MimePart) -> MimePart | None:
+def _related_candidates(part: MimePart) -> tuple[MimePart, ...]:
+    """Return the declared related root followed by pragmatic fallbacks.
+
+    MIME defines the first child as the root when ``start`` is absent. Some
+    malformed real-world messages put an inline image first, so if the root is
+    not renderable the remaining inline children are tried in wire order.
+    """
     wanted_content_id = _normalize_content_id(part.related_start)
+    root: MimePart | None = None
     if wanted_content_id:
         for child in part.children:
             if _normalize_content_id(child.content_id) == wanted_content_id:
-                return child
-    return next((child for child in part.children if not is_attachment(child)), None)
+                root = child
+                break
+    if root is None:
+        root = next(
+            (
+                child
+                for child in part.children
+                if not is_attachment(child.disposition, child.filename)
+            ),
+            None,
+        )
+    if root is None:
+        return ()
+    fallbacks = tuple(
+        child
+        for child in part.children
+        if child is not root and not is_attachment(child.disposition, child.filename)
+    )
+    return (root, *fallbacks)
 
 
 def _normalize_content_id(value: str | None) -> str:

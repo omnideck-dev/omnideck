@@ -16,7 +16,12 @@ from typing import Any
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-from integrations.brokers._email._mime import MimePart, is_attachment, render_email_body
+from integrations.brokers._email._mime import (
+    BodyUnavailableError,
+    MimePart,
+    is_attachment,
+    render_email_body,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +85,7 @@ class GmailClient:
         )
         payload = msg.get("payload", {})
         headers = _headers_dict(payload)
-        body_loader = partial(self._download_part_data, msg["id"])
+        body_loader = partial(self._load_body_part_data, msg["id"])
         return {
             "header": {
                 "uid": msg["id"],
@@ -114,6 +119,13 @@ class GmailClient:
         if data is None:
             raise ValueError("Gmail returned invalid base64url part data")
         return data
+
+    def _load_body_part_data(self, message_id: str, attachment_id: str) -> bytes:
+        """Load an inline body part, marking corrupt data as a failed candidate."""
+        try:
+            return self._download_part_data(message_id, attachment_id)
+        except ValueError as exc:
+            raise BodyUnavailableError(str(exc)) from exc
 
     def _find_attachment_meta(
         self, message_id: str, attachment_id: str,
@@ -268,7 +280,12 @@ def _extract_text_body(
     *,
     body_loader: Callable[[str], bytes] | None = None,
 ) -> str:
-    """Render the best readable body from a Gmail API MIME payload."""
+    """Render the best readable body from a Gmail API MIME payload.
+
+    The optional loader may perform provider I/O for large inline body parts.
+    ``BodyUnavailableError`` rejects only that MIME candidate so an earlier
+    alternative can be tried; network and other provider errors propagate.
+    """
     return render_email_body(_gmail_payload_to_mime_part(payload, body_loader=body_loader))
 
 
@@ -278,13 +295,7 @@ def _gmail_payload_to_mime_part(
     body_loader: Callable[[str], bytes] | None = None,
 ) -> MimePart:
     """Adapt a Gmail API message part to the provider-neutral MIME model."""
-    metadata = email.message.Message()
-    content_type_header = _part_header(payload, "Content-Type")
-    disposition_header = _part_header(payload, "Content-Disposition")
-    if content_type_header:
-        metadata["Content-Type"] = content_type_header
-    if disposition_header:
-        metadata["Content-Disposition"] = disposition_header
+    metadata = _gmail_part_metadata(payload)
 
     body_block = payload.get("body", {})
     body_data = body_block.get("data")
@@ -322,6 +333,18 @@ def _part_header(payload: dict[str, Any], wanted_name: str) -> str:
     return ""
 
 
+def _gmail_part_metadata(payload: dict[str, Any]) -> email.message.Message:
+    """Parse MIME headers without traversing or decoding a Gmail part."""
+    metadata = email.message.Message()
+    content_type_header = _part_header(payload, "Content-Type")
+    disposition_header = _part_header(payload, "Content-Disposition")
+    if content_type_header:
+        metadata["Content-Type"] = content_type_header
+    if disposition_header:
+        metadata["Content-Disposition"] = disposition_header
+    return metadata
+
+
 def _decode_base64url(data: str) -> bytes | None:
     try:
         padded = data + "=" * (-len(data) % 4)
@@ -337,7 +360,12 @@ def _list_attachments(
     attachments: list[dict[str, Any]] = []
     for part in _walk_parts(payload):
         body = part.get("body", {})
-        if body.get("attachmentId") and is_attachment(_gmail_payload_to_mime_part(part)):
+        metadata = _gmail_part_metadata(part)
+        filename = part.get("filename") or metadata.get_filename()
+        if body.get("attachmentId") and is_attachment(
+            metadata.get_content_disposition(),
+            str(filename) if filename else None,
+        ):
             attachments.append({
                 "id": body["attachmentId"],
                 "filename": part.get("filename", ""),
