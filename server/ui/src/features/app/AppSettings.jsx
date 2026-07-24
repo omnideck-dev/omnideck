@@ -9,11 +9,10 @@ import {
 
 const AppSettingsContext = createContext(null);
 
-/** Settings needed before the desktop can choose its initial surface. */
+/** Settings needed to complete setup and choose the default agent profile. */
 export function AppSettingsProvider({ children }) {
     const [setupComplete, setSetupComplete] = useState(null);
     const [defaultProfileId, setDefaultProfileId] = useState(null);
-    const [homeAppSlug, setHomeAppSlug] = useState(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -23,7 +22,6 @@ export function AppSettingsProvider({ children }) {
                 if (cancelled) return;
                 setSetupComplete(settings.setup_complete || false);
                 setDefaultProfileId(settings.default_agent || null);
-                setHomeAppSlug(settings.home_app_slug || null);
             })
             .catch(() => {
                 if (!cancelled) setSetupComplete(false);
@@ -36,9 +34,7 @@ export function AppSettingsProvider({ children }) {
         setupComplete,
         finishSetup,
         defaultProfileId,
-        homeAppSlug,
-        setHomeAppSlug,
-    }), [defaultProfileId, finishSetup, homeAppSlug, setupComplete]);
+    }), [defaultProfileId, finishSetup, setupComplete]);
 
     return (
         <AppSettingsContext.Provider value={value}>

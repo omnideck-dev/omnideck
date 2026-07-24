@@ -1,5 +1,5 @@
-import { getConversationEventActions } from './conversationEventActions.js';
-import { CONVERSATION_EVENT_TYPES as EVENT, isRootAgentEvent } from './eventTypes.js';
+import { mapConversationEventToActions } from './mapConversationEventToActions.js';
+import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
 
 /** @param {string|null|undefined} timestamp */
 function eventTime(timestamp) {
@@ -11,8 +11,8 @@ function eventTime(timestamp) {
  * Build the reducer actions needed to restore one saved conversation.
  *
  * Persisted conversation events use the same agent event actions as the live
- * stream. Browser, terminal, and open-file state is restored explicitly from
- * its bounded sidecars because it is workspace state, not conversation history.
+ * stream. Browser and terminal data is restored explicitly from its bounded
+ * sidecars. Presentation effects are deliberately not part of this plan.
  *
  * @param {import('./frontendTypes').ConversationRestoreData|null|undefined} data
  * @returns {import('./frontendTypes').ConversationRestorePlan}
@@ -25,19 +25,17 @@ export function getConversationRestorePlan(data) {
     const workspaceActions = [];
     /** @type {Map<string, number>} */
     const unfinishedAgents = new Map();
-    let lastRootAgentId = null;
 
     for (const event of events) {
         if (!event?.type) continue;
 
-        const actions = getConversationEventActions(event);
-        agentActions.push(...actions.agent.immediate, ...actions.agent.ordered);
+        const actions = mapConversationEventToActions(event);
+        agentActions.push(...actions.agent.immediate, ...actions.agent.batched);
         workspaceActions.push(...actions.workspace);
 
         const agentId = event.agent_id || null;
         if (event.type === EVENT.AGENT_STARTED && agentId) {
             unfinishedAgents.set(agentId, eventTime(event.timestamp));
-            if (isRootAgentEvent(event)) lastRootAgentId = agentId;
         } else if (event.type === EVENT.AGENT_COMPLETED && agentId) {
             unfinishedAgents.delete(agentId);
         }
@@ -85,29 +83,8 @@ export function getConversationRestorePlan(data) {
         }
     }
 
-    if (lastRootAgentId) {
-        const openPaths = Array.isArray(data?.previewState?.open_files)
-            ? data.previewState.open_files
-            : [];
-        for (const path of openPaths) {
-            if (typeof path !== 'string' || !path) continue;
-            workspaceActions.push({
-                type: 'OPEN_FILE',
-                agentId: lastRootAgentId,
-                item: {
-                    type: 'file_output',
-                    filename: path.split('/').pop() || path,
-                    path,
-                },
-            });
-        }
-    }
-
     return {
         agentActions,
         workspaceActions,
-        activeTab: lastRootAgentId && typeof data?.previewState?.active_tab === 'string'
-            ? data.previewState.active_tab
-            : null,
     };
 }

@@ -1,6 +1,10 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentProvider, useAgentDispatch } from '../AgentState.jsx';
+import {
+    WorkspaceProvider,
+    useWorkspaceDispatch,
+} from '../../workspace/WorkspaceState.jsx';
 import AgentNetworkView from '../AgentNetworkView.jsx';
 
 vi.mock('../../../components/AgentNetwork.jsx', () => ({
@@ -12,13 +16,19 @@ vi.mock('../../../components/AgentNetwork.jsx', () => ({
 }));
 
 vi.mock('../../../components/AgentActivityView.jsx', () => ({
-    default: ({ agentId }) => (
-        <div data-testid="agent-activity-view">{agentId}</div>
+    default: ({ agentId, availableViews, onOpenView }) => (
+        <div data-testid="agent-activity-view">
+            {agentId}
+            {availableViews.map((view) => (
+                <button key={view} onClick={() => onOpenView(view)}>{view}</button>
+            ))}
+        </div>
     ),
 }));
 
 function renderView(props = {}) {
     let dispatch;
+    let workspaceDispatch;
     const defaults = {
         selectedAgentId: null,
         agentCounts: { total: 2, running: 1, complete: 1, error: 0 },
@@ -32,27 +42,41 @@ function renderView(props = {}) {
 
     function Harness() {
         dispatch = useAgentDispatch();
+        workspaceDispatch = useWorkspaceDispatch();
         return <AgentNetworkView {...viewProps} />;
     }
 
     render(
         <AgentProvider>
-            <Harness />
+            <WorkspaceProvider>
+                <Harness />
+            </WorkspaceProvider>
         </AgentProvider>,
     );
 
     const startAgent = (agentId, parentAgentId, name) => {
-        act(() => dispatch({
-            type: 'AGENT_STARTED',
-            agentId,
-            agentName: name,
-            parentAgentId,
-            instruction: '',
-            timestamp: Date.now(),
-        }));
+        act(() => {
+            dispatch({
+                type: 'AGENT_STARTED',
+                agentId,
+                agentName: name,
+                parentAgentId,
+                instruction: '',
+                timestamp: Date.now(),
+            });
+            workspaceDispatch({
+                type: 'WORKSPACE_AGENT_STARTED',
+                agentId,
+                parentAgentId,
+            });
+        });
     };
 
-    return { ...viewProps, startAgent };
+    return {
+        ...viewProps,
+        startAgent,
+        updateWorkspace: (action) => act(() => workspaceDispatch(action)),
+    };
 }
 
 describe('AgentNetworkView', () => {
@@ -88,5 +112,50 @@ describe('AgentNetworkView', () => {
         expect(onOpenOverview).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole('button', { name: 'Omnideck' }));
         expect(onSelectAgent).toHaveBeenCalledWith('root-1');
+    });
+
+    it('offers available Browser and Terminal views for the selected agent', () => {
+        const onOpenExecutionView = vi.fn();
+        const { startAgent, updateWorkspace } = renderView({
+            selectedAgentId: 'child-1',
+            onOpenExecutionView,
+        });
+        startAgent('root-1', null, 'omnideck');
+        startAgent('child-1', 'root-1', 'research_agent');
+        updateWorkspace({
+            type: 'UPDATE_BROWSER_SNAPSHOT',
+            agentId: 'child-1',
+            snapshot: {
+                url: 'https://example.test',
+                title: 'Example',
+                screenshot: 'image-data',
+                tabId: 1,
+                openTabIds: [1],
+                agentId: 'child-1',
+            },
+        });
+        updateWorkspace({
+            type: 'UPDATE_TERMINAL',
+            agentId: 'child-1',
+            event: {
+                cmd_id: 'command-1',
+                cmd: 'pwd',
+                status: 'complete',
+                agentId: 'child-1',
+            },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'browser' }));
+        fireEvent.click(screen.getByRole('button', { name: 'terminal' }));
+        expect(onOpenExecutionView).toHaveBeenNthCalledWith(
+            1,
+            'child-1',
+            'browser',
+        );
+        expect(onOpenExecutionView).toHaveBeenNthCalledWith(
+            2,
+            'child-1',
+            'terminal',
+        );
     });
 });

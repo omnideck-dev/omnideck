@@ -1,19 +1,15 @@
-import { getConversationEventActions } from './conversationEventActions.js';
-import { runOneTimeEventActions } from './oneTimeEventActions.js';
+import { mapConversationEventToActions } from './mapConversationEventToActions.js';
 
 /**
- * Connect canonical live events to the three state owners and the actions that
- * must run only once. Agent text and activity are queued until the next frame
- * so their arrival order is preserved without rendering for every event.
+ * Connect canonical live events to their state owners and the application
+ * effect dispatcher. Agent text and activity are queued until the next frame
+ * so arrival order is preserved without rendering for every stream record.
  *
  * @param {import('./frontendTypes').LiveEventDeliveryOptions} options
  * @returns {import('./frontendTypes').LiveEventDelivery}
  */
 export function createLiveEventDelivery({
-    onSessionAction,
-    onAgentAction,
-    onWorkspaceAction,
-    oneTimeActions = {},
+    dispatch = {},
     requestFrame = requestAnimationFrame,
     cancelFrame = cancelAnimationFrame,
 } = {}) {
@@ -26,7 +22,7 @@ export function createLiveEventDelivery({
         frameId = null;
         for (const action of pendingAgentActions.splice(0)) {
             try {
-                onAgentAction?.(action);
+                dispatch.agent?.(action);
             } catch {
                 // One failed dispatch must not drop later queued activity.
             }
@@ -45,7 +41,7 @@ export function createLiveEventDelivery({
     return {
         /** @param {import('./conversationEvents.generated').ConversationEvent} event */
         deliver(event) {
-            const actions = getConversationEventActions(event);
+            const actions = mapConversationEventToActions(event);
 
             for (const action of actions.session) {
                 // A completed turn must expose all preceding agent activity.
@@ -54,7 +50,7 @@ export function createLiveEventDelivery({
                     flushAgentActions();
                 }
                 try {
-                    onSessionAction?.(action);
+                    dispatch.session?.(action);
                 } catch {
                     // Keep later actions and state owners independent.
                 }
@@ -63,30 +59,32 @@ export function createLiveEventDelivery({
             // Lifecycle and context state should be visible immediately.
             for (const action of actions.agent.immediate) {
                 try {
-                    onAgentAction?.(action);
+                    dispatch.agent?.(action);
                 } catch {
                     // Keep later actions and state owners independent.
                 }
             }
 
-            // Text and activity retain arrival order across animation frames.
-            if (onAgentAction && actions.agent.ordered.length > 0) {
-                pendingAgentActions.push(...actions.agent.ordered);
+            // Text and activity are delivered together on the next frame.
+            if (dispatch.agent && actions.agent.batched.length > 0) {
+                pendingAgentActions.push(...actions.agent.batched);
                 scheduleAgentFlush();
             }
 
             for (const action of actions.workspace) {
                 try {
-                    onWorkspaceAction?.(action);
+                    dispatch.workspace?.(action);
                 } catch {
                     // A broken preview must not interrupt other event handling.
                 }
             }
 
-            try {
-                runOneTimeEventActions(event, oneTimeActions);
-            } catch {
-                // A one-time UI action cannot interrupt event delivery.
+            for (const effect of actions.effects) {
+                try {
+                    dispatch.appEffect?.(effect);
+                } catch {
+                    // A one-time application effect cannot interrupt delivery.
+                }
             }
         },
         flush: flushAgentActions,

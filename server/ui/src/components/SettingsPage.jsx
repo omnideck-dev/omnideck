@@ -33,7 +33,7 @@ export default function SettingsPage({
     const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
     const Active = active.Component;
     return (
-        <div className={styles.page}>
+        <div className={styles.page} data-testid="settings-page">
             <nav className={styles.tabBar}>
                 {tabs.map((tab) => (
                     <button

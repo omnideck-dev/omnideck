@@ -100,7 +100,7 @@ def installed_custom_app(page: Page):
 
 @pytest.fixture()
 def installed_two_custom_apps(page: Page, installed_custom_app):
-    """Add a second app when a test needs to exercise replacement."""
+    """Add a second app when a test needs concurrent app surfaces."""
     container_exec(
         "from pathlib import Path\n"
         f"files = {_SECOND_TEST_APP_FILES!r}\n"
@@ -131,50 +131,70 @@ def _open_custom_apps_library(page: Page) -> None:
 
 
 def _expect_app_beside_chat(page: Page) -> None:
-    """Assert the Custom App is active in the shared desktop dock."""
+    """Assert Chat and the Custom App are active in left and right panes."""
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).to_be_visible()
+    expect(page.get_by_test_id("desktop-window-layout")).to_have_attribute(
+        "data-split", "true"
+    )
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
+    expect(
+        page.locator("[data-surface-id='destination:chat']")
+    ).to_have_attribute("data-pane-id", "left")
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "right")
     expect(
         page.frame_locator('[data-testid="custom-app-frame"]').get_by_role("heading", name="Text Lab")
     ).to_be_visible()
 
 
-def test_custom_app_transitions_expanded_docked_and_expanded(
+def test_custom_app_moves_left_to_right_and_back_without_losing_state(
     page: Page, installed_custom_app
 ) -> None:
-    """Expanded and docked presentation changes preserve the one iframe."""
+    """Moving a surface between panes preserves its one iframe."""
     _open_custom_apps_library(page)
 
     page.get_by_test_id("custom-app-card").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
-    expect(page.get_by_test_id("custom-app-back")).to_be_visible()
+    expect(page.get_by_test_id("custom-app-surface")).to_be_visible()
+    expect(page.get_by_test_id("custom-app-back")).to_have_count(0)
+    expect(page.get_by_test_id("custom-app-chat")).to_have_count(0)
+    expect(page.get_by_test_id("custom-app-close")).to_have_count(0)
+    expect(page.get_by_test_id("custom-app-home-toggle")).to_have_count(0)
     expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).not_to_be_visible()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "left")
 
-    working_text = "Full-space state survives the move beside chat."
+    working_text = "Left-pane state survives the move beside chat."
     frame.locator("#text").fill(working_text)
-    page.get_by_test_id("custom-app-chat").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
 
-    _expect_app_beside_chat(page)
+    expect(page.get_by_test_id("apps-view")).to_be_visible()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "right")
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    page.get_by_test_id("custom-app-expand").click()
-    expect(page.get_by_test_id("desktop-dock")).to_have_attribute(
-        "data-layout", "expanded"
-    )
+    page.get_by_test_id("move-surface-custom-app:text-lab-left").click()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "left")
+    expect(page.get_by_test_id("desktop-pane-right")).to_have_count(0)
     expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    page.get_by_test_id("custom-app-close").click()
+    page.get_by_test_id("close-surface-tab-custom-app:text-lab").click()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(0)
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("apps-view")).to_be_visible()
 
 
-def test_custom_app_transitions_expanded_hidden_and_docked(
+def test_custom_app_stays_mounted_while_other_left_tabs_are_selected(
     page: Page, installed_custom_app
 ) -> None:
-    """Other desktop pages hide the iframe; returning to Chat reveals the same one."""
+    """Selecting other left-pane tabs retains the app iframe and its state."""
     _open_custom_apps_library(page)
     page.get_by_test_id("custom-app-card").click()
 
@@ -185,29 +205,26 @@ def test_custom_app_transitions_expanded_hidden_and_docked(
 
     page.get_by_test_id("sidebar-settings").click()
     expect(page.get_by_test_id("settings-tab-skills")).to_be_visible()
-    expect(page.get_by_test_id("desktop-dock")).to_have_attribute(
-        "data-visible", "false"
-    )
     expect(frame_element).to_have_count(1)
+    expect(frame_element).not_to_be_visible()
 
-    page.get_by_test_id("sidebar-settings").click()
-    _expect_app_beside_chat(page)
+    page.get_by_test_id("surface-tab-custom-app:text-lab").click()
+    expect(frame_element).to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
     page.get_by_test_id("sidebar-settings").click()
-    expect(page.get_by_test_id("desktop-dock")).to_have_attribute("data-visible", "false")
     page.get_by_test_id("sidebar-nav-apps").click()
     page.get_by_test_id("custom-app-card").click()
-    expect(page.get_by_test_id("desktop-dock")).to_have_attribute(
-        "data-layout", "expanded"
-    )
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-pane-id", "left")
     expect(frame.locator("#text")).to_have_value(working_text)
 
 
 def test_custom_app_transitions_from_bridge_open_and_compose(
     page: Page, installed_custom_app
 ) -> None:
-    """Both Custom App bridge commands move an expanded app into the dock."""
+    """Both Custom App bridge commands move a left app into the right pane."""
     _open_custom_apps_library(page)
     page.get_by_test_id("custom-app-card").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
@@ -215,7 +232,7 @@ def test_custom_app_transitions_from_bridge_open_and_compose(
     frame.get_by_role("button", name="Open chat").click()
     _expect_app_beside_chat(page)
 
-    page.get_by_test_id("custom-app-expand").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-left").click()
     working_text = "Bridge compose state"
     frame.locator("#text").fill(working_text)
     frame.get_by_role("button", name="Ask agent about this").click()
@@ -226,7 +243,7 @@ def test_custom_app_transitions_from_bridge_open_and_compose(
 def test_custom_app_transitions_when_loading_a_conversation(
     page: Page, installed_custom_app
 ) -> None:
-    """Loading another conversation keeps the open Custom App docked."""
+    """Loading another conversation keeps the Custom App in the right pane."""
     chat = ChatView(page).goto().new_conversation()
     chat.send(say("conversation to reopen")).wait_streaming()
     conversation_id = page.request.get("/api/conversations/sessions").json()[0][
@@ -236,7 +253,8 @@ def test_custom_app_transitions_when_loading_a_conversation(
     assert page.request.put("/api/settings", data={"custom_apps_enabled": True}).ok
     ChatView(page).goto()
     page.get_by_test_id("sidebar-nav-apps").click()
-    page.get_by_test_id("custom-app-open-docked-text-lab").click()
+    page.get_by_test_id("custom-app-card").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     working_text = "State survives conversation loading."
     frame.locator("#text").fill(working_text)
@@ -248,73 +266,98 @@ def test_custom_app_transitions_when_loading_a_conversation(
     expect(frame.locator("#text")).to_have_value(working_text)
 
 
-def test_custom_app_and_workspace_previews_share_the_dock(
+def test_custom_app_and_workspace_previews_share_the_right_tab_stack(
     page: Page, installed_custom_app
 ) -> None:
-    """Workspace preview tabs and the Custom App switch within one dock."""
+    """Workspace previews and a Custom App switch within one pane."""
     _open_custom_apps_library(page)
-    page.get_by_test_id("custom-app-open-docked-text-lab").click()
+    page.get_by_test_id("custom-app-card").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     working_text = "State survives workspace preview selection."
     frame.locator("#text").fill(working_text)
 
-    ChatView(page).send(bash('echo "custom-app-dock"')).wait_streaming()
-    expect(page.get_by_test_id("preview-tab-terminal")).to_be_visible()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).to_be_visible()
+    ChatView(page).send(bash('echo "custom-app-surface"')).wait_streaming()
+    expect(page.get_by_test_id("surface-tab-terminal")).to_be_visible()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
+    expect(page.get_by_test_id("reload-surface-custom-app:text-lab")).to_be_visible()
 
-    page.get_by_test_id("preview-tab-terminal").click()
+    page.get_by_test_id("surface-tab-terminal").click()
     expect(
-        page.get_by_test_id("preview-content").get_by_text("custom-app-dock", exact=False).last
+        page.locator(
+            "[data-surface-resource-id='terminal']"
+            "[data-pane-id='right'][data-active='true']"
+        ).get_by_text("custom-app-surface", exact=False).last
     ).to_be_visible()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(1)
+    expect(page.get_by_test_id("reload-surface-custom-app:text-lab")).to_have_count(0)
 
-    page.get_by_test_id("preview-tab-custom-app:text-lab").click()
+    page.get_by_test_id("surface-tab-custom-app:text-lab").click()
     expect(frame.locator("#text")).to_have_value(working_text)
+    expect(page.get_by_test_id("reload-surface-custom-app:text-lab")).to_be_visible()
 
 
-def test_opening_another_custom_app_replaces_the_docked_app(
+def test_opening_another_custom_app_keeps_both_as_independent_tabs(
     page: Page, installed_two_custom_apps
 ) -> None:
-    """Opening a different Custom App replaces the one iframe session."""
+    """Multiple apps retain independent iframe sessions in one pane."""
     _open_custom_apps_library(page)
-    page.get_by_test_id("custom-app-open-docked-text-lab").click()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).to_be_visible()
+    page.get_by_test_id("custom-app-card").filter(has_text="Text Lab").click()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
+    text_frame = page.frame_locator(
+        "[data-surface-id='custom-app:text-lab'] [data-testid='custom-app-frame']"
+    )
+    working_text = "The first app remains mounted."
+    text_frame.locator("#text").fill(working_text)
 
     page.get_by_test_id("sidebar-nav-apps").click()
     page.get_by_test_id("custom-app-card").filter(has_text="Notes Lab").click()
 
-    expect(page.get_by_test_id("desktop-dock")).to_have_attribute(
-        "data-layout", "expanded"
-    )
-    expect(page.get_by_test_id("custom-app-frame")).to_have_attribute(
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
+    expect(page.get_by_test_id("surface-tab-custom-app:notes-lab")).to_be_visible()
+    expect(page.get_by_test_id("custom-app-frame")).to_have_count(2)
+    expect(
+        page.locator("[data-surface-id='custom-app:notes-lab']")
+    ).to_have_attribute("data-pane-id", "left")
+    expect(
+        page.locator("[data-surface-id='custom-app:notes-lab']")
+        .get_by_test_id("custom-app-frame")
+    ).to_have_attribute(
         "src", "/api/custom-apps/notes-lab/web/"
     )
     expect(
-        page.frame_locator('[data-testid="custom-app-frame"]').get_by_role(
+        page.frame_locator(
+            "[data-surface-id='custom-app:notes-lab'] "
+            "[data-testid='custom-app-frame']"
+        ).get_by_role(
             "heading", name="Notes Lab"
         )
     ).to_be_visible()
 
+    page.get_by_test_id("surface-tab-custom-app:text-lab").click()
+    expect(text_frame.locator("#text")).to_have_value(working_text)
 
-def test_custom_app_transitions_docked_new_conversation_and_closed(
+
+def test_right_pane_custom_app_survives_new_conversation_and_closes(
     page: Page, installed_custom_app
 ) -> None:
-    """A docked app survives a new conversation and closes only on request."""
+    """A right-pane app survives a new conversation and closes only on request."""
     _open_custom_apps_library(page)
 
-    page.get_by_test_id("custom-app-open-docked-text-lab").click()
+    page.get_by_test_id("custom-app-card").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     _expect_app_beside_chat(page)
 
-    working_text = "Docked state survives a new conversation."
+    working_text = "Right-pane state survives a new conversation."
     frame.locator("#text").fill(working_text)
     page.get_by_test_id("sidebar-new-chat").click()
 
     _expect_app_beside_chat(page)
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    page.get_by_test_id("close-tab-custom-app:text-lab").click()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).not_to_be_visible()
+    page.get_by_test_id("close-surface-tab-custom-app:text-lab").click()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).not_to_be_visible()
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
 
 
@@ -323,7 +366,8 @@ def test_disabling_custom_apps_closes_the_open_app(
 ) -> None:
     """Disabling the feature removes an open app rather than leaving hidden state."""
     _open_custom_apps_library(page)
-    page.get_by_test_id("custom-app-open-docked-text-lab").click()
+    page.get_by_test_id("custom-app-card").click()
+    page.get_by_test_id("move-surface-custom-app:text-lab-right").click()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(1)
 
     page.get_by_test_id("sidebar-settings").click()
@@ -334,33 +378,25 @@ def test_disabling_custom_apps_closes_the_open_app(
     expect(page.get_by_test_id("sidebar-nav-apps")).not_to_be_visible()
 
 
-def test_custom_app_transitions_home_expanded_docked_and_expanded(
+def test_legacy_home_setting_is_ignored_by_the_tabbed_shell(
     page: Page, installed_custom_app
 ) -> None:
-    """A Home app starts expanded, docks with Chat, and expands from Home again."""
+    """Persisted legacy Home metadata does not create special navigation."""
     assert page.request.put("/api/settings", data={"custom_apps_enabled": True}).ok
     assert page.request.put("/api/custom-apps/home", data={"slug": "text-lab"}).ok
 
     ChatView(page).goto()
+    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("sidebar-nav-home")).to_have_count(0)
+    expect(page.get_by_test_id("custom-app-frame")).to_have_count(0)
+
+    page.get_by_test_id("sidebar-nav-apps").click()
+    page.get_by_test_id("custom-app-card").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
-    expect(page.get_by_test_id("home-view")).to_be_visible()
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
-    expect(page.get_by_test_id("custom-app-home-toggle")).to_contain_text("Remove from Home")
+    expect(page.get_by_test_id("custom-app-home-toggle")).to_have_count(0)
     expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).not_to_be_visible()
-
-    working_text = "Home state survives expanded and docked navigation."
-    frame.locator("#text").fill(working_text)
-    page.get_by_test_id("custom-app-chat").click()
-
-    _expect_app_beside_chat(page)
-    expect(frame.locator("#text")).to_have_value(working_text)
-
-    page.get_by_test_id("sidebar-nav-home").click()
-    expect(page.get_by_test_id("custom-app-home-toggle")).to_contain_text("Remove from Home")
-    expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).not_to_be_visible()
-    expect(frame.locator("#text")).to_have_value(working_text)
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
 
 
 def test_custom_app_keeps_file_views_inside_the_app_frame(
@@ -441,45 +477,44 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     expect(frame.get_by_text("12", exact=True)).to_be_visible()
 
     # The app can explicitly open the existing chat and seed its composer.
-    working_text = "This state should survive expanded, docked, and a new conversation."
+    working_text = "This state should survive moving panes and a new conversation."
     frame.locator("#text").fill(working_text)
     frame.get_by_role("button", name="Ask agent about this").click()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).to_be_visible()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
     expect(page.locator("textarea").first).to_have_value(re.compile(re.escape(working_text)))
     expect(frame.locator("#text")).to_have_value(working_text)
 
     # A new conversation clears workspace previews, not the open Custom App.
     page.get_by_test_id("sidebar-new-chat").click()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).to_be_visible()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
-    # Dock tabs can reload frontend files without refreshing Omnideck.
-    page.get_by_test_id("custom-app-tab-reload").click()
+    # The app tab owns its reload action; the pane has no global app action.
+    page.get_by_test_id("reload-surface-custom-app:text-lab").click()
     expect(frame.locator("#text")).to_have_value("The simplest useful app should feel like a folder you can open.")
 
-    # Closing the app removes its dock tab and leaves Chat expanded.
-    page.get_by_test_id("close-tab-custom-app:text-lab").click()
-    expect(page.get_by_test_id("preview-tab-custom-app:text-lab")).not_to_be_visible()
+    # Closing the app removes its surface tab and leaves Chat active.
+    page.get_by_test_id("close-surface-tab-custom-app:text-lab").click()
+    expect(page.get_by_test_id("surface-tab-custom-app:text-lab")).not_to_be_visible()
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
 
-    # Reopen expanded before assigning it as Home.
+    # Reopen as a normal tab and maximize the same iframe surface.
     page.get_by_test_id("sidebar-nav-apps").click()
     page.get_by_test_id("custom-app-card").click()
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
-
-    # Docking persists the app as Home; a full reload should land there.
-    page.get_by_test_id("custom-app-home-toggle").click()
-    expect(page.get_by_test_id("custom-app-home-toggle")).to_contain_text("Remove from Home")
-    page.reload()
-
-    expect(page.get_by_test_id("home-view")).to_be_visible()
-    home_frame = page.frame_locator('[data-testid="custom-app-frame"]')
-    expect(home_frame.get_by_role("heading", name="Text Lab")).to_be_visible()
-
-    # Clear persisted state so this spike remains isolated from the rest of the suite.
-    page.get_by_test_id("custom-app-home-toggle").click()
-    expect(page.get_by_test_id("apps-view")).to_be_visible()
+    maximized_text = "Maximizing preserves this app state."
+    frame.locator("#text").fill(maximized_text)
+    page.get_by_test_id("maximize-surface-custom-app:text-lab").click()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-maximized", "true")
+    expect(frame.locator("#text")).to_have_value(maximized_text)
+    expect(page.get_by_test_id("custom-app-frame")).to_have_count(1)
+    page.get_by_test_id("restore-surface-custom-app:text-lab").click()
+    expect(
+        page.locator("[data-surface-id='custom-app:text-lab']")
+    ).to_have_attribute("data-maximized", "false")
 
     # Turning the setting back off removes app navigation immediately.
     page.get_by_test_id("sidebar-settings").click()

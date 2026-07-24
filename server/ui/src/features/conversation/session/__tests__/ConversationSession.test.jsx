@@ -1,15 +1,21 @@
 import { act, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentProvider, useAgentState } from '../../../agent/AgentState.jsx';
+import {
+    AppEffectsProvider,
+    useAppEffectSubscription,
+} from '../../../app/AppEffects.jsx';
+import { APP_EFFECT_TYPES } from '../../../app/appEffectTypes.js';
 import {
     WorkspaceProvider,
     useWorkspaceState,
 } from '../../../workspace/WorkspaceState.jsx';
 
 const harness = vi.hoisted(() => ({
-    callbacks: null,
+    dispatchers: null,
     addStartedConversation: vi.fn(),
-    refreshCustomTools: vi.fn(),
+    addToast: vi.fn(),
+    effects: [],
     controller: {
         activeConversationId: 'conversation-1',
         turns: [],
@@ -23,13 +29,12 @@ const harness = vi.hoisted(() => ({
         loadConversation: vi.fn(),
         newConversation: vi.fn(),
         setDraft: vi.fn(),
-        savePreviewState: vi.fn(),
     },
 }));
 
 vi.mock('../useConversationSessionController.js', () => ({
-    default: (callbacks) => {
-        harness.callbacks = callbacks;
+    default: (dispatchers) => {
+        harness.dispatchers = dispatchers;
         return harness.controller;
     },
 }));
@@ -41,11 +46,7 @@ vi.mock('../../catalog/ConversationCatalog.jsx', () => ({
 }));
 
 vi.mock('../../../../components/ToastProvider.jsx', () => ({
-    useToast: () => ({ addToast: vi.fn() }),
-}));
-
-vi.mock('../../../customTools/CustomToolsCatalog.jsx', () => ({
-    useCustomToolsCatalog: () => ({ refreshCustomTools: harness.refreshCustomTools }),
+    useToast: () => ({ addToast: harness.addToast }),
 }));
 
 const {
@@ -62,17 +63,23 @@ function renderSession() {
         session = useConversationSession();
         agents = useAgentState();
         workspaces = useWorkspaceState();
+        useAppEffectSubscription(
+            APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            (effect) => harness.effects.push(effect),
+        );
         return null;
     }
 
     render(
-        <AgentProvider>
-            <WorkspaceProvider>
-                <ConversationSessionProvider>
-                    <Inspector />
-                </ConversationSessionProvider>
-            </WorkspaceProvider>
-        </AgentProvider>,
+        <AppEffectsProvider>
+            <AgentProvider>
+                <WorkspaceProvider>
+                    <ConversationSessionProvider>
+                        <Inspector />
+                    </ConversationSessionProvider>
+                </WorkspaceProvider>
+            </AgentProvider>
+        </AppEffectsProvider>,
     );
 
     return {
@@ -96,10 +103,15 @@ function event(type, fields = {}) {
 }
 
 describe('ConversationSessionProvider', () => {
-    it('assembles a restored conversation into the agent and workspace owners', () => {
-        const { getAgents, getSession, getWorkspaces } = renderSession();
+    beforeEach(() => {
+        vi.clearAllMocks();
+        harness.effects = [];
+        harness.controller.loadConversation.mockResolvedValue(null);
+    });
 
-        act(() => harness.callbacks.onConversationLoaded({
+    it('restores execution data without reopening historical surfaces', async () => {
+        harness.controller.loadConversation.mockResolvedValue({
+            conversationId: 'conversation-2',
             events: [
                 event('agent_started', {
                     parent_agent_id: null,
@@ -121,21 +133,25 @@ describe('ConversationSessionProvider', () => {
                 active_tab: 'file:/tmp/report.md',
             },
             profileId: 'profile-2',
-        }));
+        });
+        const { getAgents, getSession, getWorkspaces } = renderSession();
 
-        expect(getAgents().agents['root-1'].activityLog).toEqual([
-            expect.objectContaining({ type: 'content', content: 'restored answer' }),
-        ]);
-        expect(getWorkspaces().byAgentId['root-1'].openFiles).toEqual([
-            { type: 'file_output', filename: 'report.md', path: '/tmp/report.md' },
-        ]);
-        expect(getWorkspaces().restoredActiveTab).toBe('file:/tmp/report.md');
+        await act(async () => {
+            expect(await getSession().loadConversation('conversation-2')).toBe(true);
+        });
+
+        expect(getAgents().agents['root-1'].activityLog).toEqual([]);
+        expect(getWorkspaces().byAgentId['root-1'].openFiles).toEqual([]);
+        expect(harness.effects).toContainEqual({
+            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            conversationId: 'conversation-1',
+        });
         expect(getSession().conversationProfileId).toBe('profile-2');
     });
 
     it('resets both derived owners when starting a new conversation', () => {
         const { getAgents, getSession, getWorkspaces } = renderSession();
-        act(() => harness.callbacks.onAgentAction({
+        act(() => harness.dispatchers.agentDispatch({
             type: 'AGENT_STARTED',
             agentId: 'root-1',
             agentName: 'Root',
@@ -144,7 +160,7 @@ describe('ConversationSessionProvider', () => {
             correlationId: null,
             timestamp: Date.now(),
         }));
-        act(() => harness.callbacks.onWorkspaceAction({
+        act(() => harness.dispatchers.workspaceDispatch({
             type: 'WORKSPACE_AGENT_STARTED', agentId: 'root-1', parentAgentId: null,
         }));
 
@@ -153,18 +169,42 @@ describe('ConversationSessionProvider', () => {
         expect(harness.controller.newConversation).toHaveBeenCalledWith({ draft: 'next task' });
         expect(getAgents().agents).toEqual({});
         expect(getWorkspaces().byAgentId).toEqual({});
+        expect(harness.effects).toContainEqual({
+            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            conversationId: 'conversation-1',
+        });
     });
 
     it('connects newly started conversations to the catalog owner', () => {
-        renderSession();
-        const started = { conversationId: 'conversation-2', firstMessage: 'hello' };
-        act(() => harness.callbacks.onConversationStarted(started));
-        expect(harness.addStartedConversation).toHaveBeenCalledWith(started);
+        const { getSession } = renderSession();
+
+        act(() => {
+            getSession().sendMessage('hello', null, 'profile-1');
+            getSession().sendMessage('follow-up', null, 'profile-1');
+        });
+
+        expect(harness.addStartedConversation).toHaveBeenCalledOnce();
+        expect(harness.addStartedConversation).toHaveBeenCalledWith({
+            conversationId: 'conversation-1',
+            firstMessage: 'hello',
+        });
     });
 
-    it('refreshes the Custom Tools owner after a tool-created event', () => {
-        renderSession();
-        act(() => harness.callbacks.onToolCreated());
-        expect(harness.refreshCustomTools).toHaveBeenCalledOnce();
+    it('shows nudge results returned by the controller', async () => {
+        harness.controller.sendNudge.mockResolvedValue({
+            ok: false,
+            status: 409,
+            error: 'not running',
+        });
+        const { getSession } = renderSession();
+
+        await act(async () => {
+            await getSession().sendNudge('please stop');
+        });
+
+        expect(harness.addToast).toHaveBeenCalledWith(
+            'Agent is no longer running',
+            { type: 'warn', duration: 5000 },
+        );
     });
 });

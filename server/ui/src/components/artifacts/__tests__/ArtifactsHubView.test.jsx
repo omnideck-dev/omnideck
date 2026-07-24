@@ -63,12 +63,12 @@ test('search filters the list', async () => {
     expect(screen.queryByText('b.html')).not.toBeInTheDocument();
 });
 
-test('selecting an artifact renders the preview pane', async () => {
-    render(<ArtifactsHubView />);
+test('selecting an artifact asks the desktop to open its surface', async () => {
+    const onOpenArtifact = vi.fn();
+    render(<ArtifactsHubView onOpenArtifact={onOpenArtifact} />);
     await waitFor(() => expect(screen.getByText('a.md')).toBeInTheDocument());
     fireEvent.click(cardFor('a.md'));
-    const preview = await screen.findByTestId('artifact-preview');
-    expect(within(preview).getByText('a.md')).toBeInTheDocument();
+    expect(onOpenArtifact).toHaveBeenCalledWith(ARTIFACTS[0]);
 });
 
 test('deleting a present artifact confirms then removes the row', async () => {

@@ -17,18 +17,12 @@ export default function ChatMessages({
     onStarterSelect,
     onSelectAgent,
 }) {
-    const { agents, rootId } = useAgentState();
+    const { agents } = useAgentState();
 
-    // Scroll triggers: turns array length + the root agent's
-    // activityLog growth (so tokens streaming in scroll the view).
-    const rootLog = rootId ? agents[rootId]?.activityLog : null;
-    const lastEntry = rootLog?.length ? rootLog[rootLog.length - 1] : null;
-    const scrollKey = lastEntry
-        ? (lastEntry.content?.length || lastEntry.thinking?.length || 0)
-        : 0;
-    const { ref, onScroll } = useAutoScroll(
-        [turns, rootLog?.length, scrollKey],
-    );
+    // The conversation session rebuilds turns whenever persisted events or
+    // the in-flight iteration changes, so transcript growth is the chat's
+    // complete and feature-owned scroll signal.
+    const { ref, onScroll } = useAutoScroll([turns]);
 
     const turnList = Array.isArray(turns) ? turns : [];
     const isEmpty = turnList.length === 0;

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react';
 import useArtifacts from '../../hooks/useArtifacts.js';
 import Badge from '../Badge.jsx';
 import DeleteArtifactDialog from './DeleteArtifactDialog.jsx';
-import FilePreview from '../FilePreview.jsx';
 import Button from '../primitives/Button.jsx';
 import IconButton from '../primitives/IconButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
@@ -58,21 +57,22 @@ function ArtifactThumb({ item }) {
 }
 
 /**
- * Global artifacts hub: every artifact across all conversations, in a grid or
- * table, with search, sort (name/created/type), an in-place preview pane
- * (reusing FilePreview), delete, and a prune-missing action.
+ * Artifact library surface, optionally scoped to one conversation, with grid
+ * and table layouts, search, sorting, deletion, and missing-file cleanup.
  *
- * Each artifact carries its source conversation's title from the API
- * (`conversation_title`, null when that conversation is gone). When an
- * `onOpenConversation(artifact)` handler is supplied, the preview also offers an
- * "open in conversation" action; without it the hub still works (no open action).
+ * Selecting a present artifact asks the desktop to open an independent file
+ * surface. The library itself does not own a second preview presentation.
  */
-export default function ArtifactsHubView({ onOpenConversation }) {
-    const { items, loading, removeArtifact, pruneMissing } = useArtifacts();
+export default function ArtifactsHubView({
+    conversationId = null,
+    onOpenArtifact,
+}) {
+    const { items, loading, removeArtifact, pruneMissing } = useArtifacts({
+        conversationId,
+    });
     const [layout, setLayout] = useState('grid'); // 'grid' | 'table'
     const [query, setQuery] = useState('');
     const [sort, setSort] = useState({ key: 'created', dir: 'desc' });
-    const [selected, setSelected] = useState(null);
     const [pendingDelete, setPendingDelete] = useState(null);
 
     const visible = useMemo(() => {
@@ -95,8 +95,6 @@ export default function ArtifactsHubView({ onOpenConversation }) {
     const missingCount = useMemo(
         () => items.filter((a) => a.status === 'missing').length, [items],
     );
-    const activeSelected = selected && visible.some((a) => a.id === selected.id) ? selected : null;
-
     function sortBy(key) {
         setSort((s) => (s.key === key
             ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
@@ -106,7 +104,6 @@ export default function ArtifactsHubView({ onOpenConversation }) {
     function requestDelete(artifact) {
         if (artifact.status === 'missing') {
             removeArtifact(artifact.id);
-            if (selected?.id === artifact.id) setSelected(null);
             return;
         }
         setPendingDelete(artifact);
@@ -114,17 +111,21 @@ export default function ArtifactsHubView({ onOpenConversation }) {
 
     function confirmDelete({ deleteFile }) {
         removeArtifact(pendingDelete.id, { deleteFile });
-        if (selected?.id === pendingDelete.id) setSelected(null);
         setPendingDelete(null);
     }
 
     return (
-        <div className={styles.view} data-testid="artifacts-hub">
+        <div
+            className={styles.view}
+            data-testid="artifacts-hub"
+            data-conversation-id={conversationId || ''}
+        >
             <div className={styles.content}>
                 <div className={styles.listPane}>
                     <div className={styles.listToolbar}>
                         <h1 className={styles.title}>
-                            <i className="bi bi-collection" /> Artifacts
+                            <i className="bi bi-collection" />
+                            {conversationId ? 'Conversation artifacts' : 'Artifacts'}
                             <span className={styles.count}>{loading ? '' : `· ${visible.length}`}</span>
                         </h1>
                         <SearchInput
@@ -197,8 +198,10 @@ export default function ArtifactsHubView({ onOpenConversation }) {
                             {visible.map((a) => (
                                 <div
                                     key={a.id}
-                                    className={`${styles.card} ${a.status === 'missing' ? styles.missing : ''} ${activeSelected?.id === a.id ? styles.sel : ''}`}
-                                    onClick={() => setSelected(a)}
+                                    className={`${styles.card} ${a.status === 'missing' ? styles.missing : ''}`}
+                                    onClick={() => {
+                                        if (a.status !== 'missing') onOpenArtifact?.(a);
+                                    }}
                                     data-testid="artifact-card"
                                 >
                                     <IconButton
@@ -237,9 +240,10 @@ export default function ArtifactsHubView({ onOpenConversation }) {
                             rowKey={(a) => a.id}
                             sort={sort}
                             onSort={sortBy}
-                            onRowClick={(a) => setSelected(a)}
+                            onRowClick={(a) => {
+                                if (a.status !== 'missing') onOpenArtifact?.(a);
+                            }}
                             rowClassName={(a) => (a.status === 'missing' ? styles.missing : '')}
-                            activeRowKey={activeSelected?.id}
                             rowTestId="artifact-row"
                             testId="artifacts-table"
                             columns={[
@@ -275,44 +279,6 @@ export default function ArtifactsHubView({ onOpenConversation }) {
                     </div>
                 </div>
 
-                {activeSelected && (
-                    <aside className={styles.preview} data-testid="artifact-preview">
-                        <div className={styles.previewHead}>
-                            <span className={styles.previewLabel}>Preview</span>
-                            {onOpenConversation && (
-                                <Button
-                                    variant="ghost"
-                                    onClick={() => onOpenConversation(activeSelected)}
-                                    disabled={!activeSelected.conversation_title}
-                                    title={activeSelected.conversation_title
-                                        ? 'Open the conversation that produced this file'
-                                        : 'That conversation no longer exists'}
-                                    data-testid="artifact-open-conversation"
-                                >
-                                    <i className="bi bi-box-arrow-up-right" /> Open in conversation
-                                </Button>
-                            )}
-                            <IconButton
-                                title="Close preview"
-                                aria-label="Close preview"
-                                onClick={() => setSelected(null)}
-                                data-testid="preview-close"
-                            >
-                                <i className="bi bi-x-lg" />
-                            </IconButton>
-                        </div>
-                        <div className={styles.previewBody}>
-                            {activeSelected.status === 'missing' ? (
-                                <div className={styles.empty}>
-                                    <i className="bi bi-exclamation-triangle" />
-                                    <div>This file no longer exists on disk.</div>
-                                </div>
-                            ) : (
-                                <FilePreview item={activeSelected} />
-                            )}
-                        </div>
-                    </aside>
-                )}
             </div>
 
             {pendingDelete && (

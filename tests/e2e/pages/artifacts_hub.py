@@ -50,7 +50,10 @@ class ArtifactsHub:
 
     @property
     def preview(self) -> Locator:
-        return self.page.get_by_test_id("artifact-preview")
+        """The artifact file surface opened from the selected card."""
+        return self.page.locator(
+            "[data-surface-kind='artifact-file'][data-active='true']"
+        )
 
     # ── delete ──
 

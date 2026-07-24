@@ -1,10 +1,4 @@
-"""POM for the browser takeover control plane — the shared chrome bar + the
-screencast surface, used by both the inline preview and the fullscreen view.
-
-Selectors are scoped to a root container (``browser-preview`` inline,
-``fullscreen-preview`` for fullscreen) so the same semantic test ids work in
-either context and survive a future component refactor.
-"""
+"""POM for the browser takeover control plane inside its stable surface."""
 
 from __future__ import annotations
 
@@ -47,7 +41,11 @@ class BrowserControl:
 
     @property
     def fullscreen_btn(self) -> Locator:
-        return self.root.get_by_test_id("browser-fullscreen")
+        host = self.root.locator("xpath=ancestor::*[@data-surface-id][1]")
+        pane_id = host.get_attribute("data-pane-id")
+        return self.page.get_by_test_id(
+            f"desktop-pane-{pane_id}-tab-bar"
+        ).locator("[data-testid^='maximize-surface-']")
 
     @property
     def tab_rail(self) -> Locator:

@@ -2,7 +2,8 @@
 
 Naming follows docs/ui_architecture.md: the three main views are
 Chat, Network View, and Agent Activity View. Shared sub-panels
-(PreviewPanel, FilePreview, FullscreenPreview) live here too.
+(PreviewPanel, FilePreview, FullscreenPreview) live here too. FullscreenPreview
+represents the generic maximized-surface presentation.
 """
 
 from .chat_view import ChatView

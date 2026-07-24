@@ -93,14 +93,13 @@
 }
 
 
-/* ── content: list pane + preview ── */
+/* ── content ── */
 .content {
     flex: 1;
     display: flex;
     min-height: 0;
 }
 
-/* left pane owns the list and its controls; the preview pane stays clean */
 .listPane {
     flex: 1;
     min-width: 0;
@@ -149,11 +148,6 @@
     border-color: var(--border-strong);
     box-shadow: var(--shadow-lg);
     transform: translateY(-2px);
-}
-
-.card.sel {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
 }
 
 .card.missing {
@@ -324,38 +318,6 @@
     width: 1px;
     white-space: nowrap;
     text-align: right;
-}
-
-/* preview pane */
-.preview {
-    width: 42%;
-    min-width: 360px;
-    border-left: 1px solid var(--border);
-    background: var(--elevated);
-    display: flex;
-    flex-direction: column;
-}
-
-.previewHead {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
-    border-bottom: 1px solid var(--border);
-}
-
-.previewLabel {
-    flex: 1;
-    font-size: 12px;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: .5px;
-}
-
-.previewBody {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
 }
 
 /* empty / no-results */

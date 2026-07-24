@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react';
 import styles from './SplitHandle.module.css';
 
 /**
- * A draggable vertical divider between chat and preview columns.
+ * A draggable vertical divider between two sibling panes.
  *
  * @param {Object} props
  * @param {function(number): void} props.onDrag - Callback that receives the new split percentage (20-80)
  * @returns {JSX.Element}
  */
-export default function SplitHandle({ onDrag }) {
+export default function SplitHandle({ onDrag, className = '' }) {
     const handleRef = useRef(null);
     const onDragRef = useRef(onDrag);
     onDragRef.current = onDrag;
@@ -68,10 +68,10 @@ export default function SplitHandle({ onDrag }) {
     return (
         <div
             ref={handleRef}
-            className={styles.splitHandle}
+            className={`${styles.splitHandle} ${className}`.trim()}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize panels"
+            aria-label="Resize panes"
         />
     );
 }

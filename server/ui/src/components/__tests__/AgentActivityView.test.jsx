@@ -5,12 +5,6 @@ import { AgentProvider, useAgentDispatch } from '../../features/agent/AgentState
 import AgentActivityView from '../AgentActivityView.jsx';
 import { act, useState } from 'react';
 
-// ── Mock child components that are hard to render in jsdom ───────────
-
-vi.mock('../DesktopPreview.jsx', () => ({
-    default: ({ visible }) => visible ? <div data-testid="desktop-preview">Desktop</div> : null,
-}));
-
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function renderView(props = {}) {
@@ -75,26 +69,35 @@ describe('AgentActivityView', () => {
     });
 
     describe('activity pane', () => {
-        it('always has activityFull class (previews are in shared panel)', () => {
-            const { dispatch, container } = renderView();
-            startAgent(dispatch, 'a1');
-
-            const activity = container.querySelector('[class*="activity"]');
-            expect(activity.className).toMatch(/activityFull/);
-        });
-
-        it('stays full width even when preview data exists on agent', () => {
-            const { dispatch, container } = renderView();
+        it('keeps following text as streamed chunks merge into one activity entry', () => {
+            const { dispatch } = renderView();
             startAgent(dispatch, 'a1');
             dispatch({
-                type: 'UPDATE_BROWSER_SNAPSHOT',
+                type: 'APPEND_STREAM_CHUNK',
                 agentId: 'a1',
-                snapshot: { url: 'https://example.com', title: 'Example', screenshot: 'abc' },
+                content: 'first',
+                thinking: '',
             });
 
-            const activity = container.querySelector('[class*="activity"]');
-            expect(activity.className).toMatch(/activityFull/);
+            const activity = screen.getByTestId('agent-activity-scroll');
+            Object.defineProperty(activity, 'scrollHeight', {
+                configurable: true,
+                value: 500,
+            });
+            activity.scrollTop = 0;
+
+            // This extends the existing content entry, so activityLog.length
+            // remains unchanged. Content growth must still trigger scrolling.
+            dispatch({
+                type: 'APPEND_STREAM_CHUNK',
+                agentId: 'a1',
+                content: ' second',
+                thinking: '',
+            });
+
+            expect(activity.scrollTop).toBe(500);
         });
+
     });
 
     describe('nudge bar', () => {
@@ -106,18 +109,29 @@ describe('AgentActivityView', () => {
         });
     });
 
-    describe('does not render inline previews', () => {
-        it('no previews div exists', () => {
-            const { dispatch, container } = renderView();
-            startAgent(dispatch, 'a1');
-            dispatch({
-                type: 'UPDATE_BROWSER_SNAPSHOT',
-                agentId: 'a1',
-                snapshot: { url: 'https://example.com', title: 'Example', screenshot: 'abc' },
+    describe('agent execution views', () => {
+        it('renders only the concrete available actions and opens them explicitly', async () => {
+            const user = userEvent.setup();
+            const onOpenView = vi.fn();
+            const { dispatch } = renderView({
+                availableViews: ['browser', 'terminal'],
+                onOpenView,
             });
+            startAgent(dispatch, 'a1');
 
-            const previews = container.querySelector('[class*="previews"]');
-            expect(previews).toBeNull();
+            await user.click(screen.getByRole('button', { name: 'Browser' }));
+            await user.click(screen.getByRole('button', { name: 'Terminal' }));
+
+            expect(onOpenView).toHaveBeenNthCalledWith(1, 'browser');
+            expect(onOpenView).toHaveBeenNthCalledWith(2, 'terminal');
+        });
+
+        it('does not render a resource action when it is unavailable', () => {
+            const { dispatch } = renderView({ availableViews: ['browser'] });
+            startAgent(dispatch, 'a1');
+
+            expect(screen.getByRole('button', { name: 'Browser' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Terminal' })).not.toBeInTheDocument();
         });
     });
 

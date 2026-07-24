@@ -107,11 +107,6 @@ export type WorkspaceAction =
     | { type: 'CLEAR_DESKTOP'; agentId: string }
     | { type: 'CLEAR_GENERATION_PREVIEW'; agentId: string }
     | { type: 'CLOSE_FILE'; agentId: string; fileKey: string }
-    | { type: 'RESTORE_ACTIVE_TAB'; activeTab: string | null }
-    | { type: 'CONSUME_RESTORED_ACTIVE_TAB' }
-    | { type: 'SELECT_PREVIEW_TAB'; activeTab: string | null }
-    | { type: 'SET_PREVIEW_SPLIT_POSITION'; position: number }
-    | { type: 'SET_FULLSCREEN_ITEM'; item: unknown | null }
     | { type: 'RESET' };
 
 export type ConversationRestoreData = {
@@ -124,16 +119,11 @@ export type ConversationRestoreData = {
         tab_id: string | null;
     }>;
     terminal?: Record<string, Array<Record<string, unknown>>>;
-    previewState?: {
-        open_files?: Array<string>;
-        active_tab?: string | null;
-    };
 };
 
 export type ConversationRestorePlan = {
     agentActions: Array<AgentAction>;
     workspaceActions: Array<WorkspaceAction>;
-    activeTab: string | null;
 };
 
 export type SessionAction =
@@ -148,14 +138,10 @@ export type ConversationEventActions = {
     session: Array<SessionAction>;
     agent: {
         immediate: Array<AgentAction>;
-        ordered: Array<AgentAction>;
+        batched: Array<AgentAction>;
     };
     workspace: Array<WorkspaceAction>;
-};
-
-export type OneTimeEventActions = {
-    onToolCreated?: () => void;
-    onAudioPlayback?: (audio: { key: number; src: string }) => void;
+    effects: Array<import('../../app/appEffects.types').AppEffect>;
 };
 
 export type LiveIteration = {
@@ -219,10 +205,12 @@ export type ConversationTurn = {
 };
 
 export type LiveEventDeliveryOptions = {
-    onSessionAction?: (action: SessionAction) => void;
-    onAgentAction?: (action: AgentAction) => void;
-    onWorkspaceAction?: (action: WorkspaceAction) => void;
-    oneTimeActions?: OneTimeEventActions;
+    dispatch?: {
+        session?: (action: SessionAction) => void;
+        agent?: (action: AgentAction) => void;
+        workspace?: (action: WorkspaceAction) => void;
+        appEffect?: (effect: import('../../app/appEffects.types').AppEffect) => void;
+    };
     requestFrame?: (callback: FrameRequestCallback) => number;
     cancelFrame?: (handle: number) => void;
 };

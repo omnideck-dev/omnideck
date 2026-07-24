@@ -22,7 +22,7 @@ describe('useArtifactNavigation', () => {
         const { result } = renderHook(() => useArtifactNavigation({
             destination: { kind: 'artifacts' },
             navigation,
-            openWorkspacePreview: vi.fn(),
+            openArtifact: vi.fn(),
             onError: vi.fn(),
         }));
 
@@ -33,7 +33,7 @@ describe('useArtifactNavigation', () => {
         });
     });
 
-    it('resolves artifact intent into a workspace preview without a preview-state write', async () => {
+    it('resolves artifact intent into a durable artifact surface', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => ARTIFACT,
@@ -42,7 +42,7 @@ describe('useArtifactNavigation', () => {
             openConversation: vi.fn(),
             openChat: vi.fn(),
         };
-        const openWorkspacePreview = vi.fn();
+        const openArtifact = vi.fn();
 
         renderHook(() => useArtifactNavigation({
             destination: {
@@ -51,22 +51,14 @@ describe('useArtifactNavigation', () => {
                 artifactId: 'artifact-1',
             },
             navigation,
-            openWorkspacePreview,
+            openArtifact,
             onError: vi.fn(),
         }));
 
-        await waitFor(() => expect(openWorkspacePreview).toHaveBeenCalledWith({
-            filename: 'report.md',
-            content_type: 'text/markdown',
-            path: '/home/omnideck/report.md',
-        }));
+        await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(ARTIFACT));
         expect(globalThis.fetch).toHaveBeenCalledWith('/api/artifacts/artifact-1', {
             signal: expect.any(AbortSignal),
         });
         expect(navigation.openChat).toHaveBeenCalledWith('conversation-2');
-        expect(globalThis.fetch).not.toHaveBeenCalledWith(
-            expect.stringContaining('preview-state'),
-            expect.anything(),
-        );
     });
 });

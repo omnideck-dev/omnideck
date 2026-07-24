@@ -19,33 +19,38 @@ backend classes or separate network channels.
   draft, stream lifecycle, pending input, and the event records needed to build
   the transcript.
 - **Agent model:** Agent identities, parent-child relationships, lifecycle
-  status, context usage, and per-agent activity.
+  status, context usage, and sub-agent activity.
 - **Agent activity:** The ordered work attributed to one agent, such as
   reasoning, content, tool calls, spawned agents, file results, and errors. It
   powers the agent network and detail surfaces and is separate from the main
   transcript.
 - **Workspace model:** Browser, terminal, file, generation, and remote-desktop
   state associated with a conversation and its agents.
-- **One-time action:** Work triggered only when an event arrives live, such as
-  playing audio or refreshing a resource list. Restoring saved events must not
-  repeat it.
-- **Event action plan:** The session, agent, and workspace reducer actions
-  built from one canonical event. Live delivery additionally runs one-time
-  actions.
+- **Application effect:** A typed, one-time notification such as requesting
+  audio playback or refreshing a resource list. Effects can originate from
+  any feature; restoring saved conversation events does not repeat them.
 
-The same conversation event may contribute to more than one model. For
-example, root-agent output updates both the transcript and the root agent's
-activity, while sub-agent output updates agent activity but does not appear as
-root transcript output.
+Root-agent activity is projected from its transcript turn instead of retained
+twice. Sub-agent output is excluded from the main transcript and remains in the
+agent model for the network activity view.
 
 ## Ownership and flow
 
 `ConversationCatalogProvider` owns conversation lists and list mutations.
 `ConversationSessionProvider` owns the open conversation and its commands.
-`AgentProvider` owns the agent graph and activity. `WorkspaceProvider` owns
-browser, terminal, file, generation, desktop, and preview presentation state.
-`DesktopNavigationProvider` owns a serializable destination and named
-navigation commands. `App` assembles setup, these state owners, and `Desktop`.
+`AgentProvider` owns the agent graph and sub-agent activity. `WorkspaceProvider`
+owns browser, terminal, file, generation, and desktop data by agent.
+`AppEffectsProvider` delivers typed one-time effects to feature owners without
+retaining them as global state. `AudioPlayer` subscribes to playback effects
+and owns its transient player state locally.
+`DesktopNavigationProvider` owns serializable navigation requests and named
+navigation commands. `useDesktopWindowManager` owns two equivalent tabbed pane
+stacks, surface placement and focus, the horizontal split ratio, fullscreen
+presentation, and pending focus for restored workspace surfaces. Each surface
+has one stable host even when it moves between panes. Custom Apps and workspace
+previews retain their feature data in their own owners and contribute
+serializable surface descriptions to the window manager. `App` assembles setup,
+these state owners, and `Desktop`.
 
 Live data follows this path:
 
@@ -53,20 +58,24 @@ Live data follows this path:
 /api/chat
   → chatClient (request and JSONL stream)
   → normalizeLiveEvent (canonical conversation event)
-  → getConversationEventActions
+  → mapConversationEventToActions
       ├── session reducer actions
       ├── agent reducer actions
-      └── workspace reducer actions
-  → one-time actions (live delivery only)
+      ├── workspace reducer actions
+      └── application effects (live delivery only)
 ```
 
 Restoration reads saved canonical events and calls the same
-`getConversationEventActions` function. Saved browser and terminal snapshots
+`mapConversationEventToActions` function. Saved browser and terminal snapshots
 and preview metadata become explicit workspace restore actions. Restoration
-does not run one-time actions.
+ignores application effects.
 
 Desktop features navigate through commands such as `openConversation`,
-`openAgent`, and `openSettings`. The destination contains stable IDs rather
-than feature objects. There is no URL synchronization yet; a future router can
+`openAgent`, and `openSettings`. Sidebar reads that navigation owner directly
+instead of sending generic panel identifiers through Desktop. Desktop
+interprets navigation requests as surfaces to open or select in the left pane;
+any surface can subsequently move to either pane. Destinations and surfaces
+contain stable IDs and serializable metadata rather than React content or
+feature objects. There is no URL synchronization yet; a future router can
 implement the same destination and command interface without changing feature
 components.

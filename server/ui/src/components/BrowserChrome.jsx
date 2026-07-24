@@ -7,11 +7,10 @@ import styles from './BrowserChrome.module.css';
 /**
  * Shared browser control bar: the page title above a control row of
  * back/forward/reload, lock, an (editable while engaged) address field,
- * take-control, and an expand / exit-fullscreen button. Rendered identically by
- * the inline preview and the fullscreen view so the two stay consistent;
- * `fullscreen` only flips the right-hand button and adds outer padding.
+ * and take-control. Full-screen presentation belongs to the desktop window
+ * manager rather than to this feature component.
  */
-export default function BrowserChrome({ url, title, control, fullscreen, onToggleFullscreen, focusSurface }) {
+export default function BrowserChrome({ url, title, control, focusSurface }) {
     const c = control || {};
     // Local edit buffer for the address field: null = show the live url; a string
     // = the user is editing. Avoids live nav updates clobbering what they type.
@@ -24,7 +23,7 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
     };
 
     return (
-        <div className={`${styles.chrome} ${fullscreen ? styles.fullscreen : ''}`}>
+        <div className={styles.chrome}>
             {/* Always render the title row (with a fallback) so its height is
                 constant — an empty row would shift the preview as pages with and
                 without a title alternate. */}
@@ -79,17 +78,6 @@ export default function BrowserChrome({ url, title, control, fullscreen, onToggl
                         data-testid="browser-take-control"
                     >
                         <i className={`bi ${c.engaged ? 'bi-pause-circle' : 'bi-mouse'}`} style={{ fontSize: 14 }} />
-                    </IconButton>
-                )}
-                {onToggleFullscreen && (
-                    <IconButton
-                        size="sm"
-                        onClick={onToggleFullscreen}
-                        title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                        aria-label={fullscreen ? 'Exit fullscreen' : 'Open fullscreen'}
-                        data-testid={fullscreen ? 'browser-fullscreen-exit' : 'browser-fullscreen'}
-                    >
-                        <i className={`bi ${fullscreen ? 'bi-arrows-angle-contract' : 'bi-arrows-angle-expand'}`} style={{ fontSize: 14 }} />
                     </IconButton>
                 )}
             </div>

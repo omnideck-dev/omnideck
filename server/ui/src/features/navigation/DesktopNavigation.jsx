@@ -4,13 +4,6 @@ import {
     useConversationSessionState,
 } from '../conversation/session/ConversationSession.jsx';
 
-function sameDestination(left, right) {
-    const leftKeys = Object.keys(left);
-    const rightKeys = Object.keys(right);
-    return leftKeys.length === rightKeys.length
-        && leftKeys.every((key) => left[key] === right[key]);
-}
-
 const DesktopNavigationStateContext = createContext(null);
 const DesktopNavigationCommandsContext = createContext(null);
 
@@ -23,12 +16,13 @@ export function DesktopNavigationProvider({ children }) {
     }));
 
     const open = useCallback((nextDestination) => {
-        setDestination((currentDestination) => (
-            sameDestination(currentDestination, nextDestination)
-                ? currentDestination
-                : nextDestination
-        ));
+        // Repeating a destination is still a meaningful "open/select" request.
+        // Its surface may have been explicitly closed since the last request.
+        setDestination(nextDestination);
     }, []);
+    const openDestination = useCallback((nextDestination) => {
+        open(nextDestination);
+    }, [open]);
 
     const openChat = useCallback((conversationId = activeConversationId) => {
         open({ kind: 'chat', conversationId: conversationId || null });
@@ -44,11 +38,10 @@ export function DesktopNavigationProvider({ children }) {
         [open],
     );
     const openArtifacts = useCallback(
-        (artifactId = null) => open({ kind: 'artifacts', artifactId }),
+        (conversationId = null) => open({ kind: 'artifacts', conversationId }),
         [open],
     );
     const openApps = useCallback(() => open({ kind: 'apps' }), [open]);
-    const openHome = useCallback(() => open({ kind: 'home' }), [open]);
     const openCustomApp = useCallback(
         (appSlug) => open({ kind: 'custom-app', appSlug }),
         [open],
@@ -68,6 +61,7 @@ export function DesktopNavigationProvider({ children }) {
     }, [activeConversationId, loadConversation, open]);
 
     const commands = useMemo(() => ({
+        openDestination,
         openChat,
         openNetwork,
         openAgent,
@@ -77,7 +71,6 @@ export function DesktopNavigationProvider({ children }) {
         openRoutines,
         openArtifacts,
         openApps,
-        openHome,
         openCustomApp,
     }), [
         openAgent,
@@ -86,8 +79,8 @@ export function DesktopNavigationProvider({ children }) {
         openArtifacts,
         openChat,
         openConversation,
-        openHome,
         openNetwork,
+        openDestination,
         openRoutines,
         openSettings,
         openCustomApp,

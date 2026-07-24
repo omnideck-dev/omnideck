@@ -4,7 +4,7 @@ import { useCallback, useEffect } from 'react';
 export default function useArtifactNavigation({
     destination,
     navigation,
-    openWorkspacePreview,
+    openArtifact,
     onError,
 }) {
     const openArtifactInConversation = useCallback((artifact) => (
@@ -22,11 +22,7 @@ export default function useArtifactNavigation({
             })
             .then((artifact) => {
                 navigation.openChat(destination.conversationId);
-                openWorkspacePreview({
-                    filename: artifact.filename,
-                    content_type: artifact.content_type,
-                    path: artifact.path,
-                });
+                openArtifact(artifact);
             })
             .catch((error) => {
                 if (error.name === 'AbortError') return;
@@ -34,7 +30,7 @@ export default function useArtifactNavigation({
                 navigation.openChat(destination.conversationId);
             });
         return () => controller.abort();
-    }, [destination, navigation, onError, openWorkspacePreview]);
+    }, [destination, navigation, onError, openArtifact]);
 
     return openArtifactInConversation;
 }

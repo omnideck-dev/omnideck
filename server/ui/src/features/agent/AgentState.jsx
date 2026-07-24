@@ -1,11 +1,12 @@
 import { createContext, useContext, useReducer } from 'react';
 
 /**
- * State for the agent tree. This powers the network graph and agent
- * detail views. Each agent gets its own node and ordered activity log.
+ * State for the agent tree. This powers the network graph and agent detail
+ * views. Every agent gets a node; sub-agents additionally retain an ordered
+ * activity log. Root activity is projected from conversation turns.
  *
  * Data arrives here via:
- *   backend stream → canonical event action plan → reducer actions → dispatch
+ *   backend stream → canonical event mapping → reducer actions → dispatch
  *
  * The tree builds up as agent_started events arrive and updates as
  * lifecycle, content, tool, and context events flow in.
@@ -32,7 +33,7 @@ function _makeAgent(id, name, parentId, instruction, startedAt, correlationId = 
         childIds: [],            // sub-agents spawned by this agent
         startedAt,               // for elapsed time display
         instruction: instruction || '',
-        activityLog: [],         // everything the agent did: thinking, content, tool calls
+        activityLog: [],         // sub-agent thinking, content, and tool calls
         inflightActivityStart: null, // first temporary text entry for the current iteration
         completedAt: null,       // when the agent finished (for frozen elapsed time)
         iteration: null,         // current loop iteration

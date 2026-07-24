@@ -15,11 +15,10 @@ function _hostOf(url) {
 
 /**
  * `tabs` is an array of ``{ id, snapshot }`` for every open browser tab.
- * Selection is controlled by the parent (`selectedId` / `onSelectTab`) so the
- * inline preview and fullscreen share one selection and one screencast session.
+ * Selection is controlled by the parent (`selectedId` / `onSelectTab`).
  * `control` carries the live screencast frame + nav state for the selected tab.
  */
-export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullscreen, control, inputActive = true }) {
+export default function BrowserPreview({ tabs, selectedId, onSelectTab, control, inputActive = true }) {
     const activeTab = tabs.find(t => t.id === selectedId) || tabs[0];
     if (!activeTab) return null;
 
@@ -49,8 +48,6 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, onFullsc
                 url={url}
                 title={title}
                 control={control}
-                fullscreen={false}
-                onToggleFullscreen={onFullscreen}
                 focusSurface={focusSurface}
             />
 

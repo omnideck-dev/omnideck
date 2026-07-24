@@ -61,8 +61,8 @@ describe('conversation session stream delivery', () => {
             ok: true,
             body: bodyFromBytes(bytes, [7, 31, 83, 147]),
         });
-        const onAgentAction = vi.fn();
-        const { result } = renderHook(() => useConversationSessionController({ onAgentAction }));
+        const agentDispatch = vi.fn();
+        const { result } = renderHook(() => useConversationSessionController({ agentDispatch }));
 
         await act(async () => {
             await result.current.sendMessage('hello', null, 'profile-1');
@@ -77,12 +77,78 @@ describe('conversation session stream delivery', () => {
                 { kind: 'iteration', content: 'world' },
             ],
         });
-        expect(onAgentAction).toHaveBeenCalledWith(expect.objectContaining({
+        expect(agentDispatch).toHaveBeenCalledWith(expect.objectContaining({
             type: 'AGENT_STARTED', agentId,
         }));
     });
 
-    it('continues with later events when one live callback fails', async () => {
+    it('keeps sub-agent output in agent activity and out of the root transcript', async () => {
+        const records = [
+            {
+                id: 'start-root', agent_id: 'root-1', agent_name: 'Root', depth: 0,
+                payload: {
+                    type: 'agent_started', agent_id: 'root-1',
+                    agent_name: 'Root', parent_agent_id: null,
+                },
+            },
+            {
+                id: 'user-root', agent_id: 'root-1', agent_name: 'Root', depth: 0,
+                payload: { type: 'user_message', content: 'hello', attachments: [] },
+            },
+            {
+                id: 'start-child', agent_id: 'child-1', agent_name: 'Child', depth: 1,
+                payload: {
+                    type: 'agent_started', agent_id: 'child-1',
+                    agent_name: 'Child', parent_agent_id: 'root-1',
+                },
+            },
+            {
+                id: 'content-child', agent_id: 'child-1', agent_name: 'Child', depth: 1,
+                payload: { type: 'content', content: 'child partial', thinking: '' },
+            },
+            {
+                id: 'iteration-child', agent_id: 'child-1', agent_name: 'Child', depth: 1,
+                payload: {
+                    type: 'iteration', iteration_index: 0,
+                    content: 'child answer', thinking: null, tool_calls: [],
+                },
+            },
+            {
+                id: 'iteration-root', agent_id: 'root-1', agent_name: 'Root', depth: 0,
+                payload: {
+                    type: 'iteration', iteration_index: 0,
+                    content: 'root answer', thinking: null, tool_calls: [],
+                },
+            },
+            {
+                id: 'end-root', agent_id: 'root-1', agent_name: 'Root', depth: 0,
+                payload: { type: 'turn_end' },
+            },
+        ];
+        const bytes = encoder.encode(`${records.map(JSON.stringify).join('\n')}\n`);
+        vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
+            body: bodyFromBytes(bytes, [41, 127, 301]),
+        });
+        const agentDispatch = vi.fn();
+        const { result } = renderHook(() => useConversationSessionController({ agentDispatch }));
+
+        await act(async () => {
+            await result.current.sendMessage('hello', null, 'profile-1');
+        });
+
+        expect(result.current.turns[0].children).toEqual([
+            expect.objectContaining({ kind: 'user_prompt', content: 'hello' }),
+            expect.objectContaining({ kind: 'iteration', content: 'root answer' }),
+        ]);
+        expect(agentDispatch).toHaveBeenCalledWith(expect.objectContaining({
+            type: 'FINALIZE_AGENT_ITERATION',
+            agentId: 'child-1',
+            content: 'child answer',
+        }));
+    });
+
+    it('continues with later events when one feature dispatch fails', async () => {
         const agentId = 'root.test.1';
         const records = [
             {
@@ -123,19 +189,19 @@ describe('conversation session stream delivery', () => {
             ok: true,
             body: bodyFromBytes(bytes, [19, 71, 133]),
         });
-        const onWorkspaceAction = vi.fn(() => {
+        const workspaceDispatch = vi.fn(() => {
             throw new Error('preview unavailable');
         });
         const { result } = renderHook(() => useConversationSessionController({
-            onWorkspaceAction,
-            onAgentAction: vi.fn(),
+            workspaceDispatch,
+            agentDispatch: vi.fn(),
         }));
 
         await act(async () => {
             await result.current.sendMessage('hello', null, 'profile-1');
         });
 
-        expect(onWorkspaceAction).toHaveBeenCalledTimes(2);
+        expect(workspaceDispatch).toHaveBeenCalledTimes(2);
         expect(result.current.turns).toHaveLength(1);
         expect(result.current.turns[0]).toMatchObject({
             agentId,
@@ -146,7 +212,7 @@ describe('conversation session stream delivery', () => {
         });
     });
 
-    it('preserves queued agent activity when one dispatch fails', async () => {
+    it('preserves the root transcript when sub-agent activity dispatch fails', async () => {
         const agentId = 'root.test.1';
         const records = [
             {
@@ -163,6 +229,10 @@ describe('conversation session stream delivery', () => {
             {
                 id: 'content-1', agent_id: agentId, agent_name: 'TEST', depth: 0,
                 payload: { type: 'content', content: 'partial', thinking: '' },
+            },
+            {
+                id: 'content-child', agent_id: 'child-1', agent_name: 'Child', depth: 1,
+                payload: { type: 'content', content: 'child activity', thinking: '' },
             },
             {
                 id: 'spawn-1', agent_id: agentId, agent_name: 'TEST', depth: 0,
@@ -199,27 +269,23 @@ describe('conversation session stream delivery', () => {
             ok: true,
             body: bodyFromBytes(bytes, [43, 109, 211]),
         });
-        const onAgentAction = vi.fn((action) => {
+        const agentDispatch = vi.fn((action) => {
             if (action.type === 'APPEND_STREAM_CHUNK') {
                 throw new Error('activity unavailable');
             }
         });
-        const { result } = renderHook(() => useConversationSessionController({ onAgentAction }));
+        const { result } = renderHook(() => useConversationSessionController({ agentDispatch }));
 
         await act(async () => {
             await result.current.sendMessage('hello', null, 'profile-1');
         });
 
-        const actionNames = onAgentAction.mock.calls.map(([action]) => (
+        const actionNames = agentDispatch.mock.calls.map(([action]) => (
             action.type === 'APPEND_ACTIVITY' ? action.entry.type : action.type
         ));
         expect(actionNames).toEqual([
             'AGENT_STARTED',
             'APPEND_STREAM_CHUNK',
-            'spawn_requested',
-            'FINALIZE_AGENT_ITERATION',
-            'file_output',
-            'compaction',
         ]);
         expect(result.current.turns[0].children).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: 'iteration', content: 'complete' }),

@@ -49,8 +49,8 @@ def test_sent_file_appears_in_grid(page: Page, produced):
     expect(hub.card(produced["html"])).to_be_visible()
 
 
-def test_selecting_artifact_renders_preview(page: Page, produced):
-    """Selecting a card opens the reused FilePreview with the file's content."""
+def test_selecting_artifact_opens_file_surface(page: Page, produced):
+    """Selecting a card opens a file surface with the artifact's content."""
     hub = ArtifactsHub(page).goto()
     hub.select(produced["md"])
     expect(hub.preview).to_be_visible(timeout=5_000)

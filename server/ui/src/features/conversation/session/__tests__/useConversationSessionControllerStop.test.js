@@ -56,8 +56,7 @@ describe('conversation session stop handling', () => {
             if (url === '/api/chat') return chat.promise;
             return Promise.resolve({ ok: true });
         });
-        const onNudgeSent = vi.fn();
-        const { result } = renderHook(() => useConversationSessionController({ onNudgeSent }));
+        const { result } = renderHook(() => useConversationSessionController());
         let sendPromise;
 
         await act(async () => {
@@ -69,12 +68,13 @@ describe('conversation session stop handling', () => {
             result.current.stopGeneration();
         });
 
+        let nudgeResult;
         await act(async () => {
-            await result.current.sendNudge('wait');
+            nudgeResult = await result.current.sendNudge('wait');
         });
 
         expect(fetchSpy.mock.calls.filter(([url]) => url === '/api/nudge')).toHaveLength(0);
-        expect(onNudgeSent).not.toHaveBeenCalled();
+        expect(nudgeResult).toBeNull();
 
         await act(async () => {
             chat.resolve({ body: null });

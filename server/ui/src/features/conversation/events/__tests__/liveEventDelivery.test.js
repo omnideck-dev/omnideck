@@ -25,11 +25,11 @@ function frameScheduler() {
 }
 
 describe('createLiveEventDelivery', () => {
-    it('applies lifecycle actions immediately and batches ordered activity', () => {
+    it('applies lifecycle actions immediately and batches streamed activity', () => {
         const frame = frameScheduler();
-        const onAgentAction = vi.fn();
+        const agentDispatch = vi.fn();
         const delivery = createLiveEventDelivery({
-            onAgentAction,
+            dispatch: { agent: agentDispatch },
             requestFrame: frame.requestFrame,
             cancelFrame: frame.cancelFrame,
         });
@@ -40,20 +40,19 @@ describe('createLiveEventDelivery', () => {
             agent_id: 'child-1', depth: 1, content: 'child output',
         }));
 
-        expect(onAgentAction).toHaveBeenCalledTimes(1);
-        expect(onAgentAction).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(agentDispatch).toHaveBeenCalledTimes(1);
+        expect(agentDispatch).toHaveBeenLastCalledWith(expect.objectContaining({
             type: 'AGENT_STARTED', agentId: 'root-1',
         }));
         expect(frame.requestFrame).toHaveBeenCalledTimes(1);
 
         frame.run();
 
-        expect(onAgentAction.mock.calls.slice(1).map(([action]) => ({
+        expect(agentDispatch.mock.calls.slice(1).map(([action]) => ({
             type: action.type,
             agentId: action.agentId,
             content: action.content,
         }))).toEqual([
-            { type: 'APPEND_STREAM_CHUNK', agentId: 'root-1', content: 'root output' },
             { type: 'APPEND_STREAM_CHUNK', agentId: 'child-1', content: 'child output' },
         ]);
     });
@@ -62,26 +61,32 @@ describe('createLiveEventDelivery', () => {
         const frame = frameScheduler();
         const order = [];
         const delivery = createLiveEventDelivery({
-            onAgentAction: () => order.push('agent activity'),
-            onSessionAction: (action) => {
-                if (action.type === 'FINISH_TURN') order.push('turn finished');
+            dispatch: {
+                agent: () => order.push('agent activity'),
+                session: (action) => {
+                    if (action.type === 'FINISH_TURN') order.push('turn finished');
+                },
             },
             requestFrame: frame.requestFrame,
             cancelFrame: frame.cancelFrame,
         });
 
-        delivery.deliver(event('content', { content: 'last output' }));
+        delivery.deliver(event('content', {
+            agent_id: 'child-1', depth: 1, content: 'last output',
+        }));
         delivery.deliver(event('turn_end'));
 
         expect(frame.cancelFrame).toHaveBeenCalledWith(42);
         expect(order).toEqual(['agent activity', 'turn finished']);
     });
 
-    it('keeps workspace and one-time callback failures from stopping delivery', () => {
-        const onToolCreated = vi.fn();
+    it('keeps workspace and application-effect failures from stopping delivery', () => {
+        const appEffectDispatch = vi.fn();
         const delivery = createLiveEventDelivery({
-            onWorkspaceAction: vi.fn(() => { throw new Error('preview failed'); }),
-            oneTimeActions: { onToolCreated },
+            dispatch: {
+                workspace: vi.fn(() => { throw new Error('preview failed'); }),
+                appEffect: appEffectDispatch,
+            },
             requestFrame: vi.fn(),
             cancelFrame: vi.fn(),
         });
@@ -91,6 +96,8 @@ describe('createLiveEventDelivery', () => {
         }))).not.toThrow();
         delivery.deliver(event('tool_created'));
 
-        expect(onToolCreated).toHaveBeenCalledTimes(1);
+        expect(appEffectDispatch).toHaveBeenCalledWith({
+            type: 'custom-tools/refresh',
+        });
     });
 });

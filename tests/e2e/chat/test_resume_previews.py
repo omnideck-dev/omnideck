@@ -1,4 +1,4 @@
-"""E2E tests for restoring preview-panel state when a conversation is reopened.
+"""E2E tests for restoring workspace-surface state when a conversation is reopened.
 
 Seeds a conversation directly on disk (history + events + metadata) plus
 the file the events reference in /home/computron, then loads it from the

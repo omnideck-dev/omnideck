@@ -62,10 +62,10 @@ describe('getAgentEventActions', () => {
         }]);
     });
 
-    it('builds ordered stream and tool-call actions', () => {
+    it('builds batched stream and tool-call actions', () => {
         expect(getAgentEventActions(event('content', {
-            content: 'answer', thinking: 'reasoning',
-        })).ordered).toEqual([{
+            depth: 1, content: 'answer', thinking: 'reasoning',
+        })).batched).toEqual([{
             type: 'APPEND_STREAM_CHUNK',
             agentId: 'agent-1',
             content: 'answer',
@@ -73,13 +73,14 @@ describe('getAgentEventActions', () => {
         }]);
 
         expect(getAgentEventActions(event('iteration', {
+            depth: 1,
             content: 'complete answer',
             thinking: 'complete reasoning',
             tool_calls: [
                 { name: 'shell', arguments: { cmd: 'ls' } },
                 { name: 'browser', arguments: null },
             ],
-        })).ordered).toEqual([{
+        })).batched).toEqual([{
             type: 'FINALIZE_AGENT_ITERATION',
             agentId: 'agent-1',
             content: 'complete answer',
@@ -92,17 +93,17 @@ describe('getAgentEventActions', () => {
         }]);
     });
 
-    it('builds ordered activity records', () => {
+    it('builds batched activity records', () => {
         expect(getAgentEventActions(event('spawn_requested', {
-            correlation_id: 'spawn-1',
-        })).ordered[0]).toMatchObject({
+            depth: 1, correlation_id: 'spawn-1',
+        })).batched[0]).toMatchObject({
             type: 'APPEND_ACTIVITY',
             entry: { type: 'spawn_requested', correlationId: 'spawn-1', timestamp: TIME },
         });
 
         expect(getAgentEventActions(event('file_output', {
-            filename: 'report.md', content_type: 'text/markdown', path: '/tmp/report.md',
-        })).ordered[0]).toMatchObject({
+            depth: 1, filename: 'report.md', content_type: 'text/markdown', path: '/tmp/report.md',
+        })).batched[0]).toMatchObject({
             type: 'APPEND_ACTIVITY',
             entry: {
                 type: 'file_output', filename: 'report.md', path: '/tmp/report.md', timestamp: TIME,
@@ -110,8 +111,11 @@ describe('getAgentEventActions', () => {
         });
 
         expect(getAgentEventActions(event('compaction', {
-            summary_text: 'summary', user_intent_summary: 'intent', stats: { removed: 3 },
-        })).ordered[0]).toMatchObject({
+            depth: 1,
+            summary_text: 'summary',
+            user_intent_summary: 'intent',
+            stats: { removed: 3 },
+        })).batched[0]).toMatchObject({
             type: 'APPEND_ACTIVITY',
             entry: {
                 type: 'compaction', summaryText: 'summary', userIntentSummary: 'intent', timestamp: TIME,
@@ -119,20 +123,36 @@ describe('getAgentEventActions', () => {
         });
     });
 
+    it('does not duplicate root transcript output in agent activity', () => {
+        expect(getAgentEventActions(event('content', {
+            content: 'answer', thinking: 'reasoning',
+        })).batched).toEqual([]);
+        expect(getAgentEventActions(event('iteration', {
+            content: 'complete answer',
+            thinking: null,
+            tool_calls: [],
+        })).batched).toEqual([]);
+        expect(getAgentEventActions(event('file_output', {
+            filename: 'report.md',
+            content_type: 'text/markdown',
+            path: '/tmp/report.md',
+        })).batched).toEqual([]);
+    });
+
     it('adds errors only to sub-agent activity', () => {
-        expect(getAgentEventActions(event('error', { message: 'root failed' })).ordered).toEqual([]);
+        expect(getAgentEventActions(event('error', { message: 'root failed' })).batched).toEqual([]);
         expect(getAgentEventActions(event('error', {
             depth: 1, message: 'child failed',
-        })).ordered[0]).toMatchObject({
+        })).batched[0]).toMatchObject({
             type: 'APPEND_ACTIVITY',
             entry: { type: 'error', message: 'child failed', timestamp: TIME },
         });
     });
 
     it('ignores unrelated and agentless events', () => {
-        expect(getAgentEventActions(event('audio_playback'))).toEqual({ immediate: [], ordered: [] });
+        expect(getAgentEventActions(event('audio_playback'))).toEqual({ immediate: [], batched: [] });
         expect(getAgentEventActions(event('content', { agent_id: null, content: 'ignored' })))
-            .toEqual({ immediate: [], ordered: [] });
-        expect(getAgentEventActions(null)).toEqual({ immediate: [], ordered: [] });
+            .toEqual({ immediate: [], batched: [] });
+        expect(getAgentEventActions(null)).toEqual({ immediate: [], batched: [] });
     });
 });

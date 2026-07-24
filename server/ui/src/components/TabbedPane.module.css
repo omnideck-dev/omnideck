@@ -21,40 +21,75 @@
     display: flex;
     align-items: center;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE and Edge */
     flex: 1;
     min-width: 0;
+    scroll-behavior: smooth;
 }
 
 .tabList::-webkit-scrollbar {
     display: none; /* Chrome, Safari, Opera */
 }
 
-.tabActions {
+.tabScrollButton {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
-    padding-right: 8px;
+    justify-content: center;
+    align-self: stretch;
+    flex: 0 0 30px;
+    width: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--surface);
+    color: var(--text-secondary);
+}
+
+.tabScrollButton:hover:not(:disabled) {
+    background: var(--border-subtle);
+    color: var(--text-primary);
+}
+
+.tabScrollButton:disabled {
+    color: var(--text-tertiary);
+    opacity: 0.45;
+    cursor: default;
+}
+
+.tabScrollButtonHidden {
+    display: none;
 }
 
 /* Individual tab */
 .tab {
     display: flex;
     align-items: center;
-    gap: 6px;
+    flex: 0 0 auto;
     height: var(--header-height);
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tabSelection {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    align-self: stretch;
+    min-width: 0;
     padding: 0 12px;
     background: transparent;
     border: none;
     border-radius: 0;
     box-shadow: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    color: inherit;
+    font: inherit;
 }
 
 .tab:hover {
@@ -64,6 +99,20 @@
 .tabActive {
     border-bottom-color: var(--accent);
     color: var(--text-primary);
+}
+
+.tabActions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 2px;
+}
+
+.tabActions :global(button) {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: var(--radius-sm);
 }
 
 .tabIcon {
@@ -90,7 +139,11 @@
     font-size: 11px;
     color: var(--text-tertiary);
     border-radius: 3px;
-    margin-left: 4px;
+    margin: 0 6px 0 2px;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
     opacity: 0;
     transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }

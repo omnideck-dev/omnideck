@@ -1,11 +1,11 @@
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import { useCallback } from 'react';
 
 import useListPanel from '../../hooks/useListPanel.js';
+import { useAppEffectSubscription } from '../app/AppEffects.jsx';
+import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 
-const CustomToolsCatalogContext = createContext(null);
-
-/** Owns the Custom Tools collection and its server-backed mutations. */
-export function CustomToolsCatalogProvider({ children }) {
+/** Loads and mutates the catalog only while its management screen is mounted. */
+export function useCustomToolsCatalog() {
     const panel = useListPanel('/api/custom-tools');
 
     const deleteCustomTool = useCallback((name) => (
@@ -17,31 +17,13 @@ export function CustomToolsCatalogProvider({ children }) {
     ), [panel.handleDelete]);
 
     const refreshCustomTools = useCallback(() => panel.refetch(), [panel.refetch]);
-    const value = useMemo(() => ({
+    useAppEffectSubscription(APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS, refreshCustomTools);
+
+    return {
         customTools: panel.items,
         loading: panel.loading,
         deleting: panel.deleting,
         deleteCustomTool,
         refreshCustomTools,
-    }), [
-        deleteCustomTool,
-        panel.deleting,
-        panel.items,
-        panel.loading,
-        refreshCustomTools,
-    ]);
-
-    return (
-        <CustomToolsCatalogContext.Provider value={value}>
-            {children}
-        </CustomToolsCatalogContext.Provider>
-    );
-}
-
-export function useCustomToolsCatalog() {
-    const value = useContext(CustomToolsCatalogContext);
-    if (value === null) {
-        throw new Error('useCustomToolsCatalog must be used within CustomToolsCatalogProvider');
-    }
-    return value;
+    };
 }

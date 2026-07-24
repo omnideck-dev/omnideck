@@ -3,7 +3,7 @@ import { createLiveEventDelivery } from '../events/liveEventDelivery.js';
 import { normalizeLiveEvent } from '../events/normalizeEvent.js';
 import { projectTurns } from '../events/projectTurns.js';
 import { accumulateLiveIteration } from '../events/liveIteration.js';
-import { getConversationEventActions } from '../events/conversationEventActions.js';
+import { mapConversationEventToActions } from '../events/mapConversationEventToActions.js';
 import { streamChatTurn } from '../transport/chatClient.js';
 import useStreamStall from '../../../hooks/useStreamStall.js';
 
@@ -13,19 +13,14 @@ import useStreamStall from '../../../hooks/useStreamStall.js';
  * @property {Array<object>} events
  * @property {Array<object>} browserTabs
  * @property {Object<string, Array<object>>} terminal
- * @property {object} previewState
  * @property {string|null} profileId
  */
 
 /**
- * @typedef {object} ConversationSessionCallbacks
- * @property {(action: import('../events/frontendTypes').AgentAction) => void} [onAgentAction]
- * @property {(action: import('../events/frontendTypes').WorkspaceAction) => void} [onWorkspaceAction]
- * @property {() => void} [onToolCreated]
- * @property {(audio: {key: number, src: string}) => void} [onAudioPlayback]
- * @property {(result: {ok: boolean, message?: string, status?: number, error?: string}) => void} [onNudgeSent]
- * @property {(conversation: {conversationId: string, firstMessage: string}) => void} [onConversationStarted]
- * @property {(conversation: ConversationLoadData) => void} [onConversationLoaded]
+ * @typedef {object} ConversationSessionDispatchers
+ * @property {(action: import('../events/frontendTypes').AgentAction) => void} [agentDispatch]
+ * @property {(action: import('../events/frontendTypes').WorkspaceAction) => void} [workspaceDispatch]
+ * @property {(effect: import('../../app/appEffects.types').AppEffect) => void} [appEffectDispatch]
  */
 
 function _uuid() {
@@ -83,13 +78,17 @@ function conversationReducer(state, action) {
  * Coordinates the active conversation session around the raw envelopes yielded
  * by the chat transport client.
  *
- * Root agent output updates the open transcript. Agent activity for both the
- * root and sub-agents is delivered to the agent model in animation-frame
- * batches for the network and detail views.
+ * Root agent output updates the open transcript. Sub-agent activity is
+ * delivered to the agent model in animation-frame batches for the network and
+ * detail views; root detail is projected from the transcript.
  *
- * @param {ConversationSessionCallbacks} callbacks
+ * @param {ConversationSessionDispatchers} dispatchers
  */
-export default function useConversationSessionController(callbacks = {}) {
+export default function useConversationSessionController({
+    agentDispatch,
+    workspaceDispatch,
+    appEffectDispatch,
+} = {}) {
     // ── Unified state for chat rendering ───────────────────────────────
     // ``events`` is the source of truth for the open conversation's
     // transcript: resume seeds saved canonical records and live handling
@@ -129,8 +128,8 @@ export default function useConversationSessionController(callbacks = {}) {
     }, []);
     const abortControllerRef = useRef(null);
     // The open conversation id is this hook's primary key — every request it
-    // makes (send, nudge, stop, resume, preview-state) is keyed by it. The ref
-    // is the source of truth so callbacks can read it synchronously mid-flight,
+    // makes (send, nudge, stop, resume) is keyed by it. The ref
+    // is the source of truth so commands can read it synchronously mid-flight,
     // before any re-render lands. The state below mirrors it purely so rendered
     // consumers (the sidebar's active-row highlight) update when it changes;
     // always flip both together via setConversationId, never the ref alone.
@@ -141,16 +140,8 @@ export default function useConversationSessionController(callbacks = {}) {
         _setActiveConversationId(id);
     }, []);
     const rootAgentIdRef = useRef(null);
-    // True until the current conversation has had a turn started. Set when a
-    // fresh conversation is opened (mount / New chat), cleared once its first
-    // message is sent or when an existing conversation is resumed. Lets
-    // sendMessage tell consumers a brand-new conversation just began without
-    // them having to infer it from list membership.
-    const isFreshConversationRef = useRef(true);
-
     const sendNudge = useCallback(async (message, agentId) => {
-        if (!message) return;
-        if (stopRequestedRef.current) return;
+        if (!message || stopRequestedRef.current) return null;
         const nudgeBody = {
             message,
             conversation_id: conversationIdRef.current,
@@ -163,30 +154,25 @@ export default function useConversationSessionController(callbacks = {}) {
                 body: JSON.stringify(nudgeBody),
             });
             if (res.ok) {
-                if (callbacks.onNudgeSent) callbacks.onNudgeSent({ ok: true, message });
-            } else {
-                const data = await res.json().catch(() => ({}));
-                if (callbacks.onNudgeSent) callbacks.onNudgeSent({ ok: false, status: res.status, error: data.error });
+                return { ok: true, message };
             }
+            const data = await res.json().catch(() => ({}));
+            return {
+                ok: false,
+                status: res.status,
+                error: data.error,
+            };
         } catch {
-            if (callbacks.onNudgeSent) callbacks.onNudgeSent({ ok: false, status: 0, error: 'Could not reach the server' });
+            return {
+                ok: false,
+                status: 0,
+                error: 'Could not reach the server',
+            };
         }
-    }, [callbacks]);
+    }, []);
 
     const sendMessage = useCallback(async (message, attachments, profileId) => {
         if (!message && !attachments?.length) return;
-
-        // First message of a brand-new conversation: the events-first backend
-        // persists it as soon as the turn starts, so tell consumers now (the
-        // sidebar inserts the row + kicks off title generation). Cleared so a
-        // second message in the same conversation isn't treated as new.
-        if (isFreshConversationRef.current) {
-            isFreshConversationRef.current = false;
-            callbacks.onConversationStarted?.({
-                conversationId: conversationIdRef.current,
-                firstMessage: message || '',
-            });
-        }
 
         // The pending attachment list keeps upload order
         // and carries filename + content_type for every entry (images too), so
@@ -223,15 +209,17 @@ export default function useConversationSessionController(callbacks = {}) {
             setStopRequested(false);
 
             liveEventDelivery = createLiveEventDelivery({
-                onSessionAction: (action) => {
-                    if (action.type === 'SET_ROOT_AGENT') {
-                        rootAgentIdRef.current = action.agentId;
-                    }
-                    dispatchConversation(action);
+                dispatch: {
+                    session: (action) => {
+                        if (action.type === 'SET_ROOT_AGENT') {
+                            rootAgentIdRef.current = action.agentId;
+                        }
+                        dispatchConversation(action);
+                    },
+                    agent: agentDispatch,
+                    workspace: workspaceDispatch,
+                    appEffect: appEffectDispatch,
                 },
-                onAgentAction: callbacks.onAgentAction,
-                onWorkspaceAction: callbacks.onWorkspaceAction,
-                oneTimeActions: callbacks,
             });
 
             for await (const data of streamChatTurn({
@@ -282,7 +270,7 @@ export default function useConversationSessionController(callbacks = {}) {
             // and the next sendMessage replaces it.
             dispatchConversation({ type: 'FINALIZE_ITERATION' });
         }
-    }, [callbacks, setStopRequested]);
+    }, [agentDispatch, appEffectDispatch, setStopRequested, workspaceDispatch]);
 
     /** Ask the backend to stop generation, leaving the stream open until
      * turn_end so the backend can flush whatever it streamed so far. */
@@ -306,57 +294,35 @@ export default function useConversationSessionController(callbacks = {}) {
             const resp = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {
                 method: 'POST',
             });
-            if (!resp.ok) return false;
+            if (!resp.ok) return null;
             const data = await resp.json();
             setConversationId(conversationId);
-            // A resumed conversation already exists; its next message is not new.
-            isFreshConversationRef.current = false;
-
             const events = Array.isArray(data.events) ? data.events : [];
             const retainedEvents = [];
             rootAgentIdRef.current = null;
             for (const event of events) {
-                const actions = getConversationEventActions(event);
+                const actions = mapConversationEventToActions(event);
                 for (const action of actions.session) {
                     if (action.type === 'RETAIN_EVENT') retainedEvents.push(action.event);
                     if (action.type === 'SET_ROOT_AGENT') rootAgentIdRef.current = action.agentId;
                 }
             }
 
-            // Seed the session first so a buggy callback can't
-            // leave the events array out of sync with the agent tree.
+            // Seed the open transcript before the provider restores the other
+            // feature owners from the returned canonical data.
             dispatchConversation({ type: 'RESTORE_CONVERSATION', events: retainedEvents });
 
-            if (callbacks.onConversationLoaded) {
-                callbacks.onConversationLoaded({
-                    conversationId,
-                    events,
-                    browserTabs: data.browser_tabs || [],
-                    terminal: data.terminal || {},
-                    previewState: data.preview_state || {},
-                    profileId: data.profile_id || null,
-                });
-            }
-            return true;
+            return {
+                conversationId,
+                events,
+                browserTabs: data.browser_tabs || [],
+                terminal: data.terminal || {},
+                profileId: data.profile_id || null,
+            };
         } catch (_) {
-            return false;
+            return null;
         }
-    }, [callbacks, setConversationId]);
-
-    /** Persist the user's preview-panel tab state for the current conversation. */
-    const savePreviewState = useCallback(async (state) => {
-        const id = conversationIdRef.current;
-        if (!id) return;
-        try {
-            await fetch(`/api/conversations/sessions/${id}/preview-state`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(state),
-            });
-        } catch {
-            // best-effort; preview state is non-critical UI affordance
-        }
-    }, []);
+    }, [setConversationId]);
 
     /** Clear session state and switch to a fresh conversation ID.
      *
@@ -379,8 +345,6 @@ export default function useConversationSessionController(callbacks = {}) {
         setDraft(seedDraft);
         const nextConversationId = _uuid();
         setConversationId(nextConversationId);
-        // A fresh conversation: its first message starts it anew.
-        isFreshConversationRef.current = true;
         return nextConversationId;
     }, [setConversationId, setStopRequested]);
 
@@ -440,6 +404,5 @@ export default function useConversationSessionController(callbacks = {}) {
         stopGeneration,
         loadConversation,
         newConversation,
-        savePreviewState,
     };
 }

@@ -1,4 +1,4 @@
-"""POM for the tabbed Preview Panel shared by Chat and Agent Activity views."""
+"""POM for workspace surfaces hosted in the desktop's right pane."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .file_preview import FilePreview
 
 
 class PreviewPanel:
-    """Tabbed preview panel on the right side of the UI."""
+    """Workspace-preview conveniences over the generic right pane."""
 
     def __init__(self, page: Page):
         self.page = page
@@ -16,7 +16,7 @@ class PreviewPanel:
 
     @property
     def root(self) -> Locator:
-        return self.page.get_by_test_id("preview-panel")
+        return self.page.get_by_test_id("desktop-pane-right")
 
     @property
     def split_handle(self) -> Locator:
@@ -24,31 +24,33 @@ class PreviewPanel:
 
     @property
     def tab_bar(self) -> Locator:
-        return self.page.get_by_test_id("preview-tab-bar")
+        return self.page.get_by_test_id("desktop-pane-right-tab-bar")
 
     @property
     def tabs(self) -> Locator:
-        return self.tab_bar.locator("button")
+        return self.tab_bar.locator("[data-testid^='surface-tab-']")
 
     @property
     def terminal_tab(self) -> Locator:
-        return self.page.get_by_test_id("preview-tab-terminal")
+        return self.page.get_by_test_id("surface-tab-terminal")
 
     @property
     def browser_tab(self) -> Locator:
-        return self.page.get_by_test_id("preview-tab-browser")
+        return self.page.get_by_test_id("surface-tab-browser")
 
     @property
     def file_tabs(self) -> Locator:
         """All file tabs across the panel."""
-        return self.page.locator("[data-testid^='preview-tab-file:']")
+        return self.page.locator("[data-testid^='surface-tab-file:']")
 
     def file_tab(self, filename: str) -> Locator:
-        return self.page.locator(f"[data-testid='preview-tab-file:{filename}']")
+        return self.page.locator(f"[data-testid='surface-tab-file:{filename}']")
 
     @property
     def content(self) -> Locator:
-        return self.page.get_by_test_id("preview-content")
+        return self.page.locator(
+            "[data-surface-id][data-pane-id='right'][data-active='true']"
+        )
 
     def select_tab(self, tab: Locator) -> "PreviewPanel":
         tab.click()
@@ -56,7 +58,7 @@ class PreviewPanel:
         return self
 
     def close_first_tab(self) -> "PreviewPanel":
-        self.tabs.first.locator("[class*='tabClose']").click()
+        self.tab_bar.locator("[data-testid^='close-surface-tab-']").first.click()
         self.page.wait_for_timeout(200)
         return self
 
@@ -70,7 +72,7 @@ class PreviewPanel:
         tabs = self.file_tabs
         for i in range(tabs.count()):
             testid = tabs.nth(i).get_attribute("data-testid") or ""
-            filename = testid.replace("preview-tab-file:", "")
+            filename = testid.replace("surface-tab-file:", "")
             if filename.endswith(ext):
                 tabs.nth(i).click()
                 self.page.wait_for_timeout(200)

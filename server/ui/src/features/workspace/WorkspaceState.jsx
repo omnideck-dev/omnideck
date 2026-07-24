@@ -13,11 +13,6 @@ const EMPTY_WORKSPACE = Object.freeze({
 const INITIAL_STATE = {
     byAgentId: {},
     rootId: null,
-    restoredActiveTab: null,
-    presentation: {
-        activeTab: null,
-        fullscreenItem: null,
-    },
 };
 
 function newWorkspace(previous = null) {
@@ -150,26 +145,6 @@ function workspaceReducer(state, action) {
                     (file) => (file.path || file.filename) !== action.fileKey,
                 ),
             }));
-
-        case 'RESTORE_ACTIVE_TAB':
-            return { ...state, restoredActiveTab: action.activeTab };
-
-        case 'CONSUME_RESTORED_ACTIVE_TAB':
-            return { ...state, restoredActiveTab: null };
-
-        case 'SELECT_PREVIEW_TAB':
-            if (state.presentation.activeTab === action.activeTab) return state;
-            return {
-                ...state,
-                presentation: { ...state.presentation, activeTab: action.activeTab },
-            };
-
-        case 'SET_FULLSCREEN_ITEM':
-            if (state.presentation.fullscreenItem === action.item) return state;
-            return {
-                ...state,
-                presentation: { ...state.presentation, fullscreenItem: action.item },
-            };
 
         case 'RESET':
             return INITIAL_STATE;

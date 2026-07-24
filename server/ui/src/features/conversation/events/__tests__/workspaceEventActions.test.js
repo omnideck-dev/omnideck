@@ -45,7 +45,7 @@ describe('getWorkspaceEventActions', () => {
         }]);
     });
 
-    it('maps terminal, desktop, and generation events', () => {
+    it('maps terminal events', () => {
         expect(getWorkspaceEventActions(event('terminal_output', {
             cmd_id: 'cmd-1', cmd: 'pwd', status: 'completed', stdout: '/tmp',
         }))[0]).toMatchObject({
@@ -53,18 +53,13 @@ describe('getWorkspaceEventActions', () => {
             agentId: 'agent-1',
             event: { type: 'terminal_output', cmd_id: 'cmd-1', agentId: 'agent-1' },
         });
+    });
 
-        expect(getWorkspaceEventActions(event('desktop_active'))).toEqual([{
-            type: 'UPDATE_DESKTOP_ACTIVE', agentId: 'agent-1',
-        }]);
-
+    it('ignores retired desktop and generation events', () => {
+        expect(getWorkspaceEventActions(event('desktop_active'))).toEqual([]);
         expect(getWorkspaceEventActions(event('generation_preview', {
-            gen_id: 'generation-1', status: 'generating', step: 2,
-        }))[0]).toMatchObject({
-            type: 'UPDATE_GENERATION_PREVIEW',
-            agentId: 'agent-1',
-            preview: { type: 'generation_preview', gen_id: 'generation-1', agentId: 'agent-1' },
-        });
+            gen_id: 'generation-1',
+        }))).toEqual([]);
     });
 
     it('ignores unrelated and missing events', () => {

@@ -295,14 +295,15 @@ def test_clicking_link_opens_new_tab(page: Page):
 
 
 def test_fullscreen_round_trip(page: Page):
-    """Expanding shows the fullscreen view (its own surface); exiting restores."""
-    chat, bc = _open(page, open_fixture("idle"))
+    """Maximizing and restoring preserves the same browser surface."""
+    _, bc = _open(page, open_fixture("idle"))
+    host = bc.root.locator("xpath=ancestor::*[@data-surface-id][1]")
     bc.fullscreen_btn.click()
-    fs = BrowserControl(page, root_testid="fullscreen-preview")
-    expect(fs.surface).to_be_visible()
-    # In fullscreen the chrome's expand button becomes an exit-fullscreen button.
-    page.get_by_test_id("browser-fullscreen-exit").click()
-    expect(page.get_by_test_id("fullscreen-preview")).not_to_be_visible()
+    expect(host).to_have_attribute("data-maximized", "true")
+    expect(bc.surface).to_be_visible()
+
+    page.get_by_test_id("restore-surface-browser").click()
+    expect(host).to_have_attribute("data-maximized", "false")
     expect(bc.surface).to_be_visible()
 
 

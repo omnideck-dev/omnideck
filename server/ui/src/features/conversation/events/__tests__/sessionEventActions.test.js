@@ -41,9 +41,29 @@ describe('getSessionEventActions', () => {
             { type: 'RETAIN_EVENT', event: root },
             { type: 'SET_ROOT_AGENT', agentId: 'agent-1' },
         ]);
-        expect(getSessionEventActions(child)).toEqual([
-            { type: 'RETAIN_EVENT', event: child },
-        ]);
+        expect(getSessionEventActions(child)).toEqual([]);
+    });
+
+    it('leaves sub-agent transcript activity to the agent owner', () => {
+        const childFields = { agent_id: 'child-1', depth: 1, parent_agent_id: 'agent-1' };
+
+        expect(getSessionEventActions(event('user_message', childFields))).toEqual([]);
+        expect(getSessionEventActions(event('content', {
+            ...childFields,
+            content: 'partial child output',
+        }))).toEqual([]);
+        expect(getSessionEventActions(event('iteration', {
+            ...childFields,
+            content: 'complete child output',
+        }))).toEqual([]);
+        expect(getSessionEventActions(event('file_output', {
+            ...childFields,
+            filename: 'child.txt',
+        }))).toEqual([]);
+        expect(getSessionEventActions(event('error', {
+            ...childFields,
+            message: 'child failed',
+        }))).toEqual([]);
     });
 
     it('finishes turns without retaining the boundary signal', () => {

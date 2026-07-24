@@ -100,7 +100,7 @@ describe('getConversationRestorePlan', () => {
         const liveEvents = events.map((savedEvent) => normalizeLiveEvent(asLiveEnvelope(savedEvent)));
         const liveActions = liveEvents.flatMap((liveEvent) => {
             const actions = getAgentEventActions(liveEvent);
-            return [...actions.immediate, ...actions.ordered];
+            return [...actions.immediate, ...actions.batched];
         });
 
         expect(projectTurns(liveEvents)).toEqual(projectTurns(events));
@@ -131,7 +131,7 @@ describe('getConversationRestorePlan', () => {
         });
     });
 
-    it('restores bounded workspace sidecars without treating them as events', () => {
+    it('restores execution data without restoring presentation state', () => {
         const restore = getConversationRestorePlan({
             events: [event('agent_started', {
                 parent_agent_id: null,
@@ -182,24 +182,14 @@ describe('getConversationRestorePlan', () => {
                     agentId: 'root-1',
                 },
             },
-            {
-                type: 'OPEN_FILE',
-                agentId: 'root-1',
-                item: {
-                    type: 'file_output',
-                    filename: 'report.md',
-                    path: '/tmp/report.md',
-                },
-            },
         ]);
-        expect(restore.activeTab).toBe('file:/tmp/report.md');
+        expect(restore).not.toHaveProperty('activeTab');
     });
 
     it('returns an empty plan for missing restore data', () => {
         expect(getConversationRestorePlan(null)).toEqual({
             agentActions: [],
             workspaceActions: [],
-            activeTab: null,
         });
     });
 });

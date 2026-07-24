@@ -43,7 +43,6 @@ describe('conversation session restore', () => {
                 tool_calls: [],
             },
         ];
-        const onConversationLoaded = vi.fn();
         const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation((url) => {
             if (url.endsWith('/resume')) {
                 return Promise.resolve({
@@ -54,12 +53,11 @@ describe('conversation session restore', () => {
             if (url === '/api/nudge') return Promise.resolve({ ok: true });
             return Promise.resolve({ ok: true, body: null });
         });
-        const { result } = renderHook(() => useConversationSessionController({
-            onConversationLoaded,
-        }));
+        const { result } = renderHook(() => useConversationSessionController());
 
+        let loaded;
         await act(async () => {
-            expect(await result.current.loadConversation('conversation-1')).toBe(true);
+            loaded = await result.current.loadConversation('conversation-1');
         });
 
         expect(result.current.turns).toEqual([expect.objectContaining({
@@ -69,11 +67,16 @@ describe('conversation session restore', () => {
                 expect.objectContaining({ kind: 'iteration', content: 'world' }),
             ],
         })]);
-        expect(onConversationLoaded).toHaveBeenCalledWith(expect.objectContaining({ events }));
+        expect(loaded).toEqual(expect.objectContaining({
+            conversationId: 'conversation-1',
+            events,
+        }));
 
+        let nudgeResult;
         await act(async () => {
-            await result.current.sendNudge('continue');
+            nudgeResult = await result.current.sendNudge('continue');
         });
+        expect(nudgeResult).toEqual({ ok: true, message: 'continue' });
         const nudgeRequest = fetchSpy.mock.calls.find(([url]) => url === '/api/nudge');
         expect(JSON.parse(nudgeRequest[1].body)).toMatchObject({
             conversation_id: 'conversation-1',

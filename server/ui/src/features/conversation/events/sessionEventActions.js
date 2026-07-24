@@ -8,7 +8,6 @@ import {
 /** @type {Set<import('./conversationEvents.generated').ConversationEvent['type']>} */
 const RETAINED_SESSION_EVENT_TYPES = new Set([
     EVENT.AGENT_STARTED,
-    EVENT.AGENT_COMPLETED,
     EVENT.USER_MESSAGE,
     EVENT.ITERATION,
     EVENT.TOOL_RESULT,
@@ -28,20 +27,23 @@ export function getSessionEventActions(event) {
     /** @type {Array<import('./frontendTypes').SessionAction>} */
     const actions = [];
     if (!event?.type) return actions;
+    const isRootEvent = isRootAgentEvent(event);
 
-    if (RETAINED_SESSION_EVENT_TYPES.has(event.type)) {
+    if (isRootEvent && RETAINED_SESSION_EVENT_TYPES.has(event.type)) {
         actions.push({ type: 'RETAIN_EVENT', event });
     }
 
     switch (event.type) {
         case EVENT.USER_MESSAGE:
-            actions.push({ type: 'CONFIRM_USER_MESSAGE' });
+            if (isRootEvent) actions.push({ type: 'CONFIRM_USER_MESSAGE' });
             break;
         case EVENT.ITERATION:
-            actions.push({ type: 'FINALIZE_ITERATION' });
+            if (isRootEvent) actions.push({ type: 'FINALIZE_ITERATION' });
             break;
         case EVENT.CONTENT:
-            if (event.agent_id) actions.push({ type: 'UPDATE_IN_PROGRESS_ITERATION', event });
+            if (isRootEvent && event.agent_id) {
+                actions.push({ type: 'UPDATE_IN_PROGRESS_ITERATION', event });
+            }
             break;
         case EVENT.AGENT_STARTED:
             if (event.agent_id && isRootAgentEvent(event)) {

@@ -8,10 +8,8 @@ export default function AppsView({
     apps = [],
     loading = false,
     error = '',
-    homeAppSlug = null,
     onRefresh = NOOP,
     onOpenApp = NOOP,
-    onOpenAppInDock = NOOP,
 }) {
     return (
         <div className={styles.view} data-testid="apps-view">
@@ -47,22 +45,9 @@ export default function AppsView({
                                     <div className={styles.cardBody}>
                                         <strong>{app.title}</strong>
                                         <p>{app.description || 'A Custom App built for Omnideck.'}</p>
-                                        {app.slug === homeAppSlug && (
-                                            <div className={styles.meta}>
-                                                <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
-                                            </div>
-                                        )}
                                     </div>
                                     <i className={`bi bi-chevron-right ${styles.chevron}`} />
                                 </button>
-                                <Button
-                                    variant="ghost"
-                                    className={styles.openInDock}
-                                    onClick={() => onOpenAppInDock(app)}
-                                    data-testid={`custom-app-open-docked-${app.slug}`}
-                                >
-                                    <i className="bi bi-layout-sidebar-inset-reverse" /> Open in Dock
-                                </Button>
                             </div>
                         ))}
                     </div>

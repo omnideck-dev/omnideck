@@ -194,18 +194,6 @@ describe('WorkspaceProvider', () => {
         expect(getState().byAgentId['root-1'].generationPreview).toBeNull();
     });
 
-    it('owns workspace preview selection and fullscreen presentation', () => {
-        const { getState, dispatch } = renderWithProvider();
-        const file = { filename: 'report.md', path: '/tmp/report.md' };
-        dispatch({ type: 'SELECT_PREVIEW_TAB', activeTab: 'browser' });
-        dispatch({ type: 'SET_FULLSCREEN_ITEM', item: { kind: 'file', file } });
-
-        expect(getState().presentation).toEqual({
-            activeTab: 'browser',
-            fullscreenItem: { kind: 'file', file },
-        });
-    });
-
     it('resets all workspace state', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(started('root-1'));
@@ -213,11 +201,6 @@ describe('WorkspaceProvider', () => {
         expect(getState()).toEqual({
             byAgentId: {},
             rootId: null,
-            restoredActiveTab: null,
-            presentation: {
-                activeTab: null,
-                fullscreenItem: null,
-            },
         });
     });
 });

@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const EMPTY_STATE = { apps: [], loading: false, loaded: false, error: '' };
 
-/** Discovery data shared by Home resolution and the Custom Apps library. */
-export default function useCustomAppsCatalog({ enabled, homeAppSlug, onHomeAppChange }) {
+/** Shared discovery data for the Custom Apps library and app deep links. */
+export default function useCustomAppsCatalog({ enabled }) {
     const [state, setState] = useState(EMPTY_STATE);
     const requestIdRef = useRef(0);
-    const homeAppSlugRef = useRef(homeAppSlug);
-    homeAppSlugRef.current = homeAppSlug;
 
     const refresh = useCallback(async () => {
         if (!enabled) return;
@@ -19,8 +17,6 @@ export default function useCustomAppsCatalog({ enabled, homeAppSlug, onHomeAppCh
             if (!response.ok) throw new Error('Could not load Custom Apps');
             if (requestId !== requestIdRef.current) return;
             setState({ apps: body.apps || [], loading: false, loaded: true, error: '' });
-            const nextHomeSlug = body.home_app_slug || null;
-            if (nextHomeSlug !== homeAppSlugRef.current) onHomeAppChange(nextHomeSlug);
         } catch (error) {
             if (requestId !== requestIdRef.current) return;
             setState((current) => ({
@@ -30,7 +26,7 @@ export default function useCustomAppsCatalog({ enabled, homeAppSlug, onHomeAppCh
                 error: error.message || 'Could not load Custom Apps',
             }));
         }
-    }, [enabled, onHomeAppChange]);
+    }, [enabled]);
 
     useEffect(() => {
         if (enabled) return;

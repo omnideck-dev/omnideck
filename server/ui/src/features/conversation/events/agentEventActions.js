@@ -1,4 +1,7 @@
-import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
+import {
+    CONVERSATION_EVENT_TYPES as EVENT,
+    isSubAgentEvent,
+} from './eventTypes.js';
 
 /** @param {import('./conversationEvents.generated').ConversationEvent} event */
 function eventTime(event) {
@@ -18,22 +21,23 @@ function activityAction(agentId, entry) {
 /**
  * Convert one canonical conversation event into agent reducer actions.
  *
- * Immediate actions update lifecycle and context metadata. Ordered actions
- * enter the animation-frame queue so streamed activity retains arrival order.
+ * Immediate actions update lifecycle and context metadata. Batched actions
+ * enter the animation-frame queue to avoid rendering for every stream record.
  *
  * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
- * @returns {{immediate: Array<import('./frontendTypes').AgentAction>, ordered: Array<import('./frontendTypes').AgentAction>}}
+ * @returns {{immediate: Array<import('./frontendTypes').AgentAction>, batched: Array<import('./frontendTypes').AgentAction>}}
  */
 export function getAgentEventActions(event) {
     /** @type {Array<import('./frontendTypes').AgentAction>} */
     const immediate = [];
     /** @type {Array<import('./frontendTypes').AgentAction>} */
-    const ordered = [];
-    if (!event?.type) return { immediate, ordered };
+    const batched = [];
+    if (!event?.type) return { immediate, batched };
 
     const agentId = event.agent_id || null;
-    if (!agentId) return { immediate, ordered };
+    if (!agentId) return { immediate, batched };
     const timestamp = eventTime(event);
+    const retainActivity = isSubAgentEvent(event);
 
     switch (event.type) {
         case EVENT.AGENT_STARTED:
@@ -72,8 +76,8 @@ export function getAgentEventActions(event) {
         case EVENT.CONTENT: {
             const content = event.content || '';
             const thinking = typeof event.thinking === 'string' ? event.thinking : '';
-            if (content || thinking) {
-                ordered.push({
+            if (retainActivity && (content || thinking)) {
+                batched.push({
                     type: 'APPEND_STREAM_CHUNK',
                     agentId,
                     content: content || null,
@@ -83,7 +87,7 @@ export function getAgentEventActions(event) {
             break;
         }
         case EVENT.ITERATION:
-            ordered.push({
+            if (retainActivity) batched.push({
                 type: 'FINALIZE_AGENT_ITERATION',
                 agentId,
                 content: event.content || null,
@@ -96,14 +100,14 @@ export function getAgentEventActions(event) {
             });
             break;
         case EVENT.SPAWN_REQUESTED:
-            ordered.push(activityAction(agentId, {
+            if (retainActivity) batched.push(activityAction(agentId, {
                 type: 'spawn_requested',
                 correlationId: event.correlation_id,
                 timestamp,
             }));
             break;
         case EVENT.FILE_OUTPUT:
-            ordered.push(activityAction(agentId, {
+            if (retainActivity) batched.push(activityAction(agentId, {
                 type: 'file_output',
                 filename: event.filename,
                 content_type: event.content_type,
@@ -114,7 +118,7 @@ export function getAgentEventActions(event) {
             }));
             break;
         case EVENT.COMPACTION:
-            ordered.push(activityAction(agentId, {
+            if (retainActivity) batched.push(activityAction(agentId, {
                 type: 'compaction',
                 stats: event.stats || null,
                 summaryText: event.summary_text || null,
@@ -124,7 +128,7 @@ export function getAgentEventActions(event) {
             break;
         case EVENT.ERROR:
             if ((event.depth ?? 0) > 0) {
-                ordered.push(activityAction(agentId, {
+                batched.push(activityAction(agentId, {
                     type: 'error',
                     message: event.message || 'An error occurred.',
                     timestamp,
@@ -135,5 +139,5 @@ export function getAgentEventActions(event) {
             break;
     }
 
-    return { immediate, ordered };
+    return { immediate, batched };
 }

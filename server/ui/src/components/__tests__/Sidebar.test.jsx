@@ -3,34 +3,65 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
+import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
+
+const navigationHarness = vi.hoisted(() => ({
+    destination: { kind: 'chat', conversationId: 'conversation-1' },
+    commands: {
+        openChat: vi.fn(),
+        openAgents: vi.fn(),
+        openRoutines: vi.fn(),
+        openArtifacts: vi.fn(),
+        openApps: vi.fn(),
+        openSettings: vi.fn(),
+    },
+    customApps: {
+        enabled: false,
+    },
+}));
+
+vi.mock('../../features/navigation/DesktopNavigation.jsx', () => ({
+    useDesktopNavigationState: () => ({
+        destination: navigationHarness.destination,
+    }),
+    useDesktopNavigationCommands: () => navigationHarness.commands,
+}));
+
+vi.mock('../../features/customApps/CustomApps.jsx', () => ({
+    useCustomApps: () => navigationHarness.customApps,
+}));
 
 // The expanded sidebar renders ConversationsPanel (conversations context) and
 // reads the theme context for its toggle — so every render supplies both.
 const Wrapper = ({ children }) => (
-    <ThemeProvider>
-        <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
-    </ThemeProvider>
+    <AppEffectsProvider>
+        <ThemeProvider>
+            <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+        </ThemeProvider>
+    </AppEffectsProvider>
 );
 const render = (ui, options) => _render(ui, { wrapper: Wrapper, ...options });
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 
 function setup(props = {}) {
-    const onPanelToggle = vi.fn();
     const onNewConversation = vi.fn();
     render(
         <Sidebar
-            activePanel={null}
-            onPanelToggle={onPanelToggle}
             onNewConversation={onNewConversation}
             {...props}
         />,
     );
-    return { onPanelToggle, onNewConversation };
+    return { navigation: navigationHarness.commands, onNewConversation };
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+    localStorage.clear();
+    navigationHarness.destination = { kind: 'chat', conversationId: 'conversation-1' };
+    navigationHarness.customApps.enabled = false;
+    Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
+});
 afterEach(() => localStorage.clear());
 
 describe('Sidebar', () => {
@@ -85,57 +116,55 @@ describe('Sidebar', () => {
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     });
 
-    it('opens a panel from a nav item', async () => {
+    it('opens a destination from a navigation item', async () => {
         const user = userEvent.setup();
-        const { onPanelToggle } = setup();
+        const { navigation } = setup();
         await user.click(screen.getByTestId('sidebar-nav-routines'));
-        expect(onPanelToggle).toHaveBeenCalledWith('routines');
+        expect(navigation.openRoutines).toHaveBeenCalledOnce();
     });
 
-    it('toggles an already-active panel closed', async () => {
+    it('returns to chat from an already-active navigation item', async () => {
         const user = userEvent.setup();
-        const { onPanelToggle } = setup({ activePanel: 'routines' });
+        navigationHarness.destination = { kind: 'routines', routineId: null, runId: null };
+        const { navigation } = setup();
         await user.click(screen.getByTestId('sidebar-nav-routines'));
-        expect(onPanelToggle).toHaveBeenCalledWith(null);
+        expect(navigation.openChat).toHaveBeenCalledOnce();
     });
 
-    it('opens the Agents panel from its nav item', async () => {
+    it('opens the Agents destination from its navigation item', async () => {
         const user = userEvent.setup();
-        const { onPanelToggle } = setup();
+        const { navigation } = setup();
         expect(screen.getByText('Agents')).toBeInTheDocument();
         await user.click(screen.getByTestId('sidebar-nav-agents'));
-        expect(onPanelToggle).toHaveBeenCalledWith('agents');
+        expect(navigation.openAgents).toHaveBeenCalledOnce();
     });
 
-    it('shows the Apps panel only when Custom Apps are enabled', async () => {
+    it('shows the Apps destination only when Custom Apps are enabled', async () => {
         const user = userEvent.setup();
         const hidden = setup();
         expect(screen.queryByTestId('sidebar-nav-apps')).not.toBeInTheDocument();
-        expect(hidden.onPanelToggle).not.toHaveBeenCalled();
+        expect(hidden.navigation.openApps).not.toHaveBeenCalled();
 
         cleanup();
-        const { onPanelToggle } = setup({ customAppsEnabled: true });
+        navigationHarness.customApps.enabled = true;
+        const { navigation } = setup();
         expect(screen.getByText('Custom Apps')).toBeInTheDocument();
         await user.click(screen.getByTestId('sidebar-nav-apps'));
-        expect(onPanelToggle).toHaveBeenCalledWith('apps');
+        expect(navigation.openApps).toHaveBeenCalledOnce();
     });
 
-    it('shows Home only when a Home Custom App is configured', async () => {
-        const user = userEvent.setup();
-        setup({ customAppsEnabled: true });
-        expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
+    it('does not expose a special Home destination for Custom Apps', () => {
+        navigationHarness.customApps.enabled = true;
+        setup();
 
-        cleanup();
-        const { onPanelToggle } = setup({ customAppsEnabled: true, homeAppEnabled: true });
-        await user.click(screen.getByTestId('sidebar-nav-home'));
-        expect(onPanelToggle).toHaveBeenCalledWith('home');
+        expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
     });
 
     it('opens settings from the footer', async () => {
         const user = userEvent.setup();
-        const { onPanelToggle } = setup();
+        const { navigation } = setup();
         await user.click(screen.getByTestId('sidebar-settings'));
-        expect(onPanelToggle).toHaveBeenCalledWith('settings');
+        expect(navigation.openSettings).toHaveBeenCalledOnce();
     });
 
 it('hides the desktop button unless desktop is enabled', () => {

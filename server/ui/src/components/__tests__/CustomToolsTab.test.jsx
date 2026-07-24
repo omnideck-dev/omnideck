@@ -2,7 +2,11 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CustomToolsTab from '../CustomToolsTab.jsx';
-import { CustomToolsCatalogProvider } from '../../features/customTools/CustomToolsCatalog.jsx';
+import {
+    AppEffectsProvider,
+    useAppEffectDispatch,
+} from '../../features/app/AppEffects.jsx';
+import { APP_EFFECT_TYPES } from '../../features/app/appEffectTypes.js';
 
 const _mockTools = [
     {
@@ -26,11 +30,18 @@ function _noContent() {
     return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
 }
 
+let _dispatchAppEffect;
+function EffectControl() {
+    _dispatchAppEffect = useAppEffectDispatch();
+    return null;
+}
+
 function renderTab() {
     return render(
-        <CustomToolsCatalogProvider>
+        <AppEffectsProvider>
+            <EffectControl />
             <CustomToolsTab />
-        </CustomToolsCatalogProvider>,
+        </AppEffectsProvider>,
     );
 }
 
@@ -91,6 +102,25 @@ describe('CustomToolsTab', () => {
         await waitFor(() => expect(screen.queryByText('ls_home')).not.toBeInTheDocument());
         const delCall = _calls.find((c) => c.url === '/api/custom-tools/ls_home' && c.init?.method === 'DELETE');
         expect(delCall).toBeDefined();
+    });
+
+    it('refreshes when the application effect is dispatched', async () => {
+        renderTab();
+        await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
+        const initialFetches = _calls.filter(({ url, init }) => (
+            url === '/api/custom-tools' && !init?.method
+        )).length;
+
+        act(() => _dispatchAppEffect({
+            type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS,
+        }));
+
+        await waitFor(() => {
+            const currentFetches = _calls.filter(({ url, init }) => (
+                url === '/api/custom-tools' && !init?.method
+            )).length;
+            expect(currentFetches).toBe(initialFetches + 1);
+        });
     });
 
     it('shows the empty state when there are no tools', async () => {

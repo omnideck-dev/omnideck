@@ -1,10 +1,4 @@
-/* Shared by the inline preview (inside the panel's padding) and the fullscreen
-   view (supplies its own outer padding). The title sits above the control row. */
 .chrome {
-}
-
-.chrome.fullscreen {
-  padding: 10px 12px 0;
 }
 
 .pageTitle {

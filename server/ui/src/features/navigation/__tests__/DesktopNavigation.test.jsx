@@ -49,12 +49,23 @@ describe('DesktopNavigationProvider', () => {
         });
     });
 
+    it('can restore a serializable destination owned by a desktop surface', () => {
+        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const destination = { kind: 'settings', tab: 'skills' };
+
+        act(() => result.current.openDestination(destination));
+
+        expect(result.current.destination).toEqual(destination);
+    });
+
     it('opens the active conversation without reloading it', async () => {
         const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const initialDestination = result.current.destination;
 
         await act(async () => result.current.openConversation('conversation-1'));
 
         expect(session.loadConversation).not.toHaveBeenCalled();
+        expect(result.current.destination).not.toBe(initialDestination);
         expect(result.current.destination).toEqual({
             kind: 'chat',
             conversationId: 'conversation-1',

@@ -24,7 +24,9 @@ class RoutinesView:
 
     def empty_example(self) -> Locator:
         """First suggestion card in the empty state."""
-        return self.page.get_by_test_id("starter-prompt").first
+        return self.page.get_by_test_id("routines-empty").get_by_test_id(
+            "starter-prompt"
+        ).first
 
     def select_by_name(self, description: str) -> None:
         self.page.get_by_test_id("routines-list").get_by_text(description, exact=True).first.click()

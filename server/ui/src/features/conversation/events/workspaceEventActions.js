@@ -54,27 +54,6 @@ export function getWorkspaceEventActions(event) {
                 agentId,
                 event: { ...eventDetails(event), agentId },
             }];
-        case EVENT.DESKTOP_ACTIVE:
-            return [{ type: 'UPDATE_DESKTOP_ACTIVE', agentId }];
-        case EVENT.GENERATION_PREVIEW:
-            return [{
-                type: 'UPDATE_GENERATION_PREVIEW',
-                agentId,
-                preview: {
-                    type: event.type,
-                    gen_id: event.gen_id,
-                    media_type: event.media_type,
-                    status: event.status,
-                    step: event.step,
-                    total_steps: event.total_steps,
-                    preview: event.preview,
-                    message: event.message,
-                    output: event.output,
-                    output_content_type: event.output_content_type,
-                    output_path: event.output_path,
-                    agentId,
-                },
-            }];
         default:
             return [];
     }

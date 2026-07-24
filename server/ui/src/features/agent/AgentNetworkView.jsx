@@ -1,8 +1,11 @@
+import { useMemo } from 'react';
 import AgentActivityView from '../../components/AgentActivityView.jsx';
 import AgentNetwork from '../../components/AgentNetwork.jsx';
 import BackButton from '../../components/BackButton.jsx';
 import { formatAgentName } from '../../utils/agentUtils.js';
 import { useAgentState } from './AgentState.jsx';
+import { projectAgentActivity } from '../conversation/events/projectAgentActivity.js';
+import { useWorkspaceState } from '../workspace/WorkspaceState.jsx';
 import styles from './AgentNetworkView.module.css';
 
 function buildBreadcrumb(agents, agentId) {
@@ -18,16 +21,35 @@ function buildBreadcrumb(agents, agentId) {
 /** Owns the Agent Network header and graph-to-activity drill-down. */
 export default function AgentNetworkView({
     selectedAgentId,
+    turns,
     agentCounts,
     onClose,
     onOpenOverview,
     onSelectAgent,
     onNudge,
     onPreview,
+    onOpenExecutionView,
     nudgeDisabled = false,
 }) {
     const { agents } = useAgentState();
+    const { byAgentId: executionByAgentId } = useWorkspaceState();
     const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
+    const selectedActivity = useMemo(() => {
+        if (!selectedAgent || selectedAgent.parentId !== null) {
+            return selectedAgent?.activityLog;
+        }
+        return projectAgentActivity(turns, selectedAgent.id);
+    }, [selectedAgent, turns]);
+    const selectedExecution = selectedAgent
+        ? executionByAgentId[selectedAgent.id]
+        : null;
+    const availableViews = [];
+    if (Object.keys(selectedExecution?.browserTabs || {}).length > 0) {
+        availableViews.push('browser');
+    }
+    if ((selectedExecution?.terminalLines || []).length > 0) {
+        availableViews.push('terminal');
+    }
     const breadcrumb = selectedAgent ? buildBreadcrumb(agents, selectedAgent.id) : [];
     const counts = agentCounts || { total: 0, running: 0, complete: 0, error: 0 };
 
@@ -91,9 +113,14 @@ export default function AgentNetworkView({
                 {selectedAgent ? (
                     <AgentActivityView
                         agentId={selectedAgent.id}
+                        activityEntries={selectedActivity}
                         onSelectAgent={onSelectAgent}
                         onNudge={onNudge}
                         onPreview={onPreview}
+                        availableViews={availableViews}
+                        onOpenView={(resourceId) => (
+                            onOpenExecutionView?.(selectedAgent.id, resourceId)
+                        )}
                         nudgeDisabled={nudgeDisabled}
                     />
                 ) : (

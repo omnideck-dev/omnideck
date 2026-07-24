@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPanel from '../ChatPanel.jsx';
 
@@ -62,5 +62,13 @@ describe('ChatPanel title bar', () => {
                 networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
         );
         expect(screen.getByTestId('network-indicator')).toHaveTextContent('3 agents');
+    });
+
+    it('delegates conversation artifact navigation to the desktop', () => {
+        const onOpenArtifacts = vi.fn();
+        renderPanel({ onOpenArtifacts });
+
+        fireEvent.click(screen.getByTestId('conversation-artifacts-trigger'));
+        expect(onOpenArtifacts).toHaveBeenCalledOnce();
     });
 });

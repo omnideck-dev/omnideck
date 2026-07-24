@@ -37,11 +37,9 @@ export default function ScreencastSurface({
     }, []);
 
     useEffect(() => {
-        // Only one surface is the live input target at a time: the inline preview
-        // goes inactive while the fullscreen view is open, and vice versa. Because
-        // `active` flips on that transition, this effect re-runs and re-focuses the
-        // right surface — otherwise focus is left on the unmounted one and keyboard
-        // input silently dies after a fullscreen round-trip.
+        // Only the selected Browser tab is the live input target. Window-manager
+        // moves and full-screen transitions preserve this mounted element, so its
+        // screencast session and keyboard focus do not need to be recreated.
         if (!engaged || !active) return undefined;
         const el = surfaceRef.current;
         if (!el) return undefined;

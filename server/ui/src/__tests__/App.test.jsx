@@ -1,6 +1,7 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppDataProvider } from '../contexts/AppData.jsx';
+import { DESKTOP_WINDOW_STORAGE_KEY } from '../features/desktop/desktopWindowPersistence.js';
 
 // Minimal 1x1 transparent PNG
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
@@ -54,10 +55,23 @@ vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
         onClose,
         onOpenOverview,
         onSelectAgent,
+        onOpenExecutionView,
     }) => selectedAgentId ? (
         <div data-testid="agent-activity-view">
             Activity View
             <button data-testid="activity-back" onClick={onOpenOverview}>Back</button>
+            <button
+                data-testid="activity-open-browser"
+                onClick={() => onOpenExecutionView(selectedAgentId, 'browser')}
+            >
+                Browser
+            </button>
+            <button
+                data-testid="activity-open-terminal"
+                onClick={() => onOpenExecutionView(selectedAgentId, 'terminal')}
+            >
+                Terminal
+            </button>
         </div>
     ) : (
         <div data-testid="agent-network">
@@ -68,52 +82,49 @@ vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
     ),
 }));
 
-vi.mock('../components/Sidebar.jsx', () => ({
-    default: ({ activePanel, onPanelToggle, onNewConversation, onLoadConversation }) => (
-        <div data-testid="sidebar">
-            <span data-testid="sidebar-active-panel">{activePanel || 'chat'}</span>
-            Sidebar
-            <button data-testid="open-settings" onClick={() => onPanelToggle('settings')}>Settings</button>
-            <button data-testid="open-routines" onClick={() => onPanelToggle('routines')}>Routines</button>
-            <button data-testid="open-agents" onClick={() => onPanelToggle('agents')}>Agents</button>
-            <button data-testid="open-apps" onClick={() => onPanelToggle('apps')}>Apps</button>
-            <button data-testid="close-panel" onClick={() => onPanelToggle(null)}>Close panel</button>
-            <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
-            <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
-        </div>
-    ),
-}));
-
-vi.mock('../components/TabbedPane.jsx', () => ({
-    default: ({ children, tabs = [], onCloseTab, actions }) => (
-        <div data-testid="preview-panel">
-            {tabs.map((tab) => (
-                <button
-                    key={tab.id}
-                    data-testid={`close-tab-${tab.id}`}
-                    onClick={() => onCloseTab?.(tab.id)}
-                >
-                    Close {tab.label}
-                </button>
-            ))}
-            {actions}
-            {children}
-        </div>
-    ),
-}));
+vi.mock('../components/Sidebar.jsx', async () => {
+    const {
+        useDesktopNavigationCommands,
+        useDesktopNavigationState,
+    } = await import('../features/navigation/DesktopNavigation.jsx');
+    return {
+        default: ({ onNewConversation, onLoadConversation }) => {
+            const { destination } = useDesktopNavigationState();
+            const navigation = useDesktopNavigationCommands();
+            const activeItem = [
+                'settings',
+                'routines',
+                'agents',
+                'artifacts',
+                'apps',
+            ].includes(destination.kind)
+                ? destination.kind
+                : 'chat';
+            return (
+                <div data-testid="sidebar">
+                    <span data-testid="sidebar-active-panel">{activeItem}</span>
+                    Sidebar
+                    <button data-testid="open-settings" onClick={() => navigation.openSettings()}>Settings</button>
+                    <button data-testid="open-routines" onClick={() => navigation.openRoutines()}>Routines</button>
+                    <button data-testid="open-agents" onClick={() => navigation.openAgents()}>Agents</button>
+                    <button data-testid="open-apps" onClick={() => navigation.openApps()}>Apps</button>
+                    <button data-testid="close-panel" onClick={() => navigation.openChat()}>Close panel</button>
+                    <button data-testid="new-chat" onClick={onNewConversation}>New chat</button>
+                    <button data-testid="load-conversation" onClick={() => onLoadConversation('conv-1')}>Load</button>
+                </div>
+            );
+        },
+    };
+});
 
 vi.mock('../components/SplitHandle.jsx', () => ({
     default: () => <div data-testid="split-handle" />,
 }));
 
 vi.mock('../components/FilePreview.jsx', () => ({
-    default: ({ item, fullscreen }) => (fullscreen
-        ? <div data-testid="fullscreen-preview" />
-        : <div data-testid="file-preview-inline">{item?.filename}</div>),
-}));
-
-vi.mock('../components/BrowserFullscreen.jsx', () => ({
-    default: () => <div data-testid="browser-fullscreen" />,
+    default: ({ item }) => (
+        <div data-testid="file-preview-inline">{item?.filename}</div>
+    ),
 }));
 
 vi.mock('../components/SettingsPage.jsx', () => ({
@@ -121,15 +132,15 @@ vi.mock('../components/SettingsPage.jsx', () => ({
 }));
 
 vi.mock('../components/apps/AppsView.jsx', () => ({
-    default: ({ onOpenApp, onOpenAppInDock }) => (
+    default: ({ onOpenApp }) => (
         <div data-testid="apps-view">
             Apps
             <button data-testid="mock-open-app-full" onClick={() => onOpenApp({
                 slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
             })}>Open full</button>
-            <button data-testid="mock-open-app-docked" onClick={() => onOpenAppInDock({
-                slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts',
-            })}>Open split</button>
+            <button data-testid="mock-open-notes" onClick={() => onOpenApp({
+                slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal',
+            })}>Open Notes</button>
         </div>
     ),
 }));
@@ -200,8 +211,7 @@ const streamMock = vi.hoisted(() => {
         stopGeneration: () => {},
         loadConversation: () => true,
         newConversation: () => {},
-        activeConversationId: null,
-        savePreviewState: () => {},
+        activeConversationId: 'conversation-1',
     });
     return { makeDefault, value: makeDefault() };
 });
@@ -233,6 +243,7 @@ const { default: App } = await import('../App.jsx');
 
 let capturedDispatch = null;
 let capturedWorkspaceDispatch = null;
+let capturedAppEffectDispatch = null;
 
 // Capture agent actions from inside the app's provider.
 vi.mock('../features/agent/AgentState.jsx', async (importOriginal) => {
@@ -259,9 +270,23 @@ vi.mock('../features/workspace/WorkspaceState.jsx', async (importOriginal) => {
     };
 });
 
+vi.mock('../features/app/AppEffects.jsx', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        useAppEffectDispatch: () => {
+            const dispatch = actual.useAppEffectDispatch();
+            capturedAppEffectDispatch = dispatch;
+            return dispatch;
+        },
+    };
+});
+
 async function renderApp() {
     capturedDispatch = null;
     capturedWorkspaceDispatch = null;
+    capturedAppEffectDispatch = null;
+    let rootAgentId = null;
     let result;
     await act(async () => {
         result = render(
@@ -274,6 +299,9 @@ async function renderApp() {
     const dispatch = (action) => {
         act(() => {
             capturedDispatch(action);
+            if (action.type === 'AGENT_STARTED' && !action.parentAgentId) {
+                rootAgentId = action.agentId;
+            }
             const workspaceAction = action.type === 'AGENT_STARTED'
                 ? {
                     type: 'WORKSPACE_AGENT_STARTED',
@@ -282,6 +310,20 @@ async function renderApp() {
                 }
                 : action;
             capturedWorkspaceDispatch(workspaceAction);
+            if (
+                action.agentId === rootAgentId
+                && ['UPDATE_BROWSER_SNAPSHOT', 'UPDATE_TERMINAL'].includes(action.type)
+            ) {
+                capturedAppEffectDispatch({
+                    type: 'conversation-execution/root-view-available',
+                    conversationId: streamMock.value.activeConversationId,
+                    agentId: action.agentId,
+                    agentName: 'omnideck',
+                    resourceId: action.type === 'UPDATE_BROWSER_SNAPSHOT'
+                        ? 'browser'
+                        : 'terminal',
+                });
+            }
         });
     };
 
@@ -310,13 +352,32 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
     });
 }
 
+function surfaceHostFor(testId) {
+    return screen.getByTestId(testId).closest('[data-surface-id]');
+}
+
+function expectSurfaceActive(testId, paneId = null) {
+    const host = surfaceHostFor(testId);
+    expect(host).toHaveAttribute('data-active', 'true');
+    if (paneId) expect(host).toHaveAttribute('data-pane-id', paneId);
+    return host;
+}
+
+function expectSurfaceInactive(testId) {
+    const host = surfaceHostFor(testId);
+    expect(host).toHaveAttribute('data-active', 'false');
+    return host;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 
 describe('App view transitions', () => {
     beforeEach(() => {
         capturedDispatch = null;
         capturedWorkspaceDispatch = null;
+        capturedAppEffectDispatch = null;
         streamMock.value = streamMock.makeDefault();
+        localStorage.removeItem(DESKTOP_WINDOW_STORAGE_KEY);
         // Mock the fetches App's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -372,12 +433,26 @@ describe('App view transitions', () => {
             expect(screen.queryByTestId('agent-activity-view')).not.toBeInTheDocument();
         });
 
-        it('lands on a docked custom app when Custom Apps are enabled', async () => {
+        it('can reopen the active conversation after its tab is closed', async () => {
+            await renderApp();
+
+            fireEvent.click(screen.getByTestId(
+                'close-surface-tab-destination:conversation',
+            ));
+            expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
+
+            await act(async () => fireEvent.click(
+                screen.getByTestId('load-conversation'),
+            ));
+            expectSurfaceActive('chat-panel', 'left');
+        });
+
+        it('ignores legacy Home metadata and starts on Chat', async () => {
             globalThis.fetch = vi.fn((url) => {
                 if (url === '/api/settings') {
                     return Promise.resolve({
                         ok: true,
-                        json: () => Promise.resolve({ setup_complete: true, home_app_slug: 'text-lab' }),
+                        json: () => Promise.resolve({ setup_complete: true }),
                     });
                 }
                 if (url === '/api/features') {
@@ -405,15 +480,13 @@ describe('App view transitions', () => {
             });
 
             await renderApp();
-            expect(await screen.findByTestId('home-view')).toBeInTheDocument();
-
-            await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            expectSurfaceActive('chat-panel', 'left');
+            expect(screen.queryByTestId('custom-app-frame')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
         });
     });
 
-    describe('desktop Custom App dock', () => {
+    describe('desktop Custom App surfaces', () => {
         beforeEach(() => {
             globalThis.fetch = vi.fn((url) => {
                 if (url === '/api/settings') {
@@ -428,6 +501,17 @@ describe('App view transitions', () => {
                 if (url === '/api/profiles') {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
                 }
+                if (url === '/api/custom-apps') {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            apps: [
+                                { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
+                                { slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal' },
+                            ],
+                        }),
+                    });
+                }
                 if (url.startsWith('/api/models')) {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [] }) });
                 }
@@ -435,25 +519,40 @@ describe('App view transitions', () => {
             });
         });
 
-        it('moves a full app beside the current chat, survives New chat, and can close', async () => {
+        it('moves an app between tab stacks, survives New chat, and can close', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
-            const customApp = screen.getByTestId('desktop-dock');
-            expect(customApp).toHaveAttribute('data-layout', 'expanded');
-            expect(customApp).toHaveAttribute('data-visible', 'true');
+            const frame = screen.getByTestId('custom-app-frame');
+            const leftHost = expectSurfaceActive('custom-app-frame', 'left');
+            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
 
-            fireEvent.click(screen.getByTestId('custom-app-chat'));
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            fireEvent.click(screen.getByTestId(
+                'move-surface-custom-app:text-lab-right',
+            ));
+            const rightHost = expectSurfaceActive('custom-app-frame', 'right');
+            expect(rightHost).toBe(leftHost);
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+            expectSurfaceActive('apps-view', 'left');
+            expect(screen.getByTestId('desktop-window-layout')).toHaveAttribute('data-split', 'true');
+
+            fireEvent.click(screen.getByTestId(
+                'maximize-surface-custom-app:text-lab',
+            ));
+            expect(rightHost).toHaveAttribute('data-maximized', 'true');
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+            fireEvent.click(screen.getByTestId(
+                'restore-surface-custom-app:text-lab',
+            ));
+            expect(rightHost).toHaveAttribute('data-maximized', 'false');
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            expectSurfaceActive('custom-app-frame', 'right');
 
-            fireEvent.click(screen.getByTestId('close-tab-custom-app:text-lab'));
-            expect(screen.queryByTestId('desktop-dock')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            fireEvent.click(screen.getByTestId('close-surface-tab-custom-app:text-lab'));
+            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('opens the current chat and seeds its composer from explicit app context', async () => {
@@ -464,53 +563,109 @@ describe('App view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             fireEvent.click(screen.getByTestId('mock-workspace-compose'));
 
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            expectSurfaceInactive('custom-app-frame');
+            expectSurfaceActive('chat-panel', 'left');
+            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
             expect(setDraft).toHaveBeenCalledOnce();
             const updateDraft = setDraft.mock.calls[0][0];
             expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
             expect(updateDraft('')).toContain('"Draft"');
         });
 
-        it('moves a docked app back to expanded presentation', async () => {
+        it('moves an app from the right pane back to the left pane', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
-            fireEvent.click(await screen.findByTestId('mock-open-app-docked'));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId(
+                'move-surface-custom-app:text-lab-right',
+            ));
 
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
-            fireEvent.click(screen.getByTestId('custom-app-expand'));
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'expanded');
+            const frame = screen.getByTestId('custom-app-frame');
+            const rightHost = expectSurfaceActive('custom-app-frame', 'right');
+            fireEvent.click(screen.getByTestId(
+                'move-surface-custom-app:text-lab-left',
+            ));
+            const leftHost = expectSurfaceActive('custom-app-frame', 'left');
+            expect(leftHost).toBe(rightHost);
+            expect(screen.getByTestId('custom-app-frame')).toBe(frame);
+            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
 
-            fireEvent.click(screen.getByTestId('custom-app-close'));
-            expect(screen.queryByTestId('desktop-dock')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByTestId(
+                'close-surface-tab-custom-app:text-lab',
+            ));
+            expect(screen.queryByTestId('custom-app-frame')).not.toBeInTheDocument();
+            expectSurfaceActive('apps-view', 'left');
         });
 
-        it('keeps the Custom App mounted while another desktop page hides it', async () => {
+        it('keeps the Custom App mounted while another tab is selected', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
             const frame = screen.getByTestId('custom-app-frame');
-            fireEvent.click(screen.getByTestId('open-settings'));
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-visible', 'false');
+            await act(async () => {
+                fireEvent.click(screen.getByTestId('open-settings'));
+            });
+            expectSurfaceActive('settings-page', 'left');
+            expectSurfaceInactive('custom-app-frame');
             expect(frame).toBeInTheDocument();
             expect(frame).toHaveAttribute('data-active', 'false');
 
-            fireEvent.click(screen.getByTestId('close-panel'));
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            fireEvent.click(screen.getByTestId('surface-tab-custom-app:text-lab'));
+            expectSurfaceActive('custom-app-frame', 'left');
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
         });
 
-        it('keeps the Custom App docked when loading a conversation', async () => {
+        it('restores open tabs, pane placement, and active selections after remount', async () => {
+            const loadConversation = vi.fn(() => true);
+            streamMock.value = { ...streamMock.makeDefault(), loadConversation };
+            const firstRender = await renderApp();
+
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId(
+                'move-surface-custom-app:text-lab-right',
+            ));
+            await act(async () => {
+                fireEvent.click(screen.getByTestId('open-settings'));
+            });
+
+            expectSurfaceActive('settings-page', 'left');
+            expectSurfaceActive('custom-app-frame', 'right');
+            expect(
+                JSON.parse(localStorage.getItem(DESKTOP_WINDOW_STORAGE_KEY))
+                    .window.panes.left.activeSurfaceId,
+            ).toBe('destination:settings');
+            firstRender.unmount();
+
+            await renderApp();
+
+            expect(loadConversation).toHaveBeenCalledWith('conversation-1');
+            expect(screen.getByTestId(
+                'surface-tab-destination:conversation',
+            )).toBeInTheDocument();
+            expect(screen.getByTestId(
+                'surface-tab-destination:apps',
+            )).toBeInTheDocument();
+            expectSurfaceActive('settings-page', 'left');
+            expectSurfaceActive('custom-app-frame', 'right');
+        });
+
+        it('keeps a right-pane Custom App in place when loading a conversation', async () => {
             const loadConversation = vi.fn(() => true);
             streamMock.value = { ...streamMock.makeDefault(), loadConversation };
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
-            fireEvent.click(await screen.findByTestId('mock-open-app-docked'));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId(
+                'move-surface-custom-app:text-lab-right',
+            ));
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
 
             expect(loadConversation).toHaveBeenCalledWith('conv-1');
-            expect(screen.getByTestId('desktop-dock')).toHaveAttribute('data-layout', 'docked');
+            expectSurfaceActive('custom-app-frame', 'right');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('does not leave Apps highlighted after entering an app workspace', async () => {
@@ -521,14 +676,80 @@ describe('App view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
 
-            fireEvent.click(screen.getByTestId('custom-app-chat'));
             expect(screen.getByTestId('sidebar-active-panel')).toHaveTextContent('chat');
+        });
+
+        it('keeps multiple Custom Apps mounted as independent tabs', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId('open-apps'));
+            fireEvent.click(screen.getByTestId('mock-open-notes'));
+
+            expect(screen.getByTestId(
+                'surface-tab-custom-app:text-lab',
+            )).toBeInTheDocument();
+            expect(screen.getByTestId(
+                'surface-tab-custom-app:notes-lab',
+            )).toBeInTheDocument();
+            expect(screen.getAllByTestId('custom-app-frame')).toHaveLength(2);
+
+            const textSurface = screen.getByTestId(
+                'desktop-surface-custom-app:text-lab',
+            );
+            const notesSurface = screen.getByTestId(
+                'desktop-surface-custom-app:notes-lab',
+            );
+            expect(textSurface).toHaveAttribute('data-active', 'false');
+            expect(notesSurface).toHaveAttribute('data-active', 'true');
+        });
+
+        it('applies tab context-menu close commands without first selecting the tab', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+            fireEvent.click(screen.getByTestId('open-apps'));
+            fireEvent.click(screen.getByTestId('mock-open-notes'));
+
+            const textTab = screen.getByTestId(
+                'surface-tab-custom-app:text-lab',
+            );
+            expect(screen.getByTestId(
+                'desktop-surface-custom-app:text-lab',
+            )).toHaveAttribute('data-active', 'false');
+
+            fireEvent.contextMenu(textTab);
+            fireEvent.click(screen.getByRole(
+                'menuitem',
+                { name: 'Close tabs to the right' },
+            ));
+
+            expect(screen.queryByTestId(
+                'desktop-surface-custom-app:notes-lab',
+            )).not.toBeInTheDocument();
+            expectSurfaceActive('custom-app-frame', 'left');
+
+            fireEvent.contextMenu(textTab);
+            fireEvent.click(screen.getByRole(
+                'menuitem',
+                { name: 'Close other tabs' },
+            ));
+
+            expect(screen.getByTestId(
+                'surface-tab-custom-app:text-lab',
+            )).toBeInTheDocument();
+            expect(screen.queryByTestId(
+                'surface-tab-destination:conversation',
+            )).not.toBeInTheDocument();
+            expect(screen.queryByTestId(
+                'surface-tab-destination:apps',
+            )).not.toBeInTheDocument();
         });
     });
 
-    // ── Simple chat + preview panels ────────────────────────────────
+    // ── Conversation execution tabs ─────────────────────────────────
 
-    describe('simple chat with preview panels', () => {
+    describe('conversation execution tabs', () => {
         it('shows browser preview alongside chat when snapshot arrives', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
@@ -540,6 +761,35 @@ describe('App view transitions', () => {
 
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
             expect(screen.getByTestId('browser-preview')).toBeInTheDocument();
+        });
+
+        it('moves an execution tab between the same left and right pane stacks', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: {
+                    url: 'https://test.com',
+                    title: 'Test',
+                    screenshot: TINY_PNG,
+                    tabId: 1,
+                },
+            });
+
+            const browser = screen.getByTestId('browser-preview');
+            const surfaceHost = expectSurfaceActive('browser-preview', 'right');
+            fireEvent.click(screen.getByTestId('move-surface-browser-left'));
+            expectSurfaceActive('browser-preview', 'left');
+            expect(surfaceHostFor('browser-preview')).toBe(surfaceHost);
+            expect(screen.getByTestId('browser-preview')).toBe(browser);
+            expectSurfaceInactive('chat-panel');
+
+            fireEvent.click(screen.getByTestId('move-surface-browser-right'));
+            expectSurfaceActive('browser-preview', 'right');
+            expectSurfaceActive('chat-panel', 'left');
+            expect(surfaceHostFor('browser-preview')).toBe(surfaceHost);
+            expect(screen.getByTestId('browser-preview')).toBe(browser);
         });
 
         it('shows terminal panel alongside chat', async () => {
@@ -555,7 +805,7 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('terminal-panel')).toBeInTheDocument();
         });
 
-        it('shows generation preview alongside chat', async () => {
+        it('ignores retired generation preview events', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -565,7 +815,7 @@ describe('App view transitions', () => {
             });
 
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.getByTestId('generation-preview')).toBeInTheDocument();
+            expect(screen.queryByTestId('generation-preview')).not.toBeInTheDocument();
         });
 
         it('previews persist into second turn', async () => {
@@ -601,21 +851,6 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('terminal-panel')).toBeInTheDocument();
         });
 
-        it('generation preview persists into second turn', async () => {
-            const { dispatch } = await renderApp();
-            startRoot(dispatch, 'r1');
-            dispatch({
-                type: 'UPDATE_GENERATION_PREVIEW',
-                agentId: 'r1',
-                preview: { gen_id: 'g1', media_type: 'image', status: 'complete' },
-            });
-
-            expect(screen.getByTestId('generation-preview')).toBeInTheDocument();
-
-            startRoot(dispatch, 'r2');
-            expect(screen.getByTestId('generation-preview')).toBeInTheDocument();
-        });
-
         it('new browser snapshot replaces old one in second turn', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
@@ -633,6 +868,33 @@ describe('App view transitions', () => {
             });
 
             expect(screen.getByText('Browser: https://second.com')).toBeInTheDocument();
+        });
+
+        it('closes execution tabs with Chat and does not reopen them with the conversation', async () => {
+            const { dispatch } = await renderApp();
+            startRoot(dispatch, 'r1');
+            dispatch({
+                type: 'UPDATE_BROWSER_SNAPSHOT',
+                agentId: 'r1',
+                snapshot: {
+                    url: 'https://test.com',
+                    title: 'Test',
+                    screenshot: TINY_PNG,
+                    tabId: 1,
+                },
+            });
+
+            fireEvent.click(screen.getByTestId(
+                'close-surface-tab-destination:conversation',
+            ));
+            expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
+
+            await act(async () => fireEvent.click(
+                screen.getByTestId('load-conversation'),
+            ));
+            expectSurfaceActive('chat-panel', 'left');
+            expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
         });
     });
 
@@ -671,10 +933,10 @@ describe('App view transitions', () => {
 
             act(() => fireEvent.click(screen.getByTestId('network-close')));
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceActive('chat-panel', 'left');
         });
 
-        it('does not show preview column when network view is open', async () => {
+        it('keeps an independent execution tab open when network view is selected', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -687,12 +949,11 @@ describe('App view transitions', () => {
             startSubAgent(dispatch, 's1', 'r1');
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
 
-            // Network is shown, preview column is hidden
-            expect(screen.getByTestId('agent-network')).toBeInTheDocument();
-            expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
+            expectSurfaceActive('agent-network', 'left');
+            expectSurfaceActive('browser-preview', 'right');
         });
 
-        it('previews return when network view is closed', async () => {
+        it('keeps the execution tab active when network view is closed', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -703,10 +964,11 @@ describe('App view transitions', () => {
 
             startSubAgent(dispatch, 's1', 'r1');
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
+            expectSurfaceActive('browser-preview', 'right');
 
             act(() => fireEvent.click(screen.getByTestId('network-close')));
-            expect(screen.getByTestId('browser-preview')).toBeInTheDocument();
+            expectSurfaceActive('browser-preview', 'right');
+            expectSurfaceActive('chat-panel', 'left');
         });
     });
 
@@ -752,8 +1014,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('settings-page');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('new chat closes the routines view and returns to chat', async () => {
@@ -762,8 +1024,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.queryByTestId('routines-view')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('routines-view');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('opens the agents view from the nav and escapes it on new chat', async () => {
@@ -772,8 +1034,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('agents-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expect(screen.queryByTestId('agents-view')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('agents-view');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('loading a conversation closes the settings page and returns to chat', async () => {
@@ -782,8 +1044,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('settings-page');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('loading a conversation closes the routines view and returns to chat', async () => {
@@ -792,8 +1054,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expect(screen.queryByTestId('routines-view')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('routines-view');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
         it('clicking the already-active conversation returns to chat WITHOUT re-resuming', async () => {
@@ -811,8 +1073,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('settings-page');
+            expectSurfaceActive('chat-panel', 'left');
             expect(loadConversation).not.toHaveBeenCalled();
         });
 
@@ -834,18 +1096,18 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('close-panel')));
-            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceInactive('settings-page');
+            expectSurfaceActive('chat-panel', 'left');
         });
 
-        it('switching from settings to routines shows only routines, never both', async () => {
+        it('switching from settings to routines selects routines while retaining both tabs', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('open-routines')));
-            expect(screen.getByTestId('routines-view')).toBeInTheDocument();
-            expect(screen.queryByTestId('settings-page')).not.toBeInTheDocument();
+            expectSurfaceActive('routines-view', 'left');
+            expectSurfaceInactive('settings-page');
         });
 
         it('opening settings from the network view hides the network', async () => {
@@ -856,8 +1118,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
-            expect(screen.getByTestId('settings-page')).toBeInTheDocument();
-            expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
+            expectSurfaceActive('settings-page', 'left');
+            expectSurfaceInactive('agent-network');
         });
 
         it('keeps a running conversation alive when switching to routines', async () => {
@@ -901,14 +1163,14 @@ describe('App view transitions', () => {
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+            expectSurfaceActive('chat-panel', 'left');
         });
     });
 
-    // ── Preview follows the active view, not a stale selection ──────
+    // ── Agent-attributed execution tabs ─────────────────────────────
 
-    describe('preview content follows the active view', () => {
-        it('shows the selected agent preview in its detail view, root preview in chat', async () => {
+    describe('agent-attributed execution tabs', () => {
+        it('keeps the root Browser open until the user opens the sub-agent Browser', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -926,13 +1188,26 @@ describe('App view transitions', () => {
             // Chat view tracks the root conversation.
             expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
 
-            // Drill into the sub-agent — preview follows it.
+            // Selecting the sub-agent does not replace or focus its Browser.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
-            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+            expect(screen.queryByTestId('desktop-surface-s1:browser'))
+                .not.toBeInTheDocument();
+            expectSurfaceActive('browser-preview', 'right');
+
+            // The explicit action opens a distinct, agent-bound tab.
+            act(() => fireEvent.click(screen.getByTestId('activity-open-browser')));
+            const subAgentBrowser = screen.getByTestId(
+                'desktop-surface-s1:browser',
+            );
+            expect(subAgentBrowser).toHaveAttribute('data-active', 'true');
+            expect(subAgentBrowser).toHaveAttribute('data-surface-owner-id', 's1');
+            expect(subAgentBrowser).toHaveTextContent('Browser: https://sub.com');
+            expect(screen.getByTestId('desktop-surface-browser'))
+                .toHaveAttribute('data-active', 'false');
         });
 
-        it('does not bleed a stale selection into the chat preview', async () => {
+        it('does not change an explicitly opened sub-agent tab when navigating elsewhere', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -947,17 +1222,21 @@ describe('App view transitions', () => {
                 snapshot: { url: 'https://sub.com', title: 'Sub', screenshot: TINY_PNG, tabId: 1 },
             });
 
-            // Drill into the sub-agent, then bounce out to settings and back.
+            // Explicitly open the sub-agent Browser, then navigate elsewhere.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
-            expect(screen.getByText('Browser: https://sub.com')).toBeInTheDocument();
+            act(() => fireEvent.click(screen.getByTestId('activity-open-browser')));
+            expect(screen.getByTestId('desktop-surface-s1:browser'))
+                .toHaveAttribute('data-active', 'true');
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             act(() => fireEvent.click(screen.getByTestId('close-panel')));
 
-            // Back in chat the selection lingers, but the preview tracks the root.
-            expect(screen.getByText('Browser: https://root.com')).toBeInTheDocument();
-            expect(screen.queryByText('Browser: https://sub.com')).not.toBeInTheDocument();
+            expectSurfaceActive('chat-panel', 'left');
+            expect(screen.getByTestId('desktop-surface-s1:browser'))
+                .toHaveAttribute('data-active', 'true');
+            expect(screen.getByTestId('desktop-surface-s1:browser'))
+                .toHaveTextContent('Browser: https://sub.com');
         });
     });
 
@@ -971,7 +1250,7 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
 
-            // 2. Root agent starts, browser snapshot appears → preview column
+            // 2. Root agent starts, browser snapshot appears → right Browser tab
             startRoot(dispatch, 'r1');
             dispatch({
                 type: 'UPDATE_BROWSER_SNAPSHOT',
@@ -986,10 +1265,10 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('browser-preview')).toBeInTheDocument();
             expect(screen.getByTestId('network-indicator')).toBeInTheDocument();
 
-            // 4. Click indicator → network view (chat + preview hidden)
+            // 4. Click indicator → network on the left; Browser remains on the right.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            expect(screen.getByTestId('agent-network')).toBeInTheDocument();
-            expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
+            expectSurfaceActive('agent-network', 'left');
+            expectSurfaceActive('browser-preview', 'right');
 
             // 5. Select sub-agent → detail view
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
@@ -1003,8 +1282,8 @@ describe('App view transitions', () => {
 
             // 7. Close network → back to chat with previews
             act(() => fireEvent.click(screen.getByTestId('network-close')));
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.getByTestId('browser-preview')).toBeInTheDocument();
+            expectSurfaceActive('chat-panel', 'left');
+            expectSurfaceActive('browser-preview', 'right');
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
         });
     });

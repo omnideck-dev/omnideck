@@ -109,19 +109,21 @@
     overflow: hidden;
 }
 
-/* Network view — full-screen when open (not side-by-side with chat) */
+/* Network content fills whichever desktop surface hosts it. */
 .networkArea {
     flex: 1;
+    width: 100%;
     overflow: hidden;
 }
 
-/* Chat column — left side */
+/* Chat content fills whichever desktop surface hosts it. */
 .chatColumn {
+    flex: 1;
+    width: 100%;
     min-width: 320px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* width is set by the desktop dock, and defaults to 100% when the dock is hidden */
 }
 
 .hidden {
