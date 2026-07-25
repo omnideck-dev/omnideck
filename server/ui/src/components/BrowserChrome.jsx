@@ -59,6 +59,16 @@ export default function BrowserChrome({ url, title, control, focusViewport }) {
                 ) : (
                     <span className={styles.url} title={url}>{url}</span>
                 )}
+                {control && c.error && (
+                    <span
+                        className={styles.controlError}
+                        role="status"
+                        title={`Browser control unavailable: ${c.error}`}
+                        data-testid="browser-control-error"
+                    >
+                        {c.error}
+                    </span>
+                )}
                 {c.engaged && c.newTab && (
                     <IconButton
                         size="sm"
@@ -70,7 +80,7 @@ export default function BrowserChrome({ url, title, control, focusViewport }) {
                         <i className="bi bi-plus-lg" style={{ fontSize: 14 }} />
                     </IconButton>
                 )}
-                {c.toggleEngage && (
+                {control && c.toggleEngage && (
                     <IconButton
                         size="sm"
                         onClick={c.toggleEngage}

@@ -6,6 +6,7 @@ import {
     DesktopViewRuntimeProvider,
     useDesktopViewCatalog,
     useDesktopViewCommands,
+    useFocusedViewId,
 } from '../DesktopViewRuntime.jsx';
 
 const CONVERSATION = {
@@ -17,7 +18,11 @@ const ARTIFACT = {
     type: 'artifact-file',
 };
 
-function model({ conversationTabGroupId = 'left' } = {}) {
+function model({
+    conversationTabGroupId = 'left',
+    focusedFloatingViewId = null,
+    focusedTabGroupId = conversationTabGroupId,
+} = {}) {
     return {
         openViews: [CONVERSATION],
         openViewsById: {
@@ -41,6 +46,8 @@ function model({ conversationTabGroupId = 'left' } = {}) {
                     : null,
             },
         },
+        focusedFloatingViewId,
+        focusedTabGroupId,
     };
 }
 
@@ -98,13 +105,42 @@ describe('DesktopViewRuntime', () => {
         expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
-    it('does not wake domain catalog consumers for bounds-only changes', () => {
+    it('prefers floating focus and falls back to the focused tab group', () => {
+        const layoutCommands = commandSpies();
+        let currentModel = model();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: currentModel,
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result, rerender } = renderHook(useFocusedViewId, { wrapper });
+
+        expect(result.current).toBe(CONVERSATION.id);
+
+        currentModel = model({ focusedFloatingViewId: ARTIFACT.id });
+        rerender();
+
+        expect(result.current).toBe(ARTIFACT.id);
+    });
+
+    it('does not wake catalog consumers when only focus or bounds change', () => {
         const layoutCommands = commandSpies();
         const baseModel = model();
-        let renders = 0;
+        let catalogRenders = 0;
+        let focusRenders = 0;
         const CatalogConsumer = memo(function CatalogConsumer() {
             useDesktopViewCatalog();
-            renders += 1;
+            catalogRenders += 1;
+            return null;
+        });
+        const FocusConsumer = memo(function FocusConsumer() {
+            useFocusedViewId();
+            focusRenders += 1;
             return null;
         });
         const { rerender } = render(
@@ -115,6 +151,7 @@ describe('DesktopViewRuntime', () => {
                 }}
             >
                 <CatalogConsumer />
+                <FocusConsumer />
             </DesktopViewRuntimeProvider>,
         );
 
@@ -126,14 +163,17 @@ describe('DesktopViewRuntime', () => {
                         floatingByViewId: {
                             sample: { x: 100, y: 80 },
                         },
+                        focusedFloatingViewId: ARTIFACT.id,
                     },
                     commands: layoutCommands,
                 }}
             >
                 <CatalogConsumer />
+                <FocusConsumer />
             </DesktopViewRuntimeProvider>,
         );
 
-        expect(renders).toBe(1);
+        expect(catalogRenders).toBe(1);
+        expect(focusRenders).toBe(2);
     });
 });

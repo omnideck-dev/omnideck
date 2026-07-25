@@ -10,7 +10,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._protocol import bash, open_url, send_file, spawn, write_file
-from tests.e2e.pages import AgentActivityView, BrowserControl, ChatView, NetworkView
+from tests.e2e.pages import AgentActivityView, ChatView, NetworkView
 
 
 @pytest.fixture(scope="module")
@@ -86,12 +86,73 @@ def test_agent_terminal_opens_explicitly_and_keeps_agent_identity(
 
 
 def test_agent_browser_opens_explicitly(isolation_page: Page):
-    """The Browser action opens the selected sub-agent's captured browser."""
+    """A sub-agent Browser paints its capture without offering takeover."""
     activity = _open_agent(isolation_page, "ALPHA").open_browser()
 
     expect(activity.execution_tab("browser")).to_be_visible(timeout=10_000)
-    expect(activity.execution_view("browser")).to_be_visible()
-    BrowserControl(isolation_page).wait_loaded(timeout=15_000)
+    browser_view = activity.execution_view("browser")
+    expect(browser_view).to_be_visible()
+    expect(browser_view.get_by_test_id("browser-frame")).to_be_visible(
+        timeout=15_000
+    )
+    expect(
+        browser_view.get_by_test_id("browser-take-control")
+    ).to_have_count(0)
+
+
+def test_root_and_subagent_browsers_have_one_control_session(
+    isolation_page: Page,
+):
+    """Two open Browsers produce one root-only takeover UI and socket."""
+    control_sockets: list[str] = []
+
+    def record_control_socket(websocket):
+        if "/api/browser/control" in websocket.url:
+            control_sockets.append(websocket.url)
+
+    isolation_page.on("websocket", record_control_socket)
+    try:
+        # Return to Chat and give the root agent its own Browser. The ALPHA
+        # Browser remains open in the same tab group.
+        activity = _open_agent(isolation_page, "ALPHA")
+        alpha_id = activity.agent_id
+        activity.back_to_network().back_to_chat()
+        chat = ChatView(isolation_page)
+        chat.send(open_url("https://example.org")).wait_streaming(
+            timeout=30_000
+        )
+
+        root_tab = chat.preview.browser_tab
+        expect(root_tab).to_be_visible(timeout=10_000)
+        root_tab.click()
+
+        root_browser = isolation_page.locator(
+            "[data-view-id$=':root:browser']"
+        )
+        expect(root_browser).to_have_count(1)
+        expect(
+            root_browser.get_by_test_id("browser-take-control")
+        ).to_be_enabled(timeout=10_000)
+
+        # ALPHA's Browser is still open, but it contributes neither another
+        # takeover affordance nor another control connection.
+        expect(
+            isolation_page.get_by_test_id(f"view-tab-{alpha_id}:browser")
+        ).to_be_visible()
+        alpha_browser = isolation_page.locator(
+            "[data-view-type='workspace-resource']"
+            f"[data-view-owner-id='{alpha_id}']"
+            "[data-view-resource-id='browser']"
+        )
+        expect(
+            alpha_browser.get_by_test_id("browser-take-control")
+        ).to_have_count(0)
+        expect(
+            isolation_page.get_by_test_id("browser-take-control")
+        ).to_have_count(1)
+        assert len(control_sockets) == 1
+    finally:
+        isolation_page.remove_listener("websocket", record_control_socket)
 
 
 def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):

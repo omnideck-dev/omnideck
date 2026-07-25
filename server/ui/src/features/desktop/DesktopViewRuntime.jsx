@@ -12,6 +12,7 @@ import { CONVERSATION_VIEW_ID } from './desktopViews.js';
 
 const DesktopViewCatalogContext = createContext(null);
 const DesktopViewCommandsContext = createContext(null);
+const DesktopViewFocusContext = createContext(null);
 
 /** Return the tab group opposite Conversation, falling back to the right. */
 function preferredCompanionTabGroup(model) {
@@ -41,6 +42,20 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
         openViews: Object.values(model.openViewsById),
         openViewsById: model.openViewsById,
     }), [model.openViewsById]);
+    const focusedTabGroupActiveViewId = model.tabGroups[
+        model.focusedTabGroupId
+    ]?.activeViewId || null;
+    // Focus is intentionally a separate subscription from the View catalog.
+    // Tab selection and floating-window focus change often, while domain
+    // lifecycle effects only need to wake when the catalog itself changes.
+    const viewFocus = useMemo(() => ({
+        focusedViewId: model.focusedFloatingViewId
+            || focusedTabGroupActiveViewId,
+    }), [
+        model.focusedFloatingViewId,
+        model.focusedTabGroupId,
+        focusedTabGroupActiveViewId,
+    ]);
 
     const openView = useCallback((view, {
         tabGroupId = DESKTOP_TAB_GROUP_IDS.LEFT,
@@ -95,7 +110,9 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     return (
         <DesktopViewCatalogContext.Provider value={viewCatalog}>
             <DesktopViewCommandsContext.Provider value={commands}>
-                {children}
+                <DesktopViewFocusContext.Provider value={viewFocus}>
+                    {children}
+                </DesktopViewFocusContext.Provider>
             </DesktopViewCommandsContext.Provider>
         </DesktopViewCatalogContext.Provider>
     );
@@ -119,4 +136,21 @@ export function useDesktopViewCommands() {
         );
     }
     return commands;
+}
+
+/**
+ * Return the one View which owns keyboard/control focus in Desktop Layout.
+ *
+ * Visibility is deliberately broader than focus: both tab groups and every
+ * floating View may be visible, but exclusive domain side channels need one
+ * unambiguous owner.
+ */
+export function useFocusedViewId() {
+    const focus = useContext(DesktopViewFocusContext);
+    if (focus === null) {
+        throw new Error(
+            'useFocusedViewId must be used within DesktopViewRuntimeProvider',
+        );
+    }
+    return focus.focusedViewId;
 }

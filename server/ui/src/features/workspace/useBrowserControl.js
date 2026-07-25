@@ -87,6 +87,7 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
     const [liveTabs, setLiveTabs] = useState(null); // live open-tab list; null = none received yet, [] = authoritatively zero
     const [engaged, setEngaged] = useState(false);
     const [connected, setConnected] = useState(false);
+    const [error, setError] = useState(null);
     const wsRef = useRef(null);
     const framesRef = useRef({}); // mirror of framesByTab, for blob-url revocation
 
@@ -97,6 +98,7 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         const ws = new WebSocket(
             `${proto}://${location.host}/api/browser/control?conversation_id=${encodeURIComponent(conversationId)}`,
         );
+        setError(null);
         wsRef.current = ws;
         ws.binaryType = 'arraybuffer';
         ws.onopen = () => setConnected(true);
@@ -130,6 +132,13 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
                         ws.send(JSON.stringify({ type: 'file', files }));
                     }
                 });
+            } else if (m.type === 'error') {
+                // Keep server rejections visible to the renderer. In
+                // particular, no_active_browser used to be swallowed while an
+                // enabled takeover button remained on screen.
+                setError(m.reason || 'browser_control_error');
+                setConnected(false);
+                setEngaged(false);
             }
         };
         ws.onclose = () => { if (wsRef.current === ws) { wsRef.current = null; setConnected(false); } };
@@ -170,16 +179,26 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         if (changed) { framesRef.current = next; setFramesByTab(next); }
     }, [liveTabs]);
 
+    // A connected channel is part of control eligibility. The caller supplies
+    // conversation state (for example, whether an agent is streaming); this
+    // hook adds the transport requirement it alone can know.
+    const controlAvailable = canControl && connected && !error;
+
     // A turn starting revokes control.
-    useEffect(() => { if (!canControl) setEngaged(false); }, [canControl]);
+    useEffect(() => {
+        if (!controlAvailable) setEngaged(false);
+    }, [controlAvailable]);
 
     // Tell the backend whether the human holds control (gates remote file dialogs).
     useEffect(() => {
         const ws = wsRef.current;
         if (connected && ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'engage', on: engaged && canControl }));
+            ws.send(JSON.stringify({
+                type: 'engage',
+                on: engaged && controlAvailable,
+            }));
         }
-    }, [engaged, canControl, connected]);
+    }, [engaged, controlAvailable, connected]);
 
     // Low-level: forward a raw input primitive (mouse/key/wheel/text) over the
     // channel. The screencast surface streams these; discrete commands below
@@ -196,8 +215,8 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
     const navigate = useCallback((direction) => sendInput({ type: direction }), [sendInput]);
 
     const toggleEngage = useCallback(() => {
-        setEngaged((v) => (canControl ? !v : false));
-    }, [canControl]);
+        setEngaged((v) => (controlAvailable ? !v : false));
+    }, [controlAvailable]);
 
     // The selected tab's cached frame drives the main view; the full per-tab
     // cache drives the rail thumbnails (so deselected tabs keep their frame).
@@ -211,8 +230,9 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         navTitle: navState?.title ?? null,
         liveTabs,
         connected,
-        engaged: engaged && canControl,
-        canControl,
+        error,
+        engaged: engaged && controlAvailable,
+        canControl: controlAvailable,
         toggleEngage,
         sendInput,
         closeTab,

@@ -72,8 +72,15 @@ class DesktopLayout:
         self.page.get_by_test_id(f"float-view-{view_key}").click()
 
     def maximize(self, view_key: str) -> None:
+        maximize = self.page.get_by_test_id(f"maximize-view-{view_key}")
+        # Floating chrome exposes placement actions directly, while docked
+        # tabs keep them in the overflow menu. Support both presentations so
+        # callers describe the intent rather than the current chrome.
+        if maximize.is_visible():
+            maximize.click()
+            return
         self.open_tab_actions(view_key)
-        self.page.get_by_test_id(f"maximize-view-{view_key}").click()
+        maximize.click()
 
     def restore(self, view_key: str) -> None:
         self.page.get_by_test_id(f"restore-view-{view_key}").click()
