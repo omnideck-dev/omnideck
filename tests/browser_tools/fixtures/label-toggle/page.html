@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Label toggle</title>
+</head>
+<body>
+  <h1>Cart</h1>
+  <div id="t" style="cursor:pointer">Add to cart</div>
+  <script>
+    document.getElementById('t').addEventListener('click', function () {
+      this.textContent = this.textContent === 'Add to cart' ? 'Remove from cart' : 'Add to cart';
+    });
+  </script>
+</body>
+</html>

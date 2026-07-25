@@ -10,18 +10,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+from dataclasses import replace
 
 from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import Page
 
 from settings import load_settings
-from tools.browser.core import get_active_view, get_browser
-from tools.browser.core._formatting import format_page_view
-from tools.browser.core._selectors import _resolve_locator
+from tools.browser._tool_context import get_document
+from tools.browser._tool_support import format_action_result
+from tools.browser.core.document import Document
 from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.page_view import build_page_view
+from tools.browser.core.formatting import format_rendered_document
 from tools.browser.events import emit_screenshot_after
-from tools.browser.interactions import _format_result
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ async def inspect_page(
     prompt: str,
     *,
     mode: str = "full_page",
-    selector: str | None = None,
+    ref: str | None = None,
     tab: str,
 ) -> str:
     """Inspect the current page visually and answer a question about it.  SLOW.
@@ -48,10 +47,10 @@ async def inspect_page(
 
     Args:
         prompt: Specific question about what you see on the page.
-        mode: ``"full_page"`` (default), ``"viewport"``, or ``"selector"``.
-        selector: Required when ``mode="selector"`` — ref number of the
+        mode: ``"full_page"`` (default), ``"viewport"``, or ``"ref"``.
+        ref: Required when ``mode="ref"`` — ref number of the
             element to capture.
-        tab: Stable tab ID to inspect — the ID shown in the snapshot
+        tab: Stable tab ID to inspect — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
@@ -68,29 +67,30 @@ async def inspect_page(
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME)
 
     normalized_mode = mode.lower().strip()
-    if normalized_mode not in {"full_page", "viewport", "selector"}:
-        msg = "mode must be one of {'full_page', 'viewport', 'selector'}."
+    if normalized_mode not in {"full_page", "viewport", "ref"}:
+        msg = "mode must be one of {'full_page', 'viewport', 'ref'}."
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME)
 
-    _browser, view = await get_active_view(_SCREENSHOT_TOOL_NAME, tab=tab)
-    # Screenshots require the Page object (not Frame)
-    page = view.page
+    _browser, resolved_tab, document = await get_document(
+        _SCREENSHOT_TOOL_NAME,
+        tab=tab,
+    )
 
     try:
-        if normalized_mode == "selector":
-            screenshot_bytes = await _selector_screenshot(page, selector)
+        if normalized_mode == "ref":
+            screenshot_bytes = await _ref_screenshot(document, ref)
         elif normalized_mode == "full_page":
-            screenshot_bytes = await page.screenshot(type="png", full_page=True)
+            screenshot_bytes = await resolved_tab.screenshot(full_page=True)
         else:  # viewport
-            screenshot_bytes = await page.screenshot(type="png", full_page=False)
+            screenshot_bytes = await resolved_tab.screenshot(full_page=False)
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
-        logger.exception("Failed to capture screenshot for page %s", page.url)
+        logger.exception("Failed to capture screenshot for page %s", resolved_tab.url)
         err_msg = f"Playwright error capturing screenshot: {exc}"
         raise BrowserToolError(err_msg, tool=_SCREENSHOT_TOOL_NAME) from exc
     except Exception as exc:  # pragma: no cover - unexpected Playwright failure
-        logger.exception("Unexpected failure capturing screenshot for page %s", page.url)
+        logger.exception("Unexpected failure capturing screenshot for page %s", resolved_tab.url)
         err_msg = f"Unexpected failure capturing screenshot: {exc}"
         raise BrowserToolError(err_msg, tool=_SCREENSHOT_TOOL_NAME) from exc
 
@@ -116,9 +116,12 @@ async def inspect_page(
     settings = load_settings()
     elapsed_ms = (asyncio.get_event_loop().time() - t0) * 1000
     log_vision_panel(
-        "inspect_page", settings.get("vision_model", ""),
-        clean_prompt, answer, elapsed_ms,
-        image_source="%s (%s)" % (view.url, normalized_mode),
+        "inspect_page",
+        settings.get("vision_model", ""),
+        clean_prompt,
+        answer,
+        elapsed_ms,
+        image_source="%s (%s)" % (resolved_tab.url, normalized_mode),
     )
 
     return answer
@@ -138,32 +141,37 @@ async def browser_visual_action(task: str, *, tab: str) -> str:
         task: Natural-language description of what to do, e.g.
             ``"Click the Login button"``, ``"Drag the slider to the right"``,
             or ``"Type hello into the search box"``.
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string after executing the action.
+        Updated rendered-document string after executing the action.
 
     Raises:
         BrowserToolError: If the page is inaccessible, the screenshot fails,
             the grounding server is unreachable, or the action fails.
     """
     from tools._grounding import run_grounding
-    from tools.browser._action_map import execute_action
+    from tools.browser._visual_actions import execute_action
 
     clean_task = task.strip()
     if not clean_task:
         msg = "task must be a non-empty string."
         raise BrowserToolError(msg, tool=_VISUAL_ACTION_TOOL_NAME)
 
-    browser, view = await get_active_view(_VISUAL_ACTION_TOOL_NAME, tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document(
+        _VISUAL_ACTION_TOOL_NAME,
+        tab=tab,
+    )
 
     # Capture viewport screenshot.
     try:
-        screenshot_bytes = await page.screenshot(type="png", full_page=False)
+        screenshot_bytes = await resolved_tab.screenshot(full_page=False)
     except PlaywrightError as exc:
-        logger.exception("Failed to capture screenshot for visual action on %s", page.url)
+        logger.exception(
+            "Failed to capture screenshot for visual action on %s",
+            resolved_tab.url,
+        )
         msg = "Failed to capture screenshot for visual action."
         raise BrowserToolError(msg, tool=_VISUAL_ACTION_TOOL_NAME) from exc
 
@@ -181,33 +189,33 @@ async def browser_visual_action(task: str, *, tab: str) -> str:
 
     logger.info(
         "Visual action: %s → %s (thought: %s)",
-        clean_task, response.action_type, response.thought,
+        clean_task,
+        response.action_type,
+        response.thought,
     )
 
-    # Handle finished — return snapshot with note.
+    # Handle finished — return the rendered document with a note.
     if response.action_type == "finished":
         finished_content = response.raw.get("finished_content", "")
-        snapshot = await build_page_view(view, None)
-        content = snapshot.content
+        rendered = await resolved_tab.render_document(settle=False)
+        content = rendered.content
         if finished_content:
             content += "\n\n--- Vision model says task is finished: %s ---" % finished_content
-        return format_page_view(
-            title=snapshot.title,
-            url=snapshot.url,
-            status_code=snapshot.status_code,
-            viewport=snapshot.viewport,
-            content=content,
-            truncated=snapshot.truncated,
-            tab_id=browser.tab_id_of(page),
+        return format_rendered_document(
+            replace(rendered, content=content),
+            tab_id=resolved_tab.id,
         )
 
-    # Execute the action via perform_interaction for proper settle/snapshot.
+    # Coordinate the action so the resulting document is settled and rendered.
     try:
-        result = await browser.perform_interaction(
-            lambda: execute_action(response, page, view.frame),
-            source_page=page,
+        result = await browser.coordinate_action(
+            lambda: execute_action(response, document),
+            source_tab=resolved_tab,
         )
-        return await _format_result(result, page, tool_name=_VISUAL_ACTION_TOOL_NAME)
+        return await format_action_result(
+            result,
+            tool_name=_VISUAL_ACTION_TOOL_NAME,
+        )
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
@@ -216,34 +224,20 @@ async def browser_visual_action(task: str, *, tab: str) -> str:
         raise BrowserToolError(msg, tool=_VISUAL_ACTION_TOOL_NAME) from exc
 
 
-async def _selector_screenshot(page: Page, selector: str | None) -> bytes:
-    if selector is None:
-        msg = "selector cannot be None when mode='selector'."
+async def _ref_screenshot(document: Document, ref: str | None) -> bytes:
+    if ref is None:
+        msg = "ref cannot be None when mode='ref'."
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME)
-    clean_selector = selector.strip()
-    if not clean_selector:
-        msg = "selector must be a non-empty string when mode='selector'."
+    clean_ref = ref.strip()
+    if not clean_ref:
+        msg = "ref must be non-empty when mode='ref'."
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME)
 
-    # Use active frame for locator resolution (element may be inside an iframe)
-    browser = await get_browser()
-    active_view = await browser.active_view(page=page)
-
-    resolution = await _resolve_locator(
-        active_view.frame,
-        clean_selector,
-        tool_name=_SCREENSHOT_TOOL_NAME,
-    )
-    if resolution is None:
-        msg = f"No element matched selector handle '{clean_selector}'"
-        raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME)
-    locator = resolution.locator
-    return await locator.screenshot(type="png")
-
-
+    resolution = await document.resolve_ref(clean_ref, tool_name=_SCREENSHOT_TOOL_NAME)
+    return await document.screenshot(resolution)
 
 
 __all__ = [
-    "inspect_page",
     "browser_visual_action",
+    "inspect_page",
 ]

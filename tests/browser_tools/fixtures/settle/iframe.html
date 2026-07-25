@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Settled iframe</title></head>
+<body>
+  <label for="query">Query</label>
+  <input id="query" name="query">
+  <p id="status">Waiting</p>
+
+  <script>
+    const input = document.getElementById('query');
+    const status = document.getElementById('status');
+    let updateTimer;
+
+    input.addEventListener('input', () => {
+      clearInterval(updateTimer);
+      let step = 0;
+      updateTimer = setInterval(() => {
+        step += 1;
+        status.textContent = `Updating ${step}`;
+        if (step === 6) {
+          clearInterval(updateTimer);
+          status.textContent = 'Update complete';
+        }
+      }, 50);
+    });
+  </script>
+</body>
+</html>

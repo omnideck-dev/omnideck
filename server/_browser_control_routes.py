@@ -43,13 +43,15 @@ from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
-from tools.browser.core import Browser, get_browser_by_conversation_id
+from tools.browser.core.browser import Browser
+from tools.browser.core.pool import get_browser_by_conversation_id
+from tools.browser.core.tab import Tab
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Coroutine
+    from collections.abc import Callable, Coroutine
 
     from aiohttp.web_request import Request
-    from playwright.async_api import CDPSession, FileChooser, Frame, Page
+    from playwright.async_api import CDPSession, FileChooser, FilePayload
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,7 @@ _SELECTION_JS = """() => {
 def _as_float(value: Any, default: float = 0.0) -> float:
     """Coerce one decoded JSON field to a finite float."""
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)
     except (TypeError, ValueError):
         return default
     # NaN and the infinities survive float() and would reach CDP, where they are
@@ -275,10 +277,13 @@ class _ControlSession:
         self._ws = ws
         self._browser = browser
         self._cdp: CDPSession | None = None
-        self._page: Page | None = None
+        self._tab: Tab | None = None
         self._engaged = False
         self._pending_chooser: FileChooser | None = None  # awaiting host files
         self._bg_tasks: set[asyncio.Task[None]] = set()
+        self._selected_unsubscribe: Callable[[], None] | None = None
+        self._new_tabs_unsubscribe: Callable[[], None] | None = None
+        self._watched_tab_unsubscribers: list[Callable[[], None]] = []
 
         # Input side: the read loop appends here and the pump drains it, so a
         # slow CDP ack never stalls reading the next message off the socket.
@@ -313,26 +318,24 @@ class _ControlSession:
     async def select(self, tab_id: int) -> None:
         """Foreground *tab_id* and stream it; report ``tab_gone`` if it's gone."""
         await self._stop_screencast()
-        self._detach_page_listeners()
+        self._unsubscribe_selected_tab()
         try:
-            page = self._browser.resolve_tab(tab_id)
+            tab = self._browser.get_tab(tab_id)
         except ValueError:
             await self._ws.send_json({"type": "tab_gone", "tab_id": tab_id})
-            self._page = None
+            self._tab = None
             return
-        self._page = page
-        page.on("framenavigated", self._on_navigated)
-        if self._engaged:  # only intercept file dialogs while the human drives
-            page.on("filechooser", self._on_filechooser)
+        self._tab = tab
+        self._subscribe_selected_tab()
         with contextlib.suppress(Exception):
-            await page.bring_to_front()
-        cdp = await page.context.new_cdp_session(page)
+            await tab.activate()
+        cdp = await tab.devtools_session()
         cdp.on("Page.screencastFrame", self._on_frame)
         self._cdp = cdp
         self._last_cursor = ""
         await self._start_screencast()
-        await self._send_nav()   # initial url/title for the newly selected tab
-        self.request_tabs()      # and the current tab list
+        await self._send_nav()  # initial url/title for the newly selected tab
+        self.request_tabs()  # and the current tab list
 
     async def _start_screencast(self) -> None:
         """Begin streaming the selected tab at the client's display size."""
@@ -393,7 +396,7 @@ class _ControlSession:
             if pending is None or cdp is None:
                 continue
             data, meta, session_id = pending
-            tid = self._browser.tab_id_of(self._page) if self._page else None
+            tid = self._tab.id if self._tab else None
             header = _FRAME_HEADER.pack(
                 tid if tid is not None else -1,
                 meta.device_width, meta.device_height, meta.page_scale, meta.offset_top,
@@ -482,7 +485,7 @@ class _ControlSession:
 
     # ---- nav + tab list ----------------------------------------------------
 
-    def _on_navigated(self, frame: Frame) -> None:
+    def _on_navigated(self) -> None:
         """Push fresh url/title when the selected tab's main frame navigates.
 
         Covers history nav, link clicks, and same-document (SPA) navigations —
@@ -490,8 +493,7 @@ class _ControlSession:
         screenshot events (which otherwise carry url/title) don't fire during
         takeover.
         """
-        page = self._page
-        if page is not None and frame == page.main_frame:
+        if self._tab is not None:
             self._spawn(self._send_nav())
             # A navigation resets page scale, so the next frame's metadata is
             # the authority again; drop the stale cursor so it re-probes.
@@ -499,31 +501,37 @@ class _ControlSession:
 
     async def _send_nav(self) -> None:
         """Push the streamed tab's current url/title to the client."""
-        page = self._page
-        if page is None:
+        tab = self._tab
+        if tab is None:
             return
-        url = getattr(page, "url", "")
-        try:
-            title = await page.title()
-        except Exception:  # noqa: BLE001 - title read is best-effort
-            title = ""
+        title = await tab.title()
         with contextlib.suppress(Exception):
-            await self._ws.send_json({
-                "type": "nav",
-                "tab_id": self._browser.tab_id_of(page),
-                "url": url,
-                "title": title,
-            })
+            await self._ws.send_json(
+                {
+                    "type": "nav",
+                    "tab_id": tab.id,
+                    "url": tab.url,
+                    "title": title,
+                }
+            )
 
-    def _detach_page_listeners(self) -> None:
-        # Remove the per-page listeners select() attached (nav + filechooser) so
+    def _unsubscribe_selected_tab(self) -> None:
+        # Remove the listeners select() attached (nav + filechooser) so
         # the previously-selected tab stops emitting once we switch away or close.
-        page = self._page
-        if page is not None:
+        unsubscribe, self._selected_unsubscribe = self._selected_unsubscribe, None
+        if unsubscribe is not None:
             with contextlib.suppress(Exception):
-                page.remove_listener("framenavigated", self._on_navigated)
-            with contextlib.suppress(Exception):
-                page.remove_listener("filechooser", self._on_filechooser)
+                unsubscribe()
+
+    def _subscribe_selected_tab(self) -> None:
+        """Attach the listeners needed only for the currently streamed tab."""
+        tab = self._tab
+        if tab is None:
+            return
+        self._selected_unsubscribe = tab.subscribe(
+            on_navigated=self._on_navigated,
+            on_file_chooser=self._on_filechooser if self._engaged else None,
+        )
 
     def set_engaged(self, on: bool) -> None:
         """Track control state and arm the file-dialog interceptor.
@@ -532,16 +540,13 @@ class _ControlSession:
         file-input clicks aren't intercepted.
         """
         self._engaged = on
-        page = self._page
-        if page is None:
+        if self._tab is None:
             return
-        # Remove-then-(re)add so repeated engage messages don't stack listeners.
-        with contextlib.suppress(Exception):
-            page.remove_listener("filechooser", self._on_filechooser)
-        if on:
-            with contextlib.suppress(Exception):
-                page.on("filechooser", self._on_filechooser)
-        else:
+        # Re-subscribe so file chooser interception follows engagement without
+        # exposing Playwright's event emitter outside Tab.
+        self._unsubscribe_selected_tab()
+        self._subscribe_selected_tab()
+        if not on:
             self._pending_chooser = None
 
     def _on_filechooser(self, chooser: FileChooser) -> None:
@@ -553,24 +558,32 @@ class _ControlSession:
         if not self._engaged:
             return
         self._pending_chooser = chooser
-        self._spawn(self._ws.send_json({
-            "type": "filechooser",
-            "multiple": _is_multiple(chooser),
-        }))
+        self._spawn(
+            self._ws.send_json(
+                {
+                    "type": "filechooser",
+                    "multiple": _is_multiple(chooser),
+                }
+            )
+        )
 
     async def provide_files(self, files: list[HostFile]) -> None:
         """Fulfil a pending file dialog with files picked on the host."""
         chooser, self._pending_chooser = self._pending_chooser, None
         if chooser is None:
             return
-        payloads = [
-            {"name": f.name, "mimeType": f.mime, "buffer": base64.b64decode(f.data)}
-            for f in files
+        payloads: list[FilePayload] = [
+            {
+                "name": file.name,
+                "mimeType": file.mime,
+                "buffer": base64.b64decode(file.data),
+            }
+            for file in files
         ]
         with contextlib.suppress(Exception):
             await chooser.set_files(payloads)
 
-    def on_new_page(self, page: Page) -> None:
+    def on_new_tab(self, tab: Tab) -> None:
         """Handle a newly opened tab: watch it and refresh the client's tab list.
 
         No foreground guard is needed. The live screencast and input are pinned
@@ -580,26 +593,24 @@ class _ControlSession:
         foreground before its first screenshot, stalling the agent on a capture
         timeout.
         """
-        self._watch_tab(page)
+        self._watch_tab(tab)
         self.request_tabs()
 
-    def _watch_tab(self, page: Page) -> None:
-        """Refresh the client's tab list when *page* navigates or closes.
+    def _watch_tab(self, tab: Tab) -> None:
+        """Refresh the client's tab list when *tab* navigates or closes.
 
         A tab's url/title in the rail would otherwise freeze at open time (when
         a fresh tab is still ``about:blank``): the nav push only tracks the
         streamed tab, and there's no context-level navigate/close event, so each
         tracked page needs its own listeners.
         """
-        def _on_nav(frame: Frame) -> None:
-            if frame == page.main_frame:
-                self.request_tabs()
-
-        # framenavigated commits the url (fast, and covers same-document nav);
-        # load lands the final title, which isn't parsed yet at commit.
-        page.on("framenavigated", _on_nav)
-        page.on("load", lambda _p: self.request_tabs())
-        page.on("close", lambda _p: self.request_tabs())
+        self._watched_tab_unsubscribers.append(
+            tab.subscribe(
+                on_navigated=self.request_tabs,
+                on_loaded=self.request_tabs,
+                on_closed=self.request_tabs,
+            )
+        )
 
     def request_tabs(self) -> None:
         """Schedule one tab-list push, collapsing any already pending."""
@@ -619,39 +630,42 @@ class _ControlSession:
         fire while the agent is idle.
         """
         tabs = []
-        for page in self._browser.open_tabs():
-            tid = self._browser.tab_id_of(page)
-            if tid is None:
-                continue
+        for tab in self._browser.tabs():
             try:
-                title = await page.title()
+                title = await tab.title()
             except Exception:  # noqa: BLE001 - best-effort
                 title = ""
-            tabs.append({"id": tid, "url": getattr(page, "url", ""), "title": title})
+            tabs.append(
+                {
+                    "id": tab.id,
+                    "url": tab.url,
+                    "title": title,
+                }
+            )
         with contextlib.suppress(Exception):
             await self._ws.send_json({"type": "tabs", "tabs": tabs})
 
     async def new_tab(self) -> None:
         """Open a blank tab. The engaged client auto-selects it on the tab push."""
         with contextlib.suppress(Exception):
-            await self._browser.new_page()
+            await self._browser.new_tab()
 
     async def close_tab(self, tab_id: int) -> None:
         """Close the tab with *tab_id*; the close listener pushes the new list."""
         try:
-            page = self._browser.resolve_tab(tab_id)
+            tab = self._browser.get_tab(tab_id)
         except ValueError:
             return
         with contextlib.suppress(Exception):
-            await page.close()
+            await tab.close()
 
     async def copy(self) -> None:
         """Read the streamed tab's selection and send it back for the host clipboard."""
-        page = self._page
-        if page is None:
+        tab = self._tab
+        if tab is None:
             return
         try:
-            text = await page.evaluate(_SELECTION_JS)
+            text = await tab.evaluate(_SELECTION_JS)
         except Exception:  # noqa: BLE001 - selection read is best-effort
             text = ""
         if text:
@@ -660,31 +674,33 @@ class _ControlSession:
 
     async def navigate(self, direction: str) -> None:
         """History navigation / reload on the streamed tab."""
-        page = self._page
-        if page is None:
+        tab = self._tab
+        if tab is None:
             return
         with contextlib.suppress(Exception):
             if direction == "back":
-                await page.go_back()
+                await self._browser.navigate_back(tab)
             elif direction == "forward":
-                await page.go_forward()
+                await tab.go_forward()
             elif direction == "reload":
-                await page.reload()
+                await tab.reload()
 
     async def goto(self, url: str) -> None:
         """Navigate the streamed tab to *url* (address-bar entry)."""
-        page = self._page
-        if page is None or not url:
+        tab = self._tab
+        if tab is None or not url:
             return
         if "://" not in url:
             url = "https://" + url
         with contextlib.suppress(Exception):
-            await page.goto(url)
+            await self._browser.navigate(url, tab=tab)
 
     async def __aenter__(self) -> _ControlSession:
         """Start tracking the browser: new-tab guard + watch existing tabs."""
-        self._browser.add_new_page_listener(self.on_new_page)
-        for existing in self._browser.open_tabs():
+        self._new_tabs_unsubscribe = self._browser.subscribe_to_new_tabs(
+            self.on_new_tab,
+        )
+        for existing in self._browser.tabs():
             self._watch_tab(existing)
         self._pump_task = asyncio.create_task(self._input_pump())
         self._writer_task = asyncio.create_task(self._frame_writer())
@@ -693,13 +709,18 @@ class _ControlSession:
     async def __aexit__(self, *exc: object) -> None:
         """Tear the session down: drop all listeners and stop the screencast."""
         with contextlib.suppress(Exception):
-            self._browser.remove_new_page_listener(self.on_new_page)
+            if self._new_tabs_unsubscribe is not None:
+                self._new_tabs_unsubscribe()
+                self._new_tabs_unsubscribe = None
+            for unsubscribe in self._watched_tab_unsubscribers:
+                unsubscribe()
+            self._watched_tab_unsubscribers.clear()
         for task in (self._pump_task, self._writer_task, self._tabs_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
-        self._detach_page_listeners()
+        self._unsubscribe_selected_tab()
         await self._stop_screencast()
 
 
@@ -725,7 +746,7 @@ def _is_multiple(chooser: FileChooser) -> bool:
     return val() if callable(val) else bool(val)
 
 
-async def browser_control_handler(request: Request) -> web.WebSocketResponse:
+async def browser_control_handler(request: Request) -> web.StreamResponse:
     """Bridge a control WebSocket to the conversation's root browser."""
     if not _same_origin(request):
         return web.Response(status=403, text="Forbidden origin")

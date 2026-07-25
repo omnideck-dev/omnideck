@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from tools.browser.interactions import go_back
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
+from tools.browser.navigation import go_back
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_go_back_navigates_backward(
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     page = StubPage(
@@ -22,7 +22,7 @@ async def test_go_back_navigates_backward(
         title="Next",
         body="Next body",
     )
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
     result = await go_back(tab="1")
     assert isinstance(result, str)
@@ -34,14 +34,14 @@ async def test_go_back_navigates_backward(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_go_back_no_history_returns_snapshot(patch_interactions_browser) -> None:
+async def test_go_back_no_history_returns_snapshot(browser_tool_harness) -> None:
     """When there is no history, go_back still returns a snapshot instead of raising."""
     page = StubPage(
         title="Only",
         body_text="Body",
         url="https://example.test/only",
     )
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
     result = await go_back(tab="1")
     assert isinstance(result, str)

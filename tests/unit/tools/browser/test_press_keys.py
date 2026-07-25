@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from typing import Any, cast
-
 from tools.browser import BrowserToolError
+from tools.browser.core.document import Document
 from tools.browser.interactions import press_keys
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
 
@@ -27,7 +26,7 @@ class FakeKeyboard:
 @pytest.mark.asyncio
 async def test_press_keys_success(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     keyboard = FakeKeyboard()
@@ -37,15 +36,13 @@ async def test_press_keys_success(
         url="https://example.test/start",
     )
     page.keyboard = keyboard  # type: ignore[attr-defined]
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
-    async def fake_human_press_keys(page: object, keys: list[str]) -> None:
-        # simulate pressing keys by delegating to page.keyboard
-        stub_page = cast(StubPage, page)
+    async def fake_press_keys(document: Document, keys: list[str]) -> None:
         for k in keys:
-            await cast(Any, stub_page.keyboard).press(k)
+            await keyboard.press(k)
 
-    monkeypatch.setattr("tools.browser.interactions.human_press_keys", fake_human_press_keys)
+    monkeypatch.setattr(Document, "press_keys", fake_press_keys)
 
     result = await press_keys(["Enter"], tab="1")
     assert isinstance(result, str)

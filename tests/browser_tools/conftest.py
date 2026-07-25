@@ -2,8 +2,8 @@
 
 This suite drives the *real* browser tools (``browse_page``, ``click``,
 ``fill_field``) against hand-written HTML pages served over HTTP, using a
-real headless Chrome. It exists to catch behavior the unit suite can't: the
-unit tests stub Playwright, so the real DOM walker in ``page_view.py`` never
+real headed Chrome. It exists to catch behavior the unit suite can't: the
+  unit tests stub Playwright, so the real renderer in ``core/rendering/renderer.py`` never
 runs against a real document.
 
 Two design constraints worth calling out:
@@ -14,10 +14,9 @@ Two design constraints worth calling out:
   null and the same-origin iframe scenarios become impossible to reproduce.
   Serving over ``http://127.0.0.1:<port>`` gives real same-origin iframes,
   and a second port gives a real cross-origin one.
-* The tools resolve their browser through ``get_browser`` (imported per
-  module). The ``browser_session`` fixture starts a real ``Browser`` and patches
-  every ``get_browser`` binding to hand it back, so the actual tool functions
-  run unchanged against it.
+* The fixture starts a real ``Browser`` and patches only the lifecycle lookup
+  that supplies it. Every page operation still goes through the public tool
+  functions exported by ``tools.browser``.
 
 Kept out of the default unit ``testpaths``; run with ``just browser-tools``.
 """
@@ -25,7 +24,7 @@ Kept out of the default unit ``testpaths``; run with ``just browser-tools``.
 from __future__ import annotations
 
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
@@ -33,7 +32,7 @@ from urllib.parse import urlencode
 import pytest
 from aiohttp import web
 
-from tools.browser.core.browser import Browser
+from tools.browser import Browser, new_tab
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -122,26 +121,25 @@ async def servers() -> AsyncIterator[Servers]:
         await secondary_runner.cleanup()
 
 
-class BrowserSession:
-    """A real browser wired into the tools, with a helper to open tabs."""
-
-    def __init__(self, browser: Browser) -> None:
-        self.browser = browser
-
-    async def open(self, url: str) -> str:
-        """Open *url* in a new tab and return its stable tab id as a string."""
-        page = await self.browser.new_page()
-        await self.browser.navigate(url, page=page)
-        tab_id = self.browser.tab_id_of(page)
-        assert tab_id is not None
-        return str(tab_id)
+def _tab_id_from_output(output: str) -> str:
+    """Read the tab ID from the page header returned by a browser tool."""
+    _, header_tail = output.split(" | tab=", maxsplit=1)
+    return header_tail.split("]", maxsplit=1)[0]
 
 
 @pytest.fixture
-async def browser_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[BrowserSession]:
-    """A real headless Browser wired into every ``get_browser`` call site.
+def downloads_dir(tmp_path: Path) -> Path:
+    """Return the download directory configured for this test's browser."""
+    return tmp_path / "downloads"
+
+
+@pytest.fixture
+async def _live_browser(
+    tmp_path: Path,
+    downloads_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[None]:
+    """A real headed Browser wired into every ``get_browser`` call site.
 
     Patching ``get_browser`` (rather than constructing an agent context) is
     the same seam the unit suite uses; here it's backed by a real browser so
@@ -150,21 +148,17 @@ async def browser_session(
     """
     browser = await Browser.start(
         str(tmp_path / "profile"),
-        headless=True,
-        downloads_path=str(tmp_path / "downloads"),
+        headless=False,
+        downloads_path=str(downloads_dir),
     )
-    browser._downloads_dir = str(tmp_path / "downloads")
 
     async def _get_live_browser() -> Browser:
         return browser
 
     for target in (
-        "tools.browser.core.browser.get_browser",
-        "tools.browser.core.get_browser",
-        "tools.browser.snapshot_tool.get_browser",
-        "tools.browser.interactions.get_browser",
-        "tools.browser.read_content.get_browser",
+        "tools.browser._tool_context.get_browser",
         "tools.browser.events.get_browser",
+        "tools.browser.navigation.get_browser",
     ):
         monkeypatch.setattr(target, _get_live_browser)
 
@@ -174,6 +168,16 @@ async def browser_session(
     monkeypatch.setattr("tools.browser.events._emit_screenshot", _noop_emit)
 
     try:
-        yield BrowserSession(browser)
+        yield
     finally:
         await browser.close()
+
+
+@pytest.fixture
+def open_tab(_live_browser: None) -> Callable[[str], Awaitable[str]]:
+    """Open a tab through the public tool and return its reported ID."""
+
+    async def _open(url: str) -> str:
+        return _tab_id_from_output(await new_tab(url))
+
+    return _open

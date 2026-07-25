@@ -15,6 +15,8 @@ tools:
     headless: false  # true = no GUI, false = visible browser window
     human:
       pointer:
+        move_duration_min_ms: 120
+        move_duration_max_ms: 240
         hover_min_ms: 90
         hover_max_ms: 180
         click_hold_min_ms: 35
@@ -28,7 +30,7 @@ tools:
     scroll_warn_threshold: 10
     scroll_hard_limit: 15
     waits:
-      network_idle_timeout_ms: 3000
+      load_timeout_ms: 3000
       font_timeout_ms: 1000
       dom_mutation_timeout_ms: 1500
       dom_quiet_window_ms: 150

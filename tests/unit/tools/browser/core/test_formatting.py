@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from tools.browser.core._formatting import (
+from tools.browser.core.formatting import (
     format_javascript_result,
     format_page_header,
-    format_page_view,
+    format_rendered_document,
     format_save_result,
 )
+from tools.browser.core.rendering import RenderedDocument
 
 
 @pytest.mark.unit
@@ -103,70 +104,68 @@ class TestFormatSaveResult:
 
 
 @pytest.mark.unit
-class TestFormatPageView:
-    """Tests for format_page_view."""
+class TestFormatRenderedDocument:
+    """Tests for formatting completed document renderings."""
 
     def test_basic_page(self) -> None:
         """Standard page view with viewport."""
-        out = format_page_view(
+        out = format_rendered_document(RenderedDocument(
             title="Example",
             url="https://example.com",
             status_code=200,
             viewport={"scroll_top": 0, "viewport_height": 800, "document_height": 2000},
             content="Hello world",
             truncated=False,
-        )
+        ))
         assert "[Page: Example | https://example.com | 200]" in out
         assert "[Viewport: 0-800 of 2000px]" in out
         assert "Hello world" in out
 
     def test_truncated_flag(self) -> None:
         """Truncated flag appears in viewport line."""
-        out = format_page_view(
+        out = format_rendered_document(RenderedDocument(
             title="T",
             url="u",
             status_code=None,
             viewport={"scroll_top": 0, "viewport_height": 800, "document_height": 2000},
             content="",
             truncated=True,
-        )
+        ))
         assert "truncated" in out
 
     def test_no_viewport(self) -> None:
         """Missing viewport shows unavailable."""
-        out = format_page_view(
+        out = format_rendered_document(RenderedDocument(
             title="T",
             url="u",
             status_code=None,
             viewport=None,
             content="",
             truncated=False,
-        )
+        ))
         assert "[Viewport: unavailable]" in out
 
     def test_tab_id_in_header(self) -> None:
         """tab=N segment appears in the header when an ID is supplied."""
-        out = format_page_view(
+        out = format_rendered_document(RenderedDocument(
             title="Example",
             url="https://example.com",
             status_code=200,
             viewport={"scroll_top": 0, "viewport_height": 800, "document_height": 2000},
             content="",
             truncated=False,
-            tab_id=4,
-        )
+        ), tab_id=4)
         assert "[Page: Example | https://example.com | 200 | tab=4]" in out
 
     def test_tab_id_omitted_when_none(self) -> None:
         """Header has no tab segment when tab_id is None."""
-        out = format_page_view(
+        out = format_rendered_document(RenderedDocument(
             title="Example",
             url="https://example.com",
             status_code=200,
             viewport={"scroll_top": 0, "viewport_height": 800, "document_height": 2000},
             content="",
             truncated=False,
-            tab_id=None,
-        )
+        ), tab_id=None)
         assert "tab=" not in out.splitlines()[0]
         assert "[Page: Example | https://example.com | 200]" in out

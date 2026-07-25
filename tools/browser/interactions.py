@@ -1,7 +1,7 @@
 """Browser interaction tools.
 
 This module exposes helpers for interacting with the active browser page.
-Each tool returns a formatted page view string showing the updated page
+Each tool returns a formatted rendered-document string showing the updated page
 content and interactive elements.
 """
 
@@ -10,29 +10,20 @@ from __future__ import annotations
 import contextvars
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from typing import Any
 
-from playwright.async_api import Error as PlaywrightError, Page
-
-if TYPE_CHECKING:
-    from playwright.async_api import Response
+from playwright.async_api import Error as PlaywrightError
 
 from config import load_config
-from tools.browser.core import get_active_view, get_browser
-from tools.browser.core._formatting import format_page_view
-from tools.browser.core._selectors import _LocatorResolution, _resolve_locator
-from tools.browser.core.browser import BrowserInteractionResult
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.human import (
-    human_click,
-    human_drag,
-    human_press_and_hold,
-    human_press_keys,
-    human_scroll,
-    human_type,
+from tools.browser._tool_context import get_document
+from tools.browser._tool_support import (
+    _log_browser_panel,
+    format_action_result,
 )
-from tools.browser.core.page_view import PageView, build_page_view
-from tools.browser.events import emit_screenshot_after, set_settled_page
+from tools.browser.core.exceptions import BrowserToolError
+from tools.browser.core.formatting import format_rendered_document
+from tools.browser.events import emit_screenshot_after, set_result_tab
 
 # ---------------------------------------------------------------------------
 # Scroll budget tracking
@@ -48,133 +39,13 @@ _scroll_url_var: contextvars.ContextVar[str] = contextvars.ContextVar("_scroll_u
 logger = logging.getLogger(__name__)
 
 
-def _log_browser_panel(
-    result: BrowserInteractionResult,
-    *,
-    snapshot: PageView | None,
-    tool_name: str = "",
-    resolution: _LocatorResolution | None = None,
-) -> None:
-    """Emit a single Rich panel summarising a browser tool call."""
-    if not logger.isEnabledFor(logging.INFO):
-        return
-
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-
-    table = Table(show_header=False, expand=False, padding=(0, 1))
-    table.add_column("Phase", style="bold")
-    table.add_column("Duration", justify="right")
-    table.add_column("Status")
-
-    if result.action_ms > 0:
-        table.add_row("interaction", f"{result.action_ms:.0f}ms", "")
-
-    settle = result.settle_timings
-    if settle is not None:
-        for name, duration_ms, timed_out in settle.phases:
-            status = "[yellow]timeout[/yellow]" if timed_out else "[green]ok[/green]"
-            table.add_row(name, f"{duration_ms:.0f}ms", status)
-        if settle.error:
-            table.add_row("error", "", f"[red]{settle.error}[/red]")
-
-    if snapshot is not None and snapshot.snapshot_nodes > 0:
-        total_snap = snapshot.snapshot_js_ms + snapshot.snapshot_py_ms
-        table.add_row("snapshot", f"{total_snap:.0f}ms", f"{snapshot.snapshot_nodes} nodes")
-
-    settle_total = settle.total_ms if settle else 0
-    snap_total = (snapshot.snapshot_js_ms + snapshot.snapshot_py_ms) if snapshot else 0
-    total_ms = result.action_ms + settle_total + snap_total
-
-    url = snapshot.url if snapshot else ""
-    display_url = url if len(url) <= 80 else url[:77] + "…"
-
-    # Title: "click  ref=7 → [data-ct-ref='7']" or just "browser"
-    title_parts: list[str] = [f"[bold cyan]{tool_name or 'browser'}[/bold cyan]"]
-    if resolution:
-        title_parts.append(f"ref={resolution.query}")
-    title = "  ".join(title_parts)
-
-    # Subtitle: total + url + optional frame/download info
-    parts: list[str] = [f"total=[bold]{total_ms:.0f}ms[/bold]"]
-    if display_url:
-        parts.append(display_url)
-    if result.frame_transition:
-        parts.append(f"frame: {result.frame_transition}")
-    if result.download:
-        parts.append(f"download: {result.download.filename}")
-    subtitle = "  ".join(parts)
-
-    console = Console(stderr=True)
-    console.print(Panel(
-        table,
-        title=title,
-        subtitle=subtitle,
-        border_style="dim",
-        expand=False,
-    ))
-
-
-async def _build_snapshot(
-    response: Response | None,
-    *,
-    page: Page,
-) -> PageView:
-    """Snapshot *page* into a ``PageView``."""
-    browser = await get_browser()
-    view = await browser.active_view(page=page)
-    return await build_page_view(view, response)
-
-
-async def _format_result(
-    result: BrowserInteractionResult,
-    source_page: Page,
-    *,
-    tool_name: str = "",
-    resolution: _LocatorResolution | None = None,
-) -> str:
-    """Format a BrowserInteractionResult as a page view string.
-
-    *source_page* is the tab the tool was called on.  The snapshot comes from
-    the tab the interaction settled on, which is a different tab when the
-    interaction opened one; its tab ID goes in the header so the agent can keep
-    working there.  Parallel calls on different tabs each pass their own page;
-    nothing is read from any shared global page state.
-    """
-    page = result.settled_page or source_page
-    # The post-tool screenshot has to show the tab the agent was just handed, or
-    # the picture and the text disagree about where it is.
-    set_settled_page(page)
-    if result.download is not None:
-        _log_browser_panel(result, snapshot=None, tool_name=tool_name, resolution=resolution)
-        return format_page_view(
-            title="File Download",
-            url="",
-            status_code=200,
-            content="",
-            viewport=None,
-            truncated=False,
-            downloaded_file=result.download,
-        )
-    snapshot = await _build_snapshot(result.navigation_response, page=page)
-    browser = await get_browser()
-    tab_id = browser.tab_id_of(page)
-    _log_browser_panel(result, snapshot=snapshot, tool_name=tool_name, resolution=resolution)
-    return format_page_view(
-        title=snapshot.title,
-        url=snapshot.url,
-        status_code=snapshot.status_code,
-        viewport=snapshot.viewport,
-        content=snapshot.content,
-        truncated=snapshot.truncated,
-        tab_id=tab_id,
-    )
-
-
 def _validate_bbox(
-    x1: float | int, y1: float | int, x2: float | int, y2: float | int,
-    *, tool_name: str,
+    x1: float | int,
+    y1: float | int,
+    x2: float | int,
+    y2: float | int,
+    *,
+    tool_name: str,
 ) -> tuple[float, float, float, float]:
     """Validate and convert bounding box coordinates."""
     try:
@@ -186,77 +57,54 @@ def _validate_bbox(
     return coords
 
 
-async def _resolve_or_raise(
-    frame: Any,
-    selector: str,
-    *,
-    tool_name: str,
-) -> _LocatorResolution:
-    """Resolve a ref number or selector, raising BrowserToolError on failure."""
-    try:
-        resolution = await _resolve_locator(
-            frame,
-            selector,
-            tool_name=tool_name,
-        )
-    except BrowserToolError:
-        raise
-    except PlaywrightError as exc:
-        logger.exception("Locator resolution failed for %s selector %s", tool_name, selector)
-        msg = f"Failed to locate element for selector '{selector}'."
-        raise BrowserToolError(msg, tool=tool_name) from exc
-    if resolution is None:
-        msg = f"No element found for '{selector}'. Use a ref number from browse_page() output."
-        raise BrowserToolError(msg, tool=tool_name)
-    return resolution
-
-
 @emit_screenshot_after
-async def click(selector: str, *, tab: str) -> str:
-    """Click an element by its ref number from the page view.
+async def click(ref: str, *, tab: str) -> str:
+    """Click an element by its ref number from the rendered document.
 
-    Always returns an updated page snapshot.  For AJAX actions (e.g. add-to-cart),
-    ``page_changed`` may be False but snapshot content will differ.
+    Always returns an updated rendered document.
 
     Args:
-        selector: Ref number from ``browse_page()`` output.
+        ref: Ref number from ``browse_page()`` output.
             Examples: ``"7"``, ``"12"``.
         tab: Tab ID from new_tab() or browse_page() output.
 
     Returns:
-        Updated page snapshot string.
+        Updated rendered-document string.
 
     Raises:
         BrowserToolError: If the element is not found or the click fails.
     """
-    clean_selector = selector.strip()
-    if not clean_selector:
-        msg = "selector must be a non-empty string"
+    clean_ref = ref.strip()
+    if not clean_ref:
+        msg = "ref must be a non-empty string"
         raise BrowserToolError(msg, tool="click")
 
-    browser, view = await get_active_view("click", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("click", tab=tab)
 
     try:
-        resolution = await _resolve_or_raise(view.frame, clean_selector, tool_name="click")
+        resolution = await document.resolve_ref(clean_ref, tool_name="click")
     except BrowserToolError as exc:
         return str(exc)
 
     try:
-        result = await browser.perform_interaction(
-            lambda: human_click(view.frame, resolution.locator), source_page=page,
+        result = await browser.coordinate_action(
+            lambda: document.click(resolution),
+            source_tab=resolved_tab,
         )
-        return await _format_result(result, page, tool_name="click", resolution=resolution)
+        return await format_action_result(result, tool_name="click", resolution=resolution)
     except BrowserToolError as exc:
         return str(exc)
-    except PlaywrightError as exc:  # pragma: no cover - final safety net
-        logger.exception("Failed to build snapshot after click for selector %s", clean_selector)
+    except PlaywrightError:  # pragma: no cover - final safety net
+        logger.exception("Failed to render document after click for ref %s", clean_ref)
         return "[click] Failed to complete click operation."
 
 
 @emit_screenshot_after
 async def press_and_hold(
-    selector: str, duration_ms: int = 3000, *, tab: str,
+    ref: str,
+    duration_ms: int = 3000,
+    *,
+    tab: str,
 ) -> str:
     """Press and hold an element for a specified duration.
 
@@ -264,47 +112,48 @@ async def press_and_hold(
     for several seconds (e.g. Walmart's press-and-hold verification).
 
     Args:
-        selector: Ref number from ``browse_page()`` output.
+        ref: Ref number from ``browse_page()`` output.
             Examples: ``"7"``, ``"12"``.
         duration_ms: How long to hold the mouse button in milliseconds.
             Defaults to 3000 (3 seconds). Range: 500-10000.
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string after the hold is released.
+        Updated rendered-document string after the hold is released.
 
     Raises:
         BrowserToolError: If the element is not found or the hold fails.
     """
-    clean_selector = selector.strip()
-    if not clean_selector:
-        raise BrowserToolError("selector must be a non-empty string", tool="press_and_hold")
+    clean_ref = ref.strip()
+    if not clean_ref:
+        raise BrowserToolError("ref must be a non-empty string", tool="press_and_hold")
 
     clamped_duration = max(500, min(10000, duration_ms))
 
-    browser, view = await get_active_view("press_and_hold", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("press_and_hold", tab=tab)
 
-    resolution = await _resolve_or_raise(view.frame, clean_selector, tool_name="press_and_hold")
+    resolution = await document.resolve_ref(clean_ref, tool_name="press_and_hold")
 
     details = {
-        "query": resolution.query,
-        "selector": resolution.resolved_selector,
+        "ref": resolution.ref,
         "duration_ms": clamped_duration,
     }
 
     try:
-        result = await browser.perform_interaction(
-            lambda: human_press_and_hold(view.frame, resolution.locator, duration_ms=clamped_duration),
-            source_page=page,
+        result = await browser.coordinate_action(
+            lambda: document.press_and_hold(
+                resolution,
+                duration_ms=clamped_duration,
+            ),
+            source_tab=resolved_tab,
             wait_for_navigation=False,
         )
-        return await _format_result(result, page, tool_name="press_and_hold", resolution=resolution)
+        return await format_action_result(result, tool_name="press_and_hold", resolution=resolution)
     except BrowserToolError:
         raise
     except PlaywrightError as exc:  # pragma: no cover - final safety net
-        logger.exception("Failed to complete press_and_hold for selector %s", clean_selector)
+        logger.exception("Failed to complete press_and_hold for ref %s", clean_ref)
         raise BrowserToolError(
             "Failed to complete press_and_hold operation",
             tool="press_and_hold",
@@ -324,11 +173,11 @@ async def drag(
     Args:
         source: Ref number from ``browse_page()`` for the drag start element.
         target: Ref number for the drop destination.
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string.
+        Updated rendered-document string.
 
     Raises:
         BrowserToolError: If elements are not found or the drag fails.
@@ -341,34 +190,25 @@ async def drag(
     if not clean_target:
         raise BrowserToolError("target must be a non-empty string", tool="drag")
 
-    browser, view = await get_active_view("drag", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("drag", tab=tab)
 
-    source_resolution = await _resolve_or_raise(view.frame, clean_source, tool_name="drag")
+    source_resolution = await document.resolve_ref(clean_source, tool_name="drag")
 
-    target_resolution = await _resolve_or_raise(view.frame, clean_target, tool_name="drag")
+    target_resolution = await document.resolve_ref(clean_target, tool_name="drag")
 
     details: dict[str, Any] = {
-        "source": {
-            "selector": source_resolution.resolved_selector,
-            "query": source_resolution.query,
-        },
-        "target": {
-            "selector": target_resolution.resolved_selector,
-            "query": target_resolution.query,
-        },
+        "source_ref": source_resolution.ref,
+        "target_ref": target_resolution.ref,
     }
 
     async def _perform_drag() -> None:
-        await human_drag(
-            view.frame,
-            source_resolution.locator,
-            target_locator=target_resolution.locator,
-        )
+        await document.drag(source_resolution, target_resolution)
 
     try:
-        browser_result = await browser.perform_interaction(
-            _perform_drag, source_page=page, wait_for_navigation=False,
+        browser_result = await browser.coordinate_action(
+            _perform_drag,
+            source_tab=resolved_tab,
+            wait_for_navigation=False,
         )
     except BrowserToolError:
         raise
@@ -377,12 +217,12 @@ async def drag(
         msg = "Playwright error performing drag"
         raise BrowserToolError(msg, tool="drag", details=details) from exc
 
-    return await _format_result(browser_result, page, tool_name="drag", resolution=source_resolution)
+    return await format_action_result(browser_result, tool_name="drag", resolution=source_resolution)
 
 
 @emit_screenshot_after
 async def fill_field(
-    selector: str,
+    ref: str,
     value: str | int | float | bool | None,
     *,
     tab: str,
@@ -390,81 +230,53 @@ async def fill_field(
     """Type into a text input or textarea field.
 
     Pass the complete text in a single call — do not call multiple times
-    with individual characters.  Returns an updated page snapshot.
+    with individual characters. Returns an updated rendered document.
 
     Args:
-        selector: Ref number from ``browse_page()`` output.
+        ref: Ref number from ``browse_page()`` output.
             Examples: ``"7"``, ``"12"``.
         value: The complete text to type (converted to string).
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string.
+        Updated rendered-document string.
 
     Raises:
         BrowserToolError: If the element is not found or is unsupported.
     """
-    clean_selector = selector.strip()
-    if not clean_selector:
-        msg = "selector must be a non-empty string"
+    clean_ref = ref.strip()
+    if not clean_ref:
+        msg = "ref must be a non-empty string"
         raise BrowserToolError(msg, tool="fill_field")
 
     # Allow callers to pass None; convert to empty string for typing into fields.
     text_value = "" if value is None else str(value)
 
-    browser, view = await get_active_view("fill_field", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("fill_field", tab=tab)
 
-    resolution = await _resolve_or_raise(view.frame, clean_selector, tool_name="fill_field")
-
-    locator = resolution.locator
-    details = {
-        "query": resolution.query,
-        "selector": resolution.resolved_selector,
-    }
-
-    tag_name = ""
-    input_type = ""
-    is_contenteditable = False
-    try:
-        handle = await locator.element_handle(timeout=5000)
-        if handle is not None:
-            tag_name = await handle.evaluate("el => el.tagName.toLowerCase()")
-            if tag_name == "input":
-                raw_type = await handle.get_attribute("type")
-                input_type = (raw_type or "text").lower()
-            is_contenteditable = await handle.evaluate("el => el.isContentEditable")
-    except PlaywrightError as exc:  # pragma: no cover - defensive introspection aid
-        logger.debug("Failed to introspect element for fill_field: %s", exc)
-
-    if tag_name not in {"input", "textarea"} and not is_contenteditable:
-        msg = "fill_field only supports input, textarea, and contenteditable elements"
-        raise BrowserToolError(msg, tool="fill_field", details=details)
-
-    unsupported_inputs = {"checkbox", "radio", "submit", "button", "image", "file", "hidden"}
-    if tag_name == "input" and input_type in unsupported_inputs:
-        msg = f"Input type '{input_type}' is not supported by fill_field."
-        raise BrowserToolError(msg, tool="fill_field", details=details)
+    resolution = await document.resolve_ref(clean_ref, tool_name="fill_field")
 
     async def _perform_fill() -> None:
-        try:
-            await human_click(view.frame, locator)
-        except PlaywrightError:
-            await locator.click(force=True, timeout=5000)
-        await human_type(view.frame, locator, text_value, clear_existing=True)
+        await document.fill_field(resolution, text_value)
 
     try:
-        result = await browser.perform_interaction(
-            _perform_fill, source_page=page, wait_for_navigation=False,
+        result = await browser.coordinate_action(
+            _perform_fill,
+            source_tab=resolved_tab,
+            wait_for_navigation=False,
         )
-        return await _format_result(result, page, tool_name="fill_field", resolution=resolution)
+        return await format_action_result(result, tool_name="fill_field", resolution=resolution)
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
-        logger.exception("Playwright error during fill_field for selector %s", clean_selector)
+        logger.exception("Playwright error during fill_field for ref %s", clean_ref)
         msg = f"Playwright error filling element: {exc}"
-        raise BrowserToolError(msg, tool="fill_field", details=details) from exc
+        raise BrowserToolError(
+            msg,
+            tool="fill_field",
+            details={"ref": resolution.ref},
+        ) from exc
 
 
 @emit_screenshot_after
@@ -477,11 +289,11 @@ async def press_keys(keys: list[str], *, tab: str) -> str:
     Args:
         keys: List of key names.  Examples: ``["Enter"]``, ``["Escape"]``,
             ``["ArrowDown"]``, ``["Control+Shift+P"]``.
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string.
+        Updated rendered-document string.
 
     Raises:
         BrowserToolError: If keys are invalid or key presses fail.
@@ -489,14 +301,14 @@ async def press_keys(keys: list[str], *, tab: str) -> str:
     if not isinstance(keys, list) or len(keys) == 0:
         raise BrowserToolError("keys must be a non-empty list of key names", tool="press_keys")
 
-    browser, view = await get_active_view("press_keys", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("press_keys", tab=tab)
 
     try:
-        result = await browser.perform_interaction(
-            lambda: human_press_keys(view.frame, keys), source_page=page,
+        result = await browser.coordinate_action(
+            lambda: document.press_keys(keys),
+            source_tab=resolved_tab,
         )
-        return await _format_result(result, page, tool_name="press_keys")
+        return await format_action_result(result, tool_name="press_keys")
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
@@ -512,7 +324,7 @@ async def scroll_page(
     *,
     tab: str,
 ) -> str:
-    """Scroll the page and return an updated snapshot.
+    """Scroll the page and return an updated rendered document.
 
     A scroll budget is enforced per URL.  After several scrolls a warning
     appears; after the hard limit, scrolling is refused.  Use
@@ -524,11 +336,11 @@ async def scroll_page(
             ``"top"``, or ``"bottom"``.
         amount: Optional pixel distance for ``"down"``/``"up"``.  Omit for
             a viewport-sized scroll.
-        tab: Stable tab ID to act on — the ID shown in the snapshot
+        tab: Stable tab ID to act on — the ID shown in the document
             header (e.g. ``tab="3"``).
 
     Returns:
-        Updated page snapshot string with scroll state.
+        Updated rendered-document string with scroll state.
 
     Raises:
         BrowserToolError: If direction is invalid or scroll budget exhausted.
@@ -536,8 +348,7 @@ async def scroll_page(
     if not isinstance(direction, str) or not direction:
         raise BrowserToolError("direction must be a non-empty string", tool="scroll_page")
 
-    browser, view = await get_active_view("scroll_page", tab=tab)
-    page = view.page
+    browser, resolved_tab, document = await get_document("scroll_page", tab=tab)
 
     cfg = load_config()
     warn_threshold = cfg.tools.browser.scroll_warn_threshold
@@ -547,8 +358,8 @@ async def scroll_page(
     scroll_url = _scroll_url_var.get()
 
     # Reset counter when the page URL changes (navigation, click-through, etc.)
-    if view.url != scroll_url:
-        _scroll_url_var.set(view.url)
+    if resolved_tab.url != scroll_url:
+        _scroll_url_var.set(resolved_tab.url)
         scroll_count = 0
 
     # Hard limit: refuse to scroll further
@@ -564,9 +375,9 @@ async def scroll_page(
     _scroll_count_var.set(scroll_count)
 
     try:
-        interaction_result = await browser.perform_interaction(
-            lambda: human_scroll(view.frame, direction=direction, amount=amount),
-            source_page=page,
+        interaction_result = await browser.coordinate_action(
+            lambda: document.scroll(direction, amount),
+            source_tab=resolved_tab,
             wait_for_navigation=False,
         )
     except BrowserToolError:
@@ -575,11 +386,13 @@ async def scroll_page(
         logger.exception("Playwright error during scroll_page for direction %s", direction)
         raise BrowserToolError(f"Playwright error performing scroll: {exc}", tool="scroll_page") from exc
 
-    # Build snapshot which includes viewport/scroll info
-    annotated = await _build_snapshot(None, page=page)  # Scroll never produces navigation
-    _log_browser_panel(interaction_result, snapshot=annotated, tool_name="scroll_page")
+    # Render the document with updated viewport/scroll information.
+    result_tab = interaction_result.tab
+    set_result_tab(result_tab)
+    rendered = await result_tab.render_document(interaction_result.navigation_response)
+    _log_browser_panel(interaction_result, rendered=rendered, tool_name="scroll_page")
 
-    content = annotated.content
+    content = rendered.content
     # Inject warning after threshold
     if scroll_count >= warn_threshold:
         remaining = hard_limit - scroll_count
@@ -591,50 +404,13 @@ async def scroll_page(
             "---\n"
         )
 
-    return format_page_view(
-        title=annotated.title,
-        url=annotated.url,
-        status_code=annotated.status_code,
-        viewport=annotated.viewport,
-        content=content,
-        truncated=annotated.truncated,
-        tab_id=browser.tab_id_of(page),
-    )
-
-
-@emit_screenshot_after
-async def go_back(*, tab: str) -> str:
-    """Navigate back in browser history and return an updated snapshot.
-
-    Args:
-        tab: Tab ID to act on.
-
-    Returns:
-        Updated page snapshot string.
-
-    Raises:
-        BrowserToolError: If back navigation fails.
-    """
-    browser, view = await get_active_view("go_back", tab=tab)
-    page = view.page
-
-    try:
-        browser_result = await browser.navigate_back(page=page)
-    except BrowserToolError:
-        raise
-    except PlaywrightError as exc:
-        logger.exception("Playwright error during go_back")
-        msg = "Failed to navigate back"
-        raise BrowserToolError(msg, tool="go_back") from exc
-
-    return await _format_result(browser_result, page, tool_name="go_back")
+    return format_rendered_document(replace(rendered, content=content), tab_id=result_tab.id)
 
 
 __all__ = [
     "click",
     "drag",
     "fill_field",
-    "go_back",
     "press_and_hold",
     "press_keys",
     "scroll_page",

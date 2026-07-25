@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from config import load_config
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.save_content import save_page_content
+from tools.browser import BrowserToolError
+from tools.browser import save_page_content
 
 _EXPECTED_MARKDOWN = """\
 # The Hubble Telescope
@@ -21,12 +21,12 @@ It carries cameras and spectrographs. See the [mission overview](</article/artic
   * Cosmic Origins Spectrograph"""
 
 
-async def test_save_page_content_writes_markdown(browser_session, servers, tmp_path, monkeypatch):
+async def test_save_page_content_writes_markdown(open_tab, servers, tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(load_config().virtual_computer, "home_dir", str(home))
 
-    tab = await browser_session.open(f"{servers.primary}/article/article.html")
+    tab = await open_tab(f"{servers.primary}/article/article.html")
     result = await save_page_content("article.md", tab=tab)
 
     saved = home / "article.md"
@@ -36,9 +36,9 @@ async def test_save_page_content_writes_markdown(browser_session, servers, tmp_p
     assert result == f"[Saved: article.md | {saved} | {saved.stat().st_size} bytes]"
 
 
-async def test_save_page_content_rejects_paths(browser_session, servers, tmp_path, monkeypatch):
+async def test_save_page_content_rejects_paths(open_tab, servers, tmp_path, monkeypatch):
     monkeypatch.setattr(load_config().virtual_computer, "home_dir", str(tmp_path))
-    tab = await browser_session.open(f"{servers.primary}/article/article.html")
+    tab = await open_tab(f"{servers.primary}/article/article.html")
 
     with pytest.raises(BrowserToolError):
         await save_page_content("sub/dir/page.md", tab=tab)

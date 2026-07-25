@@ -2,30 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from tests.unit.tools.browser.support.playwright_stubs import StubPage
 from tools.browser import BrowserToolError
+from tools.browser.core.document import Document, ResolvedElement
 from tools.browser.interactions import drag
-from tests.unit.tools.browser.support.playwright_stubs import StubLocator, StubPage
-
-
-async def _human_drag_probe(
-    page: StubPage,
-    source_locator: StubLocator,
-    *,
-    target_locator: StubLocator,
-) -> None:
-    page.drag_calls.append(  # type: ignore[attr-defined]
-        {
-            "source": source_locator,
-            "target": target_locator,
-        }
-    )
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_drag_with_target_selector(
+async def test_drag_delegates_to_document(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     page = StubPage(
@@ -34,18 +21,26 @@ async def test_drag_with_target_selector(
         url="https://example.test/drag",
     )
     page.drag_calls = []  # type: ignore[attr-defined]
-    source_locator = page.add_css_locator("#handle")
-    target_locator = page.add_css_locator(".drop-zone")
+    page.add_ref_locator(1)
+    page.add_ref_locator(2)
 
-    patch_interactions_browser(page)
-    monkeypatch.setattr("tools.browser.interactions.human_drag", _human_drag_probe)
+    browser_tool_harness(page)
 
-    result = await drag("#handle", ".drop-zone", tab="1")
+    async def record_drag(
+        document: Document,
+        source: ResolvedElement,
+        target: ResolvedElement,
+    ) -> None:
+        page.drag_calls.append(  # type: ignore[attr-defined]
+            {"source_ref": source.ref, "target_ref": target.ref}
+        )
+
+    monkeypatch.setattr(Document, "drag", record_drag)
+
+    result = await drag("1", "2", tab="1")
     assert isinstance(result, str)
     assert "[Page:" in result
-    assert page.drag_calls == [
-        {"source": source_locator, "target": target_locator}
-    ]
+    assert page.drag_calls == [{"source_ref": "1", "target_ref": "2"}]
     assert settle_tracker["count"] == 1
 
 
@@ -53,7 +48,7 @@ async def test_drag_with_target_selector(
 @pytest.mark.asyncio
 async def test_drag_with_ref(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     page = StubPage(
@@ -62,31 +57,39 @@ async def test_drag_with_ref(
         url="https://example.test/drag",
     )
     page.drag_calls = []  # type: ignore[attr-defined]
-    source_locator = page.add_ref_locator(1)
-    target_locator = page.add_ref_locator(2)
+    page.add_ref_locator(1)
+    page.add_ref_locator(2)
 
-    patch_interactions_browser(page)
-    monkeypatch.setattr("tools.browser.interactions.human_drag", _human_drag_probe)
+    browser_tool_harness(page)
+
+    async def record_drag(
+        document: Document,
+        source: ResolvedElement,
+        target: ResolvedElement,
+    ) -> None:
+        page.drag_calls.append(  # type: ignore[attr-defined]
+            {"source_ref": source.ref, "target_ref": target.ref}
+        )
+
+    monkeypatch.setattr(Document, "drag", record_drag)
 
     result = await drag("1", "2", tab="1")
     assert "[Page:" in result
-    assert page.drag_calls == [
-        {"source": source_locator, "target": target_locator}
-    ]
+    assert page.drag_calls == [{"source_ref": "1", "target_ref": "2"}]
     assert settle_tracker["count"] == 1
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_drag_empty_source(
-    patch_interactions_browser,
+    browser_tool_harness,
 ) -> None:
     page = StubPage(
         title="Drag Playground",
         body_text="Welcome to the drag playground.",
         url="https://example.test/drag",
     )
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError):
         await drag("", "1", tab="1")
@@ -95,7 +98,7 @@ async def test_drag_empty_source(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_drag_empty_target(
-    patch_interactions_browser,
+    browser_tool_harness,
 ) -> None:
     page = StubPage(
         title="Drag Playground",
@@ -103,7 +106,7 @@ async def test_drag_empty_target(
         url="https://example.test/drag",
     )
     page.add_ref_locator(1)
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError):
         await drag("1", "", tab="1")
@@ -112,15 +115,15 @@ async def test_drag_empty_target(
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_drag_target_not_found(
-    patch_interactions_browser,
+    browser_tool_harness,
 ) -> None:
     page = StubPage(
         title="Drag Playground",
         body_text="Welcome to the drag playground.",
         url="https://example.test/drag",
     )
-    page.add_css_locator("#handle")
-    patch_interactions_browser(page)
+    page.add_ref_locator(1)
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError):
-        await drag("#handle", ".missing", tab="1")
+        await drag("1", "99", tab="1")

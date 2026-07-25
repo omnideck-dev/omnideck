@@ -201,9 +201,19 @@ logs:
 unit:
     PYTHONPATH=. uv run pytest tests/unit/
 
-# Run browser-tools tests (real headless Chrome against local fixture pages)
+# Run browser-tools tests (real headed Chrome against local fixture pages)
 test-browser-tools *args:
-    PYTHONPATH=. uv run pytest tests/browser_tools/ -n 4 {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v xvfb-run >/dev/null 2>&1; then
+        # Keep headed test windows isolated from the developer's desktop.
+        PYTHONPATH=. xvfb-run -a uv run pytest tests/browser_tools/ -n 4 {{args}}
+    elif [[ -n "${DISPLAY:-}" ]]; then
+        PYTHONPATH=. uv run pytest tests/browser_tools/ -n 4 {{args}}
+    else
+        echo "A display or xvfb-run is required for headed browser-tool tests." >&2
+        exit 1
+    fi
 
 # Run tests matching a specific file or path
 test-file file:

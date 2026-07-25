@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from playwright.async_api import Error as PlaywrightError
 
-from tools.browser.core._challenge import (
+from tools.browser.core.challenges import (
     ChallengeInfo,
     detect_challenge,
     is_cloudflare_challenge_response,

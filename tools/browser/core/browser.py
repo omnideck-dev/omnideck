@@ -7,18 +7,19 @@ shutdown while keeping a light surface area.
 
 from __future__ import annotations
 
-import atexit
 import asyncio
-import time
 import logging
-import os
 import platform
 import secrets
-import signal
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
+from playwright.async_api import (
+    Browser as PlaywrightBrowser,
+)
 from playwright.async_api import (
     BrowserContext,
     Frame,
@@ -30,211 +31,49 @@ from playwright.async_api import (
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from sdk.events import (
-    get_current_agent_id,
-    get_current_depth,
-    register_agent_span_exit_hook,
-    register_conversation_exit_hook,
-)
-from sdk.turn._turn import get_conversation_id
-from pydantic import BaseModel, ConfigDict
-
-import tools.browser.core.waits as browser_waits
 from config import load_config
-from tools.browser.core._challenge import ChallengeInfo, detect_challenge
+from tools.browser.core.challenges import detect_challenge
+from tools.browser.core.downloads import DownloadInfo
 from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core._file_detection import DownloadInfo
+from tools.browser.core.launch import (
+    _ANTI_BOT_SCRIPT,
+    _OPEN_SHADOW_DOM_SCRIPT,
+    _apply_ua_override,
+    _chrome_args,
+    _chrome_ua_metadata,
+    _launch_options,
+)
+from tools.browser.core.tab import Tab
 
 if TYPE_CHECKING:  # Imported only for type checking to avoid runtime dependency surface
     from playwright.async_api import Geolocation, ProxySettings
 
-# Union type for functions that can operate on either a Page or a Frame.
-# Frame exposes the same DOM-query API as Page (evaluate, locator, get_by_role,
-# get_by_text, etc.) but lacks mouse/keyboard and screenshot methods.
-PageOrFrame = Page | Frame
-
-
-class ActiveView(NamedTuple):
-    """The resolved view a tool should operate on for one tab.
-
-    A tab is not a single document. It is a frame tree: the top-level page is
-    the root frame, and it may contain iframes. So "the page" is ambiguous —
-    the content the agent cares about sometimes lives in an iframe that fills
-    the viewport (an embedded app, a doc viewer, a payment widget). The active
-    view is the one answer to "which frame do tools read from and act on right
-    now", resolved once and cached, so every tool agrees instead of each
-    re-deciding. Tools get it from ``active_view()`` and never resolve frames
-    themselves.
-
-    ``frame`` is that context. It is the ``Page`` when the top document is the
-    target, or a ``Frame`` when a dominant iframe is. The two are
-    interchangeable for content operations — a ``Page`` delegates ``evaluate`` /
-    ``click`` / ``query_selector`` to its own main frame — so a tool acts on
-    either without caring which it got. ``page`` recovers the owning ``Page``
-    when a caller needs the tab-level methods a ``Frame`` lacks (title,
-    viewport, dialogs).
-
-    ``title`` and ``url`` always come from the main page, never from ``frame``.
-    When the active frame is an iframe its own url is usually an embed or CDN
-    origin the agent never navigated to; pinning identity to the main page
-    keeps "what page am I on" stable while the interaction target may be nested.
-
-    ``challenge`` is set when the tab is an anti-bot "Verify you are human"
-    interstitial (Cloudflare, …). The browser can't get past it, so ``frame``
-    stays the main page and tools replace the view with ``challenge.banner`` to
-    route the agent to fetch_url rather than entering the interstitial's frame.
-    """
-
-    frame: Page | Frame
-    title: str
-    url: str
-    challenge: ChallengeInfo | None = None
-
-    @property
-    def page(self) -> Page:
-        """The ``Page`` owning ``frame`` — same as ``frame`` for the main page."""
-        return self.frame.page if isinstance(self.frame, Frame) else self.frame
-
 logger = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class ActionResult:
+    """Complete outcome of one browser-coordinated action."""
 
-# ---------------------------------------------------------------------------
-# Shared helper injected into both stealth scripts
-# ---------------------------------------------------------------------------
-
-_MAKE_NATIVE_JS = r"""
-// Helper: make a replaced function's .toString() return a native code string.
-// Handles the common check: fn.toString() and fn.toString.toString().
-// Note: Function.prototype.toString.call(fn) will still reveal the real source,
-// but virtually no bot detection does this check.
-const _makeNative = (fn, nativeName) => {
-  const toStr = `function ${nativeName}() { [native code] }`;
-  const toString = () => toStr;
-  Object.defineProperty(toString, 'toString', {
-    value: () => 'function toString() { [native code] }',
-    configurable: true, writable: false,
-  });
-  Object.defineProperty(fn, 'toString', {
-    value: toString, configurable: true, writable: false,
-  });
-  return fn;
-};
-"""
-
-# ---------------------------------------------------------------------------
-# The only patch needed for real Chrome: remove the webdriver property so
-# navigator.webdriver is undefined, matching a real non-automated browser.
-# --disable-blink-features=AutomationControlled prevents Playwright from
-# injecting navigator.webdriver=true via CDP, so deleting the native C++
-# getter (which returns false with that flag) leaves the property fully absent.
-# Redefining it as false is detectable — fp-collect checks for the property's
-# existence, not just its value.
-# ---------------------------------------------------------------------------
-
-_ANTI_BOT_SCRIPT = (
-    "// --- Stealth patches to reduce automation detection ---\n"
-    + _MAKE_NATIVE_JS
-    + r"""
-// webdriver flag — delete it entirely so navigator.webdriver is undefined.
-// In a real non-automated Chrome the property does not exist at all.
-// --disable-blink-features=AutomationControlled prevents Playwright from
-// re-injecting it, so it is safe to leave it absent.
-delete Navigator.prototype.webdriver;
-delete navigator.webdriver;
-"""
-)
-
-# Force all shadow DOM attachments to use open mode so the DOM walker
-# in page_view.py can traverse shadow roots.  Closed shadow roots
-# return null from el.shadowRoot, making their contents invisible to
-# JavaScript-based DOM walkers.  Playwright's own locators already
-# pierce closed shadow DOM via CDP, so interactions still work — this
-# patch only affects snapshot visibility.
-_OPEN_SHADOW_DOM_SCRIPT = r"""
-(function() {
-  const _origAttachShadow = Element.prototype.attachShadow;
-  Element.prototype.attachShadow = function(opts) {
-    return _origAttachShadow.call(this, { ...opts, mode: 'open' });
-  };
-})();
-"""
-
-class BrowserInteractionResult(BaseModel):
-    """Structured metadata describing the outcome of a browser interaction."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
+    # A successful action always has a resulting tab. Requiring it here keeps
+    # callers from carrying a separate source-tab fallback through formatting.
+    tab: Tab
     navigation_response: Response | None = None
     download: DownloadInfo | None = None
-    settle_timings: browser_waits.SettleTimings | None = None
-    frame_transition: str | None = None
+    document_transition: str | None = None
     action_ms: float = 0.0
-    # The tab the interaction finished on.  It is not always the tab it started
-    # from: clicking a link that targets a new tab leaves the agent in that tab.
-    # Callers render this one, or the click looks like it did nothing.
-    settled_page: Page | None = None
-
-
-def _chrome_ua_metadata(version: str) -> tuple[str, dict]:
-    """Build a Chrome UA string + Client Hints metadata at the given
-    engine version, internally consistent across all three surfaces
-    (legacy header, Sec-CH-UA headers, navigator.userAgentData)."""
-    major = version.split(".")[0]
-    ua_string = (
-        f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        f"(KHTML, like Gecko) Chrome/{version} Safari/537.36"
-    )
-    metadata = {
-        "brands": [
-            {"brand": "Google Chrome", "version": major},
-            {"brand": "Chromium", "version": major},
-            {"brand": "Not_A Brand", "version": "24"},
-        ],
-        "fullVersionList": [
-            {"brand": "Google Chrome", "version": version},
-            {"brand": "Chromium", "version": version},
-            {"brand": "Not_A Brand", "version": "24.0.0.0"},
-        ],
-        "platform": "Linux",
-        "platformVersion": "6.5.0",
-        "architecture": "x86",
-        "model": "",
-        "mobile": False,
-        "bitness": "64",
-        "wow64": False,
-    }
-    return ua_string, metadata
-
-
-async def _apply_ua_override(
-    context: BrowserContext, ua_string: str, ua_metadata: dict
-) -> None:
-    """Patch every page's UA + Client Hints via CDP."""
-    async def _override(page: Page) -> None:
-        try:
-            client = await context.new_cdp_session(page)
-            await client.send(
-                "Network.setUserAgentOverride",
-                {"userAgent": ua_string, "userAgentMetadata": ua_metadata},
-            )
-        except Exception:
-            logger.warning("Failed to apply CDP UA override", exc_info=True)
-
-    for page in context.pages:
-        await _override(page)
-    context.on("page", lambda page: asyncio.create_task(_override(page)))
+    navigation_wait_ms: float = 0.0
 
 
 class Browser:
     """Minimal persistent Playwright browser core for powering LLM tools.
 
     Example:
-        core = await CoreBrowser.start(profile_dir="~/.playwright/profiles/agent1")
-        page = await core.new_page()
-        await page.goto("https://example.com")
+        browser = await Browser.start(profile_dir="~/.playwright/profiles/agent1")
+        tab = await browser.new_tab()
+        await browser.navigate("https://example.com", tab=tab)
         ...
-        await core.close()
+        await browser.close()
     """
 
     def __init__(
@@ -242,8 +81,9 @@ class Browser:
         context: BrowserContext,
         extra_headers: dict[str, str] | None = None,
         pw: Playwright | None = None,
-        pw_browser: Any = None,
+        pw_browser: PlaywrightBrowser | None = None,
         profile_dir: str = "",
+        downloads_dir: str = "",
     ) -> None:
         """Initialize the browser wrapper.
 
@@ -254,39 +94,19 @@ class Browser:
             pw_browser: The Playwright Browser object. Present on the root
                 browser so sub-agents can create new contexts on it.
             profile_dir: Path to the browser session state directory.
+            downloads_dir: Directory where captured downloads are stored.
         """
         self._context: BrowserContext = context
         self._profile_dir: str = profile_dir
         self._extra_headers: dict[str, str] = extra_headers or {}
         self._pw: Playwright | None = pw
-        self._pw_browser: Any = pw_browser
+        self._pw_browser = pw_browser
         self._closed: bool = False
-        # Per-tab cache of the dominant iframe we detected on that tab.
-        #
-        # Some pages render their primary content inside a large iframe
-        # (booking widgets, payment frames, embedded apps).  When such a
-        # frame covers most of the viewport we cache it so subsequent
-        # tool calls read/click against its DOM instead of the parent
-        # page's.  Re-detecting on every tool call would be wasteful and
-        # would also disturb settle timings.
-        #
-        # Invalidated when any of these happen for a given page:
-        #   - the tab is closed (page "close" listener)
-        #   - the tab is about to navigate (cleared at the top of navigate())
-        #   - _finalize_action sees a download or a URL change (PDF
-        #     viewer stub or a fresh page — old frame is gone)
-        #   - the cached frame becomes detached (checked at read time)
-        self._dominant_frames: dict[Page, Frame] = {}
-        # Tabs currently behind an anti-bot interstitial, mapped to the detected
-        # challenge (vendor + banner). Cleared whenever the page changes
-        # (navigation, tab close, URL change) so a stale banner never outlives
-        # the page that raised it.
-        self._challenges: dict[Page, ChallengeInfo] = {}
-        self._tab_id_of: dict[Page, int] = {}
+        self._tabs_by_id: dict[int, Tab] = {}
+        self._tabs_by_page: dict[Page, Tab] = {}
         self._next_tab_id: int = 0
-        self._pages_in_navigation: set[Page] = set()
         self._pending_downloads: list[DownloadInfo] = []
-        self._downloads_dir: str = ""
+        self._downloads_dir = downloads_dir
         self._download_listener_pages: set[int] = set()  # page id() tracking
         self._download_tasks: set[asyncio.Task[None]] = set()
         self._download_event: asyncio.Event = asyncio.Event()
@@ -294,6 +114,8 @@ class Browser:
         # Track every page the context creates (opened by us, by a link, or
         # target=_blank) the moment it exists: stable tab id + download + close.
         self._context.on("page", self._track_page)
+        for page in self._context.pages:
+            self._track_page(page)
 
         # Capture the Playwright driver PID so the atexit handler can kill the
         # process tree if the async close path never ran (e.g. SIGKILL, event
@@ -331,21 +153,27 @@ class Browser:
         ``window.open`` — the moment it's created, before any other ``page``
         listener runs. That means a tab the site opens gets a stable ID and is
         visible to anything mirroring the tab set, not only
-        tabs opened via ``new_page``. Guards against double-tracking the same
+        tabs opened via ``new_tab``. Guards against double-tracking the same
         page (re-entry is a no-op).
         """
-        if page in self._tab_id_of:
+        if page in self._tabs_by_page:
             self._attach_download_listener(page)
             return
         self._next_tab_id += 1
-        self._tab_id_of[page] = self._next_tab_id
+        tab = Tab(self._next_tab_id, page)
+        self._tabs_by_id[tab.id] = tab
+        self._tabs_by_page[page] = tab
         self._attach_download_listener(page)
 
-        def _on_close(_p: Any) -> None:
-            self._tab_id_of.pop(page, None)
-            self._pages_in_navigation.discard(page)
-            self._invalidate_active_view(page)
+        def _on_frame_navigated(frame: Frame) -> None:
+            tab._handle_frame_navigated(frame)
 
+        def _on_close(_p: Any) -> None:
+            self._tabs_by_page.pop(page, None)
+            self._tabs_by_id.pop(tab.id, None)
+            tab._invalidate_document()
+
+        page.on("framenavigated", _on_frame_navigated)
         page.on("close", _on_close)
 
     async def _handle_download(self, download: Any) -> None:
@@ -372,19 +200,21 @@ class Browser:
                 except OSError:
                     logger.debug("Could not rename download to %s", suggested)
 
-            from tools.browser.core._file_detection import build_download_info_from_path
+            from tools.browser.core.downloads import build_download_info_from_path
 
             info = build_download_info_from_path(path)
             self._pending_downloads.append(info)
             self._download_event.set()
             logger.info(
                 "Download captured: %s (%s, %d bytes)",
-                info.filename, info.content_type, info.size_bytes,
+                info.filename,
+                info.content_type,
+                info.size_bytes,
             )
         except Exception:
             logger.exception("Failed to process download event")
 
-    def drain_downloads(self) -> list[DownloadInfo]:
+    def _drain_downloads(self) -> list[DownloadInfo]:
         """Return and clear any pending downloads captured since the last drain."""
         downloads = list(self._pending_downloads)
         self._pending_downloads.clear()
@@ -434,23 +264,7 @@ class Browser:
         profile_path = Path(profile_dir).expanduser().resolve()
         profile_path.mkdir(parents=True, exist_ok=True)
 
-        chrome_args = [
-            "--disable-blink-features=AutomationControlled",
-            "--disable-features=AutomationControlled",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            # Size the real window to a 1080p monitor. With no emulated viewport,
-            # the page viewport is this window minus the browser chrome — the
-            # natural screen >= window >= viewport relationship a real browser
-            # has. (Works without a window manager, unlike --start-maximized.)
-            "--window-size=1920,1080",
-            "--disable-session-crashed-bubble",
-            "--hide-crash-restore-bubble",
-            "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-            "--disable-pdf-viewer",
-        ]
-        if args:
-            chrome_args.extend(args)
+        chrome_args = _chrome_args(args)
 
         resolved_downloads_path: str | None = None
         if downloads_path:
@@ -458,26 +272,16 @@ class Browser:
             dl_path.mkdir(parents=True, exist_ok=True)
             resolved_downloads_path = str(dl_path)
 
-        launch_kwargs: dict[str, Any] = dict(
+        launch_kwargs = _launch_options(
             headless=headless,
-            args=chrome_args,
-            # Playwright adds --enable-automation by default, which turns on
-            # Chrome's automation mode (infobar + automation-mode behaviours a
-            # bot detector can key on). Drop it; navigator.webdriver is already
-            # suppressed by --disable-blink-features=AutomationControlled.
-            ignore_default_args=["--enable-automation"],
+            chrome_args=chrome_args,
+            downloads_path=resolved_downloads_path,
         )
-        # Google Chrome is amd64-only on Linux.  On arm64, omit the
-        # channel so Playwright uses its bundled Chromium instead.
-        if platform.machine() == "x86_64":
-            launch_kwargs["channel"] = "chrome"
-        if resolved_downloads_path:
-            launch_kwargs["downloads_path"] = resolved_downloads_path
 
         pw: Playwright = await async_playwright().start()
         try:
             pw_browser = await pw.chromium.launch(**launch_kwargs)
-        except Exception:
+        except Exception:  # noqa: BLE001 - restart the driver after any launch failure
             try:
                 await asyncio.wait_for(pw.stop(), timeout=5.0)
             except Exception:  # noqa: BLE001
@@ -491,13 +295,10 @@ class Browser:
 
         # Restore session state (cookies + localStorage) from previous run.
         state_file = profile_path / "storage_state.json"
-        storage_state: Any = None
+        storage_state: str | None = None
         if state_file.exists():
-            try:
-                storage_state = str(state_file)
-                logger.info("Restoring browser session from %s", state_file)
-            except Exception:  # noqa: BLE001
-                logger.warning("Failed to load browser storage state")
+            storage_state = str(state_file)
+            logger.info("Restoring browser session from %s", state_file)
 
         context_kwargs: dict[str, Any] = dict(
             no_viewport=True,
@@ -542,13 +343,14 @@ class Browser:
             pw=pw,
             pw_browser=pw_browser,
             profile_dir=str(profile_path),
+            downloads_dir=resolved_downloads_path or "",
         )
         instance._ua_string = ua_string
         instance._ua_metadata = ua_metadata
         return instance
 
     @classmethod
-    async def start_ephemeral(
+    async def _start_ephemeral(
         cls,
         root_browser: Browser,
         storage_state: Any,
@@ -569,6 +371,8 @@ class Browser:
         Returns:
             A ``Browser`` wrapping the new ephemeral context.
         """
+        if root_browser._pw_browser is None:
+            raise RuntimeError("Root Browser does not own a Chromium process")
         context = await root_browser._pw_browser.new_context(
             storage_state=storage_state,
             no_viewport=True,
@@ -586,22 +390,20 @@ class Browser:
 
         # Propagate arm64 UA override from the root browser.
         if root_browser._ua_string is not None and root_browser._ua_metadata is not None:
-            await _apply_ua_override(
-                context, root_browser._ua_string, root_browser._ua_metadata
-            )
+            await _apply_ua_override(context, root_browser._ua_string, root_browser._ua_metadata)
 
         instance = cls(
             context=context,
             extra_headers=headers,
             pw=None,  # ephemeral — does not own the Playwright driver
             profile_dir="",
+            downloads_dir=root_browser._downloads_dir,
         )
-        instance._downloads_dir = root_browser._downloads_dir
         instance._ua_string = root_browser._ua_string
         instance._ua_metadata = root_browser._ua_metadata
         return instance
 
-    async def close_context(self) -> None:
+    async def _close_context(self) -> None:
         """Close only the browser context, not the Playwright driver.
 
         Used for ephemeral sub-agent contexts that share the root's Chromium
@@ -622,21 +424,21 @@ class Browser:
         except Exception:  # noqa: BLE001
             logger.warning("Failed to close ephemeral browser context")
 
-    async def new_page(self) -> Page:
-        """Open a new page within the persistent context.
+    async def new_tab(self) -> Tab:
+        """Open and return a new stable tab.
 
         Assigns a stable monotonic tab ID that never repeats — closing a
         tab does not free its ID for reuse, so a later call that uses
         the old ID errors instead of pointing at a different page.
 
         Returns:
-            The newly created Playwright ``Page``.
+            The newly created ``Tab``.
 
         Raises:
             BrowserToolError: If the open-tab limit is already reached.
         """
         limit = load_config().tools.browser.max_open_tabs
-        open_count = len(self.open_tabs())
+        open_count = len(self.tabs())
         if open_count >= limit:
             raise BrowserToolError(
                 f"Tab limit reached ({open_count}/{limit} open). Close a tab with "
@@ -650,254 +452,90 @@ class Browser:
         # so every tab — opened by us or by the site — is the same size, like
         # tabs in a real browser window; don't re-roll a per-tab viewport here.
         page = await self._context.new_page()
-        return page
+        return self._require_tab_for_page(page)
 
-    def add_new_page_listener(self, callback: Callable[[Page], None]) -> None:
-        """Register *callback* to fire for each new tab opened.
+    def subscribe_to_new_tabs(
+        self,
+        callback: Callable[[Tab], None],
+    ) -> Callable[[], None]:
+        """Subscribe to newly opened tabs and return an unsubscribe callback."""
 
-        Lets a caller react when the context spawns a tab — e.g. to keep a
-        chosen tab in the foreground — without reaching into the context.
-        """
-        self._context.on("page", callback)
+        def _on_page(page: Page) -> None:
+            tab = self._tabs_by_page.get(page)
+            if tab is not None:
+                callback(tab)
 
-    def remove_new_page_listener(self, callback: Callable[[Page], None]) -> None:
-        """Unregister a callback previously passed to ``add_new_page_listener``."""
-        self._context.remove_listener("page", callback)
+        self._context.on("page", _on_page)
 
-    def tab_id_of(self, page: Page) -> int | None:
-        """Return the stable tab ID for *page*, or ``None`` if untracked.
+        def _unsubscribe() -> None:
+            self._context.remove_listener("page", _on_page)
 
-        The lookup lives on the Browser because Playwright's ``Page`` is
-        not our class — we can't hang an ID attribute on it.
-        """
-        return self._tab_id_of.get(page)
+        return _unsubscribe
 
-    def open_tabs(self) -> list[Page]:
-        """Return non-closed pages in the context, in opening order."""
-        return [p for p in self._context.pages if not p.is_closed()]
+    def tabs(self) -> list[Tab]:
+        """Return open tabs in browser order."""
+        return [
+            self._tabs_by_page[page]
+            for page in self._context.pages
+            if page in self._tabs_by_page and not page.is_closed()
+        ]
 
-    def _tab_listing(self) -> str:
-        """Render the open-tabs listing used in error messages."""
-        rows = []
-        for page in self.open_tabs():
-            tid = self._tab_id_of.get(page, "?")
-            rows.append(f"  tab={tid}: {page.url}")
-        return "Open tabs:\n" + "\n".join(rows) if rows else "No open tabs"
-
-    def resolve_tab(self, tab: str | int) -> Page:
-        """Look up the open tab with the given stable ID.
-
-        IDs are monotonic — closing a tab does not free its ID, so a
-        stale reference always errors rather than silently landing on a
-        different tab.
-        """
+    def get_tab(self, tab: str | int) -> Tab:
+        """Return the open tab with the given stable ID."""
         try:
             target_id = int(str(tab).strip())
         except ValueError:
             raise ValueError(
                 f"tab={tab!r} is not a valid ID. {self._tab_listing()}",
             ) from None
-        for page, tid in self._tab_id_of.items():
-            if tid == target_id and not page.is_closed():
-                return page
+        resolved = self._tabs_by_id.get(target_id)
+        if resolved is not None and not resolved.is_closed():
+            return resolved
         raise ValueError(
             f"tab={tab!r} not found. {self._tab_listing()}",
         )
 
-    async def active_frame(self, page: Page) -> Page | Frame:
-        """Return the cached dominant iframe for *page*, else the page.
+    def _tab_for_page(self, page: Page) -> Tab | None:
+        """Return the tab owning a Playwright page, if it is tracked."""
+        return self._tabs_by_page.get(page)
 
-        When a tab has a large iframe overlay (booking widget, payment
-        frame, embedded app) that covers most of the viewport, all
-        DOM-reading tools should operate on that iframe instead of the
-        main page.  This method returns whichever the tools should use.
+    def _tab_listing(self) -> str:
+        """Render the open-tabs listing used in error messages."""
+        rows = []
+        for tab in self.tabs():
+            rows.append(f"  tab={tab.id}: {tab.url}")
+        return "Open tabs:\n" + "\n".join(rows) if rows else "No open tabs"
 
-        Args:
-            page: The tab to look up.
-
-        Returns:
-            The cached dominant ``Frame`` if one is tracked for *page*
-            and still attached, otherwise *page* itself.
-        """
-        cached = self._dominant_frames.get(page)
-        if cached is not None:
-            if cached.is_detached():
-                logger.debug("Dominant frame for tab detached; falling back to page")
-                self._dominant_frames.pop(page, None)
-            else:
-                return cached
-        return page
-
-    def _invalidate_active_view(self, page: Page) -> None:
-        """Drop the cached active view for *page* — its dominant iframe and any
-        challenge state.
-
-        Call before a navigation on that tab (the new DOM won't share the old
-        iframe), on tab close, or whenever the cached view should be dropped and
-        re-resolved.
-        """
-        self._dominant_frames.pop(page, None)
-        self._challenges.pop(page, None)
-
-    async def active_view(self, page: Page) -> ActiveView:
-        """Return an ``ActiveView`` for tools to operate on.
-
-        Reads the dominant-iframe cache for *page*; re-detects (and
-        updates the cache) when the cached frame is missing or detached.
-        """
-        cached = self._dominant_frames.get(page)
-        if cached is not None and not cached.is_detached():
-            frame: Page | Frame = cached
-            challenge = self._challenges.get(page)
-        else:
-            self._dominant_frames.pop(page, None)
-            frame, challenge = await self._resolve_active_frame(page)
-            if isinstance(frame, Frame):
-                self._dominant_frames[page] = frame
-            if challenge is not None:
-                self._challenges[page] = challenge
-            else:
-                self._challenges.pop(page, None)
-
-        try:
-            title = await page.title()
-        except PlaywrightError:
-            title = ""
-
-        return ActiveView(frame=frame, title=title, url=page.url, challenge=challenge)
-
-    async def _resolve_active_frame(
-        self, page: Page,
-    ) -> tuple[Page | Frame, ChallengeInfo | None]:
-        """Decide which frame tools operate on and whether an interstitial blocks it.
-
-        An anti-bot interstitial takes priority: when one blocks the page the
-        browser can't get past it, so the main page stays the active view and
-        callers surface the challenge banner. Otherwise the largest content
-        iframe wins, else the page.
-        """
-        # detect_challenge is total — it swallows any detector error itself —
-        # so it needs no guard here.
-        challenge = await detect_challenge(page)
-        if challenge is not None:
-            return page, challenge
-
-        try:
-            dominant = await self._detect_dominant_frame(page)
-        except Exception:  # noqa: BLE001 - detection is best-effort
-            dominant = None
-        return (dominant if dominant is not None else page), None
-
-    # Minimum fraction of viewport area an iframe must cover to become dominant.
-    _DOMINANT_FRAME_THRESHOLD = 0.25
-
-    async def _detect_dominant_frame(self, page: Page) -> Frame | None:
-        """Find an iframe covering a large portion of the viewport.
-
-        Iterates all frames on the page, skips the main frame and detached
-        frames, measures each frame element's bounding box, and returns the
-        largest accessible frame that covers more than 25% of the viewport.
-
-        Returns:
-            The dominant ``Frame``, or ``None`` if no qualifying frame exists.
-        """
-        # Measure the real window, not page.viewport_size. The browser runs
-        # with no emulated viewport, so Playwright reports viewport_size as None
-        # even though the page fills the actual window; innerWidth/innerHeight
-        # give the true visible size (and match viewport_size when one is set).
-        try:
-            window_size = await page.evaluate(
-                "() => ({ width: window.innerWidth, height: window.innerHeight })"
-            )
-        except PlaywrightError:
-            return None
-        vw, vh = window_size.get("width", 0), window_size.get("height", 0)
-        if not vw or not vh:
-            return None
-        min_area = vw * vh * self._DOMINANT_FRAME_THRESHOLD
-
-        best_frame: Frame | None = None
-        best_area: float = 0
-
-        for frame in page.frames:
-            if frame == page.main_frame:
-                continue
-            if frame.is_detached():
-                continue
-            try:
-                element = await frame.frame_element()
-                box = await element.bounding_box()
-            except Exception:  # noqa: BLE001 - skip inaccessible frames
-                continue
-            if box is None:
-                continue
-
-            area = box["width"] * box["height"]
-            if area < min_area:
-                continue
-
-            # Verify the frame has accessible, meaningful content — not
-            # just an ad iframe with images/scripts but no real UI.
-            try:
-                content_check = await frame.evaluate(
-                    """() => {
-                        if (!document.body) return { children: 0, text: 0, interactive: 0 };
-                        return {
-                            children: document.body.children.length,
-                            text: (document.body.innerText || '').trim().length,
-                            interactive: document.body.querySelectorAll(
-                                'a[href], button, input, select, textarea'
-                            ).length,
-                        };
-                    }"""
-                )
-                has_content = (
-                    content_check["children"] > 0
-                    and (content_check["text"] > 0 or content_check["interactive"] > 3)
-                )
-                if has_content and area > best_area:
-                    best_frame = frame
-                    best_area = area
-            except Exception:  # noqa: BLE001 - cross-origin or detached
-                continue
-
-        return best_frame
-
-    async def pages(self) -> list[Page]:
-        """Return a snapshot list of all pages in the context.
-
-        This provides a public, read-only style accessor so external tool
-        helpers don't need to reach into the private ``_context`` attribute.
-
-        Returns:
-            list[Page]: Current pages (order: creation order as provided by Playwright).
-        """
-        return list(self._context.pages)
-
-    async def context(self) -> BrowserContext:
-        """Return the underlying persistent ``BrowserContext``."""
-        return self._context
+    def _require_tab_for_page(self, page: Page) -> Tab:
+        tab = self._tabs_by_page.get(page)
+        if tab is None:
+            raise ValueError("Playwright page is not tracked as a browser tab")
+        return tab
 
     async def navigate(
-        self, url: str, *, page: Page,
-    ) -> BrowserInteractionResult:
-        """Navigate *page* to *url* and return a ``BrowserInteractionResult``.
+        self,
+        url: str,
+        *,
+        tab: Tab,
+    ) -> ActionResult:
+        """Navigate *tab* to *url* and return a ``ActionResult``.
 
-        Raises ``BrowserToolError`` if *page* is already navigating —
+        Raises ``BrowserToolError`` if *tab* is already navigating —
         concurrent goto on the same tab is the loud-error case that
         teaches the agent to use ``new_tab`` for parallelism.
         """
-        if page in self._pages_in_navigation:
-            tid = self._tab_id_of.get(page, "?")
+        page = tab._page_for_browser()
+        if self._tabs_by_id.get(tab.id) is not tab or tab.is_closed():
+            raise BrowserToolError("Browser tab is no longer open", tool="goto")
+        if tab._navigation_in_progress():
             raise BrowserToolError(
-                f"Navigation already in flight on tab={tid}. "
-                f"Use new_tab(url) to open in parallel.",
+                f"Navigation already in flight on tab={tab.id}. Use new_tab(url) to open in parallel.",
                 tool="goto",
             )
-        self._pages_in_navigation.add(page)
+        tab._begin_navigation()
         # Any cached dominant iframe belongs to the old DOM; drop it
         # so the post-nav settle re-detects against the new one.
-        self._invalidate_active_view(page)
+        tab._invalidate_document()
         self._pending_downloads.clear()
         initial_url = getattr(page, "url", "")
         try:
@@ -917,15 +555,19 @@ class Browser:
                 except (PlaywrightTimeoutError, PlaywrightError):
                     pass
             return await self._finalize_action(
-                page, response=response, initial_url=initial_url,
+                page,
+                response=response,
+                initial_url=initial_url,
             )
         finally:
-            self._pages_in_navigation.discard(page)
+            tab._finish_navigation()
 
     async def navigate_back(
-        self, page: Page,
-    ) -> BrowserInteractionResult:
-        """Navigate *page* back in history via ``perform_interaction``."""
+        self,
+        tab: Tab,
+    ) -> ActionResult:
+        """Navigate *tab* back in history via ``coordinate_action``."""
+        page = tab._page_for_browser()
 
         async def _back() -> None:
             try:
@@ -935,10 +577,10 @@ class Browser:
                 )
             except (asyncio.TimeoutError, PlaywrightError):
                 # SPA may handle back navigation client-side without firing
-                # domcontentloaded. Fall through to settle/snapshot.
+                # domcontentloaded. Fall through to document settling/rendering.
                 logger.debug("go_back timed out (SPA likely handled navigation client-side)")
 
-        return await self.perform_interaction(_back, source_page=page)
+        return await self.coordinate_action(_back, source_tab=tab)
 
     # Timeouts for individual shutdown steps.  These are generous enough for
     # well-behaved pages but prevent indefinite hangs when Chromium is stuck.
@@ -994,7 +636,7 @@ class Browser:
             await asyncio.wait_for(self._context.close(), timeout=self._CONTEXT_CLOSE_TIMEOUT_S)
             logger.debug("BrowserContext closed")
         except asyncio.TimeoutError:
-            context_exc = TimeoutError("BrowserContext.close() timed out")
+            context_exc = asyncio.TimeoutError("BrowserContext.close() timed out")
             logger.warning(
                 "Timed out closing BrowserContext after %.1fs — will force-stop driver",
                 self._CONTEXT_CLOSE_TIMEOUT_S,
@@ -1055,7 +697,7 @@ class Browser:
         response: Response | None,
         initial_url: str,
         saw_download_response: bool = False,
-    ) -> BrowserInteractionResult:
+    ) -> ActionResult:
         """Resolve a tab's new state after a navigation or interaction.
 
         This is the shared pipeline run after anything changes the page. It
@@ -1074,48 +716,46 @@ class Browser:
         1. Downloads. Drain any captured download; if there is none but the
            response is a file content-type, save the body as a file.
 
-        2. Settle. If it was not a download, wait for the page to quiet, then
-           re-check for downloads that arrived during settle (same-tab
-           redirect-to-file chains) and honour a brief grace wait when an
-           attachment header was seen but its event has not fired yet.
+        2. Late downloads. Re-check events that arrived after the action and
+           honour a brief grace wait when an attachment header was seen but its
+           download event has not fired yet.
 
-        3. View resolution — the part that updates the caches. Exactly one case
+        3. Document resolution — the part that updates tab-local state. Exactly
+           one case
            applies:
-           - download: clear the cached view; the page may be a file-viewer stub
+           - download: clear the selected document; the page may be a file-viewer stub
              with no real DOM to resolve.
            - challenge: an anti-bot interstitial is up. Cache it, drop any
-             dominant frame (tools never act inside the interstitial), and label
+             embedded document (tools never act inside the interstitial), and label
              the transition the first time it appears. The response is passed to
              detection so header-only variants are caught here, where the header
              still exists.
-           - navigated with no challenge: a fresh document. Clear the cached view
-             and let the next read re-resolve it — dominant-iframe detection
+           - navigated with no challenge: a fresh document. Clear the selection
+             and let the next read resolve it — embedded-document detection
              deliberately skips fresh navigations.
-           - otherwise (an in-page change, no navigation): re-run dominant-iframe
-             detection, and if the dominant frame changed, label the transition,
-             update the cache, and settle the newly-entered frame.
+           - otherwise (an in-page change, no navigation): re-run embedded-document
+             selection and label a transition when the chosen document changes.
 
-        4. Return the result: the response, any download, settle timings, and the
-           frame transition — a short label for the log panel, e.g.
+        4. Return the result: the response, any download, and the document
+           transition — a short label for the log panel, e.g.
            ``"→ iframe <url>"`` or ``"→ cloudflare challenge"``.
         """
-        wait_cfg = load_config().tools.browser.waits
-
         # 1. Download detection
         download_info: DownloadInfo | None = None
 
         if self._download_tasks:
             await asyncio.gather(*self._download_tasks, return_exceptions=True)
 
-        pending = self.drain_downloads()
+        pending = self._drain_downloads()
         if pending:
             download_info = pending[0]
 
         if download_info is None and response is not None:
-            from tools.browser.core._file_detection import (
+            from tools.browser.core.downloads import (
                 is_file_content_type,
                 save_response_as_file,
             )
+
             ct = response.headers.get("content-type", "")
             if is_file_content_type(ct):
                 try:
@@ -1126,21 +766,13 @@ class Browser:
                 except Exception:
                     logger.exception("Failed to save file from response")
 
-        # 2. Settle (skip if download — no page to settle)
-        settle_timings = None
+        # 2. Re-check for downloads that arrived after the action. Page
+        # stabilization happens at the render-return boundary, after the selected
+        # document has been resolved and immediately before its DOM walk.
         if download_info is None:
-            try:
-                settle_timings = await browser_waits.wait_for_page_settle(page, waits=wait_cfg)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Page settle raised unexpectedly: %s", exc)
-
-            # Re-check for downloads that arrived during page settle.
-            # This catches same-tab redirect chains to PDFs (e.g. Bing
-            # click-through → prier.com/document.pdf) where the download
-            # event fires after the initial check but during settle.
             if self._download_tasks:
                 await asyncio.gather(*self._download_tasks, return_exceptions=True)
-            late_downloads = self.drain_downloads()
+            late_downloads = self._drain_downloads()
             if late_downloads:
                 download_info = late_downloads[0]
 
@@ -1155,7 +787,7 @@ class Browser:
                 logger.debug("Download grace period expired despite attachment header")
             if self._download_tasks:
                 await asyncio.gather(*self._download_tasks, return_exceptions=True)
-            grace_downloads = self.drain_downloads()
+            grace_downloads = self._drain_downloads()
             if grace_downloads:
                 download_info = grace_downloads[0]
                 logger.info(
@@ -1164,58 +796,44 @@ class Browser:
                 )
 
         # 3. Iframe / challenge detection (skip if download — page may be a
-        # PDF viewer stub). Operates on this tab's dominant-frame slot only;
-        # other tabs' cached frames are untouched.
-        frame_transition: str | None = None
+        # PDF viewer stub). Operates on this tab's document selection only;
+        # other tabs' selected documents are untouched.
+        document_transition: str | None = None
         final_url = getattr(page, "url", initial_url)
         navigated = bool(initial_url and final_url and final_url != initial_url)
+        tab = self._require_tab_for_page(page)
 
         if download_info is not None:
-            self._invalidate_active_view(page)
+            tab._invalidate_document()
         else:
             # Detect before the dominant-iframe path so a challenge wins; the
             # response lets header-only variants be caught here.
             challenge = await detect_challenge(page, response)
             if challenge is not None:
                 # Don't enter the interstitial's frame; the banner replaces the
-                # view and routes the agent to fetch_url.
-                was_challenge = page in self._challenges
-                self._challenges[page] = challenge
-                self._dominant_frames.pop(page, None)
+                # rendered document and routes the agent to fetch_url.
+                was_challenge = tab.challenge is not None
+                tab._set_challenge(challenge)
                 if not was_challenge:
-                    frame_transition = f"→ {challenge.vendor} challenge"
+                    document_transition = f"→ {challenge.vendor} challenge"
             elif navigated:
-                self._invalidate_active_view(page)
+                tab._invalidate_document()
             else:
-                self._challenges.pop(page, None)
                 try:
-                    previous_frame = self._dominant_frames.get(page)
-                    dominant = await self._detect_dominant_frame(page)
-                    if dominant != previous_frame:
-                        if dominant is not None:
-                            frame_transition = f"→ iframe {dominant.url}"
+                    previous_frame, selected = await tab._refresh_content_frame()
+                    if selected != previous_frame:
+                        if selected is not None:
+                            document_transition = f"→ iframe {selected.url}"
                         elif previous_frame is not None:
-                            frame_transition = "→ main page"
-                        if dominant is not None:
-                            self._dominant_frames[page] = dominant
-                        else:
-                            self._dominant_frames.pop(page, None)
-
-                    if dominant is not None and dominant != previous_frame:
-                        try:
-                            await dominant.wait_for_load_state("load", timeout=5000)
-                            await browser_waits.wait_for_page_settle(dominant, waits=wait_cfg)
-                        except (PlaywrightTimeoutError, PlaywrightError):
-                            pass
+                            document_transition = "→ main page"
                 except Exception:  # noqa: BLE001
-                    logger.debug("Dominant frame detection failed; keeping current state")
+                    logger.debug("Embedded document selection failed; keeping current state")
 
-        return BrowserInteractionResult(
+        return ActionResult(
+            tab=tab,
             navigation_response=response,
             download=download_info,
-            settle_timings=settle_timings,
-            frame_transition=frame_transition,
-            settled_page=page,
+            document_transition=document_transition,
         )
 
     async def _probe_file_url(self, url: str) -> None:
@@ -1231,14 +849,15 @@ class Browser:
         return.  Whether or not the URL was a file, the tab holding it is where
         the agent now is.
         """
-        from tools.browser.core._file_detection import (
+        from tools.browser.core.downloads import (
             is_file_content_type,
             save_response_as_file,
         )
 
         try:
             api_resp = await asyncio.wait_for(
-                self._context.request.get(url), timeout=15.0,
+                self._context.request.get(url),
+                timeout=15.0,
             )
             ct = api_resp.headers.get("content-type", "")
             if is_file_content_type(ct):
@@ -1249,7 +868,9 @@ class Browser:
                 self._pending_downloads.append(info)
                 logger.info(
                     "Probed file URL in new tab: %s (%s, %d bytes)",
-                    info.filename, info.content_type, info.size_bytes,
+                    info.filename,
+                    info.content_type,
+                    info.size_bytes,
                 )
                 await api_resp.dispose()
                 return
@@ -1257,23 +878,24 @@ class Browser:
         except Exception:  # noqa: BLE001
             logger.debug("Failed to probe new tab URL: %s", url)
 
-    async def perform_interaction(
+    async def coordinate_action(
         self,
         action: Callable[[], Awaitable[Any]],
         *,
-        source_page: Page,
+        source_tab: Tab,
         wait_for_navigation: bool = True,
-    ) -> BrowserInteractionResult:
-        """Perform an interaction on *source_page* and run the shared post-action pipeline.
+    ) -> ActionResult:
+        """Coordinate a document action with browser-context outcomes.
 
         When *wait_for_navigation* is True (the default), briefly wait for a
         navigation the action may start a beat late — some sites dispatch a
         click's navigation request only after the click returns (e.g. via a JS
-        click handler) — so the post-action snapshot reflects the new page
+        click handler) — so the post-action rendering reflects the new page
         rather than the old one. Pass False for actions that never navigate
         (scroll, drag, fill) to skip the wait.
         """
-        initial_url = getattr(source_page, "url", "")
+        source_page = source_tab._page_for_browser()
+        initial_url = source_tab.url
 
         self._pending_downloads.clear()
         self._download_event.clear()
@@ -1329,14 +951,21 @@ class Browser:
         t0 = time.monotonic()
         await action()
         action_ms = (time.monotonic() - t0) * 1000
+        navigation_wait_ms = 0.0
 
         # Bridge the gap between the action returning and a navigation starting.
-        # wait_for_load_state("networkidle") in the settle below returns
-        # immediately on the already-idle old page if no navigation has begun
-        # yet, producing a stale snapshot. Wait briefly for a navigation to
-        # start, then for it to commit, so the settle runs against the new
-        # document. Only nav-capable actions that don't navigate pay the wait.
+        # A readiness wait on the old page would return immediately if no
+        # navigation has begun yet, producing stale output. Wait briefly
+        # for navigation to start, then for it to commit, so rendering resolves
+        # the new document. Only nav-capable actions that do not navigate pay
+        # the grace period.
         if wait_for_navigation:
+            navigation_wait_started = time.monotonic()
+            # Let immediate browser events dispatched by the action reach the
+            # listeners above. In headed Chromium, PDF navigation/download
+            # events can arrive just after mouse.up() even though the URL has
+            # already changed.
+            await asyncio.sleep(0.05)
             if not nav_started.is_set():
                 grace_ms = load_config().tools.browser.waits.post_action_nav_grace_ms
                 if grace_ms > 0:
@@ -1349,6 +978,7 @@ class Browser:
                     await source_page.wait_for_load_state("domcontentloaded", timeout=10_000)
                 except PlaywrightError:
                     pass
+            navigation_wait_ms = (time.monotonic() - navigation_wait_started) * 1000
 
         source_page.remove_listener("response", _on_response)
         source_page.remove_listener("request", _on_request)
@@ -1369,7 +999,8 @@ class Browser:
             if not new_page_responses:
                 try:
                     await new_page.wait_for_load_state(
-                        "domcontentloaded", timeout=10_000,
+                        "domcontentloaded",
+                        timeout=10_000,
                     )
                 except (PlaywrightTimeoutError, PlaywrightError):
                     pass
@@ -1402,193 +1033,23 @@ class Browser:
                 pass
 
         result = await self._finalize_action(
-            settled_page, response=response, initial_url=initial_url,
+            settled_page,
+            response=response,
+            initial_url=initial_url,
             saw_download_response=_saw_download_response,
         )
         result.action_ms = action_ms
+        result.navigation_wait_ms = navigation_wait_ms
 
         # If a download was captured from a new tab, close that tab so the
-        # agent returns to the original page.  Otherwise current_page() would
-        # return the download tab (often about:blank) and subsequent tools
-        # would fail with "Navigate to a page first."
+        # agent returns to the original page rather than receiving a closed or
+        # about:blank download tab in the interaction result.
         if result.download and settled_page is not source_page:
             try:
                 await settled_page.close()
             except Exception:  # noqa: BLE001
                 pass
             # That tab is gone; the agent is back where it started.
-            result.settled_page = source_page
+            result.tab = source_tab
 
         return result
-
-
-_browser: Browser | None = None
-_agent_browsers: dict[str, Browser] = {}
-_agent_browser_lock = asyncio.Lock()
-
-
-def _kill_driver_tree(pid: int) -> None:
-    """Send SIGTERM to a Playwright driver process and its children.
-
-    This is a synchronous, best-effort fallback used by the ``atexit`` handler
-    when the async close path didn't run (e.g. the event loop was torn down).
-    Killing the driver also kills the Chromium child it manages.
-    """
-    try:
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        pass
-    except OSError:
-        # Fallback: kill just the driver process if pgid failed
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-
-
-def _atexit_kill_browser() -> None:
-    """Last-resort cleanup: kill the Chromium/driver process tree on exit.
-
-    Registered via ``atexit`` when a browser is created.  If the async
-    ``close_browser()`` already ran, ``_browser`` is ``None`` and this is a
-    no-op.  Otherwise it sends SIGTERM to the Playwright driver PID, which
-    takes Chromium down with it.
-    """
-    if _browser is None or _browser._closed:
-        return
-    pid = _browser._driver_pid
-    if pid is None:
-        return
-    logger.debug("atexit: killing browser driver tree (pid %d)", pid)
-    _kill_driver_tree(pid)
-
-
-async def _get_root_browser() -> Browser:
-    """Return the persistent root browser, initializing it on first call.
-
-    Locked so concurrent first callers don't each spin up their own root
-    Browser — without this, parallel tool calls that hit a cold cache
-    would each race past the ``_browser is None`` check and launch their
-    own Playwright instance.
-    """
-    global _browser
-    async with _agent_browser_lock:
-        if _browser is None:
-            config = load_config()
-            profile_path = Path(config.settings.home_dir) / "browser" / "profiles" / "default"
-            downloads_dir = str(Path(config.virtual_computer.home_dir) / "downloads")
-            headless = config.tools.browser.headless
-            _browser = await Browser.start(
-                str(profile_path),
-                headless=headless,
-                downloads_path=downloads_dir,
-            )
-            _browser._downloads_dir = downloads_dir
-            atexit.register(_atexit_kill_browser)
-        return _browser
-
-
-async def get_browser() -> Browser:
-    """Get the browser instance for the current agent.
-
-    Every agent gets its own ephemeral context on the shared Chrome process,
-    seeded with the root browser's cookies and localStorage for session
-    inheritance.  The root browser is never navigated directly — it serves
-    as the persistent profile template (manageable via VNC).
-
-    Root agents (depth=0) share a single context per conversation — page
-    state persists across turns. Sub-agents get their own isolated context
-    keyed by agent_id, released when the sub-agent completes.
-    """
-    root = await _get_root_browser()
-    depth = get_current_depth()
-    conv_id = get_conversation_id()
-
-    # Root agents: scope browser to the conversation so page state persists.
-    # Sub-agents: scope to agent_id (isolated, released on completion).
-    if depth == 0 and conv_id:
-        key = f"conv:{conv_id}"
-    else:
-        agent_id = get_current_agent_id()
-        if agent_id is None:
-            raise RuntimeError("get_browser() called outside an agent span")
-        key = agent_id
-
-    async with _agent_browser_lock:
-        if key in _agent_browsers:
-            return _agent_browsers[key]
-
-        state = await root._context.storage_state()
-        ephemeral = await Browser.start_ephemeral(root, storage_state=state)
-        _agent_browsers[key] = ephemeral
-        logger.info("Created ephemeral browser context for key '%s'", key)
-        return ephemeral
-
-
-async def get_browser_by_conversation_id(conversation_id: str) -> Browser | None:
-    """Return the live root-agent browser context for *conversation_id*.
-
-    This is the depth-0 context the UI mirrors — the same context
-    ``get_browser`` hands to root agents. Returns ``None`` when the
-    conversation has no live browser yet. Sub-agent contexts and the
-    persistent profile template are never returned here, so callers that
-    expose interactive control can only ever reach the root context.
-    """
-    async with _agent_browser_lock:
-        return _agent_browsers.get(f"conv:{conversation_id}")
-
-
-async def release_agent_browser(key: str) -> None:
-    """Close and remove an ephemeral browser context by its storage key."""
-    async with _agent_browser_lock:
-        browser = _agent_browsers.pop(key, None)
-    if browser is not None:
-        try:
-            await browser.close_context()
-            logger.info("Released browser context for '%s'", key)
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to release browser context for '%s'", key)
-
-
-async def release_conversation_browser(conversation_id: str) -> None:
-    """Release the root-agent context bound to a conversation.
-
-    Owns the conv-scoped key format so callers don't reconstruct it.
-    """
-    await release_agent_browser(f"conv:{conversation_id}")
-
-
-register_agent_span_exit_hook(release_agent_browser)
-register_conversation_exit_hook(release_conversation_browser)
-
-
-async def close_browser() -> None:
-    """Shutdown all browser instances — ephemeral contexts and root singleton."""
-    global _browser
-
-    # Close all ephemeral sub-agent contexts first.
-    async with _agent_browser_lock:
-        agents = list(_agent_browsers.items())
-        _agent_browsers.clear()
-    for agent_id, browser in agents:
-        try:
-            await browser.close_context()
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to close ephemeral context for '%s'", agent_id)
-
-    if _browser is None:
-        logger.debug("close_browser called but no browser instance exists")
-        return
-    try:
-        await _browser.close()
-    except PlaywrightError as exc:  # pragma: no cover - defensive
-        logger.warning("Suppressed exception in close_browser wrapper: %s: %s", type(exc).__name__, exc)
-    except Exception as exc:  # noqa: BLE001  pragma: no cover - highly defensive
-        logger.warning(
-            "Suppressed unexpected exception in close_browser wrapper: %s: %s",
-            type(exc).__name__,
-            exc,
-        )
-    finally:
-        _browser = None
-        logger.debug("Browser singleton cleared")

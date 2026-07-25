@@ -40,6 +40,8 @@ class HumanTypingConfig(BaseModel):
 class HumanPointerConfig(BaseModel):
     """Pointer movement simulation configuration."""
 
+    move_duration_min_ms: int = 120
+    move_duration_max_ms: int = 240
     hover_min_ms: int = 80
     hover_max_ms: int = 160
     click_hold_min_ms: int = 25
@@ -67,7 +69,7 @@ class BrowserToolsConfig(BaseModel):
 class BrowserWaitConfig(BaseModel):
     """Configuration controlling browser wait/settle timeouts."""
 
-    network_idle_timeout_ms: int = 3000
+    load_timeout_ms: int = 3000
     font_timeout_ms: int = 1000
     dom_mutation_timeout_ms: int = 1500
     dom_quiet_window_ms: int = 150
@@ -76,7 +78,7 @@ class BrowserWaitConfig(BaseModel):
     # Some sites dispatch a click's navigation request a beat after the click
     # returns — e.g. a JS click handler that runs before setting location
     # (measured ~500ms on nasa.gov, same-origin and cross-origin alike).
-    # Without this, the settle can snapshot the old page. Only paid by
+    # Without this, the observation can snapshot the old page. Only paid by
     # nav-capable actions that don't end up navigating.
     post_action_nav_grace_ms: int = 800
 

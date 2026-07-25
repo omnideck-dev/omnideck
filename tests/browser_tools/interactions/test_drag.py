@@ -8,14 +8,14 @@ refs to pass to drag().
 
 from __future__ import annotations
 
-from tools.browser.interactions import drag
-from tools.browser.snapshot_tool import browse_page
+from tools.browser import drag
+from tools.browser import browse_page
 
 from .._helpers import find_ref
 
 
-async def test_drag_source_to_target(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/drag-drop/page.html")
+async def test_drag_source_to_target(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/drag-drop/page.html")
     view = await browse_page(tab=tab)
 
     src = find_ref(view, role="button", name="Drag source")

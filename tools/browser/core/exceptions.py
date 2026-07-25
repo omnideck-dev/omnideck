@@ -15,7 +15,7 @@ Usage pattern inside a tool implementation::
         raise BrowserToolError("Meaningful message") from exc
 
 Callers should catch ``BrowserToolError`` for any recoverable, user-actionable
-issues (e.g., navigation problems, invalid selectors, model failures).
+issues (e.g., navigation problems, invalid refs, model failures).
 """
 
 from __future__ import annotations

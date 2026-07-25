@@ -295,7 +295,6 @@ class StubPage:
         self._title = title
         self._body_text = body_text
         self.url = url
-        self._css_locators: dict[str, StubLocator] = {}
         self._ref_locators: dict[str, StubLocator] = {}
         self._all_locators: set[StubLocator] = set()
         self._nav_event = asyncio.Event()
@@ -406,9 +405,6 @@ class StubPage:
                     )
             return StubLocator(self, key=selector, present=False)
 
-        if selector in self._css_locators:
-            return self._css_locators[selector]
-
         if selector in self._ref_locators:
             return self._ref_locators[selector]
 
@@ -416,45 +412,6 @@ class StubPage:
 
     async def wait_for_function(self, script: str, timeout: int | None = None) -> None:
         return None
-
-    def add_css_locator(
-        self,
-        selector: str,
-        *,
-        tag: str = "div",
-        input_type: str | None = None,
-        navigates_to: str | None = None,
-        navigation_title: str | None = None,
-        navigation_body: str | None = None,
-        bounding_box: dict[str, float] | None = None,
-        frame: Any | None = None,
-        text_value: str | None = None,
-        texts: Sequence[str] | None = None,
-        dom_parent_selector: str = "body",
-        dom_path: str | None = None,
-        dom_nth: int = 1,
-    ) -> StubLocator:
-        locator = StubLocator(
-            self,
-            key=selector,
-            present=bool(texts) if texts is not None else True,
-            tag=tag,
-            input_type=input_type,
-            navigates_to=navigates_to,
-            navigation_title=navigation_title,
-            navigation_body=navigation_body,
-            bounding_box=bounding_box,
-            frame=frame,
-            text_value=text_value,
-            texts=texts,
-            dom_parent_selector=dom_parent_selector,
-            dom_tag=tag,
-            dom_nth=dom_nth,
-            dom_path=dom_path,
-        )
-        self._css_locators[selector] = locator
-        self._all_locators.add(locator)
-        return locator
 
     def add_ref_locator(
         self,
@@ -647,88 +604,3 @@ class _StubFrameElement:
 
     async def bounding_box(self) -> dict[str, float]:
         return self._box
-
-
-class StubBrowser:
-    """Minimal browser stub exposing ``current_page`` for interaction tests."""
-
-    def __init__(self, page: StubPage) -> None:
-        self._page = page
-        self._dominant_frames: dict[StubPage, StubFrame] = {}
-
-    async def current_page(self) -> StubPage:
-        return self._page
-
-    async def active_frame(self, page: StubPage | None = None) -> StubPage | StubFrame:
-        if page is None:
-            page = self._page
-        cached = self._dominant_frames.get(page)
-        if cached is not None and not cached.is_detached():
-            return cached
-        return page
-
-    async def active_view(self, page: Any = None) -> Any:
-        from tools.browser.core.browser import ActiveView
-        if page is None:
-            page = self._page
-        frame = await self.active_frame(page)
-        try:
-            title = await self._page.title()
-        except Exception:
-            title = "Test Page"
-        return ActiveView(frame=frame, title=title, url=self._page.url)
-
-    def _invalidate_active_view(self, page: Any) -> None:
-        self._dominant_frames.pop(page, None)
-
-    async def new_page(self) -> StubPage:
-        return self._page
-
-    def open_tabs(self) -> list[StubPage]:
-        return [self._page]
-
-    def tab_id_of(self, page: Any) -> int | None:
-        return 1 if page is self._page else None
-
-    def resolve_tab(self, tab: Any) -> StubPage:
-        return self._page
-
-    async def navigate(self, url: str, *, page: Any = None) -> Any:
-        from tools.browser.core.browser import BrowserInteractionResult
-        target = page if page is not None else self._page
-        self._invalidate_active_view(target)
-        await target.goto(url)
-        return BrowserInteractionResult(
-            navigation_response=None,
-            download=None,
-        )
-
-    async def navigate_back(self, page: Any = None) -> Any:
-        from tools.browser.core.browser import BrowserInteractionResult
-
-        async def _back() -> None:
-            await self._page.go_back(wait_until="domcontentloaded")
-
-        return await self.perform_interaction(_back, source_page=page)
-
-    async def perform_interaction(
-        self,
-        action: Callable[[], Awaitable[Any]],
-        *,
-        source_page: Any = None,
-    ) -> Any:
-        """Match Browser.perform return contract for tests."""
-        await action()
-
-        from config import load_config
-        from tools.browser.core.browser import BrowserInteractionResult
-        from tools.browser.core.waits import wait_for_page_settle as settle_helper
-
-        waits = load_config().tools.browser.waits
-        await settle_helper(self._page, waits=waits)
-
-        return BrowserInteractionResult(
-            navigation_response=None,
-        )
-
-
