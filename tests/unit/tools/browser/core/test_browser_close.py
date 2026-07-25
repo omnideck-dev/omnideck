@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import os
-import pytest
-
 from pathlib import Path
+
+import pytest
 
 from tools.browser.core.browser import Browser
 
@@ -56,6 +56,9 @@ class DummyPage:
     def is_closed(self) -> bool:
         return self._closed
 
+    def on(self, event: str, callback: object) -> None:
+        pass
+
     async def close(self) -> None:
         if self._hang:
             await asyncio.sleep(9999)
@@ -98,25 +101,25 @@ async def test_close_swallows_driver_exception(caplog: pytest.LogCaptureFixture)
 @pytest.mark.asyncio
 async def test_close_browser_function_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """close_browser should be safe when no browser exists."""
-    import tools.browser.core.browser as mod
+    import tools.browser.core.pool as mod
 
-    # Ensure global _browser is None
-    mod._browser = None  # type: ignore[attr-defined]
+    # Ensure the pool has no persistent root Browser.
+    mod._root_browser = None
     await mod.close_browser()  # Should not raise
 
     # Set one then close twice
     ctx = DummyContext()
     pw = DummyPW()
-    mod._browser = Browser(context=ctx, extra_headers={}, pw=pw)  # type: ignore[arg-type]
+    mod._root_browser = Browser(context=ctx, extra_headers={}, pw=pw)  # type: ignore[arg-type]
     await mod.close_browser()
-    assert mod._browser is None
+    assert mod._root_browser is None
     # second call: still fine
     await mod.close_browser()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_close_context_timeout(caplog: pytest.LogCaptureFixture) -> None:
+async def test_close_timeout(caplog: pytest.LogCaptureFixture) -> None:
     """Browser.close should not hang when context.close() blocks indefinitely."""
     ctx = DummyContext(hang=True)
     pw = DummyPW()

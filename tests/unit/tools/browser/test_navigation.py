@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 from tools.browser import BrowserToolError, close_tab, goto, new_tab
-from tools.browser.core.browser import ActiveView, BrowserInteractionResult
-from tools.browser.core.page_view import PageView
+from tools.browser.core.browser import ActionResult
+from tools.browser.core.rendering import RenderedDocument
 
 
 class _StubPage:
@@ -24,65 +24,93 @@ class _StubPage:
         self._closed = True
 
 
+class _StubTab:
+    def __init__(self, tab_id: int, page: _StubPage) -> None:
+        self.id = tab_id
+        self._page = page
+
+    @property
+    def url(self) -> str:
+        return self._page.url
+
+    def is_closed(self) -> bool:
+        return self._page.is_closed()
+
+    async def close(self) -> None:
+        await self._page.close()
+
+    async def render_document(
+        self,
+        response: Any = None,
+        **kwargs: Any,
+    ) -> RenderedDocument:
+        return RenderedDocument(
+            title="",
+            url=self.url,
+            status_code=200,
+            content="",
+            viewport={
+                "scroll_top": 0,
+                "viewport_height": 0,
+                "viewport_width": 0,
+                "document_height": 0,
+            },
+            truncated=False,
+        )
+
+    async def screenshot(self, **kwargs: Any) -> bytes:
+        return b""
+
+
 class _StubBrowser:
-    """Browser stub modeling stable IDs + busy flag + open_tabs."""
+    """Browser stub modeling stable IDs + busy flag + open_pages."""
 
     def __init__(self) -> None:
-        self._pages: list[_StubPage] = []
-        self._ids: dict[_StubPage, int] = {}
+        self._tabs: list[_StubTab] = []
         self._next_id = 0
-        self._pages_in_navigation: set[_StubPage] = set()
+        self._tabs_in_navigation: set[_StubTab] = set()
 
     # ── Tab tracking ──────────────────────────────────────────────────
-    def open_tabs(self) -> list[_StubPage]:
-        return [p for p in self._pages if not p.is_closed()]
+    def open_pages(self) -> list[_StubPage]:
+        return [tab._page for tab in self.tabs()]
 
-    def tab_id_of(self, page: _StubPage) -> int | None:
-        return self._ids.get(page)
+    def tabs(self) -> list[_StubTab]:
+        return [tab for tab in self._tabs if not tab.is_closed()]
 
-    def resolve_tab(self, tab: Any) -> _StubPage:
-        tabs = self.open_tabs()
+    def get_tab(self, tab: Any) -> _StubTab:
+        tabs = self.tabs()
         if not tabs:
             raise ValueError("No open tabs; call new_tab(url) first")
-        if tab is None:
-            if len(tabs) == 1:
-                return tabs[0]
-            raise ValueError(f"{len(tabs)} tabs open; specify tab=N.")
         target = int(str(tab).strip())
-        for page, tid in self._ids.items():
-            if tid == target and not page.is_closed():
-                return page
+        for candidate in tabs:
+            if candidate.id == target:
+                return candidate
         raise ValueError(f"tab={tab!r} not found.")
 
     # ── Page / navigation surface ─────────────────────────────────────
-    async def new_page(self) -> _StubPage:
+    async def new_tab(self) -> _StubTab:
         page = _StubPage()
-        self._pages.append(page)
         self._next_id += 1
-        self._ids[page] = self._next_id
-        return page
+        tab = _StubTab(self._next_id, page)
+        self._tabs.append(tab)
+        return tab
 
-    async def navigate(self, url: str, *, page: _StubPage) -> BrowserInteractionResult:
-        if page in self._pages_in_navigation:
-            tid = self._ids.get(page)
+    async def navigate(self, url: str, *, tab: _StubTab) -> ActionResult:
+        if tab in self._tabs_in_navigation:
             raise BrowserToolError(
-                f"Navigation already in flight on tab={tid}. Use new_tab(url).",
+                f"Navigation already in flight on tab={tab.id}. Use new_tab(url).",
                 tool="goto",
             )
-        self._pages_in_navigation.add(page)
+        self._tabs_in_navigation.add(tab)
         try:
-            page.url = url
-            return BrowserInteractionResult(
+            tab._page.url = url
+            return ActionResult(
                 navigation_response=None,
                 download=None,
+                tab=tab,
             )
         finally:
-            self._pages_in_navigation.discard(page)
-
-    async def active_view(self, page: _StubPage | None = None) -> ActiveView:
-        if page is None:
-            page = self.open_tabs()[-1]
-        return ActiveView(frame=page, title="", url=page.url)
+            self._tabs_in_navigation.discard(tab)
 
 
 @pytest.fixture
@@ -92,30 +120,11 @@ def stub_browser(monkeypatch: pytest.MonkeyPatch) -> _StubBrowser:
     async def _get_browser() -> _StubBrowser:
         return browser
 
-    async def _no_screenshot() -> None:
-        return None
+    async def _events_get_browser() -> _StubBrowser:
+        return browser
 
-    # Avoid the screenshot decorator trying to use a real browser.
-    class _Stub:
-        async def current_page(self) -> Any:
-            return _StubPage()
-
-    async def _events_get_browser() -> _Stub:
-        return _Stub()
-
-    async def _mock_build(response: Any, *, page: Any = None) -> PageView:
-        return PageView(
-            title="",
-            url=page.url if page is not None else "",
-            status_code=200,
-            content="",
-            viewport={"scroll_top": 0, "viewport_height": 0, "viewport_width": 0, "document_height": 0},
-            truncated=False,
-        )
-
-    monkeypatch.setattr("tools.browser.navigation.browser_core.get_browser", _get_browser)
-    monkeypatch.setattr("tools.browser.interactions.get_browser", _get_browser)
-    monkeypatch.setattr("tools.browser.interactions._build_snapshot", _mock_build)
+    monkeypatch.setattr("tools.browser.navigation.get_browser", _get_browser)
+    monkeypatch.setattr("tools.browser._tool_context.get_browser", _get_browser)
     monkeypatch.setattr("tools.browser.events.get_browser", _events_get_browser)
     return browser
 
@@ -134,8 +143,8 @@ async def test_goto_navigates_existing_tab(stub_browser: _StubBrowser) -> None:
     """goto re-points an existing tab in place."""
     await new_tab("https://example.com")
     await goto("https://other.com", tab="1")
-    assert len(stub_browser.open_tabs()) == 1
-    assert stub_browser.open_tabs()[0].url == "https://other.com"
+    assert len(stub_browser.open_pages()) == 1
+    assert stub_browser.open_pages()[0].url == "https://other.com"
 
 
 @pytest.mark.unit
@@ -145,7 +154,7 @@ async def test_goto_with_tab_arg(stub_browser: _StubBrowser) -> None:
     await new_tab("https://a.com")
     await new_tab("https://b.com")
     await goto("https://navigated.com", tab="1")
-    tabs = stub_browser.open_tabs()
+    tabs = stub_browser.open_pages()
     assert tabs[0].url == "https://navigated.com"
     assert tabs[1].url == "https://b.com"
 
@@ -163,7 +172,7 @@ async def test_goto_unknown_tab_errors(stub_browser: _StubBrowser) -> None:
 async def test_new_tab_opens_new(stub_browser: _StubBrowser) -> None:
     await new_tab("https://a.com")
     out = await new_tab("https://b.com")
-    assert len(stub_browser.open_tabs()) == 2
+    assert len(stub_browser.open_pages()) == 2
     assert "tab=2" in out
 
 
@@ -174,8 +183,8 @@ async def test_close_tab_removes_tab(stub_browser: _StubBrowser) -> None:
     await new_tab("https://b.com")
     output = await close_tab(tab="1")
     assert output == "Closed tab=1."
-    assert len(stub_browser.open_tabs()) == 1
-    assert stub_browser.open_tabs()[0].url == "https://b.com"
+    assert len(stub_browser.open_pages()) == 1
+    assert stub_browser.open_pages()[0].url == "https://b.com"
 
 
 @pytest.mark.unit
@@ -216,7 +225,7 @@ async def test_parallel_goto_on_different_tabs_both_succeed(
         goto("https://navigated-b.com", tab="2"),
     )
 
-    tabs = stub_browser.open_tabs()
+    tabs = stub_browser.open_pages()
     assert tabs[0].url == "https://navigated-a.com"
     assert tabs[1].url == "https://navigated-b.com"
     # Each result's header carries its own tab ID — no cross-contamination.

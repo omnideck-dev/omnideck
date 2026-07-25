@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from tools.browser.interactions import press_and_hold
-from tools.browser.snapshot_tool import browse_page
+from tools.browser import press_and_hold
+from tools.browser import browse_page
 
 from .._helpers import find_ref
 
 
-async def test_press_and_hold_button(browser_session, servers):
-    tab = await browser_session.open(f"{servers.primary}/hold-button/page.html")
+async def test_press_and_hold_button(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/hold-button/page.html")
     view = await browse_page(tab=tab)
 
     ref = find_ref(view, role="button", name="Hold me")

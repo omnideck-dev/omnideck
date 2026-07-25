@@ -4,6 +4,7 @@ import pytest
 
 from config import load_config
 from tools.browser import BrowserToolError
+from tools.browser.core.document import Document
 from tools.browser.interactions import scroll_page
 
 _cfg = load_config()
@@ -12,7 +13,7 @@ _SCROLL_HARD_LIMIT = _cfg.tools.browser.scroll_hard_limit
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
 
 
-def _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker):
+def _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker):
     """Create a page + fake scroll setup for scroll budget tests."""
     page = StubPage(
         title="Start",
@@ -20,12 +21,16 @@ def _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker):
         url="https://example.test/start",
     )
     page.set_scroll_state(scroll_top=0, viewport_height=600, document_height=2000)
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
-    async def fake_human_scroll(page_arg: object, direction: str = "down", amount: int | None = None) -> None:
-        assert page_arg is page
+    async def fake_scroll(
+        document: Document,
+        direction: str = "down",
+        amount: int | None = None,
+    ) -> None:
+        assert isinstance(document, Document)
 
-    monkeypatch.setattr("tools.browser.interactions.human_scroll", fake_human_scroll)
+    monkeypatch.setattr(Document, "scroll", fake_scroll)
     return page
 
 
@@ -33,7 +38,7 @@ def _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker):
 @pytest.mark.asyncio
 async def test_scroll_page_delegates(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     page = StubPage(
@@ -42,13 +47,17 @@ async def test_scroll_page_delegates(
         url="https://example.test/start",
     )
     page.set_scroll_state(scroll_top=0, viewport_height=600, document_height=2000)
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
-    async def fake_human_scroll(page_arg: object, direction: str = "down", amount: int | None = None) -> None:
-        assert page_arg is page
+    async def fake_scroll(
+        document: Document,
+        direction: str = "down",
+        amount: int | None = None,
+    ) -> None:
+        assert isinstance(document, Document)
         assert direction in {"down", "up", "page_down", "page_up", "top", "bottom"}
 
-    monkeypatch.setattr("tools.browser.interactions.human_scroll", fake_human_scroll)
+    monkeypatch.setattr(Document, "scroll", fake_scroll)
 
     result = await scroll_page("down", tab="1")
     assert isinstance(result, str)
@@ -68,11 +77,11 @@ async def test_scroll_page_invalid_direction() -> None:
 @pytest.mark.asyncio
 async def test_scroll_budget_warning_after_threshold(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """After WARN_THRESHOLD scrolls, a warning is injected into the content."""
-    _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker)
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
 
     # Scroll up to the warning threshold
     result = ""
@@ -87,11 +96,11 @@ async def test_scroll_budget_warning_after_threshold(
 @pytest.mark.asyncio
 async def test_scroll_budget_no_warning_before_threshold(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """Before the warning threshold, no warning is injected."""
-    _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker)
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
 
     result = ""
     for _ in range(_SCROLL_WARN_THRESHOLD - 1):
@@ -104,11 +113,11 @@ async def test_scroll_budget_no_warning_before_threshold(
 @pytest.mark.asyncio
 async def test_scroll_budget_hard_limit_raises(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """After HARD_LIMIT scrolls, further scrolls raise BrowserToolError."""
-    _make_scroll_setup(monkeypatch, patch_interactions_browser, settle_tracker)
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
 
     # Exhaust the budget
     for _ in range(_SCROLL_HARD_LIMIT):
@@ -123,7 +132,7 @@ async def test_scroll_budget_hard_limit_raises(
 @pytest.mark.asyncio
 async def test_scroll_budget_resets_on_url_change(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """Scroll budget resets when the page URL changes."""
@@ -133,12 +142,16 @@ async def test_scroll_budget_resets_on_url_change(
         url="https://example.test/page1",
     )
     page.set_scroll_state(scroll_top=0, viewport_height=600, document_height=2000)
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
-    async def fake_human_scroll(page_arg: object, direction: str = "down", amount: int | None = None) -> None:
+    async def fake_scroll(
+        document: Document,
+        direction: str = "down",
+        amount: int | None = None,
+    ) -> None:
         pass
 
-    monkeypatch.setattr("tools.browser.interactions.human_scroll", fake_human_scroll)
+    monkeypatch.setattr(Document, "scroll", fake_scroll)
 
     # Use up most of the budget
     for _ in range(_SCROLL_HARD_LIMIT - 1):

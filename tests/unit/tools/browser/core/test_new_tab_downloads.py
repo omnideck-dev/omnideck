@@ -7,17 +7,13 @@ where the agent now is.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
-from tools.browser.core._file_detection import DownloadInfo
-from tools.browser.core.browser import Browser, BrowserInteractionResult
-
+from tools.browser.core.browser import Browser
 
 # ---------------------------------------------------------------------------
 # Stubs with event support
@@ -46,12 +42,44 @@ class FakePage(EventEmitterStub):
         return None
 
 
+class FakeResponse:
+    """Document/API response with the file-saving surface Browser uses."""
+
+    def __init__(
+        self,
+        *,
+        url: str,
+        content_type: str = "text/html",
+        body: bytes = b"<html></html>",
+        frame: object | None = None,
+    ) -> None:
+        self.url = url
+        self.headers = {"content-type": content_type}
+        self.request = MagicMock(resource_type="document")
+        self.frame = frame
+        self._body = body
+
+    async def body(self) -> bytes:
+        return self._body
+
+    async def dispose(self) -> None:
+        return None
+
+
+class FakeRequestContext:
+    """Return ordinary HTML when Browser probes an unannounced popup URL."""
+
+    async def get(self, url: str) -> FakeResponse:
+        return FakeResponse(url=url)
+
+
 class FakeContext(EventEmitterStub):
     """Stub context with event support."""
 
     def __init__(self, pages: list[FakePage] | None = None) -> None:
         super().__init__()
         self.pages = pages or []
+        self.request = FakeRequestContext()
 
     async def new_page(self) -> FakePage:
         page = FakePage()
@@ -65,127 +93,106 @@ class FakeContext(EventEmitterStub):
         self.emit("page", page)
 
 
-def _make_browser(ctx: FakeContext) -> Browser:
-    return Browser(context=ctx, extra_headers={})  # type: ignore[arg-type]
+def _make_browser(ctx: FakeContext, *, downloads_dir: str = "") -> Browser:
+    return Browser(  # type: ignore[arg-type]
+        context=ctx,
+        extra_headers={},
+        downloads_dir=downloads_dir,
+    )
 
 
 def _fake_response(
+    *,
+    url: str,
     content_type: str = "text/html",
-    resource_type: str = "document",
-) -> MagicMock:
-    resp = MagicMock()
-    resp.headers = {"content-type": content_type}
-    resp.request.resource_type = resource_type
-    return resp
-
-
-# ---------------------------------------------------------------------------
-# _track_page — download listener auto-attachment
-# ---------------------------------------------------------------------------
+    frame: object | None = None,
+    body: bytes = b"<html></html>",
+) -> FakeResponse:
+    return FakeResponse(
+        url=url,
+        content_type=content_type,
+        frame=frame,
+        body=body,
+    )
 
 
 @pytest.mark.unit
 class TestContextPageHandler:
-    """Verify that tabs the site opens get download listeners immediately."""
+    """Verify that context pages become public browser tabs."""
 
-    def test_new_tab_gets_download_listener(self) -> None:
-        """A tab opened by a click should have a download listener attached."""
-        ctx = FakeContext([FakePage()])
-        browser = _make_browser(ctx)
-
-        new_page = FakePage(url="https://example.com/file.pdf")
-        ctx.open_tab(new_page)
-
-        # The download listener registers the page id in the tracking set
-        assert id(new_page) in browser._download_listener_pages
-
-    def test_existing_pages_not_auto_attached(self) -> None:
-        """Pages that existed before Browser init don't get auto-attached."""
+    def test_existing_pages_are_attached(self) -> None:
+        """Pages that existed before Browser init become fully tracked tabs."""
         existing = FakePage()
         ctx = FakeContext([existing])
         browser = _make_browser(ctx)
 
-        # Existing page is NOT auto-attached (it gets attached lazily by
-        # current_page() on first use)
-        assert id(existing) not in browser._download_listener_pages
-
-
-# ---------------------------------------------------------------------------
-# perform_interaction — new tab detection
-# ---------------------------------------------------------------------------
+        assert browser.tabs()[0].id == 1
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestPerformInteractionNewTab:
-    """Verify that perform_interaction detects files opened in new tabs."""
+class TestCoordinateActionNewTab:
+    """Verify that coordinate_action detects files opened in new tabs."""
 
-    async def test_pdf_in_new_tab_detected_via_response(self) -> None:
-        """Click opening a PDF in a new tab captures the new page's response."""
+    async def test_pdf_in_new_tab_detected_via_response(self, tmp_path: Path) -> None:
+        """A PDF response becomes a download and returns to the source tab."""
         old_page = FakePage(url="https://texas.gov/rules")
         ctx = FakeContext([old_page])
-        browser = _make_browser(ctx)
+        browser = _make_browser(ctx, downloads_dir=str(tmp_path))
 
-        pdf_response = _fake_response(content_type="application/pdf")
+        pdf_response = _fake_response(
+            url="https://texas.gov/rules.pdf",
+            content_type="application/pdf",
+            body=b"%PDF-1.4 fake pdf content",
+        )
         new_page = FakePage(url="https://texas.gov/rules.pdf")
 
-        # The action simulates a click that opens a new tab.
-        # The new page fires a document response with application/pdf.
         async def fake_click() -> None:
             ctx.open_tab(new_page)
-            # Simulate the new page firing a response event
             new_page.emit("response", pdf_response)
 
-        finalize_args: dict[str, Any] = {}
-        original_finalize = browser._finalize_action
+        source_tab = browser.get_tab(1)
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=source_tab,
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            finalize_args["response"] = kwargs.get("response")
-            return BrowserInteractionResult()
+        assert result.download is not None
+        assert result.download.filename == "rules.pdf"
+        assert result.download.content_type == "application/pdf"
+        assert result.navigation_response is pdf_response
+        assert result.tab is source_tab
+        assert new_page.is_closed()
 
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        assert finalize_args["page"] is new_page
-        assert finalize_args["response"] is pdf_response
-
-    async def test_download_event_in_new_tab_detected(self) -> None:
+    async def test_download_event_in_new_tab_detected(self, tmp_path: Path) -> None:
         """Click opening a PDF in a new tab is detected via download event."""
         old_page = FakePage(url="https://texas.gov/rules")
         ctx = FakeContext([old_page])
-        browser = _make_browser(ctx)
+        browser = _make_browser(ctx, downloads_dir=str(tmp_path))
 
         new_page = FakePage(url="about:blank")
-
-        download_info = DownloadInfo(
-            path="/home/computron/rules.pdf",
-            content_type="application/pdf",
-            size_bytes=50000,
-            filename="rules.pdf",
-        )
+        opaque_path = tmp_path / "download-uuid"
+        opaque_path.write_bytes(b"%PDF-1.4 fake pdf content")
+        download = AsyncMock()
+        download.path = AsyncMock(return_value=str(opaque_path))
+        download.suggested_filename = "rules.pdf"
 
         async def fake_click() -> None:
             ctx.open_tab(new_page)
-            # Simulate a download being captured (as --disable-pdf-viewer does)
-            browser._pending_downloads.append(download_info)
+            new_page.emit("download", download)
 
-        finalize_args: dict[str, Any] = {}
+        source_tab = browser.get_tab(1)
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=source_tab,
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            finalize_args["response"] = kwargs.get("response")
-            return BrowserInteractionResult()
-
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        # Should switch to the new page since a download was detected
-        assert finalize_args["page"] is new_page
+        assert result.download is not None
+        assert result.download.filename == "rules.pdf"
+        assert result.tab is source_tab
+        assert new_page.is_closed()
 
     async def test_html_in_new_tab_also_switches(self) -> None:
         """Click opening an HTML page in a new tab switches to that page."""
@@ -193,28 +200,26 @@ class TestPerformInteractionNewTab:
         ctx = FakeContext([old_page])
         browser = _make_browser(ctx)
 
-        html_response = _fake_response(content_type="text/html")
         new_page = FakePage(url="https://example.com/other")
+        html_response = _fake_response(
+            url=new_page.url,
+            content_type="text/html",
+            frame=new_page.main_frame,
+        )
 
         async def fake_click() -> None:
             ctx.open_tab(new_page)
             new_page.emit("response", html_response)
 
-        finalize_args: dict[str, Any] = {}
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            finalize_args["response"] = kwargs.get("response")
-            return BrowserInteractionResult()
-
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        # New tab with an HTML response should also be detected
-        assert finalize_args["page"] is new_page
-        assert finalize_args["response"] is html_response
+        assert result.tab is browser.get_tab(2)
+        assert result.navigation_response is html_response
+        assert result.download is None
 
     async def test_html_in_new_tab_switches_even_with_no_response(self) -> None:
         """A new tab whose document response was never seen is still where the agent is.
@@ -233,57 +238,15 @@ class TestPerformInteractionNewTab:
         async def fake_click() -> None:
             ctx.open_tab(new_page)  # no response ever emitted
 
-        finalize_args: dict[str, Any] = {}
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            return BrowserInteractionResult()
-
-        probe = AsyncMock(return_value=None)
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-            patch.object(browser, "_probe_file_url", probe),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        # Probed for a file, found none, and stayed on the new tab regardless.
-        probe.assert_awaited_once()
-        assert finalize_args["page"] is new_page
-
-    async def test_download_in_new_tab_returns_the_agent_to_the_source(self) -> None:
-        """A file downloaded in a new tab closes it and hands the agent back."""
-        old_page = FakePage(url="https://example.com")
-        ctx = FakeContext([old_page])
-        browser = _make_browser(ctx)
-
-        new_page = FakePage(url="https://example.com/report.pdf")
-        pdf_response = _fake_response(content_type="application/pdf")
-
-        async def fake_click() -> None:
-            ctx.open_tab(new_page)
-            new_page.emit("response", pdf_response)
-
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            result = BrowserInteractionResult(
-                download=DownloadInfo(
-                    path="/tmp/report.pdf",
-                    content_type="application/pdf",
-                    size_bytes=1024,
-                    filename="report.pdf",
-                ),
-            )
-            # What the real _finalize_action records: the tab it settled on.
-            result.settled_page = page
-            return result
-
-        with patch.object(browser, "_finalize_action", side_effect=capture_finalize):
-            result = await browser.perform_interaction(fake_click, source_page=old_page)
-
-        # The new tab was the settled tab, but a download closes it.  The result has
-        # to name the tab the agent is actually on now, or the snapshot and the
-        # screenshot would both chase a dead tab.
-        assert new_page.is_closed()
-        assert result.settled_page is old_page
+        assert result.tab is browser.get_tab(2)
+        assert result.navigation_response is None
+        assert result.download is None
 
     async def test_no_new_tab_uses_original_page(self) -> None:
         """A click that opens no tab stays on the original page."""
@@ -291,28 +254,24 @@ class TestPerformInteractionNewTab:
         ctx = FakeContext([old_page])
         browser = _make_browser(ctx)
 
-        same_page_response = _fake_response(content_type="text/html")
-        # Attach main_frame so the response listener matches
-        same_page_response.frame = old_page.main_frame
+        same_page_response = _fake_response(
+            url=old_page.url,
+            content_type="text/html",
+            frame=old_page.main_frame,
+        )
 
         async def fake_click() -> None:
             # Response on the same page (normal navigation)
             old_page.emit("response", same_page_response)
 
-        finalize_args: dict[str, Any] = {}
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            finalize_args["response"] = kwargs.get("response")
-            return BrowserInteractionResult()
-
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        assert finalize_args["page"] is old_page
-        assert finalize_args["response"] is same_page_response
+        assert result.tab is browser.get_tab(1)
+        assert result.navigation_response is same_page_response
 
     async def test_new_tab_about_blank_stays_on_original(self) -> None:
         """A new tab left at about:blank with no response stays on the original page."""
@@ -326,19 +285,13 @@ class TestPerformInteractionNewTab:
             ctx.open_tab(blank_page)
             # No response, no download — just an empty tab
 
-        finalize_args: dict[str, Any] = {}
+        result = await browser.coordinate_action(
+            fake_click,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
-        async def capture_finalize(page: Any, **kwargs: Any) -> BrowserInteractionResult:
-            finalize_args["page"] = page
-            return BrowserInteractionResult()
-
-        with (
-            patch.object(browser, "_finalize_action", side_effect=capture_finalize),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
-
-        # No response or download on a blank tab → stay on the original page
-        assert finalize_args["page"] is old_page
+        assert result.tab is browser.get_tab(1)
 
     async def test_response_listeners_cleaned_up(self) -> None:
         """Response listeners on new pages are removed after the interaction."""
@@ -347,36 +300,49 @@ class TestPerformInteractionNewTab:
         browser = _make_browser(ctx)
 
         new_page = FakePage(url="https://example.com/file.pdf")
-        pdf_response = _fake_response(content_type="application/pdf")
+        html_response = _fake_response(
+            url=new_page.url,
+            content_type="text/html",
+            frame=new_page.main_frame,
+        )
 
         async def fake_click() -> None:
             ctx.open_tab(new_page)
-            new_page.emit("response", pdf_response)
+            new_page.emit("response", html_response)
 
-        with (
-            patch.object(browser, "_finalize_action", return_value=BrowserInteractionResult()),
-        ):
-            await browser.perform_interaction(fake_click, source_page=old_page)
+        await browser.coordinate_action(
+            fake_click,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
-        # The response listener should have been removed from the new page
         assert not new_page._listeners.get("response", [])
-
-
-# ---------------------------------------------------------------------------
-# _handle_download — suggested filename rename
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestHandleDownloadRename:
-    """Verify that _handle_download renames files to the suggested filename."""
+class TestDownloadFilename:
+    """Verify download filenames through the public action boundary."""
+
+    @staticmethod
+    async def _download(
+        browser: Browser,
+        page: FakePage,
+        download: AsyncMock,
+    ):
+        async def action() -> None:
+            page.emit("download", download)
+
+        return await browser.coordinate_action(
+            action,
+            source_tab=browser.get_tab(1),
+            wait_for_navigation=False,
+        )
 
     async def test_renames_to_suggested_filename(self, tmp_path: Path) -> None:
         """Download file is renamed from UUID to the server's suggested name."""
-        ctx = FakeContext([FakePage()])
-        browser = _make_browser(ctx)
-        browser._downloads_dir = str(tmp_path)
+        page = FakePage()
+        browser = _make_browser(FakeContext([page]), downloads_dir=str(tmp_path))
 
         # Simulate a Playwright download with a UUID path and suggested name
         uuid_file = tmp_path / "abc123-def456"
@@ -386,10 +352,10 @@ class TestHandleDownloadRename:
         download.path = AsyncMock(return_value=str(uuid_file))
         download.suggested_filename = "BoardRules_March2026.pdf"
 
-        await browser._handle_download(download)
+        result = await self._download(browser, page, download)
 
-        assert len(browser._pending_downloads) == 1
-        info = browser._pending_downloads[0]
+        assert result.download is not None
+        info = result.download
         assert info.filename == "BoardRules_March2026.pdf"
         assert info.content_type == "application/pdf"
         assert info.path == str(tmp_path / "BoardRules_March2026.pdf")
@@ -399,9 +365,8 @@ class TestHandleDownloadRename:
 
     async def test_deduplicates_suggested_filename(self, tmp_path: Path) -> None:
         """Conflicting filenames get a unique suffix."""
-        ctx = FakeContext([FakePage()])
-        browser = _make_browser(ctx)
-        browser._downloads_dir = str(tmp_path)
+        page = FakePage()
+        browser = _make_browser(FakeContext([page]), downloads_dir=str(tmp_path))
 
         # Pre-existing file with the same name
         (tmp_path / "report.pdf").write_bytes(b"existing")
@@ -413,9 +378,10 @@ class TestHandleDownloadRename:
         download.path = AsyncMock(return_value=str(uuid_file))
         download.suggested_filename = "report.pdf"
 
-        await browser._handle_download(download)
+        result = await self._download(browser, page, download)
 
-        info = browser._pending_downloads[0]
+        assert result.download is not None
+        info = result.download
         assert info.filename != "report.pdf"
         assert info.filename.startswith("report_")
         assert info.filename.endswith(".pdf")
@@ -423,9 +389,8 @@ class TestHandleDownloadRename:
 
     async def test_falls_back_to_uuid_path(self, tmp_path: Path) -> None:
         """Falls back to the original path when no suggested filename."""
-        ctx = FakeContext([FakePage()])
-        browser = _make_browser(ctx)
-        browser._downloads_dir = str(tmp_path)
+        page = FakePage()
+        browser = _make_browser(FakeContext([page]), downloads_dir=str(tmp_path))
 
         uuid_file = tmp_path / "some-uuid-name"
         uuid_file.write_bytes(b"some content")
@@ -435,7 +400,8 @@ class TestHandleDownloadRename:
         # No suggested_filename attribute
         del download.suggested_filename
 
-        await browser._handle_download(download)
+        result = await self._download(browser, page, download)
 
-        info = browser._pending_downloads[0]
+        assert result.download is not None
+        info = result.download
         assert info.filename == "some-uuid-name"

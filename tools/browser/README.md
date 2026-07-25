@@ -1,470 +1,213 @@
-# Browser Tools
+# Browser tools
 
-Browser automation tools powered by Playwright. These tools are used by the browser agent to navigate, read, and interact with web pages.
+The browser package gives agents a stable, tab-oriented tool API while keeping
+Playwright behind a small internal model:
 
-## Architecture Overview
-
-```
-+-------------------------------------------------------------+
-|                      TOOL LAYER (Public API)                 |
-|                                                              |
-|  open_url  browse_page  click  fill_field  scroll_page ...   |
-|  page.py   snapshot_    interactions.py    select.py         |
-|            tool.py      read_content.py    vision.py         |
-|                         javascript.py      save_content.py   |
-+-----------------------------+--------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                    CORE LAYER (Internals)                     |
-|                                                              |
-|  Browser          PageView        Selectors     Human        |
-|  (browser.py)     (page_view.py)  (_selectors   (human.py)   |
-|                                    .py)                      |
-|  - Lifecycle      - DOM walker    - Ref-based   - Bezier     |
-|  - ActiveView     - ARIA roles      resolution    mouse      |
-|  - Interaction    - Viewport      - CSS         - Typing     |
-|    cycle            clipping        fallback      delays     |
-|  - Anti-bot       - Shadow DOM                  - Scroll     |
-|  - Frame detect   - Scoping                       timing    |
-|                   - Ref stamping                             |
-|                                                              |
-|  Waits            Events          Exceptions                 |
-|  (waits.py)       (events.py)     (exceptions.py)            |
-|                                                              |
-|  - Network idle   - Progressive   - Unified errors           |
-|  - DOM quiet        screenshots   - Context details          |
-|    window         - Throttling                               |
-|                   - UI events                                |
-+-----------------------------+--------------------------------+
-                              |
-                              v
-+-------------------------------------------------------------+
-|                    PLAYWRIGHT (External)                      |
-|                                                              |
-|  Persistent Context -> Pages -> Frames -> Locators -> Actions|
-+-------------------------------------------------------------+
+```text
+agent tool
+   |
+   v
+Browser  -- owns the Chromium context and open tabs
+   |
+   v
+Tab      -- stable tab ID, navigation, screenshots, selected document
+   |
+   v
+Document -- DOM context plus the owning tab's physical input route
+   |
+   v
+RenderedDocument  -- parsed, agent-readable content and interaction refs
 ```
 
-## Module Structure
+The agent-facing tool signatures are the compatibility boundary. `Browser`,
+`Tab`, and `Document` are free to evolve internally without changing how the
+agent calls the tools or interprets their results.
 
-| File | Purpose |
-|------|---------|
-| `core/browser.py` | Singleton `Browser` class — manages Playwright lifecycle, page tracking, and the settle/interaction cycle |
-| `core/page_view.py` | `build_page_view()` — walks the DOM producing `[ref] [role] name` annotated text, stamps `data-ct-ref` attributes |
-| `core/_selectors.py` | `_resolve_locator()` — resolves ref numbers to Playwright locators via `[data-ct-ref="N"]` |
-| `core/_dom_nodes.py` | `DomNode` dataclass and `parse_nodes()` for structured DOM node data |
-| `core/_pipeline.py` | Rendering pipeline — converts `DomNode` list to formatted text output |
-| `core/human.py` | Human-like mouse movement, click hold, and keystroke timing |
-| `core/waits.py` | Navigation detection and DOM settle logic |
-| `core/exceptions.py` | `BrowserToolError` base exception |
-| `interactions.py` | `click()`, `fill_field()`, `press_keys()`, `scroll_page()`, `drag()`, `go_back()` |
-| `snapshot_tool.py` | `browse_page()` — reads the current page without side effects |
-| `read_content.py` | `read_page()` — reads the current page as clean markdown text |
-| `page.py` | `open_url()` — navigates to a URL |
-| `select.py` | `select_option()` — dropdown/combobox interactions |
-| `javascript.py` | `execute_javascript()` — raw JS evaluation |
-| `vision.py` | `inspect_page()`, `ground_elements_by_text()` — visual inspection and element grounding |
-| `save_content.py` | `save_page_content()` — saves page HTML as markdown |
-| `events.py` | Emits post-action browser screenshot events to the UI |
+## Agent tool surface
 
----
+The package exports these tools from `tools.browser`:
 
-## Core Responsibilities
+| Area | Tools |
+| --- | --- |
+| Navigation | `goto`, `new_tab`, `close_tab`, `go_back` |
+| DOM interaction | `click`, `press_and_hold`, `drag`, `fill_field`, `press_keys`, `select_option`, `scroll_page` |
+| Page access | `browse_page`, `read_page`, `save_page_content` |
+| Advanced access | `execute_javascript`, `inspect_page`, `browser_visual_action` |
 
-### 1. Browser Lifecycle & State (`core/browser.py`)
+Every agent tool has a Google-style docstring. Contract tests pin each tool's
+parameters, defaults, keyword-only boundaries, and documentation sections.
 
-Manages a **persistent Playwright browser singleton**. A single browser instance lives for the entire process, preserving cookies, localStorage, and session state across tool calls.
+Tab IDs are stable and monotonically allocated. Closing a tab never reuses its
+ID, so a stale call fails instead of acting on a different tab. Tools include
+`tab=N` in the page header and expect that value on later calls.
 
-**Key types:**
+## Core model
 
-- **`Browser`** — Wraps a persistent Playwright context. Handles page creation, navigation, and the interaction cycle.
-- **`ActiveView`** — `NamedTuple(frame, title, url)` — The canonical "where to interact" abstraction. Can point at the main page or a dominant iframe.
-- **`get_browser()`** — Lazily initializes the singleton.
-- **`close_browser()`** — Tears down and clears the singleton.
+### Browser
 
-**Page management:**
+`core/browser.py` owns behavior that spans a browser context:
 
-- `current_page()` — Returns the most recent non-closed page or creates a new one.
-- `new_page()` — Opens a new page with jittered viewport dimensions.
-- `pages()` — Lists all open pages.
+- launching and closing Chromium contexts;
+- tracking every tab, including `target=_blank` and `window.open` tabs;
+- assigning stable IDs;
+- coordinating navigation and post-interaction state;
+- capturing downloads and choosing the tab where an interaction ended.
 
-**Anti-bot defenses** (injected via `add_init_script`):
+`core/pool.py` owns process-, conversation-, and agent-scoped Browser
+lifecycle. Keeping the pool separate prevents global lifecycle state from
+leaking into the Browser abstraction.
 
-| Patch | What it does |
-|-------|-------------|
-| `navigator.webdriver` | Set to `false` |
-| `navigator.languages` / `platform` | Spoofed to realistic values |
-| `window.chrome.runtime` | Faked as a real object |
-| `navigator.plugins` | Proxy wrapping real PluginArray |
-| WebGL vendor/renderer | Spoofed to Intel |
-| Permissions API | Returns `"prompt"` for notifications |
-| `outerWidth` / `outerHeight` | Matched to screen bounds |
-| `navigator.userAgentData.brands` | Includes "Google Chrome" |
-| `attachShadow` | Forced to `mode: 'open'` so DOM walker sees shadow roots |
-| Page-change detection | Listeners for beforeunload, pushState, replaceState, popstate, MutationObserver |
+### Tab
 
----
+`core/tab.py` is the behavior boundary for a browser tab. It owns:
 
-### 2. The Interaction Cycle (`Browser.perform_interaction`)
+- the stable ID and underlying Playwright page;
+- normalized tab events, screenshots, activation, and DevTools sessions;
+- explicit navigation exclusion;
+- challenge state;
+- selection and caching of the document browser tools should use;
+- construction of a document-consistent `RenderedDocument`.
 
-Every interaction tool (click, fill, scroll, etc.) delegates to `perform_interaction()`. This is the heart of the system:
+Playwright's Page is not exposed to tool implementations. Package internals
+that genuinely coordinate at the context level use a private accessor.
 
-```
-+----------------------------------------------------+
-|          perform_interaction(action_fn)              |
-|                                                     |
-|  1. Reset     - Clear __pageChange__ markers        |
-|  2. Execute   - Call action_fn (click, type, etc.)  |
-|  3. Detect    - Read __pageChange__ flags           |
-|  4. Settle    - Wait for network idle + DOM quiet   |
-|  5. Re-check  - Read flags again (async updates)    |
-|  6. Classify  - browser-nav / history-nav /         |
-|                  dom-mutation / no-change            |
-|  7. Frame     - Re-detect dominant iframe           |
-|  8. Delay     - 300-800ms human reading pause       |
-+----------------------------------------------------+
-```
+### Document
 
-**Change classification:**
+`core/document.py` hides an important Playwright split: DOM work belongs to a
+Frame, while mouse and keyboard input belong to the owning Page. A Document
+keeps both handles together. It resolves agent refs and owns the element
+operations that use them, so Playwright locators and element handles do not
+escape into tool implementations. `core/input/` contains the low-level
+physical input algorithms used behind that boundary.
 
-| Reason | Trigger |
-|--------|---------|
-| `browser-navigation` | Hard page reload detected |
-| `history-navigation` | pushState / replaceState / popstate |
-| `dom-mutation` | DOM changed without navigation |
-| `no-change` | No detectable changes |
+The root document is selected normally. A large, content-bearing iframe can be
+selected when the outer page is only a host for an embedded application.
+Challenge pages always select the root document so tools do not enter a
+verification widget.
 
----
+A Document object's identity is also its lifetime identity. Root navigation,
+selected-iframe navigation, detachment, or a selection change replaces the
+Document. Rendering checks that identity before returning refs and
+retries once if navigation raced the DOM walk. No parallel generation counter
+is required.
 
-### 3. DOM Snapshots & Ref Stamping (`core/page_view.py`)
+### RenderedDocument and refs
 
-Walks the DOM once per snapshot and produces LLM-consumable annotated text. Each interactive element is stamped with a `data-ct-ref` attribute and shown with a `[ref] [role] name` annotation:
+`core/rendering/renderer.py` walks the selected document once and creates a
+`RenderedDocument`. The renderer emits structured nodes in DOM order, stamps actionable elements with
+`data-ct-ref=N`, and records viewport state. `core/rendering/pipeline.py` applies
+scope filtering, site filters, rendering, and the character budget in Python.
 
-```
-Welcome to our store
-[1] [link] Home  [2] [link] Products  [3] [link] Cart (3)
-Search for products
-[4] [textbox] Search...
-[5] [button] Search
+The agent sees lines such as:
+
+```text
+[3] [searchbox] Search
+[4] [link] Result title
+[5] [button] Add to cart
 ```
 
-The agent uses the ref number as the selector for interaction tools: `click("5")`, `fill_field("4", "laptop")`.
+`Document.resolve_ref()` accepts the returned number and resolves it inside
+the selected Document. If the document changed, the old stamped element is
+absent and the tool tells the agent to call `browse_page()` for fresh refs.
 
-**The JavaScript walker** (`_ANNOTATED_SNAPSHOT_JS`) handles:
+## Interaction pipeline
 
-| Concern | How |
-|---------|-----|
-| Ref stamping | Assigns sequential `data-ct-ref` attributes to each interactive element |
-| Stale cleanup | Removes old `data-ct-ref` attributes before each snapshot |
-| Role mapping | HTML tag -> ARIA role (A->link, BUTTON->button, INPUT[type]->specific role) |
-| Accessible name | aria-label -> aria-labelledby -> label[for] -> placeholder -> alt -> innerText |
-| Visibility | Skips aria-hidden, display:none, opacity:0, overflow-clipped elements |
-| Viewport clipping | Only emits visible elements (unless `full_page=True`) |
-| Shadow DOM | Traverses `el.shadowRoot` after light DOM children |
-| Scoping | Narrows to heading/landmark matching query text |
-| Budget | Default 8000 char limit with truncation flag |
-| Dedup | Tracks emitted lines to avoid repetition |
-| Form state | Shows combobox selected value, checkbox checked state, textbox current value |
+A mutating tool follows one shared path:
 
-**`PageView` model** (Pydantic): `title`, `url`, `status_code`, `content`, `viewport`, `truncated`
-
----
-
-### 4. Selector Resolution (`core/_selectors.py`)
-
-Resolves ref numbers from annotated page views into Playwright Locators using `data-ct-ref` attribute selectors.
-
-```
-Agent sees:    [5] [button] Add to Cart
-Agent passes:  "5"
-                    |
-                    v
-            +-------------------+
-            | _resolve_locator  |
-            |                   |
-            | 1. Parse as int   |
-            | 2. Lookup via     |
-            |    [data-ct-ref]  |
-            | 3. CSS fallback   |  <-- Non-numeric strings tried as CSS
-            +--------+----------+
-                     |
-                     v
-            Playwright Locator (scoped to frame)
+```text
+resolve Browser + Tab + Document
+        |
+resolve ref to an opaque Document element
+        |
+perform the element operation through Document
+        |
+Browser.coordinate_action()
+  - observe navigation/new-tab/download signals
+  - wait briefly for deferred navigation to start
+  - wait for navigation commit when it did start
+  - select the resulting Tab and Document
+        |
+settle selected Document
+        |
+build RenderedDocument, verify Document identity, format tool result
 ```
 
-**How it works:**
+Settling happens at the render-return boundary, after Browser has determined
+which tab and document the action produced. This avoids settling an old
+document immediately before a navigation replaces it. The phases in
+`core/settling.py` are:
 
-- **Ref lookup** — Numeric strings (e.g. `"5"`) resolve via `page.locator('[data-ct-ref="5"]')`. This is 100% reliable because the walker stamps each element during the snapshot.
-- **CSS fallback** — Non-numeric strings are tried as CSS selectors for backwards compatibility.
-- **Stale refs** — If a ref is not found (page changed since snapshot), a `BrowserToolError` tells the agent to call `browse_page()` for fresh refs.
-- **`_LocatorResolution` dataclass** — `locator`, `query`, `resolved_selector`.
+1. document load;
+2. web-font readiness;
+3. a quiet DOM mutation window, including open shadow roots;
+4. completion of short CSS animations.
 
----
+Each phase has an independent cap and records diagnostic timings. Network-idle
+is intentionally not used because analytics, polling, and streaming requests
+can keep it busy long after useful content is ready.
 
-### 5. Human-Like Simulation (`core/human.py`)
+`browse_page()` is the non-mutating reread path. It captures current state
+without repeating the settle delay that mutating tools already paid. The
+document identity check still protects its refs if navigation races the walk.
 
-Makes browser interactions look human to anti-bot systems.
+## Module map
 
-**Mouse movement:**
+```text
+tools/browser/
+  browse.py             annotated page access
+  interactions.py       DOM interaction tools
+  navigation.py         tab and history navigation tools
+  read.py               Markdown reading, chunking, and search
+  save.py               save page content
+  scripting.py          JavaScript execution
+  select.py             select-element interaction
+  vision.py             screenshots and visual actions
+  _visual_actions.py    internal visual-action dispatch
+  _tool_context.py      per-call Browser, Tab, and Document resolution
+  _tool_support.py      coordinated-action result formatting
+  events.py             UI screenshots and tab-state events
 
-```
-human_click(frame, locator)
-    |
-    +-- Get element bounding box
-    +-- Build Bezier trajectory (cubic curve with control points)
-    +-- Apply ease-in-out timing (sinusoidal)
-    +-- Move mouse along path in N steps
-    +-- Hover (50-200ms random)
-    +-- Click (hold 50-150ms random)
-```
+  core/
+    browser.py          browser-context orchestration
+    launch.py           Chrome launch, UA, and init-script policy
+    pool.py             scoped Browser lifecycle
+    tab.py              stable tab behavior
+    document.py         selected DOM and input routing
+    settling.py         bounded document settling
+    downloads.py        file detection and persistence
+    challenges.py       anti-bot challenge detection
+    formatting.py       agent-facing result formatting
+    markdown.py         HTML-to-Markdown conversion
 
-**Typing:**
+    input/
+      pointer.py        mouse movement, clicks, holds, and drags
+      keyboard.py       typing and key chords
+      scroll.py         document scrolling
 
-```
-human_type(frame, locator, text)
-    |
-    +-- Click to focus
-    +-- Clear existing text (Ctrl+A -> Backspace)
-    +-- Type each character with:
-        +-- Random delay (30-90ms per key)
-        +-- Extra pause every N chars (100-300ms)
-```
-
-**`_page_for(target: Page | Frame) -> Page`** — Utility that extracts the Page from a Page or Frame, since mouse/keyboard APIs require Page-level access.
-
-All timing parameters are configurable via `config.yaml` under `tools.browser.human`.
-
----
-
-### 7. Post-Interaction Settling (`core/waits.py`)
-
-Waits for the page to stabilize after an interaction.
-
-- **Navigation settle** — Waits for `networkidle` load state (configurable timeout).
-- **DOM settle** — JavaScript watches for N ms of no MutationObserver activity (ignores input value changes). Respects a max timeout to avoid hanging on constantly-mutating pages.
-
----
-
-### 8. Error Handling (`core/exceptions.py`)
-
-All browser tool failures raise `BrowserToolError` with:
-
-- `message` — Human-readable description
-- `tool` — Short identifier (e.g. `"click"`, `"fill_field"`)
-- `details` — Optional JSON-serializable context dict
-
-Formatted as: `[click] Ref 5 not found on the page. ({"selector": "[data-ct-ref=\"5\"]"})`
-
----
-
-## Tool Implementations
-
-### Interaction Tools (`interactions.py`)
-
-Every interaction tool follows the same pattern:
-
-```
-+---------------------------------------------+
-|           Standard Tool Flow                 |
-|                                              |
-|  1. get_active_view("tool_name")             |
-|     -> (Browser, ActiveView)                 |
-|                                              |
-|  2. _resolve_or_raise(view.frame, selector)  |
-|     -> _LocatorResolution                    |
-|     (ref number -> [data-ct-ref] locator)    |
-|                                              |
-|  3. browser.perform_interaction(action_fn)   |
-|     -> BrowserInteractionResult              |
-|     (action + settle + change detection)     |
-|                                              |
-|  4. _format_result(browser_result)           |
-|     -> Formatted string with page snapshot   |
-|                                              |
-|  5. @emit_screenshot_after                   |
-|     -> Screenshot event to UI (decorator)    |
-+---------------------------------------------+
+    rendering/
+      model.py          RenderedDocument model
+      renderer.py       DOM walk and RenderedDocument construction
+      pipeline.py       structured-node rendering and budgets
+      nodes.py          structured DOM node types
+      filters/          site-specific rendering filters
 ```
 
-**Tools:**
+## Tests
 
-| Function | What it does |
-|----------|-------------|
-| `click(selector)` | Resolves ref, human-clicks, returns snapshot |
-| `fill_field(selector, value)` | Validates input/textarea, clicks, clears, types with human timing |
-| `press_keys(keys)` | Types key sequences with random delays, supports modifier chains |
-| `scroll_page(direction, amount)` | Scrolls with budget enforcement per URL |
-| `go_back()` | Browser back button |
-| `drag(source, target, offset)` | Drag from element to element or by pixel offset |
-| `press_and_hold(selector, duration)` | For bot-detection challenges (clamped 500-10000ms) |
-| `click_at(x, y)` | Coordinate-based click |
-| `press_and_hold_at(x, y, duration)` | Coordinate-based press-and-hold |
+Fast unit tests live in `tests/unit/tools/browser`. They cover individual
+policies and Playwright edge cases with focused stubs.
 
-All interaction tools return a formatted string containing the action header and updated page snapshot.
+Real-browser tests live in `tests/browser_tools`. They import agent tools from
+the public `tools.browser` surface and drive them against fixture pages in a
+real headed Chrome. The fixture only supplies the Browser lifecycle and local
+HTTP origins; page operations go through the same public tool functions used
+by agents.
 
-### Dropdown Selection (`select.py`)
+Run them with:
 
-Two-phase approach for `<select>` elements:
-
-1. **Keyboard** (Home -> ArrowDown x N -> Enter) — generates `isTrusted: true` events that bypass JS validation.
-2. **JS fallback** — Sets `selectedIndex` + dispatches change event.
-
-### Read-Only Tools
-
-| Tool | File | What it does |
-|------|------|-------------|
-| `browse_page(scope, full_page)` | `snapshot_tool.py` | Annotated `[ref] [role] name` snapshot, no side effects |
-| `open_url(url)` | `page.py` | Navigates + returns snapshot with status_code |
-| `read_page(chunk, query)` | `read_content.py` | Whole page as markdown via html2text, 20K-char line-snapped chunks, optional query search that reports which chunk each match is in |
-| `save_page_content(filename)` | `save_content.py` | Saves page as markdown file |
-
-### Vision Tools (`vision.py`)
-
-Screenshot-based analysis using a vision model (Ollama).
-
-```
-inspect_page(prompt, mode)
-    |
-    +-- Capture screenshot (full_page / viewport / element)
-    +-- Send to vision model with prompt
-    +-- Return textual response
-
-ground_elements_by_text(text)
-    |
-    +-- Capture screenshot
-    +-- Ask vision model for element locations
-    +-- Parse normalized 0-1000 bounding boxes
-    +-- Resolve CSS selectors from page
-    +-- Return list[GroundingResult]
-            |
-            +-- click_element(grounding_result)
-                    +-- click_at(center_x, center_y)
+```bash
+just test-browser-tools
 ```
 
-This provides a fallback path when ref-based selectors can't find an element — the agent can "look" at the page and click by visual position.
-
-### JavaScript Execution (`javascript.py`)
-
-`execute_javascript(code, timeout_ms)` — Evaluates arbitrary JavaScript in the page context. Returns a dict with `success`, `result`, and `error` fields.
-
----
-
-## Events & Screenshots (`events.py`)
-
-Publishes `BrowserScreenshotPayload` events to the UI for thumbnails and
-post-action state. The live, high-frame-rate view of the *selected* tab is
-served separately by the browser control side channel (CDP screencast), so
-these screenshots only fire at discrete points — they are not a live stream.
-
-```
-+---------------------------------------------+
-|        Screenshot Emission                   |
-|                                              |
-|  Tool call runs                              |
-|       |                                      |
-|       +-- Tool returns result                |
-|            |                                 |
-|            v                                 |
-|  @emit_screenshot_after                      |
-|  (decorator captures post-action screenshot, |
-|   tagged with tab id + open-tab id set)      |
-|                                              |
-|  javascript.py also calls emit_screenshot()  |
-|  ad-hoc after JS evaluation.                 |
-+---------------------------------------------+
-```
-
-Screenshots are emitted to the UI for visual feedback but are **not included in tool return values** — this saves LLM context tokens.
-
----
-
-## Active Frame (iframe support)
-
-When a dominant iframe covers >25% of the viewport (e.g. booking widgets, modal overlays), all tools automatically operate on that iframe instead of the main page. This is transparent to the agent — it doesn't need to know about iframes.
-
-- `Browser.active_frame()` — Returns dominant iframe if detected, else main page.
-- `Browser._detect_dominant_frame()` — Measures iframe bounding boxes, skips detached frames.
-- `Browser.clear_active_frame()` — Resets to main page.
-- `Browser.active_view()` — Proactively detects dominant iframe, returns `ActiveView`.
-
----
-
-## Scroll Budget
-
-Prevents the agent from scrolling endlessly on long pages. Tracked **per URL, per async task** (using `contextvars` so concurrent requests don't interfere).
-
-- **Warn threshold**: After N scrolls on the same URL, a warning is injected into the snapshot telling the agent to stop or use `browse_page(full_page=True)`.
-- **Hard limit**: After N scrolls, `scroll_page()` raises `BrowserToolError` and refuses to scroll further.
-- **URL change resets**: Navigating to a new page resets the counter.
-
-### Configuration (`config.yaml`)
-
-```yaml
-tools:
-  browser:
-    scroll_warn_threshold: 5   # scrolls before warning appears
-    scroll_hard_limit: 10      # scrolls before hard stop
-```
-
----
-
-## Cross-Cutting Interaction Map
-
-```
-                    Agent (LLM)
-                        |
-                        | tool call: click("5")
-                        v
-              +------------------+
-              |  interactions.py  |
-              +---------+--------+
-                        |
-          +-------------+-------------+
-          v             v             v
-   get_active_view  _resolve     perform_
-   (browser.py)     _locator     interaction
-          |        (_selectors   (browser.py)
-          |         .py)              |
-          v             |     +-------+-------+
-    Browser.            |     |       |       |
-    active_view()       |   human_  waits.  page_change
-          |             |   click() py     detection JS
-          |             |   (human         (browser.py)
-          v             |    .py)
-    ActiveView          |
-    (frame,title,url)   |
-                        v
-              [data-ct-ref="5"]
-                        |
-                        v
-              +-----------------+
-              | Playwright API  |
-              +--------+--------+
-                       |
-                       v
-              +-----------------+     +--------------+
-              |  DOM changes    |---->| events.py    |
-              +-----------------+     | (screenshot  |
-                       |              |  to UI)      |
-                       v              +--------------+
-              build_page_view()
-              (page_view.py)
-                       |
-                       v
-              Formatted string
-              (back to agent)
-```
-
----
-
-## Data Models
-
-| Model | Type | Fields |
-|-------|------|--------|
-| `ActiveView` | NamedTuple | `frame`, `title`, `url` |
-| `PageView` | Pydantic | `title`, `url`, `status_code`, `content`, `viewport`, `truncated` |
-| `DomNode` | dataclass | `type`, `text`, `role`, `name`, `ref`, `value`, `checked`, `viewport` |
-| `BrowserInteractionResult` | Pydantic | `navigation`, `page_changed`, `reason`, `navigation_response` |
-| `GroundingResult` | Pydantic | `text`, `bbox`, `center`, `selector`, `reasoning` |
-| `_LocatorResolution` | dataclass | `locator`, `query`, `resolved_selector` |
+The recipe always uses headed mode. When `xvfb-run` is available it allocates a
+separate display; otherwise it uses the current display.

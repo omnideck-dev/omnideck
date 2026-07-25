@@ -3,96 +3,18 @@
 from __future__ import annotations
 
 import logging
-import random
 
-from playwright.async_api import ElementHandle, Error as PlaywrightError, Page
+from playwright.async_api import Error as PlaywrightError
 
-from .core import get_active_view
+from ._tool_context import get_document
+from ._tool_support import format_action_result
 from .core.exceptions import BrowserToolError
-from .core.human import human_click, human_press_keys
-from .interactions import _format_result, _resolve_or_raise
 
 logger = logging.getLogger(__name__)
 
-# Maximum options to navigate via keyboard before falling back to JS.
-# Keeps the interaction time reasonable for long option lists.
-_MAX_KEYBOARD_NAV_STEPS = 30
-
-
-async def _keyboard_select(
-    page: Page,
-    select_handle: ElementHandle,
-    target_index: int,
-) -> bool:
-    """Try to select an option using keyboard navigation (trusted events).
-
-    Presses Home to reset to first option, then ArrowDown × target_index,
-    then Enter.  All key presses generate ``isTrusted: true`` events.
-
-    Returns ``True`` if the native ``<select>`` element's ``selectedIndex``
-    matches ``target_index`` after navigation, ``False`` otherwise.
-    """
-    if target_index > _MAX_KEYBOARD_NAV_STEPS:
-        logger.debug(
-            "Target index %d exceeds keyboard nav limit %d; skipping keyboard approach",
-            target_index,
-            _MAX_KEYBOARD_NAV_STEPS,
-        )
-        return False
-
-    try:
-        # Home resets to the first option in a native <select>.
-        await human_press_keys(page, ["Home"])
-        await page.wait_for_timeout(random.randint(30, 80))
-
-        # Navigate down to the target option
-        for _ in range(target_index):
-            await human_press_keys(page, ["ArrowDown"])
-            await page.wait_for_timeout(random.randint(20, 60))
-
-        # Confirm selection
-        await human_press_keys(page, ["Enter"])
-        await page.wait_for_timeout(random.randint(50, 150))
-
-        # Verify the native <select> actually changed
-        actual_index = await select_handle.evaluate("el => el.selectedIndex")
-        if actual_index == target_index:
-            logger.debug("Keyboard navigation succeeded: selectedIndex=%d", actual_index)
-            return True
-
-        logger.debug(
-            "Keyboard navigation landed on index %d instead of %d; will fall back to JS",
-            actual_index,
-            target_index,
-        )
-        return False
-    except (PlaywrightError, Exception) as exc:
-        logger.debug("Keyboard navigation failed: %s", exc)
-        return False
-
-
-async def _js_select(select_handle: ElementHandle, target_index: int) -> None:
-    """Fall back to setting selectedIndex via JS with synthetic events.
-
-    Event dispatch is wrapped in try/catch because some pages' handlers
-    assume internal state from a real native interaction and can throw.
-    """
-    await select_handle.evaluate(
-        """(el, idx) => {
-            el.selectedIndex = idx;
-            try {
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            } catch (_) {
-                // Page-side handler errors should not prevent selection.
-            }
-        }""",
-        target_index,
-    )
-
 
 async def select_option(
-    selector: str,
+    ref: str,
     value: str,
     wait_after_select_ms: int | None = None,
     *,
@@ -101,75 +23,46 @@ async def select_option(
     """Select an option from a ``<select>`` dropdown by visible text.
 
     Args:
-        selector: Ref number from ``browse_page()`` output.
+        ref: Ref number from ``browse_page()`` output.
             Examples: ``"7"``, ``"12"``.
         value: Exact visible text of the option (case-sensitive).
             Example: ``"Price: Low to High"``.
         wait_after_select_ms: Optional ms to wait after selecting.
-        tab: 1-based tab index when multiple tabs are open.
+        tab: Stable tab ID to inspect — the ID shown in the document
+            header (e.g. ``tab="3"``).
 
     Returns:
-        Formatted string with action header and page snapshot.
+        Formatted string with action header and rendered document.
 
     Raises:
         BrowserToolError: If dropdown not found or option text doesn't match.
     """
-    logger.info("Selecting option '%s' from dropdown '%s'", value, selector)
+    clean_ref = ref.strip()
+    logger.info("Selecting option '%s' from dropdown ref %s", value, clean_ref)
 
-    browser, view = await get_active_view("select_option", tab=tab)
+    browser, resolved_tab, document = await get_document("select_option", tab=tab)
 
     try:
-        # Resolve selector using shared resolution (ref number from page view).
-        resolution = await _resolve_or_raise(view.frame, selector.strip(), tool_name="select_option")
-
-        select_locator = resolution.locator
-
-        # Get all options to find the index of the desired value
-        options = [o.strip() for o in await select_locator.locator("option").all_text_contents()]
-        try:
-            target_index = options.index(value)
-        except ValueError as exc:
-            msg = f"Option '{value}' not found in dropdown. Available options: {options}"
-            raise BrowserToolError(msg, tool="select_option") from exc
-
-        # Pin an ElementHandle so DOM changes (e.g. custom overlay opening)
-        # don't invalidate our reference — positional locators like .nth(1)
-        # break when the page adds/removes elements.
-        select_handle = await select_locator.element_handle(timeout=5000)
-
-        # Get the page for wait_for_timeout calls
-        page = view.page
+        resolution = await document.resolve_ref(clean_ref, tool_name="select_option")
 
         async def _perform_select() -> None:
-            # Click the dropdown to open it (human-like mouse movement).
-            await human_click(view.frame, select_locator)
-            await page.wait_for_timeout(random.randint(100, 300))
-
-            # Try keyboard navigation first — generates isTrusted:true events
-            # that avoid bot detection.  Falls back to JS if the keyboard
-            # approach doesn't land on the right option (custom overlays can
-            # intercept keys and shift the cursor unpredictably).
-            # _keyboard_select needs a Page (not Frame) for wait_for_timeout
-            kb_ok = await _keyboard_select(page, select_handle, target_index)
-
-            if not kb_ok:
-                logger.debug("Falling back to JS selectedIndex for '%s'", value)
-                await _js_select(select_handle, target_index)
-                # Close any open overlay
-                await human_press_keys(view.frame, ["Escape"])
-            # else: keyboard Enter already closed the dropdown
-
-            if wait_after_select_ms:
-                await page.wait_for_timeout(wait_after_select_ms)
+            await document.select_option(
+                resolution,
+                value,
+                wait_after_select_ms=wait_after_select_ms,
+            )
 
         # Perform interaction and check for page changes
-        browser_result = await browser.perform_interaction(_perform_select, source_page=page)
-        return await _format_result(browser_result, page)
+        browser_result = await browser.coordinate_action(
+            _perform_select,
+            source_tab=resolved_tab,
+        )
+        return await format_action_result(browser_result, tool_name="select_option", resolution=resolution)
     except BrowserToolError:
         raise
     except PlaywrightError as exc:
-        logger.exception("Failed to select option '%s' from '%s'", value, selector)
-        msg = f"Failed to select option '{value}' from dropdown '{selector}'"
+        logger.exception("Failed to select option '%s' from ref %s", value, clean_ref)
+        msg = f"Failed to select option '{value}' from dropdown ref {clean_ref}"
         raise BrowserToolError(msg, tool="select_option") from exc
 
 

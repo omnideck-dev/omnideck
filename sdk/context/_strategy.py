@@ -717,8 +717,8 @@ _TOOL_ARG_KEYS: dict[str, list[str]] = {
     "replace_in_file": ["path"],
     "run_bash_cmd": ["cmd", "command"],
     "open_url": ["url"],
-    "click": ["selector", "ref"],
-    "fill_field": ["selector", "ref"],
+    "click": ["ref"],
+    "fill_field": ["ref"],
     "grep": ["pattern", "query"],
     "list_dir": ["path"],
     "generate_image": ["prompt"],
@@ -975,5 +975,3 @@ def _dedup_page_snapshots(messages: list[dict]) -> None:
             base_url = m.group(1).split("?")[0]
             if last_seen.get(base_url) != i:
                 msg["content"] = "[page snapshot — superseded by later snapshot]"
-
-

@@ -40,6 +40,8 @@ class HumanTypingConfig(BaseModel):
 class HumanPointerConfig(BaseModel):
     """Pointer movement simulation configuration."""
 
+    move_duration_min_ms: int = 120
+    move_duration_max_ms: int = 240
     hover_min_ms: int = 80
     hover_max_ms: int = 160
     click_hold_min_ms: int = 25

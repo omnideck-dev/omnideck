@@ -1,20 +1,23 @@
-"""Browser tools: tab-aware navigation (goto, new_tab, close_tab)."""
+"""Browser tools for tab-aware URL and history navigation."""
 
 from __future__ import annotations
 
 import logging
 
-import tools.browser.core as browser_core
+from playwright.async_api import Error as PlaywrightError
+
+from tools.browser._tool_context import get_document, get_tab
+from tools.browser._tool_support import format_action_result
 from tools.browser.core.exceptions import BrowserToolError
+from tools.browser.core.pool import get_browser
 from tools.browser.events import emit_screenshot, emit_screenshot_after, emit_tab_state
-from tools.browser.interactions import _format_result
 
 logger = logging.getLogger(__name__)
 
 
 @emit_screenshot_after
 async def goto(url: str, *, tab: str) -> str:
-    """Navigate an existing tab to ``url`` and return its snapshot.
+    """Navigate an existing tab to ``url`` and return its rendered document.
 
     ``goto`` only re-points a tab that already exists.  To open a fresh
     page, use ``new_tab(url)`` — that is the only way to create a tab.
@@ -25,19 +28,18 @@ async def goto(url: str, *, tab: str) -> str:
     Args:
         url: The URL to navigate to.
         tab: Stable tab ID to navigate — pass the ID shown in the
-            snapshot header (e.g. ``tab="3"``).
+            document header (e.g. ``tab="3"``).
 
     Returns:
-        Annotated page snapshot of the navigated tab.
+        Annotated rendered document for the navigated tab.
+
+    Raises:
+        BrowserToolError: If the tab is unavailable or navigation fails.
     """
     try:
-        browser = await browser_core.get_browser()
-        try:
-            page = browser.resolve_tab(tab)
-        except ValueError as exc:
-            raise BrowserToolError(str(exc), tool="goto") from exc
-        result = await browser.navigate(url, page=page)
-        return await _format_result(result, page, tool_name="goto")
+        browser, resolved_tab = await get_tab("goto", tab=tab)
+        result = await browser.navigate(url, tab=resolved_tab)
+        return await format_action_result(result, tool_name="goto")
     except BrowserToolError:
         raise
     except Exception as exc:  # pragma: no cover - wrap into tool error
@@ -46,9 +48,9 @@ async def goto(url: str, *, tab: str) -> str:
 
 
 async def new_tab(url: str) -> str:
-    """Open a new tab at ``url`` and return its snapshot.
+    """Open a new tab at ``url`` and return its rendered document.
 
-    Use this when you want to keep the current page intact and view
+    Use this when you want to keep the current page intact and inspect
     something else in addition — e.g. opening a search result without
     losing the listing, or fetching several pages in parallel.
 
@@ -56,19 +58,22 @@ async def new_tab(url: str) -> str:
         url: The URL the new tab should navigate to.
 
     Returns:
-        Annotated page snapshot of the new tab.  The header carries the
+        Annotated rendered document for the new tab. The header carries the
         new tab's ID (``tab=N``) — use that ID on subsequent tools to
         act on this tab.
+
+    Raises:
+        BrowserToolError: If the tab limit is reached or navigation fails.
     """
     try:
-        browser = await browser_core.get_browser()
-        page = await browser.new_page()
-        result = await browser.navigate(url, page=page)
-        formatted = await _format_result(result, page, tool_name="new_tab")
+        browser = await get_browser()
+        resolved_tab = await browser.new_tab()
+        result = await browser.navigate(url, tab=resolved_tab)
+        formatted = await format_action_result(result, tool_name="new_tab")
         # new_tab is the one tool that doesn't take a ``tab`` kwarg, so
         # it emits its own screenshot explicitly rather than going through
         # the @emit_screenshot_after decorator.
-        await emit_screenshot(page)
+        await emit_screenshot(resolved_tab)
         return formatted
     except BrowserToolError:
         raise
@@ -80,25 +85,23 @@ async def new_tab(url: str) -> str:
 async def close_tab(*, tab: str) -> str:
     """Close a tab and free its resources.
 
-    With one tab open, ``tab`` may be omitted.  With multiple tabs,
-    pass the ID of the tab to close.  Closing a tab does not free its
-    ID — a later call that references a closed tab errors with the
-    open-tab listing, rather than acting on a different tab.
+    Closing a tab does not free its ID. A later call that references the
+    closed tab errors with the open-tab listing rather than acting on a
+    different tab.
 
     Args:
-        tab: Stable tab ID to close.  Omit when only one tab is open.
+        tab: Stable ID of the tab to close.
 
     Returns:
         Confirmation line naming the closed tab.
+
+    Raises:
+        BrowserToolError: If the tab does not exist or cannot be closed.
     """
     try:
-        browser = await browser_core.get_browser()
-        try:
-            page = browser.resolve_tab(tab)
-        except ValueError as exc:
-            raise BrowserToolError(str(exc), tool="close_tab") from exc
-        closed_id = browser.tab_id_of(page)
-        await page.close()
+        browser, resolved_tab = await get_tab("close_tab", tab=tab)
+        closed_id = resolved_tab.id
+        await resolved_tab.close()
         # close_tab produces no screenshot, so emit the reduced open-tab set
         # explicitly to prune the closed tab from the UI's record.
         await emit_tab_state()
@@ -110,4 +113,30 @@ async def close_tab(*, tab: str) -> str:
         raise BrowserToolError(str(exc), tool="close_tab") from exc
 
 
-__all__ = ["close_tab", "goto", "new_tab"]
+@emit_screenshot_after
+async def go_back(*, tab: str) -> str:
+    """Navigate back in browser history and return an updated rendered document.
+
+    Args:
+        tab: Tab ID to act on.
+
+    Returns:
+        Updated rendered-document string.
+
+    Raises:
+        BrowserToolError: If back navigation fails.
+    """
+    browser, resolved_tab, _document = await get_document("go_back", tab=tab)
+
+    try:
+        browser_result = await browser.navigate_back(tab=resolved_tab)
+    except BrowserToolError:
+        raise
+    except PlaywrightError as exc:
+        logger.exception("Playwright error during go_back")
+        raise BrowserToolError("Failed to navigate back", tool="go_back") from exc
+
+    return await format_action_result(browser_result, tool_name="go_back")
+
+
+__all__ = ["close_tab", "go_back", "goto", "new_tab"]

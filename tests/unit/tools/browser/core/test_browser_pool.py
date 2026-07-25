@@ -6,16 +6,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
-from tools.browser.core.browser import (
-    Browser,
-    _agent_browsers,
+from tools.browser.core.browser import Browser
+from tools.browser.core.pool import (
+    _scoped_browsers,
     get_browser,
     release_agent_browser,
 )
 
-# All get_browser patches target browser.py's namespace since the names
+# All get_browser patches target pool.py's namespace since the names
 # are bound there at import time, not looked up in sdk.events each call.
-_MOD = "tools.browser.core.browser"
+_MOD = "tools.browser.core.pool"
 
 
 class _FakePage:
@@ -75,9 +75,9 @@ def _make_browser(**kwargs: Any) -> Browser:
 @pytest.fixture(autouse=True)
 def _clean_pool():
     """Ensure the global pool is clean."""
-    _agent_browsers.clear()
+    _scoped_browsers.clear()
     yield
-    _agent_browsers.clear()
+    _scoped_browsers.clear()
 
 
 async def test_agent_gets_ephemeral_context(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,7 +96,7 @@ async def test_agent_gets_ephemeral_context(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result is not root
     assert result._context is ephemeral_ctx
-    assert "root.1" in _agent_browsers
+    assert "root.1" in _scoped_browsers
     assert result._downloads_dir == root._downloads_dir
 
 
@@ -133,25 +133,25 @@ async def test_concurrent_agents_get_separate_contexts(monkeypatch: pytest.Monke
 
     assert first is not second
     assert first._context is not second._context
-    assert "task_a.1" in _agent_browsers
-    assert "task_b.2" in _agent_browsers
+    assert "task_a.1" in _scoped_browsers
+    assert "task_b.2" in _scoped_browsers
 
 
 async def test_release_agent_browser_closes_context() -> None:
     """release_agent_browser closes the ephemeral context and removes it from the pool."""
     browser = _make_browser()
-    _agent_browsers["agent_x"] = browser
+    _scoped_browsers["agent_x"] = browser
 
     await release_agent_browser("agent_x")
 
-    assert "agent_x" not in _agent_browsers
+    assert "agent_x" not in _scoped_browsers
     assert browser._closed is True
 
 
 async def test_release_nonexistent_agent_is_noop() -> None:
     """Releasing a browser for an agent that doesn't exist is a no-op."""
     await release_agent_browser("nonexistent")
-    assert len(_agent_browsers) == 0
+    assert len(_scoped_browsers) == 0
 
 
 async def test_root_agent_reuses_conversation_context(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,7 +162,7 @@ async def test_root_agent_reuses_conversation_context(monkeypatch: pytest.Monkey
         context=prior_ctx, extra_headers={}, pw=None, profile_dir=""
     )
     prior_browser._downloads_dir = "/tmp/dl"
-    _agent_browsers["conv:abc-123"] = prior_browser
+    _scoped_browsers["conv:abc-123"] = prior_browser
 
     # Root agent: depth 0, conv_id set — key is "conv:abc-123".
     monkeypatch.setattr(f"{_MOD}.get_current_depth", lambda: 0)
@@ -173,7 +173,7 @@ async def test_root_agent_reuses_conversation_context(monkeypatch: pytest.Monkey
         result = await get_browser()
 
     assert result is prior_browser
-    assert "conv:abc-123" in _agent_browsers
+    assert "conv:abc-123" in _scoped_browsers
     root._pw_browser.new_context.assert_not_awaited()
 
 
@@ -184,7 +184,7 @@ async def test_different_conversation_gets_separate_context(monkeypatch: pytest.
         context=_FakeContext([_FakePage()]), extra_headers={}, pw=None, profile_dir=""
     )
     old_browser._downloads_dir = "/tmp/dl"
-    _agent_browsers["conv:old-conv"] = old_browser
+    _scoped_browsers["conv:old-conv"] = old_browser
 
     monkeypatch.setattr(f"{_MOD}.get_current_depth", lambda: 0)
     monkeypatch.setattr(f"{_MOD}.get_conversation_id", lambda: "new-conv")
@@ -194,18 +194,18 @@ async def test_different_conversation_gets_separate_context(monkeypatch: pytest.
         result = await get_browser()
 
     assert result is not old_browser
-    assert "conv:new-conv" in _agent_browsers
-    assert "conv:old-conv" in _agent_browsers
+    assert "conv:new-conv" in _scoped_browsers
+    assert "conv:old-conv" in _scoped_browsers
 
 
 async def test_release_conversation_browser_by_key() -> None:
     """release_agent_browser with a conv: key releases the conversation context."""
     browser = _make_browser()
-    _agent_browsers["conv:target-conv"] = browser
+    _scoped_browsers["conv:target-conv"] = browser
 
     await release_agent_browser("conv:target-conv")
 
-    assert "conv:target-conv" not in _agent_browsers
+    assert "conv:target-conv" not in _scoped_browsers
     assert browser._closed is True
 
 

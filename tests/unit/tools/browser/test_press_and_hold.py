@@ -4,23 +4,27 @@ from __future__ import annotations
 
 import pytest
 
+from tests.unit.tools.browser.support.playwright_stubs import StubPage
 from tools.browser import BrowserToolError
+from tools.browser.core.document import Document, ResolvedElement
 from tools.browser.interactions import press_and_hold
-from tests.unit.tools.browser.support.playwright_stubs import StubLocator, StubPage
 
 
 async def _human_press_and_hold_passthrough(
-    page: object, locator: StubLocator, duration_ms: int = 3000
+    document: Document,
+    element: ResolvedElement,
+    *,
+    duration_ms: int,
 ) -> None:
-    """Passthrough that clicks the locator to trigger navigation stubs."""
-    await locator.click()
+    """Record a successful Document-level press without physical input."""
+    assert element.ref.isdecimal()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_press_and_hold_basic(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """Pressing and holding a role-matched element returns a valid snapshot."""
@@ -30,11 +34,8 @@ async def test_press_and_hold_basic(
         url="https://example.test/challenge",
     )
     page.add_ref_locator(1, tag="button")
-    patch_interactions_browser(page)
-    monkeypatch.setattr(
-        "tools.browser.interactions.human_press_and_hold",
-        _human_press_and_hold_passthrough,
-    )
+    browser_tool_harness(page)
+    monkeypatch.setattr(Document, "press_and_hold", _human_press_and_hold_passthrough)
 
     result = await press_and_hold("1", duration_ms=3000, tab="1")
     assert isinstance(result, str)
@@ -44,12 +45,12 @@ async def test_press_and_hold_basic(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_press_and_hold_empty_selector(
-    patch_interactions_browser,
+async def test_press_and_hold_empty_ref(
+    browser_tool_harness,
 ) -> None:
-    """Empty selector raises BrowserToolError before accessing the browser."""
+    """An empty ref raises BrowserToolError before accessing the browser."""
     page = StubPage(url="https://example.test/page")
-    patch_interactions_browser(page)
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError, match="non-empty"):
         await press_and_hold("   ", tab="1")
@@ -59,15 +60,11 @@ async def test_press_and_hold_empty_selector(
 @pytest.mark.asyncio
 async def test_press_and_hold_about_blank(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
 ) -> None:
     """Pressing on about:blank raises a helpful error."""
     page = StubPage(url="about:blank", body_text="")
-    patch_interactions_browser(page)
-    monkeypatch.setattr(
-        "tools.browser.interactions.human_press_and_hold",
-        _human_press_and_hold_passthrough,
-    )
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError, match="Navigate"):
         await press_and_hold("1", tab="1")
@@ -77,7 +74,7 @@ async def test_press_and_hold_about_blank(
 @pytest.mark.asyncio
 async def test_press_and_hold_not_found(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
 ) -> None:
     """Raises BrowserToolError when element can't be located."""
     page = StubPage(
@@ -85,11 +82,7 @@ async def test_press_and_hold_not_found(
         body_text="Page content",
         url="https://example.test/challenge",
     )
-    patch_interactions_browser(page)
-    monkeypatch.setattr(
-        "tools.browser.interactions.human_press_and_hold",
-        _human_press_and_hold_passthrough,
-    )
+    browser_tool_harness(page)
 
     with pytest.raises(BrowserToolError):
         await press_and_hold("99", tab="1")
@@ -99,13 +92,18 @@ async def test_press_and_hold_not_found(
 @pytest.mark.asyncio
 async def test_press_and_hold_duration_clamped(
     monkeypatch: pytest.MonkeyPatch,
-    patch_interactions_browser,
+    browser_tool_harness,
     settle_tracker,
 ) -> None:
     """Duration is clamped to 500-10000 range and passed to human helper."""
     captured_durations: list[int] = []
 
-    async def _capture_duration(page: object, locator: object, duration_ms: int = 3000) -> None:
+    async def _capture_duration(
+        document: Document,
+        element: ResolvedElement,
+        *,
+        duration_ms: int,
+    ) -> None:
         captured_durations.append(duration_ms)
 
     page = StubPage(
@@ -114,11 +112,8 @@ async def test_press_and_hold_duration_clamped(
         url="https://example.test/challenge",
     )
     page.add_ref_locator(1, tag="button")
-    patch_interactions_browser(page)
-    monkeypatch.setattr(
-        "tools.browser.interactions.human_press_and_hold",
-        _capture_duration,
-    )
+    browser_tool_harness(page)
+    monkeypatch.setattr(Document, "press_and_hold", _capture_duration)
 
     # Below minimum: should clamp to 500
     await press_and_hold("1", duration_ms=100, tab="1")

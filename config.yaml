@@ -15,6 +15,8 @@ tools:
     headless: false  # true = no GUI, false = visible browser window
     human:
       pointer:
+        move_duration_min_ms: 120
+        move_duration_max_ms: 240
         hover_min_ms: 90
         hover_max_ms: 180
         click_hold_min_ms: 35
