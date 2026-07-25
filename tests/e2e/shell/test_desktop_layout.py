@@ -112,6 +112,9 @@ def test_split_resize_tab_order_and_selection_persist_on_refresh(page: Page):
     _open_destinations(page, "settings")
     desktop.move("destination:settings", "right")
     _open_destinations(page, "agents")
+    expect(desktop.active_view("left")).to_have_attribute(
+        "data-view-id", "destination:agents"
+    )
 
     handle_box = _rect(desktop.split_handle)
     before = desktop.root.get_attribute("style")
@@ -125,6 +128,15 @@ def test_split_resize_tab_order_and_selection_persist_on_refresh(page: Page):
     page.wait_for_timeout(300)
     resized = desktop.root.get_attribute("style")
     assert resized != before
+    # Pin the persisted bytes as well as the restored UI. A later bootstrap
+    # command must not be able to hide a stale snapshot write by changing the
+    # selection only after reload.
+    saved_active_view_id = page.evaluate(
+        """() => JSON.parse(
+            localStorage.getItem('omnideck_desktop_window_v1')
+        ).layout.tabGroups.left.activeViewId"""
+    )
+    assert saved_active_view_id == "destination:agents"
 
     page.reload()
 

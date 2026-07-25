@@ -1,36 +1,67 @@
-import { useCallback, useEffect } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useState,
+} from 'react';
 
-/** Resolves a serializable artifact ID after its source conversation loads. */
+import {
+    useAppEffectSubscription,
+} from '../app/AppEffects.jsx';
+import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
+
+/**
+ * Own the Artifact domain's deferred ID resolution.
+ *
+ * Navigation first loads/focuses the source Conversation, then emits an
+ * Artifact request. Keeping the pending ID here avoids storing an unresolved
+ * domain key in either Desktop Layout or a parallel navigation store.
+ */
 export default function useArtifactNavigation({
-    navigationTarget,
     navigation,
     openArtifact,
     onError,
 }) {
-    const openArtifactInConversation = useCallback((artifact) => (
-        navigation.openConversation(artifact.conversation_id, { artifactId: artifact.id })
-    ), [navigation]);
+    const [pendingArtifact, setPendingArtifact] = useState(null);
+
+    const handleOpenArtifactRequest = useCallback((effect) => {
+        if (!effect.artifactId) return;
+        setPendingArtifact({
+            artifactId: effect.artifactId,
+            conversationId: effect.conversationId || null,
+        });
+    }, []);
+    useAppEffectSubscription(
+        APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED,
+        handleOpenArtifactRequest,
+    );
 
     useEffect(() => {
-        const artifactId = navigationTarget.kind === 'chat' ? navigationTarget.artifactId : null;
-        if (!artifactId) return undefined;
+        if (!pendingArtifact?.artifactId) return undefined;
         const controller = new AbortController();
-        fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { signal: controller.signal })
+        const { artifactId } = pendingArtifact;
+        fetch(
+            `/api/artifacts/${encodeURIComponent(artifactId)}`,
+            { signal: controller.signal },
+        )
             .then(async (response) => {
                 if (!response.ok) throw new Error('Artifact not found');
                 return response.json();
             })
             .then((artifact) => {
-                navigation.openChat(navigationTarget.conversationId);
+                setPendingArtifact(null);
                 openArtifact(artifact);
             })
             .catch((error) => {
                 if (error.name === 'AbortError') return;
+                setPendingArtifact(null);
                 onError();
-                navigation.openChat(navigationTarget.conversationId);
             });
         return () => controller.abort();
-    }, [navigationTarget, navigation, onError, openArtifact]);
+    }, [onError, openArtifact, pendingArtifact]);
 
-    return openArtifactInConversation;
+    return useCallback((artifact) => (
+        navigation.openConversation(artifact.conversation_id, {
+            artifactId: artifact.id,
+        })
+    ), [navigation]);
 }

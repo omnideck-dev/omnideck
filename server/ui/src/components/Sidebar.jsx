@@ -4,8 +4,8 @@ import ConversationsPanel from './ConversationsPanel.jsx';
 import { useTheme } from '../contexts/Theme.jsx';
 import { useCustomApps } from '../features/customApps/CustomApps.jsx';
 import {
+    useCurrentNavigationTarget,
     useDesktopNavigationCommands,
-    useDesktopNavigationState,
 } from '../features/navigation/DesktopNavigation.jsx';
 import styles from './Sidebar.module.css';
 
@@ -51,7 +51,7 @@ export default function Sidebar({
     activeConversationId,
 }) {
     const { dark, toggleTheme } = useTheme();
-    const { navigationTarget } = useDesktopNavigationState();
+    const navigationTarget = useCurrentNavigationTarget();
     const navigation = useDesktopNavigationCommands();
     const customApps = useCustomApps();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
@@ -68,10 +68,12 @@ export default function Sidebar({
         });
     }, []);
 
-    const activeItemId = NAV_ITEMS.some((item) => item.id === navigationTarget.kind)
+    const activeItemId = NAV_ITEMS.some(
+        (item) => item.id === navigationTarget?.kind,
+    )
         ? navigationTarget.kind
         : null;
-    const settingsActive = navigationTarget.kind === 'settings';
+    const settingsActive = navigationTarget?.kind === 'settings';
 
     const activateNavigationItem = useCallback((item) => {
         if (activeItemId === item.id) {

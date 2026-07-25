@@ -11,7 +11,6 @@ import {
 } from '../conversation/session/ConversationSession.jsx';
 import {
     useDesktopNavigationCommands,
-    useDesktopNavigationState,
 } from '../navigation/DesktopNavigation.jsx';
 import {
     createArtifactView,
@@ -31,7 +30,6 @@ import useArtifactNavigation from './useArtifactNavigation.js';
  */
 export function useArtifactDesktopActions() {
     const activeConversationId = useActiveConversationId();
-    const navigation = useDesktopNavigationCommands();
     const desktop = useDesktopViewCommands();
 
     const openArtifact = useCallback((artifact, tabGroupId = null) => {
@@ -58,8 +56,7 @@ export function useArtifactDesktopActions() {
         desktop.openView(view, {
             tabGroupId: tabGroupId || desktop.preferredTabGroupId(),
         });
-        navigation.openTarget(view.navigationTarget);
-    }, [desktop, navigation]);
+    }, [desktop]);
 
     return {
         openArtifact,
@@ -78,7 +75,6 @@ export function useArtifactDesktopActions() {
  * action means.
  */
 export function ArtifactDesktopEffects() {
-    const { navigationTarget } = useDesktopNavigationState();
     const navigation = useDesktopNavigationCommands();
     const { openArtifact } = useArtifactDesktopActions();
     const { addToast } = useToast();
@@ -86,7 +82,6 @@ export function ArtifactDesktopEffects() {
         addToast('Could not open the artifact', { type: 'error' });
     }, [addToast]);
     const openArtifactInConversation = useArtifactNavigation({
-        navigationTarget,
         navigation,
         openArtifact,
         onError: handleArtifactError,

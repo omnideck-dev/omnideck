@@ -1,4 +1,7 @@
-import { useCallback } from 'react';
+import {
+    useCallback,
+    useState,
+} from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
 import Sidebar from '../../components/Sidebar.jsx';
@@ -7,6 +10,7 @@ import {
     useConversationSessionCommands,
 } from '../conversation/session/ConversationSession.jsx';
 import {
+    DesktopNavigationProvider,
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
 import useGraphicalDesktopOverlay from
@@ -26,11 +30,6 @@ import useDesktopViewInteractions from './useDesktopViewInteractions.js';
 import { createNavigationView } from './desktopViews.js';
 import styles from '../../App.module.css';
 
-const INITIAL_CHAT_VIEW = createNavigationView({
-    kind: 'chat',
-    conversationId: null,
-});
-
 // View rendering is a pure adapter lookup. Keeping this function at module
 // scope lets memoized hosts ignore unrelated DesktopShell renders.
 const renderDesktopViewContent = (view, { active, tabGroupId }) => (
@@ -48,19 +47,30 @@ const renderDesktopViewContent = (view, { active, tabGroupId }) => (
  * same generic View command interface without moving domain data into Desktop.
  */
 export default function Desktop() {
+    const activeConversationId = useActiveConversationId();
+    // The layout hook consumes its initializer only once. Capture the session
+    // identity on that first render so a fresh (non-restored) Conversation
+    // View has the same durable identity the removed navigation mirror used
+    // to supply.
+    const [initialChatView] = useState(() => createNavigationView({
+        kind: 'chat',
+        conversationId: activeConversationId || null,
+    }));
     const desktopRestore = useDesktopRestoreSnapshot();
     const desktopLayout = useDesktopLayout({
-        initialView: INITIAL_CHAT_VIEW,
+        initialView: initialChatView,
         initialLayoutState: desktopRestore?.layoutState || null,
     });
 
     return (
         <DesktopViewRuntimeProvider desktopLayout={desktopLayout}>
-            <DesktopDomainEffects />
-            <DesktopShell
-                desktopLayout={desktopLayout}
-                desktopRestore={desktopRestore}
-            />
+            <DesktopNavigationProvider>
+                <DesktopDomainEffects />
+                <DesktopShell
+                    desktopLayout={desktopLayout}
+                    desktopRestore={desktopRestore}
+                />
+            </DesktopNavigationProvider>
         </DesktopViewRuntimeProvider>
     );
 }
@@ -96,11 +106,9 @@ function DesktopShell({ desktopLayout, desktopRestore }) {
     const {
         getViewActions,
         handleCloseView,
-        handleFocusView,
         handleSelectView,
     } = useDesktopViewInteractions({
         desktopLayout,
-        navigation,
     });
 
     return (
@@ -119,7 +127,6 @@ function DesktopShell({ desktopLayout, desktopRestore }) {
                         model={desktopLayout.model}
                         commands={desktopLayout.commands}
                         onSelectView={handleSelectView}
-                        onFocusView={handleFocusView}
                         onCloseView={handleCloseView}
                         getViewActions={getViewActions}
                         renderView={renderDesktopViewContent}

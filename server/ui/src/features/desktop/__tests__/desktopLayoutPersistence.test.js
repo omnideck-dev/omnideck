@@ -28,6 +28,10 @@ const APP = {
     type: 'custom-app',
     label: 'Text Lab',
     icon: 'bi-fonts',
+    navigationTarget: {
+        kind: 'custom-app',
+        appSlug: 'text-lab',
+    },
     app: {
         slug: 'text-lab',
         title: 'Text Lab',
@@ -72,12 +76,16 @@ describe('desktop layout persistence', () => {
         localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
     });
 
-    it('restores tab order, placement, selection, split, fullscreen, and navigation', () => {
-        const navigationTarget = { kind: 'custom-app', appSlug: 'text-lab' };
-        saveDesktopLayoutSnapshot(model(), navigationTarget);
+    it('restores tab order, placement, selection, split, and fullscreen', () => {
+        saveDesktopLayoutSnapshot(model());
 
         const restored = loadDesktopLayoutSnapshot();
+        const saved = JSON.parse(
+            localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
+        );
 
+        expect(saved.version).toBe(3);
+        expect(saved).not.toHaveProperty('navigationTarget');
         expect(restored.layoutState.tabGroups.left.viewIds).toEqual([CHAT.id]);
         expect(restored.layoutState.tabGroups.right.viewIds).toEqual([APP.id]);
         expect(restored.layoutState.tabGroups.right.activeViewId).toBe(APP.id);
@@ -85,7 +93,6 @@ describe('desktop layout persistence', () => {
         expect(restored.layoutState.splitRatio).toBe(62);
         expect(restored.layoutState.fullscreenViewId).toBe(APP.id);
         expect(restored.layoutState.openViewsById[APP.id]).toEqual(APP);
-        expect(restored.navigationTarget).toEqual(navigationTarget);
     });
 
     it('ignores corrupt snapshots without changing storage consumers', () => {
@@ -96,6 +103,35 @@ describe('desktop layout persistence', () => {
             version: 999,
         }));
         expect(loadDesktopLayoutSnapshot()).toBeNull();
+    });
+
+    it('migrates v2 by trusting focused View location, not saved navigation', () => {
+        saveDesktopLayoutSnapshot(model());
+        const previous = JSON.parse(
+            localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
+        );
+        previous.version = 2;
+        // Deliberately conflicts with the focused right-hand Custom App.
+        previous.navigationTarget = { kind: 'settings', tab: null };
+        localStorage.setItem(
+            DESKTOP_LAYOUT_STORAGE_KEY,
+            JSON.stringify(previous),
+        );
+
+        const restored = loadDesktopLayoutSnapshot();
+        const focusedTabGroup = restored.layoutState.tabGroups[
+            restored.layoutState.focusedTabGroupId
+        ];
+        const focusedView = restored.layoutState.openViewsById[
+            focusedTabGroup.activeViewId
+        ];
+
+        expect(restored).not.toHaveProperty('navigationTarget');
+        expect(focusedView.id).toBe(APP.id);
+        expect(focusedView.navigationTarget).toEqual({
+            kind: 'custom-app',
+            appSlug: 'text-lab',
+        });
     });
 
     it('drops invalid and duplicate view placement while preserving an empty tabGroup', () => {
@@ -192,9 +228,12 @@ describe('desktop layout persistence', () => {
             .toEqual([browserId]);
         expect(restored.layoutState.openViewsById[browserId].type)
             .toBe('workspace-resource');
-        expect(restored.navigationTarget).toEqual({
-            kind: 'chat',
+        expect(
+            restored.layoutState.openViewsById[CHAT.id].navigationTarget,
+        ).toEqual({
+            kind: 'network',
             conversationId: 'conversation-1',
+            agentId: 'agent-2',
         });
     });
 
@@ -258,7 +297,6 @@ describe('desktop layout persistence', () => {
         desktop.focusedFloatingViewId = SETTINGS.id;
         saveDesktopLayoutSnapshot(
             desktop,
-            SETTINGS.navigationTarget,
         );
 
         const restored = loadDesktopLayoutSnapshot().layoutState;

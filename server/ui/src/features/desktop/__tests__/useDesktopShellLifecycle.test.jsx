@@ -25,32 +25,23 @@ import { createNavigationView } from '../desktopViews.js';
 import useDesktopLayout from '../useDesktopLayout.jsx';
 import useDesktopShellLifecycle from '../useDesktopShellLifecycle.js';
 
-const navigation = vi.hoisted(() => ({
-    state: {
-        navigationTarget: {
-            kind: 'chat',
-            conversationId: null,
-        },
-    },
-    commands: {
-        openTarget: vi.fn(),
-    },
+const sessionHarness = vi.hoisted(() => ({
+    activeConversationId: 'fresh-conversation',
+    loadConversation: vi.fn(),
 }));
-
-vi.mock('../../navigation/DesktopNavigation.jsx', () => ({
-    useDesktopNavigationCommands: () => navigation.commands,
-    useDesktopNavigationState: () => navigation.state,
+const appEffectHarness = vi.hoisted(() => ({
+    dispatch: vi.fn(),
 }));
 
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
-    useActiveConversationId: () => null,
+    useActiveConversationId: () => sessionHarness.activeConversationId,
     useConversationSessionCommands: () => ({
-        loadConversation: vi.fn(),
+        loadConversation: sessionHarness.loadConversation,
     }),
 }));
 
 vi.mock('../../app/AppEffects.jsx', () => ({
-    useAppEffectDispatch: () => vi.fn(),
+    useAppEffectDispatch: () => appEffectHarness.dispatch,
 }));
 
 const CHAT = createNavigationView({
@@ -60,6 +51,10 @@ const CHAT = createNavigationView({
 const SETTINGS = createNavigationView({
     kind: 'settings',
     tab: null,
+});
+const AGENTS = createNavigationView({
+    kind: 'agents',
+    profileId: null,
 });
 const INITIAL_LAYOUT = desktopLayoutReducer(
     createInitialDesktopLayoutState(CHAT),
@@ -71,13 +66,16 @@ const INITIAL_LAYOUT = desktopLayoutReducer(
 );
 const renderView = (view) => <div>{view.label}</div>;
 
-function LifecycleHarness() {
+function LifecycleHarness({
+    initialLayoutState = INITIAL_LAYOUT,
+    desktopRestore = null,
+}) {
     const desktopLayout = useDesktopLayout({
-        initialLayoutState: INITIAL_LAYOUT,
+        initialLayoutState,
     });
     useDesktopShellLifecycle({
         desktopLayout,
-        desktopRestore: null,
+        desktopRestore,
     });
     return (
         <DesktopLayout
@@ -91,6 +89,9 @@ function LifecycleHarness() {
 describe('useDesktopShellLifecycle persistence', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        sessionHarness.activeConversationId = 'fresh-conversation';
+        sessionHarness.loadConversation.mockReset();
+        appEffectHarness.dispatch.mockReset();
         localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
     });
 
@@ -125,5 +126,52 @@ describe('useDesktopShellLifecycle persistence', () => {
         expect(JSON.parse(
             localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
         ).layout.splitRatio).toBe(68);
+    });
+
+    it('replaces an unloadable Conversation without stealing restored focus', async () => {
+        sessionHarness.loadConversation.mockResolvedValue(false);
+        const staleConversation = createNavigationView({
+            kind: 'chat',
+            conversationId: 'missing-conversation',
+        });
+        const restoredLayout = desktopLayoutReducer(
+            createInitialDesktopLayoutState(staleConversation),
+            {
+                type: 'OPEN_VIEW',
+                view: AGENTS,
+                tabGroupId: 'left',
+            },
+        );
+        const desktopRestore = { layoutState: restoredLayout };
+
+        render(
+            <LifecycleHarness
+                initialLayoutState={restoredLayout}
+                desktopRestore={desktopRestore}
+            />,
+        );
+
+        await waitFor(() => {
+            expect(sessionHarness.loadConversation)
+                .toHaveBeenCalledWith('missing-conversation');
+        });
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('desktop-view-destination:agents'),
+            ).toHaveAttribute('data-active', 'true');
+        });
+
+        // The stale domain identity is still repaired and persisted even
+        // though the active Agents location is preserved.
+        await waitFor(() => {
+            const saved = JSON.parse(
+                localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
+            );
+            const conversationView = saved.layout.views.find(
+                (view) => view.id === staleConversation.id,
+            );
+            expect(conversationView.navigationTarget.conversationId)
+                .toBe('fresh-conversation');
+        });
     });
 });

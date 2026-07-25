@@ -40,7 +40,6 @@ function DesktopViewHost({
     focusedFloating,
     fullscreen,
     commands,
-    onFocusView,
     getViewActions,
     renderView,
 }) {
@@ -63,11 +62,9 @@ function DesktopViewHost({
     const focusView = useCallback(() => {
         if (!floating) return;
         commands.focusFloatingView(view.id);
-        onFocusView?.(view.id);
     }, [
         commands.focusFloatingView,
         floating,
-        onFocusView,
         view.id,
     ]);
     const focusEmbeddedView = useCallback((event) => {

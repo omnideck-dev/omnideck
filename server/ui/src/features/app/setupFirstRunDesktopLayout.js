@@ -62,7 +62,7 @@ export function persistFirstRunDesktopLayout(welcome) {
             fullscreenViewId: null,
         };
 
-        saveDesktopLayoutSnapshot(model, navigationTarget);
+        saveDesktopLayoutSnapshot(model);
         return localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY) !== null;
     } catch {
         // Storage can be disabled. Optional onboarding placement must never

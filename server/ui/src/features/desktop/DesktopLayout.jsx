@@ -22,7 +22,6 @@ export default function DesktopLayout({
     model,
     commands,
     onSelectView,
-    onFocusView,
     onCloseView,
     getViewActions,
     renderView,
@@ -139,7 +138,6 @@ export default function DesktopLayout({
                         }
                         fullscreen={fullscreen}
                         commands={commands}
-                        onFocusView={onFocusView}
                         getViewActions={getViewActions}
                         renderView={renderView}
                     />

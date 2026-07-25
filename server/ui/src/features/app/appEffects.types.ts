@@ -27,6 +27,15 @@ export type AppEffect =
         resourceId: 'browser' | 'terminal';
     }
     | {
+        type: typeof APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED;
+        appSlug: string;
+    }
+    | {
+        type: typeof APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED;
+        artifactId: string;
+        conversationId: string | null;
+    }
+    | {
         type: typeof APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING;
         views: Array<Record<string, unknown> & {
             id: string;

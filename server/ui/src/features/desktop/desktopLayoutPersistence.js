@@ -10,7 +10,8 @@ import {
 
 // Keep the historical key so existing layouts can be migrated in place.
 export const DESKTOP_LAYOUT_STORAGE_KEY = 'omnideck_desktop_window_v1';
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
+const PREVIOUS_SNAPSHOT_VERSION = 2;
 const LEGACY_SNAPSHOT_VERSION = 1;
 const TAB_GROUP_IDS = Object.values(DESKTOP_TAB_GROUP_IDS);
 
@@ -105,7 +106,6 @@ function migrateLegacySnapshot(raw) {
                 legacyWindow.fullscreenSurfaceId,
             ) || null,
         },
-        navigationTarget: raw.navigationDestination || null,
     };
 }
 
@@ -262,30 +262,26 @@ export function loadDesktopLayoutSnapshot() {
         const snapshot = raw.version === LEGACY_SNAPSHOT_VERSION
             ? migrateLegacySnapshot(raw)
             : (
-                raw.version === SNAPSHOT_VERSION
+                [
+                    PREVIOUS_SNAPSHOT_VERSION,
+                    SNAPSHOT_VERSION,
+                ].includes(raw.version)
                     ? {
                         layout: raw.layout,
-                        navigationTarget: raw.navigationTarget,
                     }
                     : null
             );
         if (!snapshot) return null;
         const layoutState = restoreLayoutState(snapshot.layout);
         if (!layoutState) return null;
-        return {
-            layoutState,
-            navigationTarget: isRecord(snapshot.navigationTarget)
-                && typeof snapshot.navigationTarget.kind === 'string'
-                ? snapshot.navigationTarget
-                : null,
-        };
+        return { layoutState };
     } catch {
         return null;
     }
 }
 
 /** Build the serializable payload without touching storage. */
-export function createDesktopLayoutSnapshot(model, navigationTarget) {
+export function createDesktopLayoutSnapshot(model) {
     try {
         const placedViewIds = new Set([
             ...TAB_GROUP_IDS.flatMap(
@@ -327,7 +323,6 @@ export function createDesktopLayoutSnapshot(model, navigationTarget) {
                 splitRatio: model.splitRatio,
                 fullscreenViewId: model.fullscreenViewId,
             },
-            navigationTarget,
         };
     } catch {
         return null;
@@ -348,8 +343,8 @@ export function writeDesktopLayoutSnapshot(snapshot) {
 }
 
 /** Persist serializable layout and navigation—never rendered React content. */
-export function saveDesktopLayoutSnapshot(model, navigationTarget) {
+export function saveDesktopLayoutSnapshot(model) {
     writeDesktopLayoutSnapshot(
-        createDesktopLayoutSnapshot(model, navigationTarget),
+        createDesktopLayoutSnapshot(model),
     );
 }

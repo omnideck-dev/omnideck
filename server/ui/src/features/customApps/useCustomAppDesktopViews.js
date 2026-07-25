@@ -1,12 +1,16 @@
-import { useCallback, useEffect } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useState,
+} from 'react';
 
 import {
     useAppEffectSubscription,
 } from '../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 import {
+    useCurrentNavigationTarget,
     useDesktopNavigationCommands,
-    useDesktopNavigationState,
 } from '../navigation/DesktopNavigation.jsx';
 import {
     createCustomAppView,
@@ -28,7 +32,6 @@ import { useCustomApps } from './CustomApps.jsx';
 export function useOpenCustomAppView() {
     const desktopModel = useDesktopViewCatalog();
     const desktopCommands = useDesktopViewCommands();
-    const navigation = useDesktopNavigationCommands();
 
     return useCallback((
         app,
@@ -39,11 +42,9 @@ export function useOpenCustomAppView() {
             createCustomAppView(app, existing?.reloadSignal || 0),
             { tabGroupId },
         );
-        navigation.openCustomApp(app.slug);
     }, [
         desktopCommands.openView,
         desktopModel.openViewsById,
-        navigation,
     ]);
 }
 
@@ -55,13 +56,14 @@ export function useOpenCustomAppView() {
  */
 export default function useCustomAppDesktopViews() {
     const customApps = useCustomApps();
-    const { navigationTarget } = useDesktopNavigationState();
+    const currentNavigationTarget = useCurrentNavigationTarget();
     const navigation = useDesktopNavigationCommands();
     const desktopModel = useDesktopViewCatalog();
     const desktopCommands = useDesktopViewCommands();
     const openApp = useOpenCustomAppView();
     const { loaded: catalogLoaded, findBySlug } = customApps.catalog;
-    const targetType = navigationTarget.kind;
+    const [pendingAppSlug, setPendingAppSlug] = useState(null);
+    const targetType = currentNavigationTarget?.kind || null;
 
     const reloadApp = useCallback((viewId) => {
         const view = desktopModel.openViewsById[viewId];
@@ -83,25 +85,32 @@ export default function useCustomAppDesktopViews() {
         handleViewAction,
     );
 
-    // A restored/deep-linked Custom App target is resolved after its catalog
-    // has loaded. Desktop itself does not need to understand app slugs.
+    const handleOpenAppRequest = useCallback((effect) => {
+        setPendingAppSlug(effect.appSlug || null);
+    }, []);
+    useAppEffectSubscription(
+        APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
+        handleOpenAppRequest,
+    );
+
+    // A deep-linked slug is the Custom Apps domain's deferred state. Resolve
+    // it once the catalog is authoritative, then clear it whether or not the
+    // requested app still exists.
     useEffect(() => {
-        if (
-            targetType !== 'custom-app'
-            || !catalogLoaded
-            || !navigationTarget.appSlug
-        ) return;
-        const viewId = customAppViewId(navigationTarget.appSlug);
-        if (desktopModel.openViewsById[viewId]) return;
-        const app = findBySlug(navigationTarget.appSlug);
-        if (app) openApp(app, DESKTOP_TAB_GROUP_IDS.LEFT);
+        if (!pendingAppSlug || !catalogLoaded) return;
+        const app = findBySlug(pendingAppSlug);
+        if (customApps.enabled && app) {
+            // openView also focuses an existing instance, so a repeated deep
+            // link is still a meaningful navigation command.
+            openApp(app, DESKTOP_TAB_GROUP_IDS.LEFT);
+        }
+        setPendingAppSlug(null);
     }, [
         catalogLoaded,
-        navigationTarget.appSlug,
+        customApps.enabled,
+        pendingAppSlug,
         findBySlug,
         openApp,
-        targetType,
-        desktopModel.openViewsById,
     ]);
 
     useEffect(() => {

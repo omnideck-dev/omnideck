@@ -2,32 +2,23 @@ import { useCallback, useMemo } from 'react';
 
 import { useAppEffectDispatch } from '../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
-import {
-    focusOrderedVisibleViews,
-    nextActiveViewIdAfterClose,
-} from './desktopLayoutSelectors.js';
 import { createDesktopViewActions } from './desktopViewActions.js';
 
 /**
- * Coordinates generic View gestures with application navigation.
+ * Coordinates generic View gestures and lifecycle effects.
  *
- * This hook understands placement, selection, and navigationTarget only. It
- * announces lifecycle/action events so feature owners can apply domain policy.
+ * Selection and placement mutate Desktop Layout directly. The focused View is
+ * therefore also the application location; no navigation writeback is needed.
  */
 export default function useDesktopViewInteractions({
     desktopLayout,
-    navigation,
 }) {
     const dispatchAppEffect = useAppEffectDispatch();
     const { model, commands } = desktopLayout;
 
     const handleSelectView = useCallback((tabGroupId, viewId) => {
         commands.selectView(tabGroupId, viewId);
-        const view = model.openViewsById[viewId];
-        if (view?.navigationTarget) {
-            navigation.openTarget(view.navigationTarget);
-        }
-    }, [commands.selectView, model.openViewsById, navigation]);
+    }, [commands.selectView]);
 
     const closeManagedViews = useCallback((views) => {
         if (!views.length) return;
@@ -43,65 +34,26 @@ export default function useDesktopViewInteractions({
     const handleCloseView = useCallback((tabGroupId, viewId) => {
         const view = model.openViewsById[viewId];
         if (!view) return;
-        const wasActive = Boolean(
-            tabGroupId
-            && model.tabGroups[tabGroupId]?.activeViewId === viewId,
-        );
-        const fallback = wasActive
-            ? model.openViewsById[
-                nextActiveViewIdAfterClose(
-                    model.tabGroups[tabGroupId],
-                    viewId,
-                )
-            ]
-            : null;
-        const floatingFallback = !tabGroupId && view.navigationTarget
-            ? focusOrderedVisibleViews(model, viewId)
-                .find((candidate) => candidate.navigationTarget)
-            : null;
-
         closeManagedViews([view]);
-
-        if (wasActive && fallback?.navigationTarget) {
-            navigation.openTarget(fallback.navigationTarget);
-        } else if (!wasActive && floatingFallback?.navigationTarget) {
-            navigation.openTarget(floatingFallback.navigationTarget);
-        }
-    }, [closeManagedViews, model, navigation]);
+    }, [closeManagedViews, model.openViewsById]);
 
     const handleMoveView = useCallback((viewId, targetTabGroupId) => {
         const view = model.openViewsById[viewId];
         if (!view) return;
         commands.moveView(viewId, targetTabGroupId);
-        if (view.navigationTarget) {
-            navigation.openTarget(view.navigationTarget);
-        }
-    }, [commands.moveView, model.openViewsById, navigation]);
+    }, [commands.moveView, model.openViewsById]);
 
     const handleFloatView = useCallback((viewId) => {
         const view = model.openViewsById[viewId];
         if (!view) return;
         commands.floatView(viewId);
-        if (view.navigationTarget) {
-            navigation.openTarget(view.navigationTarget);
-        }
-    }, [commands.floatView, model.openViewsById, navigation]);
-
-    const handleFocusView = useCallback((viewId) => {
-        const view = model.openViewsById[viewId];
-        if (view?.navigationTarget) {
-            navigation.openTarget(view.navigationTarget);
-        }
-    }, [model.openViewsById, navigation]);
+    }, [commands.floatView, model.openViewsById]);
 
     const handleEnterFullscreen = useCallback((viewId) => {
         const view = model.openViewsById[viewId];
         if (!view) return;
         commands.enterFullscreen(viewId);
-        if (view.navigationTarget) {
-            navigation.openTarget(view.navigationTarget);
-        }
-    }, [commands.enterFullscreen, model.openViewsById, navigation]);
+    }, [commands.enterFullscreen, model.openViewsById]);
 
     const closeViewBatch = useCallback((
         tabGroupId,
@@ -118,15 +70,11 @@ export default function useDesktopViewInteractions({
             : null;
         if (activatedView) {
             commands.selectView(tabGroupId, activateViewId);
-            if (activatedView.navigationTarget) {
-                navigation.openTarget(activatedView.navigationTarget);
-            }
         }
     }, [
         closeManagedViews,
         commands.selectView,
         model.openViewsById,
-        navigation,
     ]);
 
     const handleCloseOtherViews = useCallback((tabGroupId, keepViewId) => {
@@ -191,7 +139,6 @@ export default function useDesktopViewInteractions({
     return {
         getViewActions,
         handleCloseView,
-        handleFocusView,
         handleSelectView,
     };
 }

@@ -84,12 +84,12 @@ vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
 
 vi.mock('../components/Sidebar.jsx', async () => {
     const {
+        useCurrentNavigationTarget,
         useDesktopNavigationCommands,
-        useDesktopNavigationState,
     } = await import('../features/navigation/DesktopNavigation.jsx');
     return {
         default: ({ onNewConversation, onLoadConversation }) => {
-            const { navigationTarget } = useDesktopNavigationState();
+            const navigationTarget = useCurrentNavigationTarget();
             const navigation = useDesktopNavigationCommands();
             const activeItem = [
                 'settings',
@@ -97,7 +97,7 @@ vi.mock('../components/Sidebar.jsx', async () => {
                 'agents',
                 'artifacts',
                 'apps',
-            ].includes(navigationTarget.kind)
+            ].includes(navigationTarget?.kind)
                 ? navigationTarget.kind
                 : 'chat';
             return (
@@ -683,6 +683,8 @@ describe('App view transitions', () => {
             )).toBeInTheDocument();
             expectViewActive('settings-page', 'left');
             expectViewActive('custom-app-frame', 'right');
+            expect(screen.getByTestId('sidebar-active-panel'))
+                .toHaveTextContent('settings');
         });
 
         it('keeps a right-tab group Custom App in place when loading a conversation', async () => {

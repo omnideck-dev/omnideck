@@ -1,36 +1,60 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
+
 const session = vi.hoisted(() => ({
     activeConversationId: 'conversation-1',
     loadConversation: vi.fn(),
 }));
+const desktop = vi.hoisted(() => ({
+    focusedViewId: 'destination:conversation',
+    catalog: {
+        openViewsById: {
+            'destination:conversation': {
+                id: 'destination:conversation',
+                navigationTarget: {
+                    kind: 'chat',
+                    conversationId: 'conversation-1',
+                },
+            },
+        },
+    },
+    commands: {
+        openView: vi.fn(),
+    },
+}));
+const dispatchAppEffect = vi.hoisted(() => vi.fn());
 
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useActiveConversationId: () => session.activeConversationId,
-    useConversationSessionState: () => ({
-        activeConversationId: session.activeConversationId,
-    }),
     useConversationSessionCommands: () => ({
         loadConversation: session.loadConversation,
     }),
 }));
 
+vi.mock('../../desktop/DesktopViewRuntime.jsx', () => ({
+    useDesktopViewCommands: () => desktop.commands,
+    useDesktopViewCatalog: () => desktop.catalog,
+    useFocusedViewId: () => desktop.focusedViewId,
+}));
+
+vi.mock('../../app/AppEffects.jsx', () => ({
+    useAppEffectDispatch: () => dispatchAppEffect,
+}));
+
 const {
     DesktopNavigationProvider,
+    useCurrentNavigationTarget,
     useDesktopNavigationCommands,
-    useDesktopNavigationState,
 } = await import('../DesktopNavigation.jsx');
 
 function wrapper({ children }) {
-    return <DesktopNavigationProvider>{children}</DesktopNavigationProvider>;
-}
-
-function useNavigationHarness() {
-    return {
-        ...useDesktopNavigationState(),
-        ...useDesktopNavigationCommands(),
-    };
+    return (
+        <DesktopNavigationProvider>
+            {children}
+        </DesktopNavigationProvider>
+    );
 }
 
 describe('DesktopNavigationProvider', () => {
@@ -38,82 +62,141 @@ describe('DesktopNavigationProvider', () => {
         session.activeConversationId = 'conversation-1';
         session.loadConversation.mockReset();
         session.loadConversation.mockResolvedValue(true);
+        desktop.commands.openView.mockReset();
+        dispatchAppEffect.mockReset();
     });
 
-    it('stores serializable navigationTargets with stable IDs', () => {
-        const { result } = renderHook(useNavigationHarness, { wrapper });
+    it('translates named navigation into one Desktop View write path', () => {
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
         act(() => result.current.openAgent('agent-2'));
-        expect(result.current.navigationTarget).toEqual({
-            kind: 'network',
-            conversationId: 'conversation-1',
-            agentId: 'agent-2',
-        });
+        expect(desktop.commands.openView).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                id: 'destination:conversation',
+                navigationTarget: {
+                    kind: 'network',
+                    conversationId: 'conversation-1',
+                    agentId: 'agent-2',
+                },
+            }),
+            { tabGroupId: 'left' },
+        );
 
         act(() => result.current.openRoutines('routine-2', 'run-3'));
-        expect(result.current.navigationTarget).toEqual({
-            kind: 'routines',
-            routineId: 'routine-2',
-            runId: 'run-3',
+        expect(desktop.commands.openView).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                id: 'destination:routines',
+                navigationTarget: {
+                    kind: 'routines',
+                    routineId: 'routine-2',
+                    runId: 'run-3',
+                },
+            }),
+            { tabGroupId: 'left' },
+        );
+    });
+
+    it('derives current location from the focused View', () => {
+        const { result } = renderHook(useCurrentNavigationTarget);
+
+        expect(result.current).toEqual({
+            kind: 'chat',
+            conversationId: 'conversation-1',
         });
     });
 
-    it('can restore a serializable navigation target owned by a Desktop View', () => {
-        const { result } = renderHook(useNavigationHarness, { wrapper });
-        const navigationTarget = { kind: 'settings', tab: 'skills' };
+    it('loads a different conversation before opening its View', async () => {
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
-        act(() => result.current.openTarget(navigationTarget));
+        await act(async () => result.current.openConversation(
+            'conversation-2',
+        ));
 
-        expect(result.current.navigationTarget).toEqual(navigationTarget);
+        expect(session.loadConversation)
+            .toHaveBeenCalledWith('conversation-2');
+        expect(desktop.commands.openView).toHaveBeenCalledWith(
+            expect.objectContaining({
+                navigationTarget: {
+                    kind: 'chat',
+                    conversationId: 'conversation-2',
+                },
+            }),
+            { tabGroupId: 'left' },
+        );
     });
 
     it('opens the active conversation without reloading it', async () => {
-        const { result } = renderHook(useNavigationHarness, { wrapper });
-        const initialNavigationTarget = result.current.navigationTarget;
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
-        await act(async () => result.current.openConversation('conversation-1'));
+        await act(async () => result.current.openConversation(
+            'conversation-1',
+        ));
 
         expect(session.loadConversation).not.toHaveBeenCalled();
-        expect(result.current.navigationTarget).not.toBe(initialNavigationTarget);
-        expect(result.current.navigationTarget).toEqual({
-            kind: 'chat',
-            conversationId: 'conversation-1',
-        });
+        expect(desktop.commands.openView).toHaveBeenCalledOnce();
     });
 
-    it('loads a different conversation before navigating to it', async () => {
-        const { result } = renderHook(useNavigationHarness, { wrapper });
+    it('hands an artifact deep link to the Artifact domain after loading', async () => {
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
-        await act(async () => result.current.openConversation('conversation-2'));
+        await act(async () => result.current.openConversation(
+            'conversation-2',
+            { artifactId: 'artifact-3' },
+        ));
 
-        expect(session.loadConversation).toHaveBeenCalledWith('conversation-2');
-        expect(result.current.navigationTarget).toEqual({
-            kind: 'chat',
+        expect(desktop.commands.openView).toHaveBeenCalledWith(
+            expect.objectContaining({
+                navigationTarget: {
+                    kind: 'chat',
+                    conversationId: 'conversation-2',
+                },
+            }),
+            { tabGroupId: 'left' },
+        );
+        expect(dispatchAppEffect).toHaveBeenCalledWith({
+            type: APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED,
+            artifactId: 'artifact-3',
             conversationId: 'conversation-2',
         });
     });
 
-    it('carries an artifact as serializable conversation navigation intent', async () => {
-        const { result } = renderHook(useNavigationHarness, { wrapper });
+    it('hands an unresolved Custom App slug to its domain owner', () => {
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
-        await act(async () => result.current.openConversation('conversation-2', {
-            artifactId: 'artifact-3',
-        }));
+        act(() => result.current.openCustomApp('text-lab'));
 
-        expect(result.current.navigationTarget).toEqual({
-            kind: 'chat',
-            conversationId: 'conversation-2',
-            artifactId: 'artifact-3',
+        expect(desktop.commands.openView).not.toHaveBeenCalled();
+        expect(dispatchAppEffect).toHaveBeenCalledWith({
+            type: APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
+            appSlug: 'text-lab',
         });
     });
 
-    it('keeps the current navigationTarget when conversation loading fails', async () => {
+    it('does not change Desktop when conversation loading fails', async () => {
         session.loadConversation.mockResolvedValue(false);
-        const { result } = renderHook(useNavigationHarness, { wrapper });
-        act(() => result.current.openApps());
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
 
         await act(async () => result.current.openConversation('missing'));
 
-        expect(result.current.navigationTarget).toEqual({ kind: 'apps' });
+        expect(desktop.commands.openView).not.toHaveBeenCalled();
+        expect(dispatchAppEffect).not.toHaveBeenCalled();
     });
 });

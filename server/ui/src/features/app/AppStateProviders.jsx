@@ -1,6 +1,5 @@
 import { ConversationCatalogProvider } from '../conversation/catalog/ConversationCatalog.jsx';
 import { ConversationSessionProvider } from '../conversation/session/ConversationSession.jsx';
-import { DesktopNavigationProvider } from '../navigation/DesktopNavigation.jsx';
 import { WorkspaceProvider } from '../workspace/WorkspaceState.jsx';
 import { AgentProvider } from '../agent/AgentState.jsx';
 import { CustomAppsProvider } from '../customApps/CustomApps.jsx';
@@ -13,11 +12,9 @@ export default function AppStateProviders({ children }) {
                 <WorkspaceProvider>
                     <ConversationCatalogProvider>
                         <ConversationSessionProvider>
-                            <DesktopNavigationProvider>
-                                <CustomAppsProvider>
-                                    {children}
-                                </CustomAppsProvider>
-                            </DesktopNavigationProvider>
+                            <CustomAppsProvider>
+                                {children}
+                            </CustomAppsProvider>
                         </ConversationSessionProvider>
                     </ConversationCatalogProvider>
                 </WorkspaceProvider>

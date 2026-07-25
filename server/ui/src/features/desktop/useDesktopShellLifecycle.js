@@ -14,48 +14,15 @@ import {
     useConversationSessionCommands,
 } from '../conversation/session/ConversationSession.jsx';
 import {
-    useDesktopNavigationCommands,
-    useDesktopNavigationState,
-} from '../navigation/DesktopNavigation.jsx';
-import {
     createDesktopLayoutSnapshot,
     loadDesktopLayoutSnapshot,
     writeDesktopLayoutSnapshot,
 } from './desktopLayoutPersistence.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
-import { focusOrderedTabGroupIds } from './desktopLayoutSelectors.js';
 import {
     CONVERSATION_VIEW_ID,
     createNavigationView,
-    customAppViewId,
 } from './desktopViews.js';
-
-function viewForNavigationTarget(layoutState, navigationTarget) {
-    if (!navigationTarget) return null;
-    if (navigationTarget.kind === 'custom-app') {
-        return layoutState.openViewsById[
-            customAppViewId(navigationTarget.appSlug)
-        ] || null;
-    }
-    const view = createNavigationView(navigationTarget);
-    return view ? layoutState.openViewsById[view.id] || null : null;
-}
-
-function restoredNavigationTarget(snapshot) {
-    if (!snapshot) return null;
-    const { layoutState, navigationTarget } = snapshot;
-    if (viewForNavigationTarget(layoutState, navigationTarget)) {
-        return navigationTarget;
-    }
-
-    for (const tabGroupId of focusOrderedTabGroupIds(layoutState)) {
-        const activeViewId = layoutState.tabGroups[tabGroupId].activeViewId;
-        const activeView = layoutState.openViewsById[activeViewId];
-        if (activeView?.navigationTarget) return activeView.navigationTarget;
-    }
-    return layoutState.openViewsById[CONVERSATION_VIEW_ID]
-        ?.navigationTarget || null;
-}
 
 /** Capture one immutable restore snapshot before the layout reducer starts. */
 export function useDesktopRestoreSnapshot() {
@@ -63,32 +30,23 @@ export function useDesktopRestoreSnapshot() {
 }
 
 /**
- * Own restore bootstrap, navigation-to-layout mirroring, and persistence.
+ * Own restore bootstrap and persistence.
  *
- * These effects all synchronize the same Desktop model with application
- * navigation, so keeping them together makes their ordering explicit.
+ * Restore loads the Conversation data referenced by the already-restored
+ * layout. Focus and location require no reconciliation because both live in
+ * that layout.
  */
 export default function useDesktopShellLifecycle({
     desktopLayout,
     desktopRestore,
 }) {
-    const { navigationTarget } = useDesktopNavigationState();
-    const navigation = useDesktopNavigationCommands();
     const activeConversationId = useActiveConversationId();
     const { loadConversation } = useConversationSessionCommands();
     const dispatchAppEffect = useAppEffectDispatch();
     const [restorationReady, setRestorationReady] = useState(!desktopRestore);
     const restoreStartedRef = useRef(false);
-    const preserveRestoredSelectionRef = useRef(Boolean(desktopRestore));
-    const navigationView = useMemo(
-        () => createNavigationView(navigationTarget),
-        [navigationTarget],
-    );
     const persistenceSnapshot = useMemo(
-        () => createDesktopLayoutSnapshot(
-            desktopLayout.model,
-            navigationTarget,
-        ),
+        () => createDesktopLayoutSnapshot(desktopLayout.model),
         [
             desktopLayout.model.floatingViews,
             desktopLayout.model.focusedFloatingViewId,
@@ -97,7 +55,6 @@ export default function useDesktopShellLifecycle({
             desktopLayout.model.openViewsById,
             desktopLayout.model.splitRatio,
             desktopLayout.model.tabGroups,
-            navigationTarget,
         ],
     );
 
@@ -123,7 +80,6 @@ export default function useDesktopShellLifecycle({
             }
             if (cancelled) return;
 
-            let nextNavigationTarget = restoredNavigationTarget(desktopRestore);
             if (!conversationLoaded) {
                 // Announcing the abandoned Conversation lets feature owners
                 // remove dependent Views without restore knowing their types.
@@ -131,13 +87,19 @@ export default function useDesktopShellLifecycle({
                     type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
                     views: conversationView ? [conversationView] : [],
                 });
-                nextNavigationTarget = {
+                const fallbackView = createNavigationView({
                     kind: 'chat',
                     conversationId: activeConversationId,
-                };
-            }
-            if (nextNavigationTarget) {
-                navigation.openTarget(nextNavigationTarget);
+                });
+                desktopLayout.commands.openView(
+                    fallbackView,
+                    DESKTOP_TAB_GROUP_IDS.LEFT,
+                    // Replace the stale Conversation descriptor without
+                    // stealing the location restored from Desktop focus. If
+                    // Chat was already active, updating it in place naturally
+                    // leaves it active.
+                    { activate: false },
+                );
             }
             setRestorationReady(true);
         };
@@ -148,34 +110,6 @@ export default function useDesktopShellLifecycle({
         // This is a one-time bootstrap from the immutable restored snapshot.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [desktopRestore]);
-
-    useEffect(() => {
-        if (!restorationReady) return;
-        if (preserveRestoredSelectionRef.current) {
-            preserveRestoredSelectionRef.current = false;
-            if (
-                !navigationView
-                || !desktopLayout.model.openViewsById[navigationView.id]
-            ) {
-                return;
-            }
-            desktopLayout.commands.openView(
-                navigationView,
-                DESKTOP_TAB_GROUP_IDS.LEFT,
-                { activate: false },
-            );
-            return;
-        }
-        if (!navigationView) return;
-        desktopLayout.commands.openView(
-            navigationView,
-            DESKTOP_TAB_GROUP_IDS.LEFT,
-        );
-    }, [
-        desktopLayout.commands.openView,
-        navigationView,
-        restorationReady,
-    ]);
 
     useEffect(() => {
         if (!restorationReady) return;

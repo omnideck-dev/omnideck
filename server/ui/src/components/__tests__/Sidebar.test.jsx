@@ -22,9 +22,7 @@ const navigationHarness = vi.hoisted(() => ({
 }));
 
 vi.mock('../../features/navigation/DesktopNavigation.jsx', () => ({
-    useDesktopNavigationState: () => ({
-        navigationTarget: navigationHarness.navigationTarget,
-    }),
+    useCurrentNavigationTarget: () => navigationHarness.navigationTarget,
     useDesktopNavigationCommands: () => navigationHarness.commands,
 }));
 
@@ -127,6 +125,8 @@ describe('Sidebar', () => {
         const user = userEvent.setup();
         navigationHarness.navigationTarget = { kind: 'routines', routineId: null, runId: null };
         const { navigation } = setup();
+        expect(screen.getByTestId('sidebar-nav-routines').className)
+            .toContain('active');
         await user.click(screen.getByTestId('sidebar-nav-routines'));
         expect(navigation.openChat).toHaveBeenCalledOnce();
     });

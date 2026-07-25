@@ -43,13 +43,15 @@ owns browser, terminal, file, generation, and desktop data by agent.
 `AppEffectsProvider` delivers typed one-time effects to feature owners without
 retaining them as global state. `AudioPlayer` subscribes to playback effects
 and owns its transient player state locally.
-`DesktopNavigationProvider` owns serializable navigation requests and named
-navigation commands. `useDesktopLayout` owns two equivalent tab groups, View
-placement and focus, the horizontal split ratio, floating placement, and
-fullscreen presentation. Each View has one stable host even when it moves
-between tab groups. Custom Apps and Workspace resources retain their domain
-data in their own owners and contribute serializable View descriptions to
-Desktop Layout. `App` assembles setup, these state owners, and `Desktop`.
+`DesktopNavigationProvider` translates named navigation commands directly into
+Desktop View commands; it owns no parallel current-location state.
+`useDesktopLayout` owns two equivalent tab groups, View placement and focus,
+the horizontal split ratio, floating placement, and fullscreen presentation.
+The focused View supplies the current navigation target. Each View has one
+stable host even when it moves between tab groups. Custom Apps and Workspace
+resources retain their domain data in their own owners and contribute
+serializable View descriptions to Desktop Layout. `App` assembles setup, these
+state owners, and `Desktop`.
 
 Live data follows this path:
 

@@ -34,10 +34,6 @@ describe('setup first-run Desktop Layout', () => {
         expect(persistFirstRunDesktopLayout(WELCOME)).toBe(true);
 
         const restored = loadDesktopLayoutSnapshot();
-        expect(restored.navigationTarget).toEqual({
-            kind: 'chat',
-            conversationId: 'welcome-to-omnideck',
-        });
         expect(restored.layoutState.tabGroups.left).toEqual({
             viewIds: ['destination:conversation'],
             activeViewId: 'destination:conversation',
@@ -45,6 +41,14 @@ describe('setup first-run Desktop Layout', () => {
         expect(restored.layoutState.tabGroups.right).toEqual({
             viewIds: ['artifact:welcome-dashboard-id'],
             activeViewId: 'artifact:welcome-dashboard-id',
+        });
+        expect(
+            restored.layoutState.openViewsById[
+                'destination:conversation'
+            ].navigationTarget,
+        ).toEqual({
+            kind: 'chat',
+            conversationId: 'welcome-to-omnideck',
         });
     });
 
