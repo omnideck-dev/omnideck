@@ -5,16 +5,6 @@
     overflow: hidden;
 }
 
-/* Fullscreen overlay variant — same toolbar/content, viewport-filling chrome */
-.fullscreen {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-modal);
-    background: var(--canvas);
-    display: flex;
-    flex-direction: column;
-}
-
 /* Toolbar */
 .toolbar {
     display: flex;
@@ -259,10 +249,6 @@
 }
 
 /* Light theme overrides */
-:global([data-theme="light"]) .fullscreen {
-    background: var(--elevated);
-}
-
 :global([data-theme="light"]) .toolbar {
     background: var(--surface);
     border-bottom-color: var(--border);

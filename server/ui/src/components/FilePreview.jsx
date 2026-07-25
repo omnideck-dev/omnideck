@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import styles from './FilePreview.module.css';
 import FileIcon from './icons/FileIcon.jsx';
 import ImageIcon from './icons/ImageIcon.jsx';
@@ -23,11 +23,10 @@ function getFileIcon(contentType, filename) {
 }
 
 /**
- * A file preview, shown either inline in the preview panel or as a full-viewport
- * overlay. The two modes share one toolbar and renderer; `fullscreen` only swaps
- * the outer chrome (overlay + Esc + Back vs panel + Expand).
+ * A file preview rendered inside its stable artifact tab.
+ * Full-screen presentation belongs to Desktop Layout.
  */
-export default function FilePreview({ item, fullscreen = false, onFullscreen, onClose }) {
+export default function FilePreview({ item }) {
     const {
         text,
         draft,
@@ -62,16 +61,6 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Esc leaves the fullscreen overlay; no-op for the inline tab.
-    const handleKeyDown = useCallback((e) => {
-        if (fullscreen && e.key === 'Escape' && onClose) onClose();
-    }, [fullscreen, onClose]);
-    useEffect(() => {
-        if (!fullscreen) return undefined;
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [fullscreen, handleKeyDown]);
-
     // Cmd/Ctrl+S saves the source edits, matching editor muscle memory.
     useEffect(() => {
         if (!canSave) return undefined;
@@ -88,15 +77,8 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
     const { filename, content_type } = item;
     const fileIcon = getFileIcon(content_type, filename);
 
-    // The inline tab carries the e2e hooks; the overlay is queried by its own
-    // container/back ids, so omit the per-control ids there to avoid duplicates.
-    const t = (id) => (fullscreen ? undefined : id);
-
     return (
-        <div
-            className={fullscreen ? styles.fullscreen : styles.filePreview}
-            data-testid={fullscreen ? 'fullscreen-preview' : undefined}
-        >
+        <div className={styles.filePreview}>
             <div className={styles.toolbar}>
                 <div className={styles.toolbarLeft}>
                     <div className={styles.filePill}>
@@ -109,11 +91,11 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
 
                 <div className={styles.toolbarCenter}>
                     {showToggle && !isPdf && (
-                        <div className={styles.toggle} data-testid={t('file-view-toggle')}>
+                        <div className={styles.toggle} data-testid="file-view-toggle">
                             <button
                                 className={`${styles.toggleBtn} ${viewMode === 'source' ? styles.toggleBtnActive : ''}`}
                                 onClick={() => setViewMode('source')}
-                                data-testid={t('file-view-source')}
+                                data-testid="file-view-source"
                             >
                                 <SourceIcon size={12} />
                                 Source
@@ -121,7 +103,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             <button
                                 className={`${styles.toggleBtn} ${viewMode === 'preview' ? styles.toggleBtnActive : ''}`}
                                 onClick={() => setViewMode('preview')}
-                                data-testid={t('file-view-preview')}
+                                data-testid="file-view-preview"
                             >
                                 <EyeIcon size={12} />
                                 Preview
@@ -129,7 +111,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                         </div>
                     )}
                     {!showToggle && !isPdf && !isImageFile && (
-                        <div className={styles.toggle} data-testid={t('file-view-source-only')}>
+                        <div className={styles.toggle} data-testid="file-view-source-only">
                             <button className={`${styles.toggleBtn} ${styles.toggleBtnActive}`}>
                                 <SourceIcon size={12} /> Source
                             </button>
@@ -145,7 +127,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             disabled={!isDirty || saving}
                             title={saveError ? `Save failed: ${saveError}` : saving ? 'Saving…' : isDirty ? 'Save (⌘S)' : 'Saved'}
                             aria-label="Save file"
-                            data-testid={t('file-save')}
+                            data-testid="file-save"
                         >
                             <SaveIcon size={14} className={isDirty ? styles.saveIconDirty : undefined} />
                         </IconButton>
@@ -155,7 +137,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             className={styles.refreshLink}
                             onClick={refresh}
                             title="File changed on disk — click to reload"
-                            data-testid={t('file-refresh')}
+                            data-testid="file-refresh"
                         >
                             <RefreshIcon size={12} />
                             Refresh
@@ -167,7 +149,7 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                             onClick={onCopyClick}
                             title={copied ? 'Copied!' : 'Copy to clipboard'}
                             aria-label="Copy file contents to clipboard"
-                            data-testid={t('file-copy')}
+                            data-testid="file-copy"
                         >
                             <CopyIcon size={14} />
                         </IconButton>
@@ -177,31 +159,10 @@ export default function FilePreview({ item, fullscreen = false, onFullscreen, on
                         onClick={handleDownload}
                         title="Download"
                         aria-label="Download file"
-                        data-testid={t('file-download')}
+                        data-testid="file-download"
                     >
                         <DownloadIcon size={14} />
                     </IconButton>
-                    {fullscreen ? (
-                        <IconButton
-                            size="sm"
-                            onClick={onClose}
-                            title="Exit fullscreen"
-                            aria-label="Exit fullscreen"
-                            data-testid="fullscreen-back"
-                        >
-                            <i className="bi bi-arrows-angle-contract" style={{ fontSize: 14 }} />
-                        </IconButton>
-                    ) : onFullscreen && (
-                        <IconButton
-                            size="sm"
-                            onClick={onFullscreen}
-                            title="Fullscreen"
-                            aria-label="Open fullscreen"
-                            data-testid="file-fullscreen"
-                        >
-                            <i className="bi bi-arrows-angle-expand" style={{ fontSize: 14 }} />
-                        </IconButton>
-                    )}
                 </div>
             </div>
 

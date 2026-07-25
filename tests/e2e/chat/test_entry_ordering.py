@@ -74,7 +74,7 @@ SINGLE_AGENT_EVENTS = _build_jsonl([
 
 # Root agent emits one spawn_agent tool call → one sub-agent runs and
 # finishes → root replies. Used to verify the chat footer counts the
-# spawn_agent call and the panel surfaces it.
+# spawn_agent call and the panel views it.
 SPAWN_ONLY_EVENTS = _build_jsonl([
     _event("agent_started", agent_id="root", agent_name="computron",
            parent_agent_id=None),
@@ -184,7 +184,7 @@ def _get_entries(container):
 @pytest.mark.e2e
 def test_chat_view_hides_thinking_and_tool_calls(page: Page):
     """Chat view shows only content inline; thinking and tool_calls are
-    hidden and surfaced via the per-turn activity footer."""
+    hidden and viewd via the per-turn activity footer."""
     chat = ChatView(page).goto().new_conversation()
     page.route("**/api/chat", _mock_chat_with(SINGLE_AGENT_EVENTS))
     chat.send("test")

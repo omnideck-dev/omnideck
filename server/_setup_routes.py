@@ -18,8 +18,14 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agents import apply_llm_config_to_profiles
+from artifacts import list_artifacts, reconcile
+from conversations import conversation_exists
+from migrations._welcome_constants import (
+    WELCOME_CONVERSATION_ID,
+    WELCOME_DASHBOARD_FILENAME,
+)
 from sdk.providers import get_provider
-from settings import save_settings
+from settings import load_settings, save_settings
 from setup import mark_ready
 
 logger = logging.getLogger(__name__)
@@ -35,6 +41,43 @@ class _CompleteBody(BaseModel):
     vision_model: str | None = None
     context_window: int | None = None
     default_agent: str = "omnideck"
+
+
+def _welcome_startup_payload() -> dict[str, object] | None:
+    """Resolve the seeded welcome content used by the first Desktop mount.
+
+    The server returns domain identities and data only. The browser remains
+    responsible for translating them into a Desktop Layout snapshot.
+    """
+    try:
+        # The artifact index intentionally keeps provenance after a
+        # conversation is archived or deleted. Do not let that stale index
+        # entry resurrect welcome content the user removed from the active
+        # list.
+        if not conversation_exists(WELCOME_CONVERSATION_ID):
+            return None
+        artifacts = reconcile(list_artifacts(WELCOME_CONVERSATION_ID))
+    except Exception:
+        # Welcome placement is optional. Setup has already succeeded and must
+        # not report a false failure because optional onboarding data could
+        # not be resolved.
+        logger.exception("could not resolve welcome startup content")
+        return None
+    dashboard = next(
+        (
+            artifact
+            for artifact in artifacts
+            if artifact.filename == WELCOME_DASHBOARD_FILENAME
+        ),
+        None,
+    )
+    if dashboard is None or dashboard.status != "present":
+        logger.warning("welcome dashboard artifact was not available at setup completion")
+        return None
+    return {
+        "conversation_id": WELCOME_CONVERSATION_ID,
+        "artifact": dashboard.model_dump(),
+    }
 
 
 async def handle_defaults(_request: web.Request) -> web.Response:
@@ -58,6 +101,11 @@ async def handle_complete(request: web.Request) -> web.Response:
     4. Flip ``setup_complete`` to true (last) and call ``mark_ready`` so
        any ready-gated waiters fire.
     """
+    # A repeated API call must not re-offer onboarding content to an existing
+    # installation. The browser normally cannot remount the wizard once this
+    # is true, but the server enforces the transition as well.
+    was_setup_complete = load_settings().get("setup_complete") is True
+
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -96,7 +144,14 @@ async def handle_complete(request: web.Request) -> web.Response:
 
     saved = save_settings({"setup_complete": True})
     mark_ready(request.app)
-    return web.json_response(saved)
+    return web.json_response({
+        **saved,
+        "welcome": (
+            None
+            if was_setup_complete
+            else _welcome_startup_payload()
+        ),
+    })
 
 
 def register_setup_routes(app: web.Application) -> None:

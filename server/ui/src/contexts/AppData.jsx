@@ -13,8 +13,17 @@ const AppDataContext = createContext(null);
 
 export function AppDataProvider({ children }) {
     const profilesHook = useAgentProfiles();
-    const { features, refresh: refreshFeatures } = useFeatures();
-    const value = { profilesHook, features, refreshFeatures };
+    const {
+        features,
+        loaded: featuresLoaded,
+        refresh: refreshFeatures,
+    } = useFeatures();
+    const value = {
+        profilesHook,
+        features,
+        featuresLoaded,
+        refreshFeatures,
+    };
     return (
         <AppDataContext.Provider value={value}>
             {children}

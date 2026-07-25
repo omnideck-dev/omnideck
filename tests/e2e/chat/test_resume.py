@@ -35,7 +35,7 @@ def resumed(browser, browser_context_args):
     chat.send(say(cw2)).wait_streaming()
 
     # Sanity: confirm the live render produced what we'll later expect to
-    # come back. Tool calls are hidden inline and surfaced via the per-turn
+    # come back. Tool calls are hidden inline and viewd via the per-turn
     # activity footer, so check that footer instead of bare tool-name text.
     assert page.get_by_text(cw1).count() >= 1, "cw1 missing before switch"
     assert page.get_by_test_id("activity-toggle").count() >= 1, (
@@ -82,7 +82,7 @@ def test_turn_one_user_message_restored(resumed):
 
 
 def test_turn_one_tool_call_badge_restored(resumed):
-    """Turn 1's assistant tool_call is surfaced via the activity footer."""
+    """Turn 1's assistant tool_call is viewd via the activity footer."""
     assistant = resumed["page"].get_by_test_id("message-assistant").first
     toggle = assistant.get_by_test_id("activity-toggle")
     expect(toggle).to_be_visible()

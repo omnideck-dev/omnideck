@@ -9,7 +9,7 @@ import styles from './MemoryTab.module.css';
  * key, value preview, hide-value toggle, delete. Hide just masks the
  * value in the UI — the value itself stays in the backend.
  */
-export default function MemoryTab({ refreshSignal }) {
+export default function MemoryTab() {
     const [hiddenKeys, setHiddenKeys] = useState(new Set());
 
     const onFetched = useCallback((data) => {
@@ -20,7 +20,6 @@ export default function MemoryTab({ refreshSignal }) {
         items: entries, loading,
         deleting, handleDelete,
     } = useListPanel('/api/memory', {
-        refreshSignal,
         getId: ([key]) => key,
         transform: (data) => Object.entries(data.entries),
         onFetched,

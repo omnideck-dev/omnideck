@@ -94,6 +94,7 @@
   /* ── Z-index scale ── */
   --z-sticky: 10;
   --z-flyout: 100;
+  --z-fullscreen: 500;
   --z-toast: 1000;
   --z-modal: 9999;
   --z-wizard: 10000;

@@ -16,7 +16,7 @@ from tests.e2e.pages import ChatView
 
 
 def test_provider_error_before_turn_shows_error(page: Page):
-    """A provider error before any output streams surfaces as a chat error."""
+    """A provider error before any output streams views as a chat error."""
     chat = ChatView(page).goto().new_conversation()
 
     chat.send(provider_fail("usage limit reached")).wait_streaming()
@@ -27,7 +27,7 @@ def test_provider_error_before_turn_shows_error(page: Page):
 
 
 def test_provider_error_mid_stream_shows_error(page: Page):
-    """A provider error partway through the stream still surfaces as an error."""
+    """A provider error partway through the stream still views as an error."""
     chat = ChatView(page).goto().new_conversation()
 
     chat.send(provider_fail("connection dropped", mid=True)).wait_streaming()

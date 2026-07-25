@@ -65,7 +65,7 @@ class SystemTab:
 
     @property
     def default_agent_select(self) -> Locator:
-        return self.page.locator("select").first
+        return self.page.get_by_test_id("settings-page").locator("select").first
 
     @property
     def vision_model_picker(self) -> ModelPickerLocator:
@@ -100,8 +100,16 @@ class SettingsPage:
     def goto(self) -> "SettingsPage":
         """Open Settings (lands on the Skills tab, the default)."""
         self.page.goto("/")
-        self.page.get_by_test_id("sidebar-settings").click()
-        self.page.get_by_test_id("settings-tab-skills").wait_for(state="visible")
+        settings_button = self.page.get_by_test_id("sidebar-settings")
+        skills_tab = self.page.get_by_test_id("settings-tab-skills")
+        settings_button.wait_for(state="visible")
+        # Desktop restores the focused View on reload. Clicking an already
+        # active Settings entry intentionally toggles back to Chat, so this
+        # navigation helper must be idempotent now that location comes from
+        # restored Desktop focus.
+        if not skills_tab.is_visible():
+            settings_button.click()
+        skills_tab.wait_for(state="visible")
         return self
 
     def goto_system(self) -> "SettingsPage":

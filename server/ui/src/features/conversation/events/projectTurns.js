@@ -23,10 +23,15 @@ import {
  * A sub-agent's events are omitted here because its detailed output appears in
  * the agent network/activity view. The root transcript can still contain the
  * `spawn_requested` item that links to that sub-agent.
+ *
+ * @param {Array<import('./conversationEvents.generated').ConversationEvent>|null|undefined} events
+ * @returns {Array<import('./frontendTypes').ConversationTurn>}
  */
 export function projectTurns(events) {
     if (!Array.isArray(events)) return [];
+    /** @type {Array<import('./frontendTypes').ConversationTurn>} */
     const turns = [];
+    /** @type {import('./frontendTypes').ConversationTurn|null} */
     let currentTurn = null;
 
     for (const ev of events) {
@@ -74,7 +79,7 @@ export function projectTurns(events) {
         // Everything from a sub-agent (depth>0) lives in the agent
         // activity view, not the main chat. Without this filter the
         // sub-agent's instruction user_message would render as a user
-        // bubble in the conversation.
+        // item in the conversation.
         if (isSubAgentEvent(ev)) continue;
 
         if (t === EVENT.USER_MESSAGE) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import styles from './Modal.module.css';
 
@@ -34,7 +35,7 @@ export default function Modal({
         panelRef.current?.focus();
     }, []);
 
-    return (
+    const modal = (
         <div
             className={styles.scrim}
             onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
@@ -53,4 +54,11 @@ export default function Modal({
             </div>
         </div>
     );
+
+    // View hosts deliberately clip their content so inactive, floating, and
+    // split views cannot paint into neighboring regions. A modal is global UI,
+    // however, and must escape that containment boundary. Portaling to body
+    // also keeps fixed positioning relative to the viewport when an ancestor
+    // establishes a transformed or positioned containing block.
+    return createPortal(modal, document.body);
 }

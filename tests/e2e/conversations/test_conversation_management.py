@@ -388,7 +388,7 @@ def test_archive_then_restore_round_trip(page: Page):
         expect(recent.items.first).to_be_visible(timeout=5000)
         expect(recent.item_by_id(conv_id).root).not_to_be_visible()
 
-        # ...and surfaces in the Archived shelf, which loads on expand.
+        # ...and views in the Archived shelf, which loads on expand.
         recent.expand_archived()
         expect(recent.archived_item_by_id(conv_id).root).to_be_visible(timeout=5000)
 

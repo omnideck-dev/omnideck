@@ -23,7 +23,7 @@ from tests.e2e.pages import ChatView, NetworkView
 def test_error_agent_shows_error_dot(page: Page):
     """A failed sub-agent card displays the 'error' status dot.
 
-    The sub raises; spawn_agent surfaces that to the root as an error
+    The sub raises; spawn_agent views that to the root as an error
     tool-result, so the root still completes — only the sub is errored.
     """
     chat = ChatView(page).goto().new_conversation()

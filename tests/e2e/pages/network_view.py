@@ -82,9 +82,23 @@ class NetworkView:
     def select_agent(self, index: int) -> AgentActivityView:
         from .agent_activity_view import AgentActivityView as _AgentActivityView
 
-        self.agent_cards.nth(index).click()
+        card = self.agent_cards.nth(index)
+        agent_id = card.get_attribute("data-agent-id")
+        card.click()
         self.page.wait_for_timeout(500)
-        return _AgentActivityView(self.page)
+        return _AgentActivityView(self.page, agent_id)
+
+    def select_agent_by_name(self, name: str) -> AgentActivityView:
+        from .agent_activity_view import AgentActivityView as _AgentActivityView
+
+        for i in range(self.agent_cards.count()):
+            card = self.agent_cards.nth(i)
+            if name.lower() in (AgentCard(card).name.lower()):
+                agent_id = card.get_attribute("data-agent-id")
+                card.click()
+                self.page.wait_for_timeout(500)
+                return _AgentActivityView(self.page, agent_id)
+        raise ValueError(f"No card found with name containing '{name}'")
 
     def back_to_chat(self) -> None:
         self.page.get_by_test_id("back-btn-chat").click()

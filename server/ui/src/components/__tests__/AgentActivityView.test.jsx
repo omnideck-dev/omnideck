@@ -1,15 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import { AgentStateProvider, useAgentDispatch } from '../../hooks/useAgentState.jsx';
+import { AgentProvider, useAgentDispatch } from '../../features/agent/AgentState.jsx';
 import AgentActivityView from '../AgentActivityView.jsx';
-import { act } from 'react';
-
-// ── Mock child components that are hard to render in jsdom ───────────
-
-vi.mock('../DesktopPreview.jsx', () => ({
-    default: ({ visible }) => visible ? <div data-testid="desktop-preview">Desktop</div> : null,
-}));
+import { act, useState } from 'react';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -17,14 +11,24 @@ function renderView(props = {}) {
     let dispatch;
 
     function Harness() {
+        const [agentId, setAgentId] = useState(props.agentId ?? 'a1');
         dispatch = useAgentDispatch();
-        return <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} {...props} />;
+        return (
+            <AgentActivityView
+                agentId={agentId}
+                onBack={() => setAgentId(null)}
+                onSelectAgent={setAgentId}
+                onNudge={vi.fn()}
+                onPreview={vi.fn()}
+                {...props}
+            />
+        );
     }
 
     const result = render(
-        <AgentStateProvider>
+        <AgentProvider>
             <Harness />
-        </AgentStateProvider>,
+        </AgentProvider>,
     );
 
     return {
@@ -42,7 +46,6 @@ function startAgent(dispatch, id, { name = 'omnideck', parent = null, instructio
         instruction,
         timestamp: Date.now(),
     });
-    dispatch({ type: 'SELECT_AGENT', agentId: id });
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -50,9 +53,9 @@ function startAgent(dispatch, id, { name = 'omnideck', parent = null, instructio
 describe('AgentActivityView', () => {
     it('renders nothing when no agent is selected', () => {
         const { container } = render(
-            <AgentStateProvider>
+            <AgentProvider>
                 <AgentActivityView onNudge={vi.fn()} onPreview={vi.fn()} />
-            </AgentStateProvider>,
+            </AgentProvider>,
         );
         expect(container.innerHTML).toBe('');
     });
@@ -61,31 +64,40 @@ describe('AgentActivityView', () => {
         const { dispatch } = renderView();
         startAgent(dispatch, 'a1', { instruction: 'Go to example.com' });
 
-        expect(screen.getAllByText('Omnideck')).toHaveLength(2); // breadcrumb + title
+        expect(screen.getByText('Omnideck')).toBeInTheDocument();
         expect(screen.getByText('Go to example.com')).toBeInTheDocument();
     });
 
     describe('activity pane', () => {
-        it('always has activityFull class (previews are in shared panel)', () => {
-            const { dispatch, container } = renderView();
-            startAgent(dispatch, 'a1');
-
-            const activity = container.querySelector('[class*="activity"]');
-            expect(activity.className).toMatch(/activityFull/);
-        });
-
-        it('stays full width even when preview data exists on agent', () => {
-            const { dispatch, container } = renderView();
+        it('keeps following text as streamed chunks merge into one activity entry', () => {
+            const { dispatch } = renderView();
             startAgent(dispatch, 'a1');
             dispatch({
-                type: 'UPDATE_BROWSER_SNAPSHOT',
+                type: 'APPEND_STREAM_CHUNK',
                 agentId: 'a1',
-                snapshot: { url: 'https://example.com', title: 'Example', screenshot: 'abc' },
+                content: 'first',
+                thinking: '',
             });
 
-            const activity = container.querySelector('[class*="activity"]');
-            expect(activity.className).toMatch(/activityFull/);
+            const activity = screen.getByTestId('agent-activity-scroll');
+            Object.defineProperty(activity, 'scrollHeight', {
+                configurable: true,
+                value: 500,
+            });
+            activity.scrollTop = 0;
+
+            // This extends the existing content entry, so activityLog.length
+            // remains unchanged. Content growth must still trigger scrolling.
+            dispatch({
+                type: 'APPEND_STREAM_CHUNK',
+                agentId: 'a1',
+                content: ' second',
+                thinking: '',
+            });
+
+            expect(activity.scrollTop).toBe(500);
         });
+
     });
 
     describe('nudge bar', () => {
@@ -97,18 +109,29 @@ describe('AgentActivityView', () => {
         });
     });
 
-    describe('does not render inline previews', () => {
-        it('no previews div exists', () => {
-            const { dispatch, container } = renderView();
-            startAgent(dispatch, 'a1');
-            dispatch({
-                type: 'UPDATE_BROWSER_SNAPSHOT',
-                agentId: 'a1',
-                snapshot: { url: 'https://example.com', title: 'Example', screenshot: 'abc' },
+    describe('agent workspace resources', () => {
+        it('renders only the concrete available actions and opens them explicitly', async () => {
+            const user = userEvent.setup();
+            const onOpenView = vi.fn();
+            const { dispatch } = renderView({
+                availableViews: ['browser', 'terminal'],
+                onOpenView,
             });
+            startAgent(dispatch, 'a1');
 
-            const previews = container.querySelector('[class*="previews"]');
-            expect(previews).toBeNull();
+            await user.click(screen.getByRole('button', { name: 'Browser' }));
+            await user.click(screen.getByRole('button', { name: 'Terminal' }));
+
+            expect(onOpenView).toHaveBeenNthCalledWith(1, 'browser');
+            expect(onOpenView).toHaveBeenNthCalledWith(2, 'terminal');
+        });
+
+        it('does not render a resource action when it is unavailable', () => {
+            const { dispatch } = renderView({ availableViews: ['browser'] });
+            startAgent(dispatch, 'a1');
+
+            expect(screen.getByRole('button', { name: 'Browser' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Terminal' })).not.toBeInTheDocument();
         });
     });
 
@@ -147,7 +170,6 @@ describe('AgentActivityView', () => {
                 type: 'AGENT_STARTED', agentId: 'c2', agentName: 'code_expert',
                 parentAgentId: 'a1', instruction: '', correlationId: 'c-2', timestamp: Date.now(),
             });
-            dispatch({ type: 'SELECT_AGENT', agentId: 'a1' });
         }
 
         it('renders an inline spawn card for the agent\'s sub-agents', () => {

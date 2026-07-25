@@ -11,7 +11,7 @@ const SAMPLE = {
     has_actions: true,
 };
 
-test('lists discovered apps and asks the shell to open one full-space', () => {
+test('lists discovered apps and asks the shell to open one on the left', () => {
     const onOpenApp = vi.fn();
     render(<AppsView apps={[SAMPLE]} onOpenApp={onOpenApp} />);
     expect(screen.getByText('Text Lab')).toBeInTheDocument();
@@ -21,14 +21,6 @@ test('lists discovered apps and asks the shell to open one full-space', () => {
 
     fireEvent.click(screen.getByTestId('custom-app-card'));
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
-});
-
-test('can open an app directly beside the active chat', () => {
-    const onOpenAppBesideChat = vi.fn();
-    render(<AppsView apps={[SAMPLE]} onOpenAppBesideChat={onOpenAppBesideChat} />);
-
-    fireEvent.click(screen.getByTestId('custom-app-open-split-text-lab'));
-    expect(onOpenAppBesideChat).toHaveBeenCalledWith(SAMPLE);
 });
 
 test('asks the catalog owner to refresh', () => {

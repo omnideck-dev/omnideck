@@ -6,31 +6,6 @@
     flex: 1;
 }
 
-/* Crumb bar — own row, sits at the very top of the view */
-.crumbBar {
-    height: var(--header-height);
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: 0 var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    letter-spacing: 0.02em;
-}
-
-.breadcrumb {
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    letter-spacing: 0.04em;
-}
-.breadcrumbCurrent {
-    color: var(--text-secondary);
-}
-
 /* Agent name row — status dot + name in brand mono + meta in code mono */
 .agentBar {
     padding: var(--sp-3) var(--sp-4);
@@ -51,6 +26,32 @@
     letter-spacing: 0.04em;
 }
 
+.viewActions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.viewAction {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 26px;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 11px;
+}
+
+.viewAction:hover {
+    border-color: var(--border-strong);
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
 .meta {
     margin-left: auto;
     display: flex;
@@ -61,25 +62,20 @@
     color: var(--text-tertiary);
 }
 
-/* Two-pane body */
 .body {
     flex: 1;
     display: flex;
     overflow: hidden;
 }
 
-/* Activity stream (left pane — 40%, or full width when no previews) */
 .activity {
-    flex: 0 0 40%;
+    flex: 1 1 100%;
     overflow-y: auto;
     padding: var(--sp-3) var(--sp-4);
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-}
-.activity.activityFull {
-    flex: 1 1 100%;
 }
 
 /* Instruction box — sits between the agent header and the activity
@@ -169,17 +165,6 @@
 .fileMeta {
     font-size: 8px;
     color: var(--text-tertiary);
-}
-
-/* Preview panels (right pane — 60%) */
-.previews {
-    flex: 1;
-    border-left: 1px solid var(--border);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
-    padding: var(--sp-2);
 }
 
 /* Nudge bar — lightweight variant of the chat input */

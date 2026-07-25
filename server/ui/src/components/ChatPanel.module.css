@@ -46,7 +46,7 @@
     flex-shrink: 0;
 }
 
-/* center cell: the artifacts drawer trigger. A bespoke compact title-bar pill
+/* center cell: the conversation artifacts trigger. A bespoke compact title-bar pill
    (matching .networkBtn) rather than the Button primitive — the 32px primitive
    is too tall for the title bar. */
 .artifactsBtn {

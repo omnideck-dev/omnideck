@@ -1,10 +1,4 @@
-/* Shared by the inline preview (inside the panel's padding) and the fullscreen
-   view (supplies its own outer padding). The title sits above the control row. */
 .chrome {
-}
-
-.chrome.fullscreen {
-  padding: 10px 12px 0;
 }
 
 .pageTitle {
@@ -57,6 +51,16 @@
 
 .urlInput:focus {
   border-color: var(--accent);
+}
+
+.controlError {
+  flex-shrink: 0;
+  max-width: 180px;
+  color: var(--danger, #e57373);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :global([data-theme="light"]) .urlBar {

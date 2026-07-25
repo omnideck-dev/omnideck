@@ -144,7 +144,7 @@ def test_delete_removes_row_and_record(page: Page):
 
 
 def test_duplicate_name_is_rejected(page: Page):
-    """Saving a new skill with an existing name surfaces an error and doesn't persist."""
+    """Saving a new skill with an existing name views an error and doesn't persist."""
     _seed_skills([_skill("coder", name="Coder", tool_categories=["coding"])])
 
     skills = SettingsPage(page).goto_skills().skills

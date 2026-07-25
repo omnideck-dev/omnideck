@@ -8,7 +8,7 @@ import ChatPanel from '../ChatPanel.jsx';
 vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-messages" /> }));
 // ChatPanel reads the root agent from the agent-state context; the title bar is
 // irrelevant to these draft tests, so a no-root stub suffices.
-vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
+vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
 
 function renderPanel(props = {}) {
     return render(

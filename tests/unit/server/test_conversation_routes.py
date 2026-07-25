@@ -23,6 +23,7 @@ from server._conversation_routes import (
     generate_title_handler,
     list_archived_handler,
     list_folders_handler,
+    resume_conversation_handler,
     unarchive_conversation_handler,
     update_conversation_handler,
     update_folder_handler,
@@ -70,6 +71,27 @@ def _seed(conv_id: str) -> None:
         "agent_id": "root.test.1", "agent_name": "TEST",
         "parent_agent_id": None,
     }) + "\n")
+
+
+@pytest.mark.unit
+async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
+    """The HTTP payload includes the explicit browser and terminal restores."""
+    resume = AsyncMock(return_value={
+        "messages": [],
+        "events": [{"id": "event-1", "type": "agent_started"}],
+        "browser_tabs": [{"tab_id": 1, "agent_id": "root-1"}],
+        "terminal": {"root-1": [{"cmd_id": "command-1"}]},
+        "preview_state": {"active_tab": "browser"},
+        "profile_id": "general",
+    })
+    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+
+    response = await resume_conversation_handler(_make_request("conversation-1", None))
+    body = json.loads(response.body)
+
+    assert body["browser_tabs"] == [{"tab_id": 1, "agent_id": "root-1"}]
+    assert body["terminal"] == {"root-1": [{"cmd_id": "command-1"}]}
+    resume.assert_awaited_once_with("conversation-1")
 
 
 @pytest.mark.unit

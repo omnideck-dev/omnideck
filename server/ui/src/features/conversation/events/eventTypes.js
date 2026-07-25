@@ -4,7 +4,7 @@
  * JavaScript has no native string enum, so this frozen object gives event
  * producers and consumers one vocabulary without changing the wire format.
  */
-export const CONVERSATION_EVENT_TYPES = Object.freeze({
+export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
     CONTENT: 'content',
     TURN_END: 'turn_end',
     TOOL_CALL: 'tool_call',
@@ -24,10 +24,10 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze({
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     COMPACTION: 'compaction',
-});
+}));
 
 /** Item names understood by the chat transcript's Turn renderer. */
-export const TRANSCRIPT_ITEM_KINDS = Object.freeze({
+export const TRANSCRIPT_ITEM_KINDS = Object.freeze(/** @type {const} */ ({
     USER_PROMPT: 'user_prompt',
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
@@ -35,18 +35,20 @@ export const TRANSCRIPT_ITEM_KINDS = Object.freeze({
     COMPACTION: 'compaction',
     SPAWN_REQUESTED: 'spawn_requested',
     ERROR: 'error',
-});
+}));
 
 /**
  * Agent lifecycle events identify a sub-agent with `parent_agent_id`; other
  * events identify it with `depth > 0`. Keep that protocol detail here so
  * transcript code does not alternate between the two tests.
  */
+/** @param {{parent_agent_id?: string|null, depth?: number|null}|null|undefined} event */
 export function isSubAgentEvent(event) {
     if (!event) return false;
     return Boolean(event.parent_agent_id) || (event.depth ?? 0) > 0;
 }
 
+/** @param {{parent_agent_id?: string|null, depth?: number|null}|null|undefined} event */
 export function isRootAgentEvent(event) {
     return Boolean(event) && !isSubAgentEvent(event);
 }
