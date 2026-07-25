@@ -24,10 +24,10 @@ export default function useArtifactNavigation({
     const [pendingArtifact, setPendingArtifact] = useState(null);
 
     const handleOpenArtifactRequest = useCallback((effect) => {
-        if (!effect.artifactId) return;
+        if (!effect.payload.artifactId) return;
         setPendingArtifact({
-            artifactId: effect.artifactId,
-            conversationId: effect.conversationId || null,
+            artifactId: effect.payload.artifactId,
+            conversationId: effect.payload.conversationId || null,
         });
     }, []);
     useAppEffectSubscription(

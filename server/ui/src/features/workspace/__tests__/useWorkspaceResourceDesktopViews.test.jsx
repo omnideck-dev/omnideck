@@ -80,10 +80,12 @@ function useHarness() {
 function rootViewEffect(resourceId, agentId = 'root-1') {
     return {
         type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
-        conversationId: CONVERSATION_ID,
-        agentId,
-        agentName: 'root',
-        resourceId,
+        payload: {
+            conversationId: CONVERSATION_ID,
+            agentId,
+            agentName: 'root',
+            resourceId,
+        },
     };
 }
 
@@ -147,7 +149,7 @@ describe('useWorkspaceResourceDesktopViews', () => {
                 .openViewsById[browserId];
             result.current.dispatchEffect({
                 type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
-                views: [view],
+                payload: { views: [view] },
             });
             result.current.desktopLayout.commands.closeView(browserId);
         });
@@ -183,9 +185,12 @@ describe('useWorkspaceResourceDesktopViews', () => {
             .toHaveLength(1);
 
         act(() => result.current.dispatchEffect({
-            type: APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE,
-            agentId: 'researcher-1',
-            resourceId: 'terminal',
+            type: APP_EFFECT_TYPES
+                .OPEN_AGENT_WORKSPACE_RESOURCE_REQUESTED,
+            payload: {
+                agentId: 'researcher-1',
+                resourceId: 'terminal',
+            },
         }));
 
         const terminalId =
@@ -211,8 +216,9 @@ describe('useWorkspaceResourceDesktopViews', () => {
         });
         act(() => result.current.dispatchEffect(rootViewEffect('browser')));
         act(() => result.current.dispatchEffect({
-            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
-            conversationId: CONVERSATION_ID,
+            type: APP_EFFECT_TYPES
+                .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
+            payload: { conversationId: CONVERSATION_ID },
         }));
 
         expect(result.current.desktopLayout.model.openViewsById[APP.id])
@@ -234,7 +240,7 @@ describe('useWorkspaceResourceDesktopViews', () => {
                 .openViewsById[browserId];
             result.current.dispatchEffect({
                 type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
-                views: [browserView, CHAT],
+                payload: { views: [browserView, CHAT] },
             });
         });
 

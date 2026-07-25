@@ -87,7 +87,9 @@ export default function useDesktopShellLifecycle({
                 // remove dependent Views without restore knowing their types.
                 dispatchAppEffect({
                     type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
-                    views: conversationView ? [conversationView] : [],
+                    payload: {
+                        views: conversationView ? [conversationView] : [],
+                    },
                 });
                 const fallbackView = createNavigationView({
                     kind: 'chat',

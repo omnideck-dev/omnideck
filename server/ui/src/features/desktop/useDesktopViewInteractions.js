@@ -26,7 +26,7 @@ export default function useDesktopViewInteractions({
         // descriptors before layout removes them.
         dispatchAppEffect({
             type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
-            views,
+            payload: { views },
         });
         commands.closeViews(views.map((view) => view.id));
     }, [commands.closeViews, dispatchAppEffect]);
@@ -111,8 +111,10 @@ export default function useDesktopViewInteractions({
         enterFullscreen: handleEnterFullscreen,
         requestViewAction: (actionId, view) => dispatchAppEffect({
             type: APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
-            actionId,
-            view,
+            payload: {
+                actionId,
+                view,
+            },
         }),
         closeView: handleCloseView,
         closeOtherViews: handleCloseOtherViews,

@@ -48,7 +48,7 @@ export function DesktopNavigationProvider({ children }) {
             // it. Custom Apps owns that short-lived deferred intent.
             dispatchAppEffect({
                 type: APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
-                appSlug: nextTarget.appSlug,
+                payload: { appSlug: nextTarget.appSlug },
             });
             return true;
         }
@@ -67,8 +67,10 @@ export function DesktopNavigationProvider({ children }) {
         if (artifactId) {
             dispatchAppEffect({
                 type: APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED,
-                artifactId,
-                conversationId: viewTarget.conversationId || null,
+                payload: {
+                    artifactId,
+                    conversationId: viewTarget.conversationId || null,
+                },
             });
         }
         return true;

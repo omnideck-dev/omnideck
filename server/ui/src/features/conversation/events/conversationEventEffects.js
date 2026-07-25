@@ -16,28 +16,37 @@ export function getConversationEventEffects(event) {
             if (!isRootAgentEvent(event) || !event.agent_id || !event.screenshot) return [];
             return [{
                 type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
-                conversationId: event.conversation_id || null,
-                agentId: event.agent_id,
-                agentName: event.agent_name || null,
-                resourceId: 'browser',
+                payload: {
+                    conversationId: event.conversation_id || null,
+                    agentId: event.agent_id,
+                    agentName: event.agent_name || null,
+                    resourceId: 'browser',
+                },
             }];
         case EVENT.TERMINAL_OUTPUT:
             if (!isRootAgentEvent(event) || !event.agent_id) return [];
             return [{
                 type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
-                conversationId: event.conversation_id || null,
-                agentId: event.agent_id,
-                agentName: event.agent_name || null,
-                resourceId: 'terminal',
+                payload: {
+                    conversationId: event.conversation_id || null,
+                    agentId: event.agent_id,
+                    agentName: event.agent_name || null,
+                    resourceId: 'terminal',
+                },
             }];
         case EVENT.TOOL_CREATED:
-            return [{ type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS }];
+            return [{
+                type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+                payload: null,
+            }];
         case EVENT.AUDIO_PLAYBACK:
             return [{
-                type: APP_EFFECT_TYPES.PLAY_AUDIO,
-                audio: {
-                    key: event.id,
-                    src: `data:${event.content_type};base64,${event.content}`,
+                type: APP_EFFECT_TYPES.PLAY_AUDIO_REQUESTED,
+                payload: {
+                    audio: {
+                        key: event.id,
+                        src: `data:${event.content_type};base64,${event.content}`,
+                    },
                 },
             }];
         default:

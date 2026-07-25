@@ -17,7 +17,10 @@ export function useCustomToolsCatalog() {
     ), [panel.handleDelete]);
 
     const refreshCustomTools = useCallback(() => panel.refetch(), [panel.refetch]);
-    useAppEffectSubscription(APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS, refreshCustomTools);
+    useAppEffectSubscription(
+        APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+        refreshCustomTools,
+    );
 
     return {
         customTools: panel.items,

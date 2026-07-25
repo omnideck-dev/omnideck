@@ -68,8 +68,10 @@ describe('useArtifactNavigation', () => {
 
         act(() => result.current.dispatch({
             type: APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED,
-            artifactId: 'artifact-1',
-            conversationId: 'conversation-2',
+            payload: {
+                artifactId: 'artifact-1',
+                conversationId: 'conversation-2',
+            },
         }));
 
         await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(

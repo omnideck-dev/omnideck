@@ -76,7 +76,8 @@ export default function useWorkspaceResourceDesktopViews({
     }), []);
 
     const handleRootResourceAvailable = useCallback((effect) => {
-        const conversationId = effect.conversationId || activeConversationId;
+        const conversationId = effect.payload.conversationId
+            || activeConversationId;
         if (
             !conversationId
             || conversationId !== activeConversationId
@@ -85,7 +86,7 @@ export default function useWorkspaceResourceDesktopViews({
             return;
         }
         const view = buildView({
-            ...effect,
+            ...effect.payload,
             conversationId,
             isRoot: true,
         });
@@ -125,11 +126,13 @@ export default function useWorkspaceResourceDesktopViews({
     }, [desktopCommands.closeViews]);
 
     const handleCloseConversationViews = useCallback(
-        (effect) => closeConversationWorkspaceViews(effect.conversationId),
+        (effect) => closeConversationWorkspaceViews(
+            effect.payload.conversationId,
+        ),
         [closeConversationWorkspaceViews],
     );
     useAppEffectSubscription(
-        APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
+        APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
         handleCloseConversationViews,
     );
 
@@ -164,16 +167,19 @@ export default function useWorkspaceResourceDesktopViews({
     ]);
 
     const handleOpenAgentResource = useCallback((effect) => {
-        openAgentWorkspaceResource(effect.agentId, effect.resourceId);
+        openAgentWorkspaceResource(
+            effect.payload.agentId,
+            effect.payload.resourceId,
+        );
     }, [openAgentWorkspaceResource]);
     useAppEffectSubscription(
-        APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE,
+        APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE_REQUESTED,
         handleOpenAgentResource,
     );
 
     const handleViewsClosing = useCallback((effect) => {
         const closingConversationIds = new Set(
-            effect.views
+            effect.payload.views
                 .filter((view) => view.type === 'conversation')
                 .map((view) => (
                     navigationTargetForView(view)?.conversationId
@@ -184,7 +190,7 @@ export default function useWorkspaceResourceDesktopViews({
         // An explicitly closed Workspace View remains dismissed until the
         // conversation changes. If the conversation itself is closing, its
         // dismissal history is cleared instead.
-        for (const view of effect.views) {
+        for (const view of effect.payload.views) {
             const identity = workspaceResourceIdentityForView(view);
             if (
                 view.type === 'workspace-resource'

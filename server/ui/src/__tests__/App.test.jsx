@@ -1,6 +1,7 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppDataProvider } from '../contexts/AppData.jsx';
+import { APP_EFFECT_TYPES } from '../features/app/appEffectTypes.js';
 import { DESKTOP_LAYOUT_STORAGE_KEY } from '../features/desktop/desktopLayoutPersistence.js';
 
 // Minimal 1x1 transparent PNG
@@ -318,13 +319,16 @@ async function renderApp() {
                 && ['UPDATE_BROWSER_SNAPSHOT', 'UPDATE_TERMINAL'].includes(action.type)
             ) {
                 capturedAppEffectDispatch({
-                    type: 'workspace/root-resource-available',
-                    conversationId: streamMock.value.activeConversationId,
-                    agentId: action.agentId,
-                    agentName: 'omnideck',
-                    resourceId: action.type === 'UPDATE_BROWSER_SNAPSHOT'
-                        ? 'browser'
-                        : 'terminal',
+                    type: APP_EFFECT_TYPES
+                        .ROOT_WORKSPACE_RESOURCE_AVAILABLE,
+                    payload: {
+                        conversationId: streamMock.value.activeConversationId,
+                        agentId: action.agentId,
+                        agentName: 'omnideck',
+                        resourceId: action.type === 'UPDATE_BROWSER_SNAPSHOT'
+                            ? 'browser'
+                            : 'terminal',
+                    },
                 });
             }
         });

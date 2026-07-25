@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { APP_EFFECT_TYPES } from '../../../app/appEffectTypes.js';
 import { createLiveEventDelivery } from '../liveEventDelivery.js';
 
 function event(type, fields = {}) {
@@ -97,7 +98,8 @@ describe('createLiveEventDelivery', () => {
         delivery.deliver(event('tool_created'));
 
         expect(appEffectDispatch).toHaveBeenCalledWith({
-            type: 'custom-tools/refresh',
+            type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+            payload: null,
         });
     });
 });

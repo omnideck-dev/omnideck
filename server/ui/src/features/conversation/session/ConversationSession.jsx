@@ -71,8 +71,9 @@ export function ConversationSessionProvider({ children }) {
             && previousConversationId !== conversationId
         ) {
             appEffectDispatch({
-                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
-                conversationId: previousConversationId,
+                type: APP_EFFECT_TYPES
+                    .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
+                payload: { conversationId: previousConversationId },
             });
         }
         const restore = getConversationRestorePlan(loaded);
@@ -94,8 +95,11 @@ export function ConversationSessionProvider({ children }) {
     const newConversation = useCallback((options) => {
         if (session.activeConversationId) {
             appEffectDispatch({
-                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
-                conversationId: session.activeConversationId,
+                type: APP_EFFECT_TYPES
+                    .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
+                payload: {
+                    conversationId: session.activeConversationId,
+                },
             });
         }
         const result = session.newConversation(options);

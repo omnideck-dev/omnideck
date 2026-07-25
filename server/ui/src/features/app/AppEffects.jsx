@@ -9,6 +9,15 @@ import {
 const AppEffectDispatchContext = createContext(null);
 const AppEffectSubscriptionContext = createContext(null);
 
+function isAppEffectEnvelope(effect) {
+    return Boolean(
+        effect
+        && typeof effect.type === 'string'
+        && effect.type.length > 0
+        && Object.prototype.hasOwnProperty.call(effect, 'payload'),
+    );
+}
+
 /**
  * Delivers typed, one-time application effects without turning them into
  * globally retained state. Feature owners subscribe and decide whether an
@@ -20,7 +29,9 @@ export function AppEffectsProvider({ children }) {
     const dispatchAppEffect = useCallback(
         /** @param {import('./appEffects.types').AppEffect} effect */
         (effect) => {
-            if (!effect?.type) return;
+            // Even payload-free effects carry `payload: null`. Rejecting old
+            // flat messages here keeps the envelope contract unambiguous.
+            if (!isAppEffectEnvelope(effect)) return;
             const subscribers = subscribersRef.current.get(effect.type);
             if (!subscribers) return;
 

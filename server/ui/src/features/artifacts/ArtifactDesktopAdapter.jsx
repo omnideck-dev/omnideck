@@ -207,8 +207,8 @@ export function ArtifactDesktopEffects() {
         onError: handleArtifactError,
     });
     const handleViewAction = useCallback((effect) => {
-        if (effect.actionId !== 'open-source-conversation') return;
-        const artifact = effect.view.artifact;
+        if (effect.payload.actionId !== 'open-source-conversation') return;
+        const artifact = effect.payload.view.artifact;
         if (!artifact?.id || !artifact.conversation_id) {
             // A declared View action must either work or fail visibly. This
             // also guards restored/legacy descriptors that predate the

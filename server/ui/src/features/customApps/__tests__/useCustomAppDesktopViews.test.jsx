@@ -90,7 +90,7 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
 
         act(() => result.current({
             type: APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
-            appSlug: 'text-lab',
+            payload: { appSlug: 'text-lab' },
         }));
         expect(openApp).not.toHaveBeenCalled();
 

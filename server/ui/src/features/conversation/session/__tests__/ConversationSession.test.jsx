@@ -70,7 +70,8 @@ function renderSession() {
         agents = useAgentState();
         workspaces = useWorkspaceState();
         useAppEffectSubscription(
-            APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
+            APP_EFFECT_TYPES
+                .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
             (effect) => harness.effects.push(effect),
         );
         return null;
@@ -149,8 +150,9 @@ describe('ConversationSessionProvider', () => {
         expect(getAgents().agents['root-1'].activityLog).toEqual([]);
         expect(getWorkspaces().byAgentId['root-1'].openFiles).toEqual([]);
         expect(harness.effects).toContainEqual({
-            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
-            conversationId: 'conversation-1',
+            type: APP_EFFECT_TYPES
+                .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
+            payload: { conversationId: 'conversation-1' },
         });
         expect(getSession().conversationProfileId).toBe('profile-2');
     });
@@ -176,8 +178,9 @@ describe('ConversationSessionProvider', () => {
         expect(getAgents().agents).toEqual({});
         expect(getWorkspaces().byAgentId).toEqual({});
         expect(harness.effects).toContainEqual({
-            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
-            conversationId: 'conversation-1',
+            type: APP_EFFECT_TYPES
+                .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
+            payload: { conversationId: 'conversation-1' },
         });
     });
 

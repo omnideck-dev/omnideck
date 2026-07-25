@@ -44,9 +44,12 @@ export function useWorkspaceResourceDesktopActions() {
     const dispatchAppEffect = useAppEffectDispatch();
     const openAgentWorkspaceResource = useCallback((agentId, resourceId) => {
         dispatchAppEffect({
-            type: APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE,
-            agentId,
-            resourceId,
+            type: APP_EFFECT_TYPES
+                .OPEN_AGENT_WORKSPACE_RESOURCE_REQUESTED,
+            payload: {
+                agentId,
+                resourceId,
+            },
         });
     }, [dispatchAppEffect]);
     return { openAgentWorkspaceResource };

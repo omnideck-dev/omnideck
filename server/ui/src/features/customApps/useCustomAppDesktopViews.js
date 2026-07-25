@@ -52,7 +52,9 @@ export default function useCustomAppDesktopViews({ openApp }) {
     ]);
 
     const handleViewAction = useCallback((effect) => {
-        if (effect.actionId === 'reload') reloadApp(effect.view.id);
+        if (effect.payload.actionId === 'reload') {
+            reloadApp(effect.payload.view.id);
+        }
     }, [reloadApp]);
     useAppEffectSubscription(
         APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
@@ -60,7 +62,7 @@ export default function useCustomAppDesktopViews({ openApp }) {
     );
 
     const handleOpenAppRequest = useCallback((effect) => {
-        setPendingAppSlug(effect.appSlug || null);
+        setPendingAppSlug(effect.payload.appSlug || null);
     }, []);
     useAppEffectSubscription(
         APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,

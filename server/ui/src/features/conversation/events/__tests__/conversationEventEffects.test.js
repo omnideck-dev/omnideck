@@ -9,7 +9,10 @@ function event(type, fields = {}) {
 describe('getConversationEventEffects', () => {
     it('maps tool creation to catalog invalidation', () => {
         expect(getConversationEventEffects(event('tool_created'))).toEqual([
-            { type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS },
+            {
+                type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+                payload: null,
+            },
         ]);
     });
 
@@ -17,10 +20,12 @@ describe('getConversationEventEffects', () => {
         expect(getConversationEventEffects(event('audio_playback', {
             content_type: 'audio/wav', content: 'base64-audio',
         }))).toEqual([{
-            type: APP_EFFECT_TYPES.PLAY_AUDIO,
-            audio: {
-                key: 'event-audio_playback',
-                src: 'data:audio/wav;base64,base64-audio',
+            type: APP_EFFECT_TYPES.PLAY_AUDIO_REQUESTED,
+            payload: {
+                audio: {
+                    key: 'event-audio_playback',
+                    src: 'data:audio/wav;base64,base64-audio',
+                },
             },
         }]);
     });
@@ -34,10 +39,12 @@ describe('getConversationEventEffects', () => {
             screenshot: 'base64-image',
         }))).toEqual([{
             type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
-            conversationId: 'conversation-1',
-            agentId: 'root-1',
-            agentName: 'Omnideck',
-            resourceId: 'browser',
+            payload: {
+                conversationId: 'conversation-1',
+                agentId: 'root-1',
+                agentName: 'Omnideck',
+                resourceId: 'browser',
+            },
         }]);
         expect(getConversationEventEffects(event('terminal_output', {
             conversation_id: 'conversation-1',
@@ -46,10 +53,12 @@ describe('getConversationEventEffects', () => {
             depth: 0,
         }))).toEqual([{
             type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
-            conversationId: 'conversation-1',
-            agentId: 'root-1',
-            agentName: 'Omnideck',
-            resourceId: 'terminal',
+            payload: {
+                conversationId: 'conversation-1',
+                agentId: 'root-1',
+                agentName: 'Omnideck',
+                resourceId: 'terminal',
+            },
         }]);
     });
 

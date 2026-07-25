@@ -177,8 +177,10 @@ describe('DesktopNavigationProvider', () => {
         );
         expect(dispatchAppEffect).toHaveBeenCalledWith({
             type: APP_EFFECT_TYPES.OPEN_ARTIFACT_REQUESTED,
-            artifactId: 'artifact-3',
-            conversationId: 'conversation-2',
+            payload: {
+                artifactId: 'artifact-3',
+                conversationId: 'conversation-2',
+            },
         });
     });
 
@@ -193,7 +195,7 @@ describe('DesktopNavigationProvider', () => {
         expect(desktop.commands.openView).not.toHaveBeenCalled();
         expect(dispatchAppEffect).toHaveBeenCalledWith({
             type: APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
-            appSlug: 'text-lab',
+            payload: { appSlug: 'text-lab' },
         });
     });
 

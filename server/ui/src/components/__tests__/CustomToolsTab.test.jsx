@@ -112,7 +112,8 @@ describe('CustomToolsTab', () => {
         )).length;
 
         act(() => _dispatchAppEffect({
-            type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS,
+            type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+            payload: null,
         }));
 
         await waitFor(() => {

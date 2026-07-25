@@ -12,10 +12,13 @@ function AudioPlayer() {
     const [paused, setPaused] = useState(false);
 
     const receiveAudio = useCallback((effect) => {
-        setAudio(effect.audio);
+        setAudio(effect.payload.audio);
         setPaused(false);
     }, []);
-    useAppEffectSubscription(APP_EFFECT_TYPES.PLAY_AUDIO, receiveAudio);
+    useAppEffectSubscription(
+        APP_EFFECT_TYPES.PLAY_AUDIO_REQUESTED,
+        receiveAudio,
+    );
 
     if (!audio) return null;
 

@@ -25,10 +25,12 @@ describe('AudioPlayer', () => {
         expect(screen.queryByTestId('audio-player')).not.toBeInTheDocument();
 
         act(() => dispatchAppEffect({
-            type: APP_EFFECT_TYPES.PLAY_AUDIO,
-            audio: {
-                key: 'audio-1',
-                src: 'data:audio/wav;base64,content',
+            type: APP_EFFECT_TYPES.PLAY_AUDIO_REQUESTED,
+            payload: {
+                audio: {
+                    key: 'audio-1',
+                    src: 'data:audio/wav;base64,content',
+                },
             },
         }));
 
