@@ -55,6 +55,8 @@ export function createArtifactView(artifact) {
         testid: `artifact:${artifact.filename}`,
         type: 'artifact-file',
         resourceId: artifact.id,
+        resourcePath: artifact.path || null,
+        conversationId: artifact.conversation_id || null,
         artifact,
         label: artifact.filename || 'Artifact',
         icon: 'bi-file-earmark',
@@ -88,6 +90,12 @@ export function createFileOutputView(item, conversationId) {
         id: `artifact-output:${conversationId || 'unknown'}:${encodeURIComponent(fileKey)}`,
         testid: `artifact:${item.filename || fileKey}`,
         type: 'artifact-file',
+        // Persist the catalog id when the event already carries one. Older
+        // file-output events have only a path; the Artifact adapter resolves
+        // that path against the catalog after a restore.
+        resourceId: item.id || null,
+        resourcePath: fileKey,
+        conversationId: conversationId || null,
         artifact: {
             ...item,
             conversation_id: conversationId || null,
@@ -159,9 +167,14 @@ export const DESKTOP_VIEW_VALIDATORS = Object.freeze({
         && typeof view.agentId === 'string'
         && ['browser', 'terminal'].includes(view.resourceId)
     ),
-    'artifact-file': (view) => isRecord(view.artifact),
+    'artifact-file': (view) => (
+        isRecord(view.artifact)
+        || typeof view.resourceId === 'string'
+        || typeof view.resourcePath === 'string'
+    ),
     'custom-app': (view) => (
-        isRecord(view.app) && typeof view.app.slug === 'string'
+        (isRecord(view.app) && typeof view.app.slug === 'string')
+        || typeof view.resourceId === 'string'
     ),
     settings: () => true,
     agents: () => true,
@@ -180,4 +193,64 @@ export function validDesktopView(view) {
         return false;
     }
     return Boolean(DESKTOP_VIEW_VALIDATORS[view.type]?.(view));
+}
+
+function compactRecord(record) {
+    return Object.fromEntries(
+        Object.entries(record).filter(([, value]) => (
+            value !== null && value !== undefined
+        )),
+    );
+}
+
+/**
+ * Reduce a runtime View to the durable identity Desktop Layout may persist.
+ *
+ * Domain objects and commands are deliberately omitted. Domain adapters
+ * rehydrate those runtime fields from the keys below after restore.
+ */
+export function persistedDesktopView(view) {
+    if (!validDesktopView(view)) return null;
+
+    const core = compactRecord({
+        id: view.id,
+        type: view.type,
+        label: view.label,
+        icon: view.icon,
+        closable: view.closable,
+    });
+
+    if (view.type === 'workspace-resource') {
+        return {
+            ...core,
+            conversationId: view.conversationId,
+            agentId: view.agentId,
+            resourceId: view.resourceId,
+            isRoot: Boolean(view.isRoot),
+        };
+    }
+    if (view.type === 'artifact-file') {
+        return {
+            ...core,
+            ...compactRecord({
+                resourceId: view.resourceId || view.artifact?.id,
+                resourcePath: view.resourcePath || view.artifact?.path,
+                conversationId: view.conversationId
+                    || view.artifact?.conversation_id,
+            }),
+        };
+    }
+    if (view.type === 'custom-app') {
+        return {
+            ...core,
+            resourceId: view.resourceId || view.app?.slug,
+        };
+    }
+    if (view.navigationTarget) {
+        return {
+            ...core,
+            navigationTarget: view.navigationTarget,
+        };
+    }
+    return core;
 }

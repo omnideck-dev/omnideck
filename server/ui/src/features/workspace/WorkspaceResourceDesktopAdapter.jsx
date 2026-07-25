@@ -34,18 +34,19 @@ export function WorkspaceResourceDesktopEffects() {
 }
 
 /**
- * Request an explicit sub-agent resource without teaching Conversation how a
- * Workspace resource becomes a Desktop View.
+ * Commands that let other domains request Workspace-owned Desktop behavior
+ * without constructing Workspace resource Views themselves.
  */
-export function useOpenAgentWorkspaceResource() {
+export function useWorkspaceResourceDesktopActions() {
     const dispatchAppEffect = useAppEffectDispatch();
-    return useCallback((agentId, resourceId) => {
+    const openAgentWorkspaceResource = useCallback((agentId, resourceId) => {
         dispatchAppEffect({
             type: APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE,
             agentId,
             resourceId,
         });
     }, [dispatchAppEffect]);
+    return { openAgentWorkspaceResource };
 }
 
 /**

@@ -11,7 +11,7 @@ import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import useFloatingViewBounds from './useFloatingViewBounds.js';
 import styles from './DesktopLayout.module.css';
 
-function viewIdentity(view, iconClass, titleClass) {
+function ViewIdentity({ view, iconClass, titleClass }) {
     return (
         <>
             <span className={iconClass}>
@@ -23,6 +23,82 @@ function viewIdentity(view, iconClass, titleClass) {
                 {view.label}
             </span>
         </>
+    );
+}
+
+/** Shared chrome for the two placements that render a title bar. */
+function ViewHostHeader({
+    visible,
+    view,
+    actions,
+    placement,
+    dragHandlers = {},
+    onExitFullscreen = null,
+}) {
+    const floating = placement === DESKTOP_ACTION_PLACEMENTS.FLOATING;
+    const headerClass = floating
+        ? styles.floatingHeader
+        : styles.fullscreenHeader;
+    const visibleClass = floating
+        ? styles.floatingHeaderVisible
+        : styles.fullscreenHeaderVisible;
+    const identityClass = floating
+        ? styles.floatingIdentity
+        : styles.fullscreenIdentity;
+    const iconClass = floating
+        ? styles.floatingIcon
+        : styles.fullscreenIcon;
+    const titleClass = floating
+        ? styles.floatingTitle
+        : styles.fullscreenTitle;
+    const actionsClass = floating
+        ? styles.floatingActions
+        : styles.fullscreenActions;
+    const testIdPrefix = floating
+        ? 'floating-view-header'
+        : 'fullscreen-view-header';
+    const viewKey = view.testid || view.id;
+
+    return (
+        <header
+            className={[
+                headerClass,
+                visible ? visibleClass : '',
+            ].filter(Boolean).join(' ')}
+            aria-hidden={!visible}
+            data-testid={`${testIdPrefix}-${viewKey}`}
+            {...dragHandlers}
+        >
+            {visible && (
+                <>
+                    <div className={identityClass}>
+                        <ViewIdentity
+                            view={view}
+                            iconClass={iconClass}
+                            titleClass={titleClass}
+                        />
+                    </div>
+                    <div className={actionsClass}>
+                        <DesktopViewActionBar
+                            actions={actions}
+                            placement={placement}
+                        />
+                        {onExitFullscreen && (
+                            <button
+                                type="button"
+                                className={styles.restoreView}
+                                onClick={onExitFullscreen}
+                                title="Exit full screen"
+                                aria-label="Exit full screen"
+                                data-testid={`restore-view-${viewKey}`}
+                            >
+                                <i className="bi bi-fullscreen-exit" />
+                            </button>
+                        )}
+                    </div>
+                </>
+            )}
+        </header>
     );
 }
 
@@ -128,75 +204,26 @@ function DesktopViewHost({
             data-fullscreen={fullscreen ? 'true' : 'false'}
             data-maximized={fullscreen ? 'true' : 'false'}
         >
-            <header
-                className={[
-                    styles.floatingHeader,
-                    floating && !fullscreen
-                        ? styles.floatingHeaderVisible
-                        : '',
-                ].filter(Boolean).join(' ')}
-                aria-hidden={!floating || fullscreen}
-                onPointerDown={startDrag}
-                onPointerMove={drag}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                data-testid={`floating-view-header-${view.testid || view.id}`}
-            >
-                {floating && !fullscreen && (
-                    <>
-                        <div className={styles.floatingIdentity}>
-                            {viewIdentity(
-                                view,
-                                styles.floatingIcon,
-                                styles.floatingTitle,
-                            )}
-                        </div>
-                        <div className={styles.floatingActions}>
-                            <DesktopViewActionBar
-                                actions={actions}
-                                placement={DESKTOP_ACTION_PLACEMENTS.FLOATING}
-                            />
-                        </div>
-                    </>
-                )}
-            </header>
+            <ViewHostHeader
+                visible={floating && !fullscreen}
+                view={view}
+                actions={actions}
+                placement={DESKTOP_ACTION_PLACEMENTS.FLOATING}
+                dragHandlers={{
+                    onPointerDown: startDrag,
+                    onPointerMove: drag,
+                    onPointerUp: endDrag,
+                    onPointerCancel: endDrag,
+                }}
+            />
 
-            <header
-                className={[
-                    styles.fullscreenHeader,
-                    fullscreen ? styles.fullscreenHeaderVisible : '',
-                ].filter(Boolean).join(' ')}
-                aria-hidden={!fullscreen}
-                data-testid={`fullscreen-view-header-${view.testid || view.id}`}
-            >
-                {fullscreen && (
-                    <>
-                        <div className={styles.fullscreenIdentity}>
-                            {viewIdentity(
-                                view,
-                                styles.fullscreenIcon,
-                                styles.fullscreenTitle,
-                            )}
-                        </div>
-                        <div className={styles.fullscreenActions}>
-                            <DesktopViewActionBar
-                                actions={actions}
-                                placement={DESKTOP_ACTION_PLACEMENTS.FULLSCREEN}
-                            />
-                            <button
-                                type="button"
-                                className={styles.restoreView}
-                                onClick={() => commands.setFullscreenView(null)}
-                                title="Exit full screen"
-                                aria-label="Exit full screen"
-                                data-testid={`restore-view-${view.testid || view.id}`}
-                            >
-                                <i className="bi bi-fullscreen-exit" />
-                            </button>
-                        </div>
-                    </>
-                )}
-            </header>
+            <ViewHostHeader
+                visible={fullscreen}
+                view={view}
+                actions={actions}
+                placement={DESKTOP_ACTION_PLACEMENTS.FULLSCREEN}
+                onExitFullscreen={() => commands.setFullscreenView(null)}
+            />
 
             {content}
         </div>

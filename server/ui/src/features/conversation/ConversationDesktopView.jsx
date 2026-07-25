@@ -12,7 +12,7 @@ import {
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
 import {
-    useOpenAgentWorkspaceResource,
+    useWorkspaceResourceDesktopActions,
 } from '../workspace/WorkspaceResourceDesktopAdapter.jsx';
 import {
     useConversationSessionCommands,
@@ -43,7 +43,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
     const artifacts = useArtifactDesktopActions();
-    const openAgentWorkspaceResource = useOpenAgentWorkspaceResource();
+    const {
+        openAgentWorkspaceResource,
+    } = useWorkspaceResourceDesktopActions();
 
     const selectedProfileId = conversationProfileId ?? defaultProfileId;
     const mode = view.navigationTarget?.kind || 'chat';

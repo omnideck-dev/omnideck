@@ -136,12 +136,16 @@ describe('artifact view descriptions', () => {
         expect(withoutId).toMatchObject({
             type: 'artifact-file',
             label: 'report.md',
+            resourceId: null,
+            resourcePath: '/home/omnideck/report.md',
+            conversationId: 'conversation-2',
             actions: [],
             artifact: {
                 conversation_id: 'conversation-2',
                 path: '/home/omnideck/report.md',
             },
         });
+        expect(withId.resourceId).toBe('artifact-2');
         expect(withId.actions).toEqual(['open-source-conversation']);
     });
 });

@@ -14,7 +14,6 @@ import {
 } from '../navigation/DesktopNavigation.jsx';
 import {
     createCustomAppView,
-    customAppViewId,
 } from '../desktop/desktopViews.js';
 import { DESKTOP_TAB_GROUP_IDS } from '../desktop/desktopLayoutReducer.js';
 import {
@@ -24,43 +23,17 @@ import {
 import { useCustomApps } from './CustomApps.jsx';
 
 /**
- * Open a catalog entry as a normal multi-instance Desktop View.
- *
- * This command is used by the Apps view and by URL-navigation reconciliation;
- * neither caller needs to know the Custom App View identity convention.
- */
-export function useOpenCustomAppView() {
-    const desktopModel = useDesktopViewCatalog();
-    const desktopCommands = useDesktopViewCommands();
-
-    return useCallback((
-        app,
-        tabGroupId = DESKTOP_TAB_GROUP_IDS.LEFT,
-    ) => {
-        const existing = desktopModel.openViewsById[customAppViewId(app.slug)];
-        desktopCommands.openView(
-            createCustomAppView(app, existing?.reloadSignal || 0),
-            { tabGroupId },
-        );
-    }, [
-        desktopCommands.openView,
-        desktopModel.openViewsById,
-    ]);
-}
-
-/**
  * Owns Custom App effects which outlive any one rendered app View.
  *
  * It deliberately returns no render data. Individual Custom App adapters read
  * their own domain contexts when they render.
  */
-export default function useCustomAppDesktopViews() {
+export default function useCustomAppDesktopViews({ openApp }) {
     const customApps = useCustomApps();
     const currentNavigationTarget = useCurrentNavigationTarget();
     const navigation = useDesktopNavigationCommands();
     const desktopModel = useDesktopViewCatalog();
     const desktopCommands = useDesktopViewCommands();
-    const openApp = useOpenCustomAppView();
     const { loaded: catalogLoaded, findBySlug } = customApps.catalog;
     const [pendingAppSlug, setPendingAppSlug] = useState(null);
     const targetType = currentNavigationTarget?.kind || null;

@@ -10,9 +10,8 @@ model generic windows or nested layouts yet.
 ### Desktop
 
 The application shell and composition boundary. `Desktop` coordinates
-navigation synchronization, persistence, and the layout renderer, but it does
-not own conversation, workspace, artifact, or Custom App data or lifecycle
-policy.
+navigation commands, persistence, and the layout renderer, but it does not own
+conversation, workspace, artifact, or Custom App data or lifecycle policy.
 
 ### Workspace
 
@@ -119,19 +118,22 @@ unrelated domain renderers:
 
 ```text
 DesktopViewRuntimeProvider
-|-- DesktopDomainEffects
-|   |-- WorkspaceResourceDesktopEffects
-|   |-- CustomAppDesktopEffects
-|   `-- ArtifactDesktopEffects
-`-- DesktopShell
-    `-- DesktopViewContent
-        `-- one per-View domain adapter
+`-- DesktopNavigationProvider
+    |-- DesktopDomainEffects
+    |   |-- WorkspaceResourceDesktopEffects
+    |   |-- CustomAppDesktopEffects
+    |   `-- ArtifactDesktopEffects
+    `-- DesktopShell
+        `-- DesktopViewContent
+            `-- one per-View domain adapter
 ```
 
 ### Navigation target
 
-A request to open or select a view. Navigation expresses intent; Desktop
-translates that intent into View and Desktop Layout commands.
+A request to open or select a view. Navigation expresses intent and translates
+it directly into View commands; it does not keep a second current-location
+store. The focused View's navigation target is the current application
+location.
 
 ### First-run layout
 
@@ -198,6 +200,19 @@ Desktop adapter that:
 Long-lived synchronization is installed as a named headless domain effect, not
 as a provider wrapped around `DesktopShell`.
 
+Every domain adapter follows one file-level public convention:
+
+```text
+features/<domain>/<Domain>DesktopAdapter.jsx
+  export function <Domain>DesktopEffects()      // headless installation
+  export function use<Domain>DesktopActions()   // commands into Desktop
+  export default function <Domain>DesktopView() // per-View renderer
+```
+
+The lower-level `use<Domain>DesktopViews` hooks remain private effect
+implementations. Callers import cross-boundary actions and renderers from the
+adapter, so adding another domain does not introduce a fourth adapter shape.
+
 The cross-boundary command is generic:
 
 ```text
@@ -212,6 +227,27 @@ Close and toolbar-action coordination is generic too. Desktop announces which
 View descriptors are closing and which declared View action was requested.
 Feature owners interpret those announcements; Desktop never switches on a View
 type to decide domain policy.
+
+## Persistence and rehydration
+
+Desktop Layout persists durable View identity, not copies of domain records.
+The persisted core is the View ID, type, label, icon, closability, and the
+smallest domain key needed to resolve the live record. For example, a Custom
+App persists its slug and an Artifact persists its artifact ID or legacy file
+path. Transient fields such as iframe reload signals and declared runtime
+actions are never saved.
+
+On restore, each domain adapter resolves its own keys:
+
+- Custom Apps resolve slugs through the live catalog and close Views for apps
+  that no longer exist.
+- Artifacts resolve IDs or legacy output paths through the Artifact store,
+  rebuild the live file descriptor, and close Views whose artifact is gone.
+- Workspace resource Views already carry their complete durable conversation,
+  agent, and resource identity; their renderer reads live data from Workspace.
+
+This keeps storage generic and makes deletion/staleness policy the
+responsibility of the domain that can answer it.
 
 ## Lifecycle boundaries
 
@@ -278,20 +314,15 @@ now would encode behavior that the product does not yet support.
 
 These are implementation observations, not additional concepts:
 
-- Persist only durable view identity. Artifact and Custom App views currently
-  embed domain objects that should instead be resolved through their owners.
 - Move View factories and restore validators fully into their owning domains.
   Persistence now uses a validator registry rather than encoding payload
   schemas itself, but the registry and factories are still centralized in
   `desktopViews.js`.
 - Give Custom App view instances unique IDs. Slug-based IDs currently limit an
   app to one simultaneous open instance.
-- Keep transient Custom App reload signals out of persisted view descriptors.
 - Consider splitting `TabbedPane` into a reusable tab strip and an optional
   content owner. It no longer emits an empty content node for Desktop tab
   groups, but its API still supports both roles.
-- Share the nearly identical floating and fullscreen header presentation in
-  `DesktopViewHost`.
 - Replace Workspace-specific host test attributes with a generic View-owned
   test metadata convention before changing the existing E2E selectors.
 - Revisit whether the focused Terminal should disable Browser control while a

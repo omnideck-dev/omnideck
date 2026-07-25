@@ -37,6 +37,7 @@ const desktop = vi.hoisted(() => ({
         closeViews: vi.fn(),
     },
 }));
+const openApp = vi.hoisted(() => vi.fn());
 
 vi.mock('../CustomApps.jsx', () => ({
     useCustomApps: () => customApps,
@@ -65,7 +66,7 @@ const wrapper = ({ children }) => (
 
 function useHarness() {
     const dispatch = useAppEffectDispatch();
-    useCustomAppDesktopViews();
+    useCustomAppDesktopViews({ openApp });
     return dispatch;
 }
 
@@ -81,6 +82,7 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
         Object.values(desktop.commands).forEach((command) => (
             command.mockReset()
         ));
+        openApp.mockReset();
     });
 
     it('holds a slug until the Custom App catalog can resolve it', async () => {
@@ -90,18 +92,59 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
             type: APP_EFFECT_TYPES.OPEN_CUSTOM_APP_REQUESTED,
             appSlug: 'text-lab',
         }));
-        expect(desktop.commands.openView).not.toHaveBeenCalled();
+        expect(openApp).not.toHaveBeenCalled();
 
         customApps.catalog.loaded = true;
         rerender();
 
-        await waitFor(() => expect(desktop.commands.openView)
-            .toHaveBeenCalledWith(
-                expect.objectContaining({
+        await waitFor(() => expect(openApp)
+            .toHaveBeenCalledWith(APP, 'left'));
+    });
+
+    it('rehydrates a restored View from the live catalog', async () => {
+        customApps.catalog.loaded = true;
+        desktop.catalog.openViews = [{
+            id: 'custom-app:text-lab',
+            type: 'custom-app',
+            resourceId: 'text-lab',
+            label: 'Text Lab',
+            icon: 'bi-fonts',
+            closable: true,
+        }];
+
+        renderHook(useHarness, { wrapper });
+
+        await waitFor(() => expect(desktop.commands.syncViews)
+            .toHaveBeenCalledWith({
+                views: [expect.objectContaining({
                     id: 'custom-app:text-lab',
                     resourceId: 'text-lab',
-                }),
-                { tabGroupId: 'left' },
-            ));
+                    app: APP,
+                    reloadSignal: 0,
+                    actions: ['reload'],
+                })],
+                closeViewIds: [],
+            }));
+    });
+
+    it('closes a restored View when its catalog entry is gone', async () => {
+        customApps.catalog.loaded = true;
+        customApps.catalog.findBySlug.mockReturnValue(null);
+        desktop.catalog.openViews = [{
+            id: 'custom-app:missing-app',
+            type: 'custom-app',
+            resourceId: 'missing-app',
+            label: 'Missing App',
+            icon: 'bi-grid',
+            closable: true,
+        }];
+
+        renderHook(useHarness, { wrapper });
+
+        await waitFor(() => expect(desktop.commands.syncViews)
+            .toHaveBeenCalledWith({
+                views: [],
+                closeViewIds: ['custom-app:missing-app'],
+            }));
     });
 });

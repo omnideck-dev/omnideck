@@ -1,12 +1,12 @@
 import AppsView from '../../components/apps/AppsView.jsx';
 import { useCustomApps } from './CustomApps.jsx';
 import {
-    useOpenCustomAppView,
-} from './useCustomAppDesktopViews.js';
+    useCustomAppDesktopActions,
+} from './CustomAppDesktopAdapter.jsx';
 
 export default function AppsDesktopView({ tabGroupId }) {
     const customApps = useCustomApps();
-    const openApp = useOpenCustomAppView();
+    const { openApp } = useCustomAppDesktopActions();
     const { catalog } = customApps;
 
     if (!customApps.enabled) return null;

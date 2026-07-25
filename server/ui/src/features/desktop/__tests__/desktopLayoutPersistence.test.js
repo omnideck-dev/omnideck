@@ -26,6 +26,7 @@ const CHAT = {
 const APP = {
     id: 'custom-app:text-lab',
     type: 'custom-app',
+    resourceId: 'text-lab',
     label: 'Text Lab',
     icon: 'bi-fonts',
     navigationTarget: {
@@ -36,6 +37,16 @@ const APP = {
         slug: 'text-lab',
         title: 'Text Lab',
     },
+    reloadSignal: 7,
+    actions: ['reload'],
+    closable: true,
+};
+const APP_CORE = {
+    id: 'custom-app:text-lab',
+    type: 'custom-app',
+    resourceId: 'text-lab',
+    label: 'Text Lab',
+    icon: 'bi-fonts',
     closable: true,
 };
 const SETTINGS = {
@@ -44,6 +55,24 @@ const SETTINGS = {
     label: 'Settings',
     icon: 'bi-gear',
     navigationTarget: { kind: 'settings', tab: null },
+    closable: true,
+};
+const ARTIFACT = {
+    id: 'artifact:artifact-7',
+    testid: 'artifact:report.md',
+    type: 'artifact-file',
+    resourceId: 'artifact-7',
+    resourcePath: '/home/omnideck/report.md',
+    conversationId: 'conversation-1',
+    artifact: {
+        id: 'artifact-7',
+        filename: 'report.md',
+        path: '/home/omnideck/report.md',
+        conversation_id: 'conversation-1',
+    },
+    label: 'report.md',
+    icon: 'bi-file-earmark',
+    actions: ['open-source-conversation'],
     closable: true,
 };
 
@@ -92,7 +121,8 @@ describe('desktop layout persistence', () => {
         expect(restored.layoutState.focusedTabGroupId).toBe('right');
         expect(restored.layoutState.splitRatio).toBe(62);
         expect(restored.layoutState.fullscreenViewId).toBe(APP.id);
-        expect(restored.layoutState.openViewsById[APP.id]).toEqual(APP);
+        expect(restored.layoutState.openViewsById[APP.id]).toEqual(APP_CORE);
+        expect(saved.layout.views).toContainEqual(APP_CORE);
     });
 
     it('ignores corrupt snapshots without changing storage consumers', () => {
@@ -103,6 +133,45 @@ describe('desktop layout persistence', () => {
             version: 999,
         }));
         expect(loadDesktopLayoutSnapshot()).toBeNull();
+    });
+
+    it('persists Artifact identity without its runtime domain record', () => {
+        const desktop = model();
+        desktop.tabGroups.right = {
+            viewIds: [ARTIFACT.id],
+            activeViewId: ARTIFACT.id,
+        };
+        desktop.openViewsById = {
+            [CHAT.id]: CHAT,
+            [ARTIFACT.id]: ARTIFACT,
+        };
+        desktop.fullscreenViewId = null;
+
+        saveDesktopLayoutSnapshot(desktop);
+
+        const saved = JSON.parse(
+            localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
+        );
+        const artifactCore = saved.layout.views.find(
+            (view) => view.id === ARTIFACT.id,
+        );
+        expect(artifactCore).toEqual({
+            id: ARTIFACT.id,
+            type: 'artifact-file',
+            resourceId: 'artifact-7',
+            resourcePath: '/home/omnideck/report.md',
+            conversationId: 'conversation-1',
+            label: 'report.md',
+            icon: 'bi-file-earmark',
+            closable: true,
+        });
+        expect(artifactCore).not.toHaveProperty('artifact');
+        expect(artifactCore).not.toHaveProperty('actions');
+        expect(artifactCore).not.toHaveProperty('testid');
+        expect(
+            loadDesktopLayoutSnapshot().layoutState
+                .openViewsById[ARTIFACT.id],
+        ).toEqual(artifactCore);
     });
 
     it('migrates v2 by trusting focused View location, not saved navigation', () => {
@@ -128,10 +197,8 @@ describe('desktop layout persistence', () => {
 
         expect(restored).not.toHaveProperty('navigationTarget');
         expect(focusedView.id).toBe(APP.id);
-        expect(focusedView.navigationTarget).toEqual({
-            kind: 'custom-app',
-            appSlug: 'text-lab',
-        });
+        expect(focusedView.resourceId).toBe('text-lab');
+        expect(focusedView).not.toHaveProperty('navigationTarget');
     });
 
     it('drops invalid and duplicate view placement while preserving an empty tabGroup', () => {

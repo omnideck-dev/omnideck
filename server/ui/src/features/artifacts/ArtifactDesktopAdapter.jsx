@@ -1,6 +1,11 @@
-import { useCallback } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+} from 'react';
 
 import ArtifactsHubView from '../../components/artifacts/ArtifactsHubView.jsx';
+import FilePreview from '../../components/FilePreview.jsx';
 import { useToast } from '../../components/ToastProvider.jsx';
 import {
     useAppEffectSubscription,
@@ -18,9 +23,112 @@ import {
     createNavigationView,
 } from '../desktop/desktopViews.js';
 import {
+    useDesktopViewCatalog,
     useDesktopViewCommands,
 } from '../desktop/DesktopViewRuntime.jsx';
 import useArtifactNavigation from './useArtifactNavigation.js';
+
+async function fetchJson(url, signal) {
+    try {
+        const response = await fetch(url, { signal });
+        if (response.status === 404) return { status: 'missing' };
+        if (!response.ok) return { status: 'error' };
+        return {
+            status: 'found',
+            value: await response.json(),
+        };
+    } catch (error) {
+        return error.name === 'AbortError'
+            ? { status: 'aborted' }
+            : { status: 'error' };
+    }
+}
+
+/** Resolve one persisted Artifact key without teaching persistence its schema. */
+async function resolveArtifactView(view, signal) {
+    let result;
+    if (view.resourceId) {
+        result = await fetchJson(
+            `/api/artifacts/${encodeURIComponent(view.resourceId)}`,
+            signal,
+        );
+    } else if (view.resourcePath) {
+        const query = view.conversationId
+            ? `?conversation_id=${encodeURIComponent(view.conversationId)}`
+            : '';
+        const collection = await fetchJson(`/api/artifacts${query}`, signal);
+        result = collection.status === 'found'
+            ? {
+                status: 'found',
+                value: (collection.value.artifacts || []).find(
+                    (artifact) => artifact.path === view.resourcePath,
+                ) || null,
+            }
+            : collection;
+        if (result.status === 'found' && !result.value) {
+            result = { status: 'missing' };
+        }
+    } else {
+        result = { status: 'missing' };
+    }
+
+    if (
+        result.status === 'found'
+        && result.value?.status === 'missing'
+    ) {
+        return { status: 'missing' };
+    }
+    return result;
+}
+
+function useArtifactViewRehydration() {
+    const { openViews } = useDesktopViewCatalog();
+    const desktop = useDesktopViewCommands();
+    const unresolvedViews = useMemo(
+        () => openViews.filter(
+            (view) => view.type === 'artifact-file' && !view.artifact,
+        ),
+        [openViews],
+    );
+
+    useEffect(() => {
+        if (!unresolvedViews.length) return undefined;
+        const controller = new AbortController();
+        let cancelled = false;
+
+        Promise.all(unresolvedViews.map(async (view) => ({
+            view,
+            result: await resolveArtifactView(view, controller.signal),
+        }))).then((resolutions) => {
+            if (cancelled) return;
+            const views = [];
+            const closeViewIds = [];
+            for (const { view, result } of resolutions) {
+                if (result.status === 'missing') {
+                    closeViewIds.push(view.id);
+                    continue;
+                }
+                if (result.status !== 'found') continue;
+                const hydrated = createArtifactView(result.value);
+                if (!hydrated) {
+                    closeViewIds.push(view.id);
+                    continue;
+                }
+                // Placement keys must remain stable while the Artifact domain
+                // replaces durable identity with its live runtime record.
+                views.push({ ...hydrated, id: view.id });
+            }
+            if (views.length || closeViewIds.length) {
+                desktop.syncViews({ views, closeViewIds });
+            }
+        });
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
+    }, [desktop.syncViews, unresolvedViews]);
+}
 
 /**
  * Commands used by Artifact-owned renderers to cross into Desktop placement.
@@ -75,6 +183,7 @@ export function useArtifactDesktopActions() {
  * action means.
  */
 export function ArtifactDesktopEffects() {
+    useArtifactViewRehydration();
     const navigation = useDesktopNavigationCommands();
     const { openArtifact } = useArtifactDesktopActions();
     const { addToast } = useToast();
@@ -105,8 +214,14 @@ export function ArtifactDesktopEffects() {
     return null;
 }
 
-/** Per-View adapter for the Artifact hub page. */
-export default function ArtifactsDesktopView({ view, tabGroupId }) {
+/** Per-View adapter for both Artifact files and the Artifact library. */
+export default function ArtifactDesktopView({ view, tabGroupId }) {
+    // Restored file Views render after the headless domain effect resolves
+    // their durable key. Avoid handing an incomplete record to FilePreview.
+    if (view.type === 'artifact-file') {
+        return view.artifact ? <FilePreview item={view.artifact} /> : null;
+    }
+
     const {
         openArtifact,
         openArtifacts,

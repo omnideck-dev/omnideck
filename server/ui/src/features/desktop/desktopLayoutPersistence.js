@@ -5,6 +5,7 @@ import {
 } from './desktopLayoutReducer.js';
 import {
     ARTIFACTS_VIEW_ID,
+    persistedDesktopView,
     validDesktopView,
 } from './desktopViews.js';
 
@@ -177,6 +178,10 @@ function restoreLayoutState(rawLayout) {
         storedViews
             .map(restoredView)
             .filter(validDesktopView)
+            // Older snapshots may contain whole domain records. Normalize
+            // those records to the same durable core written by new saves so
+            // adapters always see one restore contract.
+            .map(persistedDesktopView)
             .map((view) => [view.id, view]),
     );
     const usedViewIds = new Set();
@@ -294,7 +299,7 @@ export function createDesktopLayoutSnapshot(model) {
         const views = [...placedViewIds]
             .map((viewId) => model.openViewsById[viewId])
             .filter(validDesktopView)
-            .map(({ iconElement: _iconElement, ...view }) => view);
+            .map(persistedDesktopView);
         return {
             version: SNAPSHOT_VERSION,
             layout: {
@@ -342,7 +347,7 @@ export function writeDesktopLayoutSnapshot(snapshot) {
     }
 }
 
-/** Persist serializable layout and navigation—never rendered React content. */
+/** Persist serializable layout identity—never domain records or React content. */
 export function saveDesktopLayoutSnapshot(model) {
     writeDesktopLayoutSnapshot(
         createDesktopLayoutSnapshot(model),
