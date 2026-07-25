@@ -220,4 +220,32 @@ describe('useWorkspaceResourceDesktopViews', () => {
             (view) => view.type === 'workspace-resource',
         )).toBe(false);
     });
+
+    it('treats workspace views in a Conversation close batch as a cascade', () => {
+        const { result } = renderHook(useHarness, { wrapper });
+        const browserId = 'workspace-resource:conversation-1:root:browser';
+
+        act(() => result.current.dispatchEffect(rootViewEffect('browser')));
+        act(() => {
+            const browserView = result.current.desktopLayout.model
+                .openViewsById[browserId];
+            result.current.dispatchEffect({
+                type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
+                views: [browserView, CHAT],
+            });
+        });
+
+        expect(result.current.desktopLayout.model.openViewsById[browserId])
+            .toBeUndefined();
+
+        // The browser was closed because its Conversation closed, not because
+        // the user explicitly dismissed that browser. If the Conversation is
+        // still available to this isolated harness, new output may open it
+        // again; an incorrectly recorded dismissal would suppress it.
+        act(() => result.current.dispatchEffect(
+            rootViewEffect('browser', 'root-2'),
+        ));
+        expect(result.current.desktopLayout.model.openViewsById[browserId])
+            .toBeDefined();
+    });
 });

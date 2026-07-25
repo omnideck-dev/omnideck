@@ -4,7 +4,7 @@ import time
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e._protocol import bash, say
+from tests.e2e._protocol import bash, open_url, say
 from tests.e2e.pages import ChatView, DesktopLayout, RecentConversations
 
 
@@ -79,3 +79,42 @@ def test_refresh_restores_the_current_execution_view(page: Page):
             "[data-view-resource-id='terminal'][data-active='true']"
         )
     ).to_contain_text(marker)
+
+
+def test_floating_workspace_views_close_with_their_conversation(page: Page):
+    """Browser and Terminal keep rendering when floated, then cascade closed."""
+    marker = f"floating-terminal-{time.time_ns()}"
+    chat = ChatView(page).goto().new_conversation()
+    chat.send(
+        open_url("https://example.com")
+        + bash(f'echo "{marker}"')
+    ).wait_streaming(timeout=30_000)
+
+    desktop = DesktopLayout(page)
+    browser_tab = page.get_by_test_id("view-tab-browser")
+    terminal_tab = page.get_by_test_id("view-tab-terminal")
+    expect(browser_tab).to_be_visible(timeout=10_000)
+    expect(terminal_tab).to_be_visible()
+
+    # Workspace resources use the same generic placement commands as every
+    # other View. Floating each one also proves the host keeps rendering its
+    # domain content outside a docked tab group.
+    browser_tab.click()
+    desktop.float("browser")
+    browser_view = page.locator("[data-view-resource-id='browser']")
+    expect(browser_view).to_have_attribute("data-floating", "true")
+    expect(browser_view.get_by_test_id("browser-frame")).to_be_visible(
+        timeout=10_000
+    )
+
+    terminal_tab.click()
+    desktop.float("terminal")
+    terminal_view = page.locator("[data-view-resource-id='terminal']")
+    expect(terminal_view).to_have_attribute("data-floating", "true")
+    expect(terminal_view).to_contain_text(marker)
+
+    # Closing the Conversation is one domain lifecycle event. It must remove
+    # all of its Workspace Views regardless of their current placement.
+    desktop.choose_tab_action("destination:conversation", "close")
+    expect(browser_view).to_have_count(0)
+    expect(terminal_view).to_have_count(0)

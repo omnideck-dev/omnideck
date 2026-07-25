@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Page, expect
 
 from tests.e2e.pages import ChatView, DesktopLayout
@@ -182,16 +184,28 @@ def test_fullscreen_uses_the_viewport_and_persists_on_refresh(page: Page):
 
 
 def test_tab_can_float_over_sidebar_resize_fullscreen_and_redock(page: Page):
-    """Floating is another placement for the same resizable view."""
+    """Placement changes preserve the mounted View and its component state."""
     ChatView(page).goto()
     desktop = DesktopLayout(page)
     _open_destinations(page, "settings")
+
+    # Settings owns local tab selection state. Choosing a non-default tab gives
+    # us an observable remount detector: a replacement SettingsPage would
+    # initialize back to Skills even if the generic View host looked stable.
+    system_tab = page.get_by_test_id("settings-tab-system")
+    system_tab.click()
+    expect(system_tab).to_have_class(re.compile("tabActive"))
+
+    def expect_settings_state_preserved() -> None:
+        expect(system_tab).to_have_class(re.compile("tabActive"))
+
     desktop.float("destination:settings")
 
     view = desktop.view("destination:settings")
     expect(view).to_have_attribute("data-floating", "true")
     expect(view).to_have_attribute("data-tab-group-id", "floating")
     expect(desktop.tab("destination:settings")).to_have_count(0)
+    expect_settings_state_preserved()
 
     desktop.drag_floating_view(
         "destination:settings",
@@ -201,6 +215,7 @@ def test_tab_can_float_over_sidebar_resize_fullscreen_and_redock(page: Page):
     moved = _rect(view)
     sidebar = _rect(page.get_by_test_id("sidebar"))
     assert moved["x"] < sidebar["x"] + sidebar["width"]
+    expect_settings_state_preserved()
 
     desktop.resize_floating_view(
         "destination:settings",
@@ -211,18 +226,23 @@ def test_tab_can_float_over_sidebar_resize_fullscreen_and_redock(page: Page):
     resized = _rect(view)
     assert resized["width"] >= moved["width"] + 50
     assert resized["height"] >= moved["height"] + 30
+    expect_settings_state_preserved()
 
     desktop.maximize("destination:settings")
     expect(view).to_have_attribute("data-fullscreen", "true")
+    expect_settings_state_preserved()
     page.keyboard.press("Escape")
     expect(view).to_have_attribute("data-floating", "true")
+    expect_settings_state_preserved()
 
     page.get_by_test_id("dock-view-destination:settings-right").click()
     expect(view).to_have_attribute("data-tab-group-id", "right")
     expect(view).to_have_attribute("data-floating", "false")
     expect(desktop.tab("destination:settings")).to_be_visible()
+    expect_settings_state_preserved()
 
     desktop.float("destination:settings")
+    expect_settings_state_preserved()
     page.get_by_test_id("close-floating-view-destination:settings").click()
     expect(view).to_have_count(0)
 
