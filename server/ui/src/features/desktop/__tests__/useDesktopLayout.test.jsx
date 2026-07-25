@@ -72,6 +72,29 @@ describe('useDesktopLayout', () => {
         expect(result.current.model.fullscreenViewId).toBe(CHAT.id);
     });
 
+    it('preserves host-facing model slices when only split geometry changes', () => {
+        const { result } = renderHook(() => useDesktopLayout({
+            initialView: CHAT,
+        }));
+        act(() => result.current.commands.openView(
+            APP,
+            DESKTOP_TAB_GROUP_IDS.RIGHT,
+        ));
+        const previous = result.current.model;
+
+        act(() => result.current.commands.setSplitRatio(68));
+
+        expect(result.current.model.splitRatio).toBe(68);
+        expect(result.current.model.tabGroups).toBe(previous.tabGroups);
+        expect(result.current.model.openViews).toBe(previous.openViews);
+        expect(result.current.model.openViewsById)
+            .toBe(previous.openViewsById);
+        expect(result.current.model.floatingViews)
+            .toBe(previous.floatingViews);
+        expect(result.current.model.floatingByViewId)
+            .toBe(previous.floatingByViewId);
+    });
+
     it('enters full screen through one activation command', () => {
         const { result } = renderHook(() => useDesktopLayout({
             initialView: CHAT,

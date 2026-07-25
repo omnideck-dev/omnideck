@@ -1,4 +1,8 @@
-import { useEffect } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useState,
+} from 'react';
 
 import SplitHandle from '../../components/SplitHandle.jsx';
 import DesktopTabGroup from './DesktopTabGroup.jsx';
@@ -23,6 +27,8 @@ export default function DesktopLayout({
     getViewActions,
     renderView,
 }) {
+    const [liveSplitRatio, setLiveSplitRatio] = useState(null);
+
     useEffect(() => {
         if (!model.fullscreenViewId) return undefined;
         const restoreOnEscape = (event) => {
@@ -38,9 +44,20 @@ export default function DesktopLayout({
     const rightVisible = rightTabGroup.viewIds.length > 0;
     const split = leftVisible && rightVisible;
     const fullscreenActive = Boolean(model.fullscreenViewId);
+    const visibleSplitRatio = liveSplitRatio ?? model.splitRatio;
     const gridTemplateColumns = split
-        ? `${model.splitRatio}fr 9px ${100 - model.splitRatio}fr`
+        ? `${visibleSplitRatio}fr 9px ${100 - visibleSplitRatio}fr`
         : (leftVisible ? '1fr 0 0' : '0 0 1fr');
+    const commitSplitRatio = useCallback((ratio) => {
+        // The local value drives every mousemove. Release it in the same event
+        // that commits once to the reducer, avoiding a frame at the old ratio.
+        setLiveSplitRatio(null);
+        commands.setSplitRatio(ratio);
+    }, [commands.setSplitRatio]);
+
+    useEffect(() => {
+        if (!split) setLiveSplitRatio(null);
+    }, [split]);
 
     return (
         <div
@@ -76,7 +93,8 @@ export default function DesktopLayout({
                         styles.splitHandle,
                         fullscreenActive ? styles.tabGroupChromeHidden : '',
                     ].filter(Boolean).join(' ')}
-                    onDrag={commands.setSplitRatio}
+                    onDrag={setLiveSplitRatio}
+                    onDragEnd={commitSplitRatio}
                 />
             )}
 

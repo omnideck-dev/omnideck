@@ -1,5 +1,6 @@
 import {
     useCallback,
+    memo,
     useMemo,
     useRef,
 } from 'react';
@@ -31,7 +32,7 @@ function viewIdentity(view, iconClass, titleClass) {
  * Placement changes only CSS and chrome around the keyed content, so an
  * iframe or domain component remains mounted while it moves.
  */
-export default function DesktopViewHost({
+function DesktopViewHost({
     view,
     tabGroupId,
     activeInTabGroup,
@@ -204,3 +205,8 @@ export default function DesktopViewHost({
         </div>
     );
 }
+
+// A live split drag re-renders DesktopLayout to move the divider. Stable host
+// props keep domain renderers asleep until a property of their own View
+// actually changes.
+export default memo(DesktopViewHost);

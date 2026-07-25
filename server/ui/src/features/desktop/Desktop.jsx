@@ -31,6 +31,16 @@ const INITIAL_CHAT_VIEW = createNavigationView({
     conversationId: null,
 });
 
+// View rendering is a pure adapter lookup. Keeping this function at module
+// scope lets memoized hosts ignore unrelated DesktopShell renders.
+const renderDesktopViewContent = (view, { active, tabGroupId }) => (
+    <DesktopViewContent
+        view={view}
+        active={active}
+        tabGroupId={tabGroupId}
+    />
+);
+
 /**
  * Owns the Desktop Layout hook and installs the adapter boundary around it.
  *
@@ -112,13 +122,7 @@ function DesktopShell({ desktopLayout, desktopRestore }) {
                         onFocusView={handleFocusView}
                         onCloseView={handleCloseView}
                         getViewActions={getViewActions}
-                        renderView={(view, { active, tabGroupId }) => (
-                            <DesktopViewContent
-                                view={view}
-                                active={active}
-                                tabGroupId={tabGroupId}
-                            />
-                        )}
+                        renderView={renderDesktopViewContent}
                     />
                 </div>
             </div>

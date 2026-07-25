@@ -9,12 +9,15 @@ import { createDesktopViewActions } from '../desktopViewActions.js';
 import { DESKTOP_TAB_GROUP_IDS } from '../desktopLayoutReducer.js';
 
 vi.mock('../../../components/SplitHandle.jsx', () => ({
-    default: ({ onDrag, className }) => (
+    default: ({ onDrag, onDragEnd, className }) => (
         <button
             type="button"
             className={className}
             data-testid="split-handle"
-            onClick={() => onDrag(65)}
+            onClick={() => {
+                onDrag(65);
+                onDragEnd(65);
+            }}
         >
             Resize
         </button>
@@ -73,6 +76,34 @@ it('renders both sides with the same tabGroup component and connects split resiz
         .toHaveAttribute('data-tab-group-id', 'right');
     fireEvent.click(screen.getByTestId('split-handle'));
     expect(setSplitRatio).toHaveBeenCalledWith(65);
+});
+
+it('does not re-render View content when only the split ratio changes', () => {
+    const baseModel = model({ rightActive: null });
+    const commands = { setSplitRatio: vi.fn() };
+    const renderView = vi.fn(
+        (view) => <div>{view.label} content</div>,
+    );
+    const props = {
+        commands,
+        onSelectView: vi.fn(),
+        onCloseView: vi.fn(),
+        renderView,
+    };
+    const { rerender } = render(
+        <DesktopLayout model={baseModel} {...props} />,
+    );
+
+    expect(renderView).toHaveBeenCalledTimes(2);
+
+    rerender(
+        <DesktopLayout
+            model={{ ...baseModel, splitRatio: 70 }}
+            {...props}
+        />,
+    );
+
+    expect(renderView).toHaveBeenCalledTimes(2);
 });
 
 it('shows the existing view host full screen without remounting it', () => {

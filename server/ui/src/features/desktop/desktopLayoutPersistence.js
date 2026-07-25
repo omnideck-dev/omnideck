@@ -284,9 +284,8 @@ export function loadDesktopLayoutSnapshot() {
     }
 }
 
-/** Persist serializable layout and navigation—never rendered React content. */
-export function saveDesktopLayoutSnapshot(model, navigationTarget) {
-    if (typeof localStorage === 'undefined') return;
+/** Build the serializable payload without touching storage. */
+export function createDesktopLayoutSnapshot(model, navigationTarget) {
     try {
         const placedViewIds = new Set([
             ...TAB_GROUP_IDS.flatMap(
@@ -300,7 +299,7 @@ export function saveDesktopLayoutSnapshot(model, navigationTarget) {
             .map((viewId) => model.openViewsById[viewId])
             .filter(validDesktopView)
             .map(({ iconElement: _iconElement, ...view }) => view);
-        localStorage.setItem(DESKTOP_LAYOUT_STORAGE_KEY, JSON.stringify({
+        return {
             version: SNAPSHOT_VERSION,
             layout: {
                 tabGroups: {
@@ -329,8 +328,28 @@ export function saveDesktopLayoutSnapshot(model, navigationTarget) {
                 fullscreenViewId: model.fullscreenViewId,
             },
             navigationTarget,
-        }));
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** Write one already-built payload; storage failures never break the Desktop. */
+export function writeDesktopLayoutSnapshot(snapshot) {
+    if (!snapshot || typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(
+            DESKTOP_LAYOUT_STORAGE_KEY,
+            JSON.stringify(snapshot),
+        );
     } catch {
         // Storage may be disabled or full; the in-memory desktop still works.
     }
+}
+
+/** Persist serializable layout and navigation—never rendered React content. */
+export function saveDesktopLayoutSnapshot(model, navigationTarget) {
+    writeDesktopLayoutSnapshot(
+        createDesktopLayoutSnapshot(model, navigationTarget),
+    );
 }

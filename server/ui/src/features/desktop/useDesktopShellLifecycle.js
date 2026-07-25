@@ -18,8 +18,9 @@ import {
     useDesktopNavigationState,
 } from '../navigation/DesktopNavigation.jsx';
 import {
+    createDesktopLayoutSnapshot,
     loadDesktopLayoutSnapshot,
-    saveDesktopLayoutSnapshot,
+    writeDesktopLayoutSnapshot,
 } from './desktopLayoutPersistence.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import { focusOrderedTabGroupIds } from './desktopLayoutSelectors.js';
@@ -82,6 +83,22 @@ export default function useDesktopShellLifecycle({
     const navigationView = useMemo(
         () => createNavigationView(navigationTarget),
         [navigationTarget],
+    );
+    const persistenceSnapshot = useMemo(
+        () => createDesktopLayoutSnapshot(
+            desktopLayout.model,
+            navigationTarget,
+        ),
+        [
+            desktopLayout.model.floatingViews,
+            desktopLayout.model.focusedFloatingViewId,
+            desktopLayout.model.focusedTabGroupId,
+            desktopLayout.model.fullscreenViewId,
+            desktopLayout.model.openViewsById,
+            desktopLayout.model.splitRatio,
+            desktopLayout.model.tabGroups,
+            navigationTarget,
+        ],
     );
 
     useEffect(() => {
@@ -162,10 +179,9 @@ export default function useDesktopShellLifecycle({
 
     useEffect(() => {
         if (!restorationReady) return;
-        saveDesktopLayoutSnapshot(desktopLayout.model, navigationTarget);
+        writeDesktopLayoutSnapshot(persistenceSnapshot);
     }, [
-        desktopLayout.model,
-        navigationTarget,
+        persistenceSnapshot,
         restorationReady,
     ]);
 }

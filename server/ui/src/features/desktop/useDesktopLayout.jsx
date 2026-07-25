@@ -6,6 +6,8 @@ import {
     desktopLayoutReducer,
 } from './desktopLayoutReducer.js';
 
+const EMPTY_FLOATING_BY_VIEW_ID = Object.freeze({});
+
 function tabGroupModel(tabGroup, openViewsById) {
     return {
         ...tabGroup,
@@ -83,28 +85,52 @@ export default function useDesktopLayout({
         dispatch({ type: 'SET_FULLSCREEN_VIEW', viewId });
     }, []);
 
-    const model = useMemo(() => ({
-        tabGroups: {
-            [DESKTOP_TAB_GROUP_IDS.LEFT]: tabGroupModel(
-                state.tabGroups[DESKTOP_TAB_GROUP_IDS.LEFT],
-                state.openViewsById,
-            ),
-            [DESKTOP_TAB_GROUP_IDS.RIGHT]: tabGroupModel(
-                state.tabGroups[DESKTOP_TAB_GROUP_IDS.RIGHT],
-                state.openViewsById,
-            ),
-        },
-        openViews: Object.values(state.openViewsById),
-        openViewsById: state.openViewsById,
-        floatingViews: Object.values(
-            state.floatingByViewId || {},
+    // Preserve the identity of model slices whose reducer inputs did not
+    // change. DesktopLayout itself must re-render for geometry, but memoized
+    // View hosts should not receive fresh arrays and tab-group objects merely
+    // because the split ratio or floating focus changed.
+    const tabGroups = useMemo(() => ({
+        [DESKTOP_TAB_GROUP_IDS.LEFT]: tabGroupModel(
+            state.tabGroups[DESKTOP_TAB_GROUP_IDS.LEFT],
+            state.openViewsById,
         ),
-        floatingByViewId: state.floatingByViewId || {},
+        [DESKTOP_TAB_GROUP_IDS.RIGHT]: tabGroupModel(
+            state.tabGroups[DESKTOP_TAB_GROUP_IDS.RIGHT],
+            state.openViewsById,
+        ),
+    }), [state.openViewsById, state.tabGroups]);
+    const openViews = useMemo(
+        () => Object.values(state.openViewsById),
+        [state.openViewsById],
+    );
+    const floatingByViewId = state.floatingByViewId
+        || EMPTY_FLOATING_BY_VIEW_ID;
+    const floatingViews = useMemo(
+        () => Object.values(floatingByViewId),
+        [floatingByViewId],
+    );
+
+    const model = useMemo(() => ({
+        tabGroups,
+        openViews,
+        openViewsById: state.openViewsById,
+        floatingViews,
+        floatingByViewId,
         focusedTabGroupId: state.focusedTabGroupId,
         focusedFloatingViewId: state.focusedFloatingViewId || null,
         splitRatio: state.splitRatio,
         fullscreenViewId: state.fullscreenViewId,
-    }), [state]);
+    }), [
+        floatingByViewId,
+        floatingViews,
+        openViews,
+        state.focusedFloatingViewId,
+        state.focusedTabGroupId,
+        state.fullscreenViewId,
+        state.openViewsById,
+        state.splitRatio,
+        tabGroups,
+    ]);
 
     const commands = useMemo(() => ({
         openView,

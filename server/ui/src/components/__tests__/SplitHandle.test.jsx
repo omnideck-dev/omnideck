@@ -5,9 +5,10 @@ import SplitHandle from '../SplitHandle.jsx';
 
 test('reports drag position relative to the full tab-group container', () => {
     const onDrag = vi.fn();
+    const onDragEnd = vi.fn();
     render(
         <div data-testid="layout">
-            <SplitHandle onDrag={onDrag} />
+            <SplitHandle onDrag={onDrag} onDragEnd={onDragEnd} />
         </div>,
     );
     const layout = screen.getByTestId('layout');
@@ -20,8 +21,12 @@ test('reports drag position relative to the full tab-group container', () => {
         'separator',
         { name: 'Resize tab groups' },
     ));
+    fireEvent.mouseMove(document, { clientX: 600 });
     fireEvent.mouseMove(document, { clientX: 750 });
     fireEvent.mouseUp(document);
 
-    expect(onDrag).toHaveBeenCalledWith(65);
+    expect(onDrag).toHaveBeenNthCalledWith(1, 50);
+    expect(onDrag).toHaveBeenNthCalledWith(2, 65);
+    expect(onDragEnd).toHaveBeenCalledOnce();
+    expect(onDragEnd).toHaveBeenCalledWith(65);
 });
