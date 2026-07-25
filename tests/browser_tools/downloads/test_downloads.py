@@ -1,7 +1,7 @@
 """Downloads: clicking a file link returns a File Download view and saves it.
 
-Covers both download paths — a PDF (file content-type, handled via the
---disable-pdf-viewer download) and a Content-Disposition attachment.
+Covers an explicit same-origin PDF download link, a Content-Disposition
+attachment, and direct navigation to a file content type.
 """
 
 from __future__ import annotations

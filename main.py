@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from logging_config import setup_logging
 from server.aiohttp_app import create_app
-from tools.browser.core.browser import close_browser
+from tools.browser import close_browser
 
 logger = logging.getLogger(__name__)
 
