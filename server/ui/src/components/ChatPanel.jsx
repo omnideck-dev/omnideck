@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
 import { formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
-import ArtifactsDrawer from './artifacts/ArtifactsDrawer.jsx';
-import { useAgentState } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
 /**
@@ -16,9 +15,7 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ turns, stalled = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
-    const [drawerOpen, setDrawerOpen] = useState(false);
-
+export default function ChatPanel({ turns, stalled = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
     // The title bar reflects the root agent; read it straight from the agent
     // tree rather than receiving it as a prop.
     const agentState = useAgentState();
@@ -43,14 +40,14 @@ export default function ChatPanel({ turns, stalled = false, onSend, onStop, isSt
                 </div>
                 <button
                     className={styles.artifactsBtn}
-                    onClick={() => setDrawerOpen(true)}
+                    onClick={onOpenArtifacts}
                     title="Files produced in this conversation"
-                    data-testid="artifacts-drawer-trigger"
+                    data-testid="conversation-artifacts-trigger"
                 >
                     <i className="bi bi-collection" />
                     <span>Artifacts</span>
                 </button>
-                {networkActivated && (
+                {networkAgentCount > 0 && (
                     <button className={styles.networkBtn} onClick={onOpenNetwork} title="Open agent network view" data-testid="network-indicator">
                         <StatusDot status={networkRunningCount > 0 ? 'running' : 'complete'} />
                         <span>{networkAgentCount} agent{networkAgentCount !== 1 ? 's' : ''}</span>
@@ -73,13 +70,6 @@ export default function ChatPanel({ turns, stalled = false, onSend, onStop, isSt
                 onProfileChange={onProfileChange}
                 profileRefreshSignal={profileRefreshSignal}
             />
-            {drawerOpen && (
-                <ArtifactsDrawer
-                    conversationId={conversationId}
-                    onPreview={onPreview}
-                    onClose={() => setDrawerOpen(false)}
-                />
-            )}
         </div>
     );
 }

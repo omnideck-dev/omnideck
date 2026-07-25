@@ -10,11 +10,15 @@ from types import SimpleNamespace
 import pytest
 
 from server._browser_control_routes import (
+    _FRAME_HEADER,
+    FrameMetadata,
     HostFile,
     InputEvent,
+    _ControlSession,
     _dispatch_input,
     _is_multiple,
     _same_origin,
+    _virtual_key,
 )
 
 
@@ -105,25 +109,71 @@ async def test_dispatch_text_uses_insert_text():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_dispatch_keydown_maps_virtual_key_code():
+async def test_dispatch_named_key_maps_virtual_key_code():
     cdp = _FakeCDP()
-    await _dispatch_input(cdp, InputEvent(type="keydown", key="Enter", code="Enter", mods=2))
+    await _dispatch_input(cdp, InputEvent(type="keydown", key="Enter", code="Enter"))
     method, params = cdp.calls[0]
     assert method == "Input.dispatchKeyEvent"
-    assert params == {"type": "keyDown", "key": "Enter", "code": "Enter",
-                      "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
-                      "modifiers": 2}
+    assert params["type"] == "keyDown"
+    assert params["windowsVirtualKeyCode"] == 13
+    # Enter carries text, or it moves focus without inserting a newline.
+    assert params["text"] == "\r"
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_dispatch_keyup_and_unknown_key_code_zero():
+async def test_dispatch_printable_keydown_carries_its_own_text():
+    # One keystroke, one round trip: the keydown types the character itself
+    # rather than needing a second insertText that can arrive out of order.
+    cdp = _FakeCDP()
+    await _dispatch_input(cdp, InputEvent(type="keydown", key="a", code="KeyA"))
+    assert len(cdp.calls) == 1
+    _, params = cdp.calls[0]
+    assert params["text"] == "a"
+    assert params["unmodifiedText"] == "a"
+    # Pages read event.keyCode for shortcuts, so letters need a real code.
+    assert params["windowsVirtualKeyCode"] == ord("A")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_dispatch_shifted_letter_reports_unshifted_text():
+    cdp = _FakeCDP()
+    await _dispatch_input(cdp, InputEvent(type="keydown", key="A", code="KeyA", mods=8))
+    _, params = cdp.calls[0]
+    assert params["text"] == "A"
+    assert params["unmodifiedText"] == "a"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_dispatch_modifier_chord_sends_raw_keydown_without_text():
+    # Ctrl+A must select all, not type an "a", so the keystroke carries no text.
+    cdp = _FakeCDP()
+    await _dispatch_input(cdp, InputEvent(type="keydown", key="a", code="KeyA", mods=2))
+    _, params = cdp.calls[0]
+    assert params["type"] == "rawKeyDown"
+    assert "text" not in params
+    assert params["windowsVirtualKeyCode"] == ord("A")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_dispatch_keyup_carries_key_code_but_no_text():
     cdp = _FakeCDP()
     await _dispatch_input(cdp, InputEvent(type="keyup", key="a"))
     _, params = cdp.calls[0]
     assert params["type"] == "keyUp"
-    # 'a' isn't in the virtual-key table (printable chars go via insertText).
-    assert params["windowsVirtualKeyCode"] == 0
+    assert params["windowsVirtualKeyCode"] == ord("A")
+    assert "text" not in params
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_dispatch_paste_inserts_text():
+    cdp = _FakeCDP()
+    await _dispatch_input(cdp, InputEvent(type="paste", text="hi"))
+    assert cdp.calls[0] == ("Input.insertText", {"text": "hi"})
 
 
 @pytest.mark.unit
@@ -147,6 +197,35 @@ def test_input_event_from_message_maps_fields():
     assert (ev.x, ev.y, ev.button, ev.buttons) == (3, 4, "right", 2)
     assert ev.click_count == 1  # clickCount -> click_count
     assert (ev.mods, ev.key, ev.code) == (4, "k", "KeyK")
+
+
+@pytest.mark.unit
+def test_input_event_coerces_numbers_from_the_wire():
+    # The values arrive as decoded JSON, so a coordinate could be any type. It
+    # must not reach CDP, or the cursor probe's script, as-is.
+    ev = InputEvent.from_message({
+        "type": "mousemove", "x": "12.5", "y": None,
+        "buttons": "3", "clickCount": 2.9, "mods": None,
+    })
+    assert ev.x == 12.5
+    assert ev.y == 0.0
+    assert ev.buttons == 3
+    assert ev.click_count == 2
+    assert ev.mods == 0
+
+
+@pytest.mark.unit
+def test_input_event_rejects_a_coordinate_that_is_not_a_number():
+    ev = InputEvent.from_message({"type": "mousemove", "x": "1); alert(1); (", "y": "nope"})
+    assert (ev.x, ev.y) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_input_event_rejects_non_finite_coordinates():
+    # NaN and the infinities survive float() and are neither usable coordinates
+    # nor safe to render into a script.
+    ev = InputEvent.from_message({"type": "mousemove", "x": "NaN", "y": "Infinity"})
+    assert (ev.x, ev.y) == (0.0, 0.0)
 
 
 @pytest.mark.unit
@@ -175,6 +254,106 @@ def test_host_file_from_message_defaults():
 def test_host_file_from_message_none_without_data():
     assert HostFile.from_message({"name": "a.txt"}) is None
     assert HostFile.from_message({"data": ""}) is None
+
+
+# ── _virtual_key ────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_virtual_key_covers_letters_digits_named_and_punctuation():
+    assert _virtual_key("a") == _virtual_key("A") == ord("A")
+    assert _virtual_key("7") == ord("7")
+    assert _virtual_key("Escape") == 27
+    assert _virtual_key("F5") == 116
+    assert _virtual_key("/") == 191
+    assert _virtual_key("Unrecognised") == 0
+
+
+# ── input queue coalescing ──────────────────────────────────────────
+
+
+def _session() -> _ControlSession:
+    """A session with no real socket: the queue logic touches neither."""
+    return _ControlSession(SimpleNamespace(), SimpleNamespace())
+
+
+@pytest.mark.unit
+def test_enqueue_collapses_a_run_of_pointer_moves():
+    # Only the newest position carries information, so a hover burst must not
+    # build a backlog the human then waits out.
+    session = _session()
+    for x in (1, 2, 3):
+        session.enqueue_input(InputEvent(type="mousemove", x=x, y=0))
+    assert len(session._input_q) == 1
+    assert session._input_q[0].x == 3
+
+
+@pytest.mark.unit
+def test_enqueue_sums_wheel_deltas_when_collapsing():
+    # Collapsing must still scroll the same distance.
+    session = _session()
+    session.enqueue_input(InputEvent(type="wheel", dx=1, dy=10))
+    session.enqueue_input(InputEvent(type="wheel", dx=2, dy=20))
+    assert len(session._input_q) == 1
+    assert (session._input_q[0].dx, session._input_q[0].dy) == (3, 30)
+
+
+@pytest.mark.unit
+def test_enqueue_keeps_discrete_events_and_their_order():
+    # A press must stay behind the move that positioned it, and two presses are
+    # two separate actions however fast they arrive.
+    session = _session()
+    session.enqueue_input(InputEvent(type="mousemove", x=5))
+    session.enqueue_input(InputEvent(type="mousedown", x=5))
+    session.enqueue_input(InputEvent(type="mouseup", x=5))
+    session.enqueue_input(InputEvent(type="mousedown", x=5))
+    assert [e.type for e in session._input_q] == [
+        "mousemove", "mousedown", "mouseup", "mousedown",
+    ]
+
+
+@pytest.mark.unit
+def test_enqueue_does_not_merge_moves_across_a_press():
+    session = _session()
+    session.enqueue_input(InputEvent(type="mousemove", x=1))
+    session.enqueue_input(InputEvent(type="mousedown", x=1))
+    session.enqueue_input(InputEvent(type="mousemove", x=9))
+    assert [e.type for e in session._input_q] == ["mousemove", "mousedown", "mousemove"]
+    assert session._input_q[0].x == 1
+    assert session._input_q[2].x == 9
+
+
+# ── frame metadata + wire header ────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_frame_metadata_reads_geometry_from_params():
+    meta = FrameMetadata.from_params({"metadata": {
+        "deviceWidth": 1440, "deviceHeight": 900,
+        "pageScaleFactor": 2, "offsetTop": 56,
+    }})
+    assert (meta.device_width, meta.device_height) == (1440.0, 900.0)
+    assert (meta.page_scale, meta.offset_top) == (2.0, 56.0)
+
+
+@pytest.mark.unit
+def test_frame_metadata_defaults_page_scale_to_one():
+    # A missing or zero scale must not divide client coordinates by nothing.
+    assert FrameMetadata.from_params({}).page_scale == 1.0
+    assert FrameMetadata.from_params({"metadata": {"pageScaleFactor": 0}}).page_scale == 1.0
+
+
+@pytest.mark.unit
+def test_frame_header_round_trips_tab_id_and_geometry():
+    packed = _FRAME_HEADER.pack(7, 1440.0, 900.0, 1.0, 0.0)
+    assert len(packed) == 20
+    assert _FRAME_HEADER.unpack(packed) == (7, 1440.0, 900.0, 1.0, 0.0)
+
+
+@pytest.mark.unit
+def test_frame_header_carries_negative_tab_id_for_an_unknown_tab():
+    tab_id, *_ = _FRAME_HEADER.unpack(_FRAME_HEADER.pack(-1, 0.0, 0.0, 1.0, 0.0))
+    assert tab_id == -1
 
 
 # ── _is_multiple (FileChooser property-vs-method) ───────────────────

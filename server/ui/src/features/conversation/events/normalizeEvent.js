@@ -15,12 +15,15 @@
  *
  * Live events without an id or timestamp receive UI-local fallbacks. Resumed
  * events are already flat, so they do not pass through this function.
+ *
+ * @param {import('./conversationEvents.generated').StreamEnvelope|null|undefined} data
+ * @returns {import('./conversationEvents.generated').ConversationEvent|null}
  */
 export function normalizeLiveEvent(data) {
     const payload = data?.payload;
     if (!payload || typeof payload !== 'object') return null;
     const { type, ...rest } = payload;
-    return {
+    return /** @type {import('./conversationEvents.generated').ConversationEvent} */ ({
         id: data.id || `live_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         type,
         timestamp: data.timestamp || new Date().toISOString(),
@@ -29,5 +32,5 @@ export function normalizeLiveEvent(data) {
         agent_name: data.agent_name || null,
         depth: data.depth ?? 0,
         ...rest,
-    };
+    });
 }

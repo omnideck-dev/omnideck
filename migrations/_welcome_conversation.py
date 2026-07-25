@@ -41,6 +41,10 @@ from conversations import (
     save_conversation_title,
     save_preview_state,
 )
+from migrations._welcome_constants import (
+    WELCOME_CONVERSATION_ID,
+    WELCOME_DASHBOARD_FILENAME,
+)
 from sdk.events._models import (
     AgentCompletedPayload,
     AgentEvent,
@@ -57,7 +61,6 @@ from settings import load_settings
 
 logger = logging.getLogger(__name__)
 
-WELCOME_CONVERSATION_ID = "welcome-to-omnideck"
 WELCOME_TITLE = "Welcome to Omnideck 👋"
 
 # The root "Omnideck" agent and the sub-agent it spawns. The turn counter is
@@ -74,7 +77,7 @@ _SUBAGENT_NAME = "CONCIERGE"
 _SUBAGENT_PROFILE = "Research Agent"
 
 # Artifact filenames written into the virtual computer home directory.
-_PAGE_FILENAME = "welcome_dashboard.html"
+_PAGE_FILENAME = WELCOME_DASHBOARD_FILENAME
 _CHECKLIST_FILENAME = "checklist.json"
 _SCRIPT_FILENAME = "build_page.py"
 

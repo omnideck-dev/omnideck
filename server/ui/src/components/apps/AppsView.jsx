@@ -3,15 +3,13 @@ import styles from './AppsView.module.css';
 
 const NOOP = () => {};
 
-/** Lists discovered Custom Apps; opening and presentation are handled by DesktopApp. */
+/** Lists discovered Custom Apps; the desktop owns opening and presentation. */
 export default function AppsView({
     apps = [],
     loading = false,
     error = '',
-    homeAppSlug = null,
     onRefresh = NOOP,
     onOpenApp = NOOP,
-    onOpenAppBesideChat = NOOP,
 }) {
     return (
         <div className={styles.view} data-testid="apps-view">
@@ -36,7 +34,7 @@ export default function AppsView({
                 {apps.length > 0 && (
                     <div className={styles.grid}>
                         {apps.map((app) => (
-                            <div key={app.slug} className={styles.cardShell}>
+                            <div key={app.slug} className={styles.cardContainer}>
                                 <button
                                     type="button"
                                     className={styles.card}
@@ -47,22 +45,9 @@ export default function AppsView({
                                     <div className={styles.cardBody}>
                                         <strong>{app.title}</strong>
                                         <p>{app.description || 'A Custom App built for Omnideck.'}</p>
-                                        {app.slug === homeAppSlug && (
-                                            <div className={styles.meta}>
-                                                <span className={styles.homeBadge}><i className="bi bi-house-fill" /> Home</span>
-                                            </div>
-                                        )}
                                     </div>
                                     <i className={`bi bi-chevron-right ${styles.chevron}`} />
                                 </button>
-                                <Button
-                                    variant="ghost"
-                                    className={styles.besideChat}
-                                    onClick={() => onOpenAppBesideChat(app)}
-                                    data-testid={`custom-app-open-split-${app.slug}`}
-                                >
-                                    <i className="bi bi-layout-split" /> Open beside Chat
-                                </Button>
                             </div>
                         ))}
                     </div>

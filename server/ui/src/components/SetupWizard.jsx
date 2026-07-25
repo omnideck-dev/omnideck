@@ -256,7 +256,10 @@ export default function SetupWizard({ onComplete }) {
                 setSaving(false);
                 return;
             }
-            onComplete();
+            // The completion response includes optional first-run domain
+            // identities. SetupGate decides how application startup uses them.
+            const data = await res.json().catch(() => ({}));
+            onComplete(data);
         } catch (err) {
             setError(`Connection error: ${err.message}`);
             setSaving(false);

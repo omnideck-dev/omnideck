@@ -60,4 +60,43 @@ describe('useListPanel highlight timer', () => {
         // so no post-unmount state work happened (no error thrown above).
         expect(clearSpy).toHaveBeenCalled();
     });
+
+    it('ignores a slower response from a previous endpoint scope', async () => {
+        let resolveScoped;
+        let resolveGlobal;
+        global.fetch.mockImplementation((endpoint) => new Promise((resolve) => {
+            if (endpoint.includes('conversation_id')) {
+                resolveScoped = resolve;
+            } else {
+                resolveGlobal = resolve;
+            }
+        }));
+        const { result, rerender } = renderHook(
+            ({ endpoint }) => useListPanel(endpoint),
+            {
+                initialProps: {
+                    endpoint: '/api/artifacts?conversation_id=c1',
+                },
+            },
+        );
+
+        rerender({ endpoint: '/api/artifacts' });
+        await act(async () => {
+            resolveGlobal({
+                ok: true,
+                json: async () => [{ id: 'global' }],
+            });
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(result.current.items).toEqual([{ id: 'global' }]);
+
+        await act(async () => {
+            resolveScoped({
+                ok: true,
+                json: async () => [{ id: 'scoped' }],
+            });
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(result.current.items).toEqual([{ id: 'global' }]);
+    });
 });

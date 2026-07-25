@@ -136,7 +136,7 @@ def test_compaction_chip_renders_between_turns(page: Page):
         expect(chip).to_be_visible()
         expect(chip).to_contain_text("earlier conversation compacted")
         # No N-turn suffix on the chip — compactions can fire mid-turn
-        # so a turn count would overclaim. Panel still shows scope.
+        # so a turn count would overclaim. The tab group still shows scope.
     finally:
         _cleanup(conv_id)
 

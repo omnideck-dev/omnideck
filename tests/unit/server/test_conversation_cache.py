@@ -224,12 +224,10 @@ async def test_resume_conversation_marks_most_recently_used(
     assert list(cc._conversations)[-1] == "from-disk"
 
 
-async def test_resume_includes_spawn_requested_in_ui_events(
+async def test_resume_returns_complete_persisted_event_log(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """The resume API filters events.jsonl down to a UI-replay subset.
-    spawn_requested has to be in that subset, otherwise the frontend
-    can't render the spawn card on a resumed conversation."""
+    """Resume returns persisted records without a second UI allowlist."""
     monkeypatch.setattr(
         "conversations._store._get_conversations_dir", lambda: tmp_path,
     )
@@ -251,9 +249,7 @@ async def test_resume_includes_spawn_requested_in_ui_events(
     assert result is not None
     types = [e["type"] for e in result["events"]]
     assert "spawn_requested" in types
-    # context_usage is consumed by the live context meter only; it
-    # shouldn't be replayed (and would create noise on resume).
-    assert "context_usage" not in types
+    assert "context_usage" in types
 
 
 async def test_resume_conversation_returns_saved_profile(
@@ -327,21 +323,28 @@ async def test_resume_returns_terminal_sidecar(
     assert entry["stdout"] == "a.txt\n"
 
 
-@pytest.mark.unit
-def test_warm_resume_retains_every_replayed_event_type() -> None:
-    """Drift guard tying the resume contract to the in-memory log.
+async def test_warm_resume_reads_complete_log_from_disk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A warm cache cannot narrow the durable resume payload."""
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
+    _seed_events_jsonl(tmp_path, "c-warm")
+    path = tmp_path / "c-warm" / "events.jsonl"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            '{"id":"evt_context","type":"context_usage",'
+            '"timestamp":"2026-01-01T00:00:03+00:00",'
+            '"conversation_id":"c-warm","agent_id":"root.test.1",'
+            '"context_used":100,"context_limit":1000,"fill_ratio":0.1,'
+            '"compaction_threshold":0.75,"iteration":1,"max_iterations":10}\n',
+        )
 
-    A warm-cache resume replays the same in-memory log a live turn wrote, so
-    every event type the resume payload replays must be one the in-memory log
-    retains. If the two diverge, a warm resume silently drops those events
-    while a cold disk resume keeps them — exactly the file_output /
-    spawn_requested warm-resume bug. Adding a new replayed type without
-    retaining it in-memory fails here.
-    """
-    from sdk.context._history import _RETAINED_EVENT_TYPES
+    await cc.get_or_create_conversation("c-warm")
+    cc._conversations["c-warm"].seed_events([])
 
-    missing = cc._REPLAY_EVENT_TYPES - _RETAINED_EVENT_TYPES
-    assert not missing, (
-        f"resume replays {sorted(missing)} but the warm in-memory log drops "
-        "them; add them to the retained-event set so warm resume matches cold"
-    )
+    result = await cc.resume_conversation("c-warm")
+
+    assert result is not None
+    assert [event["type"] for event in result["events"]] == [
+        "agent_started", "user_message", "context_usage",
+    ]

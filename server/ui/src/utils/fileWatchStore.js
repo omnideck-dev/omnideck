@@ -1,8 +1,7 @@
 // Shared refresh state for disk-backed file previews, keyed by file path.
 //
-// The same file can be shown by more than one preview component at once — the
-// inline tab stays mounted while the fullscreen overlay renders on top. Each
-// would otherwise hold its own "changed on disk" flag and refresh version, so
+// The same file can be shown by more than one mounted preview at once. Each
+// consumer would otherwise hold its own "changed on disk" flag and refresh version, so
 // refreshing one would leave the other stale. Routing both through this store
 // keeps every view of a given file in sync.
 

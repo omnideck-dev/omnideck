@@ -1,5 +1,4 @@
-// Shared artifact display helpers, used by the global hub and the
-// in-conversation drawer.
+// Shared display helpers for artifact library surfaces.
 
 // Bootstrap-icon class for an artifact, by MIME type then extension.
 export function typeIcon(contentType, filename) {

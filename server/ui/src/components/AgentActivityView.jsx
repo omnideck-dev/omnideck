@@ -1,79 +1,93 @@
 import { useEffect, useState } from 'react';
-import { useAgentState, useAgentDispatch } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
-import BackButton from './BackButton.jsx';
 import { formatElapsed, formatAgentName } from '../utils/agentUtils.js';
 import ContextMeter from './ContextMeter.jsx';
 import ActivityRail from './ActivityRail.jsx';
+import BrowserIcon from './icons/BrowserIcon.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import StatusDot from './StatusDot.jsx';
+import TerminalIcon from './icons/TerminalIcon.jsx';
 import styles from './AgentActivityView.module.css';
 
 /**
- * Build a breadcrumb trail from root to this agent.
- */
-function _buildBreadcrumb(agents, agentId) {
-    const trail = [];
-    let current = agentId;
-    while (current && agents[current]) {
-        trail.unshift(agents[current]);
-        current = agents[current].parentId;
-    }
-    return trail;
-}
-
-/**
- * Full-screen view of a single agent's work. Stacked bars at the top
- * carry the crumb nav, the agent's name + meta, and the instruction;
- * below them, the activity stream renders via ActivityRail. Preview
- * panels (browser, terminal, files) live in the shared panel.
+ * Detail view of a single agent's work. Stacked bars at the top
+ * carry the agent's name + meta and the instruction;
+ * below them, the activity stream renders via ActivityRail. Available
+ * Browser and Terminal output can be opened as agent-bound desktop tabs.
  *
  * The nudge bar at the bottom sends to the currently viewed agent.
  */
-export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = false }) {
-    const { agents, selectedAgentId } = useAgentState();
-    const dispatch = useAgentDispatch();
-    const agent = selectedAgentId ? agents[selectedAgentId] : null;
+export default function AgentActivityView({
+    agentId,
+    activityEntries,
+    onSelectAgent,
+    onNudge,
+    onPreview,
+    availableViews = [],
+    onOpenView,
+    nudgeDisabled = false,
+}) {
+    const { agents } = useAgentState();
+    const agent = agentId ? agents[agentId] : null;
     const [instructionOpen, setInstructionOpen] = useState(false);
+    const activityLog = activityEntries || agent?.activityLog;
+    const lastActivity = activityLog?.length
+        ? activityLog[activityLog.length - 1]
+        : null;
 
     const { ref: scrollRef, onScroll: handleScroll, resetScroll } = useAutoScroll(
-        [agent?.activityLog?.length, agent?.status],
+        [
+            activityLog?.length,
+            lastActivity?.content?.length,
+            lastActivity?.thinking?.length,
+            agent?.status,
+        ],
         agent?.status === 'running',
     );
 
     // Reset scroll lock when switching agents
     useEffect(() => {
         resetScroll();
-    }, [selectedAgentId, resetScroll]);
+    }, [agentId, resetScroll]);
 
     if (!agent) return null;
 
-    const breadcrumb = _buildBreadcrumb(agents, selectedAgentId);
     const spawnedAgents = agent.childIds.map((id) => agents[id]).filter(Boolean);
-    const selectAgent = (agentId) => dispatch({ type: 'SELECT_AGENT', agentId });
 
     return (
         <div className={styles.container} data-testid="agent-activity-view">
-            {/* Crumb bar — back + breadcrumb, full width */}
-            <div className={styles.crumbBar}>
-                <BackButton label="Agents" onClick={() => dispatch({ type: 'SELECT_AGENT', agentId: null })} />
-                <span className={styles.breadcrumb}>
-                    {breadcrumb.map((a, i) => (
-                        <span key={a.id}>
-                            {i > 0 && ' › '}
-                            <span className={i === breadcrumb.length - 1 ? styles.breadcrumbCurrent : ''}>
-                                {formatAgentName(a.name)}
-                            </span>
-                        </span>
-                    ))}
-                </span>
-            </div>
-
             {/* Agent name + meta */}
             <div className={styles.agentBar}>
                 <div className={styles.titleRow}>
                     <StatusDot status={agent.status} />
                     <span className={styles.title} data-testid="agent-activity-title">{formatAgentName(agent.name)}</span>
+                    {availableViews.length > 0 && (
+                        <div className={styles.viewActions} aria-label="Agent views">
+                            {availableViews.includes('browser') && (
+                                <button
+                                    type="button"
+                                    className={styles.viewAction}
+                                    onClick={() => onOpenView?.('browser')}
+                                    data-testid="open-agent-browser"
+                                >
+                                    <BrowserIcon size={13} />
+                                    Browser
+                                </button>
+                            )}
+                            {availableViews.includes('terminal') && (
+                                <button
+                                    type="button"
+                                    className={styles.viewAction}
+                                    onClick={() => onOpenView?.('terminal')}
+                                    data-testid="open-agent-terminal"
+                                >
+                                    <TerminalIcon size={13} />
+                                    Terminal
+                                </button>
+                            )}
+                        </div>
+                    )}
                     <div className={styles.meta}>
                         {agent.startedAt && <span>{formatElapsed(agent.startedAt, agent.completedAt)}</span>}
                         {agent.iteration !== null && (
@@ -116,13 +130,18 @@ export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = 
                 </div>
             )}
 
-            {/* Activity stream — previews live in the shared panel */}
+            {/* Activity stream */}
             <div className={styles.body}>
-                <div className={`${styles.activity} ${styles.activityFull}`} ref={scrollRef} onScroll={handleScroll}>
+                <div
+                    className={styles.activity}
+                    ref={scrollRef}
+                    onScroll={handleScroll}
+                    data-testid="agent-activity-scroll"
+                >
                     <ActivityRail
-                        entries={agent.activityLog}
+                        entries={activityLog}
                         spawnedAgents={spawnedAgents}
-                        onSelectAgent={selectAgent}
+                        onSelectAgent={onSelectAgent}
                         onPreview={onPreview}
                     />
                 </div>
@@ -139,7 +158,7 @@ export default function AgentActivityView({ onNudge, onPreview, nudgeDisabled = 
                     onKeyDown={(e) => {
                         if (nudgeDisabled) return;
                         if (e.key === 'Enter' && e.target.value.trim()) {
-                            if (onNudge) onNudge(e.target.value.trim(), selectedAgentId);
+                            if (onNudge) onNudge(e.target.value.trim(), agentId);
                             e.target.value = '';
                         }
                     }}

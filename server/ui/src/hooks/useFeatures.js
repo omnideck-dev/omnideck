@@ -17,14 +17,16 @@ const DEFAULTS = {
  */
 export default function useFeatures() {
     const [features, setFeatures] = useState(DEFAULTS);
+    const [loaded, setLoaded] = useState(false);
 
     const refresh = useCallback(async () => {
         try {
             const res = await fetch('/api/features');
-            if (!res.ok) return;
-            setFeatures(await res.json());
+            if (res.ok) setFeatures(await res.json());
         } catch {
             // keep the last known feature state on error
+        } finally {
+            setLoaded(true);
         }
     }, []);
 
@@ -32,5 +34,5 @@ export default function useFeatures() {
         refresh();
     }, [refresh]);
 
-    return { features, refresh };
+    return { features, loaded, refresh };
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useConversations } from '../contexts/Conversations.jsx';
+import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -30,7 +30,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         items, setItems, loading, deleting, handleDelete,
         archiveConversation, unarchiveConversation,
         folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
-    } = useConversations();
+    } = useConversationCatalog();
     const [query, setQuery] = useState('');
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null

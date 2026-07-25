@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Locator, Page
 
-from .preview_panel import PreviewPanel
+from .preview_panel import PreviewTabGroup
 
 # Ceiling for a turn to finish streaming. With the in-process fake there's no
 # model latency, so this only needs to cover the real tool work a turn does
@@ -18,7 +18,7 @@ class ChatView:
 
     def __init__(self, page: Page):
         self.page = page
-        self.preview = PreviewPanel(page)
+        self.preview = PreviewTabGroup(page)
 
     def goto(self) -> "ChatView":
         # The initial SPA bundle load can exceed the 5s default action timeout

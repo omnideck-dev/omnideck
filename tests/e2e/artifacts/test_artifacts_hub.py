@@ -17,7 +17,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e.artifacts._helpers import VC_HOME, delete_file, file_exists, produce, purge
-from tests.e2e.pages import ArtifactsHub, ChatView, PreviewPanel
+from tests.e2e.pages import ArtifactsHub, ChatView, DesktopLayout, PreviewTabGroup
 
 
 # ── read-only group: one shared pair of produced artifacts ──────────────
@@ -49,8 +49,8 @@ def test_sent_file_appears_in_grid(page: Page, produced):
     expect(hub.card(produced["html"])).to_be_visible()
 
 
-def test_selecting_artifact_renders_preview(page: Page, produced):
-    """Selecting a card opens the reused FilePreview with the file's content."""
+def test_selecting_artifact_opens_file_view(page: Page, produced):
+    """Selecting a card opens a file view with the artifact's content."""
     hub = ArtifactsHub(page).goto()
     hub.select(produced["md"])
     expect(hub.preview).to_be_visible(timeout=5_000)
@@ -72,6 +72,26 @@ def test_search_filters_to_matching_artifact(page: Page, produced):
     expect(hub.card(produced["html"])).to_have_count(0)
 
 
+def test_fullscreen_chrome_does_not_cover_hub_controls(page: Page):
+    """Shared fullscreen chrome reserves its own row above full-width controls."""
+    hub = ArtifactsHub(page).goto()
+    desktop = DesktopLayout(page)
+    desktop.maximize("destination:artifacts")
+
+    fullscreen_header = page.get_by_test_id(
+        "fullscreen-view-header-destination:artifacts"
+    )
+    expect(fullscreen_header).to_be_visible()
+    expect(page.get_by_test_id("artifacts-search")).to_be_visible()
+
+    header_box = fullscreen_header.bounding_box()
+    search_box = page.get_by_test_id("artifacts-search").bounding_box()
+    assert header_box and search_box
+    assert search_box["y"] >= header_box["y"] + header_box["height"]
+
+    desktop.restore("destination:artifacts")
+
+
 # ── delete: present file, opting into disk deletion ─────────────────────
 
 
@@ -86,6 +106,18 @@ def test_delete_present_artifact_removes_entry_and_file(page: Page):
 
         hub.request_delete(name)
         expect(hub.delete_dialog).to_be_visible()
+
+        # Global dialogs must escape the active View host. View hosts clip
+        # overflow to preserve split/floating isolation, so an inline modal
+        # would be cut off at the tab-group boundary.
+        assert hub.delete_dialog.evaluate(
+            "(dialog) => dialog.parentElement.parentElement === document.body"
+        )
+        scrim_box = hub.delete_dialog.locator("..").bounding_box()
+        assert scrim_box
+        assert scrim_box["x"] == 0
+        assert scrim_box["width"] == page.viewport_size["width"]
+
         hub.confirm_delete(delete_file=True)
 
         expect(hub.card(name)).to_have_count(0)
@@ -120,31 +152,33 @@ def test_missing_artifact_can_be_pruned(page: Page):
         purge(page, name)
 
 
-# ── open in conversation: focus-write + resume restores the file ────────
+# ── open in conversation: navigation intent resolves the artifact ──────
 
 
 def test_open_in_conversation_restores_focused_file(page: Page):
-    """Opening an artifact from the hub loads its conversation with the file restored.
+    """Opening an artifact loads its conversation and resolves its file preview.
 
-    The open action focuses the file, navigates to the source conversation, and the
-    resumed conversation shows it as a preview tab — rebuilt from the saved
-    preview_state path alone, so it restores even on a warm-resumed conversation
-    whose in-memory log dropped the file_output event.
+    The open action carries the artifact ID as navigation intent. Once the source
+    conversation loads, the desktop resolves that ID and opens its durable file
+    tab without writing conversation-owned placement state.
     """
     nonce = time.time_ns()
     name = f"hubopen_{nonce}.md"
     produce(page, (f"{VC_HOME}/{name}", "# open me\n\nfrom the hub"))
     try:
         # Switch to a new conversation so the artifact's conversation is no
-        # longer active — exercises the focus-write + resume path.
+        # longer active — exercises conversation loading plus intent resolution.
         ChatView(page).goto().new_conversation()
 
         hub = ArtifactsHub(page).goto()
         hub.select(name)
-        page.get_by_test_id("artifact-open-conversation").click()
+        DesktopLayout(page).choose_tab_action(
+            f"artifact:{name}",
+            "open-source-conversation",
+        )
 
-        # The source conversation resumes with the file restored as a preview tab.
-        expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
+        # The source conversation loads with the artifact file open as a tab.
+        expect(PreviewTabGroup(page).file_tab(name)).to_be_visible(timeout=8_000)
     finally:
         purge(page, name)
         delete_file(name)

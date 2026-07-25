@@ -91,7 +91,7 @@ describe('useFileContent disk-change watcher', () => {
     });
 
     it('shares stale and refresh across previews of the same file', async () => {
-        // Mirrors the inline tab + fullscreen overlay both mounted at once.
+        // Mirrors multiple mounted views of the same artifact.
         function TwoViews({ item }) {
             const a = useFileContent(item);
             const b = useFileContent(item);

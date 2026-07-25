@@ -3,7 +3,7 @@
 Agents live in the left-nav "Agents" panel: a searchable, sortable list
 that opens the full profile editor with a back breadcrumb. 
 The editor is the same ProfileBuilder component that used to
-live under Settings, so its interaction surface is unchanged.
+live under Settings, so its interaction view is unchanged.
 """
 
 from __future__ import annotations
@@ -173,7 +173,7 @@ class AgentsPage:
 
     def request_back(self) -> "AgentsPage":
         """Click the back breadcrumb without asserting the destination — with
-        unsaved edits this surfaces the guard instead of leaving."""
+        unsaved edits this views the guard instead of leaving."""
         self.page.get_by_test_id("agent-detail-back").click()
         return self
 

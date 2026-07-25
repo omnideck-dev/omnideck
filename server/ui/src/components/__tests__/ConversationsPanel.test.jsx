@@ -2,11 +2,11 @@ import { fireEvent, render as _render, screen, waitFor, within } from '@testing-
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConversationsPanel from '../ConversationsPanel.jsx';
-import { ConversationsProvider } from '../../contexts/Conversations.jsx';
+import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 
 // ConversationsPanel reads its list from the conversations context, so every
 // render goes through the provider (which fetches the list on mount).
-const render = (ui, options) => _render(ui, { wrapper: ConversationsProvider, ...options });
+const render = (ui, options) => _render(ui, { wrapper: ConversationCatalogProvider, ...options });
 
 // A fixed mid-day instant. Both the session timestamps and the component's
 // own `new Date()` are pinned to this, so the day-bucket assignments don't

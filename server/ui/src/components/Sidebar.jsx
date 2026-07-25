@@ -1,7 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import AudioIndicator from './AudioIndicator.jsx';
+import AudioPlayer from './AudioPlayer.jsx';
 import ConversationsPanel from './ConversationsPanel.jsx';
 import { useTheme } from '../contexts/Theme.jsx';
+import { useCustomApps } from '../features/customApps/CustomApps.jsx';
+import {
+    useCurrentNavigationTarget,
+    useDesktopNavigationCommands,
+} from '../features/navigation/DesktopNavigation.jsx';
 import styles from './Sidebar.module.css';
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
@@ -10,12 +15,19 @@ const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 // conversations live inline in the recent list below the nav. The agent
 // network view is opened from the chat title-bar pill, not a nav item.
 // Memory and Custom Tools live under Settings, not in the nav.
-const NAV = [
-    { id: 'home', icon: 'bi-house-door', label: 'Home', feature: 'homeApp' },
-    { id: 'agents', icon: 'bi-robot', label: 'Agents' },
-    { id: 'routines', icon: 'bi-bullseye', label: 'Routines' },
-    { id: 'artifacts', icon: 'bi-collection', label: 'Artifacts' },
-    { id: 'apps', icon: 'bi-grid', label: 'Custom Apps', feature: 'customApps' },
+const NAV_ITEMS = [
+    {
+        id: 'agents', icon: 'bi-robot', label: 'Agents', command: 'openAgents',
+    },
+    {
+        id: 'routines', icon: 'bi-bullseye', label: 'Routines', command: 'openRoutines',
+    },
+    {
+        id: 'artifacts', icon: 'bi-collection', label: 'Artifacts', command: 'openArtifacts',
+    },
+    {
+        id: 'apps', icon: 'bi-grid', label: 'Custom Apps', feature: 'customApps', command: 'openApps',
+    },
 ];
 
 function _readCollapsed() {
@@ -32,21 +44,16 @@ function _readCollapsed() {
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({
-    activePanel,
-    onPanelToggle,
     onNewConversation,
-    audio,
-    muted,
-    onToggleMute,
-    onAudioEnded,
     desktopEnabled,
     onOpenDesktop,
     onLoadConversation,
     activeConversationId,
-    customAppsEnabled,
-    homeAppEnabled,
 }) {
     const { dark, toggleTheme } = useTheme();
+    const navigationTarget = useCurrentNavigationTarget();
+    const navigation = useDesktopNavigationCommands();
+    const customApps = useCustomApps();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
 
     const toggleCollapsed = useCallback(() => {
@@ -61,7 +68,20 @@ export default function Sidebar({
         });
     }, []);
 
-    const settingsActive = activePanel === 'settings';
+    const activeItemId = NAV_ITEMS.some(
+        (item) => item.id === navigationTarget?.kind,
+    )
+        ? navigationTarget.kind
+        : null;
+    const settingsActive = navigationTarget?.kind === 'settings';
+
+    const activateNavigationItem = useCallback((item) => {
+        if (activeItemId === item.id) {
+            navigation.openChat();
+            return;
+        }
+        navigation[item.command]();
+    }, [activeItemId, navigation]);
 
     return (
         <aside
@@ -98,23 +118,22 @@ export default function Sidebar({
             </div>
 
             <nav className={styles.nav}>
-                {NAV.filter((panel) => {
-                    if (panel.feature === 'customApps') return customAppsEnabled;
-                    if (panel.feature === 'homeApp') return customAppsEnabled && homeAppEnabled;
+                {NAV_ITEMS.filter((item) => {
+                    if (item.feature === 'customApps') return customApps.enabled;
                     return true;
-                }).map((panel) => {
-                    const active = activePanel === panel.id;
+                }).map((item) => {
+                    const active = activeItemId === item.id;
                     return (
                         <button
-                            key={panel.id}
+                            key={item.id}
                             className={`${styles.navItem} ${active ? styles.active : ''}`}
-                            onClick={() => onPanelToggle(active ? null : panel.id)}
-                            title={panel.label}
-                            aria-label={panel.label}
-                            data-testid={`sidebar-nav-${panel.id}`}
+                            onClick={() => activateNavigationItem(item)}
+                            title={item.label}
+                            aria-label={item.label}
+                            data-testid={`sidebar-nav-${item.id}`}
                         >
-                            <i className={`bi ${panel.icon}`} />
-                            {!collapsed && <span className={styles.navLabel}>{panel.label}</span>}
+                            <i className={`bi ${item.icon}`} />
+                            {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
                         </button>
                     );
                 })}
@@ -141,12 +160,7 @@ export default function Sidebar({
                     <i className="bi bi-sun" />
                 </button>
                 <div className={styles.footerSpacer} />
-                <AudioIndicator
-                    audio={audio}
-                    muted={muted}
-                    onToggleMute={onToggleMute}
-                    onEnded={onAudioEnded}
-                />
+                <AudioPlayer />
                 {desktopEnabled && (
                     <button
                         className={styles.iconBtn}
@@ -160,7 +174,10 @@ export default function Sidebar({
                 )}
                 <button
                     className={`${styles.iconBtn} ${settingsActive ? styles.active : ''}`}
-                    onClick={() => onPanelToggle(settingsActive ? null : 'settings')}
+                    onClick={() => {
+                        if (settingsActive) navigation.openChat();
+                        else navigation.openSettings();
+                    }}
                     title="Settings"
                     aria-label="Settings"
                     data-testid="sidebar-settings"

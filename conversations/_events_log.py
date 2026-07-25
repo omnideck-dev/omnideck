@@ -44,6 +44,7 @@ _PERSISTED_TYPES: frozenset[str] = frozenset({
     "file_output",
     "tool_created",
     "context_usage",
+    "error",
 })
 
 

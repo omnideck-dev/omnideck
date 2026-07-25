@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPanel from '../ChatPanel.jsx';
 
@@ -9,7 +9,7 @@ vi.mock('../ChatInput.jsx', () => ({ default: () => <div data-testid="chat-input
 
 // ChatPanel reads the root agent from the agent-state context; drive it here.
 const { agentState } = vi.hoisted(() => ({ agentState: { value: { rootId: null, agents: {} } } }));
-vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => agentState.value }));
+vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => agentState.value }));
 
 beforeEach(() => { agentState.value = { rootId: null, agents: {} }; });
 
@@ -54,13 +54,21 @@ describe('ChatPanel title bar', () => {
         expect(screen.getByTestId('chat-turns')).toHaveTextContent('1 turn');
     });
 
-    it('shows the network indicator only once the network is activated', () => {
-        renderPanel({ networkActivated: false });
+    it('shows the network indicator only when the conversation has an agent network', () => {
+        renderPanel({ networkAgentCount: 0 });
         expect(screen.queryByTestId('network-indicator')).not.toBeInTheDocument();
         render(
             <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
-                networkActivated networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
+                networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
         );
         expect(screen.getByTestId('network-indicator')).toHaveTextContent('3 agents');
+    });
+
+    it('delegates conversation artifact navigation to the desktop', () => {
+        const onOpenArtifacts = vi.fn();
+        renderPanel({ onOpenArtifacts });
+
+        fireEvent.click(screen.getByTestId('conversation-artifacts-trigger'));
+        expect(onOpenArtifacts).toHaveBeenCalledOnce();
     });
 });
