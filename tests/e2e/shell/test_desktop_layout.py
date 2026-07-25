@@ -190,7 +190,7 @@ def test_tab_can_float_over_sidebar_resize_fullscreen_and_redock(page: Page):
     _open_destinations(page, "settings")
 
     # Settings owns local tab selection state. Choosing a non-default tab gives
-    # us an observable remount detector: a replacement SettingsPage would
+    # us an observable remount detector: a replacement SettingsView would
     # initialize back to Skills even if the generic View host looked stable.
     system_tab = page.get_by_test_id("settings-tab-system")
     system_tab.click()

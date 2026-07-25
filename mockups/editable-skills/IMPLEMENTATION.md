@@ -169,7 +169,7 @@ disk to transform. Two mechanisms cover the transition:
 - **New** `components/SkillsTab.jsx` — Library Header switching **My Skills** (master-detail:
   `SkillList` + `SkillBuilder`, mirroring `ProfileList`/`ProfileBuilder`) and **Categories**
   (read-only `CategoryCatalog` — expandable cards, connection-state tag). Register in
-  `SettingsPage.jsx ALL_TABS` after `profiles`.
+  `SettingsView.jsx ALL_TABS` after `profiles`.
 - `SkillBuilder.jsx` — name, enabled, skill-text, category chips (bs icon + tool count +
   connection **dot** on integration chips, success/warning tokens).
 - **Change** `ProfileBuilder.jsx` — point skill chips at `/api/skills`; add an **Autonomy**

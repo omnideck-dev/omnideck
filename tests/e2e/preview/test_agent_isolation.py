@@ -165,7 +165,7 @@ def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):
     expect(tab).to_be_visible()
     expect(
         isolation_page.locator(
-            "[data-view-type='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-visible='true']"
         )
     ).to_contain_text("hello from agent one")
 
@@ -174,7 +174,7 @@ def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):
     activity.open_first_file_preview()
     expect(
         isolation_page.locator(
-            "[data-view-type='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-visible='true']"
         )
     ).to_contain_text("hello from agent two")
 

@@ -160,7 +160,7 @@ describe('useDesktopShellLifecycle persistence', () => {
         await waitFor(() => {
             expect(
                 screen.getByTestId('desktop-view-destination:agents'),
-            ).toHaveAttribute('data-active', 'true');
+            ).toHaveAttribute('data-visible', 'true');
         });
 
         // The stale domain identity is still repaired and persisted even

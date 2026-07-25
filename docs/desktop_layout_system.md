@@ -65,6 +65,11 @@ that moving a view does not change its identity or remount its content.
 The discriminator that selects a view's renderer, such as `conversation`,
 `workspace-resource`, `artifact-file`, or `custom-app`.
 
+View-type strings are serialized contracts owned by their domains. Do not
+centralize them in a Desktop enum: Desktop's explicit View-content router is
+the one application composition point that needs to recognize the supported
+types.
+
 ### Desktop Layout
 
 The presentation system that owns:
@@ -197,7 +202,7 @@ The central rule is:
 the View and its placement metadata:
 
 ```text
-DesktopViewContent(view, active, tabGroupId)
+DesktopViewContent(view, visible, tabGroupId)
 ```
 
 It does not receive conversation sessions, Workspace state, artifact actions,

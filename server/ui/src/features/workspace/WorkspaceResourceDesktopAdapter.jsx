@@ -54,17 +54,17 @@ export function useWorkspaceResourceDesktopActions() {
 /**
  * Per-View adapter from serializable Workspace identity to the domain renderer.
  *
- * Only an active root Browser View owns the browser-control side channel.
+ * Only a visible root Browser View owns the browser-control side channel.
  * Merely moving the View does not change which agent/resource it represents,
  * and sub-agent Browsers remain screenshot-backed, read-only Views.
  */
-export default function WorkspaceResourceDesktopView({ view, active }) {
+export default function WorkspaceResourceDesktopView({ view, visible }) {
     const {
         activeConversationId,
         isStreaming,
     } = useConversationSessionState();
     // There is one root Browser View per conversation and one host per View.
-    // `active` keeps hidden tabs from streaming without confusing Desktop
+    // `visible` keeps hidden tabs from streaming without confusing Desktop
     // focus—which may remain on Chat in the opposite tab group—with whether
     // the visibly selected Browser should expose its control channel.
     const {
@@ -72,7 +72,7 @@ export default function WorkspaceResourceDesktopView({ view, active }) {
         resourceId,
         isRoot,
     } = workspaceResourceIdentityForView(view);
-    const ownsBrowserSession = active && isRoot;
+    const ownsBrowserSession = visible && isRoot;
     const { browser } = useActiveWorkspaceResource({
         conversationId: activeConversationId,
         isStreaming,
@@ -83,7 +83,7 @@ export default function WorkspaceResourceDesktopView({ view, active }) {
             agentId={agentId}
             resourceId={resourceId}
             browser={browser}
-            active={active}
+            visible={visible}
         />
     );
 }

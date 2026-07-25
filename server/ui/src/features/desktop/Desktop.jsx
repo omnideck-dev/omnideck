@@ -34,10 +34,10 @@ import styles from '../../App.module.css';
 
 // View rendering is a pure adapter lookup. Keeping this function at module
 // scope lets memoized hosts ignore unrelated DesktopShell renders.
-const renderDesktopViewContent = (view, { active, tabGroupId }) => (
+const renderDesktopViewContent = (view, { visible, tabGroupId }) => (
     <DesktopViewContent
         view={view}
-        active={active}
+        visible={visible}
         tabGroupId={tabGroupId}
     />
 );

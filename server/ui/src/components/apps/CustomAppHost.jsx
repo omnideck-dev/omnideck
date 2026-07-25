@@ -6,7 +6,7 @@ import styles from './CustomAppHost.module.css';
 export default function CustomAppHost({
     app,
     reloadSignal = 0,
-    active = true,
+    visible = true,
     onOpenChat,
     onComposeChat,
 }) {
@@ -85,7 +85,7 @@ export default function CustomAppHost({
     }, [app, onOpenChat, onComposeChat]);
 
     return (
-        <div className={`${styles.frameWell} ${!active ? styles.hidden : ''}`}>
+        <div className={`${styles.frameWell} ${!visible ? styles.hidden : ''}`}>
             {/* This same-origin URL serves the app's web/index.html and its relative assets. */}
             <iframe
                 key={`${app.slug}-${reloadSignal}`}

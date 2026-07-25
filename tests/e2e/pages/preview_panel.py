@@ -51,7 +51,7 @@ class PreviewTabGroup:
     @property
     def content(self) -> Locator:
         return self.page.locator(
-            "[data-view-id][data-tab-group-id='right'][data-active='true']"
+            "[data-view-id][data-tab-group-id='right'][data-visible='true']"
         )
 
     def select_tab(self, tab: Locator) -> "PreviewTabGroup":

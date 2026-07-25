@@ -14,7 +14,7 @@ class FilePreview:
     @property
     def content(self) -> Locator:
         return self.page.locator(
-            "[data-view-type='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-visible='true']"
         )
 
     @property

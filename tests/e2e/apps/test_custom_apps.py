@@ -332,7 +332,7 @@ def test_custom_app_and_workspace_previews_share_the_right_tab_stack(
     expect(
         page.locator(
             "[data-view-resource-id='terminal']"
-            "[data-tab-group-id='right'][data-active='true']"
+            "[data-tab-group-id='right'][data-visible='true']"
         ).get_by_text("custom-app-view", exact=False).last
     ).to_be_visible()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(1)

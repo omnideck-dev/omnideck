@@ -41,7 +41,7 @@ class DesktopLayout:
 
     def active_view(self, tab_group_id: str) -> Locator:
         return self.page.locator(
-            f'[data-tab-group-id="{tab_group_id}"][data-active="true"]'
+            f'[data-tab-group-id="{tab_group_id}"][data-visible="true"]'
         )
 
     def open_tab_menu(self, view_key: str) -> Locator:

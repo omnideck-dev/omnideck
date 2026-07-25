@@ -127,7 +127,7 @@ vi.mock('../components/FilePreview.jsx', () => ({
     ),
 }));
 
-vi.mock('../components/SettingsPage.jsx', () => ({
+vi.mock('../components/SettingsView.jsx', () => ({
     default: () => <div data-testid="settings-page">Settings</div>,
 }));
 
@@ -146,8 +146,11 @@ vi.mock('../components/apps/AppsView.jsx', () => ({
 }));
 
 vi.mock('../components/apps/CustomAppHost.jsx', () => ({
-    default: ({ app, active, onComposeChat }) => (
-        <div data-testid="custom-app-frame" data-active={active ? 'true' : 'false'}>
+    default: ({ app, visible, onComposeChat }) => (
+        <div
+            data-testid="custom-app-frame"
+            data-visible={visible ? 'true' : 'false'}
+        >
             {app.title}
             <button data-testid="mock-workspace-compose" onClick={() => onComposeChat({
                 text: 'Review this', context: { text: 'Draft' },
@@ -358,7 +361,7 @@ function viewHostFor(testId) {
 
 function expectViewActive(testId, tabGroupId = null) {
     const host = viewHostFor(testId);
-    expect(host).toHaveAttribute('data-active', 'true');
+    expect(host).toHaveAttribute('data-visible', 'true');
     if (tabGroupId) {
         expect(host).toHaveAttribute('data-tab-group-id', tabGroupId);
     }
@@ -367,7 +370,7 @@ function expectViewActive(testId, tabGroupId = null) {
 
 function expectViewInactive(testId) {
     const host = viewHostFor(testId);
-    expect(host).toHaveAttribute('data-active', 'false');
+    expect(host).toHaveAttribute('data-visible', 'false');
     return host;
 }
 
@@ -643,7 +646,7 @@ describe('App view transitions', () => {
             expectViewActive('settings-page', 'left');
             expectViewInactive('custom-app-frame');
             expect(frame).toBeInTheDocument();
-            expect(frame).toHaveAttribute('data-active', 'false');
+            expect(frame).toHaveAttribute('data-visible', 'false');
 
             fireEvent.click(screen.getByTestId('view-tab-custom-app:text-lab'));
             expectViewActive('custom-app-frame', 'left');
@@ -736,8 +739,8 @@ describe('App view transitions', () => {
             const notesView = screen.getByTestId(
                 'desktop-view-custom-app:notes-lab',
             );
-            expect(textView).toHaveAttribute('data-active', 'false');
-            expect(notesView).toHaveAttribute('data-active', 'true');
+            expect(textView).toHaveAttribute('data-visible', 'false');
+            expect(notesView).toHaveAttribute('data-visible', 'true');
         });
 
         it('applies tab context-menu close commands without first selecting the tab', async () => {
@@ -752,7 +755,7 @@ describe('App view transitions', () => {
             );
             expect(screen.getByTestId(
                 'desktop-view-custom-app:text-lab',
-            )).toHaveAttribute('data-active', 'false');
+            )).toHaveAttribute('data-visible', 'false');
 
             fireEvent.contextMenu(textTab);
             fireEvent.click(screen.getByRole(
@@ -1234,11 +1237,11 @@ describe('App view transitions', () => {
             const subAgentBrowser = screen.getByTestId(
                 'desktop-view-s1:browser',
             );
-            expect(subAgentBrowser).toHaveAttribute('data-active', 'true');
+            expect(subAgentBrowser).toHaveAttribute('data-visible', 'true');
             expect(subAgentBrowser).toHaveAttribute('data-view-owner-id', 's1');
             expect(subAgentBrowser).toHaveTextContent('Browser: https://sub.com');
             expect(screen.getByTestId('desktop-view-browser'))
-                .toHaveAttribute('data-active', 'false');
+                .toHaveAttribute('data-visible', 'false');
         });
 
         it('does not change an explicitly opened sub-agent tab when navigating elsewhere', async () => {
@@ -1261,14 +1264,14 @@ describe('App view transitions', () => {
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             act(() => fireEvent.click(screen.getByTestId('activity-open-browser')));
             expect(screen.getByTestId('desktop-view-s1:browser'))
-                .toHaveAttribute('data-active', 'true');
+                .toHaveAttribute('data-visible', 'true');
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             act(() => fireEvent.click(screen.getByTestId('close-panel')));
 
             expectViewActive('chat-panel', 'left');
             expect(screen.getByTestId('desktop-view-s1:browser'))
-                .toHaveAttribute('data-active', 'true');
+                .toHaveAttribute('data-visible', 'true');
             expect(screen.getByTestId('desktop-view-s1:browser'))
                 .toHaveTextContent('Browser: https://sub.com');
         });

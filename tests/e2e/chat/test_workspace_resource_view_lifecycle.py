@@ -96,7 +96,7 @@ def test_refresh_restores_the_current_execution_view(page: Page):
     expect(terminal_tab).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible(timeout=10_000)
     terminal_view = page.locator(
-        "[data-view-resource-id='terminal'][data-active='true']"
+        "[data-view-resource-id='terminal'][data-visible='true']"
     )
     expect(terminal_view).to_be_visible()
     expect(terminal_view).to_contain_text(marker)

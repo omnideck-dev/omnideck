@@ -60,7 +60,7 @@ export function CustomAppDesktopEffects() {
 }
 
 /** Per-View adapter from a Custom App descriptor to its domain renderer. */
-export default function CustomAppDesktopView({ view, active }) {
+export default function CustomAppDesktopView({ view, visible }) {
     const customApps = useCustomApps();
     const navigation = useDesktopNavigationCommands();
     const { composeFromSource } = useConversationSessionCommands();
@@ -96,7 +96,7 @@ export default function CustomAppDesktopView({ view, active }) {
             <CustomAppHost
                 app={app}
                 reloadSignal={view.reloadSignal || 0}
-                active={active}
+                visible={visible}
                 onOpenChat={openChat}
                 onComposeChat={composeChat}
             />

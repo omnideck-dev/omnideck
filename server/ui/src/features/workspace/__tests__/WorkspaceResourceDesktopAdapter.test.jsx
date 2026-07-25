@@ -67,10 +67,10 @@ describe('WorkspaceResourceDesktopView', () => {
         mocks.renderedView.mockClear();
     });
 
-    it('gives an active root Browser the one control session', () => {
+    it('gives a visible root Browser the one control session', () => {
         const view = browserView({ isRoot: true });
 
-        render(<WorkspaceResourceDesktopView view={view} active />);
+        render(<WorkspaceResourceDesktopView view={view} visible />);
 
         expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
@@ -78,15 +78,15 @@ describe('WorkspaceResourceDesktopView', () => {
             activeView: view,
         });
         expect(mocks.renderedView).toHaveBeenCalledWith(
-            expect.objectContaining({ active: true }),
+            expect.objectContaining({ visible: true }),
             expect.anything(),
         );
     });
 
-    it('keeps an active sub-agent Browser read-only while still rendering it', () => {
+    it('keeps a visible sub-agent Browser read-only while rendering it', () => {
         const view = browserView({ isRoot: false });
 
-        render(<WorkspaceResourceDesktopView view={view} active />);
+        render(<WorkspaceResourceDesktopView view={view} visible />);
 
         expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
@@ -94,16 +94,16 @@ describe('WorkspaceResourceDesktopView', () => {
             activeView: null,
         });
         expect(mocks.renderedView).toHaveBeenCalledWith(
-            expect.objectContaining({ active: true }),
+            expect.objectContaining({ visible: true }),
             expect.anything(),
         );
     });
 
-    it('gives an active root Browser a session when Desktop focus is elsewhere', () => {
+    it('gives a visible root Browser a session when focus is elsewhere', () => {
         const view = browserView({ isRoot: true });
         mocks.useFocusedViewId.mockReturnValue('destination:conversation');
 
-        render(<WorkspaceResourceDesktopView view={view} active />);
+        render(<WorkspaceResourceDesktopView view={view} visible />);
 
         expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
@@ -111,7 +111,7 @@ describe('WorkspaceResourceDesktopView', () => {
             activeView: view,
         });
         // The adapter must not subscribe to focus: an auto-opened Browser is
-        // active in its tab group while Chat retains Desktop focus.
+        // visible in its tab group while Chat retains Desktop focus.
         expect(mocks.useFocusedViewId).not.toHaveBeenCalled();
     });
 });

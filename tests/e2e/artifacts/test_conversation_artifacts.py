@@ -35,7 +35,7 @@ def test_chat_opens_scoped_artifacts_and_artifact_tab(page: Page):
         ).to_be_visible(timeout=5_000)
         expect(
             page.locator(
-                "[data-view-type='artifact-file'][data-active='true']"
+                "[data-view-type='artifact-file'][data-visible='true']"
             )
         ).to_contain_text(name)
 

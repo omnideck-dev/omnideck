@@ -7,7 +7,7 @@ import MemoryTab from './MemoryTab.jsx';
 import ProvidersTab from './providers/ProvidersTab.jsx';
 import SkillsTab from './skills/SkillsTab.jsx';
 import SystemSettings from './SystemSettings.jsx';
-import styles from './SettingsPage.module.css';
+import styles from './SettingsView.module.css';
 
 // Tab registry — tabs own their own data (via context / their own
 // hooks), so adding a new tab is just a row here plus the component.
@@ -21,7 +21,7 @@ const ALL_TABS = [
     { id: 'system', label: 'System', Component: SystemSettings },
 ];
 
-export default function SettingsPage({
+export default function SettingsView({
     initialTab = 'skills',
 }) {
     const { features } = useAppData();

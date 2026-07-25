@@ -121,7 +121,9 @@ function DesktopViewHost({
 }) {
     const hostRef = useRef(null);
     const floating = Boolean(floatingView);
-    const active = Boolean(floating || (tabGroupId && activeInTabGroup));
+    // Visibility is distinct from Desktop focus. Every floating View and the
+    // selected tab in each tab group is visible, but only one may be focused.
+    const visible = Boolean(floating || (tabGroupId && activeInTabGroup));
     const {
         bounds: liveBounds,
         drag,
@@ -163,15 +165,15 @@ function DesktopViewHost({
         }
         : undefined;
     const content = useMemo(() => renderView(view, {
-        active,
+        visible,
         tabGroupId,
         floating,
     }), [
-        active,
         floating,
         renderView,
         tabGroupId,
         view,
+        visible,
     ]);
 
     return (
@@ -183,7 +185,7 @@ function DesktopViewHost({
                 tabGroupId === DESKTOP_TAB_GROUP_IDS.RIGHT ? styles.rightView : '',
                 floating ? styles.floatingView : '',
                 focusedFloating ? styles.focusedFloatingView : '',
-                active ? styles.activeView : styles.hiddenView,
+                visible ? styles.visibleView : styles.hiddenView,
                 fullscreen ? styles.fullscreenView : '',
             ].filter(Boolean).join(' ')}
             style={floatingStyle}
@@ -199,7 +201,7 @@ function DesktopViewHost({
             data-view-owner-id={view.testMetadata?.ownerId || ''}
             data-view-resource-id={view.testMetadata?.resourceId || ''}
             data-tab-group-id={floating ? 'floating' : (tabGroupId || 'hidden')}
-            data-active={active ? 'true' : 'false'}
+            data-visible={visible ? 'true' : 'false'}
             data-floating={floating ? 'true' : 'false'}
             data-fullscreen={fullscreen ? 'true' : 'false'}
             data-maximized={fullscreen ? 'true' : 'false'}

@@ -1,5 +1,5 @@
 import AgentsView from '../../components/agents/AgentsView.jsx';
-import SettingsPage from '../../components/SettingsPage.jsx';
+import SettingsView from '../../components/SettingsView.jsx';
 import ArtifactsHubDesktopView, {
     ArtifactFileDesktopView,
 } from '../artifacts/ArtifactDesktopAdapter.jsx';
@@ -19,20 +19,25 @@ import WorkspaceResourceDesktopView from
  */
 export default function DesktopViewContent({
     view,
-    active,
+    visible,
     tabGroupId,
 }) {
     if (view.type === 'custom-app') {
         return (
             <CustomAppDesktopView
                 view={view}
-                active={active}
+                visible={visible}
             />
         );
     }
 
     if (view.type === 'workspace-resource') {
-        return <WorkspaceResourceDesktopView view={view} active={active} />;
+        return (
+            <WorkspaceResourceDesktopView
+                view={view}
+                visible={visible}
+            />
+        );
     }
 
     if (view.type === 'artifact-file') {
@@ -51,7 +56,7 @@ export default function DesktopViewContent({
     // Page-like views are statically known today. Keeping this switch explicit
     // makes the supported View types visible without introducing a premature
     // runtime registration system.
-    if (view.type === 'settings') return <SettingsPage />;
+    if (view.type === 'settings') return <SettingsView />;
     if (view.type === 'agents') return <AgentsView />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
     if (view.type === 'artifacts') {

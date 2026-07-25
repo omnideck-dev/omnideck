@@ -52,7 +52,7 @@ class ArtifactsHub:
     def preview(self) -> Locator:
         """The artifact file view opened from the selected card."""
         return self.page.locator(
-            "[data-view-type='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-visible='true']"
         )
 
     # ── delete ──

@@ -61,7 +61,7 @@
     display: none;
 }
 
-.activeView {
+.visibleView {
     display: flex;
 }
 
