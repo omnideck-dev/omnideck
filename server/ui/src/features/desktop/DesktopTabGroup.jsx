@@ -1,4 +1,4 @@
-import TabbedPane from '../../components/TabbedPane.jsx';
+import TabStrip from '../../components/TabStrip.jsx';
 import { DESKTOP_ACTION_PLACEMENTS } from './desktopViewActions.js';
 import styles from './DesktopTabGroup.module.css';
 
@@ -39,7 +39,7 @@ export default function DesktopTabGroup({
             data-tab-group-id={tabGroupId}
             data-layout={split ? 'split' : 'single'}
         >
-            <TabbedPane
+            <TabStrip
                 tabs={tabs}
                 activeTab={tabGroup.activeViewId}
                 onTabChange={(viewId) => onSelectView(tabGroupId, viewId)}
@@ -47,7 +47,6 @@ export default function DesktopTabGroup({
                 testIds={{
                     panel: `desktop-tab-group-${tabGroupId}-tabs`,
                     tabBar: `desktop-tab-group-${tabGroupId}-tab-bar`,
-                    content: `desktop-tab-group-${tabGroupId}-content-slot`,
                 }}
             />
         </section>

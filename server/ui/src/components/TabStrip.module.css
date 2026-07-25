@@ -1,4 +1,4 @@
-.tabbedPane {
+.tabStrip {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -165,15 +165,6 @@
     color: var(--text-primary);
 }
 
-/* Content area */
-.contentArea {
-    flex: 1;
-    overflow-y: auto;
-    background: var(--canvas);
-    display: flex;
-    flex-direction: column;
-}
-
 /* Light theme overrides */
 :global([data-theme="light"]) .tabBar {
     background: var(--surface);
@@ -195,8 +186,4 @@
 :global([data-theme="light"]) .tabClose:hover {
     background: var(--border-subtle);
     color: var(--text-primary);
-}
-
-:global([data-theme="light"]) .contentArea {
-    background: var(--elevated);
 }

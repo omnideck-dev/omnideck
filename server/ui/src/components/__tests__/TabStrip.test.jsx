@@ -1,25 +1,23 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
-import TabbedPane from '../TabbedPane.jsx';
+import TabStrip from '../TabStrip.jsx';
 
 const TABS = [
     { id: 'one', label: 'One', icon: <i /> },
     { id: 'two', label: 'Two', icon: <i /> },
 ];
 
-test('selects and closes tabs and renders caller-provided content', () => {
+test('selects and closes tabs', () => {
     const onTabChange = vi.fn();
     const onCloseTab = vi.fn();
     render(
-        <TabbedPane
+        <TabStrip
             tabs={TABS}
             activeTab="one"
             onTabChange={onTabChange}
             onCloseTab={onCloseTab}
-        >
-            <div data-testid="selected-content" />
-        </TabbedPane>,
+        />,
     );
 
     fireEvent.click(screen.getByTestId('view-tab-two'));
@@ -28,33 +26,17 @@ test('selects and closes tabs and renders caller-provided content', () => {
     fireEvent.click(screen.getByTestId('close-view-tab-one'));
     expect(onCloseTab).toHaveBeenCalledWith('one');
     expect(onTabChange).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('selected-content')).toBeInTheDocument();
-});
-
-test('does not render a content slot when the caller supplies no content', () => {
-    render(
-        <TabbedPane
-            tabs={TABS}
-            activeTab="two"
-            onTabChange={vi.fn()}
-            onCloseTab={vi.fn()}
-        />,
-    );
-
-    expect(screen.queryByTestId('tabbed-pane-content')).not.toBeInTheDocument();
 });
 
 test('exposes tab semantics and supports arrow-key selection', () => {
     const onTabChange = vi.fn();
     render(
-        <TabbedPane
+        <TabStrip
             tabs={TABS}
             activeTab="one"
             onTabChange={onTabChange}
             onCloseTab={vi.fn()}
-        >
-            <div>Selected view</div>
-        </TabbedPane>,
+        />,
     );
 
     const tabs = screen.getAllByRole('tab');
@@ -68,27 +50,9 @@ test('exposes tab semantics and supports arrow-key selection', () => {
     expect(tabs[1]).toHaveFocus();
 });
 
-test('can hide its tab strip without remounting its content', () => {
-    const props = {
-        tabs: TABS,
-        activeTab: 'one',
-        onTabChange: vi.fn(),
-        onCloseTab: vi.fn(),
-    };
-    const content = <div data-testid="selected-content" />;
-    const { rerender } = render(
-        <TabbedPane {...props}>{content}</TabbedPane>,
-    );
-    const selectedContent = screen.getByTestId('selected-content');
-
-    rerender(<TabbedPane {...props} hideTabs>{content}</TabbedPane>);
-    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
-    expect(screen.getByTestId('selected-content')).toBe(selectedContent);
-});
-
 test('shows controls for an overflowing tab strip and scrolls in both directions', () => {
     render(
-        <TabbedPane
+        <TabStrip
             tabs={TABS}
             activeTab="one"
             onTabChange={vi.fn()}
@@ -127,7 +91,7 @@ test('keeps the selected tab visible when the strip is already scrolled', () => 
         onTabChange: vi.fn(),
         onCloseTab: vi.fn(),
     };
-    const { rerender } = render(<TabbedPane {...props} activeTab="one" />);
+    const { rerender } = render(<TabStrip {...props} activeTab="one" />);
     const tabList = screen.getByTestId('view-tab-one').parentElement.parentElement;
     const secondTab = screen.getByTestId('view-tab-two').parentElement;
     Object.defineProperties(tabList, {
@@ -150,7 +114,7 @@ test('keeps the selected tab visible when the strip is already scrolled', () => 
         }),
     });
 
-    rerender(<TabbedPane {...props} activeTab="two" />);
+    rerender(<TabStrip {...props} activeTab="two" />);
 
     expect(tabList.scrollLeft).toBe(400);
 });
@@ -159,7 +123,7 @@ test('opens an inactive tab context menu without selecting the tab', () => {
     const execute = vi.fn();
     const onTabChange = vi.fn();
     render(
-        <TabbedPane
+        <TabStrip
             tabs={TABS.map((tab) => ({
                 ...tab,
                 menuActions: [{
@@ -194,7 +158,7 @@ test('opens an inactive tab context menu without selecting the tab', () => {
 test('opens the active tab action menu from one compact overflow button', () => {
     const execute = vi.fn();
     render(
-        <TabbedPane
+        <TabStrip
             tabs={[{
                 ...TABS[0],
                 menuActions: [{
@@ -225,7 +189,7 @@ test('opens the active tab action menu from one compact overflow button', () => 
 
 test('opens the tab context menu from the keyboard', () => {
     render(
-        <TabbedPane
+        <TabStrip
             tabs={[{
                 ...TABS[0],
                 menuActions: [{

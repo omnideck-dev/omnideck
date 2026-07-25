@@ -356,8 +356,5 @@ These are implementation observations, not additional concepts:
 
 - Give Custom App view instances unique IDs. Slug-based IDs currently limit an
   app to one simultaneous open instance.
-- Consider splitting `TabbedPane` into a reusable tab strip and an optional
-  content owner. It no longer emits an empty content node for Desktop tab
-  groups, but its API still supports both roles.
 - Revisit whether the focused Terminal should disable Browser control while a
   Browser view remains visible.

@@ -7,22 +7,19 @@ import {
 } from 'react';
 
 import TabContextMenu from './TabContextMenu.jsx';
-import styles from './TabbedPane.module.css';
+import styles from './TabStrip.module.css';
 
-/** A tab strip and the content selected by its caller. */
-export default function TabbedPane({
+/** Accessible, scrollable tab chrome with a shared action menu. */
+export default function TabStrip({
     tabs,
     activeTab,
     onTabChange,
     onCloseTab,
-    hideTabs = false,
     testIds = {},
-    children,
 }) {
     const {
-        panel: panelTestId = 'tabbed-pane',
+        panel: panelTestId = 'tab-strip',
         tabBar: tabBarTestId = 'tab-bar',
-        content: contentTestId = 'tabbed-pane-content',
     } = testIds;
     const tabListRef = useRef(null);
     const activeTabRef = useRef(null);
@@ -33,10 +30,6 @@ export default function TabbedPane({
         canScrollRight: false,
     });
     const closeTabMenu = useCallback(() => setTabMenu(null), []);
-    const tabDomId = useCallback(
-        (tabId) => `${panelTestId}-tab-${encodeURIComponent(tabId)}`,
-        [panelTestId],
-    );
 
     const openTabMenu = useCallback((tab, position) => {
         if (!tab.menuActions?.length) return;
@@ -123,7 +116,7 @@ export default function TabbedPane({
 
     useLayoutEffect(() => {
         const tabList = tabListRef.current;
-        if (!tabList || hideTabs) return undefined;
+        if (!tabList) return undefined;
 
         const handleResize = () => {
             revealActiveTab();
@@ -144,7 +137,6 @@ export default function TabbedPane({
         };
     }, [
         activeTab,
-        hideTabs,
         revealActiveTab,
         tabs.length,
         updateTabOverflow,
@@ -158,8 +150,8 @@ export default function TabbedPane({
     }, [closeTabMenu, menuTab, tabMenu]);
 
     return (
-        <div className={styles.tabbedPane} data-testid={panelTestId}>
-            {!hideTabs && <div className={styles.tabBar} data-testid={tabBarTestId}>
+        <div className={styles.tabStrip} data-testid={panelTestId}>
+            <div className={styles.tabBar} data-testid={tabBarTestId}>
                 <button
                     type="button"
                     className={`${styles.tabScrollButton} ${tabOverflow.hasOverflow ? '' : styles.tabScrollButtonHidden}`}
@@ -236,7 +228,6 @@ export default function TabbedPane({
                                             y: rect.bottom,
                                         });
                                     }}
-                                    id={tabDomId(tab.id)}
                                     role="tab"
                                     aria-selected={isActive}
                                     tabIndex={isActive ? 0 : -1}
@@ -304,17 +295,7 @@ export default function TabbedPane({
                 >
                     <i className="bi bi-chevron-right" aria-hidden="true" />
                 </button>
-            </div>}
-            {children !== undefined && children !== null && (
-                <div
-                    className={styles.contentArea}
-                    role="tabpanel"
-                    aria-labelledby={activeTab ? tabDomId(activeTab) : undefined}
-                    data-testid={contentTestId}
-                >
-                    {children}
-                </div>
-            )}
+            </div>
             {menuTab && (
                 <TabContextMenu
                     actions={menuTab.menuActions}
