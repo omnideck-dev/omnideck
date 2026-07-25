@@ -98,6 +98,9 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         const ws = new WebSocket(
             `${proto}://${location.host}/api/browser/control?conversation_id=${encodeURIComponent(conversationId)}`,
         );
+        // A server rejection remains sticky for this ownership attempt so we
+        // do not create a reconnect loop. Hiding/reselecting the Browser or
+        // changing conversations creates a new attempt and clears the error.
         setError(null);
         wsRef.current = ws;
         ws.binaryType = 'arraybuffer';

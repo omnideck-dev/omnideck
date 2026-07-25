@@ -1,6 +1,8 @@
 import AgentsView from '../../components/agents/AgentsView.jsx';
 import SettingsPage from '../../components/SettingsPage.jsx';
-import ArtifactDesktopView from '../artifacts/ArtifactDesktopAdapter.jsx';
+import ArtifactsHubDesktopView, {
+    ArtifactFileDesktopView,
+} from '../artifacts/ArtifactDesktopAdapter.jsx';
 import ConversationDesktopView from '../conversation/ConversationDesktopView.jsx';
 import AppsDesktopView from '../customApps/AppsDesktopView.jsx';
 import CustomAppDesktopView from '../customApps/CustomAppDesktopAdapter.jsx';
@@ -34,7 +36,7 @@ export default function DesktopViewContent({
     }
 
     if (view.type === 'artifact-file') {
-        return <ArtifactDesktopView view={view} tabGroupId={tabGroupId} />;
+        return <ArtifactFileDesktopView view={view} />;
     }
 
     if (view.type === 'conversation') {
@@ -53,7 +55,12 @@ export default function DesktopViewContent({
     if (view.type === 'agents') return <AgentsView />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
     if (view.type === 'artifacts') {
-        return <ArtifactDesktopView view={view} tabGroupId={tabGroupId} />;
+        return (
+            <ArtifactsHubDesktopView
+                view={view}
+                tabGroupId={tabGroupId}
+            />
+        );
     }
     if (view.type === 'apps') {
         return <AppsDesktopView tabGroupId={tabGroupId} />;

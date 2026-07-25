@@ -108,6 +108,9 @@ function useArtifactViewRehydration() {
                     closeViewIds.push(view.id);
                     continue;
                 }
+                // A transport failure is not proof the durable Artifact was
+                // deleted. Keep the View unresolved instead of closing it; a
+                // later catalog change retries without creating a polling loop.
                 if (result.status !== 'found') continue;
                 const hydrated = createArtifactView(result.value);
                 if (!hydrated) {
@@ -214,14 +217,20 @@ export function ArtifactDesktopEffects() {
     return null;
 }
 
-/** Per-View adapter for both Artifact files and the Artifact library. */
-export default function ArtifactDesktopView({ view, tabGroupId }) {
+/**
+ * Render one hydrated Artifact file.
+ *
+ * Restored Views remain blank only while the headless Artifact effect resolves
+ * their durable key. This renderer needs no Desktop commands or placement.
+ */
+export function ArtifactFileDesktopView({ view }) {
     // Restored file Views render after the headless domain effect resolves
     // their durable key. Avoid handing an incomplete record to FilePreview.
-    if (view.type === 'artifact-file') {
-        return view.artifact ? <FilePreview item={view.artifact} /> : null;
-    }
+    return view.artifact ? <FilePreview item={view.artifact} /> : null;
+}
 
+/** Render the Artifact library and adapt its actions to Desktop commands. */
+export default function ArtifactsHubDesktopView({ view, tabGroupId }) {
     const {
         openArtifact,
         openArtifacts,

@@ -11,7 +11,6 @@ import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 import {
     useDesktopViewCommands,
     useDesktopViewCatalog,
-    useFocusedViewId,
 } from '../desktop/DesktopViewRuntime.jsx';
 import useWorkspaceResourceDesktopViews from './useWorkspaceResourceDesktopViews.js';
 import useActiveWorkspaceResource from './useActiveWorkspaceResource.js';
@@ -52,23 +51,20 @@ export function useWorkspaceResourceDesktopActions() {
 /**
  * Per-View adapter from serializable Workspace identity to the domain renderer.
  *
- * Only the focused root Browser View owns the browser-control side channel.
+ * Only an active root Browser View owns the browser-control side channel.
  * Merely moving the View does not change which agent/resource it represents,
  * and sub-agent Browsers remain screenshot-backed, read-only Views.
  */
 export default function WorkspaceResourceDesktopView({ view, active }) {
-    const focusedViewId = useFocusedViewId();
     const {
         activeConversationId,
         isStreaming,
     } = useConversationSessionState();
-    // Browser control is an exclusive lock, not a render subscription. Every
-    // visible Browser may paint Workspace screenshots, but only the focused
-    // root Browser may own the conversation's single control WebSocket.
-    const ownsBrowserSession = (
-        view.id === focusedViewId
-        && view.isRoot
-    );
+    // There is one root Browser View per conversation and one host per View.
+    // `active` keeps hidden tabs from streaming without confusing Desktop
+    // focus—which may remain on Chat in the opposite tab group—with whether
+    // the visibly selected Browser should expose its control channel.
+    const ownsBrowserSession = active && view.isRoot;
     const { browser } = useActiveWorkspaceResource({
         conversationId: activeConversationId,
         isStreaming,

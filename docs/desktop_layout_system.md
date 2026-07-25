@@ -206,12 +206,16 @@ Every domain adapter follows one file-level public convention:
 features/<domain>/<Domain>DesktopAdapter.jsx
   export function <Domain>DesktopEffects()      // headless installation
   export function use<Domain>DesktopActions()   // commands into Desktop
-  export default function <Domain>DesktopView() // per-View renderer
+  export default function <Domain>DesktopView() // usual per-View renderer
+  export function <ViewType>DesktopView()       // additional owned View types
 ```
 
 The lower-level `use<Domain>DesktopViews` hooks remain private effect
 implementations. Callers import cross-boundary actions and renderers from the
 adapter, so adding another domain does not introduce a fourth adapter shape.
+When one domain owns multiple View types, each type gets its own renderer
+instead of branching before calling type-specific hooks. Artifact files and the
+Artifacts hub are the current example.
 
 The cross-boundary command is generic:
 

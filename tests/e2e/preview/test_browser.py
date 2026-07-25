@@ -31,6 +31,11 @@ def test_browser_snapshot_appears(page: Page):
     expect(
         page.locator("[data-view-resource-id='browser']")
     ).to_have_attribute("data-tab-group-id", "right")
+    # The right group selected its first Browser even though Chat retained
+    # Desktop focus. Control must be ready without a misleading extra tab click.
+    expect(page.get_by_test_id("browser-take-control")).to_be_enabled(
+        timeout=10_000
+    )
 
 
 def test_agent_close_tab_reflected_in_ui(page: Page):
