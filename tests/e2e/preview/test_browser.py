@@ -21,21 +21,33 @@ def _fixture_page():
 
 
 def test_browser_snapshot_appears(page: Page):
-    """Browsing opens a companion tab without replacing the root Chat view."""
+    """The selected root Browser owns control across placement changes."""
     chat = ChatView(page).goto().new_conversation()
     # A cold Chromium launch in the container is the slow path here, well
     # beyond the default turn budget.
     chat.send(open_url("https://example.com")).wait_streaming(timeout=30_000)
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
-    expect(
-        page.locator("[data-view-resource-id='browser']")
-    ).to_have_attribute("data-tab-group-id", "right")
+
+    desktop = DesktopLayout(page)
+    browser_view = page.locator("[data-view-resource-id='browser']")
+    take_control = page.get_by_test_id("browser-take-control")
+    expect(browser_view).to_have_attribute("data-tab-group-id", "right")
     # The right group selected its first Browser even though Chat retained
     # Desktop focus. Control must be ready without a misleading extra tab click.
-    expect(page.get_by_test_id("browser-take-control")).to_be_enabled(
-        timeout=10_000
-    )
+    expect(take_control).to_be_enabled(timeout=10_000)
+
+    # Session ownership follows the active root Browser, not the action history
+    # that placed it. Floating focuses the View and docking focuses its target
+    # group, but neither transition should create or remove its eligibility.
+    desktop.float("browser")
+    expect(browser_view).to_have_attribute("data-floating", "true")
+    expect(take_control).to_be_enabled()
+
+    page.get_by_test_id("dock-view-browser-right").click()
+    expect(browser_view).to_have_attribute("data-tab-group-id", "right")
+    expect(browser_view).to_have_attribute("data-floating", "false")
+    expect(take_control).to_be_enabled()
 
 
 def test_agent_close_tab_reflected_in_ui(page: Page):

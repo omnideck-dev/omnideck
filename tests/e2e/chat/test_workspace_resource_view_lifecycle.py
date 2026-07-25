@@ -68,17 +68,38 @@ def test_refresh_restores_the_current_execution_view(page: Page):
     chat.send(bash(f'echo "{marker}"')).wait_streaming()
     expect(page.get_by_test_id("view-tab-terminal")).to_be_visible()
 
+    # Seeing the React tree commit does not guarantee its following persistence
+    # effect has written localStorage. Wait for the actual restore precondition
+    # so this test measures restoration instead of racing the snapshot write.
+    page.wait_for_function(
+        """() => {
+            const raw = localStorage.getItem('omnideck_desktop_window_v1');
+            if (!raw) return false;
+            try {
+                return JSON.parse(raw).layout.views.some(
+                    (view) => view.id.endsWith(':root:terminal')
+                );
+            } catch {
+                return false;
+            }
+        }"""
+    )
     page.reload()
 
-    terminal_tab = page.get_by_test_id("view-tab-terminal")
+    desktop = DesktopLayout(page)
+    # `testid` is runtime-only and deliberately absent from the durable View
+    # core. Assert the user-facing tab identity and stable resource metadata
+    # rather than coupling restoration to that convenience selector.
+    terminal_tab = desktop.tab_group("right").locator(
+        '[role="tab"][title="Terminal"]'
+    )
     expect(terminal_tab).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible(timeout=10_000)
-    terminal_tab.click()
-    expect(
-        page.locator(
-            "[data-view-resource-id='terminal'][data-active='true']"
-        )
-    ).to_contain_text(marker)
+    terminal_view = page.locator(
+        "[data-view-resource-id='terminal'][data-active='true']"
+    )
+    expect(terminal_view).to_be_visible()
+    expect(terminal_view).to_contain_text(marker)
 
 
 def test_floating_workspace_views_close_with_their_conversation(page: Page):
