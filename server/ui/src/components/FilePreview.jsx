@@ -24,7 +24,7 @@ function getFileIcon(contentType, filename) {
 
 /**
  * A file preview rendered inside its stable artifact tab.
- * Full-screen presentation belongs to the desktop window manager.
+ * Full-screen presentation belongs to Desktop Layout.
  */
 export default function FilePreview({ item }) {
     const {

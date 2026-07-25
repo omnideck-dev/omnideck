@@ -28,11 +28,11 @@ export default function AgentNetworkView({
     onSelectAgent,
     onNudge,
     onPreview,
-    onOpenExecutionView,
+    onOpenWorkspaceResource,
     nudgeDisabled = false,
 }) {
     const { agents } = useAgentState();
-    const { byAgentId: executionByAgentId } = useWorkspaceState();
+    const { byAgentId: workspaceByAgentId } = useWorkspaceState();
     const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
     const selectedActivity = useMemo(() => {
         if (!selectedAgent || selectedAgent.parentId !== null) {
@@ -40,14 +40,14 @@ export default function AgentNetworkView({
         }
         return projectAgentActivity(turns, selectedAgent.id);
     }, [selectedAgent, turns]);
-    const selectedExecution = selectedAgent
-        ? executionByAgentId[selectedAgent.id]
+    const selectedWorkspace = selectedAgent
+        ? workspaceByAgentId[selectedAgent.id]
         : null;
     const availableViews = [];
-    if (Object.keys(selectedExecution?.browserTabs || {}).length > 0) {
+    if (Object.keys(selectedWorkspace?.browserTabs || {}).length > 0) {
         availableViews.push('browser');
     }
-    if ((selectedExecution?.terminalLines || []).length > 0) {
+    if ((selectedWorkspace?.terminalLines || []).length > 0) {
         availableViews.push('terminal');
     }
     const breadcrumb = selectedAgent ? buildBreadcrumb(agents, selectedAgent.id) : [];
@@ -119,7 +119,7 @@ export default function AgentNetworkView({
                         onPreview={onPreview}
                         availableViews={availableViews}
                         onOpenView={(resourceId) => (
-                            onOpenExecutionView?.(selectedAgent.id, resourceId)
+                            onOpenWorkspaceResource?.(selectedAgent.id, resourceId)
                         )}
                         nudgeDisabled={nudgeDisabled}
                     />

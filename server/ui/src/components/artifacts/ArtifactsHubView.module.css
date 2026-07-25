@@ -29,6 +29,12 @@
     font-weight: 400;
 }
 
+.filter {
+    flex: 0 0 auto;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
 /* grid / table toggle */
 .seg {
     display: inline-flex;

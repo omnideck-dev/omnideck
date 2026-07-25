@@ -34,12 +34,18 @@ export default function ChatMessages({
                     <StarterPrompts onSelect={onStarterSelect} />
                 ) : (
                     <>
-                        {turnList.map((turn) => {
+                        {turnList.map((turn, index) => {
                             const agent = turn.agentId ? agents[turn.agentId] : null;
                             const spawnedAgents = (agent?.childIds || [])
                                 .map((id) => agents[id])
                                 .filter(Boolean);
-                            const streaming = agent?.status === 'running';
+                            // Root agent identity can be reused across turns.
+                            // Its global running status describes only the
+                            // current turn; applying it to historical turns
+                            // resurrects stale "Working…" rows above the
+                            // latest user message.
+                            const streaming = index === turnList.length - 1
+                                && agent?.status === 'running';
                             return (
                                 <Turn
                                     key={turn.id}

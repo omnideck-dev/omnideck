@@ -10,7 +10,7 @@ import useCustomAppsCatalog from './useCustomAppsCatalog.js';
 
 const CustomAppsContext = createContext(null);
 
-/** Owns the shared Custom App catalog; open app instances belong to surfaces. */
+/** Owns the shared Custom App catalog; open app instances belong to Views. */
 export function CustomAppsProvider({ children }) {
     const { features, featuresLoaded } = useAppData();
     const enabled = Boolean(features.custom_apps);

@@ -19,7 +19,7 @@ pytest_plugins = ["tests.e2e._setup"]
 
 # Fail fast while iterating. Playwright defaults to 30s for actions like
 # click/scroll_into_view; with the in-process fake there's no model latency, so
-# a locator that never resolves means a real failure — surface it in seconds
+# a locator that never resolves means a real failure — view it in seconds
 # instead of hanging. Tests that need longer pass an explicit timeout.
 DEFAULT_TIMEOUT_MS = 5_000
 

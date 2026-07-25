@@ -1,4 +1,4 @@
-"""POM for the browser takeover control plane inside its stable surface."""
+"""POM for the browser takeover control plane inside its stable view."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ class BrowserControl:
 
     # ── elements ────────────────────────────────────────────────────
     @property
-    def surface(self) -> Locator:
-        return self.root.get_by_test_id("browser-surface")
+    def view(self) -> Locator:
+        return self.root.get_by_test_id("browser-viewport")
 
     @property
     def frame(self) -> Locator:
@@ -41,11 +41,13 @@ class BrowserControl:
 
     @property
     def fullscreen_btn(self) -> Locator:
-        host = self.root.locator("xpath=ancestor::*[@data-surface-id][1]")
-        pane_id = host.get_attribute("data-pane-id")
-        return self.page.get_by_test_id(
-            f"desktop-pane-{pane_id}-tab-bar"
-        ).locator("[data-testid^='maximize-surface-']")
+        host = self.root.locator("xpath=ancestor::*[@data-view-id][1]")
+        tab_group_id = host.get_attribute("data-tab-group-id")
+        tab_bar = self.page.get_by_test_id(
+            f"desktop-tab-group-{tab_group_id}-tab-bar"
+        )
+        tab_bar.locator("[data-testid^='view-tab-actions-']").click()
+        return self.page.locator("[data-testid^='maximize-view-']")
 
     @property
     def tab_rail(self) -> Locator:
@@ -86,23 +88,23 @@ class BrowserControl:
         self.address.press("Enter")
         return self
 
-    def click_surface(self) -> "BrowserControl":
-        """Forward a click at the surface centre to the remote page."""
-        self.surface.click()
+    def click_view(self) -> "BrowserControl":
+        """Forward a click at the view centre to the remote page."""
+        self.view.click()
         return self
 
     def type_text(self, text: str) -> "BrowserControl":
-        """Focus the surface and forward each character to the remote page."""
-        self.surface.click()
+        """Focus the view and forward each character to the remote page."""
+        self.view.click()
         self.page.keyboard.type(text)
         return self
 
     def press(self, key: str) -> "BrowserControl":
-        self.surface.focus()
+        self.view.focus()
         self.page.keyboard.press(key)
         return self
 
     def scroll(self, dy: int = 600) -> "BrowserControl":
-        self.surface.hover()
+        self.view.hover()
         self.page.mouse.wheel(0, dy)
         return self

@@ -19,12 +19,24 @@ test('Escape dismisses the modal', () => {
 
 test('clicking the scrim dismisses, clicking the panel does not', () => {
     const onClose = vi.fn();
-    const { container } = render(<Modal testId="m" onClose={onClose}>x</Modal>);
+    render(<Modal testId="m" onClose={onClose}>x</Modal>);
+    const panel = screen.getByTestId('m');
     fireEvent.click(screen.getByTestId('m'));
     expect(onClose).not.toHaveBeenCalled();
-    // The scrim is the panel's parent; clicking it closes.
-    fireEvent.click(container.firstChild);
+    // The portaled scrim is the panel's parent; clicking it closes.
+    fireEvent.click(panel.parentElement);
     expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('portals outside a clipping render container', () => {
+    const { container } = render(
+        <div style={{ overflow: 'hidden' }}>
+            <Modal testId="m">x</Modal>
+        </div>,
+    );
+
+    expect(container).not.toContainElement(screen.getByTestId('m'));
+    expect(document.body).toContainElement(screen.getByTestId('m'));
 });
 
 test('width prop overrides the panel width', () => {

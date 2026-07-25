@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import styles from './SplitHandle.module.css';
 
 /**
- * A draggable vertical divider between two sibling panes.
+ * A draggable vertical divider between two sibling tab groups.
  *
  * @param {Object} props
  * @param {function(number): void} props.onDrag - Callback that receives the new split percentage (20-80)
@@ -71,7 +71,7 @@ export default function SplitHandle({ onDrag, className = '' }) {
             className={`${styles.splitHandle} ${className}`.trim()}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize panes"
+            aria-label="Resize tab groups"
         />
     );
 }

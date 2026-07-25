@@ -16,6 +16,7 @@ import { useAppEffectDispatch } from '../../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
 
 const ConversationSessionStateContext = createContext(null);
+const ActiveConversationIdContext = createContext(undefined);
 const ConversationSessionCommandsContext = createContext(null);
 
 export function ConversationSessionProvider({ children }) {
@@ -70,7 +71,7 @@ export function ConversationSessionProvider({ children }) {
             && previousConversationId !== conversationId
         ) {
             appEffectDispatch({
-                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
                 conversationId: previousConversationId,
             });
         }
@@ -93,7 +94,7 @@ export function ConversationSessionProvider({ children }) {
     const newConversation = useCallback((options) => {
         if (session.activeConversationId) {
             appEffectDispatch({
-                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+                type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
                 conversationId: session.activeConversationId,
             });
         }
@@ -110,6 +111,32 @@ export function ConversationSessionProvider({ children }) {
         session.newConversation,
         workspaceDispatch,
     ]);
+
+    /**
+     * Append externally supplied material without exposing the composer's
+     * storage or formatting rules to the source feature.
+     */
+    const composeFromSource = useCallback(({
+        title = 'Source',
+        text = '',
+        context = null,
+    }) => {
+        let addition = text.trim();
+        if (context !== null && context !== undefined) {
+            try {
+                const serialized = JSON.stringify(context, null, 2)
+                    .slice(0, 12000);
+                addition += `${addition ? '\n\n' : ''}`
+                    + `Context from ${title}:\n${serialized}`;
+            } catch {
+                // Optional structured context must not discard authored text.
+            }
+        }
+        if (!addition) return;
+        session.setDraft((current) => (
+            current.trim() ? `${current}\n\n${addition}` : addition
+        ));
+    }, [session.setDraft]);
 
     const state = useMemo(() => ({
         activeConversationId: session.activeConversationId,
@@ -136,8 +163,10 @@ export function ConversationSessionProvider({ children }) {
         loadConversation,
         newConversation,
         setDraft: session.setDraft,
+        composeFromSource,
         setConversationProfileId,
     }), [
+        composeFromSource,
         loadConversation,
         newConversation,
         sendMessage,
@@ -147,12 +176,27 @@ export function ConversationSessionProvider({ children }) {
     ]);
 
     return (
-        <ConversationSessionStateContext.Provider value={state}>
-            <ConversationSessionCommandsContext.Provider value={commands}>
-                {children}
-            </ConversationSessionCommandsContext.Provider>
-        </ConversationSessionStateContext.Provider>
+        <ActiveConversationIdContext.Provider
+            value={session.activeConversationId}
+        >
+            <ConversationSessionStateContext.Provider value={state}>
+                <ConversationSessionCommandsContext.Provider value={commands}>
+                    {children}
+                </ConversationSessionCommandsContext.Provider>
+            </ConversationSessionStateContext.Provider>
+        </ActiveConversationIdContext.Provider>
     );
+}
+
+/** Subscribe to conversation identity without receiving streamed turn state. */
+export function useActiveConversationId() {
+    const activeConversationId = useContext(ActiveConversationIdContext);
+    if (activeConversationId === undefined) {
+        throw new Error(
+            'useActiveConversationId must be used within ConversationSessionProvider',
+        );
+    }
+    return activeConversationId;
 }
 
 export function useConversationSessionState() {

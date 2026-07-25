@@ -11,7 +11,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._protocol import call_tool, open_url
-from tests.e2e.pages import BrowserControl, ChatView
+from tests.e2e.pages import BrowserControl, ChatView, DesktopLayout
 from tests.e2e.preview._browser_fixture import fixture_url, install_fixture, open_fixture
 
 
@@ -29,8 +29,8 @@ def test_browser_snapshot_appears(page: Page):
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
     expect(
-        page.locator("[data-surface-resource-id='browser']")
-    ).to_have_attribute("data-pane-id", "right")
+        page.locator("[data-view-resource-id='browser']")
+    ).to_have_attribute("data-tab-group-id", "right")
 
 
 def test_agent_close_tab_reflected_in_ui(page: Page):
@@ -53,7 +53,7 @@ def test_agent_close_tab_reflected_in_ui(page: Page):
 
 
 def test_agent_close_last_tab_clears_content_but_keeps_desktop_tab(page: Page):
-    """Remote tab closure clears Browser data, not user-owned window placement."""
+    """Remote tab closure clears Browser data, not user-owned View placement."""
     chat = ChatView(page).goto().new_conversation()
     chat.send(open_fixture("idle")).wait_streaming(timeout=30_000)
     chat.preview.browser_tab.wait_for(state="visible", timeout=10_000)
@@ -65,5 +65,5 @@ def test_agent_close_last_tab_clears_content_but_keeps_desktop_tab(page: Page):
     expect(page.get_by_test_id("browser-preview")).not_to_be_visible()
     expect(chat.preview.browser_tab).to_be_visible()
 
-    page.get_by_test_id("close-surface-tab-browser").click()
+    DesktopLayout(page).choose_tab_action("browser", "close")
     expect(chat.preview.browser_tab).to_have_count(0)

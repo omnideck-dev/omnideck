@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 
 import SplitHandle from '../SplitHandle.jsx';
 
-test('reports drag position relative to the full pane container', () => {
+test('reports drag position relative to the full tab-group container', () => {
     const onDrag = vi.fn();
     render(
         <div data-testid="layout">
@@ -16,7 +16,10 @@ test('reports drag position relative to the full pane container', () => {
         width: 1000,
     });
 
-    fireEvent.mouseDown(screen.getByRole('separator', { name: 'Resize panes' }));
+    fireEvent.mouseDown(screen.getByRole(
+        'separator',
+        { name: 'Resize tab groups' },
+    ));
     fireEvent.mouseMove(document, { clientX: 750 });
     fireEvent.mouseUp(document);
 

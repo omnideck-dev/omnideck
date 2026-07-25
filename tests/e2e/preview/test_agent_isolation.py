@@ -1,7 +1,7 @@
 """E2E coverage for agent-bound Browser, Terminal, and artifact output.
 
-Sub-agent execution views are discoverable from Agent Activity but do not open
-tabs by themselves. Once the user opens one, its surface stays bound to the
+Sub-agent workspace resources are discoverable from Agent Activity but do not open
+tabs by themselves. Once the user opens one, its view stays bound to the
 producing agent while the user moves between Chat, Network, and other agents.
 Artifacts remain manual, durable tabs.
 """
@@ -79,10 +79,10 @@ def test_agent_terminal_opens_explicitly_and_keeps_agent_identity(
     activity = _open_agent(isolation_page, "ALPHA").open_terminal()
 
     expect(activity.execution_tab("terminal")).to_be_visible()
-    surface = activity.execution_surface("terminal")
-    expect(surface).to_be_visible()
-    expect(surface).to_contain_text("agent-one")
-    expect(surface).not_to_contain_text("agent-two")
+    view = activity.execution_view("terminal")
+    expect(view).to_be_visible()
+    expect(view).to_contain_text("agent-one")
+    expect(view).not_to_contain_text("agent-two")
 
 
 def test_agent_browser_opens_explicitly(isolation_page: Page):
@@ -90,21 +90,21 @@ def test_agent_browser_opens_explicitly(isolation_page: Page):
     activity = _open_agent(isolation_page, "ALPHA").open_browser()
 
     expect(activity.execution_tab("browser")).to_be_visible(timeout=10_000)
-    expect(activity.execution_surface("browser")).to_be_visible()
+    expect(activity.execution_view("browser")).to_be_visible()
     BrowserControl(isolation_page).wait_loaded(timeout=15_000)
 
 
 def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):
     """An activity file output opens only on Preview and becomes an artifact tab."""
     activity = _open_agent(isolation_page, "ALPHA")
-    expect(isolation_page.get_by_test_id("surface-tab-artifact:one.txt")).to_have_count(0)
+    expect(isolation_page.get_by_test_id("view-tab-artifact:one.txt")).to_have_count(0)
 
     activity.open_first_file_preview()
-    tab = isolation_page.get_by_test_id("surface-tab-artifact:one.txt")
+    tab = isolation_page.get_by_test_id("view-tab-artifact:one.txt")
     expect(tab).to_be_visible()
     expect(
         isolation_page.locator(
-            "[data-surface-kind='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-active='true']"
         )
     ).to_contain_text("hello from agent one")
 
@@ -113,7 +113,7 @@ def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):
     activity.open_first_file_preview()
     expect(
         isolation_page.locator(
-            "[data-surface-kind='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-active='true']"
         )
     ).to_contain_text("hello from agent two")
 
@@ -130,14 +130,14 @@ def test_open_agent_views_remain_bound_while_returning_to_chat(
 
     expect(
         isolation_page.locator(
-            "[data-surface-kind='conversation-execution']"
-            f"[data-surface-owner-id='{alpha_id}']"
+            "[data-view-type='workspace-resource']"
+            f"[data-view-owner-id='{alpha_id}']"
         )
     ).to_have_count(2)
     expect(
         isolation_page.locator(
-            "[data-surface-kind='conversation-execution']"
-            f"[data-surface-owner-id='{bravo_id}']"
+            "[data-view-type='workspace-resource']"
+            f"[data-view-owner-id='{bravo_id}']"
         )
     ).to_have_count(1)
     expect(isolation_page.get_by_test_id("chat-title-bar")).to_be_visible()

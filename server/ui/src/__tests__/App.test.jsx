@@ -1,7 +1,7 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppDataProvider } from '../contexts/AppData.jsx';
-import { DESKTOP_WINDOW_STORAGE_KEY } from '../features/desktop/desktopWindowPersistence.js';
+import { DESKTOP_LAYOUT_STORAGE_KEY } from '../features/desktop/desktopLayoutPersistence.js';
 
 // Minimal 1x1 transparent PNG
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
@@ -55,20 +55,20 @@ vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
         onClose,
         onOpenOverview,
         onSelectAgent,
-        onOpenExecutionView,
+        onOpenWorkspaceResource,
     }) => selectedAgentId ? (
         <div data-testid="agent-activity-view">
             Activity View
             <button data-testid="activity-back" onClick={onOpenOverview}>Back</button>
             <button
                 data-testid="activity-open-browser"
-                onClick={() => onOpenExecutionView(selectedAgentId, 'browser')}
+                onClick={() => onOpenWorkspaceResource(selectedAgentId, 'browser')}
             >
                 Browser
             </button>
             <button
                 data-testid="activity-open-terminal"
-                onClick={() => onOpenExecutionView(selectedAgentId, 'terminal')}
+                onClick={() => onOpenWorkspaceResource(selectedAgentId, 'terminal')}
             >
                 Terminal
             </button>
@@ -89,7 +89,7 @@ vi.mock('../components/Sidebar.jsx', async () => {
     } = await import('../features/navigation/DesktopNavigation.jsx');
     return {
         default: ({ onNewConversation, onLoadConversation }) => {
-            const { destination } = useDesktopNavigationState();
+            const { navigationTarget } = useDesktopNavigationState();
             const navigation = useDesktopNavigationCommands();
             const activeItem = [
                 'settings',
@@ -97,8 +97,8 @@ vi.mock('../components/Sidebar.jsx', async () => {
                 'agents',
                 'artifacts',
                 'apps',
-            ].includes(destination.kind)
-                ? destination.kind
+            ].includes(navigationTarget.kind)
+                ? navigationTarget.kind
                 : 'chat';
             return (
                 <div data-testid="sidebar">
@@ -315,7 +315,7 @@ async function renderApp() {
                 && ['UPDATE_BROWSER_SNAPSHOT', 'UPDATE_TERMINAL'].includes(action.type)
             ) {
                 capturedAppEffectDispatch({
-                    type: 'conversation-execution/root-view-available',
+                    type: 'workspace/root-resource-available',
                     conversationId: streamMock.value.activeConversationId,
                     agentId: action.agentId,
                     agentName: 'omnideck',
@@ -352,21 +352,33 @@ function startSubAgent(dispatch, id, parentId, { name = 'browser_agent' } = {}) 
     });
 }
 
-function surfaceHostFor(testId) {
-    return screen.getByTestId(testId).closest('[data-surface-id]');
+function viewHostFor(testId) {
+    return screen.getByTestId(testId).closest('[data-view-id]');
 }
 
-function expectSurfaceActive(testId, paneId = null) {
-    const host = surfaceHostFor(testId);
+function expectViewActive(testId, tabGroupId = null) {
+    const host = viewHostFor(testId);
     expect(host).toHaveAttribute('data-active', 'true');
-    if (paneId) expect(host).toHaveAttribute('data-pane-id', paneId);
+    if (tabGroupId) {
+        expect(host).toHaveAttribute('data-tab-group-id', tabGroupId);
+    }
     return host;
 }
 
-function expectSurfaceInactive(testId) {
-    const host = surfaceHostFor(testId);
+function expectViewInactive(testId) {
+    const host = viewHostFor(testId);
     expect(host).toHaveAttribute('data-active', 'false');
     return host;
+}
+
+function executeTabAction(viewTestId, actionTestId) {
+    fireEvent.click(screen.getByTestId(`view-tab-actions-${viewTestId}`));
+    fireEvent.click(screen.getByTestId(actionTestId));
+}
+
+function closeTabFromMenu(viewTestId) {
+    fireEvent.click(screen.getByTestId(`view-tab-actions-${viewTestId}`));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close tab' }));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -377,7 +389,7 @@ describe('App view transitions', () => {
         capturedWorkspaceDispatch = null;
         capturedAppEffectDispatch = null;
         streamMock.value = streamMock.makeDefault();
-        localStorage.removeItem(DESKTOP_WINDOW_STORAGE_KEY);
+        localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
         // Mock the fetches App's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -436,15 +448,13 @@ describe('App view transitions', () => {
         it('can reopen the active conversation after its tab is closed', async () => {
             await renderApp();
 
-            fireEvent.click(screen.getByTestId(
-                'close-surface-tab-destination:conversation',
-            ));
+            closeTabFromMenu('destination:conversation');
             expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
 
             await act(async () => fireEvent.click(
                 screen.getByTestId('load-conversation'),
             ));
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('ignores legacy Home metadata and starts on Chat', async () => {
@@ -480,13 +490,13 @@ describe('App view transitions', () => {
             });
 
             await renderApp();
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('chat-panel', 'left');
             expect(screen.queryByTestId('custom-app-frame')).not.toBeInTheDocument();
-            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
         });
     });
 
-    describe('desktop Custom App surfaces', () => {
+    describe('desktop Custom App views', () => {
         beforeEach(() => {
             globalThis.fetch = vi.fn((url) => {
                 if (url === '/api/settings') {
@@ -525,34 +535,34 @@ describe('App view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
             const frame = screen.getByTestId('custom-app-frame');
-            const leftHost = expectSurfaceActive('custom-app-frame', 'left');
-            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
+            const leftHost = expectViewActive('custom-app-frame', 'left');
+            expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
 
-            fireEvent.click(screen.getByTestId(
-                'move-surface-custom-app:text-lab-right',
-            ));
-            const rightHost = expectSurfaceActive('custom-app-frame', 'right');
+            executeTabAction('custom-app:text-lab',
+                'move-view-custom-app:text-lab-right',
+            );
+            const rightHost = expectViewActive('custom-app-frame', 'right');
             expect(rightHost).toBe(leftHost);
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
-            expectSurfaceActive('apps-view', 'left');
-            expect(screen.getByTestId('desktop-window-layout')).toHaveAttribute('data-split', 'true');
+            expectViewActive('apps-view', 'left');
+            expect(screen.getByTestId('desktop-layout')).toHaveAttribute('data-split', 'true');
 
-            fireEvent.click(screen.getByTestId(
-                'maximize-surface-custom-app:text-lab',
-            ));
+            executeTabAction('custom-app:text-lab',
+                'maximize-view-custom-app:text-lab',
+            );
             expect(rightHost).toHaveAttribute('data-maximized', 'true');
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
             fireEvent.click(screen.getByTestId(
-                'restore-surface-custom-app:text-lab',
+                'restore-view-custom-app:text-lab',
             ));
             expect(rightHost).toHaveAttribute('data-maximized', 'false');
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expectSurfaceActive('custom-app-frame', 'right');
+            expectViewActive('custom-app-frame', 'right');
 
-            fireEvent.click(screen.getByTestId('close-surface-tab-custom-app:text-lab'));
-            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
-            expectSurfaceActive('chat-panel', 'left');
+            closeTabFromMenu('custom-app:text-lab');
+            expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
+            expectViewActive('chat-panel', 'left');
         });
 
         it('opens the current chat and seeds its composer from explicit app context', async () => {
@@ -563,64 +573,62 @@ describe('App view transitions', () => {
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
             fireEvent.click(screen.getByTestId('mock-workspace-compose'));
 
-            expectSurfaceInactive('custom-app-frame');
-            expectSurfaceActive('chat-panel', 'left');
-            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
+            expectViewInactive('custom-app-frame');
+            expectViewActive('chat-panel', 'left');
+            expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
             expect(setDraft).toHaveBeenCalledOnce();
             const updateDraft = setDraft.mock.calls[0][0];
             expect(updateDraft('Existing draft')).toContain('Context from Text Lab');
             expect(updateDraft('')).toContain('"Draft"');
         });
 
-        it('moves an app from the right pane back to the left pane', async () => {
+        it('moves an app from the right tab group back to the left tab group', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
-            fireEvent.click(screen.getByTestId(
-                'move-surface-custom-app:text-lab-right',
-            ));
+            executeTabAction('custom-app:text-lab',
+                'move-view-custom-app:text-lab-right',
+            );
 
             const frame = screen.getByTestId('custom-app-frame');
-            const rightHost = expectSurfaceActive('custom-app-frame', 'right');
-            fireEvent.click(screen.getByTestId(
-                'move-surface-custom-app:text-lab-left',
-            ));
-            const leftHost = expectSurfaceActive('custom-app-frame', 'left');
+            const rightHost = expectViewActive('custom-app-frame', 'right');
+            executeTabAction('custom-app:text-lab',
+                'move-view-custom-app:text-lab-left',
+            );
+            const leftHost = expectViewActive('custom-app-frame', 'left');
             expect(leftHost).toBe(rightHost);
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
-            expect(screen.queryByTestId('desktop-pane-right')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
 
-            fireEvent.click(screen.getByTestId(
-                'close-surface-tab-custom-app:text-lab',
-            ));
+            closeTabFromMenu('custom-app:text-lab');
             expect(screen.queryByTestId('custom-app-frame')).not.toBeInTheDocument();
-            expectSurfaceActive('apps-view', 'left');
+            expectViewActive('apps-view', 'left');
         });
 
-        it('floats a tab and docks the same mounted app in a pane again', async () => {
+        it('floats a tab and docks the same mounted app in a tab group again', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
             const frame = screen.getByTestId('custom-app-frame');
-            const surfaceHost = surfaceHostFor('custom-app-frame');
-            fireEvent.click(screen.getByTestId(
-                'float-surface-custom-app:text-lab',
-            ));
+            const viewHost = viewHostFor('custom-app-frame');
+            executeTabAction('custom-app:text-lab',
+                'float-view-custom-app:text-lab',
+            );
 
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
-            expect(surfaceHostFor('custom-app-frame')).toBe(surfaceHost);
-            expect(surfaceHost).toHaveAttribute('data-floating', 'true');
-            expect(surfaceHost).toHaveAttribute('data-pane-id', 'floating');
-            expectSurfaceActive('apps-view', 'left');
+            expect(viewHostFor('custom-app-frame')).toBe(viewHost);
+            expect(viewHost).toHaveAttribute('data-floating', 'true');
+            expect(viewHost).toHaveAttribute('data-tab-group-id', 'floating');
+            expectViewActive('apps-view', 'left');
 
             fireEvent.click(screen.getByTestId(
-                'dock-surface-custom-app:text-lab-right',
+                'dock-view-custom-app:text-lab-right',
             ));
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
-            expect(surfaceHostFor('custom-app-frame')).toBe(surfaceHost);
-            expect(surfaceHost).toHaveAttribute('data-floating', 'false');
-            expectSurfaceActive('custom-app-frame', 'right');
+            expect(viewHostFor('custom-app-frame')).toBe(viewHost);
+            expect(viewHost).toHaveAttribute('data-floating', 'false');
+            expectViewActive('custom-app-frame', 'right');
         });
 
         it('keeps the Custom App mounted while another tab is selected', async () => {
@@ -632,35 +640,35 @@ describe('App view transitions', () => {
             await act(async () => {
                 fireEvent.click(screen.getByTestId('open-settings'));
             });
-            expectSurfaceActive('settings-page', 'left');
-            expectSurfaceInactive('custom-app-frame');
+            expectViewActive('settings-page', 'left');
+            expectViewInactive('custom-app-frame');
             expect(frame).toBeInTheDocument();
             expect(frame).toHaveAttribute('data-active', 'false');
 
-            fireEvent.click(screen.getByTestId('surface-tab-custom-app:text-lab'));
-            expectSurfaceActive('custom-app-frame', 'left');
+            fireEvent.click(screen.getByTestId('view-tab-custom-app:text-lab'));
+            expectViewActive('custom-app-frame', 'left');
             expect(screen.getByTestId('custom-app-frame')).toBe(frame);
         });
 
-        it('restores open tabs, pane placement, and active selections after remount', async () => {
+        it('restores open tabs, tab group placement, and active selections after remount', async () => {
             const loadConversation = vi.fn(() => true);
             streamMock.value = { ...streamMock.makeDefault(), loadConversation };
             const firstRender = await renderApp();
 
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
-            fireEvent.click(screen.getByTestId(
-                'move-surface-custom-app:text-lab-right',
-            ));
+            executeTabAction('custom-app:text-lab',
+                'move-view-custom-app:text-lab-right',
+            );
             await act(async () => {
                 fireEvent.click(screen.getByTestId('open-settings'));
             });
 
-            expectSurfaceActive('settings-page', 'left');
-            expectSurfaceActive('custom-app-frame', 'right');
+            expectViewActive('settings-page', 'left');
+            expectViewActive('custom-app-frame', 'right');
             expect(
-                JSON.parse(localStorage.getItem(DESKTOP_WINDOW_STORAGE_KEY))
-                    .window.panes.left.activeSurfaceId,
+                JSON.parse(localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY))
+                    .layout.tabGroups.left.activeViewId,
             ).toBe('destination:settings');
             firstRender.unmount();
 
@@ -668,30 +676,30 @@ describe('App view transitions', () => {
 
             expect(loadConversation).toHaveBeenCalledWith('conversation-1');
             expect(screen.getByTestId(
-                'surface-tab-destination:conversation',
+                'view-tab-destination:conversation',
             )).toBeInTheDocument();
             expect(screen.getByTestId(
-                'surface-tab-destination:apps',
+                'view-tab-destination:apps',
             )).toBeInTheDocument();
-            expectSurfaceActive('settings-page', 'left');
-            expectSurfaceActive('custom-app-frame', 'right');
+            expectViewActive('settings-page', 'left');
+            expectViewActive('custom-app-frame', 'right');
         });
 
-        it('keeps a right-pane Custom App in place when loading a conversation', async () => {
+        it('keeps a right-tab group Custom App in place when loading a conversation', async () => {
             const loadConversation = vi.fn(() => true);
             streamMock.value = { ...streamMock.makeDefault(), loadConversation };
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
-            fireEvent.click(screen.getByTestId(
-                'move-surface-custom-app:text-lab-right',
-            ));
+            executeTabAction('custom-app:text-lab',
+                'move-view-custom-app:text-lab-right',
+            );
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
 
             expect(loadConversation).toHaveBeenCalledWith('conv-1');
-            expectSurfaceActive('custom-app-frame', 'right');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('custom-app-frame', 'right');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('does not leave Apps highlighted after entering an app workspace', async () => {
@@ -713,21 +721,21 @@ describe('App view transitions', () => {
             fireEvent.click(screen.getByTestId('mock-open-notes'));
 
             expect(screen.getByTestId(
-                'surface-tab-custom-app:text-lab',
+                'view-tab-custom-app:text-lab',
             )).toBeInTheDocument();
             expect(screen.getByTestId(
-                'surface-tab-custom-app:notes-lab',
+                'view-tab-custom-app:notes-lab',
             )).toBeInTheDocument();
             expect(screen.getAllByTestId('custom-app-frame')).toHaveLength(2);
 
-            const textSurface = screen.getByTestId(
-                'desktop-surface-custom-app:text-lab',
+            const textView = screen.getByTestId(
+                'desktop-view-custom-app:text-lab',
             );
-            const notesSurface = screen.getByTestId(
-                'desktop-surface-custom-app:notes-lab',
+            const notesView = screen.getByTestId(
+                'desktop-view-custom-app:notes-lab',
             );
-            expect(textSurface).toHaveAttribute('data-active', 'false');
-            expect(notesSurface).toHaveAttribute('data-active', 'true');
+            expect(textView).toHaveAttribute('data-active', 'false');
+            expect(notesView).toHaveAttribute('data-active', 'true');
         });
 
         it('applies tab context-menu close commands without first selecting the tab', async () => {
@@ -738,10 +746,10 @@ describe('App view transitions', () => {
             fireEvent.click(screen.getByTestId('mock-open-notes'));
 
             const textTab = screen.getByTestId(
-                'surface-tab-custom-app:text-lab',
+                'view-tab-custom-app:text-lab',
             );
             expect(screen.getByTestId(
-                'desktop-surface-custom-app:text-lab',
+                'desktop-view-custom-app:text-lab',
             )).toHaveAttribute('data-active', 'false');
 
             fireEvent.contextMenu(textTab);
@@ -751,9 +759,9 @@ describe('App view transitions', () => {
             ));
 
             expect(screen.queryByTestId(
-                'desktop-surface-custom-app:notes-lab',
+                'desktop-view-custom-app:notes-lab',
             )).not.toBeInTheDocument();
-            expectSurfaceActive('custom-app-frame', 'left');
+            expectViewActive('custom-app-frame', 'left');
 
             fireEvent.contextMenu(textTab);
             fireEvent.click(screen.getByRole(
@@ -762,20 +770,20 @@ describe('App view transitions', () => {
             ));
 
             expect(screen.getByTestId(
-                'surface-tab-custom-app:text-lab',
+                'view-tab-custom-app:text-lab',
             )).toBeInTheDocument();
             expect(screen.queryByTestId(
-                'surface-tab-destination:conversation',
+                'view-tab-destination:conversation',
             )).not.toBeInTheDocument();
             expect(screen.queryByTestId(
-                'surface-tab-destination:apps',
+                'view-tab-destination:apps',
             )).not.toBeInTheDocument();
         });
     });
 
-    // ── Conversation execution tabs ─────────────────────────────────
+    // ── Workspace resource tabs ─────────────────────────────────────
 
-    describe('conversation execution tabs', () => {
+    describe('workspace resource tabs', () => {
         it('shows browser preview alongside chat when snapshot arrives', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
@@ -789,7 +797,7 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('browser-preview')).toBeInTheDocument();
         });
 
-        it('moves an execution tab between the same left and right pane stacks', async () => {
+        it('moves a workspace resource between the same tab groups', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -804,17 +812,17 @@ describe('App view transitions', () => {
             });
 
             const browser = screen.getByTestId('browser-preview');
-            const surfaceHost = expectSurfaceActive('browser-preview', 'right');
-            fireEvent.click(screen.getByTestId('move-surface-browser-left'));
-            expectSurfaceActive('browser-preview', 'left');
-            expect(surfaceHostFor('browser-preview')).toBe(surfaceHost);
+            const viewHost = expectViewActive('browser-preview', 'right');
+            executeTabAction('browser', 'move-view-browser-left');
+            expectViewActive('browser-preview', 'left');
+            expect(viewHostFor('browser-preview')).toBe(viewHost);
             expect(screen.getByTestId('browser-preview')).toBe(browser);
-            expectSurfaceInactive('chat-panel');
+            expectViewInactive('chat-panel');
 
-            fireEvent.click(screen.getByTestId('move-surface-browser-right'));
-            expectSurfaceActive('browser-preview', 'right');
-            expectSurfaceActive('chat-panel', 'left');
-            expect(surfaceHostFor('browser-preview')).toBe(surfaceHost);
+            executeTabAction('browser', 'move-view-browser-right');
+            expectViewActive('browser-preview', 'right');
+            expectViewActive('chat-panel', 'left');
+            expect(viewHostFor('browser-preview')).toBe(viewHost);
             expect(screen.getByTestId('browser-preview')).toBe(browser);
         });
 
@@ -896,7 +904,7 @@ describe('App view transitions', () => {
             expect(screen.getByText('Browser: https://second.com')).toBeInTheDocument();
         });
 
-        it('closes execution tabs with Chat and does not reopen them with the conversation', async () => {
+        it('closes workspace resources with Chat and does not restore them', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -910,16 +918,14 @@ describe('App view transitions', () => {
                 },
             });
 
-            fireEvent.click(screen.getByTestId(
-                'close-surface-tab-destination:conversation',
-            ));
+            closeTabFromMenu('destination:conversation');
             expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
             expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
 
             await act(async () => fireEvent.click(
                 screen.getByTestId('load-conversation'),
             ));
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('chat-panel', 'left');
             expect(screen.queryByTestId('browser-preview')).not.toBeInTheDocument();
         });
     });
@@ -959,10 +965,10 @@ describe('App view transitions', () => {
 
             act(() => fireEvent.click(screen.getByTestId('network-close')));
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('chat-panel', 'left');
         });
 
-        it('keeps an independent execution tab open when network view is selected', async () => {
+        it('keeps an independent workspace resource open when Network is selected', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -975,11 +981,11 @@ describe('App view transitions', () => {
             startSubAgent(dispatch, 's1', 'r1');
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
 
-            expectSurfaceActive('agent-network', 'left');
-            expectSurfaceActive('browser-preview', 'right');
+            expectViewActive('agent-network', 'left');
+            expectViewActive('browser-preview', 'right');
         });
 
-        it('keeps the execution tab active when network view is closed', async () => {
+        it('keeps the workspace resource active when Network is closed', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
             dispatch({
@@ -990,11 +996,11 @@ describe('App view transitions', () => {
 
             startSubAgent(dispatch, 's1', 'r1');
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            expectSurfaceActive('browser-preview', 'right');
+            expectViewActive('browser-preview', 'right');
 
             act(() => fireEvent.click(screen.getByTestId('network-close')));
-            expectSurfaceActive('browser-preview', 'right');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('browser-preview', 'right');
+            expectViewActive('chat-panel', 'left');
         });
     });
 
@@ -1040,8 +1046,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expectSurfaceInactive('settings-page');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('settings-page');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('new chat closes the routines view and returns to chat', async () => {
@@ -1050,8 +1056,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expectSurfaceInactive('routines-view');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('routines-view');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('opens the agents view from the nav and escapes it on new chat', async () => {
@@ -1060,8 +1066,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('agents-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
-            expectSurfaceInactive('agents-view');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('agents-view');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('loading a conversation closes the settings page and returns to chat', async () => {
@@ -1070,8 +1076,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expectSurfaceInactive('settings-page');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('settings-page');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('loading a conversation closes the routines view and returns to chat', async () => {
@@ -1080,8 +1086,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('routines-view')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expectSurfaceInactive('routines-view');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('routines-view');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('clicking the already-active conversation returns to chat WITHOUT re-resuming', async () => {
@@ -1099,8 +1105,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             await act(async () => fireEvent.click(screen.getByTestId('load-conversation')));
-            expectSurfaceInactive('settings-page');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('settings-page');
+            expectViewActive('chat-panel', 'left');
             expect(loadConversation).not.toHaveBeenCalled();
         });
 
@@ -1122,8 +1128,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('close-panel')));
-            expectSurfaceInactive('settings-page');
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewInactive('settings-page');
+            expectViewActive('chat-panel', 'left');
         });
 
         it('switching from settings to routines selects routines while retaining both tabs', async () => {
@@ -1132,8 +1138,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('settings-page')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('open-routines')));
-            expectSurfaceActive('routines-view', 'left');
-            expectSurfaceInactive('settings-page');
+            expectViewActive('routines-view', 'left');
+            expectViewInactive('settings-page');
         });
 
         it('opening settings from the network view hides the network', async () => {
@@ -1144,8 +1150,8 @@ describe('App view transitions', () => {
             expect(screen.getByTestId('agent-network')).toBeInTheDocument();
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
-            expectSurfaceActive('settings-page', 'left');
-            expectSurfaceInactive('agent-network');
+            expectViewActive('settings-page', 'left');
+            expectViewInactive('agent-network');
         });
 
         it('keeps a running conversation alive when switching to routines', async () => {
@@ -1189,13 +1195,13 @@ describe('App view transitions', () => {
 
             await act(async () => fireEvent.click(screen.getByTestId('new-chat')));
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
-            expectSurfaceActive('chat-panel', 'left');
+            expectViewActive('chat-panel', 'left');
         });
     });
 
-    // ── Agent-attributed execution tabs ─────────────────────────────
+    // ── Agent-attributed workspace resource tabs ───────────────────
 
-    describe('agent-attributed execution tabs', () => {
+    describe('agent-attributed workspace resource tabs', () => {
         it('keeps the root Browser open until the user opens the sub-agent Browser', async () => {
             const { dispatch } = await renderApp();
             startRoot(dispatch, 'r1');
@@ -1217,19 +1223,19 @@ describe('App view transitions', () => {
             // Selecting the sub-agent does not replace or focus its Browser.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
-            expect(screen.queryByTestId('desktop-surface-s1:browser'))
+            expect(screen.queryByTestId('desktop-view-s1:browser'))
                 .not.toBeInTheDocument();
-            expectSurfaceActive('browser-preview', 'right');
+            expectViewActive('browser-preview', 'right');
 
             // The explicit action opens a distinct, agent-bound tab.
             act(() => fireEvent.click(screen.getByTestId('activity-open-browser')));
             const subAgentBrowser = screen.getByTestId(
-                'desktop-surface-s1:browser',
+                'desktop-view-s1:browser',
             );
             expect(subAgentBrowser).toHaveAttribute('data-active', 'true');
-            expect(subAgentBrowser).toHaveAttribute('data-surface-owner-id', 's1');
+            expect(subAgentBrowser).toHaveAttribute('data-view-owner-id', 's1');
             expect(subAgentBrowser).toHaveTextContent('Browser: https://sub.com');
-            expect(screen.getByTestId('desktop-surface-browser'))
+            expect(screen.getByTestId('desktop-view-browser'))
                 .toHaveAttribute('data-active', 'false');
         });
 
@@ -1252,16 +1258,16 @@ describe('App view transitions', () => {
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
             act(() => fireEvent.click(screen.getByTestId('activity-open-browser')));
-            expect(screen.getByTestId('desktop-surface-s1:browser'))
+            expect(screen.getByTestId('desktop-view-s1:browser'))
                 .toHaveAttribute('data-active', 'true');
 
             act(() => fireEvent.click(screen.getByTestId('open-settings')));
             act(() => fireEvent.click(screen.getByTestId('close-panel')));
 
-            expectSurfaceActive('chat-panel', 'left');
-            expect(screen.getByTestId('desktop-surface-s1:browser'))
+            expectViewActive('chat-panel', 'left');
+            expect(screen.getByTestId('desktop-view-s1:browser'))
                 .toHaveAttribute('data-active', 'true');
-            expect(screen.getByTestId('desktop-surface-s1:browser'))
+            expect(screen.getByTestId('desktop-view-s1:browser'))
                 .toHaveTextContent('Browser: https://sub.com');
         });
     });
@@ -1293,8 +1299,8 @@ describe('App view transitions', () => {
 
             // 4. Click indicator → network on the left; Browser remains on the right.
             act(() => fireEvent.click(screen.getByTestId('network-indicator')));
-            expectSurfaceActive('agent-network', 'left');
-            expectSurfaceActive('browser-preview', 'right');
+            expectViewActive('agent-network', 'left');
+            expectViewActive('browser-preview', 'right');
 
             // 5. Select sub-agent → detail view
             act(() => fireEvent.click(screen.getByTestId('network-select-agent')));
@@ -1308,8 +1314,8 @@ describe('App view transitions', () => {
 
             // 7. Close network → back to chat with previews
             act(() => fireEvent.click(screen.getByTestId('network-close')));
-            expectSurfaceActive('chat-panel', 'left');
-            expectSurfaceActive('browser-preview', 'right');
+            expectViewActive('chat-panel', 'left');
+            expectViewActive('browser-preview', 'right');
             expect(screen.queryByTestId('agent-network')).not.toBeInTheDocument();
         });
     });

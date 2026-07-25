@@ -20,7 +20,7 @@ describe('useArtifactNavigation', () => {
             openChat: vi.fn(),
         };
         const { result } = renderHook(() => useArtifactNavigation({
-            destination: { kind: 'artifacts' },
+            navigationTarget: { kind: 'artifacts' },
             navigation,
             openArtifact: vi.fn(),
             onError: vi.fn(),
@@ -33,7 +33,7 @@ describe('useArtifactNavigation', () => {
         });
     });
 
-    it('resolves artifact intent into a durable artifact surface', async () => {
+    it('resolves artifact intent into a durable artifact View', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => ARTIFACT,
@@ -45,7 +45,7 @@ describe('useArtifactNavigation', () => {
         const openArtifact = vi.fn();
 
         renderHook(() => useArtifactNavigation({
-            destination: {
+            navigationTarget: {
                 kind: 'chat',
                 conversationId: 'conversation-2',
                 artifactId: 'artifact-1',

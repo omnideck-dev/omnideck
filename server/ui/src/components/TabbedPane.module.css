@@ -101,18 +101,25 @@
     color: var(--text-primary);
 }
 
-.tabActions {
+.tabMenuButton {
     display: flex;
     align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    gap: 2px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    box-shadow: none;
+    background: transparent;
+    color: var(--text-tertiary);
 }
 
-.tabActions :global(button) {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border-radius: var(--radius-sm);
+.tabMenuButton:hover,
+.tabMenuButton[aria-expanded="true"] {
+    background: var(--accent-muted);
+    color: var(--text-primary);
 }
 
 .tabIcon {

@@ -57,15 +57,16 @@ function ArtifactThumb({ item }) {
 }
 
 /**
- * Artifact library surface, optionally scoped to one conversation, with grid
+ * Artifact library view, optionally scoped to one conversation, with grid
  * and table layouts, search, sorting, deletion, and missing-file cleanup.
  *
  * Selecting a present artifact asks the desktop to open an independent file
- * surface. The library itself does not own a second preview presentation.
+ * view. The library itself does not own a second preview presentation.
  */
 export default function ArtifactsHubView({
     conversationId = null,
     onOpenArtifact,
+    onClearConversationFilter,
 }) {
     const { items, loading, removeArtifact, pruneMissing } = useArtifacts({
         conversationId,
@@ -128,6 +129,19 @@ export default function ArtifactsHubView({
                             {conversationId ? 'Conversation artifacts' : 'Artifacts'}
                             <span className={styles.count}>{loading ? '' : `· ${visible.length}`}</span>
                         </h1>
+                        {conversationId && (
+                            <Button
+                                variant="ghost"
+                                className={styles.filter}
+                                onClick={onClearConversationFilter}
+                                title="Clear the conversation filter"
+                                data-testid="artifacts-clear-conversation-filter"
+                            >
+                                <i className="bi bi-funnel-fill" />
+                                This chat
+                                <i className="bi bi-x-lg" aria-hidden="true" />
+                            </Button>
+                        )}
                         <SearchInput
                             className={styles.search}
                             value={query}

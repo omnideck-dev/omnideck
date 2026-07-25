@@ -55,7 +55,7 @@ test('the same hub is unscoped when no conversation is supplied', async () => {
     expect(screen.getByText('a.md')).toBeInTheDocument();
 });
 
-test('selecting a present artifact asks the desktop to open a surface', async () => {
+test('selecting a present artifact asks the Desktop to open a View', async () => {
     const onOpenArtifact = vi.fn();
     render(
         <ArtifactsHubView
@@ -92,4 +92,21 @@ test('uses the scoped artifacts endpoint', async () => {
     expect(global.fetch).toHaveBeenCalledWith(
         '/api/artifacts?conversation_id=c1',
     );
+});
+
+test('offers a way to clear the conversation filter', async () => {
+    const onClearConversationFilter = vi.fn();
+    render(
+        <ArtifactsHubView
+            conversationId="c1"
+            onClearConversationFilter={onClearConversationFilter}
+        />,
+    );
+    await waitFor(() => expect(screen.getByText('a.md')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId(
+        'artifacts-clear-conversation-filter',
+    ));
+
+    expect(onClearConversationFilter).toHaveBeenCalledTimes(1);
 });

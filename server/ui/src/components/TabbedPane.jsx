@@ -33,6 +33,10 @@ export default function TabbedPane({
         canScrollRight: false,
     });
     const closeTabMenu = useCallback(() => setTabMenu(null), []);
+    const tabDomId = useCallback(
+        (tabId) => `${panelTestId}-tab-${encodeURIComponent(tabId)}`,
+        [panelTestId],
+    );
 
     const openTabMenu = useCallback((tab, position) => {
         if (!tab.menuActions?.length) return;
@@ -172,10 +176,12 @@ export default function TabbedPane({
                 <div
                     ref={tabListRef}
                     className={styles.tabList}
+                    role="tablist"
+                    aria-label="Open views"
                     onScroll={updateTabOverflow}
                     onWheel={handleTabWheel}
                 >
-                    {tabs.map((tab) => {
+                    {tabs.map((tab, tabIndex) => {
                         const isActive = tab.id === activeTab;
                         return (
                             <div
@@ -196,6 +202,30 @@ export default function TabbedPane({
                                     className={`${styles.tabSelection} ${isActive ? styles.tabActive : ''}`}
                                     onClick={() => onTabChange(tab.id)}
                                     onKeyDown={(event) => {
+                                        const lastIndex = tabs.length - 1;
+                                        const targetIndex = {
+                                            ArrowLeft: (
+                                                tabIndex === 0
+                                                    ? lastIndex
+                                                    : tabIndex - 1
+                                            ),
+                                            ArrowRight: (
+                                                tabIndex === lastIndex
+                                                    ? 0
+                                                    : tabIndex + 1
+                                            ),
+                                            Home: 0,
+                                            End: lastIndex,
+                                        }[event.key];
+                                        if (targetIndex !== undefined) {
+                                            event.preventDefault();
+                                            const targetTab = tabs[targetIndex];
+                                            onTabChange(targetTab.id);
+                                            const buttons = tabListRef.current
+                                                ?.querySelectorAll('[role="tab"]');
+                                            buttons?.[targetIndex]?.focus();
+                                            return;
+                                        }
                                         const opensContextMenu = event.key === 'ContextMenu'
                                             || (event.shiftKey && event.key === 'F10');
                                         if (!opensContextMenu || !tab.menuActions?.length) return;
@@ -206,17 +236,44 @@ export default function TabbedPane({
                                             y: rect.bottom,
                                         });
                                     }}
+                                    id={tabDomId(tab.id)}
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    tabIndex={isActive ? 0 : -1}
                                     title={tab.label}
                                     aria-haspopup={tab.menuActions?.length ? 'menu' : undefined}
-                                    data-testid={`surface-tab-${tab.testid || tab.id}`}
+                                    data-testid={`view-tab-${tab.testid || tab.id}`}
                                 >
                                     <span className={styles.tabIcon}>{tab.icon}</span>
                                     <span className={styles.tabLabel}>{tab.label}</span>
                                 </button>
-                                {isActive && tab.actions && (
-                                    <div className={styles.tabActions}>{tab.actions}</div>
+                                {isActive && tab.menuActions?.length > 0 && (
+                                    <button
+                                        type="button"
+                                        className={styles.tabMenuButton}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            const rect = event.currentTarget
+                                                .getBoundingClientRect();
+                                            openTabMenu(tab, {
+                                                x: rect.left,
+                                                y: rect.bottom,
+                                            });
+                                        }}
+                                        title="Tab actions"
+                                        aria-label={`Actions for ${tab.label} tab`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={tabMenu?.tabId === tab.id}
+                                        data-testid={`view-tab-actions-${tab.testid || tab.id}`}
+                                    >
+                                        <i
+                                            className="bi bi-three-dots"
+                                            aria-hidden="true"
+                                        />
+                                    </button>
                                 )}
-                                {tab.closable !== false && (
+                                {tab.closable !== false
+                                    && !tab.menuActions?.length && (
                                     <button
                                         className={styles.tabClose}
                                         onClick={(e) => {
@@ -225,11 +282,11 @@ export default function TabbedPane({
                                         }}
                                         title="Close tab"
                                         aria-label={`Close ${tab.label} tab`}
-                                        data-testid={`close-surface-tab-${tab.testid || tab.id}`}
+                                        data-testid={`close-view-tab-${tab.testid || tab.id}`}
                                     >
                                         ×
                                     </button>
-                                )}
+                                    )}
                             </div>
                         );
                     })}
@@ -248,14 +305,21 @@ export default function TabbedPane({
                     <i className="bi bi-chevron-right" aria-hidden="true" />
                 </button>
             </div>}
-            <div className={styles.contentArea} data-testid={contentTestId}>
-                {children}
-            </div>
+            {children !== undefined && children !== null && (
+                <div
+                    className={styles.contentArea}
+                    role="tabpanel"
+                    aria-labelledby={activeTab ? tabDomId(activeTab) : undefined}
+                    data-testid={contentTestId}
+                >
+                    {children}
+                </div>
+            )}
             {menuTab && (
                 <TabContextMenu
                     actions={menuTab.menuActions}
                     position={tabMenu.position}
-                    testid={`surface-tab-menu-${menuTab.testid || menuTab.id}`}
+                    testid={`view-tab-menu-${menuTab.testid || menuTab.id}`}
                     onClose={closeTabMenu}
                 />
             )}

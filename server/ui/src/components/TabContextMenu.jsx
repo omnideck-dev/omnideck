@@ -104,10 +104,21 @@ export default function TabContextMenu({
                             onClose();
                             action.execute();
                         }}
-                        data-testid={`tab-context-action-${action.id}`}
+                        data-testid={
+                            action.testid
+                            || `tab-context-action-${action.id}`
+                        }
                     >
                         <i className={`bi ${action.icon}`} aria-hidden="true" />
-                        <span>{action.label}</span>
+                        <span
+                            data-testid={
+                                action.testid
+                                    ? `tab-context-action-${action.id}`
+                                    : undefined
+                            }
+                        >
+                            {action.label}
+                        </span>
                     </button>
                 </div>
             ))}

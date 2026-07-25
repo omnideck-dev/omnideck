@@ -42,7 +42,7 @@ describe('CustomAppsProvider', () => {
         expect(harness.catalog.refresh).toHaveBeenCalledOnce();
     });
 
-    it('reports feature availability without owning open surfaces', () => {
+    it('reports feature availability without owning open Views', () => {
         const { result, rerender } = renderHook(useCustomApps, { wrapper });
 
         harness.enabled = false;

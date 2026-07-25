@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import Locator, Page
 
-from .preview_panel import PreviewPanel
+from .preview_panel import PreviewTabGroup
 
 if TYPE_CHECKING:
     from .network_view import NetworkView
@@ -18,7 +18,7 @@ class AgentActivityView:
     def __init__(self, page: Page, agent_id: str | None = None):
         self.page = page
         self.agent_id = agent_id
-        self.preview = PreviewPanel(page)
+        self.preview = PreviewTabGroup(page)
 
     @property
     def root(self) -> Locator:
@@ -57,15 +57,15 @@ class AgentActivityView:
     def execution_tab(self, resource_id: str) -> Locator:
         assert self.agent_id, "agent_id is required to locate an agent-bound tab"
         return self.page.get_by_test_id(
-            f"surface-tab-{self.agent_id}:{resource_id}"
+            f"view-tab-{self.agent_id}:{resource_id}"
         )
 
-    def execution_surface(self, resource_id: str) -> Locator:
-        assert self.agent_id, "agent_id is required to locate an agent-bound surface"
+    def execution_view(self, resource_id: str) -> Locator:
+        assert self.agent_id, "agent_id is required to locate an agent-bound view"
         return self.page.locator(
-            "[data-surface-kind='conversation-execution']"
-            f"[data-surface-owner-id='{self.agent_id}']"
-            f"[data-surface-resource-id='{resource_id}']"
+            "[data-view-type='workspace-resource']"
+            f"[data-view-owner-id='{self.agent_id}']"
+            f"[data-view-resource-id='{resource_id}']"
         )
 
     def back_to_network(self) -> NetworkView:

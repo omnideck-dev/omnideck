@@ -1,4 +1,4 @@
-"""POM for inline file-preview controls inside an active desktop surface."""
+"""POM for inline file-preview controls inside an active desktop view."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from playwright.sync_api import Locator, Page
 
 
 class FilePreview:
-    """Controls inside an active file surface."""
+    """Controls inside an active file view."""
 
     def __init__(self, page: Page):
         self.page = page
@@ -14,12 +14,12 @@ class FilePreview:
     @property
     def content(self) -> Locator:
         return self.page.locator(
-            "[data-surface-kind='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-active='true']"
         )
 
     @property
     def editor(self) -> Locator:
-        """The CodeMirror editable surface shown in source mode."""
+        """The CodeMirror editable view shown in source mode."""
         return self.content.locator(".cm-content")
 
     @property
@@ -61,16 +61,22 @@ class FilePreview:
     def open_fullscreen(self) -> "FullscreenPreview":
         from .fullscreen_preview import FullscreenPreview
 
-        surface_id = self.content.get_attribute("data-surface-id")
-        assert surface_id
-        host = self.page.locator(f'[data-surface-id="{surface_id}"]')
-        pane_id = host.get_attribute("data-pane-id")
-        if pane_id == "floating":
-            host.locator("[data-testid^='maximize-surface-']").click()
+        view_id = self.content.get_attribute("data-view-id")
+        assert view_id
+        host = self.page.locator(f'[data-view-id="{view_id}"]')
+        tab_group_id = host.get_attribute("data-tab-group-id")
+        if tab_group_id == "floating":
+            host.locator("[data-testid^='maximize-view-']").click()
         else:
-            self.page.get_by_test_id(
-                f"desktop-pane-{pane_id}-tab-bar"
-            ).locator("[data-testid^='maximize-surface-']").click()
+            tab_bar = self.page.get_by_test_id(
+                f"desktop-tab-group-{tab_group_id}-tab-bar"
+            )
+            tab_bar.locator(
+                "[data-testid^='view-tab-actions-']"
+            ).click()
+            self.page.locator(
+                "[data-testid^='maximize-view-']"
+            ).click()
         self.page.wait_for_timeout(300)
         return FullscreenPreview(self.page)
 

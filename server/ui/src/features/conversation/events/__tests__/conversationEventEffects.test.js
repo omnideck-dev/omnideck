@@ -25,7 +25,7 @@ describe('getConversationEventEffects', () => {
         }]);
     });
 
-    it('requests background Browser and Terminal surfaces for root events', () => {
+    it('requests background Browser and Terminal Views for root events', () => {
         expect(getConversationEventEffects(event('browser_screenshot', {
             conversation_id: 'conversation-1',
             agent_id: 'root-1',
@@ -33,7 +33,7 @@ describe('getConversationEventEffects', () => {
             depth: 0,
             screenshot: 'base64-image',
         }))).toEqual([{
-            type: APP_EFFECT_TYPES.ROOT_EXECUTION_VIEW_AVAILABLE,
+            type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
             conversationId: 'conversation-1',
             agentId: 'root-1',
             agentName: 'Omnideck',
@@ -45,7 +45,7 @@ describe('getConversationEventEffects', () => {
             agent_name: 'Omnideck',
             depth: 0,
         }))).toEqual([{
-            type: APP_EFFECT_TYPES.ROOT_EXECUTION_VIEW_AVAILABLE,
+            type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
             conversationId: 'conversation-1',
             agentId: 'root-1',
             agentName: 'Omnideck',
@@ -53,7 +53,7 @@ describe('getConversationEventEffects', () => {
         }]);
     });
 
-    it('does not request surfaces for sub-agent execution events', () => {
+    it('does not request Views for sub-agent Workspace events', () => {
         expect(getConversationEventEffects(event('browser_screenshot', {
             conversation_id: 'conversation-1',
             agent_id: 'child-1',

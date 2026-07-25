@@ -7,7 +7,7 @@ import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
 
 const navigationHarness = vi.hoisted(() => ({
-    destination: { kind: 'chat', conversationId: 'conversation-1' },
+    navigationTarget: { kind: 'chat', conversationId: 'conversation-1' },
     commands: {
         openChat: vi.fn(),
         openAgents: vi.fn(),
@@ -23,7 +23,7 @@ const navigationHarness = vi.hoisted(() => ({
 
 vi.mock('../../features/navigation/DesktopNavigation.jsx', () => ({
     useDesktopNavigationState: () => ({
-        destination: navigationHarness.destination,
+        navigationTarget: navigationHarness.navigationTarget,
     }),
     useDesktopNavigationCommands: () => navigationHarness.commands,
 }));
@@ -58,7 +58,7 @@ function setup(props = {}) {
 
 beforeEach(() => {
     localStorage.clear();
-    navigationHarness.destination = { kind: 'chat', conversationId: 'conversation-1' };
+    navigationHarness.navigationTarget = { kind: 'chat', conversationId: 'conversation-1' };
     navigationHarness.customApps.enabled = false;
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
 });
@@ -116,7 +116,7 @@ describe('Sidebar', () => {
         expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     });
 
-    it('opens a destination from a navigation item', async () => {
+    it('opens a navigationTarget from a navigation item', async () => {
         const user = userEvent.setup();
         const { navigation } = setup();
         await user.click(screen.getByTestId('sidebar-nav-routines'));
@@ -125,13 +125,13 @@ describe('Sidebar', () => {
 
     it('returns to chat from an already-active navigation item', async () => {
         const user = userEvent.setup();
-        navigationHarness.destination = { kind: 'routines', routineId: null, runId: null };
+        navigationHarness.navigationTarget = { kind: 'routines', routineId: null, runId: null };
         const { navigation } = setup();
         await user.click(screen.getByTestId('sidebar-nav-routines'));
         expect(navigation.openChat).toHaveBeenCalledOnce();
     });
 
-    it('opens the Agents destination from its navigation item', async () => {
+    it('opens the Agents navigationTarget from its navigation item', async () => {
         const user = userEvent.setup();
         const { navigation } = setup();
         expect(screen.getByText('Agents')).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('Sidebar', () => {
         expect(navigation.openAgents).toHaveBeenCalledOnce();
     });
 
-    it('shows the Apps destination only when Custom Apps are enabled', async () => {
+    it('shows the Apps navigationTarget only when Custom Apps are enabled', async () => {
         const user = userEvent.setup();
         const hidden = setup();
         expect(screen.queryByTestId('sidebar-nav-apps')).not.toBeInTheDocument();
@@ -153,7 +153,7 @@ describe('Sidebar', () => {
         expect(navigation.openApps).toHaveBeenCalledOnce();
     });
 
-    it('does not expose a special Home destination for Custom Apps', () => {
+    it('does not expose a special Home navigationTarget for Custom Apps', () => {
         navigationHarness.customApps.enabled = true;
         setup();
 

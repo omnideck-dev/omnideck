@@ -15,7 +15,7 @@ export function getConversationEventEffects(event) {
         case EVENT.BROWSER_SCREENSHOT:
             if (!isRootAgentEvent(event) || !event.agent_id || !event.screenshot) return [];
             return [{
-                type: APP_EFFECT_TYPES.ROOT_EXECUTION_VIEW_AVAILABLE,
+                type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
                 conversationId: event.conversation_id || null,
                 agentId: event.agent_id,
                 agentName: event.agent_name || null,
@@ -24,7 +24,7 @@ export function getConversationEventEffects(event) {
         case EVENT.TERMINAL_OUTPUT:
             if (!isRootAgentEvent(event) || !event.agent_id) return [];
             return [{
-                type: APP_EFFECT_TYPES.ROOT_EXECUTION_VIEW_AVAILABLE,
+                type: APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE,
                 conversationId: event.conversation_id || null,
                 agentId: event.agent_id,
                 agentName: event.agent_name || null,

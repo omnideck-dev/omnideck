@@ -109,7 +109,7 @@ describe('AgentActivityView', () => {
         });
     });
 
-    describe('agent execution views', () => {
+    describe('agent workspace resources', () => {
         it('renders only the concrete available actions and opens them explicitly', async () => {
             const user = userEvent.setup();
             const onOpenView = vi.fn();

@@ -11,15 +11,35 @@ export type AppEffect =
     }
     | { type: typeof APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS }
     | {
-        type: typeof APP_EFFECT_TYPES.ROOT_EXECUTION_VIEW_AVAILABLE;
+        type: typeof APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE;
         conversationId: string | null;
         agentId: string;
         agentName: string | null;
         resourceId: 'browser' | 'terminal';
     }
     | {
-        type: typeof APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS;
+        type: typeof APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS;
         conversationId: string;
+    }
+    | {
+        type: typeof APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE;
+        agentId: string;
+        resourceId: 'browser' | 'terminal';
+    }
+    | {
+        type: typeof APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING;
+        views: Array<Record<string, unknown> & {
+            id: string;
+            type: string;
+        }>;
+    }
+    | {
+        type: typeof APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED;
+        actionId: string;
+        view: Record<string, unknown> & {
+            id: string;
+            type: string;
+        };
     };
 
 export type AppEffectType = AppEffect['type'];

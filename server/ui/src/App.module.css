@@ -109,14 +109,14 @@
     overflow: hidden;
 }
 
-/* Network content fills whichever desktop surface hosts it. */
+/* Network content fills whichever Desktop View host renders it. */
 .networkArea {
     flex: 1;
     width: 100%;
     overflow: hidden;
 }
 
-/* Chat content fills whichever desktop surface hosts it. */
+/* Chat content fills whichever Desktop View host renders it. */
 .chatColumn {
     flex: 1;
     width: 100%;

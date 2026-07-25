@@ -63,7 +63,7 @@ test('search filters the list', async () => {
     expect(screen.queryByText('b.html')).not.toBeInTheDocument();
 });
 
-test('selecting an artifact asks the desktop to open its surface', async () => {
+test('selecting an artifact asks the Desktop to open its View', async () => {
     const onOpenArtifact = vi.fn();
     render(<ArtifactsHubView onOpenArtifact={onOpenArtifact} />);
     await waitFor(() => expect(screen.getByText('a.md')).toBeInTheDocument());

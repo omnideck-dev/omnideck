@@ -7,6 +7,7 @@ const session = vi.hoisted(() => ({
 }));
 
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
+    useActiveConversationId: () => session.activeConversationId,
     useConversationSessionState: () => ({
         activeConversationId: session.activeConversationId,
     }),
@@ -31,42 +32,42 @@ describe('DesktopNavigationProvider', () => {
         session.loadConversation.mockResolvedValue(true);
     });
 
-    it('stores serializable destinations with stable IDs', () => {
+    it('stores serializable navigationTargets with stable IDs', () => {
         const { result } = renderHook(useDesktopNavigation, { wrapper });
 
         act(() => result.current.openAgent('agent-2'));
-        expect(result.current.destination).toEqual({
+        expect(result.current.navigationTarget).toEqual({
             kind: 'network',
             conversationId: 'conversation-1',
             agentId: 'agent-2',
         });
 
         act(() => result.current.openRoutines('routine-2', 'run-3'));
-        expect(result.current.destination).toEqual({
+        expect(result.current.navigationTarget).toEqual({
             kind: 'routines',
             routineId: 'routine-2',
             runId: 'run-3',
         });
     });
 
-    it('can restore a serializable destination owned by a desktop surface', () => {
+    it('can restore a serializable navigation target owned by a Desktop View', () => {
         const { result } = renderHook(useDesktopNavigation, { wrapper });
-        const destination = { kind: 'settings', tab: 'skills' };
+        const navigationTarget = { kind: 'settings', tab: 'skills' };
 
-        act(() => result.current.openDestination(destination));
+        act(() => result.current.openTarget(navigationTarget));
 
-        expect(result.current.destination).toEqual(destination);
+        expect(result.current.navigationTarget).toEqual(navigationTarget);
     });
 
     it('opens the active conversation without reloading it', async () => {
         const { result } = renderHook(useDesktopNavigation, { wrapper });
-        const initialDestination = result.current.destination;
+        const initialNavigationTarget = result.current.navigationTarget;
 
         await act(async () => result.current.openConversation('conversation-1'));
 
         expect(session.loadConversation).not.toHaveBeenCalled();
-        expect(result.current.destination).not.toBe(initialDestination);
-        expect(result.current.destination).toEqual({
+        expect(result.current.navigationTarget).not.toBe(initialNavigationTarget);
+        expect(result.current.navigationTarget).toEqual({
             kind: 'chat',
             conversationId: 'conversation-1',
         });
@@ -78,7 +79,7 @@ describe('DesktopNavigationProvider', () => {
         await act(async () => result.current.openConversation('conversation-2'));
 
         expect(session.loadConversation).toHaveBeenCalledWith('conversation-2');
-        expect(result.current.destination).toEqual({
+        expect(result.current.navigationTarget).toEqual({
             kind: 'chat',
             conversationId: 'conversation-2',
         });
@@ -91,20 +92,20 @@ describe('DesktopNavigationProvider', () => {
             artifactId: 'artifact-3',
         }));
 
-        expect(result.current.destination).toEqual({
+        expect(result.current.navigationTarget).toEqual({
             kind: 'chat',
             conversationId: 'conversation-2',
             artifactId: 'artifact-3',
         });
     });
 
-    it('keeps the current destination when conversation loading fails', async () => {
+    it('keeps the current navigationTarget when conversation loading fails', async () => {
         session.loadConversation.mockResolvedValue(false);
         const { result } = renderHook(useDesktopNavigation, { wrapper });
         act(() => result.current.openApps());
 
         await act(async () => result.current.openConversation('missing'));
 
-        expect(result.current.destination).toEqual({ kind: 'apps' });
+        expect(result.current.navigationTarget).toEqual({ kind: 'apps' });
     });
 });

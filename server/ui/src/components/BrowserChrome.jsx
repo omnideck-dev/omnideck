@@ -7,10 +7,10 @@ import styles from './BrowserChrome.module.css';
 /**
  * Shared browser control bar: the page title above a control row of
  * back/forward/reload, lock, an (editable while engaged) address field,
- * and take-control. Full-screen presentation belongs to the desktop window
- * manager rather than to this feature component.
+ * and take-control. Full-screen presentation belongs to Desktop Layout rather
+ * than to this feature component.
  */
-export default function BrowserChrome({ url, title, control, focusSurface }) {
+export default function BrowserChrome({ url, title, control, focusViewport }) {
     const c = control || {};
     // Local edit buffer for the address field: null = show the live url; a string
     // = the user is editing. Avoids live nav updates clobbering what they type.
@@ -40,13 +40,15 @@ export default function BrowserChrome({ url, title, control, focusSurface }) {
                         onFocus={() => setEdit(url ?? '')}
                         onBlur={() => setEdit(null)}
                         onKeyDown={(e) => {
-                            // Hand focus back to the surface so the page is
+                            // Hand focus back to the viewport so the page is
                             // immediately typeable. Blur is the fallback when no
-                            // surface is wired — otherwise focus sits on the
-                            // document body and the surface's key listener, bound
-                            // to the surface element, receives nothing.
+                            // viewport is wired—otherwise focus sits on the
+                            // document body and its key listener receives
+                            // nothing.
                             const target = e.target;
-                            const restoreFocus = () => (focusSurface ? focusSurface() : target.blur());
+                            const restoreFocus = () => (
+                                focusViewport ? focusViewport() : target.blur()
+                            );
                             if (e.key === 'Enter') { e.preventDefault(); commitGoto(); restoreFocus(); }
                             if (e.key === 'Escape') { e.preventDefault(); setEdit(null); restoreFocus(); }
                         }}

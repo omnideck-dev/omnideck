@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 
 /** Resolves a serializable artifact ID after its source conversation loads. */
 export default function useArtifactNavigation({
-    destination,
+    navigationTarget,
     navigation,
     openArtifact,
     onError,
@@ -12,7 +12,7 @@ export default function useArtifactNavigation({
     ), [navigation]);
 
     useEffect(() => {
-        const artifactId = destination.kind === 'chat' ? destination.artifactId : null;
+        const artifactId = navigationTarget.kind === 'chat' ? navigationTarget.artifactId : null;
         if (!artifactId) return undefined;
         const controller = new AbortController();
         fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { signal: controller.signal })
@@ -21,16 +21,16 @@ export default function useArtifactNavigation({
                 return response.json();
             })
             .then((artifact) => {
-                navigation.openChat(destination.conversationId);
+                navigation.openChat(navigationTarget.conversationId);
                 openArtifact(artifact);
             })
             .catch((error) => {
                 if (error.name === 'AbortError') return;
                 onError();
-                navigation.openChat(destination.conversationId);
+                navigation.openChat(navigationTarget.conversationId);
             });
         return () => controller.abort();
-    }, [destination, navigation, onError, openArtifact]);
+    }, [navigationTarget, navigation, onError, openArtifact]);
 
     return openArtifactInConversation;
 }

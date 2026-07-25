@@ -1,7 +1,7 @@
 """E2E: a conversation that spans multiple root agent profiles and
 contains a compaction event.
 
-The migrator (and the resume API) must surface the same compaction chip
+The migrator (and the resume API) must view the same compaction chip
 regardless of profile switches between turns. Specifically, the chip's
 scope.user_messages should reflect ALL root user messages compacted,
 not just the ones for the agent_name on the compaction event.

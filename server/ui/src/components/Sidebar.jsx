@@ -51,7 +51,7 @@ export default function Sidebar({
     activeConversationId,
 }) {
     const { dark, toggleTheme } = useTheme();
-    const { destination } = useDesktopNavigationState();
+    const { navigationTarget } = useDesktopNavigationState();
     const navigation = useDesktopNavigationCommands();
     const customApps = useCustomApps();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
@@ -68,10 +68,10 @@ export default function Sidebar({
         });
     }, []);
 
-    const activeItemId = NAV_ITEMS.some((item) => item.id === destination.kind)
-        ? destination.kind
+    const activeItemId = NAV_ITEMS.some((item) => item.id === navigationTarget.kind)
+        ? navigationTarget.kind
         : null;
-    const settingsActive = destination.kind === 'settings';
+    const settingsActive = navigationTarget.kind === 'settings';
 
     const activateNavigationItem = useCallback((item) => {
         if (activeItemId === item.id) {

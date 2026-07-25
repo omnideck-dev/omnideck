@@ -115,10 +115,10 @@ describe('AgentNetworkView', () => {
     });
 
     it('offers available Browser and Terminal views for the selected agent', () => {
-        const onOpenExecutionView = vi.fn();
+        const onOpenWorkspaceResource = vi.fn();
         const { startAgent, updateWorkspace } = renderView({
             selectedAgentId: 'child-1',
-            onOpenExecutionView,
+            onOpenWorkspaceResource,
         });
         startAgent('root-1', null, 'omnideck');
         startAgent('child-1', 'root-1', 'research_agent');
@@ -147,12 +147,12 @@ describe('AgentNetworkView', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'browser' }));
         fireEvent.click(screen.getByRole('button', { name: 'terminal' }));
-        expect(onOpenExecutionView).toHaveBeenNthCalledWith(
+        expect(onOpenWorkspaceResource).toHaveBeenNthCalledWith(
             1,
             'child-1',
             'browser',
         );
-        expect(onOpenExecutionView).toHaveBeenNthCalledWith(
+        expect(onOpenWorkspaceResource).toHaveBeenNthCalledWith(
             2,
             'child-1',
             'terminal',

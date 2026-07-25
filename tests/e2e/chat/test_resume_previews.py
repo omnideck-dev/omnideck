@@ -14,7 +14,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
-from tests.e2e.pages import ChatView, PreviewPanel, RecentConversations
+from tests.e2e.pages import ChatView, PreviewTabGroup, RecentConversations
 
 CONV_DIR = "/var/lib/computron/conversations"
 VC_HOME = "/home/computron"
@@ -190,7 +190,7 @@ def test_resume_ignores_legacy_preview_placement(page: Page):
         ChatView(page).goto()
         RecentConversations(page).open_by_title(conv_id)
 
-        panel = PreviewPanel(page)
+        panel = PreviewTabGroup(page)
         expect(panel.file_tab(file_a)).to_have_count(0)
         expect(panel.file_tab(file_b)).to_have_count(0)
         expect(panel.browser_tab).to_have_count(0)

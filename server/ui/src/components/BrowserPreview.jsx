@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import styles from './BrowserPreview.module.css';
-import ScreencastSurface from './ScreencastSurface.jsx';
+import ScreencastViewport from './ScreencastViewport.jsx';
 import BrowserChrome from './BrowserChrome.jsx';
 
 /** Extract a short host label from a URL for the thumbnail caption. */
@@ -28,15 +28,15 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
         : null;
     const showRail = tabs.length > 1;
     const c = control || {};
-    // Own the surface ref so the address bar can refocus it after navigating.
-    const surfaceRef = useRef(null);
-    const focusSurface = useCallback(() => surfaceRef.current?.focus(), []);
+    // Own the viewport ref so the address bar can refocus it after navigating.
+    const viewportRef = useRef(null);
+    const focusViewport = useCallback(() => viewportRef.current?.focus(), []);
     // Switching tabs (or opening one) moves focus to the clicked rail / new-tab
-    // button. Return it to the surface so the page stays keyboard-interactive
+    // button. Return it to the viewport so the page stays keyboard-interactive
     // without having to toggle control off and on.
     useEffect(() => {
-        if (c.engaged) focusSurface();
-    }, [selectedId, c.engaged, focusSurface]);
+        if (c.engaged) focusViewport();
+    }, [selectedId, c.engaged, focusViewport]);
     // Prefer the live nav state (updates during takeover / agent nav); fall back
     // to the screenshot snapshot.
     const url = c.navUrl || activeSnapshot.url;
@@ -48,10 +48,10 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
                 url={url}
                 title={title}
                 control={control}
-                focusSurface={focusSurface}
+                focusViewport={focusViewport}
             />
 
-            <ScreencastSurface
+            <ScreencastViewport
                 frameUrl={c.frameUrl || null}
                 fallbackSrc={fallbackSrc}
                 engaged={!!c.engaged}
@@ -59,7 +59,7 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
                 sendInput={c.sendInput}
                 className={styles.screenshotContainer}
                 imgClassName={styles.screenshot}
-                surfaceRef={surfaceRef}
+                viewportRef={viewportRef}
             />
 
             {showRail && (
@@ -83,7 +83,10 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
                                     data-testid={`browser-tab-${id}`}
                                     title={tabSnap.title || tabSnap.url}
                                     className={`${styles.thumbCard} ${isActive ? styles.thumbCardActive : ''}`}
-                                    onClick={() => { if (onSelectTab) onSelectTab(id); if (c.engaged) focusSurface(); }}
+                                    onClick={() => {
+                                        if (onSelectTab) onSelectTab(id);
+                                        if (c.engaged) focusViewport();
+                                    }}
                                 >
                                     <div className={styles.thumbFrame}>
                                         {thumbSrc && (

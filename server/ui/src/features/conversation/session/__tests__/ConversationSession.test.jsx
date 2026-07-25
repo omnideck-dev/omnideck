@@ -64,7 +64,7 @@ function renderSession() {
         agents = useAgentState();
         workspaces = useWorkspaceState();
         useAppEffectSubscription(
-            APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
             (effect) => harness.effects.push(effect),
         );
         return null;
@@ -109,7 +109,7 @@ describe('ConversationSessionProvider', () => {
         harness.controller.loadConversation.mockResolvedValue(null);
     });
 
-    it('restores execution data without reopening historical surfaces', async () => {
+    it('restores Workspace data without reopening historical Views', async () => {
         harness.controller.loadConversation.mockResolvedValue({
             conversationId: 'conversation-2',
             events: [
@@ -143,7 +143,7 @@ describe('ConversationSessionProvider', () => {
         expect(getAgents().agents['root-1'].activityLog).toEqual([]);
         expect(getWorkspaces().byAgentId['root-1'].openFiles).toEqual([]);
         expect(harness.effects).toContainEqual({
-            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
             conversationId: 'conversation-1',
         });
         expect(getSession().conversationProfileId).toBe('profile-2');
@@ -170,7 +170,7 @@ describe('ConversationSessionProvider', () => {
         expect(getAgents().agents).toEqual({});
         expect(getWorkspaces().byAgentId).toEqual({});
         expect(harness.effects).toContainEqual({
-            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_EXECUTION_VIEWS,
+            type: APP_EFFECT_TYPES.CLOSE_CONVERSATION_WORKSPACE_VIEWS,
             conversationId: 'conversation-1',
         });
     });
@@ -205,6 +205,22 @@ describe('ConversationSessionProvider', () => {
         expect(harness.addToast).toHaveBeenCalledWith(
             'Agent is no longer running',
             { type: 'warn', duration: 5000 },
+        );
+    });
+
+    it('owns formatting when an external source composes into the draft', () => {
+        const { getSession } = renderSession();
+
+        act(() => getSession().composeFromSource({
+            title: 'Text Lab',
+            text: 'Review this',
+            context: { selection: 'example' },
+        }));
+
+        const updateDraft = harness.controller.setDraft.mock.calls[0][0];
+        expect(updateDraft('Existing')).toBe(
+            'Existing\n\nReview this\n\n'
+            + 'Context from Text Lab:\n{\n  "selection": "example"\n}',
         );
     });
 });

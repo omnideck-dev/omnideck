@@ -117,10 +117,10 @@ def test_take_control_engages(page: Page):
 
 
 def test_click_is_forwarded(page: Page):
-    """A click on the surface reaches the remote page (it navigates)."""
+    """A click on the view reaches the remote page (it navigates)."""
     _, bc = _open(page, open_fixture("click"))
     bc.take_control()
-    bc.click_surface()
+    bc.click_view()
     expect(bc.address).to_have_value(re.compile("clicked=1"))
 
 
@@ -133,25 +133,25 @@ def test_typing_and_enter_are_forwarded(page: Page):
     expect(bc.address).to_have_value(re.compile("got=hello"))
 
 
-def test_surface_keeps_focus_after_switching_tabs(page: Page):
-    """The surface keeps keyboard focus after switching tabs during takeover.
+def test_view_keeps_focus_after_switching_tabs(page: Page):
+    """The view keeps keyboard focus after switching tabs during takeover.
 
-    Clicking a rail thumbnail moves focus to the thumbnail button; the surface's
-    key listener only fires while the surface holds focus, so without restoring
+    Clicking a rail thumbnail moves focus to the thumbnail button; the view's
+    key listener only fires while the view holds focus, so without restoring
     it, keystrokes stop reaching the page until control is toggled off and on.
-    Asserting the surface is the active element directly verifies the refocus.
+    Asserting the view is the active element directly verifies the refocus.
     """
     _, bc = _open(page, open_fixture("input") + open_fixture("input"))
     bc.take_control()  # sticky selection has tab 1 selected
     bc.tab(2).click()  # switch to a different tab — focus would land on the button
-    surface_focused = page.evaluate(
-        "() => document.activeElement?.getAttribute('data-testid') === 'browser-surface'",
+    view_focused = page.evaluate(
+        "() => document.activeElement?.getAttribute('data-testid') === 'browser-viewport'",
     )
-    assert surface_focused, "surface lost keyboard focus after switching tabs"
+    assert view_focused, "view lost keyboard focus after switching tabs"
 
 
 def test_scroll_is_forwarded(page: Page):
-    """A wheel over the surface scrolls the remote page."""
+    """A wheel over the view scrolls the remote page."""
     _, bc = _open(page, open_fixture("scroll"))
     bc.take_control()
     bc.scroll(600)
@@ -173,16 +173,16 @@ def test_typing_after_address_bar_nav_without_clicking(page: Page):
     """After an address-bar navigation the page is immediately typeable.
 
     Regression: committing the address bar blurred focus to the document body,
-    so the surface's key listener (bound to the surface element) stopped
-    receiving keystrokes until the user clicked the surface. The goto must hand
-    focus back to the surface. The input fixture autofocuses its field, so
-    typing here — with no surface click — only lands if the surface holds focus.
+    so the view's key listener (bound to the view element) stopped
+    receiving keystrokes until the user clicked the view. The goto must hand
+    focus back to the view. The input fixture autofocuses its field, so
+    typing here — with no view click — only lands if the view holds focus.
     """
     _, bc = _open(page, open_fixture("idle"))
     bc.take_control()
     bc.goto(fixture_url("input"))
     expect(bc.address).to_have_value(re.compile("mode=input"))
-    page.keyboard.type("hello")  # no surface click first — relies on the refocus
+    page.keyboard.type("hello")  # no view click first — relies on the refocus
     page.keyboard.press("Enter")
     expect(bc.address).to_have_value(re.compile("got=hello"))
 
@@ -191,7 +191,7 @@ def test_back_and_forward(page: Page):
     """History back/forward move the remote page through its history."""
     _, bc = _open(page, open_fixture("click"))
     bc.take_control()
-    bc.click_surface()
+    bc.click_view()
     expect(bc.address).to_have_value(re.compile("clicked=1"))
     bc.nav_btn("back").click()
     expect(bc.address).not_to_have_value(re.compile("clicked=1"))
@@ -287,7 +287,7 @@ def test_clicking_link_opens_new_tab(page: Page):
     """A target=_blank link the user clicks opens a new tab in the rail."""
     _, bc = _open(page, open_fixture("link"))
     bc.take_control()
-    bc.click_surface()
+    bc.click_view()
     expect(bc.tab(2)).to_be_visible(timeout=10_000)
 
 
@@ -295,16 +295,16 @@ def test_clicking_link_opens_new_tab(page: Page):
 
 
 def test_fullscreen_round_trip(page: Page):
-    """Maximizing and restoring preserves the same browser surface."""
+    """Maximizing and restoring preserves the same browser view."""
     _, bc = _open(page, open_fixture("idle"))
-    host = bc.root.locator("xpath=ancestor::*[@data-surface-id][1]")
+    host = bc.root.locator("xpath=ancestor::*[@data-view-id][1]")
     bc.fullscreen_btn.click()
     expect(host).to_have_attribute("data-maximized", "true")
-    expect(bc.surface).to_be_visible()
+    expect(bc.view).to_be_visible()
 
-    page.get_by_test_id("restore-surface-browser").click()
+    page.get_by_test_id("restore-view-browser").click()
     expect(host).to_have_attribute("data-maximized", "false")
-    expect(bc.surface).to_be_visible()
+    expect(bc.view).to_be_visible()
 
 
 # ── clipboard bridge ────────────────────────────────────────────────
@@ -327,16 +327,16 @@ def test_copy_from_remote_to_host(page: Page):
 
 
 def test_paste_from_host_to_remote(page: Page):
-    """A host-clipboard paste over the surface inserts into the focused field."""
+    """A host-clipboard paste over the view inserts into the focused field."""
     _, bc = _open(page, open_fixture("input"))
     bc.take_control()
-    bc.click_surface()  # focus the remote input
+    bc.click_view()  # focus the remote input
     # Playwright can't reliably trigger a real OS paste in headless, so dispatch
-    # the paste event the surface listens for, carrying the host clipboard text.
+    # the paste event the view listens for, carrying the host clipboard text.
     page.evaluate(
         """() => {
           const el = document.querySelector(
-            '[data-testid="browser-preview"] [data-testid="browser-surface"]');
+            '[data-testid="browser-preview"] [data-testid="browser-viewport"]');
           const dt = new DataTransfer(); dt.setData('text/plain', 'PASTED');
           el.dispatchEvent(new ClipboardEvent(
             'paste', {clipboardData: dt, bubbles: true, cancelable: true}));
@@ -355,6 +355,6 @@ def test_file_upload_from_host(page: Page):
     _, bc = _open(page, open_fixture("file"))
     bc.take_control()
     with page.expect_file_chooser() as fc:
-        bc.click_surface()  # clicks the remote file input → host picker opens
+        bc.click_view()  # clicks the remote file input → host picker opens
     fc.value.set_files(str(_RED_SQUARE))
     expect(bc.address).to_have_value(re.compile("got=red_square.png"))

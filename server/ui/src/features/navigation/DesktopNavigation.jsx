@@ -1,27 +1,27 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import {
+    useActiveConversationId,
     useConversationSessionCommands,
-    useConversationSessionState,
 } from '../conversation/session/ConversationSession.jsx';
 
 const DesktopNavigationStateContext = createContext(null);
 const DesktopNavigationCommandsContext = createContext(null);
 
 export function DesktopNavigationProvider({ children }) {
-    const { activeConversationId } = useConversationSessionState();
+    const activeConversationId = useActiveConversationId();
     const { loadConversation } = useConversationSessionCommands();
-    const [destination, setDestination] = useState(() => ({
+    const [navigationTarget, setNavigationTarget] = useState(() => ({
         kind: 'chat',
         conversationId: activeConversationId || null,
     }));
 
-    const open = useCallback((nextDestination) => {
-        // Repeating a destination is still a meaningful "open/select" request.
-        // Its surface may have been explicitly closed since the last request.
-        setDestination(nextDestination);
+    const open = useCallback((nextTarget) => {
+        // Repeating a target is still a meaningful "open/select" request.
+        // Its view may have been explicitly closed since the last request.
+        setNavigationTarget(nextTarget);
     }, []);
-    const openDestination = useCallback((nextDestination) => {
-        open(nextDestination);
+    const openTarget = useCallback((nextTarget) => {
+        open(nextTarget);
     }, [open]);
 
     const openChat = useCallback((conversationId = activeConversationId) => {
@@ -61,7 +61,7 @@ export function DesktopNavigationProvider({ children }) {
     }, [activeConversationId, loadConversation, open]);
 
     const commands = useMemo(() => ({
-        openDestination,
+        openTarget,
         openChat,
         openNetwork,
         openAgent,
@@ -80,12 +80,15 @@ export function DesktopNavigationProvider({ children }) {
         openChat,
         openConversation,
         openNetwork,
-        openDestination,
+        openTarget,
         openRoutines,
         openSettings,
         openCustomApp,
     ]);
-    const state = useMemo(() => ({ destination }), [destination]);
+    const state = useMemo(
+        () => ({ navigationTarget }),
+        [navigationTarget],
+    );
 
     return (
         <DesktopNavigationStateContext.Provider value={state}>

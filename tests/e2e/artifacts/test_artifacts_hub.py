@@ -17,7 +17,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e.artifacts._helpers import VC_HOME, delete_file, file_exists, produce, purge
-from tests.e2e.pages import ArtifactsHub, ChatView, DesktopWindows, PreviewPanel
+from tests.e2e.pages import ArtifactsHub, ChatView, DesktopLayout, PreviewTabGroup
 
 
 # ── read-only group: one shared pair of produced artifacts ──────────────
@@ -49,8 +49,8 @@ def test_sent_file_appears_in_grid(page: Page, produced):
     expect(hub.card(produced["html"])).to_be_visible()
 
 
-def test_selecting_artifact_opens_file_surface(page: Page, produced):
-    """Selecting a card opens a file surface with the artifact's content."""
+def test_selecting_artifact_opens_file_view(page: Page, produced):
+    """Selecting a card opens a file view with the artifact's content."""
     hub = ArtifactsHub(page).goto()
     hub.select(produced["md"])
     expect(hub.preview).to_be_visible(timeout=5_000)
@@ -75,11 +75,11 @@ def test_search_filters_to_matching_artifact(page: Page, produced):
 def test_fullscreen_chrome_does_not_cover_hub_controls(page: Page):
     """Shared fullscreen chrome reserves its own row above full-width controls."""
     hub = ArtifactsHub(page).goto()
-    desktop = DesktopWindows(page)
+    desktop = DesktopLayout(page)
     desktop.maximize("destination:artifacts")
 
     fullscreen_header = page.get_by_test_id(
-        "fullscreen-surface-header-destination:artifacts"
+        "fullscreen-view-header-destination:artifacts"
     )
     expect(fullscreen_header).to_be_visible()
     expect(page.get_by_test_id("artifacts-search")).to_be_visible()
@@ -106,6 +106,18 @@ def test_delete_present_artifact_removes_entry_and_file(page: Page):
 
         hub.request_delete(name)
         expect(hub.delete_dialog).to_be_visible()
+
+        # Global dialogs must escape the active View host. View hosts clip
+        # overflow to preserve split/floating isolation, so an inline modal
+        # would be cut off at the tab-group boundary.
+        assert hub.delete_dialog.evaluate(
+            "(dialog) => dialog.parentElement.parentElement === document.body"
+        )
+        scrim_box = hub.delete_dialog.locator("..").bounding_box()
+        assert scrim_box
+        assert scrim_box["x"] == 0
+        assert scrim_box["width"] == page.viewport_size["width"]
+
         hub.confirm_delete(delete_file=True)
 
         expect(hub.card(name)).to_have_count(0)
@@ -160,10 +172,13 @@ def test_open_in_conversation_restores_focused_file(page: Page):
 
         hub = ArtifactsHub(page).goto()
         hub.select(name)
-        page.get_by_test_id("artifact-open-conversation").click()
+        DesktopLayout(page).choose_tab_action(
+            f"artifact:{name}",
+            "open-source-conversation",
+        )
 
         # The source conversation loads with the artifact file open as a tab.
-        expect(PreviewPanel(page).file_tab(name)).to_be_visible(timeout=8_000)
+        expect(PreviewTabGroup(page).file_tab(name)).to_be_visible(timeout=8_000)
     finally:
         purge(page, name)
         delete_file(name)

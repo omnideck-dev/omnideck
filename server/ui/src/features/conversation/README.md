@@ -9,7 +9,7 @@ backend classes or separate network channels.
   frontend. Live stream envelopes are normalized into this shape; saved events
   already use it.
 - **Transcript:** The ordered user prompts and agent results shown in the main
-  conversation surface. It includes completed and in-progress output, file
+  conversation view. It includes completed and in-progress output, file
   results, and compaction markers. It is a UI model derived from conversation
   events, not the raw event list or an agent's activity log.
 - **Turn:** One root-agent run in the transcript, normally beginning with a
@@ -22,7 +22,7 @@ backend classes or separate network channels.
   status, context usage, and sub-agent activity.
 - **Agent activity:** The ordered work attributed to one agent, such as
   reasoning, content, tool calls, spawned agents, file results, and errors. It
-  powers the agent network and detail surfaces and is separate from the main
+  powers the agent network and detail views and is separate from the main
   transcript.
 - **Workspace model:** Browser, terminal, file, generation, and remote-desktop
   state associated with a conversation and its agents.
@@ -44,13 +44,12 @@ owns browser, terminal, file, generation, and desktop data by agent.
 retaining them as global state. `AudioPlayer` subscribes to playback effects
 and owns its transient player state locally.
 `DesktopNavigationProvider` owns serializable navigation requests and named
-navigation commands. `useDesktopWindowManager` owns two equivalent tabbed pane
-stacks, surface placement and focus, the horizontal split ratio, fullscreen
-presentation, and pending focus for restored workspace surfaces. Each surface
-has one stable host even when it moves between panes. Custom Apps and workspace
-previews retain their feature data in their own owners and contribute
-serializable surface descriptions to the window manager. `App` assembles setup,
-these state owners, and `Desktop`.
+navigation commands. `useDesktopLayout` owns two equivalent tab groups, View
+placement and focus, the horizontal split ratio, floating placement, and
+fullscreen presentation. Each View has one stable host even when it moves
+between tab groups. Custom Apps and Workspace resources retain their domain
+data in their own owners and contribute serializable View descriptions to
+Desktop Layout. `App` assembles setup, these state owners, and `Desktop`.
 
 Live data follows this path:
 
@@ -73,9 +72,8 @@ ignores application effects.
 Desktop features navigate through commands such as `openConversation`,
 `openAgent`, and `openSettings`. Sidebar reads that navigation owner directly
 instead of sending generic panel identifiers through Desktop. Desktop
-interprets navigation requests as surfaces to open or select in the left pane;
-any surface can subsequently move to either pane. Destinations and surfaces
-contain stable IDs and serializable metadata rather than React content or
-feature objects. There is no URL synchronization yet; a future router can
-implement the same destination and command interface without changing feature
-components.
+interprets navigation targets as Views to open or select in the left tab group;
+any View can subsequently move to either tab group. Navigation targets and
+Views contain stable IDs and serializable metadata rather than React content.
+There is no URL synchronization yet; a future router can implement the same
+navigation-target interface without changing feature components.

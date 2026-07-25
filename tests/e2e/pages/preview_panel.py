@@ -1,4 +1,4 @@
-"""POM for Browser, Terminal, and artifact surfaces in the desktop."""
+"""POM for Browser, Terminal, and artifact views in the desktop."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from playwright.sync_api import Locator, Page
 from .file_preview import FilePreview
 
 
-class PreviewPanel:
-    """Execution-view and artifact conveniences over the generic desktop."""
+class PreviewTabGroup:
+    """Workspace-resource and artifact conveniences over the generic desktop."""
 
     def __init__(self, page: Page):
         self.page = page
@@ -16,7 +16,7 @@ class PreviewPanel:
 
     @property
     def root(self) -> Locator:
-        return self.page.get_by_test_id("desktop-pane-right")
+        return self.page.get_by_test_id("desktop-tab-group-right")
 
     @property
     def split_handle(self) -> Locator:
@@ -24,45 +24,54 @@ class PreviewPanel:
 
     @property
     def tab_bar(self) -> Locator:
-        return self.page.get_by_test_id("desktop-pane-right-tab-bar")
+        return self.page.get_by_test_id("desktop-tab-group-right-tab-bar")
 
     @property
     def tabs(self) -> Locator:
-        return self.tab_bar.locator("[data-testid^='surface-tab-']")
+        return self.tab_bar.get_by_role("tab")
 
     @property
     def terminal_tab(self) -> Locator:
-        return self.page.get_by_test_id("surface-tab-terminal")
+        return self.page.get_by_test_id("view-tab-terminal")
 
     @property
     def browser_tab(self) -> Locator:
-        return self.page.get_by_test_id("surface-tab-browser")
+        return self.page.get_by_test_id("view-tab-browser")
 
     @property
     def file_tabs(self) -> Locator:
-        """All artifact file tabs across both panes."""
-        return self.page.locator("[data-testid^='surface-tab-artifact:']")
+        """All artifact file tabs across both tab groups."""
+        return self.page.locator(
+            "[role='tab'][data-testid^='view-tab-artifact:']"
+        )
 
     def file_tab(self, filename: str) -> Locator:
-        return self.page.get_by_test_id(f"surface-tab-artifact:{filename}")
+        return self.page.get_by_test_id(f"view-tab-artifact:{filename}")
 
     @property
     def content(self) -> Locator:
         return self.page.locator(
-            "[data-surface-id][data-pane-id='right'][data-active='true']"
+            "[data-view-id][data-tab-group-id='right'][data-active='true']"
         )
 
-    def select_tab(self, tab: Locator) -> "PreviewPanel":
+    def select_tab(self, tab: Locator) -> "PreviewTabGroup":
         tab.click()
         self.page.wait_for_timeout(200)
         return self
 
-    def close_first_tab(self) -> "PreviewPanel":
-        self.tab_bar.locator("[data-testid^='close-surface-tab-']").first.click()
+    def close_first_tab(self) -> "PreviewTabGroup":
+        tab = self.tabs.first
+        view_key = (
+            tab.get_attribute("data-testid") or ""
+        ).removeprefix("view-tab-")
+        tab.click(button="right")
+        self.page.get_by_test_id(
+            f"view-tab-menu-{view_key}"
+        ).get_by_test_id("tab-context-action-close").click()
         self.page.wait_for_timeout(200)
         return self
 
-    def close_all_tabs(self) -> "PreviewPanel":
+    def close_all_tabs(self) -> "PreviewTabGroup":
         while self.tabs.count() > 0:
             self.close_first_tab()
         return self
@@ -72,7 +81,7 @@ class PreviewPanel:
         tabs = self.file_tabs
         for i in range(tabs.count()):
             testid = tabs.nth(i).get_attribute("data-testid") or ""
-            filename = testid.replace("surface-tab-artifact:", "")
+            filename = testid.replace("view-tab-artifact:", "")
             if filename.endswith(ext):
                 tabs.nth(i).click()
                 self.page.wait_for_timeout(200)

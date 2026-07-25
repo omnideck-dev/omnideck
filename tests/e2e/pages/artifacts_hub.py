@@ -50,9 +50,9 @@ class ArtifactsHub:
 
     @property
     def preview(self) -> Locator:
-        """The artifact file surface opened from the selected card."""
+        """The artifact file view opened from the selected card."""
         return self.page.locator(
-            "[data-surface-kind='artifact-file'][data-active='true']"
+            "[data-view-type='artifact-file'][data-active='true']"
         )
 
     # ── delete ──

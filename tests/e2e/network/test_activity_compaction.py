@@ -1,7 +1,7 @@
 """E2E: a sub-agent's compaction shows up in its activity view.
 
 A compaction inside a sub-agent (depth>0) never appears in the main chat
-(which filters depth>0). It should instead surface as a marker on the
+(which filters depth>0). It should instead view as a marker on the
 sub-agent's activity rail. This seeds a root -> sub-agent tree where the
 sub-agent carries a depth-1 compaction, then drills into that agent's
 activity view and asserts the marker renders and expands.
