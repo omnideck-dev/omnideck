@@ -14,8 +14,9 @@ import {
 } from '../desktop/DesktopViewRuntime.jsx';
 import {
     createCustomAppView,
+    customAppSlugForView,
     customAppViewId,
-} from '../desktop/desktopViews.js';
+} from './customAppDesktopViews.js';
 import {
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
@@ -66,7 +67,7 @@ export default function CustomAppDesktopView({ view, active }) {
     // Persisted Views carry only the slug. The catalog remains the owner of
     // the live app record used by the iframe host.
     const app = view.app
-        || customApps.catalog.findBySlug(view.resourceId);
+        || customApps.catalog.findBySlug(customAppSlugForView(view));
 
     const openChat = useCallback(() => {
         navigation.openChat();

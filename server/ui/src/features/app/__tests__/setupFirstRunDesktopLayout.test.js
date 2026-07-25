@@ -45,7 +45,7 @@ describe('setup first-run Desktop Layout', () => {
         expect(
             restored.layoutState.openViewsById[
                 'destination:conversation'
-            ].navigationTarget,
+            ].identity.navigationTarget,
         ).toEqual({
             kind: 'chat',
             conversationId: 'welcome-to-omnideck',

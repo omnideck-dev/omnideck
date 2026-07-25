@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 
 import useBrowserTabs from './useBrowserTabs.js';
 import { useWorkspaceState } from './WorkspaceState.jsx';
+import {
+    workspaceResourceIdentityForView,
+} from './workspaceResourceDesktopViews.js';
 
 /** Owns the one browser-control side channel used by visible Browser views. */
 export default function useActiveWorkspaceResource({
@@ -10,9 +13,10 @@ export default function useActiveWorkspaceResource({
     activeView = null,
 }) {
     const workspaceState = useWorkspaceState();
+    const activeIdentity = workspaceResourceIdentityForView(activeView);
     const activeBrowserAgentId = activeView?.type === 'workspace-resource'
-        && activeView.resourceId === 'browser'
-        ? activeView.agentId
+        && activeIdentity.resourceId === 'browser'
+        ? activeIdentity.agentId
         : null;
     const agentWorkspace = activeBrowserAgentId
         ? workspaceState.byAgentId[activeBrowserAgentId]

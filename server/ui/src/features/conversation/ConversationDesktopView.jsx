@@ -12,6 +12,9 @@ import {
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
 import {
+    navigationTargetForView,
+} from '../navigation/desktopNavigationViews.js';
+import {
     useWorkspaceResourceDesktopActions,
 } from '../workspace/WorkspaceResourceDesktopAdapter.jsx';
 import {
@@ -48,8 +51,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     } = useWorkspaceResourceDesktopActions();
 
     const selectedProfileId = conversationProfileId ?? defaultProfileId;
-    const mode = view.navigationTarget?.kind || 'chat';
-    const selectedAgentId = view.navigationTarget?.agentId || null;
+    const navigationTarget = navigationTargetForView(view);
+    const mode = navigationTarget?.kind || 'chat';
+    const selectedAgentId = navigationTarget?.agentId || null;
 
     const handleSend = useCallback((message, attachments) => {
         if (isStreaming) {

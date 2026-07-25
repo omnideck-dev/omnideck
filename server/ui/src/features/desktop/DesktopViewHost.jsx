@@ -196,8 +196,8 @@ function DesktopViewHost({
             data-testid={`desktop-view-${view.testid || view.id}`}
             data-view-id={view.id}
             data-view-type={view.type}
-            data-view-owner-id={view.agentId || view.resourceId || ''}
-            data-view-resource-id={view.resourceId || ''}
+            data-view-owner-id={view.testMetadata?.ownerId || ''}
+            data-view-resource-id={view.testMetadata?.resourceId || ''}
             data-tab-group-id={floating ? 'floating' : (tabGroupId || 'hidden')}
             data-active={active ? 'true' : 'false'}
             data-floating={floating ? 'true' : 'false'}

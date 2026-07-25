@@ -51,9 +51,11 @@ vi.mock('../useArtifactNavigation.js', () => ({
 const RESTORED_ARTIFACT = {
     id: 'artifact:artifact-7',
     type: 'artifact-file',
-    resourceId: 'artifact-7',
-    resourcePath: '/home/omnideck/report.md',
-    conversationId: 'conversation-1',
+    identity: {
+        resourceId: 'artifact-7',
+        resourcePath: '/home/omnideck/report.md',
+        conversationId: 'conversation-1',
+    },
     label: 'report.md',
     icon: 'bi-file-earmark',
     closable: true,
@@ -92,7 +94,9 @@ describe('ArtifactDesktopEffects restore reconciliation', () => {
             .toHaveBeenCalledWith({
                 views: [expect.objectContaining({
                     id: RESTORED_ARTIFACT.id,
-                    resourceId: LIVE_ARTIFACT.id,
+                    identity: expect.objectContaining({
+                        resourceId: LIVE_ARTIFACT.id,
+                    }),
                     artifact: LIVE_ARTIFACT,
                     actions: ['open-source-conversation'],
                 })],
@@ -123,7 +127,10 @@ describe('ArtifactDesktopEffects restore reconciliation', () => {
         const outputView = {
             ...RESTORED_ARTIFACT,
             id: 'artifact-output:conversation-1:%2Fhome%2Fomnideck%2Freport.md',
-            resourceId: undefined,
+            identity: {
+                ...RESTORED_ARTIFACT.identity,
+                resourceId: null,
+            },
         };
         desktop.catalog.openViews = [outputView];
         const fetchMock = vi.fn().mockResolvedValue({
@@ -139,7 +146,9 @@ describe('ArtifactDesktopEffects restore reconciliation', () => {
             .toHaveBeenCalledWith({
                 views: [expect.objectContaining({
                     id: outputView.id,
-                    resourceId: LIVE_ARTIFACT.id,
+                    identity: expect.objectContaining({
+                        resourceId: LIVE_ARTIFACT.id,
+                    }),
                     artifact: LIVE_ARTIFACT,
                 })],
                 closeViewIds: [],

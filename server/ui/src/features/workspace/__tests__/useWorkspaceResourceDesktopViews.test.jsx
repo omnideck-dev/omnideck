@@ -10,8 +10,10 @@ import {
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
 import {
     createArtifactView,
+} from '../../artifacts/artifactDesktopViews.js';
+import {
     createNavigationView,
-} from '../../desktop/desktopViews.js';
+} from '../../navigation/desktopNavigationViews.js';
 import useDesktopLayout, {
     DESKTOP_TAB_GROUP_IDS,
 } from '../../desktop/useDesktopLayout.jsx';
@@ -56,6 +58,7 @@ function useHarness() {
         ),
         closeView: desktopLayout.commands.closeView,
         closeViews: desktopLayout.commands.closeViews,
+        updateViews: desktopLayout.commands.updateViews,
         preferredTabGroupId: () => (
             desktopLayout.model.tabGroups.left.viewIds.includes(CHAT.id)
                 ? DESKTOP_TAB_GROUP_IDS.RIGHT

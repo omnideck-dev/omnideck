@@ -50,9 +50,12 @@ function browserView({ isRoot }) {
             ? 'workspace-resource:conversation-1:root:browser'
             : 'workspace-resource:conversation-1:child-1:browser',
         type: 'workspace-resource',
-        agentId: isRoot ? 'root-1' : 'child-1',
-        resourceId: 'browser',
-        isRoot,
+        identity: {
+            conversationId: 'conversation-1',
+            agentId: isRoot ? 'root-1' : 'child-1',
+            resourceId: 'browser',
+            isRoot,
+        },
     };
 }
 

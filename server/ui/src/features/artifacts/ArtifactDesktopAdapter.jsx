@@ -18,14 +18,17 @@ import {
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
 import {
-    createArtifactView,
-    createFileOutputView,
     createNavigationView,
-} from '../desktop/desktopViews.js';
+    navigationTargetForView,
+} from '../navigation/desktopNavigationViews.js';
 import {
     useDesktopViewCatalog,
     useDesktopViewCommands,
 } from '../desktop/DesktopViewRuntime.jsx';
+import {
+    createArtifactView,
+    createFileOutputView,
+} from './artifactDesktopViews.js';
 import useArtifactNavigation from './useArtifactNavigation.js';
 
 async function fetchJson(url, signal) {
@@ -46,22 +49,27 @@ async function fetchJson(url, signal) {
 
 /** Resolve one persisted Artifact key without teaching persistence its schema. */
 async function resolveArtifactView(view, signal) {
+    const {
+        resourceId,
+        resourcePath,
+        conversationId,
+    } = view.identity;
     let result;
-    if (view.resourceId) {
+    if (resourceId) {
         result = await fetchJson(
-            `/api/artifacts/${encodeURIComponent(view.resourceId)}`,
+            `/api/artifacts/${encodeURIComponent(resourceId)}`,
             signal,
         );
-    } else if (view.resourcePath) {
-        const query = view.conversationId
-            ? `?conversation_id=${encodeURIComponent(view.conversationId)}`
+    } else if (resourcePath) {
+        const query = conversationId
+            ? `?conversation_id=${encodeURIComponent(conversationId)}`
             : '';
         const collection = await fetchJson(`/api/artifacts${query}`, signal);
         result = collection.status === 'found'
             ? {
                 status: 'found',
                 value: (collection.value.artifacts || []).find(
-                    (artifact) => artifact.path === view.resourcePath,
+                    (artifact) => artifact.path === resourcePath,
                 ) || null,
             }
             : collection;
@@ -237,7 +245,9 @@ export default function ArtifactsHubDesktopView({ view, tabGroupId }) {
     } = useArtifactDesktopActions();
     return (
         <ArtifactsHubView
-            conversationId={view.navigationTarget?.conversationId || null}
+            conversationId={
+                navigationTargetForView(view)?.conversationId || null
+            }
             onOpenArtifact={(artifact) => openArtifact(artifact, tabGroupId)}
             onClearConversationFilter={() => openArtifacts(null, tabGroupId)}
         />

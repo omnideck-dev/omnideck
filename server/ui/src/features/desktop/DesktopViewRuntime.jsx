@@ -8,7 +8,6 @@ import {
 
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import { tabGroupContainingView } from './desktopLayoutSelectors.js';
-import { CONVERSATION_VIEW_ID } from './desktopViews.js';
 
 const DesktopViewCatalogContext = createContext(null);
 const DesktopViewCommandsContext = createContext(null);
@@ -16,7 +15,9 @@ const DesktopViewFocusContext = createContext(null);
 
 /** Return the tab group opposite Conversation, falling back to the right. */
 function preferredCompanionTabGroup(model) {
-    const conversationView = model.openViewsById[CONVERSATION_VIEW_ID];
+    const conversationView = Object.values(model.openViewsById).find(
+        (view) => view.type === 'conversation',
+    );
     const conversationTabGroupId = conversationView
         ? tabGroupContainingView(model.tabGroups, conversationView.id)
         : null;

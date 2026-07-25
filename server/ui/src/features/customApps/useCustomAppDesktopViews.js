@@ -12,15 +12,16 @@ import {
     useCurrentNavigationTarget,
     useDesktopNavigationCommands,
 } from '../navigation/DesktopNavigation.jsx';
-import {
-    createCustomAppView,
-} from '../desktop/desktopViews.js';
 import { DESKTOP_TAB_GROUP_IDS } from '../desktop/desktopLayoutReducer.js';
 import {
     useDesktopViewCommands,
     useDesktopViewCatalog,
 } from '../desktop/DesktopViewRuntime.jsx';
 import { useCustomApps } from './CustomApps.jsx';
+import {
+    createCustomAppView,
+    customAppSlugForView,
+} from './customAppDesktopViews.js';
 
 /**
  * Owns Custom App effects which outlive any one rendered app View.
@@ -115,7 +116,9 @@ export default function useCustomAppDesktopViews({ openApp }) {
 
         let changed = false;
         const reconciledViews = currentViews.flatMap((view) => {
-            const app = findBySlug(view.resourceId || view.app?.slug);
+            const app = findBySlug(
+                customAppSlugForView(view) || view.app?.slug,
+            );
             if (!app) {
                 changed = true;
                 return [];

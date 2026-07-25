@@ -16,22 +16,26 @@ const CHAT = {
     type: 'conversation',
     label: 'Chat',
     icon: 'bi-chat',
-    navigationTarget: {
-        kind: 'network',
-        conversationId: 'conversation-1',
-        agentId: 'agent-2',
+    identity: {
+        navigationTarget: {
+            kind: 'network',
+            conversationId: 'conversation-1',
+            agentId: 'agent-2',
+        },
     },
     closable: true,
 };
 const APP = {
     id: 'custom-app:text-lab',
     type: 'custom-app',
-    resourceId: 'text-lab',
     label: 'Text Lab',
     icon: 'bi-fonts',
-    navigationTarget: {
-        kind: 'custom-app',
+    identity: {
         appSlug: 'text-lab',
+        navigationTarget: {
+            kind: 'custom-app',
+            appSlug: 'text-lab',
+        },
     },
     app: {
         slug: 'text-lab',
@@ -44,9 +48,15 @@ const APP = {
 const APP_CORE = {
     id: 'custom-app:text-lab',
     type: 'custom-app',
-    resourceId: 'text-lab',
     label: 'Text Lab',
     icon: 'bi-fonts',
+    identity: {
+        appSlug: 'text-lab',
+        navigationTarget: {
+            kind: 'custom-app',
+            appSlug: 'text-lab',
+        },
+    },
     closable: true,
 };
 const SETTINGS = {
@@ -54,16 +64,20 @@ const SETTINGS = {
     type: 'settings',
     label: 'Settings',
     icon: 'bi-gear',
-    navigationTarget: { kind: 'settings', tab: null },
+    identity: {
+        navigationTarget: { kind: 'settings', tab: null },
+    },
     closable: true,
 };
 const ARTIFACT = {
     id: 'artifact:artifact-7',
     testid: 'artifact:report.md',
     type: 'artifact-file',
-    resourceId: 'artifact-7',
-    resourcePath: '/home/omnideck/report.md',
-    conversationId: 'conversation-1',
+    identity: {
+        resourceId: 'artifact-7',
+        resourcePath: '/home/omnideck/report.md',
+        conversationId: 'conversation-1',
+    },
     artifact: {
         id: 'artifact-7',
         filename: 'report.md',
@@ -113,7 +127,7 @@ describe('desktop layout persistence', () => {
             localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
         );
 
-        expect(saved.version).toBe(3);
+        expect(saved.version).toBe(4);
         expect(saved).not.toHaveProperty('navigationTarget');
         expect(restored.layoutState.tabGroups.left.viewIds).toEqual([CHAT.id]);
         expect(restored.layoutState.tabGroups.right.viewIds).toEqual([APP.id]);
@@ -158,12 +172,14 @@ describe('desktop layout persistence', () => {
         expect(artifactCore).toEqual({
             id: ARTIFACT.id,
             type: 'artifact-file',
-            resourceId: 'artifact-7',
-            resourcePath: '/home/omnideck/report.md',
-            conversationId: 'conversation-1',
             label: 'report.md',
             icon: 'bi-file-earmark',
             closable: true,
+            identity: {
+                resourceId: 'artifact-7',
+                resourcePath: '/home/omnideck/report.md',
+                conversationId: 'conversation-1',
+            },
         });
         expect(artifactCore).not.toHaveProperty('artifact');
         expect(artifactCore).not.toHaveProperty('actions');
@@ -172,6 +188,55 @@ describe('desktop layout persistence', () => {
             loadDesktopLayoutSnapshot().layoutState
                 .openViewsById[ARTIFACT.id],
         ).toEqual(artifactCore);
+    });
+
+    it('wraps v3 top-level domain keys in opaque identity records', () => {
+        const legacyApp = {
+            id: APP.id,
+            type: APP.type,
+            resourceId: 'text-lab',
+            label: APP.label,
+            icon: APP.icon,
+            closable: true,
+        };
+        const legacyArtifact = {
+            id: ARTIFACT.id,
+            type: ARTIFACT.type,
+            resourceId: 'artifact-7',
+            resourcePath: '/home/omnideck/report.md',
+            conversationId: 'conversation-1',
+            label: ARTIFACT.label,
+            icon: ARTIFACT.icon,
+            closable: true,
+        };
+        localStorage.setItem(DESKTOP_LAYOUT_STORAGE_KEY, JSON.stringify({
+            version: 3,
+            layout: {
+                tabGroups: {
+                    left: {
+                        viewIds: [legacyApp.id],
+                        activeViewId: legacyApp.id,
+                    },
+                    right: {
+                        viewIds: [legacyArtifact.id],
+                        activeViewId: legacyArtifact.id,
+                    },
+                },
+                views: [legacyApp, legacyArtifact],
+                focusedTabGroupId: 'left',
+                floatingViews: [],
+            },
+        }));
+
+        const restored = loadDesktopLayoutSnapshot().layoutState;
+        expect(restored.openViewsById[legacyApp.id].identity).toEqual({
+            appSlug: 'text-lab',
+        });
+        expect(restored.openViewsById[legacyArtifact.id].identity).toEqual({
+            resourceId: 'artifact-7',
+            resourcePath: '/home/omnideck/report.md',
+            conversationId: 'conversation-1',
+        });
     });
 
     it('migrates v2 by trusting focused View location, not saved navigation', () => {
@@ -197,7 +262,7 @@ describe('desktop layout persistence', () => {
 
         expect(restored).not.toHaveProperty('navigationTarget');
         expect(focusedView.id).toBe(APP.id);
-        expect(focusedView.resourceId).toBe('text-lab');
+        expect(focusedView.identity.appSlug).toBe('text-lab');
         expect(focusedView).not.toHaveProperty('navigationTarget');
     });
 
@@ -260,10 +325,10 @@ describe('desktop layout persistence', () => {
                     {
                         ...CHAT,
                         type: undefined,
-                        navigationTarget: undefined,
+                        identity: undefined,
                         kind: 'conversation',
                         group: 'destination',
-                        destination: CHAT.navigationTarget,
+                        destination: CHAT.identity.navigationTarget,
                     },
                     {
                         id: 'conversation-execution:conversation-1:root:browser',
@@ -296,7 +361,8 @@ describe('desktop layout persistence', () => {
         expect(restored.layoutState.openViewsById[browserId].type)
             .toBe('workspace-resource');
         expect(
-            restored.layoutState.openViewsById[CHAT.id].navigationTarget,
+            restored.layoutState.openViewsById[CHAT.id]
+                .identity.navigationTarget,
         ).toEqual({
             kind: 'network',
             conversationId: 'conversation-1',
@@ -311,9 +377,11 @@ describe('desktop layout persistence', () => {
             type: 'artifacts',
             label: 'Conversation artifacts',
             icon: 'bi-collection',
-            navigationTarget: {
-                kind: 'artifacts',
-                conversationId: 'conversation-2',
+            identity: {
+                navigationTarget: {
+                    kind: 'artifacts',
+                    conversationId: 'conversation-2',
+                },
             },
             closable: true,
         };
@@ -334,7 +402,8 @@ describe('desktop layout persistence', () => {
                 focusedTabGroupId: 'left',
                 floatingViews: [],
             },
-            navigationTarget: scopedArtifacts.navigationTarget,
+            navigationTarget:
+                scopedArtifacts.identity.navigationTarget,
         }));
 
         const restored = loadDesktopLayoutSnapshot();
@@ -343,9 +412,11 @@ describe('desktop layout persistence', () => {
         expect(restored.layoutState.openViewsById['destination:artifacts'])
             .toMatchObject({
                 id: 'destination:artifacts',
-                navigationTarget: {
-                    kind: 'artifacts',
-                    conversationId: 'conversation-2',
+                identity: {
+                    navigationTarget: {
+                        kind: 'artifacts',
+                        conversationId: 'conversation-2',
+                    },
                 },
             });
     });

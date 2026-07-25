@@ -19,7 +19,10 @@ import {
     useDesktopViewCommands,
     useFocusedViewId,
 } from '../desktop/DesktopViewRuntime.jsx';
-import { createNavigationView } from '../desktop/desktopViews.js';
+import {
+    createNavigationView,
+    navigationTargetForView,
+} from './desktopNavigationViews.js';
 
 const DesktopNavigationCommandsContext = createContext(null);
 
@@ -189,5 +192,5 @@ export function useDesktopNavigationCommands() {
 export function useCurrentNavigationTarget() {
     const focusedViewId = useFocusedViewId();
     const { openViewsById } = useDesktopViewCatalog();
-    return openViewsById[focusedViewId]?.navigationTarget || null;
+    return navigationTargetForView(openViewsById[focusedViewId]);
 }

@@ -5,8 +5,10 @@ import {
 import { DESKTOP_TAB_GROUP_IDS } from '../desktop/desktopLayoutReducer.js';
 import {
     createArtifactView,
+} from '../artifacts/artifactDesktopViews.js';
+import {
     createNavigationView,
-} from '../desktop/desktopViews.js';
+} from '../navigation/desktopNavigationViews.js';
 
 /**
  * Persist the one-time layout shown immediately after setup.

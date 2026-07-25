@@ -34,6 +34,18 @@ A serializable description of something currently open on the Desktop. A view
 contains stable identity and the metadata needed to select its renderer. It
 does not contain React content or placement.
 
+Every View has a generic Desktop-owned core and a domain-owned identity:
+
+```text
+View
+|-- id, type, label, icon, closable   Desktop contract
+`-- identity                         opaque domain lookup keys
+```
+
+Desktop requires the ID to be stable, unique, and serializable, but it does not
+construct or interpret the ID or the identity record. Those decisions belong
+to the domain that knows what makes two resources the same logical View.
+
 Examples include the Conversation view, an artifact view, a Custom App view,
 and a workspace-resource view.
 
@@ -217,6 +229,19 @@ When one domain owns multiple View types, each type gets its own renderer
 instead of branching before calling type-specific hooks. Artifact files and the
 Artifacts hub are the current example.
 
+Each domain also owns its View factories and ID builders beside its adapter:
+
+```text
+features/artifacts/artifactDesktopViews.js
+features/customApps/customAppDesktopViews.js
+features/navigation/desktopNavigationViews.js
+features/workspace/workspaceResourceDesktopViews.js
+```
+
+Factories translate domain records into the generic View core plus an opaque
+`identity` record. Desktop Layout compares `view.id`; the View-type router
+selects the adapter; only that adapter interprets `view.identity`.
+
 The cross-boundary command is generic:
 
 ```text
@@ -235,13 +260,18 @@ type to decide domain policy.
 ## Persistence and rehydration
 
 Desktop Layout persists durable View identity, not copies of domain records.
-The persisted core is the View ID, type, label, icon, closability, and the
-smallest domain key needed to resolve the live record. For example, a Custom
-App persists its slug and an Artifact persists its artifact ID or legacy file
-path. Transient fields such as iframe reload signals and declared runtime
-actions are never saved.
+The persisted record is the generic View core plus its opaque `identity`
+record. Desktop persistence copies that record without switching on View type
+or knowing its fields. For example, Custom Apps place their slug in identity
+and Artifacts place an artifact ID or legacy file path there. Transient fields
+such as live domain records, iframe reload signals, declared runtime actions,
+and test metadata are never saved.
 
-On restore, each domain adapter resolves its own keys:
+Snapshot v4 introduced this opaque shape. A quarantined migration wraps the
+top-level domain keys written by older snapshots so existing layouts remain
+compatible. New persistence and layout code use only the generic contract.
+
+On restore, each domain adapter resolves its own identity:
 
 - Custom Apps resolve slugs through the live catalog and close Views for apps
   that no longer exist.
@@ -318,16 +348,10 @@ now would encode behavior that the product does not yet support.
 
 These are implementation observations, not additional concepts:
 
-- Move View factories and restore validators fully into their owning domains.
-  Persistence now uses a validator registry rather than encoding payload
-  schemas itself, but the registry and factories are still centralized in
-  `desktopViews.js`.
 - Give Custom App view instances unique IDs. Slug-based IDs currently limit an
   app to one simultaneous open instance.
 - Consider splitting `TabbedPane` into a reusable tab strip and an optional
   content owner. It no longer emits an empty content node for Desktop tab
   groups, but its API still supports both roles.
-- Replace Workspace-specific host test attributes with a generic View-owned
-  test metadata convention before changing the existing E2E selectors.
 - Revisit whether the focused Terminal should disable Browser control while a
   Browser view remains visible.

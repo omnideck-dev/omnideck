@@ -14,6 +14,9 @@ import {
 } from '../desktop/DesktopViewRuntime.jsx';
 import useWorkspaceResourceDesktopViews from './useWorkspaceResourceDesktopViews.js';
 import useActiveWorkspaceResource from './useActiveWorkspaceResource.js';
+import {
+    workspaceResourceIdentityForView,
+} from './workspaceResourceDesktopViews.js';
 import WorkspaceResourceView from './WorkspaceResourceView.jsx';
 
 /**
@@ -64,7 +67,12 @@ export default function WorkspaceResourceDesktopView({ view, active }) {
     // `active` keeps hidden tabs from streaming without confusing Desktop
     // focus—which may remain on Chat in the opposite tab group—with whether
     // the visibly selected Browser should expose its control channel.
-    const ownsBrowserSession = active && view.isRoot;
+    const {
+        agentId,
+        resourceId,
+        isRoot,
+    } = workspaceResourceIdentityForView(view);
+    const ownsBrowserSession = active && isRoot;
     const { browser } = useActiveWorkspaceResource({
         conversationId: activeConversationId,
         isStreaming,
@@ -72,8 +80,8 @@ export default function WorkspaceResourceDesktopView({ view, active }) {
     });
     return (
         <WorkspaceResourceView
-            agentId={view.agentId}
-            resourceId={view.resourceId}
+            agentId={agentId}
+            resourceId={resourceId}
             browser={browser}
             active={active}
         />

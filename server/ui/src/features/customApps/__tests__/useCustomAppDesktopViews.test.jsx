@@ -106,7 +106,7 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
         desktop.catalog.openViews = [{
             id: 'custom-app:text-lab',
             type: 'custom-app',
-            resourceId: 'text-lab',
+            identity: { appSlug: 'text-lab' },
             label: 'Text Lab',
             icon: 'bi-fonts',
             closable: true,
@@ -118,7 +118,9 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
             .toHaveBeenCalledWith({
                 views: [expect.objectContaining({
                     id: 'custom-app:text-lab',
-                    resourceId: 'text-lab',
+                    identity: expect.objectContaining({
+                        appSlug: 'text-lab',
+                    }),
                     app: APP,
                     reloadSignal: 0,
                     actions: ['reload'],
@@ -133,7 +135,7 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
         desktop.catalog.openViews = [{
             id: 'custom-app:missing-app',
             type: 'custom-app',
-            resourceId: 'missing-app',
+            identity: { appSlug: 'missing-app' },
             label: 'Missing App',
             icon: 'bi-grid',
             closable: true,

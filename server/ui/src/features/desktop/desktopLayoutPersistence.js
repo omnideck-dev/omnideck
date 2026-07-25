@@ -4,17 +4,17 @@ import {
     DESKTOP_TAB_GROUP_IDS,
 } from './desktopLayoutReducer.js';
 import {
-    ARTIFACTS_VIEW_ID,
     persistedDesktopView,
     validDesktopView,
 } from './desktopViews.js';
 
 // Keep the historical key so existing layouts can be migrated in place.
 export const DESKTOP_LAYOUT_STORAGE_KEY = 'omnideck_desktop_window_v1';
-const SNAPSHOT_VERSION = 3;
-const PREVIOUS_SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 4;
+const PREVIOUS_SNAPSHOT_VERSIONS = [2, 3];
 const LEGACY_SNAPSHOT_VERSION = 1;
 const TAB_GROUP_IDS = Object.values(DESKTOP_TAB_GROUP_IDS);
+const ARTIFACTS_VIEW_ID = 'destination:artifacts';
 
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -33,11 +33,62 @@ function restoredViewId(viewId) {
         : renamed;
 }
 
+/**
+ * Quarantine knowledge of pre-v4 records at the storage migration boundary.
+ *
+ * Older Desktop snapshots persisted domain lookup fields at the top level.
+ * New runtime and persistence code never interpret those fields; this adapter
+ * only wraps historical records in the opaque identity shape expected today.
+ */
+function legacyIdentity(rawView) {
+    if (isRecord(rawView.identity)) return rawView.identity;
+    if (
+        rawView.type === 'conversation'
+        || [
+            'settings',
+            'agents',
+            'routines',
+            'artifacts',
+            'apps',
+        ].includes(rawView.type)
+    ) {
+        return isRecord(rawView.navigationTarget)
+            ? { navigationTarget: rawView.navigationTarget }
+            : null;
+    }
+    if (rawView.type === 'workspace-resource') {
+        return {
+            conversationId: rawView.conversationId,
+            agentId: rawView.agentId,
+            resourceId: rawView.resourceId,
+            isRoot: Boolean(rawView.isRoot),
+        };
+    }
+    if (rawView.type === 'artifact-file') {
+        return {
+            resourceId: rawView.resourceId || rawView.artifact?.id || null,
+            resourcePath: rawView.resourcePath
+                || rawView.artifact?.path
+                || null,
+            conversationId: rawView.conversationId
+                || rawView.artifact?.conversation_id
+                || null,
+        };
+    }
+    if (rawView.type === 'custom-app') {
+        const appSlug = rawView.resourceId || rawView.app?.slug;
+        return appSlug ? { appSlug } : null;
+    }
+    return null;
+}
+
 function restoredView(rawView) {
     if (!isRecord(rawView)) return rawView;
+    const identity = legacyIdentity(rawView);
     return {
         ...rawView,
         id: restoredViewId(rawView.id),
+        ...(identity ? { identity } : {}),
     };
 }
 
@@ -268,7 +319,7 @@ export function loadDesktopLayoutSnapshot() {
             ? migrateLegacySnapshot(raw)
             : (
                 [
-                    PREVIOUS_SNAPSHOT_VERSION,
+                    ...PREVIOUS_SNAPSHOT_VERSIONS,
                     SNAPSHOT_VERSION,
                 ].includes(raw.version)
                     ? {

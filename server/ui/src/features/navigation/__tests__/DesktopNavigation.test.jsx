@@ -13,9 +13,11 @@ const desktop = vi.hoisted(() => ({
         openViewsById: {
             'destination:conversation': {
                 id: 'destination:conversation',
-                navigationTarget: {
-                    kind: 'chat',
-                    conversationId: 'conversation-1',
+                identity: {
+                    navigationTarget: {
+                        kind: 'chat',
+                        conversationId: 'conversation-1',
+                    },
                 },
             },
         },
@@ -76,10 +78,12 @@ describe('DesktopNavigationProvider', () => {
         expect(desktop.commands.openView).toHaveBeenLastCalledWith(
             expect.objectContaining({
                 id: 'destination:conversation',
-                navigationTarget: {
-                    kind: 'network',
-                    conversationId: 'conversation-1',
-                    agentId: 'agent-2',
+                identity: {
+                    navigationTarget: {
+                        kind: 'network',
+                        conversationId: 'conversation-1',
+                        agentId: 'agent-2',
+                    },
                 },
             }),
             { tabGroupId: 'left' },
@@ -89,10 +93,12 @@ describe('DesktopNavigationProvider', () => {
         expect(desktop.commands.openView).toHaveBeenLastCalledWith(
             expect.objectContaining({
                 id: 'destination:routines',
-                navigationTarget: {
-                    kind: 'routines',
-                    routineId: 'routine-2',
-                    runId: 'run-3',
+                identity: {
+                    navigationTarget: {
+                        kind: 'routines',
+                        routineId: 'routine-2',
+                        runId: 'run-3',
+                    },
                 },
             }),
             { tabGroupId: 'left' },
@@ -122,9 +128,11 @@ describe('DesktopNavigationProvider', () => {
             .toHaveBeenCalledWith('conversation-2');
         expect(desktop.commands.openView).toHaveBeenCalledWith(
             expect.objectContaining({
-                navigationTarget: {
-                    kind: 'chat',
-                    conversationId: 'conversation-2',
+                identity: {
+                    navigationTarget: {
+                        kind: 'chat',
+                        conversationId: 'conversation-2',
+                    },
                 },
             }),
             { tabGroupId: 'left' },
@@ -158,9 +166,11 @@ describe('DesktopNavigationProvider', () => {
 
         expect(desktop.commands.openView).toHaveBeenCalledWith(
             expect.objectContaining({
-                navigationTarget: {
-                    kind: 'chat',
-                    conversationId: 'conversation-2',
+                identity: {
+                    navigationTarget: {
+                        kind: 'chat',
+                        conversationId: 'conversation-2',
+                    },
                 },
             }),
             { tabGroupId: 'left' },

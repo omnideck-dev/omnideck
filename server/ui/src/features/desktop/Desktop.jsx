@@ -27,7 +27,9 @@ import useDesktopShellLifecycle, {
     useDesktopRestoreSnapshot,
 } from './useDesktopShellLifecycle.js';
 import useDesktopViewInteractions from './useDesktopViewInteractions.js';
-import { createNavigationView } from './desktopViews.js';
+import {
+    createNavigationView,
+} from '../navigation/desktopNavigationViews.js';
 import styles from '../../App.module.css';
 
 // View rendering is a pure adapter lookup. Keeping this function at module

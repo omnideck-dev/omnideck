@@ -21,7 +21,9 @@ import {
 import {
     DESKTOP_LAYOUT_STORAGE_KEY,
 } from '../desktopLayoutPersistence.js';
-import { createNavigationView } from '../desktopViews.js';
+import {
+    createNavigationView,
+} from '../../navigation/desktopNavigationViews.js';
 import useDesktopLayout from '../useDesktopLayout.jsx';
 import useDesktopShellLifecycle from '../useDesktopShellLifecycle.js';
 
@@ -170,7 +172,9 @@ describe('useDesktopShellLifecycle persistence', () => {
             const conversationView = saved.layout.views.find(
                 (view) => view.id === staleConversation.id,
             );
-            expect(conversationView.navigationTarget.conversationId)
+            expect(
+                conversationView.identity.navigationTarget.conversationId,
+            )
                 .toBe('fresh-conversation');
         });
     });

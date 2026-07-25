@@ -20,9 +20,9 @@ import {
 } from './desktopLayoutPersistence.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import {
-    CONVERSATION_VIEW_ID,
     createNavigationView,
-} from './desktopViews.js';
+    navigationTargetForView,
+} from '../navigation/desktopNavigationViews.js';
 
 /** Capture one immutable restore snapshot before the layout reducer starts. */
 export function useDesktopRestoreSnapshot() {
@@ -64,10 +64,12 @@ export default function useDesktopShellLifecycle({
         let cancelled = false;
 
         const restoreDesktop = async () => {
-            const conversationView = desktopRestore.layoutState
-                .openViewsById[CONVERSATION_VIEW_ID];
-            const conversationId = conversationView
-                ?.navigationTarget?.conversationId;
+            const conversationView = Object.values(
+                desktopRestore.layoutState.openViewsById,
+            ).find((view) => view.type === 'conversation');
+            const conversationId = navigationTargetForView(
+                conversationView,
+            )?.conversationId;
             let conversationLoaded = true;
             if (conversationId) {
                 try {

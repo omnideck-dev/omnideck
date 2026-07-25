@@ -1,12 +1,21 @@
-import { useCallback, useRef } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useRef,
+} from 'react';
 
 import { formatAgentName } from '../../utils/agentUtils.js';
 import { useAgentState } from '../agent/AgentState.jsx';
 import { useAppEffectSubscription } from '../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 import {
+    navigationTargetForView,
+} from '../navigation/desktopNavigationViews.js';
+import {
     createWorkspaceResourceView,
-} from '../desktop/desktopViews.js';
+    rehydrateWorkspaceResourceView,
+    workspaceResourceIdentityForView,
+} from './workspaceResourceDesktopViews.js';
 
 function conversationView(model) {
     return model.openViews.find((view) => view.type === 'conversation') || null;
@@ -31,6 +40,22 @@ export default function useWorkspaceResourceDesktopViews({
     // the effect handlers depend on every drag, resize, or tab selection.
     const modelRef = useRef(desktopModel);
     modelRef.current = desktopModel;
+
+    useEffect(() => {
+        const restoredViews = desktopModel.openViews
+            .filter((view) => (
+                view.type === 'workspace-resource'
+                && !view.testMetadata
+            ))
+            .map(rehydrateWorkspaceResourceView)
+            .filter(Boolean);
+        if (restoredViews.length) {
+            desktopCommands.updateViews(restoredViews);
+        }
+    }, [
+        desktopCommands.updateViews,
+        desktopModel.openViews,
+    ]);
 
     const hasConversationView = useCallback(() => (
         Boolean(conversationView(modelRef.current))
@@ -84,10 +109,11 @@ export default function useWorkspaceResourceDesktopViews({
     const closeConversationWorkspaceViews = useCallback((conversationId) => {
         if (!conversationId) return;
         const viewIds = modelRef.current.openViews
-            .filter((view) => (
-                view.type === 'workspace-resource'
-                && view.conversationId === conversationId
-            ))
+            .filter((view) => {
+                const identity = workspaceResourceIdentityForView(view);
+                return view.type === 'workspace-resource'
+                    && identity.conversationId === conversationId;
+            })
             .map((view) => view.id);
         desktopCommands.closeViews(viewIds);
         const prefix = `workspace-resource:${conversationId}:`;
@@ -149,7 +175,9 @@ export default function useWorkspaceResourceDesktopViews({
         const closingConversationIds = new Set(
             effect.views
                 .filter((view) => view.type === 'conversation')
-                .map((view) => view.navigationTarget?.conversationId)
+                .map((view) => (
+                    navigationTargetForView(view)?.conversationId
+                ))
                 .filter(Boolean),
         );
 
@@ -157,9 +185,10 @@ export default function useWorkspaceResourceDesktopViews({
         // conversation changes. If the conversation itself is closing, its
         // dismissal history is cleared instead.
         for (const view of effect.views) {
+            const identity = workspaceResourceIdentityForView(view);
             if (
                 view.type === 'workspace-resource'
-                && !closingConversationIds.has(view.conversationId)
+                && !closingConversationIds.has(identity.conversationId)
             ) {
                 dismissedViewIdsRef.current.add(view.id);
             }
