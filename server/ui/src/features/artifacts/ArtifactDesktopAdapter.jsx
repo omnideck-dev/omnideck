@@ -92,13 +92,17 @@ export function ArtifactDesktopEffects() {
         onError: handleArtifactError,
     });
     const handleViewAction = useCallback((effect) => {
-        if (
-            effect.actionId === 'open-source-conversation'
-            && effect.view.artifact
-        ) {
-            openArtifactInConversation(effect.view.artifact);
+        if (effect.actionId !== 'open-source-conversation') return;
+        const artifact = effect.view.artifact;
+        if (!artifact?.id || !artifact.conversation_id) {
+            // A declared View action must either work or fail visibly. This
+            // also guards restored/legacy descriptors that predate the
+            // factory-level action validation.
+            handleArtifactError();
+            return;
         }
-    }, [openArtifactInConversation]);
+        openArtifactInConversation(artifact);
+    }, [handleArtifactError, openArtifactInConversation]);
     useAppEffectSubscription(
         APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
         handleViewAction,

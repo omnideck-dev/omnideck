@@ -18,11 +18,19 @@ vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
 
 const {
     DesktopNavigationProvider,
-    useDesktopNavigation,
+    useDesktopNavigationCommands,
+    useDesktopNavigationState,
 } = await import('../DesktopNavigation.jsx');
 
 function wrapper({ children }) {
     return <DesktopNavigationProvider>{children}</DesktopNavigationProvider>;
+}
+
+function useNavigationHarness() {
+    return {
+        ...useDesktopNavigationState(),
+        ...useDesktopNavigationCommands(),
+    };
 }
 
 describe('DesktopNavigationProvider', () => {
@@ -33,7 +41,7 @@ describe('DesktopNavigationProvider', () => {
     });
 
     it('stores serializable navigationTargets with stable IDs', () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
 
         act(() => result.current.openAgent('agent-2'));
         expect(result.current.navigationTarget).toEqual({
@@ -51,7 +59,7 @@ describe('DesktopNavigationProvider', () => {
     });
 
     it('can restore a serializable navigation target owned by a Desktop View', () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
         const navigationTarget = { kind: 'settings', tab: 'skills' };
 
         act(() => result.current.openTarget(navigationTarget));
@@ -60,7 +68,7 @@ describe('DesktopNavigationProvider', () => {
     });
 
     it('opens the active conversation without reloading it', async () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
         const initialNavigationTarget = result.current.navigationTarget;
 
         await act(async () => result.current.openConversation('conversation-1'));
@@ -74,7 +82,7 @@ describe('DesktopNavigationProvider', () => {
     });
 
     it('loads a different conversation before navigating to it', async () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
 
         await act(async () => result.current.openConversation('conversation-2'));
 
@@ -86,7 +94,7 @@ describe('DesktopNavigationProvider', () => {
     });
 
     it('carries an artifact as serializable conversation navigation intent', async () => {
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
 
         await act(async () => result.current.openConversation('conversation-2', {
             artifactId: 'artifact-3',
@@ -101,7 +109,7 @@ describe('DesktopNavigationProvider', () => {
 
     it('keeps the current navigationTarget when conversation loading fails', async () => {
         session.loadConversation.mockResolvedValue(false);
-        const { result } = renderHook(useDesktopNavigation, { wrapper });
+        const { result } = renderHook(useNavigationHarness, { wrapper });
         act(() => result.current.openApps());
 
         await act(async () => result.current.openConversation('missing'));

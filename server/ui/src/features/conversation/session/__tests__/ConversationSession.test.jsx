@@ -51,7 +51,8 @@ vi.mock('../../../../components/ToastProvider.jsx', () => ({
 
 const {
     ConversationSessionProvider,
-    useConversationSession,
+    useConversationSessionCommands,
+    useConversationSessionState,
 } = await import('../ConversationSession.jsx');
 
 function renderSession() {
@@ -60,7 +61,12 @@ function renderSession() {
     let workspaces;
 
     function Inspector() {
-        session = useConversationSession();
+        // Tests may merge the two narrow values locally; production consumers
+        // must choose the subscription width they actually need.
+        session = {
+            ...useConversationSessionState(),
+            ...useConversationSessionCommands(),
+        };
         agents = useAgentState();
         workspaces = useWorkspaceState();
         useAppEffectSubscription(

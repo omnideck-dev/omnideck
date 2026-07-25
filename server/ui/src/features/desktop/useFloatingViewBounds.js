@@ -168,7 +168,19 @@ export default function useFloatingViewBounds({
         observer.observe(host);
         return () => {
             observer.disconnect();
-            clearTimeout(resizeCommitRef.current);
+            if (resizeCommitRef.current) {
+                clearTimeout(resizeCommitRef.current);
+                const bounds = boundsRef.current;
+                if (bounds) {
+                    // Docking, closing, or entering fullscreen can tear down
+                    // the observer before its debounce expires. Flush the
+                    // last observed native resize instead of discarding it.
+                    commands.updateFloatingBounds(viewId, {
+                        width: bounds.width,
+                        height: bounds.height,
+                    });
+                }
+            }
             resizeCommitRef.current = null;
         };
     }, [

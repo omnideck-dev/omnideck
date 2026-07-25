@@ -114,10 +114,3 @@ export function useDesktopNavigationCommands() {
     }
     return commands;
 }
-
-export function useDesktopNavigation() {
-    return {
-        ...useDesktopNavigationState(),
-        ...useDesktopNavigationCommands(),
-    };
-}

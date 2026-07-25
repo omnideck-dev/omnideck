@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     DesktopViewRuntimeProvider,
-    preferredCompanionTabGroup,
     useDesktopViewCatalog,
     useDesktopViewCommands,
 } from '../DesktopViewRuntime.jsx';
@@ -83,12 +82,20 @@ describe('DesktopViewRuntime', () => {
     });
 
     it('keeps companion placement policy in the Desktop boundary', () => {
-        expect(preferredCompanionTabGroup(model({
-            conversationTabGroupId: 'left',
-        }))).toBe('right');
-        expect(preferredCompanionTabGroup(model({
-            conversationTabGroupId: 'right',
-        }))).toBe('left');
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'left' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
     it('does not wake domain catalog consumers for bounds-only changes', () => {

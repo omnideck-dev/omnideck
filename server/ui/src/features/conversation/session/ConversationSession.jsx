@@ -214,10 +214,3 @@ export function useConversationSessionCommands() {
     }
     return commands;
 }
-
-export function useConversationSession() {
-    return {
-        ...useConversationSessionState(),
-        ...useConversationSessionCommands(),
-    };
-}

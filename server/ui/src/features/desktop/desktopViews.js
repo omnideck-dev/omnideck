@@ -94,7 +94,9 @@ export function createFileOutputView(item, conversationId) {
         },
         label: item.filename || 'Artifact',
         icon: 'bi-file-earmark',
-        actions: conversationId ? ['open-source-conversation'] : [],
+        actions: conversationId && item.id
+            ? ['open-source-conversation']
+            : [],
         closable: true,
     };
 }

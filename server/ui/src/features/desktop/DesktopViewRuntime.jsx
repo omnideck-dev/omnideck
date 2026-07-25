@@ -14,7 +14,7 @@ const DesktopViewCatalogContext = createContext(null);
 const DesktopViewCommandsContext = createContext(null);
 
 /** Return the tab group opposite Conversation, falling back to the right. */
-export function preferredCompanionTabGroup(model) {
+function preferredCompanionTabGroup(model) {
     const conversationView = model.openViewsById[CONVERSATION_VIEW_ID];
     const conversationTabGroupId = conversationView
         ? tabGroupContainingView(model.tabGroups, conversationView.id)

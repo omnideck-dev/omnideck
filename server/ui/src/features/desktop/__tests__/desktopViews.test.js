@@ -123,16 +123,25 @@ describe('artifact view descriptions', () => {
     });
 
     it('opens a sent file as a durable artifact view', () => {
-        expect(createFileOutputView({
+        const withoutId = createFileOutputView({
             filename: 'report.md',
             path: '/home/omnideck/report.md',
-        }, 'conversation-2')).toMatchObject({
+        }, 'conversation-2');
+        const withId = createFileOutputView({
+            id: 'artifact-2',
+            filename: 'report.md',
+            path: '/home/omnideck/report.md',
+        }, 'conversation-2');
+
+        expect(withoutId).toMatchObject({
             type: 'artifact-file',
             label: 'report.md',
+            actions: [],
             artifact: {
                 conversation_id: 'conversation-2',
                 path: '/home/omnideck/report.md',
             },
         });
+        expect(withId.actions).toEqual(['open-source-conversation']);
     });
 });

@@ -172,5 +172,4 @@ export default function useWorkspaceResourceDesktopViews({
         APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
         handleViewsClosing,
     );
-
 }
