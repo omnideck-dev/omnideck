@@ -1,9 +1,22 @@
 .content {
   padding: 10px;
+  /* Fill whatever the host gives us: a floating window can be any size, so the
+     view must size to its parent rather than to the browser viewport. Growing as
+     a flex item rather than asking for height:100% keeps this correct when the
+     host's own height comes from an inline style. */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
+/* Takes its height from the frame rather than from the panel. Giving it a height
+   of its own means empty space inside it whenever the remote viewport's shape
+   differs from the panel's, and that space can only be letterboxed. Shrinking
+   and scrolling is the fallback when the panel is too short for the frame. */
 .screenshotContainer {
-  max-height: calc(100vh - 10rem);
+  flex: 0 1 auto;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -12,9 +25,18 @@
   cursor: default;
 }
 
+/* Full width, height from the frame's own aspect. Sizing this way rather than
+   with object-fit keeps the element's box exactly the drawn frame; object-fit
+   would include letterbox bars in the box and offset every forwarded click. */
 .screenshot {
   width: 100%;
   height: auto;
+}
+
+/* The frame canvas carries `hidden` until something has been drawn into it. An
+   author `display` declaration outranks the user-agent rule for `[hidden]`, so
+   setting it unconditionally would leave an empty 300x150 canvas on screen. */
+.screenshot:not([hidden]) {
   display: block;
 }
 

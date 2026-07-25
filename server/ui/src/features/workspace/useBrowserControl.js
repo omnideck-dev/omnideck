@@ -1,4 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import createFrameBus from './frameBus.js';
+
+// Binary frame header: int32 tab id, then float32 deviceWidth, deviceHeight,
+// pageScaleFactor, offsetTop. Those four are what turn a point on the displayed
+// image back into a page coordinate; the image's own pixel size cannot, because
+// capture is scaled down to the size actually on screen.
+const FRAME_HEADER_BYTES = 20;
+
+// Thumbnails only need to look current, so they refresh on a slow timer instead
+// of once per frame. This is the only place a frame reaches React state.
+const THUMB_INTERVAL_MS = 1000;
 
 /**
  * Write text to the host clipboard. Uses the async Clipboard API on secure
@@ -88,8 +99,16 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
     const [engaged, setEngaged] = useState(false);
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState(null);
+    // The cursor the remote page would show. The screencast image carries no
+    // cursor, so without mirroring it the pointer stays an arrow over links.
+    const [cursor, setCursor] = useState('default');
     const wsRef = useRef(null);
     const framesRef = useRef({}); // mirror of framesByTab, for blob-url revocation
+    const thumbAtRef = useRef({}); // per-tab timestamp of the last thumbnail refresh
+    // Live frames bypass React entirely; the viewport subscribes to this.
+    const frameBusRef = useRef(null);
+    if (frameBusRef.current === null) frameBusRef.current = createFrameBus();
+    const frameBus = frameBusRef.current;
 
     // One socket per conversation, only while a browser view is open.
     useEffect(() => {
@@ -107,16 +126,35 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         ws.onopen = () => setConnected(true);
         ws.onmessage = (e) => {
             if (typeof e.data !== 'string') {
-                // Binary screencast frame: [int32 tab_id][jpeg bytes]. Cache it
-                // per tab, revoking that tab's previous frame.
                 const buf = e.data;
-                if (!buf || buf.byteLength < 4) return;
-                const tabId = new DataView(buf).getInt32(0, false);
-                const url = URL.createObjectURL(new Blob([buf.slice(4)], { type: 'image/jpeg' }));
-                const prev = framesRef.current[tabId];
-                if (prev) URL.revokeObjectURL(prev);
-                framesRef.current = { ...framesRef.current, [tabId]: url };
-                setFramesByTab(framesRef.current);
+                if (!buf || buf.byteLength < FRAME_HEADER_BYTES) return;
+                const head = new DataView(buf, 0, FRAME_HEADER_BYTES);
+                const tabId = head.getInt32(0, false);
+                const meta = {
+                    deviceWidth: head.getFloat32(4, false),
+                    deviceHeight: head.getFloat32(8, false),
+                    pageScale: head.getFloat32(12, false) || 1,
+                    offsetTop: head.getFloat32(16, false),
+                };
+                const jpeg = buf.slice(FRAME_HEADER_BYTES);
+                const seq = frameBus.nextSeq();
+                // createImageBitmap decodes off the main thread, so a busy page
+                // does not stall the UI thread once per frame the way assigning
+                // a blob url to an <img> does.
+                createImageBitmap(new Blob([jpeg], { type: 'image/jpeg' }))
+                    .then((bitmap) => frameBus.push({ bitmap, meta, tabId, seq }))
+                    .catch(() => { /* malformed frame, wait for the next */ });
+
+                // Refresh this tab's rail thumbnail occasionally, not per frame.
+                const now = Date.now();
+                if (now - (thumbAtRef.current[tabId] || 0) >= THUMB_INTERVAL_MS) {
+                    thumbAtRef.current[tabId] = now;
+                    const url = URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }));
+                    const prev = framesRef.current[tabId];
+                    if (prev) URL.revokeObjectURL(prev);
+                    framesRef.current = { ...framesRef.current, [tabId]: url };
+                    setFramesByTab(framesRef.current);
+                }
                 return;
             }
             let m;
@@ -125,6 +163,8 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
                 setNav({ tabId: m.tab_id, url: m.url, title: m.title });
             } else if (m.type === 'tabs') {
                 setLiveTabs(Array.isArray(m.tabs) ? m.tabs : []);
+            } else if (m.type === 'cursor') {
+                setCursor(m.cursor || 'default');
             } else if (m.type === 'clipboard' && m.text) {
                 // Selection copied in the remote tab → write to the host clipboard.
                 writeHostClipboard(m.text);
@@ -151,10 +191,13 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             setConnected(false);
             Object.values(framesRef.current).forEach((u) => URL.revokeObjectURL(u));
             framesRef.current = {};
+            thumbAtRef.current = {};
+            frameBus.reset();
             setFramesByTab({});
             setLiveTabs(null);
+            setCursor('default');
         };
-    }, [enabled, conversationId]);
+    }, [enabled, conversationId, frameBus]);
 
     // Point the screencast at the selected tab. Runs both when the selection
     // changes and once the socket connects, so neither ordering misses the send.
@@ -165,6 +208,7 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             // Keep the previous tab's cached frame (it's that tab's thumbnail);
             // just drop its nav state until the newly selected tab's arrives.
             setNav(null);
+            setCursor('default');
         }
     }, [connected, selectedTabId]);
 
@@ -177,7 +221,11 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         let changed = false;
         for (const id of Object.keys(cur)) {
             if (open.has(id)) next[id] = cur[id];
-            else { URL.revokeObjectURL(cur[id]); changed = true; }
+            else {
+                URL.revokeObjectURL(cur[id]);
+                delete thumbAtRef.current[id];
+                changed = true;
+            }
         }
         if (changed) { framesRef.current = next; setFramesByTab(next); }
     }, [liveTabs]);
@@ -216,19 +264,27 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
     const newTab = useCallback(() => sendInput({ type: 'new_tab' }), [sendInput]);
     const goto = useCallback((url) => sendInput({ type: 'goto', url }), [sendInput]);
     const navigate = useCallback((direction) => sendInput({ type: direction }), [sendInput]);
+    // Ask for capture at the width it is displayed at. Capturing the whole 1080p
+    // window and letting the client shrink it wastes most of every frame, which
+    // is what caps the frame rate on a busy page. Width alone sets the scale,
+    // because the frame is always shown at the view's full width.
+    const resize = useCallback(
+        (width) => sendInput({ type: 'resize', width: Math.round(width) }),
+        [sendInput],
+    );
 
     const toggleEngage = useCallback(() => {
         setEngaged((v) => (controlAvailable ? !v : false));
     }, [controlAvailable]);
 
-    // The selected tab's cached frame drives the main view; the full per-tab
-    // cache drives the rail thumbnails (so deselected tabs keep their frame).
-    const frameUrl = selectedTabId != null ? (framesByTab[selectedTabId] || null) : null;
+    // The live view reads frames off the bus; the per-tab blob cache only feeds
+    // the rail thumbnails (so deselected tabs keep showing something).
     const navState = nav && nav.tabId === selectedTabId ? nav : null;
 
     return {
-        frameUrl,
+        frameBus,
         framesByTab,
+        cursor,
         navUrl: navState?.url ?? null,
         navTitle: navState?.title ?? null,
         liveTabs,
@@ -242,5 +298,6 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         newTab,
         goto,
         navigate,
+        resize,
     };
 }

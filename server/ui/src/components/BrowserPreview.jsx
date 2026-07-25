@@ -37,6 +37,38 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
     useEffect(() => {
         if (c.engaged) focusViewport();
     }, [selectedId, c.engaged, focusViewport]);
+
+    // Tell the channel how big the view actually is, so capture is scaled to it
+    // rather than to the remote window. Capturing 1080p for a panel a third that
+    // size is what puts a ceiling on the frame rate. Debounced because a window
+    // drag-resize fires continuously and each change restarts the stream.
+    const resize = c.resize;
+    useEffect(() => {
+        const el = viewportRef.current;
+        if (!resize || !el || typeof ResizeObserver === 'undefined') return undefined;
+        let timer = 0;
+        const report = () => {
+            const { width } = el.getBoundingClientRect();
+            if (width < 1) return;
+            // Ask in device pixels so a HiDPI display still gets a sharp frame.
+            // Chromium never upscales, so an over-large request costs nothing.
+            // Height is deliberately not reported: the frame is drawn at this
+            // full width, so the width alone decides the capture scale.
+            const scale = Math.min(window.devicePixelRatio || 1, 2);
+            resize(width * scale);
+        };
+        const observer = new ResizeObserver(() => {
+            clearTimeout(timer);
+            timer = setTimeout(report, 150);
+        });
+        observer.observe(el);
+        report();
+        return () => {
+            clearTimeout(timer);
+            observer.disconnect();
+        };
+    }, [resize, selectedId]);
+
     // Prefer the live nav state (updates during takeover / agent nav); fall back
     // to the screenshot snapshot.
     const url = c.navUrl || activeSnapshot.url;
@@ -52,11 +84,12 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
             />
 
             <ScreencastViewport
-                frameUrl={c.frameUrl || null}
+                frameBus={c.frameBus || null}
                 fallbackSrc={fallbackSrc}
                 engaged={!!c.engaged}
                 active={inputActive}
                 sendInput={c.sendInput}
+                cursor={c.cursor}
                 className={styles.screenshotContainer}
                 imgClassName={styles.screenshot}
                 viewportRef={viewportRef}
