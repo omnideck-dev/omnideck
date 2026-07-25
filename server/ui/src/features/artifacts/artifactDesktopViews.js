@@ -2,6 +2,13 @@
  * Artifact owns both the stable View ID and the durable lookup keys used to
  * rehydrate a file. Desktop treats all of these values as opaque identity.
  */
+const OPEN_SOURCE_CONVERSATION_ACTION = Object.freeze({
+    id: 'open-source-conversation',
+    label: 'Open source conversation',
+    icon: 'bi-chat-left-text',
+    testid: 'artifact-open-conversation',
+});
+
 export function createArtifactView(artifact) {
     if (!artifact?.id) return null;
     return {
@@ -19,7 +26,7 @@ export function createArtifactView(artifact) {
         label: artifact.filename || 'Artifact',
         icon: 'bi-file-earmark',
         actions: artifact.conversation_id
-            ? ['open-source-conversation']
+            ? [OPEN_SOURCE_CONVERSATION_ACTION]
             : [],
         closable: true,
     };
@@ -46,7 +53,7 @@ export function createFileOutputView(item, conversationId) {
         label: item.filename || 'Artifact',
         icon: 'bi-file-earmark',
         actions: conversationId && item.id
-            ? ['open-source-conversation']
+            ? [OPEN_SOURCE_CONVERSATION_ACTION]
             : [],
         closable: true,
     };

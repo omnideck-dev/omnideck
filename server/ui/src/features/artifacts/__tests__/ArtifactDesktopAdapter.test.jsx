@@ -98,7 +98,9 @@ describe('ArtifactDesktopEffects restore reconciliation', () => {
                         resourceId: LIVE_ARTIFACT.id,
                     }),
                     artifact: LIVE_ARTIFACT,
-                    actions: ['open-source-conversation'],
+                    actions: [expect.objectContaining({
+                        id: 'open-source-conversation',
+                    })],
                 })],
                 closeViewIds: [],
             }));

@@ -19,7 +19,11 @@ describe('generic Desktop View contract', () => {
             closable: true,
             identity,
             domainRecord: { large: true },
-            actions: ['refresh'],
+            actions: [{
+                id: 'refresh',
+                label: 'Refresh',
+                icon: 'bi-arrow-clockwise',
+            }],
             testMetadata: { ownerId: 'agent-2' },
         };
 

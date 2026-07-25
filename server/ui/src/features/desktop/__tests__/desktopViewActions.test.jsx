@@ -12,7 +12,13 @@ const CUSTOM_APP = {
     id: 'custom-app:text-lab',
     type: 'custom-app',
     label: 'Text Lab',
-    actions: ['reload'],
+    actions: [{
+        id: 'domain-refresh',
+        label: 'Refresh domain view',
+        ariaLabel: 'Refresh Text Lab',
+        icon: 'bi-arrow-clockwise',
+        testid: 'domain-refresh',
+    }],
     closable: true,
 };
 const CHAT = {
@@ -59,7 +65,7 @@ describe('desktop view actions', () => {
         );
 
         menuItems.find((item) => item.id === 'move').execute();
-        menuItems.find((item) => item.id === 'reload').execute();
+        menuItems.find((item) => item.id === 'domain-refresh').execute();
         menuItems.find((item) => item.id === 'fullscreen').execute();
 
         expect(commandSet.moveView).toHaveBeenCalledWith(
@@ -67,7 +73,7 @@ describe('desktop view actions', () => {
             DESKTOP_TAB_GROUP_IDS.LEFT,
         );
         expect(commandSet.requestViewAction).toHaveBeenCalledWith(
-            'reload',
+            'domain-refresh',
             CUSTOM_APP,
         );
         expect(commandSet.enterFullscreen).toHaveBeenCalledWith(CUSTOM_APP.id);
@@ -86,7 +92,7 @@ describe('desktop view actions', () => {
             'maximize-view-custom-app:text-lab',
         )).not.toBeInTheDocument();
         expect(screen.getByTestId(
-            'reload-view-custom-app:text-lab',
+            'domain-refresh',
         )).toBeInTheDocument();
     });
 
@@ -144,7 +150,7 @@ describe('desktop view actions', () => {
         );
     });
 
-    it('contributes source-conversation navigation for artifact views', () => {
+    it('preserves domain-owned action presentation metadata', () => {
         const artifact = {
             id: 'artifact-1',
             filename: 'notes.md',
@@ -156,16 +162,28 @@ describe('desktop view actions', () => {
             type: 'artifact-file',
             label: 'notes.md',
             artifact,
-            actions: ['open-source-conversation'],
+            actions: [{
+                id: 'inspect-source',
+                label: 'Inspect source',
+                ariaLabel: 'Inspect notes source',
+                icon: 'bi-search',
+                testid: 'inspect-source',
+            }],
             closable: true,
         }, commandSet);
         const openSource = items.find(
-            (item) => item.id === 'open-source-conversation',
+            (item) => item.id === 'inspect-source',
         );
 
+        expect(openSource).toMatchObject({
+            label: 'Inspect source',
+            ariaLabel: 'Inspect notes source',
+            icon: 'bi-search',
+            testid: 'inspect-source',
+        });
         openSource.execute();
         expect(commandSet.requestViewAction).toHaveBeenCalledWith(
-            'open-source-conversation',
+            'inspect-source',
             expect.objectContaining({ artifact }),
         );
     });

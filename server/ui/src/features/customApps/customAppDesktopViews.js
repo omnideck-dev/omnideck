@@ -5,8 +5,9 @@ export function customAppViewId(slug) {
 
 export function createCustomAppView(app, reloadSignal = 0) {
     if (!app) return null;
+    const id = customAppViewId(app.slug);
     return {
-        id: customAppViewId(app.slug),
+        id,
         type: 'custom-app',
         identity: {
             appSlug: app.slug,
@@ -19,7 +20,13 @@ export function createCustomAppView(app, reloadSignal = 0) {
         icon: app.icon,
         app,
         reloadSignal,
-        actions: ['reload'],
+        actions: [{
+            id: 'reload',
+            label: 'Reload',
+            ariaLabel: `Reload ${app.title}`,
+            icon: 'bi-arrow-clockwise',
+            testid: `reload-view-${id}`,
+        }],
         closable: true,
     };
 }

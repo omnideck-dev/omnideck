@@ -123,7 +123,9 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
                     }),
                     app: APP,
                     reloadSignal: 0,
-                    actions: ['reload'],
+                    actions: [expect.objectContaining({
+                        id: 'reload',
+                    })],
                 })],
                 closeViewIds: [],
             }));

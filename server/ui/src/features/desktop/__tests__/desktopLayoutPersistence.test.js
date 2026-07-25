@@ -42,7 +42,11 @@ const APP = {
         title: 'Text Lab',
     },
     reloadSignal: 7,
-    actions: ['reload'],
+    actions: [{
+        id: 'reload',
+        label: 'Reload',
+        icon: 'bi-arrow-clockwise',
+    }],
     closable: true,
 };
 const APP_CORE = {
@@ -86,7 +90,11 @@ const ARTIFACT = {
     },
     label: 'report.md',
     icon: 'bi-file-earmark',
-    actions: ['open-source-conversation'],
+    actions: [{
+        id: 'open-source-conversation',
+        label: 'Open source conversation',
+        icon: 'bi-chat-left-text',
+    }],
     closable: true,
 };
 

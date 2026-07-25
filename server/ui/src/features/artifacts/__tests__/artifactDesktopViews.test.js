@@ -48,6 +48,11 @@ describe('Artifact desktop View descriptions', () => {
             },
         });
         expect(withId.identity.resourceId).toBe('artifact-2');
-        expect(withId.actions).toEqual(['open-source-conversation']);
+        expect(withId.actions).toEqual([{
+            id: 'open-source-conversation',
+            label: 'Open source conversation',
+            icon: 'bi-chat-left-text',
+            testid: 'artifact-open-conversation',
+        }]);
     });
 });

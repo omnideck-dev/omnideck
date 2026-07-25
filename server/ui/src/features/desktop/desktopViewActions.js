@@ -3,6 +3,16 @@ import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 const FULLSCREEN = 'fullscreen';
 const FLOATING = 'floating';
 const MENU = 'menu';
+const RESERVED_DESKTOP_ACTION_IDS = new Set([
+    'dock-left',
+    'dock-right',
+    'move',
+    'float',
+    'fullscreen',
+    'close',
+    'close-others',
+    'close-right',
+]);
 
 function action({
     id,
@@ -117,27 +127,34 @@ export function createDesktopViewActions({
         }),
     );
 
-    if (view.actions?.includes('reload')) {
+    // Domains own the presentation metadata and meaning of their actions.
+    // Desktop contributes only the generic request bridge used by every
+    // domain effect. Ignore malformed or colliding descriptors so a domain
+    // cannot accidentally replace placement or close behavior.
+    const declaredViewActions = Array.isArray(view.actions)
+        ? view.actions
+        : [];
+    for (const viewAction of declaredViewActions) {
+        if (
+            !viewAction?.id
+            || !viewAction.label
+            || !viewAction.icon
+            || RESERVED_DESKTOP_ACTION_IDS.has(viewAction.id)
+        ) {
+            continue;
+        }
         actions.push(action({
-            id: 'reload',
-            label: 'Reload',
-            ariaLabel: `Reload ${view.label}`,
-            icon: 'bi-arrow-clockwise',
-            execute: () => commands.requestViewAction('reload', view),
-            testid: `reload-view-${viewKey}`,
-        }));
-    }
-
-    if (view.actions?.includes('open-source-conversation')) {
-        actions.push(action({
-            id: 'open-source-conversation',
-            label: 'Open source conversation',
-            icon: 'bi-chat-left-text',
+            id: viewAction.id,
+            label: viewAction.label,
+            ariaLabel: viewAction.ariaLabel,
+            icon: viewAction.icon,
+            testid: viewAction.testid,
+            disabled: Boolean(viewAction.disabled),
+            separatorBefore: Boolean(viewAction.separatorBefore),
             execute: () => commands.requestViewAction(
-                'open-source-conversation',
+                viewAction.id,
                 view,
             ),
-            testid: 'artifact-open-conversation',
         }));
     }
 

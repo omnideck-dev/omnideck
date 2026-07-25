@@ -252,6 +252,12 @@ Desktop commands must not grow domain-specific methods such as
 `openArtifact(artifact)` or `openCustomApp(app)`. Those conversions belong to
 the Artifact and Custom Apps adapters respectively.
 
+Domain-specific View actions are declarative runtime descriptors containing
+their ID, label, icon, accessibility label, and optional test ID. Desktop adds
+only a generic execution callback and emits the requested action ID. The
+domain effect interprets that ID, so Desktop action code never branches on
+commands such as Custom App reload or Artifact source navigation.
+
 Close and toolbar-action coordination is generic too. Desktop announces which
 View descriptors are closing and which declared View action was requested.
 Feature owners interpret those announcements; Desktop never switches on a View

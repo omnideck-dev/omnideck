@@ -26,7 +26,13 @@ describe('Custom App desktop View descriptions', () => {
             },
             app,
             reloadSignal: 3,
-            actions: ['reload'],
+            actions: [{
+                id: 'reload',
+                label: 'Reload',
+                ariaLabel: 'Reload Text Lab',
+                icon: 'bi-arrow-clockwise',
+                testid: 'reload-view-custom-app:text-lab',
+            }],
         });
     });
 });

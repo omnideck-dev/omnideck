@@ -41,7 +41,7 @@ export default function useCustomAppDesktopViews({ openApp }) {
 
     const reloadApp = useCallback((viewId) => {
         const view = desktopModel.openViewsById[viewId];
-        if (!view?.actions?.includes('reload')) return;
+        if (!view?.actions?.some((action) => action.id === 'reload')) return;
         desktopCommands.updateViews([{
             ...view,
             reloadSignal: (view.reloadSignal || 0) + 1,
