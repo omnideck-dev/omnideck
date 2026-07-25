@@ -6,20 +6,26 @@ import {
     workspaceResourceIdentityForView,
 } from './workspaceResourceDesktopViews.js';
 
-/** Owns the one browser-control side channel used by visible Browser views. */
-export default function useActiveWorkspaceResource({
+/**
+ * Adapts one visible root Browser View to the shared browser-control channel.
+ *
+ * Terminal Views are rejected by their resource identity, while read-only
+ * sub-agent Views pass `null`. In both cases the hook leaves the channel
+ * disabled while still returning the stable Browser runtime shape.
+ */
+export default function useBrowserControlForWorkspaceView({
     conversationId,
     isStreaming,
-    activeView = null,
+    visibleView = null,
 }) {
     const workspaceState = useWorkspaceState();
-    const activeIdentity = workspaceResourceIdentityForView(activeView);
-    const activeBrowserAgentId = activeView?.type === 'workspace-resource'
-        && activeIdentity.resourceId === 'browser'
-        ? activeIdentity.agentId
+    const visibleIdentity = workspaceResourceIdentityForView(visibleView);
+    const visibleBrowserAgentId = visibleView?.type === 'workspace-resource'
+        && visibleIdentity.resourceId === 'browser'
+        ? visibleIdentity.agentId
         : null;
-    const agentWorkspace = activeBrowserAgentId
-        ? workspaceState.byAgentId[activeBrowserAgentId]
+    const agentWorkspace = visibleBrowserAgentId
+        ? workspaceState.byAgentId[visibleBrowserAgentId]
         : null;
 
     const browserTabs = agentWorkspace?.browserTabs || {};
@@ -36,14 +42,14 @@ export default function useActiveWorkspaceResource({
         conversationId,
         canControl: !isStreaming,
         enabled: browserTabsList.length > 0
-            && activeBrowserAgentId !== null,
+            && visibleBrowserAgentId !== null,
         agentTabs: browserTabsList,
     });
 
     return {
         browser: {
             ...browser,
-            agentId: activeBrowserAgentId,
+            agentId: visibleBrowserAgentId,
         },
     };
 }

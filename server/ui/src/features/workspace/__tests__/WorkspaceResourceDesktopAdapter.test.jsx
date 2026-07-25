@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
         isStreaming: false,
     },
     useFocusedViewId: vi.fn(() => null),
-    useActiveWorkspaceResource: vi.fn(() => ({
+    useBrowserControlForWorkspaceView: vi.fn(() => ({
         browser: { agentId: null },
     })),
     renderedView: vi.fn(() => null),
@@ -28,8 +28,8 @@ vi.mock('../../desktop/DesktopViewRuntime.jsx', () => ({
     useFocusedViewId: mocks.useFocusedViewId,
 }));
 
-vi.mock('../useActiveWorkspaceResource.js', () => ({
-    default: mocks.useActiveWorkspaceResource,
+vi.mock('../useBrowserControlForWorkspaceView.js', () => ({
+    default: mocks.useBrowserControlForWorkspaceView,
 }));
 
 vi.mock('../useWorkspaceResourceDesktopViews.js', () => ({
@@ -63,7 +63,7 @@ describe('WorkspaceResourceDesktopView', () => {
     beforeEach(() => {
         mocks.useFocusedViewId.mockClear();
         mocks.useFocusedViewId.mockReturnValue(null);
-        mocks.useActiveWorkspaceResource.mockClear();
+        mocks.useBrowserControlForWorkspaceView.mockClear();
         mocks.renderedView.mockClear();
     });
 
@@ -72,10 +72,10 @@ describe('WorkspaceResourceDesktopView', () => {
 
         render(<WorkspaceResourceDesktopView view={view} visible />);
 
-        expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
+        expect(mocks.useBrowserControlForWorkspaceView).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
             isStreaming: false,
-            activeView: view,
+            visibleView: view,
         });
         expect(mocks.renderedView).toHaveBeenCalledWith(
             expect.objectContaining({ visible: true }),
@@ -88,10 +88,10 @@ describe('WorkspaceResourceDesktopView', () => {
 
         render(<WorkspaceResourceDesktopView view={view} visible />);
 
-        expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
+        expect(mocks.useBrowserControlForWorkspaceView).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
             isStreaming: false,
-            activeView: null,
+            visibleView: null,
         });
         expect(mocks.renderedView).toHaveBeenCalledWith(
             expect.objectContaining({ visible: true }),
@@ -105,10 +105,10 @@ describe('WorkspaceResourceDesktopView', () => {
 
         render(<WorkspaceResourceDesktopView view={view} visible />);
 
-        expect(mocks.useActiveWorkspaceResource).toHaveBeenCalledWith({
+        expect(mocks.useBrowserControlForWorkspaceView).toHaveBeenCalledWith({
             conversationId: 'conversation-1',
             isStreaming: false,
-            activeView: view,
+            visibleView: view,
         });
         // The adapter must not subscribe to focus: an auto-opened Browser is
         // visible in its tab group while Chat retains Desktop focus.

@@ -13,7 +13,8 @@ import {
     useDesktopViewCatalog,
 } from '../desktop/DesktopViewRuntime.jsx';
 import useWorkspaceResourceDesktopViews from './useWorkspaceResourceDesktopViews.js';
-import useActiveWorkspaceResource from './useActiveWorkspaceResource.js';
+import useBrowserControlForWorkspaceView from
+    './useBrowserControlForWorkspaceView.js';
 import {
     workspaceResourceIdentityForView,
 } from './workspaceResourceDesktopViews.js';
@@ -73,10 +74,10 @@ export default function WorkspaceResourceDesktopView({ view, visible }) {
         isRoot,
     } = workspaceResourceIdentityForView(view);
     const ownsBrowserSession = visible && isRoot;
-    const { browser } = useActiveWorkspaceResource({
+    const { browser } = useBrowserControlForWorkspaceView({
         conversationId: activeConversationId,
         isStreaming,
-        activeView: ownsBrowserSession ? view : null,
+        visibleView: ownsBrowserSession ? view : null,
     });
     return (
         <WorkspaceResourceView
