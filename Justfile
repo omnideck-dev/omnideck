@@ -432,9 +432,13 @@ _require-running:
     @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
 
 # Tar-pipe working tree into container at /opt/omnideck.
-# Excludes heavy/generated dirs so the stream stays small.
+# Excludes heavy/generated dirs so the stream stays small. Normalize archived
+# source permissions so a restrictive host umask cannot prevent the separate
+# `broker` user from importing the integrations package. Capital X preserves
+# executable scripts without making ordinary source files executable.
 _sync-src ctr:
     @tar \
+        --mode='u+rwX,go+rX' \
         --exclude='.git' \
         --exclude='.venv' \
         --exclude='.pytest_cache' \

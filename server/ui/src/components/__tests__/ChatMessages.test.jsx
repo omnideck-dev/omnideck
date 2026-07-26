@@ -1,6 +1,16 @@
 import { useEffect } from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import {
+    fireEvent,
+    render,
+    screen,
+} from '@testing-library/react';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { AgentProvider, useAgentDispatch } from '../../features/agent/AgentState.jsx';
 import ChatMessages from '../ChatMessages.jsx';
@@ -65,5 +75,98 @@ describe('ChatMessages live status', () => {
             'Thinking…',
         );
         expect(screen.queryByText('Working…')).not.toBeInTheDocument();
+    });
+});
+
+describe('ChatMessages jump to latest', () => {
+    function renderScrollableChat() {
+        render(
+            <AgentProvider>
+                <Harness turns={[]} />
+            </AgentProvider>,
+        );
+
+        const messages = document.getElementById('chatMessages');
+        Object.defineProperties(messages, {
+            scrollHeight: { configurable: true, value: 1000 },
+            clientHeight: { configurable: true, value: 400 },
+        });
+        // Far enough from the bottom for the existing auto-scroll logic to
+        // recognize that the reader intentionally moved upward.
+        messages.scrollTop = 200;
+        fireEvent.scroll(messages);
+        return messages;
+    }
+
+    it('appears away from the bottom and jumps to the latest message', () => {
+        const messages = renderScrollableChat();
+        const jumpButton = screen.getByRole('button', {
+            name: 'Jump to latest message',
+        });
+
+        expect(jumpButton).toHaveAttribute('aria-keyshortcuts', 'Alt+End');
+        fireEvent.click(jumpButton);
+
+        expect(messages.scrollTop).toBe(1000);
+        expect(screen.queryByTestId('jump-to-latest')).not.toBeInTheDocument();
+    });
+
+    it('supports Alt+End while the control is visible', () => {
+        const messages = renderScrollableChat();
+
+        fireEvent.keyDown(document, { key: 'End', altKey: true });
+
+        expect(messages.scrollTop).toBe(1000);
+        expect(screen.queryByTestId('jump-to-latest')).not.toBeInTheDocument();
+    });
+});
+
+describe('ChatMessages auto-follow', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('follows late content resizing until the reader scrolls away', () => {
+        let resizeCallback;
+        const disconnect = vi.fn();
+        vi.stubGlobal('ResizeObserver', class ResizeObserver {
+            constructor(callback) {
+                resizeCallback = callback;
+            }
+
+            observe() {}
+
+            disconnect() {
+                disconnect();
+            }
+        });
+
+        render(
+            <AgentProvider>
+                <Harness turns={[]} />
+            </AgentProvider>,
+        );
+
+        const messages = document.getElementById('chatMessages');
+        let scrollHeight = 1000;
+        Object.defineProperties(messages, {
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            clientHeight: { configurable: true, value: 400 },
+        });
+
+        messages.scrollTop = 600;
+        fireEvent.scroll(messages);
+        scrollHeight = 1200;
+        resizeCallback();
+        expect(messages.scrollTop).toBe(1200);
+
+        messages.scrollTop = 200;
+        fireEvent.scroll(messages);
+        scrollHeight = 1400;
+        resizeCallback();
+        expect(messages.scrollTop).toBe(200);
     });
 });
