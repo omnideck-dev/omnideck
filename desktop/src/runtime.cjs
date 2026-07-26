@@ -128,6 +128,13 @@ async function sha256File(filename, onProgress = () => {}) {
   return hash.digest('hex');
 }
 
+async function replaceDownloadedFile(source, destination) {
+  // fs.rename() does not replace an existing destination reliably on Windows.
+  // A failed setup may leave the previous verified download behind.
+  await fsp.rm(destination, { force: true });
+  await fsp.rename(source, destination);
+}
+
 class OmniDeckRuntime {
   constructor({
     userDataPath,
@@ -357,13 +364,17 @@ class OmniDeckRuntime {
       'Windows will ask for permission to enable its private workspace feature.',
     );
     const script = [
-      "$process = Start-Process -FilePath $args[0] -ArgumentList @('--install', '--no-distribution') -Verb RunAs -Wait -PassThru",
+      "$process = Start-Process -FilePath $env:OMNIDECK_WSL_PATH -ArgumentList @('--install', '--no-distribution') -Verb RunAs -Wait -PassThru",
       'exit $process.ExitCode',
     ].join('; ');
     await this.run(
       powershell,
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script, wsl],
-      { env: process.env, label: 'Windows workspace setup', acceptExitCodes: [0, 3010] },
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        env: { ...process.env, OMNIDECK_WSL_PATH: wsl },
+        label: 'Windows workspace setup',
+        acceptExitCodes: [0, 3010],
+      },
     );
 
     const updatedStatus = await this.run(wsl, ['--status'], {
@@ -445,13 +456,16 @@ class OmniDeckRuntime {
       throw new Error('Windows could not verify the downloaded system component.');
     }
     const script = [
-      '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+      '$signature = Get-AuthenticodeSignature -LiteralPath $env:OMNIDECK_INSTALLER_PATH',
       'if ($signature.Status -ne "Valid") { exit 1 }',
     ].join('; ');
     await this.run(
       powershell,
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script, destination],
-      { env: process.env, label: 'verify installer' },
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        env: { ...process.env, OMNIDECK_INSTALLER_PATH: destination },
+        label: 'verify installer',
+      },
     );
   }
 
@@ -481,7 +495,7 @@ class OmniDeckRuntime {
       await fsp.rm(partial, { force: true });
       throw new Error('The downloaded system component did not pass its security check.');
     }
-    await fsp.rename(partial, destination);
+    await replaceDownloadedFile(partial, destination);
   }
 
   async ensureRuntimeReady() {
@@ -754,6 +768,7 @@ module.exports = {
   installerUrl,
   linuxInstallCommands,
   parseOsRelease,
+  replaceDownloadedFile,
   reserveAvailablePort,
   sha256File,
 };
