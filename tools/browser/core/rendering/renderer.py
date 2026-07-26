@@ -441,7 +441,7 @@ _DOM_WALK_JS = """
       const node = { type: 'interactive', depth: depth, ref: refCounter, role: role, name: name || ''};
 
       if (role === 'combobox' || el.tagName === 'SELECT') {
-        const sel = el.querySelector('option:checked,option[selected]');
+        const sel = el.selectedOptions?.[0] || el.querySelector('option[selected]');
         // For <input role="combobox"> (autocomplete widgets), fall back to
         // el.value since child <option> elements won't exist.
         node.value = sel ? sel.textContent.trim()
