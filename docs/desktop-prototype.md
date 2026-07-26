@@ -100,12 +100,13 @@ SmartScreen warnings.
 ## GitHub builds and releases
 
 The application workflow can be run manually to produce test artifacts for all
-three operating systems. Pushing `v0.1.0-alpha.1` builds the matching amd64 and
-arm64 images, embeds them in the correct installers, and publishes a prerelease
-in the OmniDeck repository. The existing container workflow also publishes the
-same source revision as the multi-architecture
-`ghcr.io/omnideck-dev/omnideck:0.1.0-alpha.1` image for CLI users. Packaged
-applications continue to import their embedded image and do not depend on GHCR.
+three operating systems. Pushing `v0.1.0-alpha.1` exports the already-built and
+tested amd64 and arm64 images for that exact `main` commit, embeds them in the
+correct installers, and publishes a prerelease in the OmniDeck repository. The
+workflow also promotes that commit image to the multi-architecture
+`ghcr.io/omnideck-dev/omnideck:0.1.0-alpha.1` tag for CLI users. Packaged
+applications continue to import their embedded image and do not depend on GHCR
+after download.
 
 The workflow accepts these optional repository secrets:
 
