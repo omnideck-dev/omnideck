@@ -1,11 +1,34 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AppDataProvider, useAppData } from '../../../contexts/AppData.jsx';
+import { importPackFile } from '../../../utils/packs.js';
+import ProfileBuilder from '../../ProfileBuilder.jsx';
 import { ToastProvider } from '../../ToastProvider.jsx';
 import SkillsTab from '../SkillsTab.jsx';
 
+vi.mock('../../../hooks/useAgentProfiles.js', () => ({
+    default: () => ({ profiles: [] }),
+}));
+
+vi.mock('../../../hooks/useFeatures.js', () => ({
+    default: () => ({ features: {}, loaded: true, refresh: vi.fn() }),
+}));
+
+vi.mock('../../../utils/packs.js', async (importOriginal) => ({
+    ...(await importOriginal()),
+    importPackFile: vi.fn(),
+}));
+
 // SkillsTab reads useToast for import feedback, so every render needs a provider.
-const renderTab = () => render(<SkillsTab />, { wrapper: ToastProvider });
+const renderTab = (extra = null) => render(
+    <AppDataProvider>
+        <ToastProvider>
+            <SkillsTab />
+            {extra}
+        </ToastProvider>
+    </AppDataProvider>,
+);
 
 const _skills = [
     { id: 'coder', name: 'Coder', description: 'Write code', prompt: 'Write code.', tool_categories: ['coding'] },
@@ -21,10 +44,30 @@ function _ok(body) {
     return Promise.resolve({ ok: true, status: 200, json: async () => body });
 }
 
+function AgentProfileSkillPicker() {
+    const { skillsHook } = useAppData();
+    return (
+        <ProfileBuilder
+            profile={{
+                id: 'agent',
+                name: 'Agent',
+                provider: '',
+                model: '',
+                system_prompt: '',
+                skills: [],
+            }}
+            providers={[]}
+            skills={skillsHook.skills}
+            categories={[]}
+        />
+    );
+}
+
 describe('SkillsTab', () => {
     let _originalFetch;
 
     beforeEach(() => {
+        importPackFile.mockReset();
         _originalFetch = global.fetch;
         global.fetch = vi.fn((url, init) => {
             if (url === '/api/skills' && (!init || init.method === undefined)) return _ok(_skills);
@@ -42,6 +85,32 @@ describe('SkillsTab', () => {
         await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
         expect(screen.getByText('Coder')).toBeInTheDocument();
         expect(screen.getByText('Mailer')).toBeInTheDocument();
+    });
+
+    it('makes an imported skill immediately available in the agent profile picker', async () => {
+        const importedSkill = {
+            id: 'reviewer',
+            name: 'Reviewer',
+            description: 'Review changes',
+            prompt: 'Review changes.',
+            tool_categories: [],
+        };
+        importPackFile.mockResolvedValue({
+            ok: true,
+            data: { profiles: [], skills: [importedSkill] },
+        });
+        renderTab(<AgentProfileSkillPicker />);
+        await waitFor(() => expect(screen.getByTestId('skill-item-coder')).toBeInTheDocument());
+
+        fireEvent.click(screen.getByTestId('profile-add-skill'));
+        expect(screen.queryByTestId('profile-skill-option-reviewer')).not.toBeInTheDocument();
+
+        const file = new File(['{}'], 'reviewer.skill.omnideck.json');
+        fireEvent.change(screen.getByTestId('skills-import-input'), {
+            target: { files: [file] },
+        });
+
+        expect(await screen.findByTestId('profile-skill-option-reviewer')).toHaveTextContent('Reviewer');
     });
 
     it('shows the skill and category counts in the view tabs', async () => {

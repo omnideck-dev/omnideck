@@ -245,6 +245,57 @@ def test_import_skill_pack_creates_skill(page: Page, clean_stores, tmp_path):
     assert created["prompt"] == "Solo prompt."
 
 
+def test_imported_skill_appears_in_mounted_agent_picker(page: Page, clean_stores, tmp_path):
+    """An agent view mounted before a skill import sees the new picker option
+    immediately, without a page reload."""
+    _seed_profile(page, "e2e_import_picker_agent", "E2E Import Picker Agent", skills=[])
+    pack = {
+        "kind": "omnideck.pack",
+        "version": 1,
+        "skills": [{
+            "name": "Imported Live Skill",
+            "description": "live sync",
+            "prompt": "Live prompt.",
+            "tool_categories": ["coding"],
+        }],
+    }
+    path = _write_pack(tmp_path, "imported-live.skill.omnideck.json", pack)
+
+    # Load the agent editor and its skill snapshot before importing. Desktop
+    # keeps this view mounted when Settings opens, which reproduces the stale
+    # independent-hook state behind the regression.
+    agents = AgentsPage(page).goto()
+    agents.profiles.select("e2e_import_picker_agent")
+    agents.builder.open_skill_picker()
+    expect(
+        page.get_by_test_id("profile-skill-picker").get_by_text(
+            "Imported Live Skill", exact=True,
+        ),
+    ).not_to_be_visible()
+    page.keyboard.press("Escape")
+
+    # Open Settings without page.goto() so the existing agent editor remains
+    # mounted, then import through the real hidden file input.
+    page.get_by_test_id("sidebar-settings").click()
+    page.get_by_test_id("skills-tab").wait_for(state="visible")
+    SettingsPage(page).skills.import_file(path)
+    expect(page.get_by_text("Imported Live Skill", exact=True)).to_be_visible()
+
+    imported = next(
+        s for s in page.request.get("/api/skills").json()
+        if s["name"] == "Imported Live Skill"
+    )
+
+    # Return to that same mounted agent view. The new option must already be in
+    # its picker; reloading here would hide the bug this test protects against.
+    page.get_by_role("button", name="Agents", exact=True).click()
+    page.get_by_test_id("agent-detail").wait_for(state="visible")
+    agents.builder.open_skill_picker()
+    expect(agents.builder.skill_option(imported["id"])).to_contain_text(
+        "Imported Live Skill",
+    )
+
+
 def test_agent_round_trip_export_then_import(page: Page, clean_stores):
     """Export an agent (with skills + model) through the UI, then import the
     downloaded file back — the copy lands as a distinct, complete agent."""

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
-import useSkills from '../../hooks/useSkills.js';
 import { importPackFile, importSummaryText } from '../../utils/packs.js';
 import Badge from '../Badge.jsx';
 import ProfileBuilder from '../ProfileBuilder.jsx';
@@ -46,8 +45,8 @@ function draftAgent(providers) {
  * detail is the existing ProfileBuilder editor.
  */
 export default function AgentsView() {
-    const { profilesHook } = useAppData();
-    const { skills, addSkills } = useSkills();
+    const { profilesHook, skillsHook } = useAppData();
+    const { skills, addSkills } = skillsHook;
     const { addToast } = useToast();
     const [providers, setProviders] = useState([]);
     const [categories, setCategories] = useState([]);
