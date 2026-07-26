@@ -714,6 +714,8 @@ class OmniDeckRuntime {
         'run', '-d',
         '--name', CONTAINER_NAME,
         '--restart', 'always',
+        '--log-driver', 'k8s-file',
+        '--log-opt', 'max-size=150mb',
         '--label', `${IMAGE_LABEL}=${APP_VERSION}`,
         '--memory', '2g',
         '--shm-size', '1024m',

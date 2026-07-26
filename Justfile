@@ -137,6 +137,9 @@ dev:
         docker rm -f {{_ctr}} 2>/dev/null || true
         env_args=""; [ -f .env ] && env_args="--env-file .env"
         docker run -d --restart=unless-stopped --name {{_ctr}} \
+            --log-driver=local \
+            --log-opt max-size=50m \
+            --log-opt max-file=3 \
             --gpus all --shm-size=256m --network=host \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e DEV_MODE=true \
