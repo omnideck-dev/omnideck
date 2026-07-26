@@ -4,13 +4,25 @@ from __future__ import annotations
 
 import re
 
-from tools.browser import browse_page, scroll_page
+from tools.browser import browse_page, click, execute_javascript, scroll_page
 
 from .._helpers import find_ref
 
 
 def _scroll_top(view: str) -> int:
     match = re.search(r"\[Viewport: (\d+)-", view)
+    assert match is not None
+    return int(match.group(1))
+
+
+def _document_height(view: str) -> int:
+    match = re.search(r" of (\d+)px", view)
+    assert match is not None
+    return int(match.group(1))
+
+
+def _javascript_number(result: str) -> int:
+    match = re.search(r"Result: (-?\d+)", result)
     assert match is not None
     return int(match.group(1))
 
@@ -34,6 +46,24 @@ async def test_scroll_down_and_up_use_real_wheel_input(open_tab, servers):
 
     after_up = await scroll_page("up", amount=600, tab=tab)
     assert _scroll_top(after_up) < _scroll_top(after_down)
+
+
+async def test_wheel_scroll_keeps_targeting_hovered_container(open_tab, servers):
+    """A successful container scroll does not also move the document."""
+    tab = await open_tab(f"{servers.primary}/scroll-container/page.html")
+    initial = await browse_page(tab=tab)
+    first_item = find_ref(initial, role="button", name="List item 1")
+    assert first_item is not None
+
+    await click(first_item, tab=tab)
+    after_down = await scroll_page("down", amount=600, tab=tab)
+    container_scroll = await execute_javascript(
+        "document.getElementById('items').scrollTop",
+        tab=tab,
+    )
+
+    assert _scroll_top(after_down) == _scroll_top(initial)
+    assert _javascript_number(container_scroll) > 0
 
 
 async def test_page_and_edge_scroll_directions_use_document_evaluation(open_tab, servers):
@@ -96,3 +126,31 @@ async def test_wheel_scroll_targets_cross_origin_selected_iframe(open_tab, serve
 
     after_up = await scroll_page("up", amount=600, tab=tab)
     assert _scroll_top(after_up) < _scroll_top(after_down)
+
+
+async def test_wheel_scroll_falls_back_when_body_hides_overflow(open_tab, servers):
+    """A wheel no-op falls back to scrolling the selected document."""
+    tab = await open_tab(f"{servers.primary}/scroll-lock/overflow-hidden.html")
+    initial = await browse_page(tab=tab)
+
+    after_down = await scroll_page("down", amount=600, tab=tab)
+
+    assert _scroll_top(after_down) > _scroll_top(initial)
+
+
+async def test_viewport_height_includes_fixed_body_content(open_tab, servers):
+    """Viewport metadata includes content hidden by a fixed-body scroll lock."""
+    tab = await open_tab(f"{servers.primary}/scroll-lock/fixed-body.html")
+    view = await browse_page(tab=tab)
+
+    assert _document_height(view) > 2000
+
+
+async def test_scroll_releases_fixed_body_lock(open_tab, servers):
+    """Document scrolling recovers from a fixed, overflow-hidden body."""
+    tab = await open_tab(f"{servers.primary}/scroll-lock/fixed-body.html")
+    initial = await browse_page(tab=tab)
+
+    after_page_down = await scroll_page("page_down", tab=tab)
+
+    assert _scroll_top(after_page_down) > _scroll_top(initial)

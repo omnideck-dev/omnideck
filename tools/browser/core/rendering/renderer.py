@@ -566,9 +566,10 @@ _DOM_WALK_JS = """
       height: Math.floor(vh),
       scroll_top: Math.floor(window.scrollY),
       document_height: Math.floor(
-        document.scrollingElement
-          ? document.scrollingElement.scrollHeight
-          : document.body.scrollHeight
+        Math.max(
+          document.scrollingElement?.scrollHeight || 0,
+          document.body?.scrollHeight || 0
+        )
       )
     }
   };
