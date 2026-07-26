@@ -45,6 +45,11 @@ logs/
 # OS generated files
 .DS_Store
 
+# Desktop shell dependencies and build products
+desktop/node_modules/
+desktop/dist/
+desktop/build/runtime/
+
 # Environment variables
 .env
 
