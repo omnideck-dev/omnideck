@@ -42,6 +42,69 @@ test('installer URL is pinned to the reviewed Podman release', () => {
   );
 });
 
+test('Windows installer verification passes the path through the child environment', async () => {
+  const runtime = new OmniDeckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    onState: () => {},
+  });
+  const destination = String.raw`C:\Users\Test User\AppData\Roaming\OmniDeck\downloads\podman.msi`;
+  let invocation;
+  runtime.findExecutable = async () => 'powershell.exe';
+  runtime.run = async (executable, args, options) => {
+    invocation = { executable, args, options };
+    return { code: 0, output: '' };
+  };
+
+  await runtime.verifyWindowsInstaller(destination);
+
+  assert.equal(invocation.executable, 'powershell.exe');
+  assert.deepEqual(invocation.args.slice(0, 4), [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+  ]);
+  assert.equal(invocation.args.length, 5);
+  assert.match(invocation.args[4], /\$env:OMNIDECK_INSTALLER_PATH/);
+  assert.ok(!invocation.args.includes(destination));
+  assert.equal(invocation.options.env.OMNIDECK_INSTALLER_PATH, destination);
+  assert.equal(invocation.options.label, 'verify installer');
+});
+
+test('Windows WSL elevation passes the executable path through the child environment', async () => {
+  const runtime = new OmniDeckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    onState: () => {},
+  });
+  const wsl = String.raw`C:\Windows\System32\wsl.exe`;
+  const calls = [];
+  runtime.findExecutable = async (name) => {
+    if (name === 'wsl.exe') return wsl;
+    if (name === 'powershell.exe') return 'powershell.exe';
+    return null;
+  };
+  runtime.run = async (executable, args, options) => {
+    calls.push({ executable, args, options });
+    if (executable === wsl && args[0] === '--status') {
+      const statusChecks = calls.filter((call) => (
+        call.executable === wsl && call.args[0] === '--status'
+      ));
+      return { code: statusChecks.length === 1 ? 1 : 0, output: '' };
+    }
+    return { code: 0, output: '' };
+  };
+
+  await runtime.ensureWindowsPrerequisites();
+
+  const elevation = calls.find((call) => call.options.label === 'Windows workspace setup');
+  assert.ok(elevation);
+  assert.equal(elevation.executable, 'powershell.exe');
+  assert.equal(elevation.args.length, 5);
+  assert.match(elevation.args[4], /\$env:OMNIDECK_WSL_PATH/);
+  assert.ok(!elevation.args.includes(wsl));
+  assert.equal(elevation.options.env.OMNIDECK_WSL_PATH, wsl);
+});
+
 test('runtime state stays under the desktop application data directory', () => {
   const runtime = new OmniDeckRuntime({
     userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
