@@ -189,14 +189,57 @@ jobs:
         if: matrix.name == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y binutils fakeroot rpm
 
+      - name: Configure optional signing
+        shell: bash
+        env:
+          TARGET_NAME: ${{ matrix.name }}
+          MAC_CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
+          WINDOWS_CSC_LINK: ${{ secrets.DESKTOP_WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WINDOWS_CSC_KEY_PASSWORD }}
+          NOTARIZE_APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
+          NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE_APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+        run: |
+          append_env() {
+            name="$1"
+            value="$2"
+            if [ -n "${value}" ]; then
+              delimiter="OMNIDECK_SIGNING_VALUE_${name}"
+              {
+                echo "${name}<<${delimiter}"
+                echo "${value}"
+                echo "${delimiter}"
+              } >> "${GITHUB_ENV}"
+            fi
+          }
+
+          case "${TARGET_NAME}" in
+            macos-arm64)
+              if [ -n "${MAC_CSC_LINK}" ]; then
+                append_env CSC_LINK "${MAC_CSC_LINK}"
+                append_env CSC_KEY_PASSWORD "${MAC_CSC_KEY_PASSWORD}"
+              else
+                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
+                echo "Building unsigned macOS installer"
+              fi
+              append_env APPLE_ID "${NOTARIZE_APPLE_ID}"
+              append_env APPLE_APP_SPECIFIC_PASSWORD "${NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD}"
+              append_env APPLE_TEAM_ID "${NOTARIZE_APPLE_TEAM_ID}"
+              ;;
+            windows-x64)
+              if [ -n "${WINDOWS_CSC_LINK}" ]; then
+                append_env CSC_LINK "${WINDOWS_CSC_LINK}"
+                append_env CSC_KEY_PASSWORD "${WINDOWS_CSC_KEY_PASSWORD}"
+              else
+                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
+                echo "Building unsigned Windows installer"
+              fi
+              ;;
+          esac
+
       - name: Build installer
         working-directory: desktop
-        env:
-          CSC_LINK: ${{ matrix.name == 'macos-arm64' && secrets.DESKTOP_MAC_CSC_LINK || matrix.name == 'windows-x64' && secrets.DESKTOP_WINDOWS_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.name == 'macos-arm64' && secrets.DESKTOP_MAC_CSC_KEY_PASSWORD || matrix.name == 'windows-x64' && secrets.DESKTOP_WINDOWS_CSC_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
         run: ${{ matrix.command }}
 
       - name: Generate SHA-256 checksums
