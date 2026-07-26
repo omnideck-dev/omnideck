@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -151,12 +150,7 @@ jobs:
       - name: Set image version metadata
         id: version
         shell: bash
-        run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "value=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push (${{ matrix.platform }})
         id: build
@@ -215,8 +209,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 

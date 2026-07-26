@@ -61,22 +61,18 @@ jobs:
   image:
     if: github.event_name != 'pull_request'
     needs: test
-    timeout-minutes: 75
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - architecture: amd64
-            platform: linux/amd64
             runner: ubuntu-24.04
           - architecture: arm64
-            platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-
-      - uses: docker/setup-buildx-action@v4
 
       - name: Read application version
         id: version
@@ -84,29 +80,27 @@ jobs:
         shell: bash
         run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Build bundled OmniDeck image
-        env:
-          APP_VERSION: ${{ steps.version.outputs.value }}
-          IMAGE_PLATFORM: ${{ matrix.platform }}
-        shell: bash
-        run: |
-          mkdir -p desktop/build/runtime
-          docker buildx build \
-            --platform "${IMAGE_PLATFORM}" \
-            --build-arg "OMNIDECK_VERSION=${APP_VERSION}" \
-            --tag "localhost/omnideck/runtime:${APP_VERSION}" \
-            --output "type=oci,dest=desktop/build/runtime/omnideck-image.oci.tar,compression=gzip,compression-level=6,force-compression=true" \
-            .
+      - name: Install image export tools
+        run: sudo apt-get update && sudo apt-get install -y podman
 
-      - name: Verify bundled image can be loaded
+      - name: Export tested OmniDeck image
         env:
           APP_VERSION: ${{ steps.version.outputs.value }}
+          IMAGE_ARCHITECTURE: ${{ matrix.architecture }}
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${GITHUB_SHA:0:7}"
+          bundled_image="localhost/omnideck/runtime:${APP_VERSION}"
+          mkdir -p desktop/build/runtime
+          podman pull --arch "${IMAGE_ARCHITECTURE}" "${source_image}"
+          podman tag "${source_image}" "${bundled_image}"
+          podman save \
+            --format oci-archive \
+            --output desktop/build/runtime/omnideck-image.oci.tar \
+            "${bundled_image}"
+          podman image rm "${bundled_image}" "${source_image}"
           podman load --input desktop/build/runtime/omnideck-image.oci.tar
-          podman image exists "localhost/omnideck/runtime:${APP_VERSION}"
+          podman image exists "${bundled_image}"
 
       - name: Upload bundled image
         uses: actions/upload-artifact@v7
@@ -116,6 +110,36 @@ jobs:
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
+
+  promote-image:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote tested image to release version
+        working-directory: desktop
+        shell: bash
+        run: |
+          app_version=$(node -p "require('./package.json').version")
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${GITHUB_SHA:0:7}"
+          release_image="ghcr.io/${GITHUB_REPOSITORY}:${app_version}"
+          docker buildx imagetools inspect "${source_image}"
+          docker buildx imagetools create --tag "${release_image}" "${source_image}"
+          docker buildx imagetools inspect "${release_image}"
 
   build:
     if: github.event_name != 'pull_request'
@@ -196,7 +220,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, promote-image]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
