@@ -2,7 +2,7 @@
 
 The desktop prototype makes OmniDeck behave like a normal installed
 application. It owns the first-run experience, prepares an isolated local
-runtime, imports the fixed OmniDeck image bundled with the installer, and opens
+runtime, downloads the fixed OmniDeck image selected for the release, and opens
 the interface in an application window.
 
 The prototype targets:
@@ -17,7 +17,7 @@ prompt because macOS and Linux require approval before installing system
 components. Windows enables WSL 2 through a normal UAC prompt when necessary
 and resumes setup after the required restart.
 
-Agent Dash runs entirely in the setup renderer while the runtime and bundled
+Agent Dash runs entirely in the setup renderer while the runtime and application
 image are prepared. It has no network or runtime dependency and never blocks
 setup progress or diagnostic errors.
 
@@ -33,8 +33,8 @@ Linux deliberately does not run a Podman machine. Containers are already
 native Linux processes there, so adding a nested VM would increase first-run
 time, memory use, and failure modes without improving application consistency.
 All three platforms still use the same versioned OmniDeck image and application
-lifecycle. Each installer contains only the image architecture needed by its
-host: amd64 for Windows and Linux x64, and arm64 for Apple Silicon macOS.
+lifecycle. A single pinned multi-architecture image digest selects amd64 for
+Windows and Linux x64, and arm64 for Apple Silicon macOS.
 
 The desktop state, engine configuration, volumes, and container are separate
 from a developer's normal Podman state. The setup screen does not expose
@@ -60,15 +60,20 @@ npm start
 The development build uses a separate private runtime and storage area under
 Electron's OmniDeck application-data directory. It does not reuse containers
 or volumes created by the standalone CLI. Source mode can pull the development
-image when no bundled archive is present; packaged builds cannot use this
+image when no release manifest is present; packaged builds cannot use this
 fallback.
 
 ## Build local installers
 
-Packaged builds require `build/runtime/omnideck-image.oci.tar` and its generated
-manifest. GitHub Actions builds this archive from the same commit before
-running the platform packagers. With a prepared archive, run the matching
-command on each operating system:
+Packaged builds require `build/runtime/image-manifest.json`. Generate it from
+the immutable digest of a published multi-architecture image:
+
+```bash
+node scripts/prepare-runtime-image.cjs \
+  ghcr.io/omnideck-dev/omnideck@sha256:<digest>
+```
+
+Then run the matching command on each operating system:
 
 ```bash
 npm run dist:linux:container
@@ -100,13 +105,12 @@ SmartScreen warnings.
 ## GitHub builds and releases
 
 The application workflow can be run manually to produce test artifacts for all
-three operating systems. Pushing `v0.1.0-alpha.1` exports the already-built and
-tested amd64 and arm64 images for that exact `main` commit, embeds them in the
-correct installers, and publishes a prerelease in the OmniDeck repository. The
-workflow also promotes that commit image to the multi-architecture
-`ghcr.io/omnideck-dev/omnideck:0.1.0-alpha.1` tag for CLI users. Packaged
-applications continue to import their embedded image and do not depend on GHCR
-after download.
+three operating systems. Pushing a version tag waits for the multi-architecture
+image built from that exact `main` commit, resolves its immutable digest, embeds
+the digest manifest in each installer, and publishes a prerelease in the
+OmniDeck repository. The workflow also promotes that same image to the matching
+version tag for CLI users. On first setup, packaged applications pull the pinned
+digest from GHCR; later launches reuse the local image.
 
 The workflow accepts these optional repository secrets:
 
@@ -132,10 +136,10 @@ should move behind the shared Go workflow layer so the CLI and desktop app
 cannot drift.
 
 The runtime installer is pinned to Podman 6.0.2 and verified by SHA-256 before
-execution. The application image is tied to the `package.json` version, checked
-before import, and never pulled from `latest` in a packaged build. Production
-releases should update each pin deliberately, retain the checks, and include
-complete third-party notices.
+execution. The application image is tied to the `package.json` version and an
+immutable multi-architecture SHA-256 digest. Packaged builds never pull
+`latest`. Production releases should update each pin deliberately, retain the
+checks, and include complete third-party notices.
 
 The local app is published only on a loopback port. It uses
 `127.0.0.1:2337` when available and automatically remembers another free port

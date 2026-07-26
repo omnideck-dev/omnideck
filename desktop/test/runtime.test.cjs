@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const net = require('node:net');
 const os = require('node:os');
@@ -163,6 +162,7 @@ test('new app container exposes only the loopback web port and disables the lega
   const calls = [];
   runtime.podmanPath = 'podman';
   runtime.appPort = 24444;
+  runtime.ensureImage = async () => {};
   runtime.run = async (_executable, args) => {
     calls.push(args);
     if (args[0] === 'container' && args[1] === 'inspect') return { code: 125, output: '' };
@@ -183,23 +183,18 @@ test('new app container exposes only the loopback web port and disables the lega
   assert.ok(!runArgs.some((argument) => argument.includes('6080') || argument.includes('5900')));
 });
 
-test('bundled image manifest must match the app version and architecture', async (context) => {
-  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-bundle-test-'));
+test('release image manifest pins an immutable image digest', async (context) => {
+  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-image-test-'));
   context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
   const runtimePath = path.join(resourcesPath, 'runtime');
   await fs.mkdir(runtimePath);
-  const archivePath = path.join(runtimePath, 'omnideck-image.oci.tar');
-  const contents = Buffer.from('test OCI archive');
-  await fs.writeFile(archivePath, contents);
+  const imageRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`;
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
     `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       appVersion: APP_VERSION,
-      architecture: process.arch === 'x64' ? 'amd64' : process.arch,
-      imageRef: IMAGE,
-      archive: path.basename(archivePath),
-      archiveSha256: crypto.createHash('sha256').update(contents).digest('hex'),
+      imageRef,
     })}\n`,
   );
 
@@ -208,54 +203,69 @@ test('bundled image manifest must match the app version and architecture', async
     resourcesPath,
     onState: () => {},
   });
-  const bundle = await runtime.bundledImage();
+  const releaseImage = await runtime.releaseImage();
 
-  assert.equal(bundle.archivePath, archivePath);
-  assert.equal(bundle.appVersion, APP_VERSION);
-  assert.equal(bundle.imageRef, IMAGE);
+  assert.equal(releaseImage.appVersion, APP_VERSION);
+  assert.equal(releaseImage.imageRef, imageRef);
 });
 
-test('first setup loads the bundled image instead of pulling a registry image', async (context) => {
-  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-load-test-'));
+test('first setup pulls the pinned release image and tags it locally', async (context) => {
+  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-pull-test-'));
   context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
   const runtimePath = path.join(resourcesPath, 'runtime');
   await fs.mkdir(runtimePath);
-  const archivePath = path.join(runtimePath, 'omnideck-image.oci.tar');
-  const contents = Buffer.from('small test OCI archive');
-  await fs.writeFile(archivePath, contents);
+  const imageRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
     `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       appVersion: APP_VERSION,
-      architecture: process.arch === 'x64' ? 'amd64' : process.arch,
-      imageRef: IMAGE,
-      archive: path.basename(archivePath),
-      archiveSha256: crypto.createHash('sha256').update(contents).digest('hex'),
+      imageRef,
     })}\n`,
   );
 
   const calls = [];
-  let loaded = false;
+  const states = [];
+  let pulled = false;
   const runtime = new OmniDeckRuntime({
     userDataPath: path.join(resourcesPath, 'user-data'),
     resourcesPath,
-    onState: () => {},
+    onState: (state) => states.push(state),
   });
   runtime.podmanPath = 'podman';
   runtime.run = async (_executable, args) => {
     calls.push(args);
     if (args[0] === 'image' && args[1] === 'exists') {
-      return { code: loaded ? 0 : 1, output: '' };
+      return { code: pulled ? 0 : 1, output: '' };
     }
-    if (args[0] === 'load') loaded = true;
+    if (args[0] === 'pull') pulled = true;
     return { code: 0, output: '' };
   };
 
   await runtime.ensureImage();
 
-  assert.ok(calls.some((args) => args[0] === 'load' && args.at(-1) === archivePath));
-  assert.ok(!calls.some((args) => args[0] === 'pull'));
+  assert.ok(calls.some((args) => args[0] === 'pull' && args.at(-1) === imageRef));
+  assert.ok(calls.some((args) => (
+    args[0] === 'tag' && args[1] === imageRef && args[2] === IMAGE
+  )));
+  assert.ok(states.some((state) => (
+    state.stage === 'downloading' && state.title === 'Downloading OmniDeck'
+  )));
+  assert.ok(!calls.some((args) => args[0] === 'load'));
+});
+
+test('a packaged release refuses a missing runtime image manifest', async () => {
+  const runtime = new OmniDeckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    onState: () => {},
+  });
+  runtime.podmanPath = 'podman';
+  runtime.releaseImage = async () => null;
+
+  await assert.rejects(
+    runtime.ensureImage(),
+    /does not identify its application image/,
+  );
 });
 
 test('an existing container is current only when both version label and image match', () => {

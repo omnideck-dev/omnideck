@@ -53,8 +53,7 @@
         "from": "build/runtime",
         "to": "runtime",
         "filter": [
-          "image-manifest.json",
-          "omnideck-image.oci.tar"
+          "image-manifest.json"
         ]
       }
     ],
