@@ -86,6 +86,14 @@ class ProfileBuilder:
     def skill_chips(self) -> Locator:
         return self.page.locator("button[class*='chip']")
 
+    def open_skill_picker(self) -> "ProfileBuilder":
+        self.page.get_by_test_id("profile-add-skill").click()
+        self.page.get_by_test_id("profile-skill-picker").wait_for(state="visible")
+        return self
+
+    def skill_option(self, skill_id: str) -> Locator:
+        return self.page.get_by_test_id(f"profile-skill-option-{skill_id}")
+
     def preset(self, label: str) -> Locator:
         return self.page.locator("[class*='presetBtn']", has_text=label)
 
