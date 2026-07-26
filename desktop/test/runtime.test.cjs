@@ -177,6 +177,8 @@ test('new app container exposes only the loopback web port and disables the lega
   assert.ok(runArgs.includes('127.0.0.1:24444:8080'));
   assert.ok(runArgs.includes('ENABLE_DESKTOP=false'));
   assert.ok(runArgs.includes(`dev.omnideck.version=${APP_VERSION}`));
+  assert.ok(runArgs.includes('k8s-file'));
+  assert.ok(runArgs.includes('max-size=150mb'));
   assert.equal(runArgs.at(-1), IMAGE);
   assert.ok(!runArgs.some((argument) => argument.includes('6080') || argument.includes('5900')));
 });
