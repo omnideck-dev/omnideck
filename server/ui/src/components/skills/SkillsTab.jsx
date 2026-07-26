@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import useSkills from '../../hooks/useSkills.js';
+import { useAppData } from '../../contexts/AppData.jsx';
 import { downloadSkillPack, importPackFile, importSummaryText } from '../../utils/packs.js';
 import { useToast } from '../ToastProvider.jsx';
 import Button from '../primitives/Button.jsx';
@@ -17,7 +17,8 @@ import styles from './SkillsTab.module.css';
  * active view.
  */
 export default function SkillsTab() {
-    const { skills, addSkills, createSkill, updateSkill, deleteSkill } = useSkills();
+    const { skillsHook } = useAppData();
+    const { skills, addSkills, createSkill, updateSkill, deleteSkill } = skillsHook;
     const { addToast } = useToast();
     const [categories, setCategories] = useState([]);
     const [view, setView] = useState('skills');

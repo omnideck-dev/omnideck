@@ -27,13 +27,9 @@ const profilesHook = {
     addProfiles: vi.fn(),
 };
 
-vi.mock('../../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ profilesHook, features: {} }),
-}));
-
 const skillsHook = { skills: [], addSkills: vi.fn() };
-vi.mock('../../../hooks/useSkills.js', () => ({
-    default: () => skillsHook,
+vi.mock('../../../contexts/AppData.jsx', () => ({
+    useAppData: () => ({ profilesHook, skillsHook, features: {} }),
 }));
 
 // Import goes through the real utils, but the network call is stubbed so the
