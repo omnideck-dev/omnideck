@@ -120,7 +120,9 @@ Download the installer for your operating system from the
 
 Open the installed application and select **Set up OmniDeck**. First setup can
 take several minutes and might display a normal operating-system permission
-prompt. The setup screen includes Agent Dash while the runtime is prepared.
+prompt. It downloads the application image pinned to that OmniDeck release, so
+an internet connection is required. The setup screen includes Agent Dash while
+the runtime is prepared.
 
 ### CLI installation
 

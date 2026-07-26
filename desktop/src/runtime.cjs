@@ -586,7 +586,7 @@ class OmniDeckRuntime {
     return true;
   }
 
-  async bundledImage() {
+  async releaseImage() {
     const roots = [
       path.join(this.resourcesPath, 'runtime'),
       path.join(__dirname, '..', 'build', 'runtime'),
@@ -598,44 +598,40 @@ class OmniDeckRuntime {
         manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
       } catch (error) {
         if (error.code === 'ENOENT') continue;
-        throw new Error('The bundled OmniDeck image manifest is invalid.');
+        throw new Error('The OmniDeck runtime image manifest is invalid.');
       }
       if (
-        manifest.schemaVersion !== 1
+        manifest.schemaVersion !== 2
         || manifest.appVersion !== APP_VERSION
-        || manifest.imageRef !== IMAGE
-        || manifest.architecture !== (process.arch === 'x64' ? 'amd64' : process.arch)
-        || path.basename(manifest.archive || '') !== manifest.archive
-        || !/^[a-f0-9]{64}$/.test(manifest.archiveSha256 || '')
+        || !/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/.test(manifest.imageRef || '')
       ) {
-        throw new Error('The bundled OmniDeck image does not match this application release.');
+        throw new Error('The OmniDeck runtime image does not match this application release.');
       }
-      const archivePath = path.join(root, manifest.archive);
-      try {
-        await fsp.access(archivePath, fs.constants.R_OK);
-      } catch {
-        throw new Error('The bundled OmniDeck image archive is missing.');
-      }
-      return { ...manifest, archivePath };
+      return manifest;
     }
     return null;
   }
 
-  async imageExists() {
+  async imageExists(imageRef = IMAGE) {
     const result = await this.run(
       this.podmanPath,
-      ['image', 'exists', IMAGE],
+      ['image', 'exists', imageRef],
       { label: 'application image check', acceptExitCodes: [0, 1, 125] },
     );
     return result.code === 0;
   }
 
   async ensureImage() {
-    if (await this.imageExists()) return;
-    const bundle = await this.bundledImage();
-    if (!bundle) {
+    const releaseImage = await this.releaseImage();
+    if (!releaseImage) {
       if (!this.allowDevelopmentImagePull) {
-        throw new Error('This OmniDeck installer does not contain its application image.');
+        throw new Error('This OmniDeck installer does not identify its application image.');
+      }
+      if (await this.imageExists(DEVELOPMENT_IMAGE)) {
+        await this.run(this.podmanPath, ['tag', DEVELOPMENT_IMAGE, IMAGE], {
+          label: 'prepare development app',
+        });
+        return;
       }
       this.emit('downloading', 'Downloading development build', 'Receiving OmniDeck…');
       await this.run(this.podmanPath, ['pull', DEVELOPMENT_IMAGE], {
@@ -648,40 +644,23 @@ class OmniDeckRuntime {
       return;
     }
 
-    let lastPercent = -1;
-    this.emit(
-      'loading-image',
-      'Preparing OmniDeck',
-      'Checking the bundled application…',
-      { progress: 0 },
-    );
-    const digest = await sha256File(bundle.archivePath, (value) => {
-      const percent = Math.floor(value * 100);
-      if (percent === lastPercent) return;
-      lastPercent = percent;
-      this.emit(
-        'loading-image',
-        'Preparing OmniDeck',
-        `Checking application files… ${percent}%`,
-        { progress: value },
-      );
-    });
-    if (digest !== bundle.archiveSha256) {
-      throw new Error('The bundled OmniDeck application did not pass its integrity check.');
+    if (!await this.imageExists(releaseImage.imageRef)) {
+      this.emit('downloading', 'Downloading OmniDeck', 'Receiving application files…');
+      await this.run(this.podmanPath, ['pull', releaseImage.imageRef], {
+        label: 'download application',
+        onLine: () => this.emit(
+          'downloading',
+          'Downloading OmniDeck',
+          'Receiving application files…',
+        ),
+      });
     }
-
-    this.emit('loading-image', 'Unpacking OmniDeck', 'Installing the bundled application…');
-    await this.run(this.podmanPath, ['load', '--input', bundle.archivePath], {
-      label: 'load application',
-      onLine: () => this.emit(
-        'loading-image',
-        'Unpacking OmniDeck',
-        'Installing application files…',
-      ),
-    });
-    if (!await this.imageExists()) {
-      throw new Error('The bundled OmniDeck image could not be loaded.');
+    if (!await this.imageExists(releaseImage.imageRef)) {
+      throw new Error('The pinned OmniDeck image could not be downloaded.');
     }
+    await this.run(this.podmanPath, ['tag', releaseImage.imageRef, IMAGE], {
+      label: 'prepare application',
+    });
   }
 
   async ensureContainer() {
@@ -756,7 +735,7 @@ class OmniDeckRuntime {
       detail = 'The system permission request was cancelled or denied.';
     } else if (/network|download|http|resolve|connection/i.test(raw)) {
       detail = 'A required download failed. Check your connection and try again.';
-    } else if (/integrity|does not contain|archive is missing|does not match/i.test(raw)) {
+    } else if (/integrity|does not identify|manifest is invalid|does not match/i.test(raw)) {
       detail = 'This OmniDeck installer is incomplete or damaged. Download it again and retry.';
     }
     this.emit('error', 'OmniDeck couldn’t finish setup', detail, { canRetry: true });
