@@ -1,8 +1,16 @@
-.chatMessages {
+.scrollArea {
+  position: relative;
   flex: 1;
+  min-height: 0;
+}
+
+.chatMessages {
+  height: 100%;
   overflow-y: auto;
   background: none;
-  scroll-behavior: smooth;
+  /* Streaming follow is intentionally instant. Smooth programmatic scrolling
+   * emits intermediate events that can be mistaken for a manual scroll-up. */
+  scroll-behavior: auto;
   overscroll-behavior: contain;
   /* Flex column so .inner can grow to fill vertically — the empty
    * starter state vertically centers within this column. Scrollbar
@@ -31,3 +39,46 @@
   justify-content: center;
 }
 
+.jumpToLatest {
+  position: absolute;
+  z-index: 2;
+  left: calc(50% - 17px);
+  bottom: 12px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.jumpToLatest:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.jumpToLatest:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.jumpToLatest .bi {
+  font-size: 15px;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jumpToLatest {
+    transition: none;
+  }
+}
