@@ -13,6 +13,7 @@ const {
   installerUrl,
   linuxInstallCommands,
   parseOsRelease,
+  replaceDownloadedFile,
   reserveAvailablePort,
 } = require('../src/runtime.cjs');
 
@@ -40,6 +41,20 @@ test('installer URL is pinned to the reviewed Podman release', () => {
     installerUrl('podman-installer-windows-amd64.msi'),
     'https://github.com/podman-container-tools/podman/releases/download/v6.0.2/podman-installer-windows-amd64.msi',
   );
+});
+
+test('a fresh runtime download replaces a file left by a failed setup', async (context) => {
+  const downloadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-download-test-'));
+  context.after(() => fs.rm(downloadRoot, { recursive: true, force: true }));
+  const destination = path.join(downloadRoot, 'podman-installer.msi');
+  const partial = `${destination}.partial`;
+  await fs.writeFile(destination, 'stale download');
+  await fs.writeFile(partial, 'fresh verified download');
+
+  await replaceDownloadedFile(partial, destination);
+
+  assert.equal(await fs.readFile(destination, 'utf8'), 'fresh verified download');
+  await assert.rejects(fs.access(partial), { code: 'ENOENT' });
 });
 
 test('Windows installer verification passes the path through the child environment', async () => {

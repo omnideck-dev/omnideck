@@ -128,6 +128,13 @@ async function sha256File(filename, onProgress = () => {}) {
   return hash.digest('hex');
 }
 
+async function replaceDownloadedFile(source, destination) {
+  // fs.rename() does not replace an existing destination reliably on Windows.
+  // A failed setup may leave the previous verified download behind.
+  await fsp.rm(destination, { force: true });
+  await fsp.rename(source, destination);
+}
+
 class OmniDeckRuntime {
   constructor({
     userDataPath,
@@ -488,7 +495,7 @@ class OmniDeckRuntime {
       await fsp.rm(partial, { force: true });
       throw new Error('The downloaded system component did not pass its security check.');
     }
-    await fsp.rename(partial, destination);
+    await replaceDownloadedFile(partial, destination);
   }
 
   async ensureRuntimeReady() {
@@ -761,6 +768,7 @@ module.exports = {
   installerUrl,
   linuxInstallCommands,
   parseOsRelease,
+  replaceDownloadedFile,
   reserveAvailablePort,
   sha256File,
 };
