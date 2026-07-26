@@ -1,0 +1,97 @@
+{
+  "name": "omnideck",
+  "desktopName": "OmniDeck.desktop",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "OmniDeck",
+  "homepage": "https://github.com/omnideck-dev/omnideck",
+  "main": "src/main.cjs",
+  "author": {
+    "name": "OmniDeck",
+    "email": "omnideck-dev@users.noreply.github.com"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:linux:container": "bash scripts/build-linux-container.sh",
+    "dist:mac": "electron-builder --mac",
+    "dist:windows": "electron-builder --win"
+  },
+  "devDependencies": {
+    "@electron/notarize": "3.1.1",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "minimatch": "10.2.5"
+  },
+  "build": {
+    "appId": "dev.omnideck.app",
+    "productName": "OmniDeck",
+    "asar": true,
+    "compression": "maximum",
+    "artifactName": "OmniDeck-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "LICENSE",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/runtime",
+        "to": "runtime",
+        "filter": [
+          "image-manifest.json",
+          "omnideck-image.oci.tar"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.svg",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg"
+      ]
+    },
+    "afterSign": "scripts/notarize.cjs",
+    "win": {
+      "icon": "build/icon.svg",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "category": "Utility",
+      "icon": "build/icon.svg",
+      "syncDesktopName": true,
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "maintainer": "OmniDeck <omnideck-dev@users.noreply.github.com>",
+      "vendor": "OmniDeck",
+      "executableName": "omnideck"
+    }
+  }
+}

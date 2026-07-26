@@ -1,0 +1,229 @@
+name: OmniDeck application
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop.yml"
+      - ".dockerignore"
+      - "container/**"
+      - "desktop/**"
+      - "pyproject.toml"
+      - "server/**"
+      - "uv.lock"
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: omnideck-application-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install application dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: desktop
+        shell: bash
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "${expected}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected}"
+            exit 1
+          }
+          test -f "../docs/releases/${GITHUB_REF_NAME}.md" || {
+            echo "Missing release notes for ${GITHUB_REF_NAME}"
+            exit 1
+          }
+
+      - name: Test application manager and setup game
+        working-directory: desktop
+        run: npm test
+
+  image:
+    if: github.event_name != 'pull_request'
+    needs: test
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Read application version
+        id: version
+        working-directory: desktop
+        shell: bash
+        run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build bundled OmniDeck image
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          IMAGE_PLATFORM: ${{ matrix.platform }}
+        shell: bash
+        run: |
+          mkdir -p desktop/build/runtime
+          docker buildx build \
+            --platform "${IMAGE_PLATFORM}" \
+            --build-arg "OMNIDECK_VERSION=${APP_VERSION}" \
+            --tag "localhost/omnideck/runtime:${APP_VERSION}" \
+            --output "type=oci,dest=desktop/build/runtime/omnideck-image.oci.tar,compression=gzip,compression-level=6,force-compression=true" \
+            .
+
+      - name: Verify bundled image can be loaded
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman load --input desktop/build/runtime/omnideck-image.oci.tar
+          podman image exists "localhost/omnideck/runtime:${APP_VERSION}"
+
+      - name: Upload bundled image
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-image-${{ matrix.architecture }}
+          path: desktop/build/runtime/omnideck-image.oci.tar
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: image
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            architecture: amd64
+            command: npm run dist:linux -- --x64
+          - name: windows-x64
+            runner: windows-2025
+            architecture: amd64
+            command: npm run dist:windows -- --x64
+          - name: macos-arm64
+            runner: macos-15
+            architecture: arm64
+            command: npm run dist:mac -- --arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Download bundled image
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-${{ matrix.architecture }}
+          path: desktop/build/runtime
+
+      - name: Create bundled image manifest
+        working-directory: desktop
+        run: node scripts/prepare-bundled-image.cjs build/runtime/omnideck-image.oci.tar ${{ matrix.architecture }}
+
+      - name: Install application dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Install Linux packaging tools
+        if: matrix.name == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y binutils fakeroot rpm
+
+      - name: Build installer
+        working-directory: desktop
+        env:
+          CSC_LINK: ${{ matrix.name == 'macos-arm64' && secrets.DESKTOP_MAC_CSC_LINK || matrix.name == 'windows-x64' && secrets.DESKTOP_WINDOWS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.name == 'macos-arm64' && secrets.DESKTOP_MAC_CSC_KEY_PASSWORD || matrix.name == 'windows-x64' && secrets.DESKTOP_WINDOWS_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+        run: ${{ matrix.command }}
+
+      - name: Generate SHA-256 checksums
+        working-directory: desktop
+        run: node scripts/checksums.cjs dist
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: omnideck-installers-${{ matrix.name }}
+          path: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.dmg
+            desktop/dist/*.exe
+            desktop/dist/*.rpm
+            desktop/dist/*.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+
+      - name: Publish OmniDeck prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          name: OmniDeck ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/*
+          fail_on_unmatched_files: true
+          prerelease: true
+          make_latest: false
