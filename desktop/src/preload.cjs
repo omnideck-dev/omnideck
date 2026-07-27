@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('omnideckDesktop', {
   beginSetup: () => ipcRenderer.invoke('omnideck:begin-setup'),
+  doctorAction: (action) => ipcRenderer.invoke('omnideck:doctor-action', action),
   openApp: () => ipcRenderer.invoke('omnideck:open-app'),
   retry: () => ipcRenderer.invoke('omnideck:retry'),
   showLogs: () => ipcRenderer.invoke('omnideck:show-logs'),

@@ -21,6 +21,29 @@ Agent Dash runs entirely in the setup renderer while the runtime and application
 image are prepared. It has no network or runtime dependency and never blocks
 setup progress or diagnostic errors.
 
+## Setup lifecycle
+
+The application records setup progress in `setup-state.json` under its
+application-data directory. The record includes the application version and
+exact pinned image digest.
+
+- No setup record or usable legacy environment opens the first-time Welcome
+  screen.
+- An in-progress record resumes setup automatically and reuses completed
+  downloads, image layers, and persistent volumes when possible.
+- A completed record with the same pinned image opens the application directly,
+  even when only the desktop wrapper version changed.
+- A completed record with a different pinned image runs the update flow.
+- A completed but unhealthy environment opens diagnostics.
+
+Diagnostics are populated from the checks that ran during that launch or setup
+attempt. Checks blocked by an earlier failure remain `Not checked`; successful
+setup does not show the diagnostic checklist.
+
+The guarded scripts in `desktop/scripts/release-test/` download a published
+release and launch isolated first-run, interrupted, update, returning, and
+doctor scenarios on macOS, Linux, or Windows.
+
 ## Runtime topology
 
 On macOS and Windows, the first-run flow downloads the pinned official Podman

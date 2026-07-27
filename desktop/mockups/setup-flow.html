@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>omnideck setup flow review</title>
+    <link rel="stylesheet" href="../src/setup/setup.css" />
+    <link rel="stylesheet" href="./setup-flow.css" />
+  </head>
+  <body>
+    <main class="review-layout">
+      <aside class="review-panel">
+        <header class="review-header">
+          <p class="review-kicker">COPY &amp; FLOW REVIEW</p>
+          <h1>omnideck setup</h1>
+          <p>
+            Review the locked setup, manual upgrade, and doctor flows.
+            Approvals and notes stay in this browser.
+          </p>
+        </header>
+
+        <div class="review-controls">
+          <fieldset>
+            <legend>Preview size</legend>
+            <div class="segmented">
+              <button class="view-button is-selected" data-view="desktop" type="button">
+                Desktop
+              </button>
+              <button class="view-button" data-view="compact" type="button">
+                Compact
+              </button>
+            </div>
+          </fieldset>
+        </div>
+
+        <section class="review-card">
+          <div class="review-position">
+            <span id="screen-position">1 of 1</span>
+            <span id="approval-count">0 approved</span>
+          </div>
+          <p id="implementation-note" class="implementation-note"></p>
+          <label for="review-note">Feedback for this screen</label>
+          <textarea
+            id="review-note"
+            rows="3"
+            placeholder="What should change?"
+          ></textarea>
+          <button id="approve" class="approve-button" type="button">
+            Approve this screen
+          </button>
+          <button id="copy-summary" class="copy-button" type="button">
+            Copy review summary
+          </button>
+        </section>
+
+        <nav id="screen-list" class="screen-list" aria-label="Setup screens"></nav>
+      </aside>
+
+      <section class="preview-column">
+        <header class="preview-toolbar">
+          <button id="previous" type="button" aria-label="Previous screen">← Previous</button>
+          <div>
+            <strong id="flow-name">First-time setup</strong>
+            <span id="screen-name">Checking this computer</span>
+          </div>
+          <button id="next" type="button" aria-label="Next screen">Next →</button>
+        </header>
+
+        <div id="preview-stage" class="preview-stage">
+          <div class="shell">
+            <section class="window">
+              <aside class="setup-panel" aria-live="polite">
+                <div class="identity">
+                  <div class="mark" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <p class="brand">omnideck</p>
+                </div>
+
+                <div class="status">
+                  <p id="eyebrow" class="eyebrow">WELCOME</p>
+                  <h1 id="setup-title">Welcome to omnideck</h1>
+                  <p id="detail" class="detail">
+                    A one-time setup will prepare everything omnideck needs on
+                    this computer.
+                  </p>
+
+                  <section id="doctor-panel" class="doctor-panel" hidden>
+                    <div class="doctor-heading">
+                      <span>DIAGNOSTICS</span>
+                      <strong id="doctor-result">Issue found</strong>
+                    </div>
+                    <div id="diagnostic-list" class="diagnostic-list"></div>
+                    <details id="technical-details">
+                      <summary>Technical details</summary>
+                      <pre id="technical-output"></pre>
+                    </details>
+                  </section>
+
+                  <div id="progress-wrap" class="progress-wrap" hidden>
+                    <div
+                      id="progress-track"
+                      class="progress-track"
+                      role="progressbar"
+                      aria-label="Setup progress"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                    >
+                      <div id="progress" class="progress"></div>
+                    </div>
+                  </div>
+
+                  <div id="spinner" class="spinner" aria-label="Working"></div>
+
+                  <button id="primary" class="primary" type="button" hidden>
+                    Set up omnideck
+                  </button>
+                  <button id="logs" class="secondary" type="button" hidden>
+                    Show diagnostic log
+                  </button>
+                </div>
+
+                <p id="footnote" class="footnote">
+                  First-time setup can take several minutes. You can play Agent
+                  Dash while you wait.
+                </p>
+              </aside>
+
+              <section class="game-panel" aria-labelledby="game-title">
+                <header class="game-header">
+                  <div>
+                    <p class="game-kicker">WHILE YOU WAIT</p>
+                    <h2 id="game-title">Agent Dash</h2>
+                  </div>
+                  <div class="scoreboard" aria-live="polite">
+                    <span>SCORE <strong id="score">0000</strong></span>
+                    <span>BEST <strong id="best">0000</strong></span>
+                  </div>
+                </header>
+
+                <div class="game-frame">
+                  <canvas
+                    id="agent-dash"
+                    width="720"
+                    height="360"
+                    tabindex="0"
+                    role="img"
+                    aria-label="Agent Dash. Press Space, W, or the Up arrow, or click to jump over obstacles and collect cards."
+                  ></canvas>
+                  <div id="game-overlay" class="game-overlay">
+                    <p id="game-message">Start setup to begin the run</p>
+                    <span id="game-hint">Space / ↑ / click to jump</span>
+                  </div>
+                </div>
+
+                <p class="game-help">
+                  Jump the busywork. Collect the glowing cards.
+                </p>
+              </section>
+            </section>
+          </div>
+        </div>
+
+        <footer class="keyboard-help">
+          Use ← and → to review screens. Space, ↑, W, or click controls Agent Dash.
+        </footer>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="../src/setup/agent-dash.js"></script>
+    <script src="./setup-flow.js"></script>
+  </body>
+</html>
