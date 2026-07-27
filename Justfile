@@ -137,6 +137,9 @@ dev:
         docker rm -f {{_ctr}} 2>/dev/null || true
         env_args=""; [ -f .env ] && env_args="--env-file .env"
         docker run -d --restart=unless-stopped --name {{_ctr}} \
+            --log-driver=local \
+            --log-opt max-size=50m \
+            --log-opt max-file=3 \
             --gpus all --shm-size=256m --network=host \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e DEV_MODE=true \
@@ -432,9 +435,13 @@ _require-running:
     @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
 
 # Tar-pipe working tree into container at /opt/omnideck.
-# Excludes heavy/generated dirs so the stream stays small.
+# Excludes heavy/generated dirs so the stream stays small. Normalize archived
+# source permissions so a restrictive host umask cannot prevent the separate
+# `broker` user from importing the integrations package. Capital X preserves
+# executable scripts without making ordinary source files executable.
 _sync-src ctr:
     @tar \
+        --mode='u+rwX,go+rX' \
         --exclude='.git' \
         --exclude='.venv' \
         --exclude='.pytest_cache' \

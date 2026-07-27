@@ -1,0 +1,280 @@
+name: OmniDeck application
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop.yml"
+      - ".dockerignore"
+      - "container/**"
+      - "desktop/**"
+      - "pyproject.toml"
+      - "server/**"
+      - "uv.lock"
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: omnideck-application-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install application dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: desktop
+        shell: bash
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "${expected}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected}"
+            exit 1
+          }
+          test -f "../docs/releases/${GITHUB_REF_NAME}.md" || {
+            echo "Missing release notes for ${GITHUB_REF_NAME}"
+            exit 1
+          }
+
+      - name: Test application manager and setup game
+        working-directory: desktop
+        run: npm test
+
+  runtime_image:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Pin runtime image
+        id: image
+        shell: bash
+        run: |
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${GITHUB_SHA:0:7}"
+          digest=""
+          for attempt in {1..30}; do
+            if digest=$(docker buildx imagetools inspect \
+              "${source_image}" \
+              --format '{{.Manifest.Digest}}' 2>/dev/null); then
+              break
+            fi
+            echo "Runtime image is not available yet (attempt ${attempt}/30)"
+            sleep 20
+          done
+          [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "Could not resolve ${source_image} to an immutable digest"
+            exit 1
+          }
+          image_ref="ghcr.io/${GITHUB_REPOSITORY}@${digest}"
+          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
+          cd desktop
+          node scripts/prepare-runtime-image.cjs "${image_ref}"
+
+      - name: Upload runtime image manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-image-manifest
+          path: desktop/build/runtime/image-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+
+  promote-image:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: runtime_image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote tested image to release version
+        working-directory: desktop
+        shell: bash
+        run: |
+          app_version=$(node -p "require('./package.json').version")
+          source_image="${{ needs.runtime_image.outputs.image_ref }}"
+          release_image="ghcr.io/${GITHUB_REPOSITORY}:${app_version}"
+          docker buildx imagetools inspect "${source_image}"
+          docker buildx imagetools create --tag "${release_image}" "${source_image}"
+          docker buildx imagetools inspect "${release_image}"
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: runtime_image
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            command: npm run dist:linux -- --x64
+          - name: windows-x64
+            runner: windows-2025
+            command: npm run dist:windows -- --x64
+          - name: macos-arm64
+            runner: macos-15
+            command: npm run dist:mac -- --arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Download runtime image manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-manifest
+          path: desktop/build/runtime
+
+      - name: Install application dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Install Linux packaging tools
+        if: matrix.name == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y binutils fakeroot rpm
+
+      - name: Configure optional signing
+        shell: bash
+        env:
+          TARGET_NAME: ${{ matrix.name }}
+          MAC_CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
+          WINDOWS_CSC_LINK: ${{ secrets.DESKTOP_WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WINDOWS_CSC_KEY_PASSWORD }}
+          NOTARIZE_APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
+          NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE_APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+        run: |
+          append_env() {
+            name="$1"
+            value="$2"
+            if [ -n "${value}" ]; then
+              delimiter="OMNIDECK_SIGNING_VALUE_${name}"
+              {
+                echo "${name}<<${delimiter}"
+                echo "${value}"
+                echo "${delimiter}"
+              } >> "${GITHUB_ENV}"
+            fi
+          }
+
+          case "${TARGET_NAME}" in
+            macos-arm64)
+              if [ -n "${MAC_CSC_LINK}" ]; then
+                append_env CSC_LINK "${MAC_CSC_LINK}"
+                append_env CSC_KEY_PASSWORD "${MAC_CSC_KEY_PASSWORD}"
+              else
+                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
+                echo "Building unsigned macOS installer"
+              fi
+              append_env APPLE_ID "${NOTARIZE_APPLE_ID}"
+              append_env APPLE_APP_SPECIFIC_PASSWORD "${NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD}"
+              append_env APPLE_TEAM_ID "${NOTARIZE_APPLE_TEAM_ID}"
+              ;;
+            windows-x64)
+              if [ -n "${WINDOWS_CSC_LINK}" ]; then
+                append_env CSC_LINK "${WINDOWS_CSC_LINK}"
+                append_env CSC_KEY_PASSWORD "${WINDOWS_CSC_KEY_PASSWORD}"
+              else
+                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
+                echo "Building unsigned Windows installer"
+              fi
+              ;;
+          esac
+
+      - name: Build installer
+        working-directory: desktop
+        run: ${{ matrix.command }}
+
+      - name: Generate SHA-256 checksums
+        working-directory: desktop
+        run: node scripts/checksums.cjs dist
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: omnideck-installers-${{ matrix.name }}
+          path: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.dmg
+            desktop/dist/*.exe
+            desktop/dist/*.rpm
+            desktop/dist/*.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, promote-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+
+      - name: Publish OmniDeck prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          name: OmniDeck ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/*
+          fail_on_unmatched_files: true
+          prerelease: true
+          make_latest: false

@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -148,6 +147,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set image version metadata
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push (${{ matrix.platform }})
         id: build
         uses: docker/build-push-action@v7
@@ -156,6 +160,8 @@ jobs:
           file: container/Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
+          build-args: |
+            OMNIDECK_VERSION=${{ steps.version.outputs.value }}
           # Push by digest only — tags applied in the merge job.
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true
           cache-from: type=gha,scope=${{ matrix.platform }}
@@ -203,8 +209,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 

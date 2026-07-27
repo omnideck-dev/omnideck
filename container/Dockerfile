@@ -17,6 +17,13 @@ FROM docker.io/ubuntu:22.04
 # ── BuildKit arch detection ──────────────────────────────────────────────────
 # TARGETARCH is injected by BuildKit: amd64, arm64, arm/v7, etc.
 ARG TARGETARCH
+ARG OMNIDECK_VERSION=development
+
+LABEL org.opencontainers.image.title="OmniDeck" \
+      org.opencontainers.image.description="Private OmniDeck application runtime" \
+      org.opencontainers.image.source="https://github.com/omnideck-dev/omnideck" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${OMNIDECK_VERSION}"
 
 # ── Environment ───────────────────────────────────────────────────────────────
 ENV DEBIAN_FRONTEND=noninteractive \

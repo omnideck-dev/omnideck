@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/omnideck-dev/cli/releases/latest">
-    <img src="https://img.shields.io/github/v/release/omnideck-dev/cli?style=flat-square&label=release" alt="Latest Release">
+  <a href="https://github.com/omnideck-dev/omnideck/releases">
+    <img src="https://img.shields.io/github/v/release/omnideck-dev/omnideck?include_prereleases&style=flat-square&label=release" alt="Latest Release">
   </a>
   <a href="https://github.com/omnideck-dev/omnideck/actions/workflows/publish.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/omnideck-dev/omnideck/publish.yml?branch=main&style=flat-square&label=CI" alt="CI Status">
@@ -31,6 +31,14 @@
 ---
 
 ## Quick Start
+
+Download the experimental OmniDeck application for Windows, macOS, or Linux
+from the [releases page](https://github.com/omnideck-dev/omnideck/releases).
+Install it, open **OmniDeck**, and follow the guided setup. The application
+prepares its private runtime automatically; no container or command-line
+knowledge is required.
+
+Prefer the CLI workflow?
 
 ```bash
 # Install the CLI
@@ -86,13 +94,37 @@ omnideck install
 
 ## Prerequisites
 
-- **Container engine:** [Podman](https://podman.io/) 4.0+ (recommended) or [Docker](https://docs.docker.com/get-docker/) 20.10+. Other container engines such as Colima are not supported at this time. We recommend Podman for its open-source nature and smaller resource footprint.
+- **OmniDeck application:** Windows 11 x64, Apple Silicon macOS, or a supported
+  x64 desktop Linux distribution. The application prepares its private Podman
+  runtime during guided setup.
+- **CLI installs:** [Podman](https://podman.io/) 4.0+ (recommended) or [Docker](https://docs.docker.com/get-docker/) 20.10+. Other container engines such as Colima are not supported at this time. We recommend Podman for its open-source nature and smaller resource footprint.
 - **LLM provider:** An API key for OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint — or [Ollama](https://ollama.com/) for local models.
 - **RAM:** 4 GB minimum (8 GB recommended for local models).
 
 ---
 
 ## Installation
+
+### OmniDeck application (experimental)
+
+Download the installer for your operating system from the
+[OmniDeck releases](https://github.com/omnideck-dev/omnideck/releases):
+
+| Platform | Installer |
+|----------|-----------|
+| Windows 11 x64 | `.exe` |
+| Apple Silicon macOS | `.dmg` |
+| Ubuntu, Debian, or Linux Mint x64 | `.deb` |
+| Fedora, RHEL, Rocky Linux, AlmaLinux, or openSUSE x64 | `.rpm` |
+| Other desktop Linux x64 | `.AppImage` |
+
+Open the installed application and select **Set up OmniDeck**. First setup can
+take several minutes and might display a normal operating-system permission
+prompt. It downloads the application image pinned to that OmniDeck release, so
+an internet connection is required. The setup screen includes Agent Dash while
+the runtime is prepared.
+
+### CLI installation
 
 ### Step 1: Install the CLI
 
