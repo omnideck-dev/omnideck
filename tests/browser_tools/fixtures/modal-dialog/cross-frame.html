@@ -46,7 +46,11 @@
   </main>
 
   <div id="modal-backdrop" class="auth-modal modal-overlay">
-    <button type="button" title="Close">×</button>
+    <button id="auth-modal-close" type="button" title="Close">
+      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+        <path d="M2 2l12 12M14 2L2 14"></path>
+      </svg>
+    </button>
   </div>
   <div id="modal-content">
     <iframe></iframe>
@@ -55,6 +59,11 @@
   <script>
     document.querySelector('iframe').src =
       new URLSearchParams(location.search).get('src') || 'about:blank';
+    document.getElementById('auth-modal-close').addEventListener('click', () => {
+      document.getElementById('modal-backdrop').remove();
+      document.getElementById('modal-content').remove();
+      document.body.style.overflow = 'auto';
+    });
   </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import pytest
 from config import load_config
 from tools.browser import BrowserToolError
 from tools.browser.core.document import Document
+from tools.browser.core.input.scroll import ScrollOutcome
 from tools.browser.interactions import scroll_page
 
 _cfg = load_config()
@@ -164,4 +165,33 @@ async def test_scroll_budget_resets_on_url_change(
     result = await scroll_page("down", tab="1")
     assert isinstance(result, str)
     # First scroll on new URL, no warning expected
+    assert "SCROLL WARNING" not in result
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_modal_blocked_scroll_does_not_consume_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    browser_tool_harness,
+    settle_tracker,
+) -> None:
+    """Repeated modal no-ops remain available so the agent can get guidance."""
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
+
+    async def blocked_scroll(
+        document: Document,
+        direction: str = "down",
+        amount: int | None = None,
+    ) -> ScrollOutcome:
+        del direction, amount
+        assert isinstance(document, Document)
+        return ScrollOutcome(moved=False, blocked_by_modal=True)
+
+    monkeypatch.setattr(Document, "scroll", blocked_scroll)
+
+    result = ""
+    for _ in range(_SCROLL_HARD_LIMIT + 1):
+        result = await scroll_page("down", tab="1")
+
+    assert "blocked by an open modal dialog" in result
     assert "SCROLL WARNING" not in result

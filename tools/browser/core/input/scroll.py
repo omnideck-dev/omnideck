@@ -4,16 +4,32 @@ from __future__ import annotations
 
 import asyncio
 import random
+from dataclasses import dataclass
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame, Page
 
 from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core.input._shared import _sleep_ms
+from tools.browser.core.modals import MODAL_HELPERS_JS
+
+
+@dataclass(frozen=True, slots=True)
+class ScrollOutcome:
+    """Observable result of one selected-document scroll attempt."""
+
+    moved: bool
+    blocked_by_modal: bool = False
 
 
 _INITIAL_SCROLL_STATE_JS = """
 ({ x, y }) => {
+__MODAL_HELPERS__
+
+  const activeModal = omnideckActiveModal();
+  const modalScrollTarget = activeModal
+    ? omnideckScrollableModalElement(activeModal.element)
+    : null;
   let scrollTarget = x === null || y === null
     ? null
     : document.elementFromPoint(x, y);
@@ -25,22 +41,57 @@ _INITIAL_SCROLL_STATE_JS = """
   if (scrollTarget === document.body || scrollTarget === document.documentElement) {
     scrollTarget = null;
   }
+  if (modalScrollTarget) scrollTarget = modalScrollTarget;
+
   const bodyStyle = document.body ? getComputedStyle(document.body) : null;
+  const targetRect = modalScrollTarget?.getBoundingClientRect() || null;
   return {
     windowY: window.scrollY,
     targetScrollTop: scrollTarget?.scrollTop ?? null,
+    modalOpen: Boolean(activeModal),
+    modalScrollable: Boolean(modalScrollTarget),
+    modalTargetPoint: targetRect ? {
+      x: targetRect.left + targetRect.width / 2,
+      y: targetRect.top + Math.min(targetRect.height / 2, window.innerHeight / 2)
+    } : null,
     canFallback: Boolean(
-      document.body
+      !activeModal
+      && document.body
       && document.body.scrollHeight > window.innerHeight + 1
       && (bodyStyle.overflowY === 'hidden' || bodyStyle.overflowY === 'clip')
     )
   };
 }
-"""
+""".replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
 
-_FALLBACK_SCROLL_JS = """
+_SCROLL_MODAL_JS = """
+({ direction, delta }) => {
+__MODAL_HELPERS__
+
+  const activeModal = omnideckActiveModal();
+  const target = activeModal
+    ? omnideckScrollableModalElement(activeModal.element)
+    : null;
+  if (!target) return false;
+
+  if (direction === 'top') {
+    target.scrollTo(0, 0);
+  } else if (direction === 'bottom') {
+    target.scrollTo(0, target.scrollHeight);
+  } else if (direction === 'page_down' || direction === 'page_up') {
+    target.scrollBy(0, target.clientHeight * (direction === 'page_down' ? 1 : -1));
+  } else {
+    target.scrollBy(0, delta);
+  }
+  return true;
+}
+""".replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
+
+_FINALIZE_SCROLL_JS = """
 ({ initial, direction, delta }) => {
-  const applyScroll = () => {
+__MODAL_HELPERS__
+
+  const applyWindowScroll = () => {
     if (direction === 'top') {
       window.scrollTo(0, 0);
     } else if (direction === 'bottom') {
@@ -55,8 +106,10 @@ _FALLBACK_SCROLL_JS = """
     }
   };
 
-  // Trusted input remains the primary path. Only intervene when it produced
-  // no document or targeted-container movement.
+  const activeModal = omnideckActiveModal();
+  const modalScrollTarget = activeModal
+    ? omnideckScrollableModalElement(activeModal.element)
+    : null;
   let scrollTarget = initial.x === null || initial.y === null
     ? null
     : document.elementFromPoint(initial.x, initial.y);
@@ -65,40 +118,36 @@ _FALLBACK_SCROLL_JS = """
     if (scrollTarget.scrollHeight > scrollTarget.clientHeight + 1) break;
     scrollTarget = scrollTarget.parentElement;
   }
+  if (scrollTarget === document.body || scrollTarget === document.documentElement) {
+    scrollTarget = null;
+  }
+  if (modalScrollTarget) scrollTarget = modalScrollTarget;
+
   const targetContainerMoved = initial.targetScrollTop !== null
     && scrollTarget
     && scrollTarget.scrollTop !== initial.targetScrollTop;
-  if (window.scrollY !== initial.windowY || targetContainerMoved) return;
-
-  applyScroll();
-  if (window.scrollY !== initial.windowY) return;
-
-  const body = document.body;
-  if (!body) return;
-
-  const movingDown = direction === 'down'
-    || direction === 'page_down'
-    || direction === 'bottom';
-  const bodyStyle = getComputedStyle(body);
-  const bodyIsTaller = body.scrollHeight > window.innerHeight + 1;
-  const bodyLocksOverflow = bodyStyle.overflowY === 'hidden'
-    || bodyStyle.overflowY === 'clip';
-  if (!movingDown || !bodyIsTaller || !bodyLocksOverflow) return;
-
-  // Common modal/paywall scroll locks fix the body in place as well as hiding
-  // overflow. Releasing only one leaves the document unable to scroll.
-  const lockedOffset = bodyStyle.position === 'fixed'
-    ? Math.max(0, -(parseFloat(bodyStyle.top) || 0))
-    : window.scrollY;
-  body.style.setProperty('overflow', 'visible', 'important');
-  if (bodyStyle.position === 'fixed') {
-    body.style.setProperty('position', 'static', 'important');
-    body.style.removeProperty('top');
+  if (window.scrollY !== initial.windowY || targetContainerMoved) {
+    return { moved: true, blockedByModal: false };
   }
-  if (lockedOffset > 0) window.scrollTo(0, lockedOffset);
-  applyScroll();
+
+  if (activeModal) {
+    return {
+      moved: false,
+      blockedByModal: !modalScrollTarget
+    };
+  }
+
+  // Trusted input remains the primary path. A direct window scroll is a safe
+  // fallback only when no modal owns the interaction surface.
+  if (initial.canFallback) {
+    applyWindowScroll();
+  }
+  return {
+    moved: window.scrollY !== initial.windowY,
+    blockedByModal: false
+  };
 }
-"""
+""".replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
 
 
 async def _wheel_target_point(frame: Frame, page: Page) -> tuple[float, float]:
@@ -127,12 +176,38 @@ async def _wheel_target_point(frame: Frame, page: Page) -> tuple[float, float]:
     return box["width"] / 2, box["height"] / 2
 
 
+async def _move_to_document_point(
+    frame: Frame,
+    page: Page,
+    *,
+    x: float,
+    y: float,
+) -> None:
+    """Move physical input to document-relative coordinates."""
+    page_x = x
+    page_y = y
+    if frame != page.main_frame:
+        frame_element = await frame.frame_element()
+        box = await frame_element.bounding_box()
+        if box is None:
+            raise BrowserToolError(
+                "selected document is not visible for wheel scrolling",
+                tool="scroll_page",
+            )
+        page_x += box["x"]
+        page_y += box["y"]
+
+    from tools.browser.core.input.pointer import _mouse_move_with_fake_cursor
+
+    await _mouse_move_with_fake_cursor(page, x=page_x, y=page_y)
+
+
 async def human_scroll(
     frame: Frame,
     page: Page,
     direction: str = "down",
     amount: int | None = None,
-) -> None:
+) -> ScrollOutcome:
     """Scroll the selected document with human-like wheel increments."""
     if not isinstance(direction, str) or not direction:
         raise BrowserToolError("direction must be a non-empty string", tool="scroll_page")
@@ -172,11 +247,36 @@ async def human_scroll(
             },
         )
         if not isinstance(initial_state, dict):
-            initial_state = {"windowY": 0, "targetScrollTop": None, "canFallback": False}
+            initial_state = {
+                "windowY": 0,
+                "targetScrollTop": None,
+                "canFallback": False,
+                "modalOpen": False,
+                "modalScrollable": False,
+            }
         initial_state["x"] = wheel_target[0] if wheel_target is not None else None
         initial_state["y"] = wheel_target[1] if wheel_target is not None else None
 
-        if normalized in {"top", "bottom"}:
+        modal_open = initial_state.get("modalOpen") is True
+        modal_scrollable = initial_state.get("modalScrollable") is True
+        modal_target = initial_state.get("modalTargetPoint")
+
+        if normalized in {"down", "up"} and modal_scrollable and isinstance(modal_target, dict):
+            await _move_to_document_point(
+                frame,
+                page,
+                x=float(modal_target["x"]),
+                y=float(modal_target["y"]),
+            )
+
+        if modal_open and not modal_scrollable:
+            pass
+        elif modal_open and normalized in {"top", "bottom", "page_down", "page_up"}:
+            await frame.evaluate(
+                _SCROLL_MODAL_JS,
+                {"direction": normalized, "delta": delta},
+            )
+        elif normalized in {"top", "bottom"}:
             await frame.evaluate(
                 "(bottom) => window.scrollTo(0, bottom ? document.documentElement.scrollHeight : 0)",
                 normalized == "bottom",
@@ -188,10 +288,16 @@ async def human_scroll(
             )
         else:
             if not hasattr(page, "mouse") or page.mouse is None:
-                await frame.evaluate(
-                    "(dy) => window.scrollBy({ top: dy, left: 0, behavior: 'smooth' })",
-                    delta,
-                )
+                if modal_open:
+                    await frame.evaluate(
+                        _SCROLL_MODAL_JS,
+                        {"direction": normalized, "delta": delta},
+                    )
+                else:
+                    await frame.evaluate(
+                        "(dy) => window.scrollBy({ top: dy, left: 0, behavior: 'smooth' })",
+                        delta,
+                    )
             else:
                 wheel_increment = 50 if delta > 0 else -50
                 remaining = abs(delta)
@@ -204,18 +310,23 @@ async def human_scroll(
                     await page.mouse.wheel(0, remainder if delta > 0 else -remainder)
                     await asyncio.sleep(0.016)
 
-        if initial_state.get("canFallback") is True:
-            await frame.evaluate(
-                _FALLBACK_SCROLL_JS,
-                {
-                    "initial": initial_state,
-                    "direction": normalized,
-                    "delta": delta,
-                },
-            )
+        raw_outcome = await frame.evaluate(
+            _FINALIZE_SCROLL_JS,
+            {
+                "initial": initial_state,
+                "direction": normalized,
+                "delta": delta,
+            },
+        )
         await _sleep_ms(random.randint(100, 300))
+        if not isinstance(raw_outcome, dict):
+            return ScrollOutcome(moved=False)
+        return ScrollOutcome(
+            moved=raw_outcome.get("moved") is True,
+            blocked_by_modal=raw_outcome.get("blockedByModal") is True,
+        )
     except Exception as exc:
         raise BrowserToolError(f"Failed to perform scroll: {exc}", tool="scroll_page") from exc
 
 
-__all__ = ["human_scroll"]
+__all__ = ["ScrollOutcome", "human_scroll"]

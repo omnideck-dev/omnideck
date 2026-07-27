@@ -25,6 +25,7 @@ from playwright.async_api import Response
 
 from tools.browser.core.document import Document
 from tools.browser.core.downloads import is_file_content_type
+from tools.browser.core.modals import MODAL_HELPERS_JS
 from tools.browser.core.rendering.model import RenderedDocument
 from tools.browser.core.rendering.pipeline import render_nodes
 from tools.browser.core.settling import SettleTimings
@@ -91,6 +92,10 @@ _DOM_WALK_JS = """
   const { fullPage } = params;
   const vh = window.innerHeight;
   const vw = window.innerWidth;
+
+__MODAL_HELPERS__
+
+  const activeModal = omnideckActiveModal();
 
   // ---- Role mapping ----
   function getRole(el) {
@@ -432,6 +437,8 @@ _DOM_WALK_JS = """
       }
 
       let name = getName(el);
+      if (!name && activeModal && activeModal.element.contains(el))
+        name = omnideckModalControlName(el);
       if (!name && role !== 'combobox' && el.tagName !== 'SELECT') return;
 
       refCounter++;
@@ -557,24 +564,44 @@ _DOM_WALK_JS = """
     }
   }
 
-  walk(document.body, true);
+  if (activeModal) {
+    emit({
+      type: 'text',
+      depth: 0,
+      text: '[Modal dialog open — background controls are unavailable]'
+    });
+    walk(activeModal.element, true);
+  } else {
+    walk(document.body, true);
+  }
+
+  const modalViewport = activeModal
+    ? (omnideckScrollableModalElement(activeModal.element) || activeModal.element)
+    : null;
+  const viewportHeight = modalViewport
+    ? (modalViewport.clientHeight || Math.floor(modalViewport.getBoundingClientRect().height))
+    : Math.floor(vh);
+  const viewportScrollTop = modalViewport
+    ? Math.floor(modalViewport.scrollTop)
+    : Math.floor(window.scrollY);
+  const documentHeight = modalViewport
+    ? Math.max(modalViewport.scrollHeight, viewportHeight)
+    : Math.max(
+        document.scrollingElement?.scrollHeight || 0,
+        document.body?.scrollHeight || 0
+      );
 
   return {
     nodes: nodes,
     viewport: {
       width: Math.floor(vw),
-      height: Math.floor(vh),
-      scroll_top: Math.floor(window.scrollY),
-      document_height: Math.floor(
-        Math.max(
-          document.scrollingElement?.scrollHeight || 0,
-          document.body?.scrollHeight || 0
-        )
-      )
+      height: Math.floor(viewportHeight),
+      scroll_top: viewportScrollTop,
+      document_height: Math.floor(documentHeight)
     }
   };
 }
-"""
+""".replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
 
 
 async def render_document(

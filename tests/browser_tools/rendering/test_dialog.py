@@ -21,11 +21,8 @@ async def test_modal_shown_background_hidden(open_tab, servers):
     assert find_ref(view, role="button", name="Background button") is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="native modal dialogs do not currently scope the rendered document",
-)
 async def test_native_modal_dialog_hides_inert_background(open_tab, servers):
+    """A top-layer native dialog is the only available interaction surface."""
     tab = await open_tab(f"{servers.primary}/modal-dialog/native.html")
     view = await browse_page(tab=tab)
 
@@ -35,12 +32,9 @@ async def test_native_modal_dialog_hides_inert_background(open_tab, servers):
     assert "[Modal dialog open" in view
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="aria-modal dialogs do not currently scope the rendered document",
-)
 @pytest.mark.parametrize("role", ["dialog", "alertdialog"])
 async def test_aria_modal_dialog_hides_unavailable_background(open_tab, servers, role):
+    """ARIA modal dialog roles exclude unavailable background controls."""
     query = urlencode({"role": role})
     tab = await open_tab(f"{servers.primary}/modal-dialog/aria-modal.html?{query}")
     view = await browse_page(tab=tab)
@@ -50,11 +44,8 @@ async def test_aria_modal_dialog_hides_unavailable_background(open_tab, servers,
     assert "[Modal dialog open" in view
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="nameless modal icon buttons are dropped even when their id identifies Close",
-)
 async def test_unnamed_modal_close_button_is_actionable(open_tab, servers):
+    """A modal close icon can use its implementation metadata as a fallback."""
     tab = await open_tab(f"{servers.primary}/modal-dialog/unnamed-close.html")
     view = await browse_page(tab=tab)
     close_ref = find_ref(view, role="button", name="Close")
@@ -65,21 +56,24 @@ async def test_unnamed_modal_close_button_is_actionable(open_tab, servers):
     assert find_ref(after_close, role="button", name="Background action") is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="custom cross-origin modal frames are rendered as unexplained background locks",
-)
 async def test_cross_origin_custom_modal_surfaces_blocking_state_and_close(open_tab, servers):
+    """A custom embedded modal keeps its root-document close action visible."""
     query = urlencode({"src": f"{servers.secondary}/modal-dialog/frame-content.html"})
     tab = await open_tab(f"{servers.primary}/modal-dialog/cross-frame.html?{query}")
     view = await browse_page(tab=tab)
 
     assert find_ref(view, role="button", name="Background action") is None
-    assert find_ref(view, role="button", name="Close") is not None
+    close_ref = find_ref(view, role="button", name="Close")
+    assert close_ref is not None
     assert "[Modal dialog open" in view
+
+    after_close = await click(close_ref, tab=tab)
+    assert "[Modal dialog open" not in after_close
+    assert find_ref(after_close, role="button", name="Background action") is not None
 
 
 async def test_modeless_open_dialog_keeps_background_available(open_tab, servers):
+    """An open but modeless dialog does not make its background unavailable."""
     tab = await open_tab(f"{servers.primary}/modal-dialog/modeless.html")
     view = await browse_page(tab=tab)
 

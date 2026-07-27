@@ -29,12 +29,16 @@
     <div id="modal-content">
       <h2>Updated terms</h2>
       <p>Review the terms before continuing.</p>
+      <button type="button" autofocus>Modal start</button>
       <button id="final-action" type="button">Final modal action</button>
     </div>
   </dialog>
 
   <script>
-    document.getElementById('terms-dialog').showModal();
+    const dialog = document.getElementById('terms-dialog');
+    dialog.showModal();
+    dialog.scrollTop = 0;
+    document.querySelector('[autofocus]').focus({preventScroll: true});
   </script>
 </body>
 </html>
