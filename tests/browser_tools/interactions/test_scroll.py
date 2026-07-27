@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from tools.browser import browse_page, click, execute_javascript, scroll_page
 
 from .._helpers import find_ref
@@ -154,3 +156,32 @@ async def test_scroll_releases_fixed_body_lock(open_tab, servers):
     after_page_down = await scroll_page("page_down", tab=tab)
 
     assert _scroll_top(after_page_down) > _scroll_top(initial)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="scrolling does not currently target a scrollable active modal",
+)
+async def test_scroll_targets_active_modal_content(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/modal-dialog/scrollable.html")
+    initial = await browse_page(tab=tab)
+    assert find_ref(initial, role="button", name="Final modal action") is None
+
+    after_down = await scroll_page("down", amount=600, tab=tab)
+
+    assert find_ref(after_down, role="button", name="Final modal action") is not None
+    assert find_ref(after_down, role="button", name="Background action") is None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a modal-blocked scroll currently returns a silent no-op and consumes budget",
+)
+async def test_blocked_modal_scroll_explains_next_action_without_consuming_budget(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/modal-dialog/native.html")
+
+    for _ in range(16):
+        result = await scroll_page("down", amount=600, tab=tab)
+
+    assert "blocked by an open modal dialog" in result
+    assert "Dismiss it before scrolling" in result
