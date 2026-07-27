@@ -18,6 +18,8 @@ const {
 
 const SETUP_PAGE = path.join(__dirname, 'setup', 'index.html');
 const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
+const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases/latest';
+const SUPPORTED_SYSTEMS_URL = 'https://github.com/omnideck-dev/omnideck#prerequisites';
 
 let mainWindow;
 let runtime;
@@ -59,7 +61,7 @@ function isSetupUrl(candidate) {
 
 function assertSetupSender(event) {
   if (!isSetupUrl(event.senderFrame.url)) {
-    throw new Error('This action is only available on the OmniDeck setup screen.');
+    throw new Error('This action is only available on the omnideck setup screen.');
   }
 }
 
@@ -70,7 +72,7 @@ async function createWindow() {
     minWidth: 880,
     minHeight: 620,
     show: false,
-    title: 'OmniDeck',
+    title: 'omnideck',
     backgroundColor: '#0c0e14',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -81,7 +83,6 @@ async function createWindow() {
   });
 
   mainWindow.removeMenu();
-  mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.setZoomFactor(zoomFactor);
   });
@@ -123,13 +124,14 @@ function publishState(state) {
 
 async function openOmniDeck() {
   await mainWindow.loadURL(runtime.appUrl);
+  if (!mainWindow.isVisible()) mainWindow.show();
 }
 
-async function beginSetup() {
+async function beginSetup(reason = runtime.setupReason) {
   if (setupRunning) return;
   setupRunning = true;
   try {
-    await runtime.setup();
+    await runtime.setup(reason);
   } catch (error) {
     runtime.reportFailure(error);
   } finally {
@@ -139,14 +141,20 @@ async function beginSetup() {
 
 async function bootstrap() {
   try {
-    const ready = await runtime.startExisting();
-    if (ready) await openOmniDeck();
+    const result = await runtime.startExisting();
+    if (result.action === 'open') {
+      await openOmniDeck();
+      return;
+    }
+    if (!mainWindow.isVisible()) mainWindow.show();
+    if (result.action === 'setup') await beginSetup(result.reason);
   } catch (error) {
     runtime.reportFailure(error);
+    if (!mainWindow.isVisible()) mainWindow.show();
   }
 }
 
-app.setName('OmniDeck');
+app.setName('omnideck');
 if (process.env.OMNIDECK_DESKTOP_USER_DATA) {
   app.setPath('userData', path.resolve(process.env.OMNIDECK_DESKTOP_USER_DATA));
 }
@@ -188,7 +196,7 @@ if (!hasLock) {
     });
     ipcMain.handle('omnideck:retry', (event) => {
       assertSetupSender(event);
-      return beginSetup();
+      return beginSetup(runtime.setupReason === 'update' ? 'update' : 'repair');
     });
     ipcMain.handle('omnideck:show-logs', (event) => {
       assertSetupSender(event);
@@ -197,17 +205,27 @@ if (!hasLock) {
     ipcMain.handle('omnideck:open-app', async (event) => {
       assertSetupSender(event);
       if (runtime.currentState?.stage !== 'ready') {
-        throw new Error('OmniDeck has not finished setup.');
+        throw new Error('omnideck has not finished setup.');
       }
       return openOmniDeck();
     });
+    ipcMain.handle('omnideck:doctor-action', async (event, action) => {
+      assertSetupSender(event);
+      if (runtime.currentState?.stage !== 'error') {
+        throw new Error('This action is only available after a setup issue.');
+      }
+      if (action === 'supported-systems') return shell.openExternal(SUPPORTED_SYSTEMS_URL);
+      if (action === 'download') return shell.openExternal(DOWNLOAD_URL);
+      if (action === 'close') return app.quit();
+      throw new Error('Unknown diagnostic action.');
+    });
 
     await createWindow();
-    await bootstrap();
     if (process.env.OMNIDECK_DESKTOP_SMOKE_EXIT_MS) {
       const delay = Number(process.env.OMNIDECK_DESKTOP_SMOKE_EXIT_MS);
       if (Number.isFinite(delay) && delay > 0) setTimeout(() => app.quit(), delay);
     }
+    await bootstrap();
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {

@@ -440,6 +440,7 @@
       'loading-image',
       'preparing',
       'starting',
+      'finishing',
     ]);
     if (workingStages.has(setupState.stage) && !setupStarted) {
       setupStarted = true;

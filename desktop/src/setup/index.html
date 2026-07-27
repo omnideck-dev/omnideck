@@ -10,7 +10,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
     />
-    <title>OmniDeck</title>
+    <title>omnideck</title>
     <link rel="stylesheet" href="./setup.css" />
   </head>
   <body>
@@ -23,13 +23,28 @@
               <span></span>
               <span></span>
             </div>
-            <p class="brand">OMNIDECK</p>
+            <p class="brand">omnideck</p>
           </div>
 
           <div class="status">
-            <p id="eyebrow" class="eyebrow">PRIVATE WORKSPACE</p>
-            <h1 id="title">Opening OmniDeck</h1>
-            <p id="detail" class="detail">Checking your private workspace…</p>
+            <p id="eyebrow" class="eyebrow">WELCOME</p>
+            <h1 id="title">Welcome to omnideck</h1>
+            <p id="detail" class="detail">
+              A one-time setup will prepare everything omnideck needs on this
+              computer.
+            </p>
+
+            <section id="doctor-panel" class="doctor-panel" hidden>
+              <div class="doctor-heading">
+                <span>DIAGNOSTICS</span>
+                <strong id="doctor-result">Issue found</strong>
+              </div>
+              <div id="diagnostic-list" class="diagnostic-list"></div>
+              <details>
+                <summary>Technical details</summary>
+                <pre id="technical-output"></pre>
+              </details>
+            </section>
 
             <div id="progress-wrap" class="progress-wrap" hidden>
               <div
@@ -43,10 +58,10 @@
               </div>
             </div>
 
-            <div id="spinner" class="spinner" aria-label="Working"></div>
+            <div id="spinner" class="spinner" aria-label="Working" hidden></div>
 
-            <button id="primary" class="primary" type="button" hidden>
-              Set up OmniDeck
+            <button id="primary" class="primary" type="button">
+              Set up omnideck
             </button>
             <button id="logs" class="secondary" type="button" hidden>
               Show diagnostic log
@@ -54,7 +69,8 @@
           </div>
 
           <p id="footnote" class="footnote">
-            The first launch can take several minutes. Future launches are fast.
+            First-time setup can take several minutes. You can play Agent Dash
+            while you wait.
           </p>
         </aside>
 

@@ -164,6 +164,119 @@ h1 {
   transition: width 180ms ease;
 }
 
+.progress-wrap.is-indeterminate .progress {
+  width: 38%;
+  animation: progress-slide 1.35s ease-in-out infinite;
+  transition: none;
+}
+
+.doctor-panel {
+  display: grid;
+  gap: 7px;
+  margin: -5px 0 10px;
+  padding: 10px;
+  background: rgba(8, 10, 16, 0.55);
+  border: 1px solid #323849;
+  border-radius: 11px;
+}
+
+.doctor-panel[hidden] {
+  display: none;
+}
+
+.doctor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doctor-heading span {
+  color: #7d899d;
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.14em;
+}
+
+.doctor-heading strong {
+  color: #fda4af;
+  font-size: 11px;
+}
+
+.diagnostic-list {
+  display: grid;
+  gap: 2px;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+  color: #aab5c7;
+  font-size: 10px;
+}
+
+.diagnostic-icon {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  color: #7d899d;
+  background: #252b38;
+  border-radius: 50%;
+  font: 800 9px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+.diagnostic-row[data-status="pass"] .diagnostic-icon {
+  color: #d1fae5;
+  background: #087057;
+}
+
+.diagnostic-row[data-status="issue"] .diagnostic-icon {
+  color: #ffe4e6;
+  background: #9f1239;
+}
+
+.diagnostic-row[data-status="waiting"] {
+  color: #69758a;
+}
+
+.diagnostic-value {
+  color: #7f8ba0;
+  font-size: 10px;
+  text-align: right;
+}
+
+.diagnostic-row[data-status="issue"] .diagnostic-value {
+  color: #fda4af;
+}
+
+.doctor-panel details {
+  padding-top: 7px;
+  border-top: 1px solid #2d3341;
+}
+
+.doctor-panel summary {
+  color: #8e9aaf;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.doctor-panel pre {
+  max-height: 92px;
+  overflow: auto;
+  margin: 9px 0 0;
+  padding: 9px;
+  color: #9ba8bd;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #0a0c12;
+  border-radius: 7px;
+  font: 500 9px/1.45 ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
 button {
   width: 100%;
   min-height: 46px;
@@ -341,9 +454,40 @@ html[data-stage="error"] .eyebrow {
   color: #fb7185;
 }
 
+html[data-stage="error"] .status {
+  margin: 24px 0 auto;
+  padding: 22px 0 10px;
+}
+
+html[data-stage="error"] h1 {
+  font-size: 32px;
+  line-height: 1.04;
+}
+
+html[data-stage="error"] .detail {
+  min-height: 0;
+  margin: 11px 0 13px;
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+html[data-stage="error"] button {
+  min-height: 40px;
+  margin-top: 6px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(365%);
   }
 }
 
@@ -384,5 +528,21 @@ html[data-stage="error"] .eyebrow {
   .progress,
   .game-overlay {
     transition: none;
+  }
+
+  .progress-wrap.is-indeterminate .progress {
+    width: 100%;
+    transform: none;
+    animation: progress-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes progress-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
   }
 }
