@@ -62,6 +62,28 @@ export function CustomAppsProvider({ children }) {
         });
     }, []);
 
+    const reorderDockedApps = useCallback((orderedSlugs) => {
+        setDockedAppSlugs((current) => {
+            const remaining = new Set(current);
+            const next = [];
+            orderedSlugs.forEach((slug) => {
+                if (!remaining.delete(slug)) return;
+                next.push(slug);
+            });
+            current.forEach((slug) => {
+                if (remaining.delete(slug)) next.push(slug);
+            });
+            if (
+                next.length === current.length
+                && next.every((slug, index) => slug === current[index])
+            ) {
+                return current;
+            }
+            persistDockedAppSlugs(next);
+            return next;
+        });
+    }, []);
+
     const value = useMemo(() => ({
         enabled,
         featureLoaded: featuresLoaded,
@@ -69,12 +91,14 @@ export function CustomAppsProvider({ children }) {
         dockedAppSlugs,
         dockApp,
         undockApp,
+        reorderDockedApps,
     }), [
         catalog,
         dockApp,
         dockedAppSlugs,
         enabled,
         featuresLoaded,
+        reorderDockedApps,
         undockApp,
     ]);
 

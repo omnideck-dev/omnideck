@@ -1,4 +1,9 @@
-import { cleanup, render as _render, screen } from '@testing-library/react';
+import {
+    cleanup,
+    fireEvent,
+    render as _render,
+    screen,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
@@ -27,6 +32,7 @@ const navigationHarness = vi.hoisted(() => ({
         dockedAppSlugs: [],
         dockApp: vi.fn(),
         undockApp: vi.fn(),
+        reorderDockedApps: vi.fn(),
     },
 }));
 
@@ -71,6 +77,7 @@ beforeEach(() => {
     navigationHarness.customApps.dockedAppSlugs = [];
     navigationHarness.customApps.dockApp.mockReset();
     navigationHarness.customApps.undockApp.mockReset();
+    navigationHarness.customApps.reorderDockedApps.mockReset();
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
 });
 afterEach(() => localStorage.clear());
@@ -212,6 +219,72 @@ describe('Sidebar', () => {
         await user.click(screen.getByTestId('sidebar-docked-app-text-lab'));
         expect(navigation.openCustomApp).toHaveBeenCalledWith('text-lab');
         await user.click(screen.getByTestId('sidebar-undock-app-text-lab'));
+        expect(navigationHarness.customApps.undockApp).toHaveBeenCalledWith('text-lab');
+    });
+
+    it('persists destination order and supports Alt+Arrow reordering', () => {
+        localStorage.setItem(
+            'omnideck_sidebar_navigation_order',
+            JSON.stringify(['routines', 'agents', 'artifacts', 'apps']),
+        );
+        setup();
+        const nav = screen.getByRole('navigation');
+        expect([...nav.querySelectorAll('[data-reorder-id]')]
+            .map((row) => row.dataset.reorderId))
+            .toEqual(['routines', 'agents', 'artifacts']);
+
+        const agents = screen.getByTestId('sidebar-nav-agents');
+        expect(agents).toHaveAttribute(
+            'aria-keyshortcuts',
+            'Alt+ArrowUp Alt+ArrowDown',
+        );
+        fireEvent.keyDown(agents, { key: 'ArrowDown', altKey: true });
+        expect([...nav.querySelectorAll('[data-reorder-id]')]
+            .map((row) => row.dataset.reorderId))
+            .toEqual(['routines', 'artifacts', 'agents']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_navigation_order')))
+            .toEqual(['routines', 'artifacts', 'agents', 'apps']);
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Agents moved to position 3 of 3',
+        );
+    });
+
+    it('moves destinations from their right-click menu', async () => {
+        const user = userEvent.setup();
+        setup();
+        fireEvent.contextMenu(screen.getByTestId('sidebar-nav-routines'), {
+            clientX: 20,
+            clientY: 30,
+        });
+
+        expect(screen.getByTestId('sidebar-reorder-menu')).toBeInTheDocument();
+        await user.click(screen.getByTestId('sidebar-reorder-move-up'));
+        const nav = screen.getByRole('navigation');
+        expect([...nav.querySelectorAll('[data-reorder-id]')]
+            .map((row) => row.dataset.reorderId))
+            .toEqual(['routines', 'agents', 'artifacts']);
+    });
+
+    it('reorders and unpins sidebar Apps with keyboard and context actions', async () => {
+        const user = userEvent.setup();
+        navigationHarness.customApps.enabled = true;
+        navigationHarness.customApps.catalog.apps = [
+            { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
+            { slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal' },
+        ];
+        navigationHarness.customApps.dockedAppSlugs = ['text-lab', 'notes-lab'];
+        setup();
+
+        const notes = screen.getByTestId('sidebar-docked-app-notes-lab');
+        fireEvent.keyDown(notes, { key: 'ArrowUp', altKey: true });
+        expect(navigationHarness.customApps.reorderDockedApps)
+            .toHaveBeenCalledWith(['notes-lab', 'text-lab']);
+
+        fireEvent.contextMenu(screen.getByTestId('sidebar-docked-app-text-lab'), {
+            clientX: 20,
+            clientY: 30,
+        });
+        await user.click(screen.getByTestId('sidebar-reorder-unpin'));
         expect(navigationHarness.customApps.undockApp).toHaveBeenCalledWith('text-lab');
     });
 

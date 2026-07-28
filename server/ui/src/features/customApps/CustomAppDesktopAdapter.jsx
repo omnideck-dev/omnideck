@@ -68,6 +68,7 @@ export default function CustomAppDesktopView({ view, visible }) {
     // the live app record used by the iframe host.
     const app = view.app
         || customApps.catalog.findBySlug(customAppSlugForView(view));
+    const docked = customApps.dockedAppSlugs.includes(app?.slug);
 
     const openChat = useCallback(() => {
         navigation.openChat();
@@ -93,6 +94,22 @@ export default function CustomAppDesktopView({ view, visible }) {
             className={styles.view}
             data-testid="custom-app-view"
         >
+            <button
+                type="button"
+                className={`${styles.pinAction} ${docked ? styles.pinned : ''}`}
+                onClick={() => (
+                    docked
+                        ? customApps.undockApp(app.slug)
+                        : customApps.dockApp(app.slug)
+                )}
+                title={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                aria-label={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                aria-pressed={docked}
+                data-testid="custom-app-view-pin"
+            >
+                <i className={`bi ${docked ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`} />
+                <span>{docked ? 'Pinned' : 'Pin to sidebar'}</span>
+            </button>
             <CustomAppHost
                 app={app}
                 reloadSignal={view.reloadSignal || 0}

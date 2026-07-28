@@ -397,6 +397,7 @@ describe('App view transitions', () => {
         capturedAppEffectDispatch = null;
         streamMock.value = streamMock.makeDefault();
         localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
+        localStorage.removeItem('omnideck_sidebar_docked_apps');
         // Mock the fetches App's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -570,6 +571,24 @@ describe('App view transitions', () => {
             closeTabFromMenu('custom-app:text-lab');
             expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
             expectViewActive('chat-panel', 'left');
+        });
+
+        it('pins and unpins an App from its open view', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+
+            const pin = screen.getByTestId('custom-app-view-pin');
+            expect(pin).toHaveTextContent('Pin to sidebar');
+            act(() => fireEvent.click(pin));
+            expect(pin).toHaveTextContent('Pinned');
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+                .toEqual(['text-lab']);
+
+            act(() => fireEvent.click(pin));
+            expect(pin).toHaveTextContent('Pin to sidebar');
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+                .toEqual([]);
         });
 
         it('opens the current chat and seeds its composer from explicit app context', async () => {

@@ -78,15 +78,46 @@
     background: transparent;
     color: var(--text-secondary);
     font-size: 13px;
-    cursor: pointer;
+    cursor: grab;
     position: relative;
+    touch-action: none;
+    user-select: none;
 }
+.navItem:active { cursor: grabbing; }
 .navItem i { font-size: 14px; color: var(--text-tertiary); width: 16px; text-align: center; flex-shrink: 0; }
 .navItem:hover { background: var(--accent-muted); color: var(--text-primary); }
 .navItem:hover i { color: var(--text-primary); }
 .collapsed .navItem { justify-content: center; padding: 0; }
 
 .navLabel { flex: 1; text-align: left; }
+
+.dragHandle {
+    width: 18px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 18px;
+    margin-right: -5px;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    opacity: 0;
+}
+.dragHandle i {
+    width: auto;
+    color: inherit;
+    font-size: 13px;
+}
+.navItem:hover .dragHandle,
+.navItem:focus-visible .dragHandle,
+.dragging .dragHandle { opacity: 1; }
+
+.dragging {
+    z-index: 1;
+    background: var(--accent-muted);
+    box-shadow: var(--shadow-sm);
+    cursor: grabbing;
+    opacity: 0.7;
+}
 
 /* Signal Line — 2px accent bar on the active item's left edge */
 .navItem.active {
@@ -235,6 +266,18 @@
 
 .collapsed .dockedList { padding: var(--sp-2); }
 .collapsed .dockedItem { justify-content: center; }
+
+.srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 
 .grow { flex: 1; }
 

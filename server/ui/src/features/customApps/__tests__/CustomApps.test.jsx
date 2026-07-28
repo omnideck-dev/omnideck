@@ -67,6 +67,11 @@ describe('CustomAppsProvider', () => {
         expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
             .toEqual(['text-lab', 'notes-lab']);
 
+        act(() => result.current.reorderDockedApps(['notes-lab', 'text-lab']));
+        expect(result.current.dockedAppSlugs).toEqual(['notes-lab', 'text-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+            .toEqual(['notes-lab', 'text-lab']);
+
         act(() => result.current.undockApp('text-lab'));
         expect(result.current.dockedAppSlugs).toEqual(['notes-lab']);
         expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))

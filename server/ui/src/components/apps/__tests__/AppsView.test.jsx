@@ -31,6 +31,41 @@ test('asks the catalog owner to refresh', () => {
     expect(onRefresh).toHaveBeenCalledOnce();
 });
 
+test('pins and unpins an App from its Hub card without opening it', () => {
+    const onOpenApp = vi.fn();
+    const onDockApp = vi.fn();
+    const onUndockApp = vi.fn();
+    const { rerender } = render(
+        <AppsView
+            apps={[SAMPLE]}
+            onOpenApp={onOpenApp}
+            onDockApp={onDockApp}
+            onUndockApp={onUndockApp}
+        />,
+    );
+
+    fireEvent.click(screen.getByTestId('custom-app-pin-text-lab'));
+    expect(onDockApp).toHaveBeenCalledWith('text-lab');
+    expect(onOpenApp).not.toHaveBeenCalled();
+
+    rerender(
+        <AppsView
+            apps={[SAMPLE]}
+            dockedAppSlugs={['text-lab']}
+            onOpenApp={onOpenApp}
+            onDockApp={onDockApp}
+            onUndockApp={onUndockApp}
+        />,
+    );
+    expect(screen.getByTestId('custom-app-pin-text-lab')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+    );
+    fireEvent.click(screen.getByTestId('custom-app-pin-text-lab'));
+    expect(onUndockApp).toHaveBeenCalledWith('text-lab');
+    expect(onOpenApp).not.toHaveBeenCalled();
+});
+
 test('keeps the empty state focused on Apps rather than implementation details', () => {
     render(<AppsView />);
 

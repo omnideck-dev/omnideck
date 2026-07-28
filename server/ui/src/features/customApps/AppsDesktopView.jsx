@@ -17,6 +17,9 @@ export default function AppsDesktopView({ tabGroupId }) {
             error={catalog.error}
             onRefresh={catalog.refresh}
             onOpenApp={(app) => openApp(app, tabGroupId)}
+            dockedAppSlugs={customApps.dockedAppSlugs}
+            onDockApp={customApps.dockApp}
+            onUndockApp={customApps.undockApp}
         />
     );
 }

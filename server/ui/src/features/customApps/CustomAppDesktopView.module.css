@@ -4,4 +4,34 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    position: relative;
+}
+
+.pinAction {
+    position: absolute;
+    z-index: 2;
+    top: calc(var(--sp-3) + 8px);
+    right: calc(var(--sp-3) + 8px);
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--elevated) 92%, transparent);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    font-size: 12px;
+    backdrop-filter: blur(8px);
+}
+.pinAction:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.pinAction.pinned {
+    border-color: var(--accent);
+    background: var(--accent-muted);
+    color: var(--accent);
 }

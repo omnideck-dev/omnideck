@@ -7,15 +7,18 @@ import React, {
 } from 'react';
 import AudioPlayer from './AudioPlayer.jsx';
 import ConversationsPanel from './ConversationsPanel.jsx';
+import SidebarReorderMenu from './SidebarReorderMenu.jsx';
 import { useTheme } from '../contexts/Theme.jsx';
 import { useCustomApps } from '../features/customApps/CustomApps.jsx';
 import {
     useCurrentNavigationTarget,
     useDesktopNavigationCommands,
 } from '../features/navigation/DesktopNavigation.jsx';
+import useSidebarReorder from './useSidebarReorder.js';
 import styles from './Sidebar.module.css';
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
+const NAV_ORDER_KEY = 'omnideck_sidebar_navigation_order';
 
 // Panels reachable from the nav. Settings + theme live in the footer;
 // conversations live inline in the recent list below the nav. The agent
@@ -35,12 +38,46 @@ const NAV_ITEMS = [
         id: 'apps', icon: 'bi-grid', label: 'Apps', feature: 'customApps', command: 'openApps',
     },
 ];
+const DEFAULT_NAV_ORDER = NAV_ITEMS.map((item) => item.id);
+
+function _normalizeNavigationOrder(order) {
+    const knownIds = new Set(DEFAULT_NAV_ORDER);
+    const normalized = [];
+    if (Array.isArray(order)) {
+        order.forEach((id) => {
+            if (!knownIds.delete(id)) return;
+            normalized.push(id);
+        });
+    }
+    DEFAULT_NAV_ORDER.forEach((id) => {
+        if (knownIds.delete(id)) normalized.push(id);
+    });
+    return normalized;
+}
 
 function _readCollapsed() {
     try {
         return localStorage.getItem(COLLAPSE_KEY) === '1';
     } catch {
         return false;
+    }
+}
+
+function _readNavigationOrder() {
+    try {
+        return _normalizeNavigationOrder(
+            JSON.parse(localStorage.getItem(NAV_ORDER_KEY) || '[]'),
+        );
+    } catch {
+        return [...DEFAULT_NAV_ORDER];
+    }
+}
+
+function _persistNavigationOrder(order) {
+    try {
+        localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order));
+    } catch {
+        // Reordering still works for the session when localStorage is unavailable.
     }
 }
 
@@ -51,17 +88,28 @@ function DockedAppsSection({
     navigationTarget,
 }) {
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [itemMenu, setItemMenu] = useState(null);
     const sectionRef = useRef(null);
+    const appsBySlug = useMemo(
+        () => new Map(customApps.catalog.apps.map((app) => [app.slug, app])),
+        [customApps.catalog.apps],
+    );
+    const dockedApps = customApps.dockedAppSlugs
+        .map((slug) => appsBySlug.get(slug))
+        .filter(Boolean);
     const dockedSlugs = useMemo(
         () => new Set(customApps.dockedAppSlugs),
         [customApps.dockedAppSlugs],
     );
-    const dockedApps = customApps.catalog.apps.filter(
-        (app) => dockedSlugs.has(app.slug),
-    );
     const availableApps = customApps.catalog.apps.filter(
         (app) => !dockedSlugs.has(app.slug),
     );
+    const dockedIds = dockedApps.map((app) => app.slug);
+    const reorder = useSidebarReorder({
+        ids: dockedIds,
+        onReorder: customApps.reorderDockedApps,
+    });
+    const closeItemMenu = useCallback(() => setItemMenu(null), []);
 
     useEffect(() => {
         if (!pickerOpen) return undefined;
@@ -105,28 +153,58 @@ function DockedAppsSection({
                 </div>
             )}
 
-            <div className={styles.dockedList}>
+            <div ref={reorder.containerRef} className={styles.dockedList}>
                 {dockedApps.map((app) => {
                     const active = navigationTarget?.kind === 'custom-app'
                         && navigationTarget.appSlug === app.slug;
+                    const dragging = reorder.draggingId === app.slug;
                     return (
                         <div
                             key={app.slug}
-                            className={`${styles.dockedItem} ${active ? styles.active : ''}`}
+                            ref={(element) => reorder.registerItem(app.slug, element)}
+                            className={[
+                                styles.dockedItem,
+                                active ? styles.active : '',
+                                dragging ? styles.dragging : '',
+                            ].filter(Boolean).join(' ')}
+                            data-reorder-id={app.slug}
                         >
                             <button
                                 type="button"
                                 className={`${styles.navItem} ${styles.dockedApp}`}
-                                onClick={() => {
+                                onPointerDown={(event) => (
+                                    reorder.onItemPointerDown(app.slug, app.title, event)
+                                )}
+                                onKeyDown={(event) => (
+                                    reorder.onItemKeyDown(app.slug, app.title, event)
+                                )}
+                                onClick={(event) => {
+                                    if (reorder.consumeClick(app.slug, event)) return;
                                     if (active) navigation.openChat();
                                     else navigation.openCustomApp(app.slug);
                                 }}
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    setItemMenu({
+                                        id: app.slug,
+                                        label: app.title,
+                                        x: event.clientX,
+                                        y: event.clientY,
+                                    });
+                                }}
                                 title={app.title}
                                 aria-label={app.title}
+                                aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                                data-reorder-id={app.slug}
                                 data-testid={`sidebar-docked-app-${app.slug}`}
                             >
                                 <i className={`bi ${app.icon || 'bi-window'}`} />
                                 {!collapsed && <span className={styles.navLabel}>{app.title}</span>}
+                                {!collapsed && (
+                                    <span className={styles.dragHandle} aria-hidden="true">
+                                        <i className="bi bi-grip-vertical" />
+                                    </span>
+                                )}
                             </button>
                             {!collapsed && (
                                 <button
@@ -144,6 +222,10 @@ function DockedAppsSection({
                     );
                 })}
             </div>
+
+            <span className={styles.srOnly} role="status" aria-live="polite">
+                {reorder.announcement}
+            </span>
 
             {!collapsed && pickerOpen && (
                 <div
@@ -176,6 +258,32 @@ function DockedAppsSection({
                     ))}
                 </div>
             )}
+
+            {itemMenu && (
+                <SidebarReorderMenu
+                    label={itemMenu.label}
+                    x={itemMenu.x}
+                    y={itemMenu.y}
+                    canMoveUp={dockedIds.indexOf(itemMenu.id) > 0}
+                    canMoveDown={
+                        dockedIds.indexOf(itemMenu.id) >= 0
+                        && dockedIds.indexOf(itemMenu.id) < dockedIds.length - 1
+                    }
+                    onMoveUp={() => {
+                        reorder.moveItem(itemMenu.id, -1, itemMenu.label);
+                        closeItemMenu();
+                    }}
+                    onMoveDown={() => {
+                        reorder.moveItem(itemMenu.id, 1, itemMenu.label);
+                        closeItemMenu();
+                    }}
+                    onUnpin={() => {
+                        customApps.undockApp(itemMenu.id);
+                        closeItemMenu();
+                    }}
+                    onClose={closeItemMenu}
+                />
+            )}
         </section>
     );
 }
@@ -197,6 +305,35 @@ export default function Sidebar({
     const navigation = useDesktopNavigationCommands();
     const customApps = useCustomApps();
     const [collapsed, setCollapsed] = useState(_readCollapsed);
+    const [navigationOrder, setNavigationOrder] = useState(_readNavigationOrder);
+    const [navigationMenu, setNavigationMenu] = useState(null);
+    const closeNavigationMenu = useCallback(() => setNavigationMenu(null), []);
+    const navItemsById = useMemo(
+        () => new Map(NAV_ITEMS.map((item) => [item.id, item])),
+        [],
+    );
+    const orderedNavigationItems = navigationOrder
+        .map((id) => navItemsById.get(id))
+        .filter((item) => {
+            if (item.feature === 'customApps') return customApps.enabled;
+            return true;
+        });
+    const visibleNavigationIds = orderedNavigationItems.map((item) => item.id);
+    const reorderVisibleNavigation = useCallback((nextVisibleIds) => {
+        setNavigationOrder((current) => {
+            const visibleIds = new Set(nextVisibleIds);
+            let visibleIndex = 0;
+            const next = current.map((id) => (
+                visibleIds.has(id) ? nextVisibleIds[visibleIndex++] : id
+            ));
+            _persistNavigationOrder(next);
+            return next;
+        });
+    }, []);
+    const navigationReorder = useSidebarReorder({
+        ids: visibleNavigationIds,
+        onReorder: reorderVisibleNavigation,
+    });
 
     const toggleCollapsed = useCallback(() => {
         setCollapsed((c) => {
@@ -244,27 +381,89 @@ export default function Sidebar({
                 </button>
             </div>
 
-            <nav className={styles.nav}>
-                {NAV_ITEMS.filter((item) => {
-                    if (item.feature === 'customApps') return customApps.enabled;
-                    return true;
-                }).map((item) => {
+            <nav ref={navigationReorder.containerRef} className={styles.nav}>
+                {orderedNavigationItems.map((item) => {
                     const active = activeItemId === item.id;
                     return (
                         <button
                             key={item.id}
-                            className={`${styles.navItem} ${active ? styles.active : ''}`}
-                            onClick={() => activateNavigationItem(item)}
+                            ref={(element) => navigationReorder.registerItem(item.id, element)}
+                            className={[
+                                styles.navItem,
+                                active ? styles.active : '',
+                                navigationReorder.draggingId === item.id ? styles.dragging : '',
+                            ].filter(Boolean).join(' ')}
+                            onPointerDown={(event) => (
+                                navigationReorder.onItemPointerDown(item.id, item.label, event)
+                            )}
+                            onKeyDown={(event) => (
+                                navigationReorder.onItemKeyDown(item.id, item.label, event)
+                            )}
+                            onClick={(event) => {
+                                if (navigationReorder.consumeClick(item.id, event)) return;
+                                activateNavigationItem(item);
+                            }}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                setNavigationMenu({
+                                    id: item.id,
+                                    label: item.label,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                });
+                            }}
                             title={item.label}
                             aria-label={item.label}
+                            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                            data-reorder-id={item.id}
                             data-testid={`sidebar-nav-${item.id}`}
                         >
                             <i className={`bi ${item.icon}`} />
                             {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
+                            {!collapsed && (
+                                <span className={styles.dragHandle} aria-hidden="true">
+                                    <i className="bi bi-grip-vertical" />
+                                </span>
+                            )}
                         </button>
                     );
                 })}
             </nav>
+
+            <span className={styles.srOnly} role="status" aria-live="polite">
+                {navigationReorder.announcement}
+            </span>
+
+            {navigationMenu && (
+                <SidebarReorderMenu
+                    label={navigationMenu.label}
+                    x={navigationMenu.x}
+                    y={navigationMenu.y}
+                    canMoveUp={visibleNavigationIds.indexOf(navigationMenu.id) > 0}
+                    canMoveDown={
+                        visibleNavigationIds.indexOf(navigationMenu.id) >= 0
+                        && visibleNavigationIds.indexOf(navigationMenu.id)
+                            < visibleNavigationIds.length - 1
+                    }
+                    onMoveUp={() => {
+                        navigationReorder.moveItem(
+                            navigationMenu.id,
+                            -1,
+                            navigationMenu.label,
+                        );
+                        closeNavigationMenu();
+                    }}
+                    onMoveDown={() => {
+                        navigationReorder.moveItem(
+                            navigationMenu.id,
+                            1,
+                            navigationMenu.label,
+                        );
+                        closeNavigationMenu();
+                    }}
+                    onClose={closeNavigationMenu}
+                />
+            )}
 
             {customApps.enabled && (
                 <DockedAppsSection

@@ -10,6 +10,9 @@ export default function AppsView({
     error = '',
     onRefresh = NOOP,
     onOpenApp = NOOP,
+    dockedAppSlugs = [],
+    onDockApp = NOOP,
+    onUndockApp = NOOP,
 }) {
     return (
         <div className={styles.view} data-testid="apps-view">
@@ -33,23 +36,41 @@ export default function AppsView({
                 )}
                 {apps.length > 0 && (
                     <div className={styles.grid}>
-                        {apps.map((app) => (
-                            <div key={app.slug} className={styles.cardContainer}>
-                                <button
-                                    type="button"
-                                    className={styles.card}
-                                    onClick={() => onOpenApp(app)}
-                                    data-testid="custom-app-card"
-                                >
-                                    <div className={styles.cardIcon}><i className={`bi ${app.icon}`} /></div>
-                                    <div className={styles.cardBody}>
-                                        <strong>{app.title}</strong>
-                                        <p>{app.description || 'An App built for Omnideck.'}</p>
-                                    </div>
-                                    <i className={`bi bi-chevron-right ${styles.chevron}`} />
-                                </button>
-                            </div>
-                        ))}
+                        {apps.map((app) => {
+                            const docked = dockedAppSlugs.includes(app.slug);
+                            return (
+                                <div key={app.slug} className={styles.cardContainer}>
+                                    <button
+                                        type="button"
+                                        className={styles.card}
+                                        onClick={() => onOpenApp(app)}
+                                        data-testid="custom-app-card"
+                                    >
+                                        <div className={styles.cardIcon}><i className={`bi ${app.icon}`} /></div>
+                                        <div className={styles.cardBody}>
+                                            <strong>{app.title}</strong>
+                                            <p>{app.description || 'An App built for Omnideck.'}</p>
+                                        </div>
+                                        <i className={`bi bi-chevron-right ${styles.chevron}`} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`${styles.pinButton} ${docked ? styles.pinned : ''}`}
+                                        onClick={() => (
+                                            docked
+                                                ? onUndockApp(app.slug)
+                                                : onDockApp(app.slug)
+                                        )}
+                                        title={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                                        aria-label={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                                        aria-pressed={docked}
+                                        data-testid={`custom-app-pin-${app.slug}`}
+                                    >
+                                        <i className={`bi ${docked ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`} />
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

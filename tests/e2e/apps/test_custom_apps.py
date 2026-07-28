@@ -148,34 +148,83 @@ def _expect_app_beside_chat(page: Page) -> None:
     ).to_be_visible()
 
 
-def test_app_can_be_docked_opened_and_unpinned(
-    page: Page, installed_custom_app
+def _docked_app_order(page: Page) -> list[str]:
+    """Return pinned Apps in their current sidebar order."""
+    return page.locator("[data-testid^='sidebar-docked-app-']").evaluate_all(
+        """rows => rows.map((row) => row.getAttribute('data-reorder-id'))"""
+    )
+
+
+def _drag_app_above(page: Page, source_slug: str, target_slug: str) -> None:
+    """Drag one pinned App above another within the Apps group."""
+    source = page.get_by_test_id(f"sidebar-docked-app-{source_slug}")
+    target = page.get_by_test_id(f"sidebar-docked-app-{target_slug}")
+    source_box = source.bounding_box()
+    target_box = target.bounding_box()
+    assert source_box is not None
+    assert target_box is not None
+
+    page.mouse.move(
+        source_box["x"] + source_box["width"] / 2,
+        source_box["y"] + source_box["height"] / 2,
+    )
+    page.mouse.down()
+    page.mouse.move(
+        target_box["x"] + target_box["width"] / 2,
+        target_box["y"] + target_box["height"] * 0.2,
+        steps=8,
+    )
+    page.mouse.up()
+
+
+def test_apps_can_be_pinned_from_hub_and_open_view_then_reordered(
+    page: Page, installed_two_custom_apps
 ) -> None:
-    """Docked Apps persist in the sidebar and return to the add picker when unpinned."""
+    """Hub and open-App pin controls stay in sync with the reorderable sidebar."""
     _open_custom_apps_library(page)
 
     apps_section = page.get_by_test_id("sidebar-docked-section")
     expect(apps_section).to_be_visible()
     expect(apps_section.get_by_text("Apps", exact=True)).to_be_visible()
-    page.get_by_test_id("sidebar-docked-add").click()
-    expect(page.get_by_test_id("sidebar-docked-picker")).to_be_visible()
-    page.get_by_test_id("sidebar-dock-option-text-lab").click()
 
-    docked_app = page.get_by_test_id("sidebar-docked-app-text-lab")
-    expect(docked_app).to_be_visible()
-    docked_app.click()
+    # Pin directly from the Apps Hub.
+    page.get_by_test_id("custom-app-pin-text-lab").click()
+    text_app = page.get_by_test_id("sidebar-docked-app-text-lab")
+    expect(text_app).to_be_visible()
+
+    # The opened App view can unpin and repin itself.
+    page.get_by_test_id("custom-app-card").filter(has_text="Text Lab").click()
     expect(
         page.frame_locator('[data-testid="custom-app-frame"]').get_by_role(
             "heading", name="Text Lab"
         )
     ).to_be_visible()
+    open_view_pin = page.get_by_test_id("custom-app-view-pin")
+    expect(open_view_pin).to_have_text("Pinned")
+    open_view_pin.click()
+    expect(text_app).to_have_count(0)
+    expect(open_view_pin).to_have_text("Pin to sidebar")
+    open_view_pin.click()
+    expect(text_app).to_be_visible()
 
+    # Add another App from the Hub and reorder the Apps group by dragging.
+    page.get_by_test_id("sidebar-nav-apps").click()
+    page.get_by_test_id("custom-app-pin-notes-lab").click()
+    expect(page.get_by_test_id("sidebar-docked-app-notes-lab")).to_be_visible()
+    assert _docked_app_order(page) == ["text-lab", "notes-lab"]
+    _drag_app_above(page, "notes-lab", "text-lab")
+    assert _docked_app_order(page) == ["notes-lab", "text-lab"]
+
+    # Ordering and pin state survive reload.
     page.reload()
-    expect(docked_app).to_be_visible()
-    docked_app.hover()
-    page.get_by_test_id("sidebar-undock-app-text-lab").click()
-    expect(docked_app).to_have_count(0)
+    expect(page.get_by_test_id("sidebar-docked-app-notes-lab")).to_be_visible()
+    expect(text_app).to_be_visible()
+    assert _docked_app_order(page) == ["notes-lab", "text-lab"]
 
+    # Context-menu unpin returns the App to the section picker.
+    text_app.click(button="right")
+    page.get_by_test_id("sidebar-reorder-unpin").click()
+    expect(text_app).to_have_count(0)
     page.get_by_test_id("sidebar-docked-add").click()
     expect(page.get_by_test_id("sidebar-dock-option-text-lab")).to_be_visible()
 
