@@ -15,7 +15,7 @@ test('lists discovered apps and asks the shell to open one on the left', () => {
     const onOpenApp = vi.fn();
     render(<AppsView apps={[SAMPLE]} onOpenApp={onOpenApp} />);
     expect(screen.getByText('Text Lab')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Custom Apps/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Apps/ })).toBeInTheDocument();
     expect(screen.queryByText('text-lab')).not.toBeInTheDocument();
     expect(screen.queryByText('Python')).not.toBeInTheDocument();
 
@@ -31,10 +31,10 @@ test('asks the catalog owner to refresh', () => {
     expect(onRefresh).toHaveBeenCalledOnce();
 });
 
-test('keeps the empty state focused on Custom Apps rather than implementation details', () => {
+test('keeps the empty state focused on Apps rather than implementation details', () => {
     render(<AppsView />);
 
-    expect(screen.getByText('No Custom Apps yet')).toBeInTheDocument();
+    expect(screen.getByText('No Apps yet')).toBeInTheDocument();
     expect(screen.getByText('Ask your Omnideck agent to build one for you.')).toBeInTheDocument();
     expect(screen.queryByText(/folder|omnideck\.json|web\/index|~\/apps/i)).not.toBeInTheDocument();
 });

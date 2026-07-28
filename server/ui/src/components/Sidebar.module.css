@@ -29,15 +29,6 @@
     color: var(--text-primary);
 }
 
-/* ── Primary action ──────────────────────────────────── */
-/* No bottom padding — New chat and the nav below it visually belong
- * to the same section. The conversations panel below is what gets the
- * separating gap via its own search-row margin.
- */
-.primary {
-    padding: var(--sp-2) var(--sp-2) 0;
-}
-
 .newChat {
     display: flex;
     align-items: center;
@@ -74,7 +65,7 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 1px var(--sp-2) var(--sp-2);
+    padding: var(--sp-2);
 }
 
 .navItem {
@@ -114,7 +105,146 @@
     border-radius: var(--radius-full);
 }
 
+/* ── Docked Apps ─────────────────────────────────────── */
+.dockedSection {
+    position: relative;
+    border-top: 1px solid var(--border);
+}
+
+.sectionHeader {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px 0 11px;
+    color: var(--text-tertiary);
+    font-family: var(--font-code);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.sectionHeader > span { flex: 1; }
+
+.sectionAction {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 11px;
+}
+.sectionAction:hover,
+.sectionAction[aria-expanded='true'] {
+    background: var(--accent-muted);
+    color: var(--text-primary);
+}
+
+.dockedList {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 var(--sp-2) var(--sp-2);
+}
+
+.dockedItem {
+    display: flex;
+    align-items: center;
+    position: relative;
+    border-radius: var(--radius-md);
+}
+.dockedItem:hover { background: var(--accent-muted); }
+
+.dockedApp {
+    flex: 1;
+    min-width: 0;
+}
+.dockedItem .dockedApp:hover { background: transparent; }
+
+.unpinApp {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 24px;
+    margin-right: 3px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 11px;
+    opacity: 0;
+}
+.dockedItem:hover .unpinApp,
+.unpinApp:focus-visible { opacity: 1; }
+.unpinApp:hover { background: var(--surface); color: var(--text-primary); }
+
+.dockedItem.active {
+    background: var(--accent-muted);
+    color: var(--accent);
+}
+.dockedItem.active .dockedApp,
+.dockedItem.active .dockedApp i { color: var(--accent); }
+.dockedItem.active::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: var(--accent);
+    border-radius: var(--radius-full);
+}
+
+.dockPicker {
+    position: absolute;
+    z-index: var(--z-toast);
+    top: 30px;
+    left: var(--sp-2);
+    right: var(--sp-2);
+    max-height: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow-y: auto;
+    padding: var(--sp-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--elevated);
+    box-shadow: var(--shadow-lg);
+}
+
+.dockPickerItem {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0 9px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12.5px;
+    text-align: left;
+}
+.dockPickerItem:hover { background: var(--accent-muted); color: var(--text-primary); }
+.dockPickerItem i { width: 16px; text-align: center; color: var(--text-tertiary); }
+.dockPickerStatus { padding: 8px 9px; color: var(--text-tertiary); font-size: 11.5px; }
+
+.collapsed .dockedList { padding: var(--sp-2); }
+.collapsed .dockedItem { justify-content: center; }
+
 .grow { flex: 1; }
+
+/* Keep New chat reachable in the icon rail while preserving its place in the
+ * conversational section at the bottom.
+ */
+.collapsedConversation {
+    padding: var(--sp-2);
+    border-top: 1px solid var(--border);
+}
 
 /* ── Footer ──────────────────────────────────────────── */
 .footer {

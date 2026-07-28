@@ -14,10 +14,19 @@ const navigationHarness = vi.hoisted(() => ({
         openRoutines: vi.fn(),
         openArtifacts: vi.fn(),
         openApps: vi.fn(),
+        openCustomApp: vi.fn(),
         openSettings: vi.fn(),
     },
     customApps: {
         enabled: false,
+        catalog: {
+            apps: [],
+            loaded: true,
+            loading: false,
+        },
+        dockedAppSlugs: [],
+        dockApp: vi.fn(),
+        undockApp: vi.fn(),
     },
 }));
 
@@ -58,6 +67,10 @@ beforeEach(() => {
     localStorage.clear();
     navigationHarness.navigationTarget = { kind: 'chat', conversationId: 'conversation-1' };
     navigationHarness.customApps.enabled = false;
+    navigationHarness.customApps.catalog.apps = [];
+    navigationHarness.customApps.dockedAppSlugs = [];
+    navigationHarness.customApps.dockApp.mockReset();
+    navigationHarness.customApps.undockApp.mockReset();
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
 });
 afterEach(() => localStorage.clear());
@@ -139,7 +152,7 @@ describe('Sidebar', () => {
         expect(navigation.openAgents).toHaveBeenCalledOnce();
     });
 
-    it('shows the Apps navigationTarget only when Custom Apps are enabled', async () => {
+    it('shows the Apps navigationTarget only when Apps are enabled', async () => {
         const user = userEvent.setup();
         const hidden = setup();
         expect(screen.queryByTestId('sidebar-nav-apps')).not.toBeInTheDocument();
@@ -148,16 +161,58 @@ describe('Sidebar', () => {
         cleanup();
         navigationHarness.customApps.enabled = true;
         const { navigation } = setup();
-        expect(screen.getByText('Custom Apps')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-nav-apps')).toHaveTextContent('Apps');
         await user.click(screen.getByTestId('sidebar-nav-apps'));
         expect(navigation.openApps).toHaveBeenCalledOnce();
     });
 
-    it('does not expose a special Home navigationTarget for Custom Apps', () => {
+    it('does not expose a special Home navigationTarget for Apps', () => {
         navigationHarness.customApps.enabled = true;
         setup();
 
         expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
+    });
+
+    it('stacks destinations, docked Apps, and conversation controls in order', () => {
+        navigationHarness.customApps.enabled = true;
+        navigationHarness.customApps.catalog.apps = [
+            { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
+        ];
+        navigationHarness.customApps.dockedAppSlugs = ['text-lab'];
+        setup();
+
+        const destination = screen.getByTestId('sidebar-nav-apps');
+        const docked = screen.getByTestId('sidebar-docked-section');
+        const conversations = screen.getByTestId('recent-conversations');
+        expect(docked).toHaveTextContent('Apps');
+        expect(destination.compareDocumentPosition(docked)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(docked.compareDocumentPosition(conversations)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(conversations).toContainElement(screen.getByTestId('sidebar-new-chat'));
+        expect(conversations).toContainElement(screen.getByTestId('recent-search'));
+    });
+
+    it('adds, opens, and unpins Apps from the Docked section', async () => {
+        const user = userEvent.setup();
+        navigationHarness.customApps.enabled = true;
+        navigationHarness.customApps.catalog.apps = [
+            { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
+            { slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal' },
+        ];
+        navigationHarness.customApps.dockedAppSlugs = ['text-lab'];
+        const { navigation } = setup();
+
+        await user.click(screen.getByTestId('sidebar-docked-add'));
+        expect(screen.getByTestId('sidebar-docked-picker')).toBeInTheDocument();
+        expect(screen.queryByTestId('sidebar-dock-option-text-lab')).not.toBeInTheDocument();
+        await user.click(screen.getByTestId('sidebar-dock-option-notes-lab'));
+        expect(navigationHarness.customApps.dockApp).toHaveBeenCalledWith('notes-lab');
+
+        await user.click(screen.getByTestId('sidebar-docked-app-text-lab'));
+        expect(navigation.openCustomApp).toHaveBeenCalledWith('text-lab');
+        await user.click(screen.getByTestId('sidebar-undock-app-text-lab'));
+        expect(navigationHarness.customApps.undockApp).toHaveBeenCalledWith('text-lab');
     });
 
     it('opens settings from the footer', async () => {

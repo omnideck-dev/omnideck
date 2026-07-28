@@ -3,7 +3,7 @@ import styles from './AppsView.module.css';
 
 const NOOP = () => {};
 
-/** Lists discovered Custom Apps; the desktop owns opening and presentation. */
+/** Lists discovered Apps; the desktop owns opening and presentation. */
 export default function AppsView({
     apps = [],
     loading = false,
@@ -15,7 +15,7 @@ export default function AppsView({
         <div className={styles.view} data-testid="apps-view">
             <div className={styles.toolbar}>
                 <h1 className={styles.title}>
-                    <i className="bi bi-grid" /> Custom Apps
+                    <i className="bi bi-grid" /> Apps
                     {!loading && <span className={styles.count}>· {apps.length}</span>}
                 </h1>
                 <Button variant="ghost" onClick={onRefresh} data-testid="custom-apps-refresh">
@@ -27,7 +27,7 @@ export default function AppsView({
                 {!loading && !error && apps.length === 0 && (
                     <div className={styles.empty}>
                         <i className="bi bi-grid" />
-                        <strong>No Custom Apps yet</strong>
+                        <strong>No Apps yet</strong>
                         <span>Ask your Omnideck agent to build one for you.</span>
                     </div>
                 )}
@@ -44,7 +44,7 @@ export default function AppsView({
                                     <div className={styles.cardIcon}><i className={`bi ${app.icon}`} /></div>
                                     <div className={styles.cardBody}>
                                         <strong>{app.title}</strong>
-                                        <p>{app.description || 'A Custom App built for Omnideck.'}</p>
+                                        <p>{app.description || 'An App built for Omnideck.'}</p>
                                     </div>
                                     <i className={`bi bi-chevron-right ${styles.chevron}`} />
                                 </button>

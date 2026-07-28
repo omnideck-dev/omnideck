@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const EMPTY_STATE = { apps: [], loading: false, loaded: false, error: '' };
 
-/** Shared discovery data for the Custom Apps library and app deep links. */
+/** Shared discovery data for the Apps library and app deep links. */
 export default function useCustomAppsCatalog({ enabled }) {
     const [state, setState] = useState(EMPTY_STATE);
     const requestIdRef = useRef(0);
@@ -14,7 +14,7 @@ export default function useCustomAppsCatalog({ enabled }) {
         try {
             const response = await fetch('/api/custom-apps');
             const body = await response.json();
-            if (!response.ok) throw new Error('Could not load Custom Apps');
+            if (!response.ok) throw new Error('Could not load Apps');
             if (requestId !== requestIdRef.current) return;
             setState({ apps: body.apps || [], loading: false, loaded: true, error: '' });
         } catch (error) {
@@ -23,7 +23,7 @@ export default function useCustomAppsCatalog({ enabled }) {
                 ...current,
                 loading: false,
                 loaded: true,
-                error: error.message || 'Could not load Custom Apps',
+                error: error.message || 'Could not load Apps',
             }));
         }
     }, [enabled]);

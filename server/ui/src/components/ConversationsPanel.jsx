@@ -273,16 +273,8 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
 
     return (
         <div className={styles.recent} data-testid="recent-conversations">
-            <div className={styles.searchRow}>
-                <SearchInput
-                    className={styles.search}
-                    value={query}
-                    onChange={setQuery}
-                    placeholder="Search conversations…"
-                    ariaLabel="Search conversations"
-                    testId="recent-search"
-                    clearTestId="recent-search-clear"
-                />
+            <div className={styles.sectionHeader}>
+                <span>Conversations</span>
                 <button
                     type="button"
                     className={styles.newFolderBtn}
@@ -293,6 +285,34 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 >
                     <i className="bi bi-folder-plus" />
                 </button>
+            </div>
+
+            <div className={styles.primary}>
+                <button
+                    type="button"
+                    className={styles.newChat}
+                    onClick={onNewConversation}
+                    title="New chat"
+                    aria-label="New chat"
+                    data-testid="sidebar-new-chat"
+                >
+                    <span className={styles.newChatIcon}>
+                        <i className="bi bi-plus-lg" />
+                    </span>
+                    <span>New chat</span>
+                </button>
+            </div>
+
+            <div className={styles.searchRow}>
+                <SearchInput
+                    className={styles.search}
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Search conversations…"
+                    ariaLabel="Search conversations"
+                    testId="recent-search"
+                    clearTestId="recent-search-clear"
+                />
             </div>
 
             <div className={styles.list}>

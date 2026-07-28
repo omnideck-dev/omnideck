@@ -3,7 +3,7 @@ const DESTINATION_METADATA = {
     agents: { label: 'Agents', icon: 'bi-robot' },
     routines: { label: 'Routines', icon: 'bi-bullseye' },
     artifacts: { label: 'Artifacts', icon: 'bi-collection' },
-    apps: { label: 'Custom Apps', icon: 'bi-grid' },
+    apps: { label: 'Apps', icon: 'bi-grid' },
 };
 
 export const CONVERSATION_VIEW_ID = 'destination:conversation';

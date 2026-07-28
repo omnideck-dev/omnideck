@@ -46,14 +46,14 @@ describe('SystemSettings custom apps toggle', () => {
         });
     });
 
-    it('persists Custom Apps and refreshes shell feature state', async () => {
+    it('persists Apps and refreshes shell feature state', async () => {
         await act(async () => {
             render(<SystemSettings />);
             await new Promise((resolve) => setTimeout(resolve, 0));
         });
 
-        const toggle = await screen.findByRole('switch', { name: 'Custom Apps' });
-        expect(screen.getByText(/Custom Apps let your Omnideck agents build and run personalized apps/)).toBeInTheDocument();
+        const toggle = await screen.findByRole('switch', { name: 'Apps' });
+        expect(screen.getByText(/Apps let your Omnideck agents build and run personalized tools/)).toBeInTheDocument();
         expect(screen.getByText(/Backward compatibility is not guaranteed/)).toBeInTheDocument();
         expect(toggle).not.toBeChecked();
         await act(async () => {

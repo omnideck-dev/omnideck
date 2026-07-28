@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -29,6 +29,7 @@ function wrapper({ children }) {
 
 describe('CustomAppsProvider', () => {
     beforeEach(() => {
+        localStorage.clear();
         harness.enabled = true;
         harness.catalog.refresh.mockReset();
     });
@@ -50,5 +51,25 @@ describe('CustomAppsProvider', () => {
 
         expect(result.current.enabled).toBe(false);
         expect(result.current.catalog).toBe(harness.catalog);
+    });
+
+    it('persists ordered, unique docked App slugs', () => {
+        localStorage.setItem(
+            'omnideck_sidebar_docked_apps',
+            JSON.stringify(['text-lab']),
+        );
+        const { result } = renderHook(useCustomApps, { wrapper });
+
+        expect(result.current.dockedAppSlugs).toEqual(['text-lab']);
+        act(() => result.current.dockApp('notes-lab'));
+        act(() => result.current.dockApp('text-lab'));
+        expect(result.current.dockedAppSlugs).toEqual(['text-lab', 'notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+            .toEqual(['text-lab', 'notes-lab']);
+
+        act(() => result.current.undockApp('text-lab'));
+        expect(result.current.dockedAppSlugs).toEqual(['notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+            .toEqual(['notes-lab']);
     });
 });

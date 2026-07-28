@@ -148,6 +148,38 @@ def _expect_app_beside_chat(page: Page) -> None:
     ).to_be_visible()
 
 
+def test_app_can_be_docked_opened_and_unpinned(
+    page: Page, installed_custom_app
+) -> None:
+    """Docked Apps persist in the sidebar and return to the add picker when unpinned."""
+    _open_custom_apps_library(page)
+
+    apps_section = page.get_by_test_id("sidebar-docked-section")
+    expect(apps_section).to_be_visible()
+    expect(apps_section.get_by_text("Apps", exact=True)).to_be_visible()
+    page.get_by_test_id("sidebar-docked-add").click()
+    expect(page.get_by_test_id("sidebar-docked-picker")).to_be_visible()
+    page.get_by_test_id("sidebar-dock-option-text-lab").click()
+
+    docked_app = page.get_by_test_id("sidebar-docked-app-text-lab")
+    expect(docked_app).to_be_visible()
+    docked_app.click()
+    expect(
+        page.frame_locator('[data-testid="custom-app-frame"]').get_by_role(
+            "heading", name="Text Lab"
+        )
+    ).to_be_visible()
+
+    page.reload()
+    expect(docked_app).to_be_visible()
+    docked_app.hover()
+    page.get_by_test_id("sidebar-undock-app-text-lab").click()
+    expect(docked_app).to_have_count(0)
+
+    page.get_by_test_id("sidebar-docked-add").click()
+    expect(page.get_by_test_id("sidebar-dock-option-text-lab")).to_be_visible()
+
+
 def test_custom_app_moves_left_to_right_and_back_without_losing_state(
     page: Page, installed_custom_app
 ) -> None:
@@ -489,11 +521,11 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     page.request.put("/api/settings", data={"custom_apps_enabled": False})
     ChatView(page).goto()
 
-    # Custom Apps is a user setting, not an environment-level feature flag.
+    # Apps are controlled by a user setting, not an environment-level feature flag.
     expect(page.get_by_test_id("sidebar-nav-apps")).not_to_be_visible()
     page.get_by_test_id("sidebar-settings").click()
     page.get_by_test_id("settings-tab-system").click()
-    custom_apps_toggle = page.get_by_role("switch", name="Custom Apps")
+    custom_apps_toggle = page.get_by_role("switch", name="Apps")
     expect(custom_apps_toggle).not_to_be_checked()
     page.get_by_test_id("custom-apps-toggle").click()
     expect(custom_apps_toggle).to_be_checked()
@@ -571,7 +603,7 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     # Turning the setting back off removes app navigation immediately.
     page.get_by_test_id("sidebar-settings").click()
     page.get_by_test_id("settings-tab-system").click()
-    custom_apps_toggle = page.get_by_role("switch", name="Custom Apps")
+    custom_apps_toggle = page.get_by_role("switch", name="Apps")
     page.get_by_test_id("custom-apps-toggle").click()
     expect(custom_apps_toggle).not_to_be_checked()
     expect(page.get_by_test_id("sidebar-nav-apps")).not_to_be_visible()
