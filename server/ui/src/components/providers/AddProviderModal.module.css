@@ -1,22 +1,11 @@
-.scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 80px;
-    z-index: 60;
-}
-
 .modal {
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
-    width: 560px;
     max-width: 90%;
     max-height: calc(100vh - 120px);
+    padding: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
