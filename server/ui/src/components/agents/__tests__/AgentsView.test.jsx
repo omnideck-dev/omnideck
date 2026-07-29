@@ -28,8 +28,9 @@ const profilesHook = {
 };
 
 const skillsHook = { skills: [], addSkills: vi.fn() };
+const providersHook = { providers: [{ name: 'openai' }] };
 vi.mock('../../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ profilesHook, skillsHook, features: {} }),
+    useAppData: () => ({ profilesHook, providersHook, skillsHook, features: {} }),
 }));
 
 // Import goes through the real utils, but the network call is stubbed so the
@@ -68,9 +69,6 @@ beforeEach(() => {
     importPackFile.mockReset();
     global.fetch = vi.fn((url) => {
         const u = String(url);
-        if (u === '/api/providers') {
-            return Promise.resolve({ json: async () => ({ providers: [{ name: 'openai' }] }) });
-        }
         if (u === '/api/tool-categories') {
             return Promise.resolve({ json: async () => [] });
         }

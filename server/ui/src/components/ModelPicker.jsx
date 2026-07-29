@@ -8,6 +8,9 @@ import styles from './ModelPicker.module.css';
 const _modelsCache = new Map();
 // In-flight fetches per provider — dedupes concurrent requests.
 const _inFlight = new Map();
+// Mounted pickers subscribe to invalidations so refreshing one open picker
+// also updates another open picker showing the same provider.
+const _cacheListeners = new Set();
 
 async function _fetchModels(provider) {
     if (_modelsCache.has(provider)) return _modelsCache.get(provider);
@@ -33,6 +36,7 @@ async function _fetchModels(provider) {
 export function invalidateModelCache(provider) {
     if (provider) _modelsCache.delete(provider);
     else _modelsCache.clear();
+    _cacheListeners.forEach((listener) => listener(provider || null));
 }
 
 function _formatCtx(tokens) {
@@ -87,6 +91,7 @@ export default function ModelPicker({
     const [models, setModels] = useState(() => _modelsCache.get(initialTab) || []);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [cacheRevision, setCacheRevision] = useState(0);
 
     const wrapperRef = useRef(null);
     const triggerRef = useRef(null);
@@ -136,7 +141,21 @@ export default function ModelPicker({
         if (!open && selectedProvider) setActiveTab(selectedProvider);
     }, [selectedProvider, open]);
 
-    // Fetch models for the active tab whenever it changes (or the popover opens).
+    // Observe explicit cache invalidations. Closed pickers can wait until their
+    // next open; open pickers should immediately re-query the provider they are
+    // currently displaying.
+    useEffect(() => {
+        const onCacheInvalidated = (provider) => {
+            if (!provider || provider === activeTab) {
+                setCacheRevision((revision) => revision + 1);
+            }
+        };
+        _cacheListeners.add(onCacheInvalidated);
+        return () => _cacheListeners.delete(onCacheInvalidated);
+    }, [activeTab]);
+
+    // Fetch models for the active tab whenever it changes, the popover opens,
+    // or an explicit refresh invalidates the active provider.
     useEffect(() => {
         if (!open || !activeTab) return;
         const cached = _modelsCache.get(activeTab);
@@ -153,7 +172,7 @@ export default function ModelPicker({
             .then((m) => { if (!cancelled) { setModels(m); setLoading(false); } })
             .catch((err) => { if (!cancelled) { setError(err.message || 'error'); setLoading(false); } });
         return () => { cancelled = true; };
-    }, [activeTab, open]);
+    }, [activeTab, cacheRevision, open]);
 
     // Close on click-outside / escape. The portaled popover lives outside
     // wrapperRef, so we check both wrapperRef (trigger) and popoverRef
@@ -209,6 +228,11 @@ export default function ModelPicker({
         setOpen(false);
     }, [onSelect, activeTab]);
 
+    const handleRefresh = useCallback(() => {
+        if (!activeTab || loading) return;
+        invalidateModelCache(activeTab);
+    }, [activeTab, loading]);
+
     const triggerLabel = (() => {
         if (selectedModel) return null; // structured render below
         if (!provs.length) return 'No providers configured';
@@ -258,6 +282,17 @@ export default function ModelPicker({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                 />
+                <button
+                    type="button"
+                    className={styles.refreshButton}
+                    onClick={handleRefresh}
+                    disabled={loading || !activeTab}
+                    aria-label={`Refresh ${activeTab} models`}
+                    title={`Refresh models from ${activeTab}`}
+                    data-testid="model-picker-refresh"
+                >
+                    <i className={`bi bi-arrow-clockwise ${loading ? styles.refreshIconLoading : ''}`} />
+                </button>
             </div>
 
             <div className={styles.list}>
