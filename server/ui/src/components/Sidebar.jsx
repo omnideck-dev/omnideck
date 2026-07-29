@@ -81,7 +81,7 @@ function _persistNavigationOrder(order) {
     }
 }
 
-function DockedAppsSection({
+function PinnedAppsSection({
     collapsed,
     customApps,
     navigation,
@@ -94,20 +94,20 @@ function DockedAppsSection({
         () => new Map(customApps.catalog.apps.map((app) => [app.slug, app])),
         [customApps.catalog.apps],
     );
-    const dockedApps = customApps.dockedAppSlugs
+    const pinnedApps = customApps.pinnedAppSlugs
         .map((slug) => appsBySlug.get(slug))
         .filter(Boolean);
-    const dockedSlugs = useMemo(
-        () => new Set(customApps.dockedAppSlugs),
-        [customApps.dockedAppSlugs],
+    const pinnedSlugs = useMemo(
+        () => new Set(customApps.pinnedAppSlugs),
+        [customApps.pinnedAppSlugs],
     );
     const availableApps = customApps.catalog.apps.filter(
-        (app) => !dockedSlugs.has(app.slug),
+        (app) => !pinnedSlugs.has(app.slug),
     );
-    const dockedIds = dockedApps.map((app) => app.slug);
+    const pinnedIds = pinnedApps.map((app) => app.slug);
     const reorder = useSidebarReorder({
-        ids: dockedIds,
-        onReorder: customApps.reorderDockedApps,
+        ids: pinnedIds,
+        onReorder: customApps.reorderPinnedApps,
     });
     const closeItemMenu = useCallback(() => setItemMenu(null), []);
 
@@ -127,13 +127,13 @@ function DockedAppsSection({
         };
     }, [pickerOpen]);
 
-    if (collapsed && dockedApps.length === 0) return null;
+    if (pinnedApps.length === 0) return null;
 
     return (
         <section
             ref={sectionRef}
-            className={styles.dockedSection}
-            data-testid="sidebar-docked-section"
+            className={styles.pinnedSection}
+            data-testid="sidebar-pinned-section"
         >
             {!collapsed && (
                 <div className={styles.sectionHeader}>
@@ -142,19 +142,19 @@ function DockedAppsSection({
                         type="button"
                         className={styles.sectionAction}
                         onClick={() => setPickerOpen((open) => !open)}
-                        title="Add docked app"
-                        aria-label="Add docked app"
+                        title="Pin an App"
+                        aria-label="Pin an App"
                         aria-haspopup="menu"
                         aria-expanded={pickerOpen}
-                        data-testid="sidebar-docked-add"
+                        data-testid="sidebar-pinned-add"
                     >
                         <i className="bi bi-plus-lg" />
                     </button>
                 </div>
             )}
 
-            <div ref={reorder.containerRef} className={styles.dockedList}>
-                {dockedApps.map((app) => {
+            <div ref={reorder.containerRef} className={styles.pinnedList}>
+                {pinnedApps.map((app) => {
                     const active = navigationTarget?.kind === 'custom-app'
                         && navigationTarget.appSlug === app.slug;
                     const dragging = reorder.draggingId === app.slug;
@@ -163,7 +163,7 @@ function DockedAppsSection({
                             key={app.slug}
                             ref={(element) => reorder.registerItem(app.slug, element)}
                             className={[
-                                styles.dockedItem,
+                                styles.pinnedItem,
                                 active ? styles.active : '',
                                 dragging ? styles.dragging : '',
                             ].filter(Boolean).join(' ')}
@@ -171,7 +171,7 @@ function DockedAppsSection({
                         >
                             <button
                                 type="button"
-                                className={`${styles.navItem} ${styles.dockedApp}`}
+                                className={`${styles.navItem} ${styles.pinnedApp}`}
                                 onPointerDown={(event) => (
                                     reorder.onItemPointerDown(app.slug, app.title, event)
                                 )}
@@ -196,7 +196,7 @@ function DockedAppsSection({
                                 aria-label={app.title}
                                 aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                                 data-reorder-id={app.slug}
-                                data-testid={`sidebar-docked-app-${app.slug}`}
+                                data-testid={`sidebar-pinned-app-${app.slug}`}
                             >
                                 <i className={`bi ${app.icon || 'bi-window'}`} />
                                 {!collapsed && <span className={styles.navLabel}>{app.title}</span>}
@@ -206,18 +206,6 @@ function DockedAppsSection({
                                     </span>
                                 )}
                             </button>
-                            {!collapsed && (
-                                <button
-                                    type="button"
-                                    className={styles.unpinApp}
-                                    onClick={() => customApps.undockApp(app.slug)}
-                                    title={`Unpin ${app.title}`}
-                                    aria-label={`Unpin ${app.title}`}
-                                    data-testid={`sidebar-undock-app-${app.slug}`}
-                                >
-                                    <i className="bi bi-pin-angle-fill" />
-                                </button>
-                            )}
                         </div>
                     );
                 })}
@@ -229,28 +217,28 @@ function DockedAppsSection({
 
             {!collapsed && pickerOpen && (
                 <div
-                    className={styles.dockPicker}
+                    className={styles.pinPicker}
                     role="menu"
-                    aria-label="Apps available to dock"
-                    data-testid="sidebar-docked-picker"
+                    aria-label="Apps available to pin"
+                    data-testid="sidebar-pinned-picker"
                 >
                     {customApps.catalog.loading && (
-                        <div className={styles.dockPickerStatus}>Loading Apps…</div>
+                        <div className={styles.pinPickerStatus}>Loading Apps…</div>
                     )}
                     {!customApps.catalog.loading && availableApps.length === 0 && (
-                        <div className={styles.dockPickerStatus}>All Apps are docked</div>
+                        <div className={styles.pinPickerStatus}>All Apps are pinned</div>
                     )}
                     {availableApps.map((app) => (
                         <button
                             key={app.slug}
                             type="button"
                             role="menuitem"
-                            className={styles.dockPickerItem}
+                            className={styles.pinPickerItem}
                             onClick={() => {
-                                customApps.dockApp(app.slug);
+                                customApps.pinApp(app.slug);
                                 setPickerOpen(false);
                             }}
-                            data-testid={`sidebar-dock-option-${app.slug}`}
+                            data-testid={`sidebar-pin-option-${app.slug}`}
                         >
                             <i className={`bi ${app.icon || 'bi-window'}`} />
                             <span>{app.title}</span>
@@ -264,10 +252,10 @@ function DockedAppsSection({
                     label={itemMenu.label}
                     x={itemMenu.x}
                     y={itemMenu.y}
-                    canMoveUp={dockedIds.indexOf(itemMenu.id) > 0}
+                    canMoveUp={pinnedIds.indexOf(itemMenu.id) > 0}
                     canMoveDown={
-                        dockedIds.indexOf(itemMenu.id) >= 0
-                        && dockedIds.indexOf(itemMenu.id) < dockedIds.length - 1
+                        pinnedIds.indexOf(itemMenu.id) >= 0
+                        && pinnedIds.indexOf(itemMenu.id) < pinnedIds.length - 1
                     }
                     onMoveUp={() => {
                         reorder.moveItem(itemMenu.id, -1, itemMenu.label);
@@ -278,7 +266,7 @@ function DockedAppsSection({
                         closeItemMenu();
                     }}
                     onUnpin={() => {
-                        customApps.undockApp(itemMenu.id);
+                        customApps.unpinApp(itemMenu.id);
                         closeItemMenu();
                     }}
                     onClose={closeItemMenu}
@@ -290,7 +278,7 @@ function DockedAppsSection({
 
 /**
  * Left navigation rail. Collapses to an icon-only strip or expands to
- * show labels, the OMNIDECK wordmark, docked Apps, and conversations.
+ * show labels, the OMNIDECK wordmark, pinned Apps, and conversations.
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({
@@ -466,7 +454,7 @@ export default function Sidebar({
             )}
 
             {customApps.enabled && (
-                <DockedAppsSection
+                <PinnedAppsSection
                     collapsed={collapsed}
                     customApps={customApps}
                     navigation={navigation}

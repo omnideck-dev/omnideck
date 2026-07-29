@@ -53,28 +53,28 @@ describe('CustomAppsProvider', () => {
         expect(result.current.catalog).toBe(harness.catalog);
     });
 
-    it('persists ordered, unique docked App slugs', () => {
+    it('persists ordered, unique pinned App slugs', () => {
         localStorage.setItem(
-            'omnideck_sidebar_docked_apps',
+            'omnideck_sidebar_pinned_apps',
             JSON.stringify(['text-lab']),
         );
         const { result } = renderHook(useCustomApps, { wrapper });
 
-        expect(result.current.dockedAppSlugs).toEqual(['text-lab']);
-        act(() => result.current.dockApp('notes-lab'));
-        act(() => result.current.dockApp('text-lab'));
-        expect(result.current.dockedAppSlugs).toEqual(['text-lab', 'notes-lab']);
-        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+        expect(result.current.pinnedAppSlugs).toEqual(['text-lab']);
+        act(() => result.current.pinApp('notes-lab'));
+        act(() => result.current.pinApp('text-lab'));
+        expect(result.current.pinnedAppSlugs).toEqual(['text-lab', 'notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
             .toEqual(['text-lab', 'notes-lab']);
 
-        act(() => result.current.reorderDockedApps(['notes-lab', 'text-lab']));
-        expect(result.current.dockedAppSlugs).toEqual(['notes-lab', 'text-lab']);
-        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+        act(() => result.current.reorderPinnedApps(['notes-lab', 'text-lab']));
+        expect(result.current.pinnedAppSlugs).toEqual(['notes-lab', 'text-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
             .toEqual(['notes-lab', 'text-lab']);
 
-        act(() => result.current.undockApp('text-lab'));
-        expect(result.current.dockedAppSlugs).toEqual(['notes-lab']);
-        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+        act(() => result.current.unpinApp('text-lab'));
+        expect(result.current.pinnedAppSlugs).toEqual(['notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
             .toEqual(['notes-lab']);
     });
 });

@@ -6,7 +6,7 @@ import {
 } from '../customAppDesktopViews.js';
 
 describe('Custom App desktop View descriptions', () => {
-    it('owns its slug-based identity and runtime reload action', () => {
+    it('owns its slug-based identity and pin and reload actions', () => {
         const app = {
             slug: 'text-lab',
             title: 'Text Lab',
@@ -26,13 +26,30 @@ describe('Custom App desktop View descriptions', () => {
             },
             app,
             reloadSignal: 3,
-            actions: [{
-                id: 'reload',
-                label: 'Reload',
-                ariaLabel: 'Reload Text Lab',
-                icon: 'bi-arrow-clockwise',
-                testid: 'reload-view-custom-app:text-lab',
-            }],
+            pinnedToSidebar: false,
+            actions: [
+                {
+                    id: 'toggle-sidebar-pin',
+                    label: 'Pin to sidebar',
+                    ariaLabel: 'Pin Text Lab to sidebar',
+                    icon: 'bi-pin-angle',
+                    testid: 'pin-view-custom-app:text-lab',
+                },
+                {
+                    id: 'reload',
+                    label: 'Reload',
+                    ariaLabel: 'Reload Text Lab',
+                    icon: 'bi-arrow-clockwise',
+                    testid: 'reload-view-custom-app:text-lab',
+                },
+            ],
+        });
+
+        expect(createCustomAppView(app, 3, true).actions[0]).toMatchObject({
+            id: 'toggle-sidebar-pin',
+            label: 'Unpin from sidebar',
+            ariaLabel: 'Unpin Text Lab from sidebar',
+            icon: 'bi-pin-angle-fill',
         });
     });
 });

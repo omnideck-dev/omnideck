@@ -17,6 +17,15 @@ import {
 } from './conversationSections.js';
 import styles from './ConversationsPanel.module.css';
 
+function pointRect(event) {
+    return {
+        left: event.clientX,
+        right: event.clientX,
+        top: event.clientY,
+        bottom: event.clientY,
+    };
+}
+
 /**
  * Inline list of recent conversations for the sidebar: a search box over a
  * grouped, scrollable list. Conversations group into Pinned, custom folders,
@@ -230,6 +239,11 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                     menuOpen ? styles.menuOpen : '',
                 ].filter(Boolean).join(' ')}
                 onClick={() => onLoadConversation(id)}
+                onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openMenu(id, pointRect(event));
+                }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {

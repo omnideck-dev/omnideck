@@ -10,9 +10,9 @@ export default function AppsView({
     error = '',
     onRefresh = NOOP,
     onOpenApp = NOOP,
-    dockedAppSlugs = [],
-    onDockApp = NOOP,
-    onUndockApp = NOOP,
+    pinnedAppSlugs = [],
+    onPinApp = NOOP,
+    onUnpinApp = NOOP,
 }) {
     return (
         <div className={styles.view} data-testid="apps-view">
@@ -37,7 +37,7 @@ export default function AppsView({
                 {apps.length > 0 && (
                     <div className={styles.grid}>
                         {apps.map((app) => {
-                            const docked = dockedAppSlugs.includes(app.slug);
+                            const pinned = pinnedAppSlugs.includes(app.slug);
                             return (
                                 <div key={app.slug} className={styles.cardContainer}>
                                     <button
@@ -51,22 +51,21 @@ export default function AppsView({
                                             <strong>{app.title}</strong>
                                             <p>{app.description || 'An App built for Omnideck.'}</p>
                                         </div>
-                                        <i className={`bi bi-chevron-right ${styles.chevron}`} />
                                     </button>
                                     <button
                                         type="button"
-                                        className={`${styles.pinButton} ${docked ? styles.pinned : ''}`}
+                                        className={`${styles.pinButton} ${pinned ? styles.pinned : ''}`}
                                         onClick={() => (
-                                            docked
-                                                ? onUndockApp(app.slug)
-                                                : onDockApp(app.slug)
+                                            pinned
+                                                ? onUnpinApp(app.slug)
+                                                : onPinApp(app.slug)
                                         )}
-                                        title={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
-                                        aria-label={docked ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
-                                        aria-pressed={docked}
+                                        title={pinned ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                                        aria-label={pinned ? `Unpin ${app.title}` : `Pin ${app.title} to sidebar`}
+                                        aria-pressed={pinned}
                                         data-testid={`custom-app-pin-${app.slug}`}
                                     >
-                                        <i className={`bi ${docked ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`} />
+                                        <i className={`bi ${pinned ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`} />
                                     </button>
                                 </div>
                             );

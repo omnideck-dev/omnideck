@@ -18,6 +18,8 @@ test('lists discovered apps and asks the shell to open one on the left', () => {
     expect(screen.getByRole('heading', { name: /^Apps/ })).toBeInTheDocument();
     expect(screen.queryByText('text-lab')).not.toBeInTheDocument();
     expect(screen.queryByText('Python')).not.toBeInTheDocument();
+    expect(screen.getByTestId('custom-app-card').querySelector('.bi-chevron-right'))
+        .not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('custom-app-card'));
     expect(onOpenApp).toHaveBeenCalledWith(SAMPLE);
@@ -33,28 +35,28 @@ test('asks the catalog owner to refresh', () => {
 
 test('pins and unpins an App from its Hub card without opening it', () => {
     const onOpenApp = vi.fn();
-    const onDockApp = vi.fn();
-    const onUndockApp = vi.fn();
+    const onPinApp = vi.fn();
+    const onUnpinApp = vi.fn();
     const { rerender } = render(
         <AppsView
             apps={[SAMPLE]}
             onOpenApp={onOpenApp}
-            onDockApp={onDockApp}
-            onUndockApp={onUndockApp}
+            onPinApp={onPinApp}
+            onUnpinApp={onUnpinApp}
         />,
     );
 
     fireEvent.click(screen.getByTestId('custom-app-pin-text-lab'));
-    expect(onDockApp).toHaveBeenCalledWith('text-lab');
+    expect(onPinApp).toHaveBeenCalledWith('text-lab');
     expect(onOpenApp).not.toHaveBeenCalled();
 
     rerender(
         <AppsView
             apps={[SAMPLE]}
-            dockedAppSlugs={['text-lab']}
+            pinnedAppSlugs={['text-lab']}
             onOpenApp={onOpenApp}
-            onDockApp={onDockApp}
-            onUndockApp={onUndockApp}
+            onPinApp={onPinApp}
+            onUnpinApp={onUnpinApp}
         />,
     );
     expect(screen.getByTestId('custom-app-pin-text-lab')).toHaveAttribute(
@@ -62,7 +64,7 @@ test('pins and unpins an App from its Hub card without opening it', () => {
         'true',
     );
     fireEvent.click(screen.getByTestId('custom-app-pin-text-lab'));
-    expect(onUndockApp).toHaveBeenCalledWith('text-lab');
+    expect(onUnpinApp).toHaveBeenCalledWith('text-lab');
     expect(onOpenApp).not.toHaveBeenCalled();
 });
 

@@ -29,10 +29,10 @@ const navigationHarness = vi.hoisted(() => ({
             loaded: true,
             loading: false,
         },
-        dockedAppSlugs: [],
-        dockApp: vi.fn(),
-        undockApp: vi.fn(),
-        reorderDockedApps: vi.fn(),
+        pinnedAppSlugs: [],
+        pinApp: vi.fn(),
+        unpinApp: vi.fn(),
+        reorderPinnedApps: vi.fn(),
     },
 }));
 
@@ -74,10 +74,10 @@ beforeEach(() => {
     navigationHarness.navigationTarget = { kind: 'chat', conversationId: 'conversation-1' };
     navigationHarness.customApps.enabled = false;
     navigationHarness.customApps.catalog.apps = [];
-    navigationHarness.customApps.dockedAppSlugs = [];
-    navigationHarness.customApps.dockApp.mockReset();
-    navigationHarness.customApps.undockApp.mockReset();
-    navigationHarness.customApps.reorderDockedApps.mockReset();
+    navigationHarness.customApps.pinnedAppSlugs = [];
+    navigationHarness.customApps.pinApp.mockReset();
+    navigationHarness.customApps.unpinApp.mockReset();
+    navigationHarness.customApps.reorderPinnedApps.mockReset();
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
 });
 afterEach(() => localStorage.clear());
@@ -180,46 +180,55 @@ describe('Sidebar', () => {
         expect(screen.queryByTestId('sidebar-nav-home')).not.toBeInTheDocument();
     });
 
-    it('stacks destinations, docked Apps, and conversation controls in order', () => {
+    it('stacks destinations, pinned Apps, and conversation controls in order', () => {
         navigationHarness.customApps.enabled = true;
         navigationHarness.customApps.catalog.apps = [
             { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
         ];
-        navigationHarness.customApps.dockedAppSlugs = ['text-lab'];
+        navigationHarness.customApps.pinnedAppSlugs = ['text-lab'];
         setup();
 
         const destination = screen.getByTestId('sidebar-nav-apps');
-        const docked = screen.getByTestId('sidebar-docked-section');
+        const pinned = screen.getByTestId('sidebar-pinned-section');
         const conversations = screen.getByTestId('recent-conversations');
-        expect(docked).toHaveTextContent('Apps');
-        expect(destination.compareDocumentPosition(docked)
+        expect(pinned).toHaveTextContent('Apps');
+        expect(destination.compareDocumentPosition(pinned)
             & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(docked.compareDocumentPosition(conversations)
+        expect(pinned.compareDocumentPosition(conversations)
             & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(conversations).toContainElement(screen.getByTestId('sidebar-new-chat'));
         expect(conversations).toContainElement(screen.getByTestId('recent-search'));
     });
 
-    it('adds, opens, and unpins Apps from the Docked section', async () => {
+    it('omits the Apps section when no Apps are pinned', () => {
+        navigationHarness.customApps.enabled = true;
+        navigationHarness.customApps.catalog.apps = [
+            { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
+        ];
+        setup();
+
+        expect(screen.queryByTestId('sidebar-pinned-section')).not.toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-nav-apps')).toBeInTheDocument();
+    });
+
+    it('pins and opens Apps from the Apps section', async () => {
         const user = userEvent.setup();
         navigationHarness.customApps.enabled = true;
         navigationHarness.customApps.catalog.apps = [
             { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
             { slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal' },
         ];
-        navigationHarness.customApps.dockedAppSlugs = ['text-lab'];
+        navigationHarness.customApps.pinnedAppSlugs = ['text-lab'];
         const { navigation } = setup();
 
-        await user.click(screen.getByTestId('sidebar-docked-add'));
-        expect(screen.getByTestId('sidebar-docked-picker')).toBeInTheDocument();
-        expect(screen.queryByTestId('sidebar-dock-option-text-lab')).not.toBeInTheDocument();
-        await user.click(screen.getByTestId('sidebar-dock-option-notes-lab'));
-        expect(navigationHarness.customApps.dockApp).toHaveBeenCalledWith('notes-lab');
+        await user.click(screen.getByTestId('sidebar-pinned-add'));
+        expect(screen.getByTestId('sidebar-pinned-picker')).toBeInTheDocument();
+        expect(screen.queryByTestId('sidebar-pin-option-text-lab')).not.toBeInTheDocument();
+        await user.click(screen.getByTestId('sidebar-pin-option-notes-lab'));
+        expect(navigationHarness.customApps.pinApp).toHaveBeenCalledWith('notes-lab');
 
-        await user.click(screen.getByTestId('sidebar-docked-app-text-lab'));
+        await user.click(screen.getByTestId('sidebar-pinned-app-text-lab'));
         expect(navigation.openCustomApp).toHaveBeenCalledWith('text-lab');
-        await user.click(screen.getByTestId('sidebar-undock-app-text-lab'));
-        expect(navigationHarness.customApps.undockApp).toHaveBeenCalledWith('text-lab');
     });
 
     it('persists destination order and supports Alt+Arrow reordering', () => {
@@ -272,20 +281,20 @@ describe('Sidebar', () => {
             { slug: 'text-lab', title: 'Text Lab', icon: 'bi-fonts' },
             { slug: 'notes-lab', title: 'Notes Lab', icon: 'bi-journal' },
         ];
-        navigationHarness.customApps.dockedAppSlugs = ['text-lab', 'notes-lab'];
+        navigationHarness.customApps.pinnedAppSlugs = ['text-lab', 'notes-lab'];
         setup();
 
-        const notes = screen.getByTestId('sidebar-docked-app-notes-lab');
+        const notes = screen.getByTestId('sidebar-pinned-app-notes-lab');
         fireEvent.keyDown(notes, { key: 'ArrowUp', altKey: true });
-        expect(navigationHarness.customApps.reorderDockedApps)
+        expect(navigationHarness.customApps.reorderPinnedApps)
             .toHaveBeenCalledWith(['notes-lab', 'text-lab']);
 
-        fireEvent.contextMenu(screen.getByTestId('sidebar-docked-app-text-lab'), {
+        fireEvent.contextMenu(screen.getByTestId('sidebar-pinned-app-text-lab'), {
             clientX: 20,
             clientY: 30,
         });
         await user.click(screen.getByTestId('sidebar-reorder-unpin'));
-        expect(navigationHarness.customApps.undockApp).toHaveBeenCalledWith('text-lab');
+        expect(navigationHarness.customApps.unpinApp).toHaveBeenCalledWith('text-lab');
     });
 
     it('opens settings from the footer', async () => {

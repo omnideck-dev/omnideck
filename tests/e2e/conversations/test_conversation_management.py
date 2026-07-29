@@ -154,7 +154,7 @@ def test_file_conversation_into_folder_persists(page: Page):
 
 
 def test_folder_menu_renames_and_deletes(page: Page):
-    """A folder can be renamed and deleted from its 3-dot options menu."""
+    """Folder actions work by right-click and the hover-revealed 3-dot trigger."""
     nonce = time.time_ns()
     name = f"Proj {nonce}"
     renamed = f"Renamed {nonce}"
@@ -164,9 +164,19 @@ def test_folder_menu_renames_and_deletes(page: Page):
         expect(recent.items.first).to_be_visible(timeout=5000)
 
         recent.create_folder(name)
-        expect(recent.folder_section(name)).to_be_visible(timeout=5000)
+        section = recent.folder_section(name)
+        expect(section).to_be_visible(timeout=5000)
+        header = section.get_by_test_id("recent-folder-header")
+        trigger = header.get_by_test_id("recent-folder-menu-trigger")
+        expect(trigger).to_have_css("opacity", "0")
+        header.hover()
+        expect(trigger).to_have_css("opacity", "1")
 
-        recent.rename_folder(name, renamed)
+        header.click(button="right")
+        page.get_by_test_id("recent-folder-menu-rename").click()
+        field = page.get_by_test_id("recent-folder-rename-input")
+        field.fill(renamed)
+        field.press("Enter")
         expect(recent.folder_section(renamed)).to_be_visible(timeout=5000)
         expect(recent.folder_section(name)).to_have_count(0)
 
@@ -232,7 +242,7 @@ def test_search_shows_flat_list_with_age(page: Page):
 
 
 def test_row_menu_exposes_pin_rename_delete(page: Page):
-    """The 3-dot menu opens with Pin, Rename, and Delete actions."""
+    """Right-click opens row actions while the 3-dot trigger remains available."""
     nonce = time.time_ns()
     conv_id = f"e2e_menu_{nonce}"
     _seed_conversation(conv_id, [
@@ -244,7 +254,9 @@ def test_row_menu_exposes_pin_rename_delete(page: Page):
         recent = RecentConversations(page)
         expect(recent.items.first).to_be_visible(timeout=5000)
 
-        recent.item_by_id(conv_id).open_menu()
+        row = recent.item_by_id(conv_id).root
+        expect(row.get_by_test_id("recent-menu-trigger")).to_have_count(1)
+        row.click(button="right")
         expect(page.get_by_test_id("recent-menu-pin")).to_have_text("Pin")
         expect(page.get_by_test_id("recent-menu-rename")).to_be_visible()
         expect(page.get_by_test_id("recent-menu-delete")).to_be_visible()

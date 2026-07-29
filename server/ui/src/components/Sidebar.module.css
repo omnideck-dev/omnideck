@@ -89,7 +89,14 @@
 .navItem:hover i { color: var(--text-primary); }
 .collapsed .navItem { justify-content: center; padding: 0; }
 
-.navLabel { flex: 1; text-align: left; }
+.navLabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 .dragHandle {
     width: 18px;
@@ -136,8 +143,8 @@
     border-radius: var(--radius-full);
 }
 
-/* ── Docked Apps ─────────────────────────────────────── */
-.dockedSection {
+/* ── Pinned Apps ─────────────────────────────────────── */
+.pinnedSection {
     position: relative;
     border-top: 1px solid var(--border);
 }
@@ -173,52 +180,34 @@
     color: var(--text-primary);
 }
 
-.dockedList {
+.pinnedList {
     display: flex;
     flex-direction: column;
     gap: 1px;
     padding: 0 var(--sp-2) var(--sp-2);
 }
 
-.dockedItem {
+.pinnedItem {
     display: flex;
     align-items: center;
     position: relative;
     border-radius: var(--radius-md);
 }
-.dockedItem:hover { background: var(--accent-muted); }
+.pinnedItem:hover { background: var(--accent-muted); }
 
-.dockedApp {
+.pinnedApp {
     flex: 1;
     min-width: 0;
 }
-.dockedItem .dockedApp:hover { background: transparent; }
+.pinnedItem .pinnedApp:hover { background: transparent; }
 
-.unpinApp {
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    flex: 0 0 24px;
-    margin-right: 3px;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    font-size: 11px;
-    opacity: 0;
-}
-.dockedItem:hover .unpinApp,
-.unpinApp:focus-visible { opacity: 1; }
-.unpinApp:hover { background: var(--surface); color: var(--text-primary); }
-
-.dockedItem.active {
+.pinnedItem.active {
     background: var(--accent-muted);
     color: var(--accent);
 }
-.dockedItem.active .dockedApp,
-.dockedItem.active .dockedApp i { color: var(--accent); }
-.dockedItem.active::before {
+.pinnedItem.active .pinnedApp,
+.pinnedItem.active .pinnedApp i { color: var(--accent); }
+.pinnedItem.active::before {
     content: '';
     position: absolute;
     left: -8px;
@@ -229,7 +218,7 @@
     border-radius: var(--radius-full);
 }
 
-.dockPicker {
+.pinPicker {
     position: absolute;
     z-index: var(--z-toast);
     top: 30px;
@@ -247,7 +236,7 @@
     box-shadow: var(--shadow-lg);
 }
 
-.dockPickerItem {
+.pinPickerItem {
     min-height: 32px;
     display: flex;
     align-items: center;
@@ -260,12 +249,12 @@
     font-size: 12.5px;
     text-align: left;
 }
-.dockPickerItem:hover { background: var(--accent-muted); color: var(--text-primary); }
-.dockPickerItem i { width: 16px; text-align: center; color: var(--text-tertiary); }
-.dockPickerStatus { padding: 8px 9px; color: var(--text-tertiary); font-size: 11.5px; }
+.pinPickerItem:hover { background: var(--accent-muted); color: var(--text-primary); }
+.pinPickerItem i { width: 16px; text-align: center; color: var(--text-tertiary); }
+.pinPickerStatus { padding: 8px 9px; color: var(--text-tertiary); font-size: 11.5px; }
 
-.collapsed .dockedList { padding: var(--sp-2); }
-.collapsed .dockedItem { justify-content: center; }
+.collapsed .pinnedList { padding: var(--sp-2); }
+.collapsed .pinnedItem { justify-content: center; }
 
 .srOnly {
     position: absolute;

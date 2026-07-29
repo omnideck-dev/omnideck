@@ -1,4 +1,10 @@
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import {
+    render,
+    screen,
+    act,
+    fireEvent,
+    waitFor,
+} from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppDataProvider } from '../contexts/AppData.jsx';
 import { APP_EFFECT_TYPES } from '../features/app/appEffectTypes.js';
@@ -397,7 +403,7 @@ describe('App view transitions', () => {
         capturedAppEffectDispatch = null;
         streamMock.value = streamMock.makeDefault();
         localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
-        localStorage.removeItem('omnideck_sidebar_docked_apps');
+        localStorage.removeItem('omnideck_sidebar_pinned_apps');
         // Mock the fetches App's children make on mount so the setup
         // wizard resolves and nothing else trips on a missing endpoint.
         globalThis.fetch = vi.fn((url) => {
@@ -573,21 +579,61 @@ describe('App view transitions', () => {
             expectViewActive('chat-panel', 'left');
         });
 
-        it('pins and unpins an App from its open view', async () => {
+        it('pins and unpins an App from its floating-view toolbar without covering App content', async () => {
             await renderApp();
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
             fireEvent.click(await screen.findByTestId('mock-open-app-full'));
 
-            const pin = screen.getByTestId('custom-app-view-pin');
-            expect(pin).toHaveTextContent('Pin to sidebar');
+            expect(screen.queryByTestId('custom-app-view-pin'))
+                .not.toBeInTheDocument();
+            executeTabAction('custom-app:text-lab',
+                'float-view-custom-app:text-lab',
+            );
+            const pin = screen.getByTestId('pin-view-custom-app:text-lab');
+            expect(pin).toHaveAttribute(
+                'aria-label',
+                'Pin Text Lab to sidebar',
+            );
             act(() => fireEvent.click(pin));
-            expect(pin).toHaveTextContent('Pinned');
-            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
                 .toEqual(['text-lab']);
 
-            act(() => fireEvent.click(pin));
-            expect(pin).toHaveTextContent('Pin to sidebar');
-            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_docked_apps')))
+            const unpin = screen.getByTestId('pin-view-custom-app:text-lab');
+            expect(unpin).toHaveAttribute(
+                'aria-label',
+                'Unpin Text Lab from sidebar',
+            );
+            act(() => fireEvent.click(unpin));
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
+                .toEqual([]);
+        });
+
+        it('pins and unpins an App from its tab menu', async () => {
+            await renderApp();
+            act(() => fireEvent.click(screen.getByTestId('open-apps')));
+            fireEvent.click(await screen.findByTestId('mock-open-app-full'));
+
+            fireEvent.click(screen.getByTestId(
+                'view-tab-actions-custom-app:text-lab',
+            ));
+            const pinAction = screen.getByTestId(
+                'pin-view-custom-app:text-lab',
+            );
+            expect(pinAction).toHaveTextContent('Pin to sidebar');
+            fireEvent.click(pinAction);
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
+                .toEqual(['text-lab']);
+
+            fireEvent.click(screen.getByTestId(
+                'view-tab-actions-custom-app:text-lab',
+            ));
+            await waitFor(() => expect(screen.getByTestId(
+                'pin-view-custom-app:text-lab',
+            )).toHaveTextContent('Unpin from sidebar'));
+            fireEvent.click(screen.getByTestId(
+                'pin-view-custom-app:text-lab',
+            ));
+            expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
                 .toEqual([]);
         });
 

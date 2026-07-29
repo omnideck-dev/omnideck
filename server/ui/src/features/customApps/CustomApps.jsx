@@ -11,59 +11,61 @@ import { useAppData } from '../../contexts/AppData.jsx';
 import useCustomAppsCatalog from './useCustomAppsCatalog.js';
 
 const CustomAppsContext = createContext(null);
-const DOCKED_APPS_KEY = 'omnideck_sidebar_docked_apps';
+const PINNED_APPS_KEY = 'omnideck_sidebar_pinned_apps';
 
-function readDockedAppSlugs() {
+function readPinnedAppSlugs() {
     if (typeof localStorage === 'undefined') return [];
     try {
-        const stored = JSON.parse(localStorage.getItem(DOCKED_APPS_KEY) || '[]');
+        const stored = JSON.parse(localStorage.getItem(PINNED_APPS_KEY) || '[]');
         if (!Array.isArray(stored)) return [];
-        return [...new Set(stored.filter((slug) => typeof slug === 'string' && slug))];
+        return [
+            ...new Set(stored.filter((slug) => typeof slug === 'string' && slug)),
+        ];
     } catch {
         return [];
     }
 }
 
-function persistDockedAppSlugs(slugs) {
+function persistPinnedAppSlugs(slugs) {
     if (typeof localStorage === 'undefined') return;
     try {
-        localStorage.setItem(DOCKED_APPS_KEY, JSON.stringify(slugs));
+        localStorage.setItem(PINNED_APPS_KEY, JSON.stringify(slugs));
     } catch {
-        // Docking still works for the session when localStorage is unavailable.
+        // Pinning still works for the session when localStorage is unavailable.
     }
 }
 
-/** Owns the shared App catalog and persistent sidebar docking preferences. */
+/** Owns the shared App catalog and persistent sidebar pinning preferences. */
 export function CustomAppsProvider({ children }) {
     const { features, featuresLoaded } = useAppData();
     const enabled = Boolean(features.custom_apps);
     const catalog = useCustomAppsCatalog({ enabled });
-    const [dockedAppSlugs, setDockedAppSlugs] = useState(readDockedAppSlugs);
+    const [pinnedAppSlugs, setPinnedAppSlugs] = useState(readPinnedAppSlugs);
 
     useEffect(() => {
         if (enabled) catalog.refresh();
     }, [catalog.refresh, enabled]);
 
-    const dockApp = useCallback((slug) => {
-        setDockedAppSlugs((current) => {
+    const pinApp = useCallback((slug) => {
+        setPinnedAppSlugs((current) => {
             if (!slug || current.includes(slug)) return current;
             const next = [...current, slug];
-            persistDockedAppSlugs(next);
+            persistPinnedAppSlugs(next);
             return next;
         });
     }, []);
 
-    const undockApp = useCallback((slug) => {
-        setDockedAppSlugs((current) => {
+    const unpinApp = useCallback((slug) => {
+        setPinnedAppSlugs((current) => {
             const next = current.filter((candidate) => candidate !== slug);
             if (next.length === current.length) return current;
-            persistDockedAppSlugs(next);
+            persistPinnedAppSlugs(next);
             return next;
         });
     }, []);
 
-    const reorderDockedApps = useCallback((orderedSlugs) => {
-        setDockedAppSlugs((current) => {
+    const reorderPinnedApps = useCallback((orderedSlugs) => {
+        setPinnedAppSlugs((current) => {
             const remaining = new Set(current);
             const next = [];
             orderedSlugs.forEach((slug) => {
@@ -79,7 +81,7 @@ export function CustomAppsProvider({ children }) {
             ) {
                 return current;
             }
-            persistDockedAppSlugs(next);
+            persistPinnedAppSlugs(next);
             return next;
         });
     }, []);
@@ -88,18 +90,18 @@ export function CustomAppsProvider({ children }) {
         enabled,
         featureLoaded: featuresLoaded,
         catalog,
-        dockedAppSlugs,
-        dockApp,
-        undockApp,
-        reorderDockedApps,
+        pinnedAppSlugs,
+        pinApp,
+        unpinApp,
+        reorderPinnedApps,
     }), [
         catalog,
-        dockApp,
-        dockedAppSlugs,
         enabled,
         featuresLoaded,
-        reorderDockedApps,
-        undockApp,
+        pinApp,
+        pinnedAppSlugs,
+        reorderPinnedApps,
+        unpinApp,
     ]);
 
     return <CustomAppsContext.Provider value={value}>{children}</CustomAppsContext.Provider>;

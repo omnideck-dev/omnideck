@@ -64,9 +64,9 @@ document.querySelector('#open-chat').addEventListener('click', () => {
 }
 
 _SECOND_TEST_APP_FILES = {
-    "omnideck.json": """{"title":"Notes Lab","description":"Second E2E fixture","icon":"bi-journal"}""",
+    "omnideck.json": """{"title":"Conversation Knowledge Base","description":"Second E2E fixture","icon":"bi-journal"}""",
     "web/index.html": """<!doctype html>
-<html lang="en"><body><h1>Notes Lab</h1><textarea id="notes">second app</textarea></body></html>
+<html lang="en"><body><h1>Conversation Knowledge Base</h1><textarea id="notes">second app</textarea></body></html>
 """,
 }
 
@@ -148,17 +148,17 @@ def _expect_app_beside_chat(page: Page) -> None:
     ).to_be_visible()
 
 
-def _docked_app_order(page: Page) -> list[str]:
+def _pinned_app_order(page: Page) -> list[str]:
     """Return pinned Apps in their current sidebar order."""
-    return page.locator("[data-testid^='sidebar-docked-app-']").evaluate_all(
+    return page.locator("[data-testid^='sidebar-pinned-app-']").evaluate_all(
         """rows => rows.map((row) => row.getAttribute('data-reorder-id'))"""
     )
 
 
 def _drag_app_above(page: Page, source_slug: str, target_slug: str) -> None:
     """Drag one pinned App above another within the Apps group."""
-    source = page.get_by_test_id(f"sidebar-docked-app-{source_slug}")
-    target = page.get_by_test_id(f"sidebar-docked-app-{target_slug}")
+    source = page.get_by_test_id(f"sidebar-pinned-app-{source_slug}")
+    target = page.get_by_test_id(f"sidebar-pinned-app-{target_slug}")
     source_box = source.bounding_box()
     target_box = target.bounding_box()
     assert source_box is not None
@@ -177,56 +177,86 @@ def _drag_app_above(page: Page, source_slug: str, target_slug: str) -> None:
     page.mouse.up()
 
 
-def test_apps_can_be_pinned_from_hub_and_open_view_then_reordered(
+def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     page: Page, installed_two_custom_apps
 ) -> None:
-    """Hub and open-App pin controls stay in sync with the reorderable sidebar."""
+    """Hub, App-window, and tab pin controls stay in sync with the sidebar."""
     _open_custom_apps_library(page)
 
-    apps_section = page.get_by_test_id("sidebar-docked-section")
-    expect(apps_section).to_be_visible()
-    expect(apps_section.get_by_text("Apps", exact=True)).to_be_visible()
+    apps_section = page.get_by_test_id("sidebar-pinned-section")
+    expect(apps_section).to_have_count(0)
 
     # Pin directly from the Apps Hub.
     page.get_by_test_id("custom-app-pin-text-lab").click()
-    text_app = page.get_by_test_id("sidebar-docked-app-text-lab")
+    expect(apps_section).to_be_visible()
+    expect(apps_section.get_by_text("Apps", exact=True)).to_be_visible()
+    text_app = page.get_by_test_id("sidebar-pinned-app-text-lab")
     expect(text_app).to_be_visible()
 
-    # The opened App view can unpin and repin itself.
+    # The floating App toolbar can pin without covering the App content.
     page.get_by_test_id("custom-app-card").filter(has_text="Text Lab").click()
     expect(
         page.frame_locator('[data-testid="custom-app-frame"]').get_by_role(
             "heading", name="Text Lab"
         )
     ).to_be_visible()
-    open_view_pin = page.get_by_test_id("custom-app-view-pin")
-    expect(open_view_pin).to_have_text("Pinned")
-    open_view_pin.click()
+    expect(page.get_by_test_id("custom-app-view-pin")).to_have_count(0)
+    app_tab = page.get_by_test_id("view-tab-custom-app:text-lab")
+    app_tab.click(button="right")
+    page.get_by_test_id("float-view-custom-app:text-lab").click()
+    window_pin = page.get_by_test_id("pin-view-custom-app:text-lab")
+    expect(window_pin).to_have_attribute(
+        "aria-label", "Unpin Text Lab from sidebar"
+    )
+    window_pin.click()
     expect(text_app).to_have_count(0)
-    expect(open_view_pin).to_have_text("Pin to sidebar")
-    open_view_pin.click()
+    expect(window_pin).to_have_attribute(
+        "aria-label", "Pin Text Lab to sidebar"
+    )
+    window_pin.click()
+    expect(text_app).to_be_visible()
+    page.get_by_test_id("dock-view-custom-app:text-lab-left").click()
+
+    # The App tab menu exposes the same pin state and action.
+    app_tab = page.get_by_test_id("view-tab-custom-app:text-lab")
+    app_tab.click(button="right")
+    tab_pin = page.get_by_test_id("pin-view-custom-app:text-lab")
+    expect(tab_pin).to_have_text("Unpin from sidebar")
+    tab_pin.click()
+    expect(text_app).to_have_count(0)
+    app_tab.click(button="right")
+    tab_pin = page.get_by_test_id("pin-view-custom-app:text-lab")
+    expect(tab_pin).to_have_text("Pin to sidebar")
+    tab_pin.click()
     expect(text_app).to_be_visible()
 
     # Add another App from the Hub and reorder the Apps group by dragging.
     page.get_by_test_id("sidebar-nav-apps").click()
     page.get_by_test_id("custom-app-pin-notes-lab").click()
-    expect(page.get_by_test_id("sidebar-docked-app-notes-lab")).to_be_visible()
-    assert _docked_app_order(page) == ["text-lab", "notes-lab"]
+    notes_app = page.get_by_test_id("sidebar-pinned-app-notes-lab")
+    expect(notes_app).to_be_visible()
+    expect(notes_app).to_have_attribute("title", "Conversation Knowledge Base")
+    notes_label = notes_app.get_by_text("Conversation Knowledge Base", exact=True)
+    expect(notes_label).to_have_css("overflow", "hidden")
+    expect(notes_label).to_have_css("text-overflow", "ellipsis")
+    expect(notes_label).to_have_css("white-space", "nowrap")
+    assert notes_label.evaluate("element => element.scrollWidth > element.clientWidth")
+    assert _pinned_app_order(page) == ["text-lab", "notes-lab"]
     _drag_app_above(page, "notes-lab", "text-lab")
-    assert _docked_app_order(page) == ["notes-lab", "text-lab"]
+    assert _pinned_app_order(page) == ["notes-lab", "text-lab"]
 
     # Ordering and pin state survive reload.
     page.reload()
-    expect(page.get_by_test_id("sidebar-docked-app-notes-lab")).to_be_visible()
+    expect(page.get_by_test_id("sidebar-pinned-app-notes-lab")).to_be_visible()
     expect(text_app).to_be_visible()
-    assert _docked_app_order(page) == ["notes-lab", "text-lab"]
+    assert _pinned_app_order(page) == ["notes-lab", "text-lab"]
 
     # Context-menu unpin returns the App to the section picker.
     text_app.click(button="right")
     page.get_by_test_id("sidebar-reorder-unpin").click()
     expect(text_app).to_have_count(0)
-    page.get_by_test_id("sidebar-docked-add").click()
-    expect(page.get_by_test_id("sidebar-dock-option-text-lab")).to_be_visible()
+    page.get_by_test_id("sidebar-pinned-add").click()
+    expect(page.get_by_test_id("sidebar-pin-option-text-lab")).to_be_visible()
 
 
 def test_custom_app_moves_left_to_right_and_back_without_losing_state(
@@ -442,7 +472,9 @@ def test_opening_another_custom_app_keeps_both_as_independent_tabs(
     text_frame.locator("#text").fill(working_text)
 
     page.get_by_test_id("sidebar-nav-apps").click()
-    page.get_by_test_id("custom-app-card").filter(has_text="Notes Lab").click()
+    page.get_by_test_id("custom-app-card").filter(
+        has_text="Conversation Knowledge Base"
+    ).click()
 
     expect(page.get_by_test_id("view-tab-custom-app:text-lab")).to_be_visible()
     expect(page.get_by_test_id("view-tab-custom-app:notes-lab")).to_be_visible()
@@ -461,7 +493,7 @@ def test_opening_another_custom_app_keeps_both_as_independent_tabs(
             "[data-view-id='custom-app:notes-lab'] "
             "[data-testid='custom-app-frame']"
         ).get_by_role(
-            "heading", name="Notes Lab"
+            "heading", name="Conversation Knowledge Base"
         )
     ).to_be_visible()
 
