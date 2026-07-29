@@ -90,15 +90,15 @@ export default function SystemSettings() {
                     <PackageIcon />
                 </div>
                 <div className={styles.settingInfo}>
-                    <span className={styles.settingTitle}>Custom Apps</span>
+                    <span className={styles.settingTitle}>Apps</span>
                     <span className={styles.settingDesc}>
-                        Custom Apps let your Omnideck agents build and run personalized apps for you. Only use Custom Apps you trust.
+                        Apps let your Omnideck agents build and run personalized tools for you. Only use Apps you trust.
                     </span>
                 </div>
                 <ToggleSwitch
                     checked={!!settings.custom_apps_enabled}
                     onChange={(e) => updateSetting('custom_apps_enabled', e.target.checked)}
-                    aria-label="Custom Apps"
+                    aria-label="Apps"
                 />
             </label>
 

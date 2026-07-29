@@ -26,6 +26,7 @@ import styles from './CustomAppDesktopView.module.css';
 
 /** Translate Custom App catalog records into generic Desktop View commands. */
 export function useCustomAppDesktopActions() {
+    const customApps = useCustomApps();
     const desktopModel = useDesktopViewCatalog();
     const desktopCommands = useDesktopViewCommands();
     const openApp = useCallback((
@@ -36,10 +37,15 @@ export function useCustomAppDesktopActions() {
             customAppViewId(app.slug)
         ];
         desktopCommands.openView(
-            createCustomAppView(app, existing?.reloadSignal || 0),
+            createCustomAppView(
+                app,
+                existing?.reloadSignal || 0,
+                customApps.pinnedAppSlugs.includes(app.slug),
+            ),
             { tabGroupId },
         );
     }, [
+        customApps.pinnedAppSlugs,
         desktopCommands.openView,
         desktopModel.openViewsById,
     ]);

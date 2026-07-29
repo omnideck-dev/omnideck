@@ -5,18 +5,32 @@ import styles from './ConversationSectionHeader.module.css';
  * A collapsible section header. Pinned and date buckets show just a label;
  * folder headers put the folder's icon inline (like the pin) and add a 3-dot
  * button that opens the folder menu. Clicking the label toggles the section's
- * collapsed state. The folder ⋮ sits in the trailing slot, dimmed at rest so
- * it stays discoverable (not a hover-only reveal) and solid on hover / focus /
- * menu-open.
+ * collapsed state. The folder ⋮ follows conversation rows: it appears on
+ * hover, focus, or while the menu is open. Right-clicking anywhere on a folder
+ * header opens that same menu.
  */
 export default function ConversationSectionHeader({ section, collapsed, menuOpen, onToggle, onOpenFolderMenu }) {
     const isFolder = section.kind === 'folder';
     return (
-        <div className={[
-            styles.dayLabel,
-            isFolder ? styles.folderHead : '',
-            menuOpen ? styles.menuOpen : '',
-        ].filter(Boolean).join(' ')}>
+        <div
+            className={[
+                styles.dayLabel,
+                isFolder ? styles.folderHead : '',
+                menuOpen ? styles.menuOpen : '',
+            ].filter(Boolean).join(' ')}
+            onContextMenu={(event) => {
+                if (!isFolder) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenFolderMenu({
+                    left: event.clientX,
+                    right: event.clientX,
+                    top: event.clientY,
+                    bottom: event.clientY,
+                });
+            }}
+            data-testid={isFolder ? 'recent-folder-header' : undefined}
+        >
             <button
                 type="button"
                 className={styles.sectionToggle}
