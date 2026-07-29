@@ -18,7 +18,9 @@ const {
 
 const SETUP_PAGE = path.join(__dirname, 'setup', 'index.html');
 const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
-const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases/latest';
+// The releases index rather than /latest: GitHub excludes prereleases from
+// /latest, so it has nothing to show while every release is a prerelease.
+const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases';
 const SUPPORTED_SYSTEMS_URL = 'https://github.com/omnideck-dev/omnideck#prerequisites';
 
 let mainWindow;
@@ -38,9 +40,21 @@ async function loadZoomPreference() {
   }
 }
 
-async function saveZoomPreference() {
-  await fsp.mkdir(app.getPath('userData'), { recursive: true });
-  await fsp.writeFile(zoomPreferencePath(), `${zoomFactor}\n`, { mode: 0o600 });
+// Held between keystrokes so a key repeat writes once when it settles instead
+// of once per event. A failure here is not worth interrupting anyone over, but
+// it must be caught: an unhandled rejection takes the process down.
+let zoomSaveTimer;
+
+function saveZoomPreference() {
+  clearTimeout(zoomSaveTimer);
+  zoomSaveTimer = setTimeout(async () => {
+    try {
+      await fsp.mkdir(app.getPath('userData'), { recursive: true });
+      await fsp.writeFile(zoomPreferencePath(), `${zoomFactor}\n`, { mode: 0o600 });
+    } catch {
+      // The zoom level is a convenience; losing it is not worth reporting.
+    }
+  }, 400);
 }
 
 function isAppUrl(candidate) {
@@ -60,7 +74,9 @@ function isSetupUrl(candidate) {
 }
 
 function assertSetupSender(event) {
-  if (!isSetupUrl(event.senderFrame.url)) {
+  // senderFrame is null once the sending frame has gone away, so an absent
+  // frame fails the check rather than throwing a type error out of it.
+  if (!isSetupUrl(event.senderFrame?.url)) {
     throw new Error('This action is only available on the omnideck setup screen.');
   }
 }
@@ -115,6 +131,10 @@ async function createWindow() {
   });
 
   await mainWindow.loadFile(SETUP_PAGE);
+  // Shown as soon as there is something to draw. The checks that follow can
+  // take several seconds against a cold container runtime, and leaving the
+  // window hidden until they finish reads as the app failing to launch.
+  mainWindow.show();
 }
 
 function publishState(state) {
@@ -124,7 +144,6 @@ function publishState(state) {
 
 async function openOmniDeck() {
   await mainWindow.loadURL(runtime.appUrl);
-  if (!mainWindow.isVisible()) mainWindow.show();
 }
 
 async function beginSetup(reason = runtime.setupReason) {
@@ -146,11 +165,9 @@ async function bootstrap() {
       await openOmniDeck();
       return;
     }
-    if (!mainWindow.isVisible()) mainWindow.show();
     if (result.action === 'setup') await beginSetup(result.reason);
   } catch (error) {
     runtime.reportFailure(error);
-    if (!mainWindow.isVisible()) mainWindow.show();
   }
 }
 

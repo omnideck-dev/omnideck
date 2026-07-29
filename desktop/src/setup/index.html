@@ -27,12 +27,13 @@
           </div>
 
           <div class="status">
-            <p id="eyebrow" class="eyebrow">WELCOME</p>
-            <h1 id="title">Welcome to omnideck</h1>
-            <p id="detail" class="detail">
-              A one-time setup will prepare everything omnideck needs on this
-              computer.
-            </p>
+            <!-- Neutral until the first state arrives. The window is shown
+                 before the environment has been checked, so committing to
+                 "Welcome" here would flash first-run copy at people who are
+                 only reopening the app. -->
+            <p id="eyebrow" class="eyebrow">STARTING</p>
+            <h1 id="title">Starting omnideck</h1>
+            <p id="detail" class="detail">Checking your environment…</p>
 
             <section id="doctor-panel" class="doctor-panel" hidden>
               <div class="doctor-heading">
@@ -58,14 +59,15 @@
               </div>
             </div>
 
-            <div id="spinner" class="spinner" aria-label="Working" hidden></div>
+            <div id="spinner" class="spinner" aria-label="Working"></div>
 
-            <button id="primary" class="primary" type="button">
+            <button id="primary" class="primary" type="button" hidden>
               Set up omnideck
             </button>
             <button id="logs" class="secondary" type="button" hidden>
               Show diagnostic log
             </button>
+            <p id="action-error" class="action-error" role="alert" hidden></p>
           </div>
 
           <p id="footnote" class="footnote">

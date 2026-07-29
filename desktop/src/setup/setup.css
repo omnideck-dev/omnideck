@@ -321,6 +321,13 @@ canvas:focus-visible {
   background: #202431;
 }
 
+.action-error {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .footnote {
   margin: 0;
   color: #717c91;

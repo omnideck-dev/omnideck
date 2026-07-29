@@ -236,6 +236,18 @@ if ($Installer.ExitCode -ne 0) {
     throw "The Windows installer exited with code $($Installer.ExitCode)."
 }
 
+# The one-click installer launches the application itself, before this script
+# has applied the test profile. That instance holds the single-instance lock, so
+# the launch below would only focus it and the run would silently exercise the
+# normal profile instead of the isolated one.
+$AutoLaunched = Get-Process -Name "OmniDeck" -ErrorAction SilentlyContinue
+if ($AutoLaunched) {
+    Write-Host "Stopping the instance started by the installer so the test profile applies."
+    $AutoLaunched | Stop-Process -Force
+    # The single-instance lock is released as the process exits.
+    Start-Sleep -Seconds 2
+}
+
 $ExpectedApplications = @(
     (Join-Path $env:LOCALAPPDATA "Programs\omnideck\OmniDeck.exe"),
     (Join-Path $env:LOCALAPPDATA "Programs\OmniDeck\OmniDeck.exe")

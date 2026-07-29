@@ -27,11 +27,64 @@ helpers refuse older releases rather than risk touching a normal environment.
 
 `first-run`, `resume`, `update`, and `doctor` ask for confirmation. Each profile
 gets its own container, machine, volumes, and application-data directory.
-`--yes` is available for disposable automated test machines. These scripts
-never uninstall Podman, disable WSL, or touch the standalone CLI environment
-because those components may be shared with other applications.
-Use a disposable VM when testing installation of system-level prerequisites
-from an entirely clean computer.
+`--yes` is available for disposable automated test machines.
+
+The scenarios above reset the *application*, never the host. To test the
+prerequisite installation itself, use the dependency reset below.
+
+## Testing from a completely clean computer
+
+`reset-host.sh` and `reset-host.ps1` return the machine to a pre-install state:
+podman is uninstalled and the isolated test machine is destroyed, so the next
+launch installs its prerequisites from scratch.
+
+```bash
+./reset-host.sh --inventory     # list what would be removed and what is kept
+./reset-host.sh --dry-run       # show every step without running it
+./reset-host.sh                 # uninstall podman after confirmation
+```
+
+```powershell
+.\reset-host.ps1 -Inventory
+.\reset-host.ps1 -DryRun
+.\reset-host.ps1                # uninstall podman
+.\reset-host.ps1 -IncludeWsl    # also uninstall WSL (distributions are kept)
+```
+
+### What is never touched
+
+The reset only removes resources whose names it derives from the test
+namespace. Everything else is preserved:
+
+- **Containers and volumes are never deleted** unless they are the namespaced
+  test container or its two test volumes. The standalone CLI's `omnideck`
+  container and `omnideck-home` / `omnideck-state` volumes are not test
+  resources and are left alone.
+- **Container storage stays on disk.** Uninstalling the podman package does not
+  remove `~/.local/share/containers`, so every image, container, and volume
+  reappears when podman is reinstalled.
+- **Only the namespaced podman machine is destroyed.** Other machines — including
+  the application's normal `omnideck-runtime` — are preserved. This matters most
+  on macOS and Windows, where a machine holds all the containers inside it.
+- **WSL distributions are never unregistered.** `-IncludeWsl` removes the WSL
+  feature with `wsl --uninstall`, which leaves every distribution's disk intact.
+- `purge` and `autoremove` are never used on Linux, so podman's removal cannot
+  cascade into unrelated packages.
+
+Run `--inventory` first. It prints every container, volume, and machine on the
+host, marking each `REMOVE` or `preserved`. If a name you care about shows as
+preserved, the reset will not touch it.
+
+A full first-install pass is therefore:
+
+```bash
+./reset-host.sh --inventory     # confirm nothing of yours is in scope
+./reset-host.sh                 # uninstall podman
+./linux.sh --scenario first-run # install and set up from nothing
+```
+
+A disposable VM is still the strictest test, because a reset cannot undo
+system changes made by an earlier install that the uninstaller leaves behind.
 
 Examples:
 

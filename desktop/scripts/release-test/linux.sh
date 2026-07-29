@@ -28,6 +28,12 @@ validate_profile_name "$profile"
 TEST_NAMESPACE="release-test-${profile}"
 require_command sha256sum
 
+host_arch="$(uname -m)"
+if [[ "$host_arch" != "x86_64" ]]; then
+  echo "Published Linux builds are x86_64 only; this host reports $host_arch." >&2
+  exit 1
+fi
+
 state_root="${XDG_STATE_HOME:-$HOME/.local/state}/omnideck-release-testing"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/omnideck-release-testing"
 profiles_root="$state_root/profiles"
@@ -45,8 +51,16 @@ gh release download "$selected_release" \
   --dir "$release_cache" \
   --skip-existing
 
-artifact="$(compgen -G "$release_cache/OmniDeck-*-linux-x86_64.AppImage" | head -n 1)"
+artifact="$(compgen -G "$release_cache/OmniDeck-*-linux-x86_64.AppImage" | head -n 1 || true)"
+if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+  echo "Release $selected_release has no Linux x86_64 AppImage, or the download failed." >&2
+  exit 1
+fi
 checksum="${artifact}.sha256"
+if [[ ! -f "$checksum" ]]; then
+  echo "Release $selected_release published no checksum for $(basename "$artifact")." >&2
+  exit 1
+fi
 (
   cd "$release_cache"
   sha256sum --check "$(basename "$checksum")"

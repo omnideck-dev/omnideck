@@ -41,6 +41,17 @@ async function runtimeFixture(context, digestCharacter = 'a') {
   return { imageRef, resourcesPath, runtimePath, userDataPath };
 }
 
+// Shapes a fake `podman container inspect` the way run() reports one: the JSON
+// payload on stdout, and the transcript carrying podman's stderr chatter too.
+function inspectResult(container, stderrNoise = '') {
+  const payload = JSON.stringify([container]);
+  return {
+    code: 0,
+    stdout: payload,
+    output: stderrNoise ? `${stderrNoise}\n${payload}` : payload,
+  };
+}
+
 test('parseOsRelease accepts quoted and unquoted values', () => {
   assert.deepEqual(
     parseOsRelease('ID="ubuntu"\nVERSION_ID=24.04\n'),
@@ -442,18 +453,15 @@ test('a legacy desktop container without setup state migrates through update', a
   runtime.findExecutable = async () => 'podman';
   runtime.run = async (_executable, args) => {
     if (args[0] === 'container') {
-      return {
-        code: 0,
-        output: JSON.stringify([{
-          Config: {
-            Image: 'localhost/omnideck/runtime:0.1.0-alpha.3',
-            Labels: { 'dev.omnideck.version': '0.1.0-alpha.3' },
-          },
-          State: { Status: 'running' },
-        }]),
-      };
+      return inspectResult({
+        Config: {
+          Image: 'localhost/omnideck/runtime:0.1.0-alpha.3',
+          Labels: { 'dev.omnideck.version': '0.1.0-alpha.3' },
+        },
+        State: { Status: 'running' },
+      });
     }
-    return { code: 0, output: '' };
+    return { code: 0, output: '', stdout: '' };
   };
 
   const result = await runtime.startExisting();
@@ -482,18 +490,15 @@ test('a healthy completed setup with the same digest opens directly', async (con
   runtime.findExecutable = async () => 'podman';
   runtime.run = async (_executable, args) => {
     if (args[0] === 'container') {
-      return {
-        code: 0,
-        output: JSON.stringify([{
-          Config: {
-            Image: 'localhost/omnideck/runtime:older-wrapper',
-            Labels: { [IMAGE_REF_LABEL]: imageRef },
-          },
-          State: { Status: 'running' },
-        }]),
-      };
+      return inspectResult({
+        Config: {
+          Image: 'localhost/omnideck/runtime:older-wrapper',
+          Labels: { [IMAGE_REF_LABEL]: imageRef },
+        },
+        State: { Status: 'running' },
+      });
     }
-    return { code: 0, output: '' };
+    return { code: 0, output: '', stdout: '' };
   };
   let waitedSilently = false;
   runtime.waitForApp = async (options) => {
@@ -607,4 +612,219 @@ test('setup remains resumable after failure and becomes complete only when ready
   assert.equal(complete.status, 'complete');
   assert.equal(states.at(-1).stage, 'ready');
   assert.equal(states.at(-1).title, 'omnideck is ready');
+});
+
+test('podman warnings on stderr do not corrupt container inspection', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '5');
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  runtime.podmanPath = 'podman';
+  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
+  runtime.run = async () => inspectResult(
+    {
+      Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: imageRef } },
+      State: { Status: 'running' },
+    },
+    'WARN[0000] Failed to add pause process to systemd sandbox cgroup',
+  );
+
+  const info = await runtime.containerInfo();
+
+  assert.equal(info.State.Status, 'running');
+  assert.equal(runtime.isCurrentContainer(info), true);
+});
+
+test('a tagged failure keeps its checkpoint when the transcript mentions downloads', (context) => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  context.after(() => {});
+  const error = new Error('start app exited with code 125');
+  error.diagnostic = 'startup';
+  error.failureKind = 'startup';
+  error.output = 'Trying to pull ghcr.io/...\nerror: connection reset while reading http response';
+
+  runtime.reportFailure(error);
+  const reported = states.at(-1);
+
+  assert.equal(reported.diagnosticResult, 'Startup issue');
+  assert.equal(reported.diagnostics.find((item) => item.id === 'startup').status, 'issue');
+  assert.equal(reported.diagnostics.find((item) => item.id === 'downloads').status, 'waiting');
+  assert.equal(reported.canRetry, true);
+});
+
+test('an unsupported computer keeps its guidance when the message says restart', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  const error = new Error('omnideck cannot restart the required component on this computer.');
+  error.diagnostic = 'support';
+  error.failureKind = 'support';
+
+  runtime.reportFailure(error);
+  const reported = states.at(-1);
+
+  assert.equal(reported.diagnosticResult, 'Compatibility issue');
+  assert.equal(reported.primaryAction, 'supported-systems');
+  assert.equal(reported.canRetry, false);
+});
+
+test('a damaged release still offers a fresh download', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  const error = new Error('The omnideck runtime image manifest is invalid.');
+  error.diagnostic = 'release';
+  error.failureKind = 'release';
+
+  runtime.reportFailure(error);
+
+  assert.equal(states.at(-1).primaryAction, 'download');
+  assert.equal(states.at(-1).primaryLabel, 'Download omnideck');
+  assert.equal(states.at(-1).canRetry, false);
+});
+
+test('a declined authorization prompt is reported as a permission issue', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  const error = new Error('system installer exited with code 1');
+  error.diagnostic = 'components';
+  error.failureKind = 'permission';
+  error.output = 'User canceled.';
+
+  runtime.reportFailure(error);
+
+  assert.equal(states.at(-1).diagnosticResult, 'Permission needed');
+  assert.equal(states.at(-1).canRetry, true);
+});
+
+test('an untagged failure is still classified from its message', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  runtime.reportFailure(new Error('the network connection was lost'));
+
+  assert.equal(states.at(-1).diagnosticResult, 'Download issue');
+});
+
+test('chunk progress is rate limited and reports a real fraction', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  for (let index = 0; index < 2_000; index += 1) {
+    runtime.emitProgressUpdate(index / 2_000);
+  }
+
+  assert.ok(states.length < 20, `expected a throttled stream, got ${states.length} emits`);
+  assert.ok(states.every((state) => state.progress >= 0 && state.progress <= 1));
+  assert.equal(states.at(-1).indeterminate, false);
+});
+
+test('progress without a known total stays indeterminate', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  runtime.emitProgressUpdate();
+
+  assert.equal(states.at(-1).progress, null);
+  assert.equal(states.at(-1).indeterminate, true);
+});
+
+test('a host port taken while omnideck was closed is exchanged for a free one', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '6');
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  runtime.podmanPath = 'podman';
+  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
+  await runtime.prepare();
+  const originalPort = runtime.appPort;
+
+  runtime.run = async (_executable, args) => {
+    if (args[0] === 'start') {
+      const error = new Error('start app exited with code 125');
+      error.output = 'rootlessport cannot expose 127.0.0.1:2337: address already in use';
+      throw error;
+    }
+    return { code: 0, output: '', stdout: '' };
+  };
+
+  const started = await runtime.startCurrentContainer({ State: { Status: 'exited' } });
+
+  assert.equal(started, false, 'the container must be rebuilt rather than started again');
+  assert.notEqual(runtime.appPort, originalPort);
+  const persisted = await fs.readFile(path.join(userDataPath, 'runtime', 'app-port'), 'utf8');
+  assert.equal(Number.parseInt(persisted, 10), runtime.appPort);
+});
+
+test('an unrelated start failure is not mistaken for a port conflict', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '7');
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  runtime.podmanPath = 'podman';
+  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
+  await runtime.prepare();
+  runtime.run = async () => {
+    const error = new Error('start app exited with code 125');
+    error.output = 'Error: no such container';
+    throw error;
+  };
+
+  await assert.rejects(
+    runtime.startCurrentContainer({ State: { Status: 'exited' } }),
+    /exited with code 125/,
+  );
+});
+
+test('a reachable container skips the separate runtime probe', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '8');
+  await writeSetupState(userDataPath, {
+    status: 'complete',
+    reason: 'first-run',
+    appVersion: APP_VERSION,
+    imageRef,
+  });
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  runtime.prepare = async () => {
+    runtime.appPort = 2337;
+  };
+  runtime.findExecutable = async () => 'podman';
+  runtime.waitForApp = async () => {};
+  const calls = [];
+  runtime.run = async (_executable, args) => {
+    calls.push(args);
+    if (args[0] === 'container') {
+      return inspectResult({
+        Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: imageRef } },
+        State: { Status: 'running' },
+      });
+    }
+    return { code: 0, output: '', stdout: '' };
+  };
+
+  const result = await runtime.startExisting();
+
+  assert.equal(result.action, 'open');
+  assert.ok(
+    !calls.some((args) => args[0] === 'info'),
+    'container state already proves the runtime is reachable',
+  );
+});
+
+test('a missing container still falls back to probing the runtime', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '9');
+  await writeSetupState(userDataPath, {
+    status: 'complete',
+    reason: 'first-run',
+    appVersion: APP_VERSION,
+    imageRef,
+  });
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  runtime.prepare = async () => {
+    runtime.appPort = 2337;
+  };
+  runtime.findExecutable = async () => 'podman';
+  const calls = [];
+  runtime.run = async (_executable, args) => {
+    calls.push(args);
+    if (args[0] === 'container') return { code: 125, output: '', stdout: '' };
+    return { code: 0, output: '', stdout: '' };
+  };
+
+  await runtime.startExisting();
+
+  assert.ok(calls.some((args) => args[0] === 'info'), 'an absent container needs the probe');
 });

@@ -12,8 +12,23 @@ const doctorPanel = document.getElementById('doctor-panel');
 const doctorResult = document.getElementById('doctor-result');
 const diagnosticList = document.getElementById('diagnostic-list');
 const technicalOutput = document.getElementById('technical-output');
+const actionError = document.getElementById('action-error');
 
 let currentState = { stage: 'welcome' };
+
+const DIAGNOSTIC_ICONS = { pass: '✓', issue: '!' };
+const STAGE_EYEBROWS = {
+  ready: 'READY',
+  error: 'SETUP NEEDS ATTENTION',
+  welcome: 'WELCOME',
+};
+const REASON_EYEBROWS = { update: 'UPDATING', repair: 'PREPARING' };
+
+function eyebrowFor(state) {
+  return STAGE_EYEBROWS[state.stage]
+    || REASON_EYEBROWS[state.setupReason]
+    || 'FIRST-TIME SETUP';
+}
 
 function renderDiagnostics(state) {
   const diagnostics = Array.isArray(state.diagnostics) ? state.diagnostics : [];
@@ -30,11 +45,7 @@ function renderDiagnostics(state) {
 
     const icon = document.createElement('span');
     icon.className = 'diagnostic-icon';
-    icon.textContent = diagnostic.status === 'pass'
-      ? '✓'
-      : diagnostic.status === 'issue'
-        ? '!'
-        : '–';
+    icon.textContent = DIAGNOSTIC_ICONS[diagnostic.status] || '–';
     const label = document.createElement('span');
     label.textContent = diagnostic.label;
     const value = document.createElement('span');
@@ -50,17 +61,7 @@ function render(state) {
   document.documentElement.dataset.stage = state.stage;
   title.textContent = state.title;
   detail.textContent = state.detail;
-  eyebrow.textContent = state.stage === 'ready'
-    ? 'READY'
-    : state.stage === 'error'
-      ? 'SETUP NEEDS ATTENTION'
-      : state.stage === 'welcome'
-        ? 'WELCOME'
-        : state.setupReason === 'update'
-          ? 'UPDATING'
-          : state.setupReason === 'repair'
-            ? 'PREPARING'
-            : 'FIRST-TIME SETUP';
+  eyebrow.textContent = eyebrowFor(state);
 
   primary.hidden = !(
     state.canStart
@@ -76,6 +77,7 @@ function render(state) {
         : 'Set up omnideck'
   );
   primary.disabled = false;
+  actionError.hidden = true;
 
   logs.hidden = state.stage !== 'error';
   renderDiagnostics(state);
@@ -98,18 +100,37 @@ function render(state) {
   window.agentDashSetupState?.(state);
 }
 
+function runAction() {
+  if (currentState.primaryAction) {
+    return window.omnideckDesktop.doctorAction(currentState.primaryAction);
+  }
+  if (currentState.canOpen) return window.omnideckDesktop.openApp();
+  if (currentState.canRetry) return window.omnideckDesktop.retry();
+  return window.omnideckDesktop.beginSetup();
+}
+
+// Re-enabling in a finally matters: the button is only otherwise re-enabled by
+// the next state push, and a rejected action does not always produce one. That
+// left the single control on the screen dead with nothing explaining why.
 primary.addEventListener('click', async () => {
   primary.disabled = true;
-  if (currentState.primaryAction) {
-    await window.omnideckDesktop.doctorAction(currentState.primaryAction);
-  } else if (currentState.canOpen) {
-    await window.omnideckDesktop.openApp();
-  } else if (currentState.canRetry) {
-    await window.omnideckDesktop.retry();
-  } else {
-    await window.omnideckDesktop.beginSetup();
+  actionError.hidden = true;
+  try {
+    await runAction();
+  } catch (error) {
+    actionError.textContent = String(error?.message || error);
+    actionError.hidden = false;
+  } finally {
+    primary.disabled = false;
   }
 });
 
-logs.addEventListener('click', () => window.omnideckDesktop.showLogs());
+logs.addEventListener('click', async () => {
+  try {
+    await window.omnideckDesktop.showLogs();
+  } catch (error) {
+    actionError.textContent = String(error?.message || error);
+    actionError.hidden = false;
+  }
+});
 window.omnideckDesktop.onState(render);

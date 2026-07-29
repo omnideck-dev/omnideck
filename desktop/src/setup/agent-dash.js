@@ -209,7 +209,7 @@
 
   let state = game.initialState();
   let setupStarted = false;
-  let setupReady = false;
+  let frameHandle = null;
   let lastFrame = performance.now();
   let best = Number.parseInt(localStorage.getItem('omnideck-agent-dash-best') || '0', 10) || 0;
   let lastRenderedScore = -1;
@@ -226,12 +226,14 @@
     context.closePath();
   }
 
+  // The sky never changes, so the gradient is built once instead of per frame.
+  const skyGradient = context.createLinearGradient(0, 0, 0, game.HEIGHT);
+  skyGradient.addColorStop(0, '#0a1020');
+  skyGradient.addColorStop(0.62, '#10182a');
+  skyGradient.addColorStop(1, '#10131c');
+
   function drawBackground() {
-    const gradient = context.createLinearGradient(0, 0, 0, game.HEIGHT);
-    gradient.addColorStop(0, '#0a1020');
-    gradient.addColorStop(0.62, '#10182a');
-    gradient.addColorStop(1, '#10131c');
-    context.fillStyle = gradient;
+    context.fillStyle = skyGradient;
     context.fillRect(0, 0, game.WIDTH, game.HEIGHT);
 
     for (const star of stars) {
@@ -401,6 +403,7 @@
       saveBest();
       game.start(state);
       hideOverlay();
+      startLoop();
       return;
     }
     if (state.mode === 'idle') {
@@ -408,18 +411,19 @@
       hideOverlay();
     }
     game.jump(state);
+    startLoop();
   }
 
   function updateOverlay() {
     if (!setupStarted) {
       showOverlay('Start setup to begin the run', 'Space / ↑ / click to jump');
-    } else if (state.mode === 'over') {
-      showOverlay(`Run over — ${game.score(state)} points`, 'Press Space or click to run again');
-    } else if (setupReady) {
-      hideOverlay();
-    } else {
-      hideOverlay();
+      return;
     }
+    if (state.mode === 'over') {
+      showOverlay(`Run over — ${game.score(state)} points`, 'Press Space or click to run again');
+      return;
+    }
+    hideOverlay();
   }
 
   canvas.addEventListener('pointerdown', () => {
@@ -445,8 +449,8 @@
     if (workingStages.has(setupState.stage) && !setupStarted) {
       setupStarted = true;
       game.start(state);
+      startLoop();
     }
-    setupReady = setupState.stage === 'ready';
     updateOverlay();
   };
 
@@ -459,15 +463,24 @@
       scoreNode.textContent = String(currentScore).padStart(4, '0');
       lastRenderedScore = currentScore;
     }
-    if (state.mode === 'over') {
+    const stopped = state.mode !== 'running';
+    if (stopped) {
       saveBest();
       updateOverlay();
     }
     draw();
-    requestAnimationFrame(frame);
+    // Nothing moves unless a run is in progress, so the loop stops instead of
+    // redrawing an identical frame sixty times a second while setup is
+    // competing for the same thread.
+    frameHandle = stopped ? null : requestAnimationFrame(frame);
+  }
+
+  function startLoop() {
+    if (frameHandle !== null) return;
+    lastFrame = performance.now();
+    frameHandle = requestAnimationFrame(frame);
   }
 
   updateOverlay();
   draw();
-  requestAnimationFrame(frame);
 }());
