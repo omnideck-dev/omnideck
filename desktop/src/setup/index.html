@@ -35,13 +35,15 @@
             <h1 id="title">Starting omnideck</h1>
             <p id="detail" class="detail">Checking your environment…</p>
 
+            <!-- Doubles as the progress checklist while setup runs and as the
+                 diagnostics report once it fails. -->
             <section id="doctor-panel" class="doctor-panel" hidden>
               <div class="doctor-heading">
-                <span>DIAGNOSTICS</span>
-                <strong id="doctor-result">Issue found</strong>
+                <span id="doctor-kicker">PROGRESS</span>
+                <strong id="doctor-result" hidden>Issue found</strong>
               </div>
               <div id="diagnostic-list" class="diagnostic-list"></div>
-              <details>
+              <details id="technical-details">
                 <summary>Technical details</summary>
                 <pre id="technical-output"></pre>
               </details>
@@ -64,9 +66,7 @@
             <button id="primary" class="primary" type="button" hidden>
               Set up omnideck
             </button>
-            <button id="logs" class="secondary" type="button" hidden>
-              Show diagnostic log
-            </button>
+            <button id="secondary" class="secondary" type="button" hidden></button>
             <p id="action-error" class="action-error" role="alert" hidden></p>
           </div>
 

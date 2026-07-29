@@ -2,27 +2,36 @@ const title = document.getElementById('title');
 const detail = document.getElementById('detail');
 const eyebrow = document.getElementById('eyebrow');
 const primary = document.getElementById('primary');
-const logs = document.getElementById('logs');
+const secondary = document.getElementById('secondary');
 const spinner = document.getElementById('spinner');
 const progressWrap = document.getElementById('progress-wrap');
 const progressTrack = progressWrap.querySelector('[role="progressbar"]');
 const progress = document.getElementById('progress');
 const footnote = document.getElementById('footnote');
 const doctorPanel = document.getElementById('doctor-panel');
+const doctorKicker = document.getElementById('doctor-kicker');
 const doctorResult = document.getElementById('doctor-result');
+const technicalDetails = document.getElementById('technical-details');
 const diagnosticList = document.getElementById('diagnostic-list');
 const technicalOutput = document.getElementById('technical-output');
 const actionError = document.getElementById('action-error');
 
 let currentState = { stage: 'welcome' };
 
-const DIAGNOSTIC_ICONS = { pass: '✓', issue: '!' };
+const DIAGNOSTIC_ICONS = { pass: '✓', issue: '!', working: '›' };
 const STAGE_EYEBROWS = {
   ready: 'READY',
   error: 'SETUP NEEDS ATTENTION',
   welcome: 'WELCOME',
+  update: 'UPDATE READY',
 };
-const REASON_EYEBROWS = { update: 'UPDATING', repair: 'PREPARING' };
+const REASON_EYEBROWS = {
+  update: 'UPDATING',
+  repair: 'PREPARING',
+  resume: 'CONTINUING SETUP',
+};
+// Stages that are showing an outcome rather than work in progress.
+const SETTLED_STAGES = ['welcome', 'error', 'ready', 'update'];
 
 function eyebrowFor(state) {
   return STAGE_EYEBROWS[state.stage]
@@ -30,13 +39,22 @@ function eyebrowFor(state) {
     || 'FIRST-TIME SETUP';
 }
 
+// The same list serves two jobs: a checklist of where setup has got to, and the
+// report of which step failed. Only the heading and the technical block differ.
 function renderDiagnostics(state) {
   const diagnostics = Array.isArray(state.diagnostics) ? state.diagnostics : [];
-  doctorPanel.hidden = state.stage !== 'error' || diagnostics.length === 0;
+  const failed = state.stage === 'error';
+  doctorPanel.hidden = diagnostics.length === 0;
+  document.documentElement.dataset.checklist = doctorPanel.hidden ? '' : 'shown';
   diagnosticList.replaceChildren();
   if (doctorPanel.hidden) return;
 
+  doctorPanel.dataset.mode = failed ? 'diagnostics' : 'progress';
+  doctorKicker.textContent = failed ? 'DIAGNOSTICS' : 'PROGRESS';
+  doctorResult.hidden = !failed;
   doctorResult.textContent = state.diagnosticResult || 'Issue found';
+  technicalDetails.hidden = !failed;
+  technicalDetails.open = false;
   technicalOutput.textContent = state.technical || 'See the diagnostic log for more information.';
   diagnosticList.replaceChildren(...diagnostics.map((diagnostic) => {
     const row = document.createElement('div');
@@ -79,7 +97,8 @@ function render(state) {
   primary.disabled = false;
   actionError.hidden = true;
 
-  logs.hidden = state.stage !== 'error';
+  secondary.hidden = !state.secondaryAction;
+  secondary.textContent = state.secondaryLabel || '';
   renderDiagnostics(state);
 
   const hasProgress = Number.isFinite(state.progress);
@@ -95,18 +114,23 @@ function render(state) {
     if (hasIndeterminateProgress) progressTrack.setAttribute('aria-valuetext', 'In progress');
     else progressTrack.removeAttribute('aria-valuetext');
   }
-  spinner.hidden = progressWrap.hidden === false || ['welcome', 'error', 'ready'].includes(state.stage);
-  footnote.hidden = ['error', 'ready'].includes(state.stage);
+  spinner.hidden = progressWrap.hidden === false || SETTLED_STAGES.includes(state.stage);
+  footnote.hidden = ['error', 'ready', 'update'].includes(state.stage);
   window.agentDashSetupState?.(state);
 }
 
-function runAction() {
+function runPrimaryAction() {
   if (currentState.primaryAction) {
-    return window.omnideckDesktop.doctorAction(currentState.primaryAction);
+    return window.omnideckDesktop.runAction(currentState.primaryAction);
   }
   if (currentState.canOpen) return window.omnideckDesktop.openApp();
   if (currentState.canRetry) return window.omnideckDesktop.retry();
   return window.omnideckDesktop.beginSetup();
+}
+
+function reportActionFailure(error) {
+  actionError.textContent = String(error?.message || error);
+  actionError.hidden = false;
 }
 
 // Re-enabling in a finally matters: the button is only otherwise re-enabled by
@@ -116,21 +140,24 @@ primary.addEventListener('click', async () => {
   primary.disabled = true;
   actionError.hidden = true;
   try {
-    await runAction();
+    await runPrimaryAction();
   } catch (error) {
-    actionError.textContent = String(error?.message || error);
-    actionError.hidden = false;
+    reportActionFailure(error);
   } finally {
     primary.disabled = false;
   }
 });
 
-logs.addEventListener('click', async () => {
+secondary.addEventListener('click', async () => {
+  if (!currentState.secondaryAction) return;
+  secondary.disabled = true;
+  actionError.hidden = true;
   try {
-    await window.omnideckDesktop.showLogs();
+    await window.omnideckDesktop.runAction(currentState.secondaryAction);
   } catch (error) {
-    actionError.textContent = String(error?.message || error);
-    actionError.hidden = false;
+    reportActionFailure(error);
+  } finally {
+    secondary.disabled = false;
   }
 });
 window.omnideckDesktop.onState(render);

@@ -7,9 +7,12 @@ const test = require('node:test');
 
 const {
   APP_VERSION,
+  DIAGNOSTIC_DEFINITIONS,
+  FAILURE_COPY,
   IMAGE,
   IMAGE_REF_LABEL,
   OmniDeckRuntime,
+  SETUP_COPY,
   installerUrl,
   linuxInstallCommands,
   parseOsRelease,
@@ -827,4 +830,151 @@ test('a missing container still falls back to probing the runtime', async (conte
   await runtime.startExisting();
 
   assert.ok(calls.some((args) => args[0] === 'info'), 'an absent container needs the probe');
+});
+
+test('the checkpoint list is ordered the way setup works through it', () => {
+  assert.deepEqual(
+    DIAGNOSTIC_DEFINITIONS.map(({ id }) => id),
+    ['release', 'support', 'components', 'environment', 'downloads', 'startup'],
+  );
+});
+
+test('checkpoint labels do not name the underlying technology', () => {
+  const forbidden = /podman|docker|container|image|wsl|volume|machine|registry/i;
+  for (const { label } of DIAGNOSTIC_DEFINITIONS) {
+    assert.ok(!forbidden.test(label), `"${label}" leaks an implementation detail`);
+  }
+  for (const copy of [...Object.values(SETUP_COPY), ...Object.values(FAILURE_COPY)]) {
+    assert.ok(!forbidden.test(`${copy.title} ${copy.detail}`), copy.title);
+  }
+});
+
+test('setup reports which checkpoint it is working on', async (context) => {
+  const { resourcesPath, userDataPath } = await runtimeFixture(context, 'b');
+  const states = [];
+  const runtime = new OmniDeckRuntime({
+    userDataPath,
+    resourcesPath,
+    onState: (state) => states.push(state),
+  });
+  runtime.findExecutable = async () => 'podman';
+  runtime.ensureRuntimeReady = async () => {};
+  runtime.ensureContainer = async () => {};
+  runtime.waitForApp = async () => {};
+
+  await runtime.setup('first-run');
+
+  const working = states
+    .filter((state) => Array.isArray(state.diagnostics))
+    .flatMap((state) => state.diagnostics.filter((item) => item.status === 'working'))
+    .map((item) => item.id);
+  assert.ok(working.includes('components'), 'the software step must announce itself');
+  assert.ok(working.includes('environment'), 'the workspace step must announce itself');
+  assert.ok(working.includes('downloads'), 'the download step must announce itself');
+
+  const finished = states.at(-1);
+  assert.equal(finished.stage, 'ready');
+  assert.ok(
+    finished.diagnostics.every((item) => item.status === 'pass'),
+    'every checkpoint should be complete on the ready screen',
+  );
+});
+
+test('progress states carry the checklist so it is visible before anything fails', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  runtime.emitWorking();
+
+  assert.equal(states.at(-1).stage, 'preparing');
+  assert.equal(states.at(-1).diagnostics.length, 6);
+});
+
+test('a resumed setup says earlier work was kept without adding a screen', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  runtime.setupReason = 'resume';
+
+  runtime.emitWorking();
+  const resumed = states.at(-1);
+
+  assert.match(resumed.detail, /Continuing from where the last attempt stopped/);
+  assert.equal(resumed.canStart, false, 'resuming must not wait for a click');
+  assert.equal(resumed.title, 'Preparing your environment');
+});
+
+test('a healthy install with an update available offers the choice', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, 'c');
+  const staleRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
+  await writeSetupState(userDataPath, {
+    status: 'complete',
+    reason: 'first-run',
+    appVersion: APP_VERSION,
+    imageRef: staleRef,
+  });
+  const states = [];
+  const runtime = new OmniDeckRuntime({
+    userDataPath,
+    resourcesPath,
+    onState: (state) => states.push(state),
+  });
+  runtime.prepare = async () => {
+    runtime.appPort = 2337;
+  };
+  runtime.findExecutable = async () => 'podman';
+  runtime.waitForApp = async () => {};
+  runtime.run = async (_executable, args) => {
+    if (args[0] === 'container') {
+      // The container still matches the installed version, not the new one.
+      return inspectResult({
+        Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: staleRef } },
+        State: { Status: 'running' },
+      });
+    }
+    return { code: 0, output: '', stdout: '' };
+  };
+
+  const result = await runtime.startExisting();
+  const offered = states.at(-1);
+
+  assert.equal(result.action, 'update-available');
+  assert.equal(offered.stage, 'update');
+  assert.equal(offered.title, 'An update is ready');
+  assert.equal(offered.canStart, true);
+  assert.equal(offered.primaryLabel, 'Update now');
+  assert.equal(offered.secondaryAction, 'open-anyway');
+  assert.notEqual(imageRef, staleRef);
+});
+
+test('an unclassified failure does not accuse a checkpoint', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  runtime.reportFailure(new Error('something entirely unexpected happened'));
+  const reported = states.at(-1);
+
+  assert.equal(reported.diagnosticResult, 'Setup issue');
+  assert.ok(
+    !reported.diagnostics.some((item) => item.status === 'issue'),
+    'no checkpoint should be blamed for a failure nobody classified',
+  );
+});
+
+test('every failure kind offers a way forward and its own title', () => {
+  const titles = new Set();
+  for (const [kind, copy] of Object.entries(FAILURE_COPY)) {
+    assert.ok(copy.canRetry || copy.primaryAction, `${kind} leaves the person stuck`);
+    assert.ok(!titles.has(copy.title), `${kind} repeats the title "${copy.title}"`);
+    titles.add(copy.title);
+  }
+});
+
+test('the failure screen offers the diagnostic log as its secondary action', () => {
+  const states = [];
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+
+  runtime.reportFailure(new Error('anything'));
+
+  assert.equal(states.at(-1).secondaryAction, 'show-logs');
+  assert.equal(states.at(-1).secondaryLabel, 'Show diagnostic log');
 });

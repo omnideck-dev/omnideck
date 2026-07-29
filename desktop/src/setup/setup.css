@@ -202,6 +202,10 @@ h1 {
   font-size: 11px;
 }
 
+.doctor-heading strong[hidden] {
+  display: none;
+}
+
 .diagnostic-list {
   display: grid;
   gap: 2px;
@@ -238,8 +242,30 @@ h1 {
   background: #9f1239;
 }
 
+.diagnostic-row[data-status="working"] {
+  color: #dbeafe;
+}
+
+.diagnostic-row[data-status="working"] .diagnostic-icon {
+  color: #dbeafe;
+  background: #1d4ed8;
+}
+
+.diagnostic-row[data-status="working"] .diagnostic-value {
+  color: #93c5fd;
+}
+
 .diagnostic-row[data-status="waiting"] {
   color: #69758a;
+}
+
+/* The progress variant carries no verdict, so its heading sits alone. */
+.doctor-panel[data-mode="progress"] .doctor-heading span {
+  color: #60a5fa;
+}
+
+.doctor-panel details[hidden] {
+  display: none;
 }
 
 .diagnostic-value {
@@ -463,22 +489,27 @@ html[data-stage="error"] .eyebrow {
 
 html[data-stage="error"] .status {
   margin: 24px 0 auto;
+}
+
+/* The checklist adds a block to the panel, so the copy above it tightens to
+   keep the whole screen inside the shortest supported window height. */
+html[data-checklist="shown"] .status {
   padding: 22px 0 10px;
 }
 
-html[data-stage="error"] h1 {
+html[data-checklist="shown"] h1 {
   font-size: 32px;
   line-height: 1.04;
 }
 
-html[data-stage="error"] .detail {
+html[data-checklist="shown"] .detail {
   min-height: 0;
   margin: 11px 0 13px;
   font-size: 13px;
   line-height: 1.48;
 }
 
-html[data-stage="error"] button {
+html[data-checklist="shown"] button {
   min-height: 40px;
   margin-top: 6px;
 }

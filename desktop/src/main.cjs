@@ -215,10 +215,6 @@ if (!hasLock) {
       assertSetupSender(event);
       return beginSetup(runtime.setupReason === 'update' ? 'update' : 'repair');
     });
-    ipcMain.handle('omnideck:show-logs', (event) => {
-      assertSetupSender(event);
-      return shell.showItemInFolder(runtime.logPath);
-    });
     ipcMain.handle('omnideck:open-app', async (event) => {
       assertSetupSender(event);
       if (runtime.currentState?.stage !== 'ready') {
@@ -226,15 +222,20 @@ if (!hasLock) {
       }
       return openOmniDeck();
     });
-    ipcMain.handle('omnideck:doctor-action', async (event, action) => {
+    ipcMain.handle('omnideck:action', async (event, action) => {
       assertSetupSender(event);
-      if (runtime.currentState?.stage !== 'error') {
-        throw new Error('This action is only available after a setup issue.');
+      // Only an action the current screen actually offers may run, so the
+      // renderer cannot invoke one that belongs to a different state.
+      const state = runtime.currentState;
+      if (!action || (action !== state?.primaryAction && action !== state?.secondaryAction)) {
+        throw new Error('That action is not available right now.');
       }
       if (action === 'supported-systems') return shell.openExternal(SUPPORTED_SYSTEMS_URL);
       if (action === 'download') return shell.openExternal(DOWNLOAD_URL);
       if (action === 'close') return app.quit();
-      throw new Error('Unknown diagnostic action.');
+      if (action === 'show-logs') return shell.showItemInFolder(runtime.logPath);
+      if (action === 'open-anyway') return openOmniDeck();
+      throw new Error('Unknown action.');
     });
 
     await createWindow();
