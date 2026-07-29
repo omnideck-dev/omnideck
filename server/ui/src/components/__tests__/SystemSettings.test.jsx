@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SystemSettings from '../SystemSettings.jsx';
 
 const refreshFeatures = vi.fn();
+const providersHook = { providers: [] };
 
 vi.mock('../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ refreshFeatures }),
+    useAppData: () => ({ providersHook, refreshFeatures }),
 }));
 
 describe('SystemSettings custom apps toggle', () => {
@@ -32,9 +33,6 @@ describe('SystemSettings custom apps toggle', () => {
                         custom_apps_enabled: false,
                     }),
                 });
-            }
-            if (url === '/api/providers') {
-                return Promise.resolve({ ok: true, json: async () => ({ providers: [] }) });
             }
             if (url === '/api/profiles') {
                 return Promise.resolve({

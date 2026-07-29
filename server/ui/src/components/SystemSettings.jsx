@@ -9,8 +9,8 @@ import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 
 export default function SystemSettings() {
-    const { refreshFeatures } = useAppData();
-    const [providers, setProviders] = useState([]);
+    const { providersHook, refreshFeatures } = useAppData();
+    const { providers } = providersHook;
     const [profiles, setProfiles] = useState([]);
     const [settings, setSettings] = useState({ default_agent: 'omnideck' });
     const [loading, setLoading] = useState(true);
@@ -19,15 +19,12 @@ export default function SystemSettings() {
     useEffect(() => {
         async function init() {
             try {
-                const [providersRes, settingsRes, profilesRes] = await Promise.all([
-                    fetch('/api/providers'),
+                const [settingsRes, profilesRes] = await Promise.all([
                     fetch('/api/settings'),
                     fetch('/api/profiles'),
                 ]);
-                const providersData = await providersRes.json();
                 const settingsData = await settingsRes.json();
                 const profilesData = await profilesRes.json();
-                setProviders(providersData.providers || []);
                 setSettings(settingsData);
                 setProfiles(profilesData);
             } catch {

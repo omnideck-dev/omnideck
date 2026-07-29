@@ -7,7 +7,7 @@ import { useAppSettings } from './AppSettings.jsx';
 
 /** Shows setup until the application has the state needed to open the desktop. */
 export default function SetupGate({ children }) {
-    const { profilesHook } = useAppData();
+    const { profilesHook, providersHook } = useAppData();
     const { setupComplete, finishSetup } = useAppSettings();
 
     if (setupComplete === null) return null;
@@ -19,6 +19,7 @@ export default function SetupGate({ children }) {
                 persistFirstRunDesktopLayout(setupResult?.welcome);
                 finishSetup();
                 profilesHook.refresh?.();
+                providersHook.refresh?.();
             }} />
         );
     }

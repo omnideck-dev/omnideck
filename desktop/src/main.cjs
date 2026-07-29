@@ -15,6 +15,7 @@ const {
   nextZoomFactor,
   zoomActionForInput,
 } = require('./zoom.cjs');
+const { shouldReloadForInput } = require('./window-shortcuts.cjs');
 
 const SETUP_PAGE = path.join(__dirname, 'setup', 'index.html');
 const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
@@ -87,6 +88,11 @@ async function createWindow() {
     mainWindow.webContents.setZoomFactor(zoomFactor);
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (shouldReloadForInput(input, process.platform)) {
+      event.preventDefault();
+      mainWindow.webContents.reloadIgnoringCache();
+      return;
+    }
     const action = zoomActionForInput(input, process.platform);
     if (!action) return;
     event.preventDefault();
