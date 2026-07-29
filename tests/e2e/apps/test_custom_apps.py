@@ -127,6 +127,8 @@ def _open_custom_apps_library(page: Page) -> None:
     expect(page.get_by_test_id("sidebar-nav-apps")).to_be_visible()
     page.get_by_test_id("sidebar-nav-apps").click()
     expect(page.get_by_test_id("apps-view")).to_be_visible()
+    expect(page.get_by_test_id("apps-view").locator("h1")).to_contain_text("Apps")
+    expect(page.get_by_text("Custom Apps", exact=True)).to_have_count(0)
     expect(page.get_by_text("Text Lab", exact=True)).to_be_visible()
 
 
@@ -185,6 +187,9 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
 
     apps_section = page.get_by_test_id("sidebar-pinned-section")
     expect(apps_section).to_have_count(0)
+    expect(
+        page.get_by_test_id("custom-app-card").first.locator(".bi-chevron-right")
+    ).to_have_count(0)
 
     # Pin directly from the Apps Hub.
     page.get_by_test_id("custom-app-pin-text-lab").click()
@@ -192,6 +197,15 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     expect(apps_section.get_by_text("Apps", exact=True)).to_be_visible()
     text_app = page.get_by_test_id("sidebar-pinned-app-text-lab")
     expect(text_app).to_be_visible()
+    expect(text_app.locator(".bi-pin-angle-fill")).to_have_count(0)
+    destination_box = page.get_by_test_id("sidebar-nav-apps").bounding_box()
+    apps_box = apps_section.bounding_box()
+    conversations_box = page.get_by_test_id("recent-conversations").bounding_box()
+    assert destination_box is not None
+    assert apps_box is not None
+    assert conversations_box is not None
+    assert destination_box["y"] + destination_box["height"] <= apps_box["y"]
+    assert apps_box["y"] + apps_box["height"] <= conversations_box["y"]
 
     # The floating App toolbar can pin without covering the App content.
     page.get_by_test_id("custom-app-card").filter(has_text="Text Lab").click()
@@ -202,6 +216,9 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     ).to_be_visible()
     expect(page.get_by_test_id("custom-app-view-pin")).to_have_count(0)
     app_tab = page.get_by_test_id("view-tab-custom-app:text-lab")
+    expect(
+        page.get_by_test_id("view-tab-actions-custom-app:text-lab")
+    ).to_have_count(1)
     app_tab.click(button="right")
     page.get_by_test_id("float-view-custom-app:text-lab").click()
     window_pin = page.get_by_test_id("pin-view-custom-app:text-lab")
@@ -230,7 +247,7 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     tab_pin.click()
     expect(text_app).to_be_visible()
 
-    # Add another App from the Hub and reorder the Apps group by dragging.
+    # Add another App from the Hub and exercise every Apps reorder input.
     page.get_by_test_id("sidebar-nav-apps").click()
     page.get_by_test_id("custom-app-pin-notes-lab").click()
     notes_app = page.get_by_test_id("sidebar-pinned-app-notes-lab")
@@ -242,7 +259,32 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     expect(notes_label).to_have_css("white-space", "nowrap")
     assert notes_label.evaluate("element => element.scrollWidth > element.clientWidth")
     assert _pinned_app_order(page) == ["text-lab", "notes-lab"]
+
+    notes_app.focus()
+    notes_app.press("Alt+ArrowUp")
+    assert _pinned_app_order(page) == ["notes-lab", "text-lab"]
+
+    notes_app.click(button="right")
+    page.get_by_test_id("sidebar-reorder-move-down").click()
+    assert _pinned_app_order(page) == ["text-lab", "notes-lab"]
+
     _drag_app_above(page, "notes-lab", "text-lab")
+    assert _pinned_app_order(page) == ["notes-lab", "text-lab"]
+
+    # Collapsed Apps still drag, and New chat follows instead of dropping down.
+    page.get_by_test_id("sidebar-toggle").click()
+    _drag_app_above(page, "text-lab", "notes-lab")
+    assert _pinned_app_order(page) == ["text-lab", "notes-lab"]
+    last_app_box = notes_app.bounding_box()
+    new_chat_box = page.get_by_test_id("sidebar-new-chat").bounding_box()
+    assert last_app_box is not None
+    assert new_chat_box is not None
+    gap = new_chat_box["y"] - (last_app_box["y"] + last_app_box["height"])
+    assert 0 <= gap <= 24
+    page.get_by_test_id("sidebar-toggle").click()
+
+    notes_app.click(button="right")
+    page.get_by_test_id("sidebar-reorder-move-up").click()
     assert _pinned_app_order(page) == ["notes-lab", "text-lab"]
 
     # Ordering and pin state survive reload.
@@ -256,7 +298,10 @@ def test_apps_can_be_pinned_from_hub_window_and_tab_then_reordered(
     page.get_by_test_id("sidebar-reorder-unpin").click()
     expect(text_app).to_have_count(0)
     page.get_by_test_id("sidebar-pinned-add").click()
-    expect(page.get_by_test_id("sidebar-pin-option-text-lab")).to_be_visible()
+    picker_option = page.get_by_test_id("sidebar-pin-option-text-lab")
+    expect(picker_option).to_be_visible()
+    picker_option.click()
+    expect(text_app).to_be_visible()
 
 
 def test_custom_app_moves_left_to_right_and_back_without_losing_state(

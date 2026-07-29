@@ -270,8 +270,8 @@
 
 .grow { flex: 1; }
 
-/* Keep New chat reachable in the icon rail while preserving its place in the
- * conversational section at the bottom.
+/* Keep New chat directly below the icon rail content. The grow spacer that
+ * follows this block keeps the footer anchored to the bottom.
  */
 .collapsedConversation {
     padding: var(--sp-2);

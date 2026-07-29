@@ -101,6 +101,20 @@ describe('Sidebar', () => {
         expect(screen.queryByText('Routines')).not.toBeInTheDocument();
     });
 
+    it('keeps collapsed New chat above the flexible footer spacer', async () => {
+        const user = userEvent.setup();
+        setup();
+        await user.click(screen.getByTestId('sidebar-toggle'));
+
+        const newChat = screen.getByTestId('sidebar-new-chat');
+        const spacer = screen.getByTestId('sidebar-collapsed-spacer');
+        const settings = screen.getByTestId('sidebar-settings');
+        expect(newChat.compareDocumentPosition(spacer)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(spacer.compareDocumentPosition(settings)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it('persists the collapsed state to localStorage', async () => {
         const user = userEvent.setup();
         setup();

@@ -464,7 +464,6 @@ export default function Sidebar({
 
             {collapsed ? (
                 <>
-                    <div className={styles.grow} />
                     <div className={styles.collapsedConversation}>
                         <button
                             className={styles.newChat}
@@ -478,6 +477,10 @@ export default function Sidebar({
                             </span>
                         </button>
                     </div>
+                    <div
+                        className={styles.grow}
+                        data-testid="sidebar-collapsed-spacer"
+                    />
                 </>
             ) : (
                 <ConversationsPanel
