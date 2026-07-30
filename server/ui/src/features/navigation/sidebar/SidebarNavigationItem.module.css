@@ -1,0 +1,81 @@
+.item {
+    position: relative;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 10px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: grab;
+    font-size: 13px;
+    touch-action: none;
+    user-select: none;
+}
+
+.item:active { cursor: grabbing; }
+.item i {
+    width: 16px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-size: 14px;
+    text-align: center;
+}
+.item:hover { background: var(--accent-muted); color: var(--text-primary); }
+.item:hover i { color: var(--text-primary); }
+.collapsed { justify-content: center; padding: 0; }
+
+.label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dragHandle {
+    width: 18px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 18px;
+    margin-right: -5px;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    opacity: 0;
+}
+.dragHandle i {
+    width: auto;
+    color: inherit;
+    font-size: 13px;
+}
+.item:hover .dragHandle,
+.item:focus-visible .dragHandle,
+.dragging .dragHandle { opacity: 1; }
+
+.dragging {
+    z-index: 1;
+    background: var(--accent-muted);
+    box-shadow: var(--shadow-sm);
+    cursor: grabbing;
+    opacity: 0.7;
+}
+
+/* Signal Line — 2px accent bar on the active item's left edge */
+.item.active {
+    background: var(--accent-muted);
+    color: var(--accent);
+}
+.item.active i { color: var(--accent); }
+.item.active::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: -8px;
+    width: 2px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+}

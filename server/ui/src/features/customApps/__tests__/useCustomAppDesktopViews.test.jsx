@@ -20,6 +20,9 @@ const APP = {
 const customApps = vi.hoisted(() => ({
     enabled: true,
     featureLoaded: true,
+    pinnedAppSlugs: [],
+    pinApp: vi.fn(),
+    unpinApp: vi.fn(),
     catalog: {
         loaded: false,
         findBySlug: vi.fn(),
@@ -74,6 +77,9 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
     beforeEach(() => {
         customApps.enabled = true;
         customApps.featureLoaded = true;
+        customApps.pinnedAppSlugs = [];
+        customApps.pinApp.mockReset();
+        customApps.unpinApp.mockReset();
         customApps.catalog.loaded = false;
         customApps.catalog.findBySlug.mockReset();
         customApps.catalog.findBySlug.mockReturnValue(APP);
@@ -123,9 +129,15 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
                     }),
                     app: APP,
                     reloadSignal: 0,
-                    actions: [expect.objectContaining({
-                        id: 'reload',
-                    })],
+                    actions: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'toggle-sidebar-pin',
+                            label: 'Pin to sidebar',
+                        }),
+                        expect.objectContaining({
+                            id: 'reload',
+                        }),
+                    ]),
                 })],
                 closeViewIds: [],
             }));
@@ -150,5 +162,28 @@ describe('useCustomAppDesktopViews deferred navigation', () => {
                 views: [],
                 closeViewIds: ['custom-app:missing-app'],
             }));
+    });
+
+    it('toggles sidebar pinning from a desktop View action', () => {
+        const { result, rerender } = renderHook(useHarness, { wrapper });
+        const view = {
+            id: 'custom-app:text-lab',
+            type: 'custom-app',
+            identity: { appSlug: 'text-lab' },
+        };
+
+        act(() => result.current({
+            type: APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
+            payload: { actionId: 'toggle-sidebar-pin', view },
+        }));
+        expect(customApps.pinApp).toHaveBeenCalledWith('text-lab');
+
+        customApps.pinnedAppSlugs = ['text-lab'];
+        rerender();
+        act(() => result.current({
+            type: APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
+            payload: { actionId: 'toggle-sidebar-pin', view },
+        }));
+        expect(customApps.unpinApp).toHaveBeenCalledWith('text-lab');
     });
 });

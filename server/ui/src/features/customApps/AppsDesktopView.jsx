@@ -17,6 +17,9 @@ export default function AppsDesktopView({ tabGroupId }) {
             error={catalog.error}
             onRefresh={catalog.refresh}
             onOpenApp={(app) => openApp(app, tabGroupId)}
+            pinnedAppSlugs={customApps.pinnedAppSlugs}
+            onPinApp={customApps.pinApp}
+            onUnpinApp={customApps.unpinApp}
         />
     );
 }

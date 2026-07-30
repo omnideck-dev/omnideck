@@ -3,37 +3,84 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
+    border-top: 1px solid var(--border);
 }
 
-/* ── Search + new-folder ─────────────────────────────── */
-/* The search box and the new-folder button share a row above the list. */
+/* ── Section actions ─────────────────────────────────── */
+.sectionHeader {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0 10px 0 11px;
+    color: var(--text-tertiary);
+    font-family: var(--font-code);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.sectionHeader > span { flex: 1; }
+
+.newFolderBtn {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 12px;
+}
+.newFolderBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
+
+.primary {
+    flex-shrink: 0;
+    padding: 0 var(--sp-2) var(--sp-1);
+}
+
+.newChat {
+    width: 100%;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-2);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 500;
+}
+.newChat:hover { background: var(--elevated); }
+
+.newChatIcon {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+/* ── Search ──────────────────────────────────────────── */
 .searchRow {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: var(--sp-3) var(--sp-2) var(--sp-1);
+    flex-shrink: 0;
+    margin: 0 var(--sp-2) var(--sp-1);
 }
 /* SearchInput brings its own visuals; it just needs to flex to fill the row. */
 .search {
     flex: 1;
     min-width: 0;
 }
-.newFolderBtn {
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--canvas);
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-}
-[data-theme="dark"] .newFolderBtn { background: var(--elevated); }
-.newFolderBtn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Scrollable list ─────────────────────────────────── */
 .list {
