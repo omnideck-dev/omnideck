@@ -67,7 +67,7 @@
     );
   }
 
-  function addBurst(state, x, y, color, count = 8) {
+  function addBurst(state, x, y, kind, count = 8) {
     for (let index = 0; index < count; index += 1) {
       const angle = (Math.PI * 2 * index) / count;
       state.particles.push({
@@ -76,7 +76,7 @@
         velocityX: Math.cos(angle) * (45 + (index % 3) * 16),
         velocityY: Math.sin(angle) * (45 + (index % 2) * 18),
         life: 0.55,
-        color,
+        kind,
       });
     }
   }
@@ -155,14 +155,14 @@
       if (object.kind === 'card') {
         object.collected = true;
         state.bonus += 50;
-        addBurst(state, object.x + object.width / 2, object.y + object.height / 2, '#60a5fa');
+        addBurst(state, object.x + object.width / 2, object.y + object.height / 2, 'collect');
       } else {
         state.mode = 'over';
         addBurst(
           state,
           state.player.x + state.player.width,
           state.player.y + state.player.height / 2,
-          '#fb7185',
+          'crash',
           12,
         );
         break;
@@ -226,11 +226,41 @@
     context.closePath();
   }
 
-  // The sky never changes, so the gradient is built once instead of per frame.
-  const skyGradient = context.createLinearGradient(0, 0, 0, game.HEIGHT);
-  skyGradient.addColorStop(0, '#0a1020');
-  skyGradient.addColorStop(0.62, '#10182a');
-  skyGradient.addColorStop(1, '#10131c');
+  // Every colour comes from the shared design tokens, so the playfield belongs
+  // to whichever theme the page is in rather than being a dark rectangle on a
+  // light ground. Read once, and again if the OS preference flips.
+  let palette;
+  let skyGradient;
+
+  function readPalette() {
+    const styles = getComputedStyle(document.documentElement);
+    const token = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+    palette = {
+      screen: token('--terminal-bg', '#edf1fb'),
+      screenRaised: token('--terminal-surface', '#e2e9f7'),
+      line: token('--terminal-border', '#c8d4ec'),
+      dim: token('--text-tertiary', '#94a3b8'),
+      accent: token('--accent', '#2563eb'),
+      accentHover: token('--accent-hover', '#1d4ed8'),
+      danger: token('--danger', '#dc2626'),
+      warning: token('--warning', '#d97706'),
+      elevated: token('--elevated', '#ffffff'),
+    };
+    skyGradient = context.createLinearGradient(0, 0, 0, game.HEIGHT);
+    skyGradient.addColorStop(0, palette.screenRaised);
+    skyGradient.addColorStop(0.7, palette.screen);
+    skyGradient.addColorStop(1, palette.screenRaised);
+  }
+
+  readPalette();
+  globalThis.matchMedia?.('(prefers-color-scheme: dark)')
+    ?.addEventListener?.('change', () => {
+      // The attribute lands on the root first; read on the next frame.
+      requestAnimationFrame(() => {
+        readPalette();
+        draw();
+      });
+    });
 
   function drawBackground() {
     context.fillStyle = skyGradient;
@@ -240,7 +270,7 @@
       const shift = reducedMotion ? 0 : (state.distance * star.depth) % (game.WIDTH + 20);
       const x = (star.x - shift + game.WIDTH + 20) % (game.WIDTH + 20);
       context.globalAlpha = 0.33 + star.depth;
-      context.fillStyle = '#b9d5ff';
+      context.fillStyle = palette.dim;
       context.beginPath();
       context.arc(x, star.y, star.radius, 0, Math.PI * 2);
       context.fill();
@@ -248,7 +278,7 @@
     context.globalAlpha = 1;
 
     const skylineShift = reducedMotion ? 0 : (state.distance * 0.12) % 98;
-    context.fillStyle = '#111b31';
+    context.fillStyle = palette.line;
     for (let index = -2; index < 10; index += 1) {
       const x = index * 98 - skylineShift;
       const height = 35 + ((index + 12) % 4) * 13;
@@ -256,7 +286,7 @@
       context.fillRect(x + 70, game.GROUND_Y - height * 0.7, 23, height * 0.7);
     }
 
-    context.strokeStyle = 'rgba(96, 165, 250, 0.12)';
+    context.strokeStyle = palette.line;
     context.lineWidth = 1;
     for (let y = game.GROUND_Y + 14; y < game.HEIGHT; y += 14) {
       context.beginPath();
@@ -272,7 +302,7 @@
       context.stroke();
     }
 
-    context.strokeStyle = '#2d4264';
+    context.strokeStyle = palette.dim;
     context.lineWidth = 2;
     context.beginPath();
     context.moveTo(0, game.GROUND_Y + 0.5);
@@ -282,39 +312,35 @@
 
   function drawAgent() {
     const { x, y, width, height } = state.player;
-    context.save();
-    context.shadowColor = 'rgba(59, 130, 246, 0.7)';
-    context.shadowBlur = 18;
     const body = context.createLinearGradient(x, y, x + width, y + height);
-    body.addColorStop(0, '#60a5fa');
-    body.addColorStop(1, '#2563eb');
+    body.addColorStop(0, palette.accentHover);
+    body.addColorStop(1, palette.accent);
     context.fillStyle = body;
     roundedRect(x, y + 7, width, height - 7, 11);
     context.fill();
-    context.restore();
 
-    context.strokeStyle = '#93c5fd';
+    context.strokeStyle = palette.accent;
     context.lineWidth = 2;
     context.beginPath();
     context.moveTo(x + width / 2, y + 7);
     context.lineTo(x + width / 2, y + 1);
     context.stroke();
-    context.fillStyle = '#c4ddff';
+    context.fillStyle = palette.accent;
     context.beginPath();
     context.arc(x + width / 2, y + 1, 2.5, 0, Math.PI * 2);
     context.fill();
 
-    context.fillStyle = '#07111f';
+    context.fillStyle = 'rgba(0, 0, 0, 0.55)';
     roundedRect(x + 7, y + 17, width - 14, 16, 6);
     context.fill();
-    context.fillStyle = '#dbeafe';
+    context.fillStyle = '#fff';
     context.fillRect(x + 13, y + 23, 4, 4);
     context.fillRect(x + width - 17, y + 23, 4, 4);
 
     const footOffset = Math.abs(state.player.velocityY) > 1
       ? 0
       : Math.sin(state.elapsed * 18) * 3;
-    context.strokeStyle = '#93c5fd';
+    context.strokeStyle = palette.accent;
     context.lineWidth = 4;
     context.lineCap = 'round';
     context.beginPath();
@@ -326,31 +352,26 @@
   }
 
   function drawObstacle(object) {
-    context.save();
-    context.shadowColor = 'rgba(251, 113, 133, 0.25)';
-    context.shadowBlur = 10;
-    context.fillStyle = object.variant === 1 ? '#7c3aed' : object.variant === 2 ? '#c2410c' : '#be123c';
+    context.fillStyle = object.variant === 1 ? palette.warning : palette.danger;
     roundedRect(object.x, object.y + 8, object.width, object.height - 8, 6);
     context.fill();
-    context.restore();
 
-    context.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    context.fillStyle = 'rgba(255, 255, 255, 0.28)';
     context.fillRect(object.x + 6, object.y + 16, Math.max(10, object.width - 12), 3);
     context.fillRect(object.x + 6, object.y + 23, Math.max(7, object.width * 0.55), 3);
-    context.fillStyle = '#fb7185';
+    context.fillStyle = palette.danger;
     roundedRect(object.x + object.width * 0.18, object.y, object.width * 0.64, 13, 4);
     context.fill();
   }
 
   function drawCard(object) {
-    context.save();
-    context.shadowColor = 'rgba(96, 165, 250, 0.9)';
-    context.shadowBlur = 16;
-    context.fillStyle = '#dbeafe';
+    context.fillStyle = palette.elevated;
     roundedRect(object.x, object.y, object.width, object.height, 5);
     context.fill();
-    context.restore();
-    context.fillStyle = '#2563eb';
+    context.strokeStyle = palette.accent;
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.fillStyle = palette.accent;
     const bars = [8, 15, 11];
     for (let index = 0; index < bars.length; index += 1) {
       roundedRect(object.x + 5 + index * 4.5, object.y + object.height - 6 - bars[index], 3, bars[index], 2);
@@ -361,7 +382,7 @@
   function drawParticles() {
     for (const particle of state.particles) {
       context.globalAlpha = Math.max(0, particle.life / 0.55);
-      context.fillStyle = particle.color;
+      context.fillStyle = particle.kind === 'crash' ? palette.danger : palette.accent;
       context.beginPath();
       context.arc(particle.x, particle.y, 2.6, 0, Math.PI * 2);
       context.fill();

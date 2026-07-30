@@ -70,10 +70,6 @@ const SETUP_COPY = Object.freeze({
     title: 'Preparing your environment',
     detail: 'Continuing from where the last attempt stopped. Anything already finished is kept.',
   }),
-  updateReady: Object.freeze({
-    title: 'An update is ready',
-    detail: 'Installing it takes a few minutes. You can open omnideck now and update later instead.',
-  }),
   finishing: Object.freeze({
     title: 'Finishing setup',
     detail: 'Getting everything ready…',
@@ -730,19 +726,9 @@ class OmniDeckRuntime {
       this.markDiagnostic('startup', 'pass', 'Ready');
       this.setupReason = setupState?.reason || 'first-run';
       await this.saveSetupState('complete', this.setupReason);
-      if (updateAvailable) {
-        // The installed version answered, so updating is a choice rather than
-        // something to impose on someone who only wanted to open the app.
-        this.setupReason = 'update';
-        this.emitCopy('update', 'updateReady', {
-          canStart: true,
-          primaryLabel: 'Update now',
-          secondaryAction: 'open-anyway',
-          secondaryLabel: 'Open omnideck',
-          diagnostics: this.diagnosticSnapshot(),
-        });
-        return { action: 'update-available', reason: this.setupReason };
-      }
+      // A newer image is deliberately not acted on here. Opening the app must
+      // never be interrupted, by a prompt or by an install, so a healthy
+      // installation opens as it is and the newer image waits.
       return { action: 'open', reason: this.setupReason };
     } catch (error) {
       // An available update supersedes a broken installation: setup reinstalls

@@ -903,7 +903,7 @@ test('a resumed setup says earlier work was kept without adding a screen', () =>
   assert.equal(resumed.title, 'Preparing your environment');
 });
 
-test('a healthy install with an update available offers the choice', async (context) => {
+test('a healthy install opens without mentioning a newer image', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, 'c');
   const staleRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
   await writeSetupState(userDataPath, {
@@ -925,7 +925,7 @@ test('a healthy install with an update available offers the choice', async (cont
   runtime.waitForApp = async () => {};
   runtime.run = async (_executable, args) => {
     if (args[0] === 'container') {
-      // The container still matches the installed version, not the new one.
+      // The container matches the installed version, not the newer one.
       return inspectResult({
         Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: staleRef } },
         State: { Status: 'running' },
@@ -935,14 +935,9 @@ test('a healthy install with an update available offers the choice', async (cont
   };
 
   const result = await runtime.startExisting();
-  const offered = states.at(-1);
 
-  assert.equal(result.action, 'update-available');
-  assert.equal(offered.stage, 'update');
-  assert.equal(offered.title, 'An update is ready');
-  assert.equal(offered.canStart, true);
-  assert.equal(offered.primaryLabel, 'Update now');
-  assert.equal(offered.secondaryAction, 'open-anyway');
+  assert.equal(result.action, 'open', 'opening must never be interrupted by an update');
+  assert.equal(states.length, 0, 'no screen should be shown on the way to the app');
   assert.notEqual(imageRef, staleRef);
 });
 

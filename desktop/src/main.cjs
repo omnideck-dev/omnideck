@@ -4,6 +4,7 @@ const {
   app,
   BrowserWindow,
   ipcMain,
+  nativeTheme,
   session,
   shell,
 } = require('electron');
@@ -89,7 +90,9 @@ async function createWindow() {
     minHeight: 620,
     show: false,
     title: 'omnideck',
-    backgroundColor: '#0c0e14',
+    // The ground colour the window paints before the page renders. Both values
+    // are the canvas token from the shared design language.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0c0e14' : '#f8f9fb',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -234,7 +237,6 @@ if (!hasLock) {
       if (action === 'download') return shell.openExternal(DOWNLOAD_URL);
       if (action === 'close') return app.quit();
       if (action === 'show-logs') return shell.showItemInFolder(runtime.logPath);
-      if (action === 'open-anyway') return openOmniDeck();
       throw new Error('Unknown action.');
     });
 
