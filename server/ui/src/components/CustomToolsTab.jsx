@@ -16,7 +16,7 @@ function _badgeClass(label) {
 /**
  * Custom Tools tab inside Settings. Compact one-row-per-tool table:
  * type badge, name, description, delete. Visible only when the feature
- * flag is on (the tab registry filters by features.custom_tools).
+ * setting is on (the tab registry filters by features.custom_tools).
  */
 export default function CustomToolsTab() {
     const {

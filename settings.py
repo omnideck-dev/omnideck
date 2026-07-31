@@ -57,6 +57,7 @@ _DEFAULTS: dict[str, Any] = {
     "title_provider": "",
     "title_model": "",
     "custom_apps_enabled": False,
+    "custom_tools_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
 }
@@ -99,6 +100,7 @@ class SettingsUpdate(BaseModel):
     title_provider: str | None = None
     title_model: str | None = None
     custom_apps_enabled: bool | None = None
+    custom_tools_enabled: bool | None = None
     home_app_slug: str | None = None
 
     @field_validator("home_app_slug")
@@ -182,4 +184,15 @@ def custom_apps_enabled() -> bool:
     return load_settings().get("custom_apps_enabled", False) is True
 
 
-__all__ = ["custom_apps_enabled", "load_settings", "save_settings", "SettingsUpdate"]
+def custom_tools_enabled() -> bool:
+    """Return whether the user has enabled the experimental Custom Tools feature."""
+    return load_settings().get("custom_tools_enabled", False) is True
+
+
+__all__ = [
+    "SettingsUpdate",
+    "custom_apps_enabled",
+    "custom_tools_enabled",
+    "load_settings",
+    "save_settings",
+]
