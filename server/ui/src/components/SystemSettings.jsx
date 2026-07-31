@@ -112,7 +112,7 @@ export default function SystemSettings() {
                 <div className={styles.settingInfo}>
                     <span className={styles.settingTitle}>Custom Tools</span>
                     <span className={styles.settingDesc}>
-                        Let your Omnideck agents create, save, and run reusable tools.
+                        The agent can create, save, and run reusable tools.
                     </span>
                 </div>
                 <ToggleSwitch

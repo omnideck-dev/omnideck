@@ -79,7 +79,7 @@ describe('SystemSettings experimental feature toggles', () => {
         });
 
         const toggle = await screen.findByRole('switch', { name: 'Custom Tools' });
-        expect(screen.getByText(/Let your Omnideck agents create, save, and run reusable tools/)).toBeInTheDocument();
+        expect(screen.getByText(/The agent can create, save, and run reusable tools/)).toBeInTheDocument();
         expect(toggle).not.toBeChecked();
         await act(async () => {
             fireEvent.click(toggle);
