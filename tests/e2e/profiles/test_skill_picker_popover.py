@@ -5,8 +5,8 @@ from playwright.sync_api import Page
 from tests.e2e.pages import AgentsPage
 
 
-def test_skill_picker_stays_inside_small_electron_viewport(page: Page):
-    """Keep every skill-picker row reachable at Electron's minimum size."""
+def test_skill_picker_stays_inside_minimum_viewport(page: Page):
+    """Keep every skill-picker row reachable at the minimum supported size."""
     profile_id = "test_skill_picker_viewport"
     page.request.post(
         "/api/profiles",
