@@ -1,7 +1,6 @@
 """E2E tests for the Custom Tools tab inside Settings."""
 
 import json
-import re
 import textwrap
 from contextlib import contextmanager
 
@@ -128,13 +127,50 @@ def test_setting_immediately_toggles_custom_tools_tab(page: Page):
         expect(toggle).to_be_checked()
         expect(tools_tab).to_be_visible()
 
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/settings")
+            and response.request.method == "PUT"
+        ) as disabled_response:
+            page.get_by_test_id("custom-tools-toggle").click()
+        assert disabled_response.value.ok
+        expect(toggle).not_to_be_checked()
+        expect(tools_tab).not_to_be_visible()
+    finally:
+        # The E2E harness enables Custom Tools for the catalog tests below.
+        assert page.request.put(
+            "/api/settings",
+            data={"custom_tools_enabled": True},
+        ).ok
+
+
+def test_setting_gates_custom_tools_skill_categories(page: Page):
+    """The setting gates both the category catalog row and skill editor chip."""
+    assert page.request.put(
+        "/api/settings",
+        data={"custom_tools_enabled": False},
+    ).ok
+
+    try:
+        settings = SettingsPage(page).goto_system()
+        toggle = page.get_by_role("switch", name="Custom Tools")
+
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/settings")
+            and response.request.method == "PUT"
+        ) as enabled_response:
+            page.get_by_test_id("custom-tools-toggle").click()
+        assert enabled_response.value.ok
+
         page.get_by_test_id("settings-tab-skills").click()
-        page.get_by_role("tab", name=re.compile("Tool Categories")).click()
-        custom_tools_category = page.get_by_test_id("cat-row-custom_tools")
+        settings.skills.view_categories()
+        custom_tools_category = settings.skills.category_row("custom_tools")
         expect(custom_tools_category).to_be_visible()
         expect(custom_tools_category).to_contain_text(
             "The agent can create, look up, and run reusable tools."
         )
+
+        settings.skills.view_my_skills().new()
+        expect(settings.skills.category_chip("custom_tools")).to_be_visible()
 
         page.get_by_test_id("settings-tab-system").click()
         with page.expect_response(
@@ -144,12 +180,14 @@ def test_setting_immediately_toggles_custom_tools_tab(page: Page):
             page.get_by_test_id("custom-tools-toggle").click()
         assert disabled_response.value.ok
         expect(toggle).not_to_be_checked()
-        expect(tools_tab).not_to_be_visible()
 
         page.get_by_test_id("settings-tab-skills").click()
-        page.get_by_role("tab", name=re.compile("Tool Categories")).click()
-        expect(page.get_by_test_id("cat-row-coding")).to_be_visible()
+        settings.skills.view_categories()
+        expect(settings.skills.category_row("coding")).to_be_visible()
         expect(custom_tools_category).not_to_be_visible()
+
+        settings.skills.view_my_skills().new()
+        expect(settings.skills.category_chip("custom_tools")).not_to_be_visible()
     finally:
         # The E2E harness enables Custom Tools for the catalog tests below.
         assert page.request.put(
