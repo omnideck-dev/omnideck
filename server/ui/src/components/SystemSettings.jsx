@@ -7,6 +7,7 @@ import EyeIcon from './icons/EyeIcon';
 import CompactionIcon from './icons/CompactionIcon';
 import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
+import WrenchIcon from './icons/WrenchIcon.jsx';
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -48,7 +49,9 @@ export default function SystemSettings() {
             if (res.ok) {
                 const updated = await res.json();
                 setSettings(updated);
-                if (key === 'custom_apps_enabled') await refreshFeatures();
+                if (key === 'custom_apps_enabled' || key === 'custom_tools_enabled') {
+                    await refreshFeatures();
+                }
                 return;
             }
         } catch {
@@ -99,6 +102,23 @@ export default function SystemSettings() {
                     checked={!!settings.custom_apps_enabled}
                     onChange={(e) => updateSetting('custom_apps_enabled', e.target.checked)}
                     aria-label="Apps"
+                />
+            </label>
+
+            <label className={styles.settingRow} data-testid="custom-tools-toggle">
+                <div className={styles.settingIcon}>
+                    <WrenchIcon size={16} />
+                </div>
+                <div className={styles.settingInfo}>
+                    <span className={styles.settingTitle}>Custom Tools</span>
+                    <span className={styles.settingDesc}>
+                        Let your Omnideck agents create, save, and run reusable tools.
+                    </span>
+                </div>
+                <ToggleSwitch
+                    checked={!!settings.custom_tools_enabled}
+                    onChange={(e) => updateSetting('custom_tools_enabled', e.target.checked)}
+                    aria-label="Custom Tools"
                 />
             </label>
 

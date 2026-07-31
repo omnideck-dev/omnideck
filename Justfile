@@ -348,7 +348,6 @@ e2e *args:
         -e PORT=$port \
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
-        -e ENABLE_CUSTOM_TOOLS=true \
         -e MOCK_LLM=1 \
         $env_args \
         -v "$state/home:/home/omnideck:rw" \
@@ -368,6 +367,9 @@ e2e *args:
         docker logs "$name" 2>&1 | tail -30
         exit 1
     fi
+    curl -fsS -X PUT "http://localhost:$port/api/settings" \
+        -H "Content-Type: application/json" \
+        -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
     OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}

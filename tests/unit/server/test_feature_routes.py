@@ -11,8 +11,12 @@ from server._feature_routes import register_feature_routes
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("setting_name", ["custom_apps", "custom_tools"])
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_custom_apps_feature_comes_from_settings(monkeypatch, enabled: bool) -> None:
+async def test_user_feature_comes_from_settings(
+    monkeypatch, setting_name: str, enabled: bool,
+) -> None:
+    """User-controlled feature flags reflect their persisted setting."""
     monkeypatch.setattr(
         "server._feature_routes.load_config",
         lambda: SimpleNamespace(features=SimpleNamespace(
@@ -20,10 +24,12 @@ async def test_custom_apps_feature_comes_from_settings(monkeypatch, enabled: boo
             music_generation=False,
             desktop=False,
             visual_grounding=False,
-            custom_tools=False,
         )),
     )
-    monkeypatch.setattr("server._feature_routes.custom_apps_enabled", lambda: enabled)
+    monkeypatch.setattr(
+        f"server._feature_routes.{setting_name}_enabled",
+        lambda: enabled,
+    )
 
     app = web.Application()
     register_feature_routes(app)
@@ -32,6 +38,6 @@ async def test_custom_apps_feature_comes_from_settings(monkeypatch, enabled: boo
     try:
         response = await client.get("/api/features")
         assert response.status == 200
-        assert (await response.json())["custom_apps"] is enabled
+        assert (await response.json())[setting_name] is enabled
     finally:
         await client.close()

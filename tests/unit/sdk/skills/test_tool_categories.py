@@ -36,7 +36,6 @@ def _features(**overrides) -> FeaturesConfig:
         "music_generation": True,
         "desktop": True,
         "visual_grounding": True,
-        "custom_tools": True,
     }
     base.update(overrides)
     return FeaturesConfig(**base)
@@ -46,6 +45,7 @@ def _features(**overrides) -> FeaturesConfig:
 def _isolate(monkeypatch):
     """Default: all flags on, no integrations connected; static cache cleared per test."""
     _set_flags(monkeypatch)
+    monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
 
     async def _none():
         return {}
@@ -92,12 +92,22 @@ async def test_static_category_carries_its_tools():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("flag", ["desktop", "image_generation", "music_generation", "custom_tools"])
+@pytest.mark.parametrize("flag", ["desktop", "image_generation", "music_generation"])
 async def test_feature_off_drops_static_category(monkeypatch, flag):
     _set_flags(monkeypatch, **{flag: False})
     cats = await tool_categories()
     assert flag not in cats
     assert "coding" in cats
+
+
+@pytest.mark.unit
+async def test_custom_tools_follows_runtime_setting(monkeypatch):
+    """Custom Tools availability changes immediately with its user setting."""
+    monkeypatch.setattr("settings.custom_tools_enabled", lambda: False)
+    assert "custom_tools" not in await tool_categories()
+
+    monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
+    assert "custom_tools" in await tool_categories()
 
 
 @pytest.mark.unit

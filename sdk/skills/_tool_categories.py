@@ -42,10 +42,9 @@ class ToolCategory:
 async def tool_categories() -> dict[str, ToolCategory]:
     """Every tool category keyed by id, each with the tools it currently grants.
 
-    Static categories come from the active feature flags (built once and held);
-    integration-backed categories take their current tools and connection state
-    from the integrations subsystem, so a category whose capability nothing
-    provides is listed with no tools.
+    Config-gated static categories are built once and held. Settings-backed
+    categories and integration-backed categories resolve their current state
+    on every call, so runtime changes take effect without restarting.
     """
     # Imported here, not at module top: reaching into the tools package runs its
     # __init__, which pulls tools.browser -> sdk.events -> this package — a
@@ -53,6 +52,11 @@ async def tool_categories() -> dict[str, ToolCategory]:
     from tools.integrations import CapabilityTools, integration_tools_by_capability
 
     categories = dict(_static_tool_categories())
+    from settings import custom_tools_enabled
+
+    if custom_tools_enabled():
+        categories["custom_tools"] = _custom_tools_category()
+
     by_capability = await integration_tools_by_capability()
     for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
         backed = by_capability.get(integration.capability, CapabilityTools([], available=False))
@@ -67,7 +71,7 @@ async def tool_categories() -> dict[str, ToolCategory]:
     return categories
 
 
-# ── Static categories: feature-gated, built once and held ────────────────────
+# ── Static categories: config-gated, built once and held ────────────────────
 
 
 @cache
@@ -182,14 +186,20 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             desktop_tools,
         )
 
-    if flags.custom_tools:
-        from tools.custom_tools import create_custom_tool, lookup_custom_tools, run_custom_tool
-        categories["custom_tools"] = ToolCategory(
-            "custom_tools", "Custom Tools", "Create, look up, and run your own saved tools.",
-            [create_custom_tool, lookup_custom_tools, run_custom_tool],
-        )
-
     return categories
+
+
+@cache
+def _custom_tools_category() -> ToolCategory:
+    """Build the settings-backed Custom Tools category lazily."""
+    from tools.custom_tools import create_custom_tool, lookup_custom_tools, run_custom_tool
+
+    return ToolCategory(
+        "custom_tools",
+        "Custom Tools",
+        "Create, look up, and run your own saved tools.",
+        [create_custom_tool, lookup_custom_tools, run_custom_tool],
+    )
 
 
 # ── Integration categories: a capability per id, tools resolved per turn ──────
