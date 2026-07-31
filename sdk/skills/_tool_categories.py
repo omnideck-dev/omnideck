@@ -197,7 +197,7 @@ def _custom_tools_category() -> ToolCategory:
     return ToolCategory(
         "custom_tools",
         "Custom Tools",
-        "Create, look up, and run your own saved tools.",
+        "The agent can create, look up, and run reusable tools.",
         [create_custom_tool, lookup_custom_tools, run_custom_tool],
     )
 

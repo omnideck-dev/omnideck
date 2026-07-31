@@ -107,7 +107,8 @@ async def test_custom_tools_follows_runtime_setting(monkeypatch):
     assert "custom_tools" not in await tool_categories()
 
     monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
-    assert "custom_tools" in await tool_categories()
+    custom_tools = (await tool_categories())["custom_tools"]
+    assert custom_tools.description == "The agent can create, look up, and run reusable tools."
 
 
 @pytest.mark.unit

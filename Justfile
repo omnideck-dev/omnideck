@@ -369,6 +369,7 @@ e2e *args:
     fi
     curl -fsS -X PUT "http://localhost:$port/api/settings" \
         -H "Content-Type: application/json" \
+        -H "X-Requested-With: XMLHttpRequest" \
         -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
