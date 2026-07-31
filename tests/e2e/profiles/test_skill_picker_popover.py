@@ -26,12 +26,17 @@ def test_skill_picker_stays_inside_small_electron_viewport(page: Page):
         agents.profiles.select(profile_id)
         agents.builder.open_skill_picker()
 
+        trigger_box = page.get_by_test_id("profile-add-skill").bounding_box()
         popover = page.get_by_test_id("profile-skill-picker")
         box = popover.bounding_box()
+        assert trigger_box is not None
         assert box is not None
         assert box["y"] >= 8
         assert box["y"] + box["height"] <= 612
-        assert popover.get_attribute("data-placement") == "top"
+        assert box["y"] >= trigger_box["y"] + trigger_box["height"]
+        assert box["x"] >= trigger_box["x"] - 1
+        assert box["x"] + box["width"] <= 872
+        assert popover.get_attribute("data-placement") == "bottom"
         assert popover.evaluate("(node) => node.parentElement === document.body")
     finally:
         page.request.delete(f"/api/profiles/{profile_id}")

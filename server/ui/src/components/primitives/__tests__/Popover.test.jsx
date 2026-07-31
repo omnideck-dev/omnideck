@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Popover from '../Popover.jsx';
 
-function Harness({ anchorRect, onOption = vi.fn() }) {
+function Harness({ anchorRect, flipThreshold, onOption = vi.fn() }) {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef(null);
 
@@ -29,6 +29,7 @@ function Harness({ anchorRect, onOption = vi.fn() }) {
                     align="end"
                     width={380}
                     maxHeight={340}
+                    flipThreshold={flipThreshold}
                     role="dialog"
                     ariaLabel="Options"
                     testId="popover"
@@ -72,6 +73,32 @@ describe('Popover', () => {
             bottom: '263px',
             left: '428px',
             maxHeight: '340px',
+            width: '380px',
+        });
+    });
+
+    it('flips horizontal alignment instead of covering adjacent UI', async () => {
+        const user = userEvent.setup();
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 880 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 620 });
+        const rect = {
+            left: 289,
+            right: 380,
+            top: 363,
+            bottom: 391,
+            width: 91,
+            height: 28,
+        };
+        render(<Harness anchorRect={rect} flipThreshold={160} />);
+
+        await user.click(screen.getByTestId('trigger'));
+
+        const popover = screen.getByTestId('popover');
+        expect(popover).toHaveAttribute('data-placement', 'bottom');
+        expect(popover).toHaveStyle({
+            left: '289px',
+            maxHeight: '215px',
+            top: '397px',
             width: '380px',
         });
     });

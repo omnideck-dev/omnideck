@@ -7,10 +7,16 @@ const DEFAULT_VIEWPORT_MARGIN = 8;
 const DEFAULT_GAP = 6;
 const DEFAULT_MAX_HEIGHT = 360;
 
-function horizontalPosition(rect, width, align) {
-    if (align === 'end') return rect.right - width;
-    if (align === 'center') return rect.left + (rect.width - width) / 2;
-    return rect.left;
+function horizontalPosition(rect, width, align, minLeft, maxLeft) {
+    const start = rect.left;
+    const end = rect.right - width;
+    const center = rect.left + (rect.width - width) / 2;
+    const preferred = align === 'end' ? end : align === 'center' ? center : start;
+    const fallback = align === 'end' ? start : end;
+
+    if (preferred >= minLeft && preferred <= maxLeft) return preferred;
+    if (align !== 'center' && fallback >= minLeft && fallback <= maxLeft) return fallback;
+    return Math.min(Math.max(minLeft, preferred), maxLeft);
 }
 
 /**
@@ -18,9 +24,10 @@ function horizontalPosition(rect, width, align) {
  *
  * Popovers are portaled to document.body so a scroll pane or split view cannot
  * clip them. In auto placement they prefer the trigger's lower edge, but flip
- * above it when the upper side has more room. Their maximum height is capped to
- * the chosen side of the viewport; callers should make their content scroll
- * within that height.
+ * above it when the room below falls under the caller's useful-height threshold
+ * and the upper side has more room. Their maximum height is capped to the chosen
+ * side of the viewport; callers should make their content scroll within that
+ * height.
  */
 export default function Popover({
     anchorRef,
@@ -32,6 +39,7 @@ export default function Popover({
     placement = 'auto',
     width,
     maxHeight = DEFAULT_MAX_HEIGHT,
+    flipThreshold = maxHeight,
     gap = DEFAULT_GAP,
     viewportMargin = DEFAULT_VIEWPORT_MARGIN,
     role,
@@ -49,10 +57,16 @@ export default function Popover({
             const rect = anchor.getBoundingClientRect();
             const availableWidth = Math.max(0, window.innerWidth - (viewportMargin * 2));
             const resolvedWidth = Math.min(width || rect.width, availableWidth);
-            const unclampedLeft = horizontalPosition(rect, resolvedWidth, align);
-            const left = Math.min(
-                Math.max(viewportMargin, unclampedLeft),
-                Math.max(viewportMargin, window.innerWidth - viewportMargin - resolvedWidth),
+            const maxLeft = Math.max(
+                viewportMargin,
+                window.innerWidth - viewportMargin - resolvedWidth,
+            );
+            const left = horizontalPosition(
+                rect,
+                resolvedWidth,
+                align,
+                viewportMargin,
+                maxLeft,
             );
 
             const roomBelow = Math.max(
@@ -60,8 +74,9 @@ export default function Popover({
                 window.innerHeight - rect.bottom - gap - viewportMargin,
             );
             const roomAbove = Math.max(0, rect.top - gap - viewportMargin);
+            const minimumRoomBelow = Math.min(maxHeight, Math.max(0, flipThreshold));
             const resolvedPlacement = placement === 'auto'
-                ? (roomBelow < maxHeight && roomAbove > roomBelow ? 'top' : 'bottom')
+                ? (roomBelow < minimumRoomBelow && roomAbove > roomBelow ? 'top' : 'bottom')
                 : placement;
             const availableHeight = resolvedPlacement === 'top' ? roomAbove : roomBelow;
 
@@ -91,7 +106,7 @@ export default function Popover({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [align, anchorRef, gap, maxHeight, placement, viewportMargin, width]);
+    }, [align, anchorRef, flipThreshold, gap, maxHeight, placement, viewportMargin, width]);
 
     useEffect(() => {
         const handleOutsideMouseDown = (event) => {

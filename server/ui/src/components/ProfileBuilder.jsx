@@ -323,6 +323,7 @@ export default function ProfileBuilder({
                                     align="end"
                                     width={380}
                                     maxHeight={340}
+                                    flipThreshold={160}
                                     className={styles.skPopover}
                                     role="dialog"
                                     ariaLabel="Add skills"
