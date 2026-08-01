@@ -48,14 +48,20 @@ test('a clean profile reaches Welcome through the real process boundary', async 
   assert.equal(await window.locator('#activity').isVisible(), false);
 });
 
-test('the preload exposes only the actions the setup screen uses', async (t) => {
+test('the preload exposes only the actions the two screens use', async (t) => {
   const { window } = await launchApp(t);
 
   const bridge = await window.evaluate(
     () => Object.keys(window.omnideckDesktop || {}).sort(),
   );
 
-  assert.deepEqual(bridge, ['beginSetup', 'onState', 'openApp', 'retry', 'runAction']);
+  // Both pages load in this window and so see the same bridge. What stops the
+  // setup screen using omnideck's actions, and omnideck using setup's, is the
+  // origin check on the receiving end.
+  assert.deepEqual(bridge, [
+    'beginSetup', 'currentUpdate', 'installUpdate', 'onState',
+    'onUpdate', 'openApp', 'retry', 'runAction', 'skipUpdate',
+  ]);
 });
 
 test('the setup screen has every element the renderer writes to', async (t) => {
@@ -72,6 +78,31 @@ test('the setup screen has every element the renderer writes to', async (t) => {
   ].filter((id) => !document.getElementById(id)));
 
   assert.deepEqual(missing, [], 'the renderer writes to elements that must exist');
+});
+
+test('the setup screen cannot act on updates', async (t) => {
+  const { window } = await launchApp(t);
+
+  // The bridge is shared by both pages, so the guard has to be on the
+  // receiving end. Without it, the setup screen could install or dismiss an
+  // update — decisions that belong to the person using omnideck.
+  const refusals = await window.evaluate(async () => {
+    const attempt = async (call) => {
+      try {
+        await call();
+        return 'allowed';
+      } catch (error) {
+        return String(error.message);
+      }
+    };
+    return {
+      install: await attempt(() => window.omnideckDesktop.installUpdate()),
+      skip: await attempt(() => window.omnideckDesktop.skipUpdate()),
+    };
+  });
+
+  assert.match(refusals.install, /only available inside omnideck/);
+  assert.match(refusals.skip, /only available inside omnideck/);
 });
 
 test('the theme follows the operating system preference', async (t) => {

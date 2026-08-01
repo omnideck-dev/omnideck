@@ -8,6 +8,11 @@ import CompactionIcon from './icons/CompactionIcon';
 import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 import WrenchIcon from './icons/WrenchIcon.jsx';
+import DownloadIcon from './icons/DownloadIcon';
+
+// Omnideck also runs in a plain browser, where there is no installer to point
+// at and so nothing this setting could change.
+const inDesktopApp = typeof window !== 'undefined' && Boolean(window.omnideckDesktop);
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -85,6 +90,30 @@ export default function SystemSettings() {
 
     return (
         <div className={styles.container}>
+            {/* Updates — only the desktop application can install one. */}
+            {inDesktopApp && (
+                <>
+                    <div className={styles.sectionLabel}>Updates</div>
+
+                    <label className={styles.settingRow} data-testid="automatic-updates-toggle">
+                        <div className={styles.settingIcon}>
+                            <DownloadIcon />
+                        </div>
+                        <div className={styles.settingInfo}>
+                            <span className={styles.settingTitle}>Install updates automatically</span>
+                            <span className={styles.settingDesc}>
+                                Updates install the next time you open Omnideck, never while you are working. Leave this off to be asked each time.
+                            </span>
+                        </div>
+                        <ToggleSwitch
+                            checked={!!settings.software_updates_automatic}
+                            onChange={(e) => updateSetting('software_updates_automatic', e.target.checked)}
+                            aria-label="Install updates automatically"
+                        />
+                    </label>
+                </>
+            )}
+
             {/* Experimental */}
             <div className={styles.sectionLabel}>Experimental</div>
 

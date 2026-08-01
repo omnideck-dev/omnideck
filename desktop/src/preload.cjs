@@ -10,4 +10,17 @@ contextBridge.exposeInMainWorld('omnideckDesktop', {
     ipcRenderer.on('omnideck:state', wrapped);
     return () => ipcRenderer.removeListener('omnideck:state', wrapped);
   },
+  // Used by omnideck itself rather than by the setup screen. Both pages load in
+  // the same window and so see the same bridge; which calls are allowed is
+  // decided by where the call came from, not by what is on offer here.
+  onUpdate: (listener) => {
+    const wrapped = (_event, update) => listener(update);
+    ipcRenderer.on('omnideck:update', wrapped);
+    return () => ipcRenderer.removeListener('omnideck:update', wrapped);
+  },
+  // Asked for on load, because a page that was not listening yet cannot have
+  // been told. Everything after that arrives through onUpdate.
+  currentUpdate: () => ipcRenderer.invoke('omnideck:update-current'),
+  installUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'install'),
+  skipUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'skip'),
 });

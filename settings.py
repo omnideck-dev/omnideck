@@ -60,6 +60,12 @@ _DEFAULTS: dict[str, Any] = {
     "custom_tools_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
+    # Install updates without being asked. Off by default: an update that was
+    # not asked for should be offered, not applied. Only the desktop
+    # application acts on this — it reads it while Omnideck is running and
+    # applies an update the next time Omnideck is opened, never during a
+    # session.
+    "software_updates_automatic": False,
 }
 
 _APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
@@ -102,6 +108,7 @@ class SettingsUpdate(BaseModel):
     custom_apps_enabled: bool | None = None
     custom_tools_enabled: bool | None = None
     home_app_slug: str | None = None
+    software_updates_automatic: bool | None = None
 
     @field_validator("home_app_slug")
     @classmethod

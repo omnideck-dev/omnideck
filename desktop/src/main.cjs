@@ -5,12 +5,15 @@ const {
   BrowserWindow,
   ipcMain,
   nativeTheme,
+  Notification,
   session,
   shell,
 } = require('electron');
 const { pathToFileURL } = require('node:url');
 
 const { OmniDeckRuntime } = require('./runtime.cjs');
+const { findUpdate, selectUpdate } = require('./updates.cjs');
+const { readUpdateState, writeUpdateState } = require('./update-state.cjs');
 const {
   clampZoom,
   nextZoomFactor,
@@ -24,11 +27,18 @@ const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
 // /latest, so it has nothing to show while every release is a prerelease.
 const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases';
 const SUPPORTED_SYSTEMS_URL = 'https://github.com/omnideck-dev/omnideck#prerequisites';
+const REPOSITORY = 'omnideck-dev/omnideck';
+// Long enough that the first check never competes with opening, and rare enough
+// that a machine left running for a week makes a handful of requests.
+const UPDATE_FIRST_CHECK_MS = 2 * 60 * 1000;
+const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 let mainWindow;
 let runtime;
 let setupRunning = false;
 let zoomFactor = 1;
+let availableUpdate = null;
+let updateTimer;
 
 function zoomPreferencePath() {
   return path.join(app.getPath('userData'), 'zoom-factor');
@@ -80,6 +90,12 @@ function assertSetupSender(event) {
   // frame fails the check rather than throwing a type error out of it.
   if (!isSetupUrl(event.senderFrame?.url)) {
     throw new Error('This action is only available on the omnideck setup screen.');
+  }
+}
+
+function assertAppSender(event) {
+  if (!isAppUrl(event.senderFrame?.url)) {
+    throw new Error('This action is only available inside omnideck.');
   }
 }
 
@@ -153,22 +169,143 @@ function publishState(state) {
 
 async function openOmniDeck() {
   await mainWindow.loadURL(runtime.appUrl);
+  scheduleUpdateChecks();
 }
 
-async function beginSetup(reason = runtime.setupReason) {
+// Runs setup and lets the caller decide what a failure means. Every entry point
+// but one wants it reported on screen; the one that does not is an update
+// nobody asked for.
+async function runSetup(reason) {
   if (setupRunning) return;
   setupRunning = true;
   try {
     await runtime.setup(reason);
-  } catch (error) {
-    runtime.reportFailure(error);
   } finally {
     setupRunning = false;
   }
 }
 
+async function beginSetup(reason = runtime.setupReason) {
+  try {
+    await runSetup(reason);
+  } catch (error) {
+    runtime.reportFailure(error);
+  }
+}
+
+function publishUpdate() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Only the application itself shows this. The setup screen has its own
+  // reporting and is already saying something more urgent.
+  if (!isAppUrl(mainWindow.webContents.getURL())) return;
+  mainWindow.webContents.send('omnideck:update', availableUpdate
+    ? { version: availableUpdate.version }
+    : null);
+}
+
+// The application holds the preference; this copies it to where it can be read
+// at the one moment the application is not running. It follows that changing
+// the preference takes effect from the next launch.
+async function rememberAutomaticPreference() {
+  try {
+    const response = await fetch(`${runtime.appUrl}/api/settings`);
+    if (!response.ok) return;
+    const settings = await response.json();
+    await writeUpdateState(app.getPath('userData'), {
+      automatic: settings.software_updates_automatic === true,
+    });
+  } catch {
+    // The preference simply stays as last known.
+  }
+}
+
+async function checkForUpdate() {
+  const installedVersion = await runtime.installedVersion();
+  if (!installedVersion) return;
+  const userData = app.getPath('userData');
+  const previous = await readUpdateState(userData);
+
+  let found = null;
+  try {
+    found = await findUpdate({
+      repository: REPOSITORY,
+      installedVersion,
+      skippedVersion: previous.skippedVersion,
+    });
+  } catch (error) {
+    // No network, or a registry having a bad day. Neither is worth telling
+    // anyone about, and the next check is a few hours away.
+    await runtime.appendLog(`update check failed: ${error.message}`);
+    return;
+  }
+
+  availableUpdate = found;
+  await writeUpdateState(userData, {
+    checkedAt: new Date().toISOString(),
+    version: found?.version || null,
+    imageRef: found?.imageRef || null,
+  });
+  // Announced once per release: a version already known about on the last check
+  // has already been mentioned.
+  if (found && found.version !== previous.version && Notification.isSupported()) {
+    new Notification({
+      title: 'An omnideck update is ready',
+      body: `Version ${found.version} can be installed from omnideck.`,
+      silent: true,
+    }).show();
+  }
+  publishUpdate();
+}
+
+function scheduleUpdateChecks() {
+  if (updateTimer) return;
+  const check = () => {
+    void rememberAutomaticPreference().then(checkForUpdate).catch(() => {});
+  };
+  updateTimer = setTimeout(() => {
+    check();
+    updateTimer = setInterval(check, UPDATE_INTERVAL_MS);
+    updateTimer.unref?.();
+  }, UPDATE_FIRST_CHECK_MS);
+  updateTimer.unref?.();
+}
+
+// An update to apply before the window opens, or null. Reads only local state,
+// so launching never waits on the network: what it acts on is what the last
+// session found.
+async function updateToApplyAtLaunch() {
+  const stored = await readUpdateState(app.getPath('userData'));
+  if (!stored.automatic || !stored.version || !stored.imageRef) return null;
+  // Judged by the same rule the registry answer is judged by, so a release
+  // installed by other means, or since skipped, cannot be applied here either.
+  const chosen = selectUpdate({
+    tags: [stored.version],
+    installedVersion: await runtime.installedVersion(),
+    skippedVersion: stored.skippedVersion,
+  });
+  return chosen ? { version: chosen, imageRef: stored.imageRef } : null;
+}
+
 async function bootstrap() {
   try {
+    const pending = await updateToApplyAtLaunch();
+    if (pending) {
+      runtime.updateTarget = pending;
+      try {
+        await runSetup('update');
+        runtime.updateTarget = null;
+        await writeUpdateState(app.getPath('userData'), { version: null, imageRef: null });
+        availableUpdate = null;
+        return;
+      } catch (error) {
+        // An update nobody was waiting for must never become the reason
+        // omnideck will not open. What is installed still works, so this falls
+        // through to opening it.
+        runtime.updateTarget = null;
+        await runtime.appendLog(`update at launch failed: ${error.message}`);
+      }
+    }
+
     const result = await runtime.startExisting();
     if (result.action === 'open') {
       await openOmniDeck();
@@ -244,6 +381,36 @@ if (!hasLock) {
       if (action === 'close') return app.quit();
       if (action === 'show-logs') return shell.showItemInFolder(runtime.logPath);
       throw new Error('Unknown action.');
+    });
+
+    ipcMain.handle('omnideck:update-current', (event) => {
+      assertAppSender(event);
+      return availableUpdate ? { version: availableUpdate.version } : null;
+    });
+
+    // The application asks for the update it was told about, and answers for
+    // it. Installing takes over the window, because replacing what is running
+    // means what is running has to stop.
+    ipcMain.handle('omnideck:update-action', async (event, action) => {
+      assertAppSender(event);
+      if (!availableUpdate) throw new Error('There is no update to act on.');
+      if (action === 'skip') {
+        await writeUpdateState(app.getPath('userData'), {
+          skippedVersion: availableUpdate.version,
+          version: null,
+          imageRef: null,
+        });
+        availableUpdate = null;
+        publishUpdate();
+        return;
+      }
+      if (action !== 'install') throw new Error('Unknown action.');
+      runtime.updateTarget = availableUpdate;
+      await mainWindow.loadFile(SETUP_PAGE);
+      await beginSetup('update');
+      runtime.updateTarget = null;
+      await writeUpdateState(app.getPath('userData'), { version: null, imageRef: null });
+      availableUpdate = null;
     });
 
     await createWindow();

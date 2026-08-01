@@ -13,6 +13,7 @@ function isSetupState(value) {
     && SETUP_STATUSES.has(value.status)
     && SETUP_REASONS.has(value.reason)
     && typeof value.appVersion === 'string'
+    && (value.imageVersion === null || typeof value.imageVersion === 'string')
     && typeof value.imageRef === 'string'
     && typeof value.updatedAt === 'string',
   );
@@ -23,7 +24,12 @@ async function readSetupState(userDataPath) {
     const value = JSON.parse(
       await fsp.readFile(path.join(userDataPath, SETUP_STATE_FILENAME), 'utf8'),
     );
-    return isSetupState(value) ? value : null;
+    // An installation performed before the installed version was recorded is
+    // still a valid installation. It gets the missing field rather than being
+    // read as no installation at all, which would send someone who already has
+    // omnideck back through setting it up.
+    const filled = { imageVersion: null, ...value };
+    return isSetupState(filled) ? filled : null;
   } catch {
     return null;
   }
@@ -35,6 +41,7 @@ async function writeSetupState(userDataPath, state) {
     status: state.status,
     reason: state.reason,
     appVersion: state.appVersion,
+    imageVersion: state.imageVersion ?? null,
     imageRef: state.imageRef,
     imageDigest: state.imageRef.match(/@(?<digest>sha256:[a-f0-9]{64})$/)?.groups?.digest || null,
     updatedAt: new Date().toISOString(),

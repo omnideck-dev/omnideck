@@ -411,6 +411,10 @@ class OmniDeckRuntime {
     this.appPort = null;
     this.currentState = null;
     this.currentEnvironment = null;
+    // Set only when a specific release has been chosen to install. While it is
+    // set, it is what setup installs instead of the release this copy shipped
+    // with.
+    this.updateTarget = null;
     this.setupReason = 'first-run';
     this.lastProgressEmit = 0;
     this.phases = phasesFor(process.platform);
@@ -421,6 +425,15 @@ class OmniDeckRuntime {
   get appUrl() {
     if (!this.appPort) throw new Error('The omnideck runtime has not been prepared.');
     return `http://127.0.0.1:${this.appPort}`;
+  }
+
+  // The version currently installed on this computer, or null if nothing is.
+  // Installations made before the version was recorded fall back to the version
+  // of the application that performed them, which is the one it shipped with.
+  async installedVersion() {
+    const state = await readSetupState(this.userDataPath);
+    if (!state || state.status !== 'complete') return null;
+    return state.imageVersion || state.appVersion;
   }
 
   emit(stage, title, detail, options = {}) {
@@ -539,16 +552,28 @@ class OmniDeckRuntime {
 
   async desiredEnvironment() {
     try {
+      // A chosen update outranks the release this copy shipped with. It is
+      // already an immutable reference, so there is nothing left to resolve.
+      if (this.updateTarget) {
+        this.currentEnvironment = {
+          imageRef: this.updateTarget.imageRef,
+          sourceImage: this.updateTarget.imageRef,
+          version: this.updateTarget.version,
+        };
+        return this.currentEnvironment;
+      }
       const releaseImage = await this.releaseImage();
       if (releaseImage) {
         this.currentEnvironment = {
           imageRef: releaseImage.imageRef,
           sourceImage: releaseImage.imageRef,
+          version: APP_VERSION,
         };
       } else if (this.allowDevelopmentImagePull) {
         this.currentEnvironment = {
           imageRef: `${DEVELOPMENT_IMAGE}#${APP_VERSION}`,
           sourceImage: DEVELOPMENT_IMAGE,
+          version: APP_VERSION,
         };
       } else {
         throw new Error('This omnideck installer does not identify its application image.');
@@ -565,6 +590,7 @@ class OmniDeckRuntime {
       status,
       reason,
       appVersion: APP_VERSION,
+      imageVersion: this.currentEnvironment.version ?? APP_VERSION,
       imageRef: this.currentEnvironment.imageRef,
     });
   }
