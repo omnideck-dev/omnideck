@@ -64,7 +64,7 @@ test('a container that does not exist reads as absent, not as a failure', async 
   assert.equal(info, null, 'a missing container is a normal state, not an error');
 });
 
-test('podman error output stays out of the value callers parse', async (t) => {
+test('podman explains a missing container without corrupting the value callers parse', async (t) => {
   const { runtime, userDataPath } = await runtimeWithPodman();
   t.after(() => fs.promises.rm(userDataPath, { recursive: true, force: true }));
   if (!await available) return t.skip('podman is not installed');
@@ -76,8 +76,14 @@ test('podman error output stays out of the value callers parse', async (t) => {
   );
 
   assert.notEqual(result.code, 0);
-  assert.equal(result.stdout.trim(), '', 'nothing usable was produced, so stdout is empty');
-  assert.ok(result.output.length > 0, 'the explanation still reaches the transcript');
+  // A failed inspect still answers in JSON on stdout — an empty list — and puts
+  // the explanation on stderr. A caller that parsed the transcript instead
+  // would choke on prose that is not JSON at all.
+  assert.deepEqual(JSON.parse(result.stdout), [], `unexpected stdout: ${result.stdout}`);
+  assert.ok(
+    result.output.length > result.stdout.length,
+    'the explanation should reach the transcript without reaching stdout',
+  );
 });
 
 test('volume existence is reported by exit status', async (t) => {
