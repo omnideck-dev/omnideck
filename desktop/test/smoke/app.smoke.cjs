@@ -6,36 +6,12 @@
 // It runs against a throwaway profile directory and stops at the Welcome
 // screen, so it never installs anything or touches a container runtime.
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 const test = require('node:test');
-const { _electron } = require('playwright-core');
 
-const APP_DIR = path.join(__dirname, '..', '..');
-const LAUNCH_TIMEOUT = 60_000;
-
-async function launch(t) {
-  const profile = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'omnideck-smoke-'));
-  const app = await _electron.launch({
-    // The sandbox needs kernel privileges a container runner does not grant.
-    args: ['.', '--no-sandbox'],
-    cwd: APP_DIR,
-    executablePath: require('electron'),
-    env: { ...process.env, OMNIDECK_DESKTOP_USER_DATA: profile },
-    timeout: LAUNCH_TIMEOUT,
-  });
-  t.after(async () => {
-    await app.close().catch(() => {});
-    await fs.promises.rm(profile, { recursive: true, force: true });
-  });
-  const window = await app.firstWindow();
-  await window.waitForLoadState('domcontentloaded');
-  return { app, window };
-}
+const { launchApp } = require('./harness.cjs');
 
 test('the application opens a visible window on a clean profile', async (t) => {
-  const { app, window } = await launch(t);
+  const { app, window } = await launchApp(t);
 
   // The window is shown once its page has loaded, which is after the first
   // window exists. Sampling visibility once races that boundary, so this waits
@@ -55,7 +31,7 @@ test('the application opens a visible window on a clean profile', async (t) => {
 });
 
 test('a clean profile reaches Welcome through the real process boundary', async (t) => {
-  const { window } = await launch(t);
+  const { window } = await launchApp(t);
 
   await window.waitForFunction(
     () => document.getElementById('title')?.textContent?.includes('Welcome'),
@@ -73,7 +49,7 @@ test('a clean profile reaches Welcome through the real process boundary', async 
 });
 
 test('the preload exposes only the actions the setup screen uses', async (t) => {
-  const { window } = await launch(t);
+  const { window } = await launchApp(t);
 
   const bridge = await window.evaluate(
     () => Object.keys(window.omnideckDesktop || {}).sort(),
@@ -83,7 +59,7 @@ test('the preload exposes only the actions the setup screen uses', async (t) => 
 });
 
 test('the setup screen has every element the renderer writes to', async (t) => {
-  const { window } = await launch(t);
+  const { window } = await launchApp(t);
 
   // A removed element does not fail a unit test — the renderer has none — but
   // it throws on the first state that touches it, which is how an error screen
@@ -99,7 +75,7 @@ test('the setup screen has every element the renderer writes to', async (t) => {
 });
 
 test('the theme follows the operating system preference', async (t) => {
-  const { window } = await launch(t);
+  const { window } = await launchApp(t);
 
   const theme = await window.evaluate(() => document.documentElement.dataset.theme);
 

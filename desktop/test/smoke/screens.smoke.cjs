@@ -8,22 +8,40 @@
 // title, the phase list, and both buttons.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { _electron } = require('playwright-core');
 
-const APP_DIR = path.join(__dirname, '..', '..');
+const { APP_DIR, launchApp } = require('./harness.cjs');
+
 const RUNTIME_DIR = path.join(APP_DIR, 'build', 'runtime');
 const MANIFEST = path.join(RUNTIME_DIR, 'image-manifest.json');
 const MIN_WIDTH = 880;
 const MIN_HEIGHT = 620;
 
-// A profile that has already completed setup, so startup gets past Welcome and
-// reaches the checks, plus a manifest that does not describe this build.
-async function failingProfile(t) {
-  const profile = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'omnideck-screen-'));
+// A manifest that does not describe this build, put where the application looks
+// for the one it shipped with. Restored afterwards, since it is part of the
+// working tree rather than the profile.
+async function unidentifiableRelease(t) {
+  const existing = await fs.promises.readFile(MANIFEST, 'utf8').catch(() => null);
+  await fs.promises.mkdir(RUNTIME_DIR, { recursive: true });
   await fs.promises.writeFile(
+    MANIFEST,
+    `${JSON.stringify({
+      schemaVersion: 2,
+      appVersion: 'not-this-build',
+      imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`,
+    })}\n`,
+  );
+  t.after(async () => {
+    if (existing === null) await fs.promises.rm(MANIFEST, { force: true });
+    else await fs.promises.writeFile(MANIFEST, existing);
+  });
+}
+
+// A profile that has already completed setup, so startup gets past Welcome and
+// reaches the checks.
+function completedSetup(profile) {
+  return fs.promises.writeFile(
     path.join(profile, 'setup-state.json'),
     `${JSON.stringify({
       schemaVersion: 1,
@@ -36,39 +54,11 @@ async function failingProfile(t) {
     }, null, 2)}\n`,
     { mode: 0o600 },
   );
-
-  const existing = await fs.promises.readFile(MANIFEST, 'utf8').catch(() => null);
-  await fs.promises.mkdir(RUNTIME_DIR, { recursive: true });
-  await fs.promises.writeFile(
-    MANIFEST,
-    `${JSON.stringify({
-      schemaVersion: 2,
-      appVersion: 'not-this-build',
-      imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`,
-    })}\n`,
-  );
-
-  t.after(async () => {
-    if (existing === null) await fs.promises.rm(MANIFEST, { force: true });
-    else await fs.promises.writeFile(MANIFEST, existing);
-    await fs.promises.rm(profile, { recursive: true, force: true });
-  });
-  return profile;
 }
 
 async function launchFailing(t) {
-  const profile = await failingProfile(t);
-  const app = await _electron.launch({
-    args: ['.', '--no-sandbox'],
-    cwd: APP_DIR,
-    executablePath: require('electron'),
-    env: { ...process.env, OMNIDECK_DESKTOP_USER_DATA: profile },
-    timeout: 60_000,
-  });
-  t.after(() => app.close().catch(() => {}));
-
-  const window = await app.firstWindow();
-  await window.waitForLoadState('domcontentloaded');
+  await unidentifiableRelease(t);
+  const { app, window } = await launchApp(t, completedSetup);
   await window.waitForFunction(
     () => document.documentElement.dataset.stage === 'error',
     null,

@@ -23,7 +23,7 @@
     "dist:linux:container": "bash scripts/build-linux-container.sh",
     "dist:mac": "electron-builder --mac",
     "dist:windows": "electron-builder --win",
-    "test:app": "node scripts/install-electron.cjs && node --test test/smoke/*.smoke.cjs"
+    "test:app": "node scripts/install-electron.cjs && node --test --test-concurrency=1 --test-timeout=120000 test/smoke/*.smoke.cjs"
   },
   "devDependencies": {
     "@electron/notarize": "3.1.1",
