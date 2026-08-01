@@ -26,14 +26,14 @@ def say(text: str) -> str:
     return f"<<SAY>>{text}<<END>>"
 
 
-def call_tool(name: str, **args: object) -> str:
-    """Agent invokes tool *name* with keyword *args* (a generic escape hatch).
+def call_tool(tool_name: str, **args: object) -> str:
+    """Agent invokes *tool_name* with keyword *args* (a generic escape hatch).
 
     Use for any agent tool that has no dedicated directive, e.g.
     ``call_tool("close_tab", tab=2)`` or ``call_tool("goto", url="...", tab=1)``.
     Skill-gated tools (e.g. browser tools) are loaded automatically before use.
     """
-    return f"<<TOOL {name}>>{json.dumps(args)}<<END>>"
+    return f"<<TOOL {tool_name}>>{json.dumps(args)}<<END>>"
 
 
 def bash(cmd: str) -> str:

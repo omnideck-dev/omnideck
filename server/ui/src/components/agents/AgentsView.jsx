@@ -45,10 +45,10 @@ function draftAgent(providers) {
  * detail is the existing ProfileBuilder editor.
  */
 export default function AgentsView() {
-    const { profilesHook, skillsHook } = useAppData();
+    const { profilesHook, providersHook, skillsHook } = useAppData();
+    const { providers } = providersHook;
     const { skills, addSkills } = skillsHook;
     const { addToast } = useToast();
-    const [providers, setProviders] = useState([]);
     const [categories, setCategories] = useState([]);
     const [draft, setDraft] = useState(null);
     const [openId, setOpenId] = useState(null);
@@ -63,12 +63,6 @@ export default function AgentsView() {
     // back nav shows an inline warning instead of discarding silently.
     const [builderDirty, setBuilderDirty] = useState(false);
     const [showUnsaved, setShowUnsaved] = useState(false);
-
-    useEffect(() => {
-        fetch('/api/providers').then((r) => r.json()).then((data) => {
-            setProviders(data.providers || []);
-        }).catch(() => { });
-    }, []);
 
     // Tool-category metadata for the skill picker (tool counts, connection dots).
     useEffect(() => {

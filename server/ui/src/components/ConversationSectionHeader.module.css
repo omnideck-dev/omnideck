@@ -38,10 +38,8 @@
 /* The folder's identity icon, inline right after the chevron (like the pin). */
 .sectionToggle .folderInlineIcon { font-size: 11px; flex-shrink: 0; }
 
-/* Folder 3-dot trigger. It lives permanently in the trailing slot, dimmed at
- * rest so it stays discoverable (a hover-only reveal is invisible on touch and
- * hard to find) without pulling the eye, and goes full-strength on hover /
- * focus / while its menu is open. */
+/* Match conversation rows: reserve the trailing slot, but reveal the folder
+ * menu trigger only on hover, keyboard focus, or while its menu is open. */
 .folderMenuBtn {
     flex: none;
     width: 22px;
@@ -55,7 +53,7 @@
     color: var(--text-tertiary);
     cursor: pointer;
     font-size: 13px;
-    opacity: 0.5;
+    opacity: 0;
 }
 .folderHead:hover .folderMenuBtn,
 .folderHead.menuOpen .folderMenuBtn,

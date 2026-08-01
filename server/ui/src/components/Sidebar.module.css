@@ -29,15 +29,6 @@
     color: var(--text-primary);
 }
 
-/* ── Primary action ──────────────────────────────────── */
-/* No bottom padding — New chat and the nav below it visually belong
- * to the same section. The conversations panel below is what gets the
- * separating gap via its own search-row margin.
- */
-.primary {
-    padding: var(--sp-2) var(--sp-2) 0;
-}
-
 .newChat {
     display: flex;
     align-items: center;
@@ -74,47 +65,30 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 1px var(--sp-2) var(--sp-2);
+    padding: var(--sp-2);
 }
 
-.navItem {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    height: 30px;
-    padding: 0 10px;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    cursor: pointer;
-    position: relative;
-}
-.navItem i { font-size: 14px; color: var(--text-tertiary); width: 16px; text-align: center; flex-shrink: 0; }
-.navItem:hover { background: var(--accent-muted); color: var(--text-primary); }
-.navItem:hover i { color: var(--text-primary); }
-.collapsed .navItem { justify-content: center; padding: 0; }
-
-.navLabel { flex: 1; text-align: left; }
-
-/* Signal Line — 2px accent bar on the active item's left edge */
-.navItem.active {
-    background: var(--accent-muted);
-    color: var(--accent);
-}
-.navItem.active i { color: var(--accent); }
-.navItem.active::before {
-    content: '';
+.srOnly {
     position: absolute;
-    left: -8px;
-    top: 6px;
-    bottom: 6px;
-    width: 2px;
-    background: var(--accent);
-    border-radius: var(--radius-full);
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .grow { flex: 1; }
+
+/* Keep New chat directly below the icon rail content. The grow spacer that
+ * follows this block keeps the footer anchored to the bottom.
+ */
+.collapsedConversation {
+    padding: var(--sp-2);
+    border-top: 1px solid var(--border);
+}
 
 /* ── Footer ──────────────────────────────────────────── */
 .footer {

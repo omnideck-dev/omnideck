@@ -316,19 +316,16 @@
 .addSkillBtn:hover { border-color: var(--accent); color: var(--accent); }
 
 .skPopover {
-    position: absolute;
-    z-index: 20;
-    margin-top: 0.4rem;
-    width: 380px;
-    max-width: 100%;
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 .skPopHead { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--border-subtle); }
-.skPopList { max-height: 280px; overflow-y: auto; }
+.skPopList { flex: 1; min-height: 0; max-height: 280px; overflow-y: auto; }
 .skPopEmpty { padding: 1rem; text-align: center; font-size: 0.75rem; color: var(--text-tertiary); font-style: italic; }
 .skPopRow {
     display: flex;
@@ -380,4 +377,3 @@
 .autoText { display: flex; flex-direction: column; gap: 0.1rem; }
 .autoLabel { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
 .autoHelp { font-size: 0.7rem; color: var(--text-primary); opacity: 0.6; line-height: 1.4; }
-

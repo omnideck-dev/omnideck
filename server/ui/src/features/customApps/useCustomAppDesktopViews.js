@@ -54,8 +54,23 @@ export default function useCustomAppDesktopViews({ openApp }) {
     const handleViewAction = useCallback((effect) => {
         if (effect.payload.actionId === 'reload') {
             reloadApp(effect.payload.view.id);
+            return;
         }
-    }, [reloadApp]);
+        if (effect.payload.actionId === 'toggle-sidebar-pin') {
+            const slug = customAppSlugForView(effect.payload.view);
+            if (!slug) return;
+            if (customApps.pinnedAppSlugs.includes(slug)) {
+                customApps.unpinApp(slug);
+            } else {
+                customApps.pinApp(slug);
+            }
+        }
+    }, [
+        customApps.pinApp,
+        customApps.pinnedAppSlugs,
+        customApps.unpinApp,
+        reloadApp,
+    ]);
     useAppEffectSubscription(
         APP_EFFECT_TYPES.DESKTOP_VIEW_ACTION_REQUESTED,
         handleViewAction,
@@ -125,9 +140,19 @@ export default function useCustomAppDesktopViews({ openApp }) {
                 changed = true;
                 return [];
             }
-            if (view.app === app) return [view];
+            const pinnedToSidebar = customApps.pinnedAppSlugs.includes(app.slug);
+            if (
+                view.app === app
+                && view.pinnedToSidebar === pinnedToSidebar
+            ) {
+                return [view];
+            }
             changed = true;
-            return [createCustomAppView(app, view.reloadSignal || 0)];
+            return [createCustomAppView(
+                app,
+                view.reloadSignal || 0,
+                pinnedToSidebar,
+            )];
         });
         if (changed) {
             const reconciledIds = new Set(
@@ -143,6 +168,7 @@ export default function useCustomAppDesktopViews({ openApp }) {
     }, [
         catalogLoaded,
         customApps.enabled,
+        customApps.pinnedAppSlugs,
         desktopCommands.syncViews,
         desktopModel.openViews,
         findBySlug,

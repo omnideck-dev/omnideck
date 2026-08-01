@@ -60,6 +60,23 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         expect(screen.queryByText(/music_gen/i)).not.toBeInTheDocument();
     });
 
+    it('filters picker options by skill name', async () => {
+        const user = userEvent.setup();
+        renderBuilder();
+        await user.click(screen.getByTestId('profile-add-skill'));
+
+        const search = screen.getByPlaceholderText('Search your skills…');
+        await user.type(search, 'web');
+
+        expect(screen.getByTestId('profile-skill-option-browser')).toBeInTheDocument();
+        expect(screen.queryByTestId('profile-skill-option-coder')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('profile-skill-option-assistant')).not.toBeInTheDocument();
+
+        await user.clear(search);
+        await user.type(search, 'missing');
+        expect(screen.getByText('No skills match.')).toBeInTheDocument();
+    });
+
     it('renders the profile\'s skills as chips and removes one on save', async () => {
         const user = userEvent.setup();
         const { onSave } = renderBuilder();

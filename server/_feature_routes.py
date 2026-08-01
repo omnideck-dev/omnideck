@@ -3,7 +3,7 @@
 from aiohttp import web
 
 from config import load_config
-from settings import custom_apps_enabled
+from settings import custom_apps_enabled, custom_tools_enabled
 
 
 async def handle_features(_request: web.Request) -> web.Response:
@@ -14,7 +14,7 @@ async def handle_features(_request: web.Request) -> web.Response:
         "music_generation": features.music_generation,
         "desktop": features.desktop,
         "visual_grounding": features.visual_grounding,
-        "custom_tools": features.custom_tools,
+        "custom_tools": custom_tools_enabled(),
         "custom_apps": custom_apps_enabled(),
     })
 

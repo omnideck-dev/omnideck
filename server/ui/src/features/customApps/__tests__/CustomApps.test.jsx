@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -29,6 +29,7 @@ function wrapper({ children }) {
 
 describe('CustomAppsProvider', () => {
     beforeEach(() => {
+        localStorage.clear();
         harness.enabled = true;
         harness.catalog.refresh.mockReset();
     });
@@ -50,5 +51,30 @@ describe('CustomAppsProvider', () => {
 
         expect(result.current.enabled).toBe(false);
         expect(result.current.catalog).toBe(harness.catalog);
+    });
+
+    it('persists ordered, unique pinned App slugs', () => {
+        localStorage.setItem(
+            'omnideck_sidebar_pinned_apps',
+            JSON.stringify(['text-lab']),
+        );
+        const { result } = renderHook(useCustomApps, { wrapper });
+
+        expect(result.current.pinnedAppSlugs).toEqual(['text-lab']);
+        act(() => result.current.pinApp('notes-lab'));
+        act(() => result.current.pinApp('text-lab'));
+        expect(result.current.pinnedAppSlugs).toEqual(['text-lab', 'notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
+            .toEqual(['text-lab', 'notes-lab']);
+
+        act(() => result.current.reorderPinnedApps(['notes-lab', 'text-lab']));
+        expect(result.current.pinnedAppSlugs).toEqual(['notes-lab', 'text-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
+            .toEqual(['notes-lab', 'text-lab']);
+
+        act(() => result.current.unpinApp('text-lab'));
+        expect(result.current.pinnedAppSlugs).toEqual(['notes-lab']);
+        expect(JSON.parse(localStorage.getItem('omnideck_sidebar_pinned_apps')))
+            .toEqual(['notes-lab']);
     });
 });

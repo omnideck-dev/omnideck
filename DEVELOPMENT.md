@@ -56,7 +56,8 @@ just logs           # Tail app + inference logs
 | Music generation | `ENABLE_MUSIC_GEN=1` | GPU |
 | Desktop agent | `ENABLE_DESKTOP=1` | — |
 | Visual grounding | `ENABLE_GROUNDING=1` | GPU |
-| Custom tools | `ENABLE_CUSTOM_TOOLS=1` | — |
+
+Custom Tools and Apps are user-controlled from **Settings → System → Experimental**.
 
 ## Testing
 

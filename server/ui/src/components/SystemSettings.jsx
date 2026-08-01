@@ -7,10 +7,11 @@ import EyeIcon from './icons/EyeIcon';
 import CompactionIcon from './icons/CompactionIcon';
 import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
+import WrenchIcon from './icons/WrenchIcon.jsx';
 
 export default function SystemSettings() {
-    const { refreshFeatures } = useAppData();
-    const [providers, setProviders] = useState([]);
+    const { providersHook, refreshFeatures } = useAppData();
+    const { providers } = providersHook;
     const [profiles, setProfiles] = useState([]);
     const [settings, setSettings] = useState({ default_agent: 'omnideck' });
     const [loading, setLoading] = useState(true);
@@ -19,15 +20,12 @@ export default function SystemSettings() {
     useEffect(() => {
         async function init() {
             try {
-                const [providersRes, settingsRes, profilesRes] = await Promise.all([
-                    fetch('/api/providers'),
+                const [settingsRes, profilesRes] = await Promise.all([
                     fetch('/api/settings'),
                     fetch('/api/profiles'),
                 ]);
-                const providersData = await providersRes.json();
                 const settingsData = await settingsRes.json();
                 const profilesData = await profilesRes.json();
-                setProviders(providersData.providers || []);
                 setSettings(settingsData);
                 setProfiles(profilesData);
             } catch {
@@ -51,7 +49,9 @@ export default function SystemSettings() {
             if (res.ok) {
                 const updated = await res.json();
                 setSettings(updated);
-                if (key === 'custom_apps_enabled') await refreshFeatures();
+                if (key === 'custom_apps_enabled' || key === 'custom_tools_enabled') {
+                    await refreshFeatures();
+                }
                 return;
             }
         } catch {
@@ -93,15 +93,32 @@ export default function SystemSettings() {
                     <PackageIcon />
                 </div>
                 <div className={styles.settingInfo}>
-                    <span className={styles.settingTitle}>Custom Apps</span>
+                    <span className={styles.settingTitle}>Apps</span>
                     <span className={styles.settingDesc}>
-                        Custom Apps let your Omnideck agents build and run personalized apps for you. Only use Custom Apps you trust.
+                        Apps let your Omnideck agents build and run personalized tools for you. Only use Apps you trust.
                     </span>
                 </div>
                 <ToggleSwitch
                     checked={!!settings.custom_apps_enabled}
                     onChange={(e) => updateSetting('custom_apps_enabled', e.target.checked)}
-                    aria-label="Custom Apps"
+                    aria-label="Apps"
+                />
+            </label>
+
+            <label className={styles.settingRow} data-testid="custom-tools-toggle">
+                <div className={styles.settingIcon}>
+                    <WrenchIcon size={16} />
+                </div>
+                <div className={styles.settingInfo}>
+                    <span className={styles.settingTitle}>Custom Tools</span>
+                    <span className={styles.settingDesc}>
+                        The agent can create, save, and run reusable tools.
+                    </span>
+                </div>
+                <ToggleSwitch
+                    checked={!!settings.custom_tools_enabled}
+                    onChange={(e) => updateSetting('custom_tools_enabled', e.target.checked)}
+                    aria-label="Custom Tools"
                 />
             </label>
 

@@ -204,6 +204,19 @@ describe('ConversationsPanel — context menu', () => {
         await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
         expect(onLoadConversation).not.toHaveBeenCalled();
     });
+
+    it('opens the same menu on right-click and keeps the 3-dot trigger', async () => {
+        const onLoadConversation = vi.fn();
+        render(<ConversationsPanel onLoadConversation={onLoadConversation} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const row = screen.getAllByTestId('recent-item')[0];
+        expect(within(row).getByTestId('recent-menu-trigger')).toBeInTheDocument();
+        fireEvent.contextMenu(row, { clientX: 80, clientY: 90 });
+
+        expect(screen.getByTestId('recent-menu')).toBeInTheDocument();
+        expect(onLoadConversation).not.toHaveBeenCalled();
+    });
 });
 
 describe('ConversationsPanel — delete', () => {
@@ -635,6 +648,19 @@ describe('ConversationsPanel — folders', () => {
             }),
         );
         await waitFor(() => expect(screen.getByText('Job')).toBeInTheDocument());
+    });
+
+    it('opens the folder menu on right-click and keeps the 3-dot trigger', async () => {
+        mockFetch(SESSIONS, FOLDERS);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
+
+        const header = screen.getByTestId('recent-folder-header');
+        expect(within(header).getByTestId('recent-folder-menu-trigger'))
+            .toBeInTheDocument();
+        fireEvent.contextMenu(header, { clientX: 80, clientY: 90 });
+
+        expect(screen.getByTestId('recent-folder-menu')).toBeInTheDocument();
     });
 
     it('deletes a folder from the folder menu and returns its chat to the date buckets', async () => {

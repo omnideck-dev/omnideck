@@ -1,29 +1,10 @@
-.backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    padding: 20px;
-    animation: fadeIn 0.15s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
 .modal {
-    width: 100%;
-    max-width: 900px;
     max-height: 80vh;
     background: var(--canvas);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
+    padding: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
