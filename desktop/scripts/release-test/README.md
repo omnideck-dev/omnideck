@@ -14,6 +14,11 @@ The Linux helper caches an extracted AppImage so FUSE is not required.
 The isolated resource namespace was introduced in `v0.1.0-alpha.4`, so the
 helpers refuse older releases rather than risk touching a normal environment.
 
+`CHECKLIST.md` is the per-release manual pass: what to run, in what order, and
+what each screen should say. It covers only what automated tests cannot — the
+elevation prompts, the operating system's own install warnings, and how it looks
+on a real display.
+
 ## Scenarios
 
 | Scenario | What it exercises |
