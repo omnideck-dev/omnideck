@@ -58,6 +58,17 @@ jobs:
         working-directory: desktop
         run: npm test
 
+      # Launches the packaged entry point for real. The suite above stubs the
+      # process boundary; this is what catches a window that never opens, a
+      # preload that no longer matches, or a screen missing an element the
+      # renderer writes to — none of which fail a unit test.
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Smoke test the application
+        working-directory: desktop
+        run: xvfb-run -a npm run test:app
+
   runtime_image:
     if: github.event_name != 'pull_request'
     needs: test

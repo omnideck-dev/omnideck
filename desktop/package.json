@@ -22,12 +22,14 @@
     "dist:linux": "electron-builder --linux",
     "dist:linux:container": "bash scripts/build-linux-container.sh",
     "dist:mac": "electron-builder --mac",
-    "dist:windows": "electron-builder --win"
+    "dist:windows": "electron-builder --win",
+    "test:app": "node --test test/smoke/*.smoke.cjs"
   },
   "devDependencies": {
     "@electron/notarize": "3.1.1",
     "electron": "43.2.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "playwright-core": "^1.62.0"
   },
   "overrides": {
     "brace-expansion": "5.0.8",
