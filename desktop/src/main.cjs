@@ -117,7 +117,7 @@ async function createWindow() {
     event.preventDefault();
     zoomFactor = nextZoomFactor(zoomFactor, action);
     mainWindow.webContents.setZoomFactor(zoomFactor);
-    void saveZoomPreference();
+    saveZoomPreference();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
