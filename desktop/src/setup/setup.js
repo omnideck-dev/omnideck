@@ -1,5 +1,6 @@
 const title = document.getElementById('title');
 const detail = document.getElementById('detail');
+const activity = document.getElementById('activity');
 const eyebrow = document.getElementById('eyebrow');
 const primary = document.getElementById('primary');
 const secondary = document.getElementById('secondary');
@@ -9,9 +10,8 @@ const progressTrack = progressWrap.querySelector('[role="progressbar"]');
 const progress = document.getElementById('progress');
 const footnote = document.getElementById('footnote');
 const doctorPanel = document.getElementById('doctor-panel');
-const doctorKicker = document.getElementById('doctor-kicker');
 const doctorResult = document.getElementById('doctor-result');
-const technicalDetails = document.getElementById('technical-details');
+const technicalDetails = document.querySelector('#doctor-panel details');
 const diagnosticList = document.getElementById('diagnostic-list');
 const technicalOutput = document.getElementById('technical-output');
 const actionError = document.getElementById('action-error');
@@ -59,17 +59,16 @@ function eyebrowFor(state) {
 // report of which step failed. Only the heading and the technical block differ.
 function renderDiagnostics(state) {
   const diagnostics = Array.isArray(state.diagnostics) ? state.diagnostics : [];
+  // The list is a failure report, not a progress indicator: during setup the
+  // activity line and the overall bar say where things are, and a list of
+  // component names only invites the question of what each one is.
   const failed = state.stage === 'error';
-  doctorPanel.hidden = diagnostics.length === 0;
+  doctorPanel.hidden = !failed || diagnostics.length === 0;
   document.documentElement.dataset.checklist = doctorPanel.hidden ? '' : 'shown';
   diagnosticList.replaceChildren();
   if (doctorPanel.hidden) return;
 
-  doctorPanel.dataset.mode = failed ? 'diagnostics' : 'progress';
-  doctorKicker.textContent = failed ? 'DIAGNOSTICS' : 'PROGRESS';
-  doctorResult.hidden = !failed;
   doctorResult.textContent = state.diagnosticResult || 'Issue found';
-  technicalDetails.hidden = !failed;
   technicalDetails.open = false;
   technicalOutput.textContent = state.technical || 'See the diagnostic log for more information.';
   diagnosticList.replaceChildren(...diagnostics.map((diagnostic) => {
@@ -96,6 +95,8 @@ function render(state) {
   title.textContent = state.title;
   detail.textContent = state.detail;
   eyebrow.textContent = eyebrowFor(state);
+  activity.textContent = state.activity || '';
+  activity.hidden = !state.activity;
 
   primary.hidden = !(
     state.canStart

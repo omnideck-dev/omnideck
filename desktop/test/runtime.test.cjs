@@ -7,7 +7,7 @@ const test = require('node:test');
 
 const {
   APP_VERSION,
-  DIAGNOSTIC_DEFINITIONS,
+  SETUP_PHASES,
   FAILURE_COPY,
   IMAGE,
   IMAGE_REF_LABEL,
@@ -439,7 +439,7 @@ test('a changed pinned image selects the update flow', async (context) => {
 
   assert.deepEqual(result, { action: 'setup', reason: 'update' });
   assert.equal(states.at(-1).setupReason, 'update');
-  assert.match(states.at(-1).detail, /Applying the latest updates/);
+  assert.match(states.at(-1).detail, /Bringing omnideck up to date/);
   assert.notEqual(imageRef, oldImageRef);
 });
 
@@ -518,7 +518,7 @@ test('a healthy completed setup with the same digest opens directly', async (con
   assert.equal(migrated.imageRef, imageRef);
 });
 
-test('an unhealthy completed setup opens doctor with real checkpoint results', async (context) => {
+test('an unhealthy existing install reports which phase failed', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '1');
   await writeSetupState(userDataPath, {
     status: 'complete',
@@ -537,8 +537,8 @@ test('an unhealthy completed setup opens doctor with real checkpoint results', a
   };
   runtime.findExecutable = async () => 'podman';
   runtime.run = async (_executable, args) => {
-    if (args[0] === 'container') return { code: 125, output: '' };
-    return { code: 0, output: '' };
+    if (args[0] === 'container') return { code: 125, output: '', stdout: '' };
+    return { code: 0, output: '', stdout: '' };
   };
 
   const result = await runtime.startExisting();
@@ -546,24 +546,17 @@ test('an unhealthy completed setup opens doctor with real checkpoint results', a
 
   assert.equal(result.action, 'doctor');
   assert.equal(doctor.stage, 'error');
-  assert.equal(
-    doctor.diagnostics.find((item) => item.id === 'startup').status,
-    'issue',
-  );
-  assert.equal(
-    doctor.diagnostics.find((item) => item.id === 'release').status,
-    'pass',
-  );
+  assert.equal(doctor.diagnostics.find((item) => item.id === 'startup').status, 'issue');
   assert.equal(doctor.canRetry, true);
 });
 
-test('doctor leaves later checkpoints not checked when release validation fails first', async (context) => {
-  const { imageRef, resourcesPath, runtimePath, userDataPath } = await runtimeFixture(context, '3');
+test('a damaged installer blames no phase, because none had started', async (context) => {
+  const { resourcesPath, runtimePath, userDataPath } = await runtimeFixture(context, '3');
   await writeSetupState(userDataPath, {
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
-    imageRef,
+    imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'3'.repeat(64)}`,
   });
   await fs.writeFile(path.join(runtimePath, 'image-manifest.json'), '{"schemaVersion":1}\n');
   const states = [];
@@ -578,13 +571,9 @@ test('doctor leaves later checkpoints not checked when release validation fails 
 
   assert.equal(result.action, 'doctor');
   assert.equal(doctor.primaryAction, 'download');
-  assert.equal(
-    doctor.diagnostics.find((item) => item.id === 'release').status,
-    'issue',
-  );
-  assert.equal(
-    doctor.diagnostics.find((item) => item.id === 'components').status,
-    'waiting',
+  assert.ok(
+    !doctor.diagnostics.some((item) => item.status !== 'waiting'),
+    'no phase had started, so none should be marked',
   );
 });
 
@@ -636,10 +625,9 @@ test('podman warnings on stderr do not corrupt container inspection', async (con
   assert.equal(runtime.isCurrentContainer(info), true);
 });
 
-test('a tagged failure keeps its checkpoint when the transcript mentions downloads', (context) => {
+test('a tagged failure keeps its phase when the transcript mentions downloads', () => {
   const states = [];
   const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
-  context.after(() => {});
   const error = new Error('start app exited with code 125');
   error.diagnostic = 'startup';
   error.failureKind = 'startup';
@@ -650,7 +638,7 @@ test('a tagged failure keeps its checkpoint when the transcript mentions downloa
 
   assert.equal(reported.diagnosticResult, 'Startup issue');
   assert.equal(reported.diagnostics.find((item) => item.id === 'startup').status, 'issue');
-  assert.equal(reported.diagnostics.find((item) => item.id === 'downloads').status, 'waiting');
+  assert.equal(reported.diagnostics.find((item) => item.id === 'download').status, 'pass');
   assert.equal(reported.canRetry, true);
 });
 
@@ -706,9 +694,11 @@ test('an untagged failure is still classified from its message', () => {
   assert.equal(states.at(-1).diagnosticResult, 'Download issue');
 });
 
-test('chunk progress is rate limited and reports a real fraction', () => {
+test('chunk progress is rate limited and advances the overall bar', () => {
   const states = [];
   const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  runtime.beginPhase('download');
+  const atPhaseStart = states.at(-1).progress;
 
   for (let index = 0; index < 2_000; index += 1) {
     runtime.emitProgressUpdate(index / 2_000);
@@ -716,7 +706,10 @@ test('chunk progress is rate limited and reports a real fraction', () => {
 
   assert.ok(states.length < 20, `expected a throttled stream, got ${states.length} emits`);
   assert.ok(states.every((state) => state.progress >= 0 && state.progress <= 1));
-  assert.equal(states.at(-1).indeterminate, false);
+  // The emits are throttled, so the advance is read from the runtime rather
+  // than from what reached the screen inside a single throttle window.
+  assert.ok(runtime.overallProgress() > atPhaseStart, 'the bar should have advanced');
+  assert.ok(runtime.overallProgress() < 1, 'a mid-phase download is not the whole of setup');
 });
 
 test('progress without a known total stays indeterminate', () => {
@@ -832,24 +825,38 @@ test('a missing container still falls back to probing the runtime', async (conte
   assert.ok(calls.some((args) => args[0] === 'info'), 'an absent container needs the probe');
 });
 
-test('the checkpoint list is ordered the way setup works through it', () => {
+test('phases run in order and weigh the whole of setup', () => {
   assert.deepEqual(
-    DIAGNOSTIC_DEFINITIONS.map(({ id }) => id),
-    ['release', 'support', 'components', 'environment', 'downloads', 'startup'],
+    SETUP_PHASES.map(({ id }) => id),
+    ['software', 'environment', 'download', 'startup'],
+  );
+  const download = SETUP_PHASES.find((phase) => phase.id === 'download');
+  const others = SETUP_PHASES.filter((phase) => phase.id !== 'download');
+  assert.ok(
+    download.weight >= others.reduce((sum, phase) => sum + phase.weight, 0) / 2,
+    'the download is most of the wait and should own most of the bar',
   );
 });
 
-test('checkpoint labels do not name the underlying technology', () => {
-  const forbidden = /podman|docker|container|image|wsl|volume|machine|registry/i;
-  for (const { label } of DIAGNOSTIC_DEFINITIONS) {
-    assert.ok(!forbidden.test(label), `"${label}" leaks an implementation detail`);
+test('setup copy names no component, except where consent needs specifics', () => {
+  const forbidden = /podman|docker|container|image|wsl|windows subsystem|volume|machine|registry/i;
+  for (const phase of SETUP_PHASES) {
+    assert.ok(!forbidden.test(`${phase.label} ${phase.activity}`), phase.activity);
   }
-  for (const copy of [...Object.values(SETUP_COPY), ...Object.values(FAILURE_COPY)]) {
+  // The two permission screens are the exception: they are where an
+  // administrator prompt is approved, and consent needs to name what it is for.
+  const consent = ['permission', 'permissionWindows'];
+  for (const [key, copy] of Object.entries(SETUP_COPY)) {
+    if (consent.includes(key)) continue;
     assert.ok(!forbidden.test(`${copy.title} ${copy.detail}`), copy.title);
   }
+  for (const copy of Object.values(FAILURE_COPY)) {
+    assert.ok(!forbidden.test(`${copy.title} ${copy.detail}`), copy.title);
+  }
+  assert.match(SETUP_COPY.permission.detail, /Podman/);
 });
 
-test('setup reports which checkpoint it is working on', async (context) => {
+test('setup reports what it is doing, one activity at a time', async (context) => {
   const { resourcesPath, userDataPath } = await runtimeFixture(context, 'b');
   const states = [];
   const runtime = new OmniDeckRuntime({
@@ -864,30 +871,29 @@ test('setup reports which checkpoint it is working on', async (context) => {
 
   await runtime.setup('first-run');
 
-  const working = states
-    .filter((state) => Array.isArray(state.diagnostics))
-    .flatMap((state) => state.diagnostics.filter((item) => item.status === 'working'))
-    .map((item) => item.id);
-  assert.ok(working.includes('components'), 'the software step must announce itself');
-  assert.ok(working.includes('environment'), 'the workspace step must announce itself');
-  assert.ok(working.includes('downloads'), 'the download step must announce itself');
-
-  const finished = states.at(-1);
-  assert.equal(finished.stage, 'ready');
-  assert.ok(
-    finished.diagnostics.every((item) => item.status === 'pass'),
-    'every checkpoint should be complete on the ready screen',
+  const activities = [...new Set(states.map((state) => state.activity).filter(Boolean))];
+  assert.deepEqual(
+    activities,
+    runtime.phases.map((phase) => phase.activity),
+    'every applicable phase should announce itself, in order',
   );
+  assert.ok(
+    !states.some((state) => state.stage === 'preparing' && state.diagnostics),
+    'no checklist is shown while setup is working',
+  );
+  assert.equal(states.at(-1).stage, 'ready');
+  assert.equal(states.at(-1).progress, 1);
 });
 
-test('progress states carry the checklist so it is visible before anything fails', () => {
-  const states = [];
-  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+test('a phase that does not apply to this computer is not counted', () => {
+  const runtime = new OmniDeckRuntime({ userDataPath: '/nonexistent', onState: () => {} });
+  // The runtime picks its own phases from the host platform; drive both shapes
+  // explicitly so the weighting is checked on Linux and elsewhere alike.
+  runtime.phases = SETUP_PHASES.filter((phase) => phase.id !== 'environment');
+  runtime.phaseIndex = runtime.phases.length - 1;
+  runtime.phaseFraction = 1;
 
-  runtime.emitWorking();
-
-  assert.equal(states.at(-1).stage, 'preparing');
-  assert.equal(states.at(-1).diagnostics.length, 6);
+  assert.equal(runtime.overallProgress(), 1, 'the bar must still reach full');
 });
 
 test('a resumed setup says earlier work was kept without adding a screen', () => {

@@ -54,15 +54,22 @@ const SETUP_COPY = Object.freeze({
   }),
   preparing: Object.freeze({
     title: 'Preparing your environment',
-    detail: 'Downloading and installing required components. This may take several minutes.',
+    detail: 'Setting omnideck up on this computer. This usually takes a few minutes.',
   }),
+  // The two screens below name what is being installed. Everywhere else the
+  // copy stays in plain language, but this is the moment the user is asked to
+  // approve an administrator prompt, and consent needs specifics.
   permission: Object.freeze({
     title: 'Waiting for your permission',
-    detail: 'Your computer will ask you to approve installing required software. omnideck never sees or stores your password.',
+    detail: 'Your computer will ask you to approve installing Podman — the software omnideck uses to run in an isolated space. omnideck never sees or stores your password.',
+  }),
+  permissionWindows: Object.freeze({
+    title: 'Waiting for your permission',
+    detail: 'Your computer will ask you to approve turning on Windows Subsystem for Linux, which omnideck needs to run in an isolated space. omnideck never sees or stores your password.',
   }),
   updating: Object.freeze({
     title: 'Preparing your environment',
-    detail: 'Applying the latest updates… This may take several minutes.',
+    detail: 'Bringing omnideck up to date. This usually takes a few minutes.',
   }),
   // Keeps the working title so resuming does not read as a separate screen that
   // has to be dismissed, while still saying that earlier work was kept.
@@ -70,30 +77,66 @@ const SETUP_COPY = Object.freeze({
     title: 'Preparing your environment',
     detail: 'Continuing from where the last attempt stopped. Anything already finished is kept.',
   }),
-  finishing: Object.freeze({
-    title: 'Finishing setup',
-    detail: 'Getting everything ready…',
-  }),
   ready: Object.freeze({
     title: 'omnideck is ready',
     detail: 'Everything is prepared. Open omnideck whenever you’re ready.',
   }),
 });
 
-// Listed in the order setup works through them, because this doubles as the
-// progress checklist and a list that fills in out of order reads as broken.
-// The labels name what a person gets, never how it is delivered.
-const DIAGNOSTIC_DEFINITIONS = Object.freeze([
-  Object.freeze({ id: 'release', label: 'Installer files' }),
-  Object.freeze({ id: 'support', label: 'This computer' }),
-  Object.freeze({ id: 'components', label: 'Required software' }),
-  Object.freeze({ id: 'environment', label: 'Secure workspace' }),
-  Object.freeze({ id: 'downloads', label: 'Required downloads' }),
-  Object.freeze({ id: 'startup', label: 'omnideck startup' }),
+// The phases setup works through, in order. `activity` is the one line shown
+// while a phase runs — it describes what is happening, and deliberately never
+// names a component, because someone who just launched omnideck reads
+// "downloading omnideck" as the app downloading itself. `label` is the shorter
+// form used only in the failure report, where naming a step is the point.
+//
+// `weight` is the phase's share of the overall bar, taken from how long each
+// really takes: the download is most of the wait and the checks barely
+// register. Phases that do not apply to this computer are dropped and the
+// remaining weights are renormalised, so the bar always ends at full.
+const SETUP_PHASES = Object.freeze([
+  Object.freeze({
+    id: 'software',
+    label: 'Computer setup',
+    activity: 'Getting your computer ready…',
+    weight: 25,
+    appliesTo: null,
+  }),
+  Object.freeze({
+    id: 'environment',
+    label: 'Secure space',
+    activity: 'Preparing a secure space to run in…',
+    weight: 15,
+    // Linux runs containers directly; there is no separate space to prepare.
+    appliesTo: ['darwin', 'win32'],
+  }),
+  Object.freeze({
+    id: 'download',
+    label: 'Application files',
+    activity: 'Downloading omnideck’s files…',
+    weight: 50,
+    appliesTo: null,
+  }),
+  Object.freeze({
+    id: 'startup',
+    label: 'Final checks',
+    activity: 'Almost ready…',
+    weight: 10,
+    appliesTo: null,
+  }),
 ]);
+
+const PHASE_STATUS_VALUES = Object.freeze({
+  pass: 'Done',
+  waiting: 'Not started',
+});
+
+function phasesFor(platform) {
+  return SETUP_PHASES.filter((phase) => !phase.appliesTo || phase.appliesTo.includes(platform));
+}
 
 const FAILURE_COPY = Object.freeze({
   support: Object.freeze({
+    phase: null,
     result: 'Compatibility issue',
     title: 'This computer isn’t supported yet',
     detail: 'This version of omnideck can’t prepare the required environment on this computer.',
@@ -103,6 +146,7 @@ const FAILURE_COPY = Object.freeze({
     primaryLabel: 'View supported systems',
   }),
   components: Object.freeze({
+    phase: 'software',
     result: 'Component issue',
     title: 'Required software couldn’t be installed',
     detail: 'This can happen when an earlier attempt was interrupted. Trying again usually clears it.',
@@ -110,7 +154,7 @@ const FAILURE_COPY = Object.freeze({
     canRetry: true,
   }),
   permission: Object.freeze({
-    diagnostic: 'components',
+    phase: 'software',
     result: 'Permission needed',
     title: 'omnideck needs your permission',
     detail: 'Permission wasn’t granted. Try again and approve the request from your computer.',
@@ -118,6 +162,7 @@ const FAILURE_COPY = Object.freeze({
     canRetry: true,
   }),
   downloads: Object.freeze({
+    phase: 'download',
     result: 'Download issue',
     title: 'The download didn’t finish',
     detail: 'Check your internet connection and try again. Anything already downloaded is kept.',
@@ -125,6 +170,7 @@ const FAILURE_COPY = Object.freeze({
     canRetry: true,
   }),
   environment: Object.freeze({
+    phase: 'environment',
     result: 'Environment issue',
     title: 'The secure workspace isn’t responding',
     detail: 'It was set up but will not answer. Trying again will attempt to repair it.',
@@ -132,6 +178,7 @@ const FAILURE_COPY = Object.freeze({
     canRetry: true,
   }),
   release: Object.freeze({
+    phase: null,
     result: 'Installer issue',
     title: 'Download omnideck again',
     detail: 'This installer is incomplete or damaged. Download a fresh copy before trying again.',
@@ -141,6 +188,7 @@ const FAILURE_COPY = Object.freeze({
     primaryLabel: 'Download omnideck',
   }),
   startup: Object.freeze({
+    phase: 'startup',
     result: 'Startup issue',
     title: 'omnideck didn’t finish starting',
     detail: 'Everything installed, but omnideck did not answer in time. Trying again runs the startup checks.',
@@ -148,7 +196,7 @@ const FAILURE_COPY = Object.freeze({
     canRetry: true,
   }),
   restart: Object.freeze({
-    diagnostic: 'components',
+    phase: 'software',
     result: 'Restart required',
     title: 'Restart needed',
     detail: 'Your progress is saved. Restart your computer, then open omnideck and setup continues on its own.',
@@ -158,7 +206,7 @@ const FAILURE_COPY = Object.freeze({
     primaryLabel: 'Close omnideck',
   }),
   unknown: Object.freeze({
-    diagnostic: null,
+    phase: null,
     result: 'Setup issue',
     title: 'Setup didn’t finish',
     detail: 'Something stopped setup before it completed. Try again, or open the diagnostic log if it keeps happening.',
@@ -365,8 +413,9 @@ class OmniDeckRuntime {
     this.currentEnvironment = null;
     this.setupReason = 'first-run';
     this.lastProgressEmit = 0;
-    this.diagnostics = new Map();
-    this.resetDiagnostics();
+    this.phases = phasesFor(process.platform);
+    this.phaseIndex = -1;
+    this.phaseFraction = 0;
   }
 
   get appUrl() {
@@ -384,6 +433,7 @@ class OmniDeckRuntime {
       canStart: options.canStart ?? false,
       canRetry: options.canRetry ?? false,
       canOpen: options.canOpen ?? false,
+      activity: options.activity ?? null,
       primaryAction: options.primaryAction ?? null,
       primaryLabel: options.primaryLabel ?? null,
       secondaryAction: options.secondaryAction ?? null,
@@ -400,10 +450,14 @@ class OmniDeckRuntime {
     this.emit(stage, SETUP_COPY[copy].title, SETUP_COPY[copy].detail, options);
   }
 
-  // A screen shown part-way through setup. The checklist stays visible so it
-  // does not blink out of existence between steps.
+  // A screen shown part-way through setup. It keeps the activity line and the
+  // overall bar so neither blinks out between steps.
   emitStep(stage, copy, options = {}) {
-    this.emitCopy(stage, copy, { ...options, diagnostics: this.diagnosticSnapshot() });
+    this.emitCopy(stage, copy, {
+      activity: this.currentActivity(),
+      progress: this.overallProgress(),
+      ...options,
+    });
   }
 
   workingCopy() {
@@ -412,62 +466,79 @@ class OmniDeckRuntime {
     return 'preparing';
   }
 
+  currentActivity() {
+    return this.phases[this.phaseIndex]?.activity ?? null;
+  }
+
+  // How far through the whole of setup we are: every finished phase's weight,
+  // plus how far into the current one. Renormalised over the phases that apply
+  // to this computer so the bar always reaches full.
+  overallProgress() {
+    if (this.phaseIndex < 0) return null;
+    const total = this.phases.reduce((sum, phase) => sum + phase.weight, 0);
+    if (!total) return null;
+    const done = this.phases
+      .slice(0, this.phaseIndex)
+      .reduce((sum, phase) => sum + phase.weight, 0);
+    const current = this.phases[this.phaseIndex].weight * this.phaseFraction;
+    return Math.max(0, Math.min(1, (done + current) / total));
+  }
+
+  // Moves to a phase. Everything before it counts as finished, which also keeps
+  // the bar honest when a phase is skipped because its work was already done.
+  beginPhase(id) {
+    const index = this.phases.findIndex((phase) => phase.id === id);
+    if (index < 0) return;
+    this.phaseIndex = index;
+    this.phaseFraction = 0;
+    this.emitWorking();
+  }
+
   emitWorking() {
     this.lastProgressEmit = Date.now();
     this.emitCopy('preparing', this.workingCopy(), {
-      indeterminate: true,
-      diagnostics: this.diagnosticSnapshot(),
+      activity: this.currentActivity(),
+      progress: this.overallProgress(),
+      indeterminate: this.phaseIndex < 0,
     });
   }
 
-  // Progress reporting for steps that call back per chunk or per output line.
-  // A completed fraction renders a real progress bar; without one the step
-  // stays indeterminate. Emits are rate limited because the state crosses the
+  // Progress within the current phase, from callbacks that fire per chunk or
+  // per output line. Emits are rate limited because the state crosses the
   // process boundary and re-renders the whole setup screen.
   emitProgressUpdate(fraction = null) {
+    if (Number.isFinite(fraction)) {
+      this.phaseFraction = Math.max(0, Math.min(1, fraction));
+    }
     const now = Date.now();
     if (now - this.lastProgressEmit < PROGRESS_INTERVAL_MS) return;
     this.lastProgressEmit = now;
-    const progress = Number.isFinite(fraction)
-      ? Math.max(0, Math.min(1, fraction))
-      : null;
     this.emitCopy('preparing', this.workingCopy(), {
-      progress,
-      indeterminate: progress === null,
-      diagnostics: this.diagnosticSnapshot(),
+      activity: this.currentActivity(),
+      progress: this.overallProgress(),
+      indeterminate: this.phaseIndex < 0,
     });
   }
 
-  resetDiagnostics() {
-    this.diagnostics.clear();
-    for (const definition of DIAGNOSTIC_DEFINITIONS) {
-      this.diagnostics.set(definition.id, {
-        ...definition,
-        status: 'waiting',
-        value: 'Not checked',
-      });
-    }
-  }
-
-  markDiagnostic(id, status, value) {
-    const diagnostic = this.diagnostics.get(id);
-    if (!diagnostic) return;
-    this.diagnostics.set(id, { ...diagnostic, status, value });
-  }
-
-  // Marks a checkpoint as the one being worked on, so the progress list shows
-  // where setup currently is instead of only what has already finished.
-  beginDiagnostic(id) {
-    this.markDiagnostic(id, 'working', 'Working…');
-  }
-
-  diagnosticSnapshot() {
-    return DIAGNOSTIC_DEFINITIONS.map(({ id }) => ({ ...this.diagnostics.get(id) }));
+  // The rows shown on the failure screen. Everything before the phase that
+  // failed is finished, that phase carries the problem, and the rest never
+  // started. When a failure belongs to no phase — an unsupported computer, a
+  // damaged download of the app itself — nothing is flagged, because no step
+  // was in progress when it happened.
+  failureSnapshot(failedPhaseId, failedValue) {
+    const failedIndex = this.phases.findIndex((phase) => phase.id === failedPhaseId);
+    const reached = failedIndex >= 0 ? failedIndex : this.phaseIndex;
+    return this.phases.map((phase, index) => {
+      if (index === failedIndex) {
+        return { id: phase.id, label: phase.label, status: 'issue', value: failedValue };
+      }
+      const status = index < reached ? 'pass' : 'waiting';
+      return { id: phase.id, label: phase.label, status, value: PHASE_STATUS_VALUES[status] };
+    });
   }
 
   async desiredEnvironment() {
     try {
-      this.beginDiagnostic('release');
       const releaseImage = await this.releaseImage();
       if (releaseImage) {
         this.currentEnvironment = {
@@ -482,7 +553,6 @@ class OmniDeckRuntime {
       } else {
         throw new Error('This omnideck installer does not identify its application image.');
       }
-      this.markDiagnostic('release', 'pass', 'Verified');
       return this.currentEnvironment;
     } catch (error) {
       throw tagError(error, 'release');
@@ -642,7 +712,6 @@ class OmniDeckRuntime {
     }
 
     await this.prepare();
-    this.resetDiagnostics();
     let updateAvailable = false;
     try {
       const desired = await this.desiredEnvironment();
@@ -657,7 +726,6 @@ class OmniDeckRuntime {
         };
       }
 
-      this.markDiagnostic('support', 'pass', 'Supported');
       this.podmanPath = await this.findExecutable('podman');
       if (!this.podmanPath) {
         if (!setupState) {
@@ -670,7 +738,6 @@ class OmniDeckRuntime {
           'components',
         );
       }
-      this.markDiagnostic('components', 'pass', 'Installed');
 
       // Container state answers the runtime question too: podman cannot report
       // a container without being reachable. The separate version probe only
@@ -685,7 +752,6 @@ class OmniDeckRuntime {
           throw tagError(error, 'environment');
         });
       }
-      this.markDiagnostic('environment', 'pass', 'Ready');
 
       if (!this.isCurrentContainer(info)) {
         // Nothing working to fall back to, so there is no choice worth offering.
@@ -710,8 +776,7 @@ class OmniDeckRuntime {
         );
       }
 
-      this.markDiagnostic('downloads', 'pass', 'Available');
-      const started = await this.startCurrentContainer(info, { announce: false })
+      const started = await this.startCurrentContainer(info)
         .catch((error) => {
           throw tagError(error, 'startup');
         });
@@ -723,7 +788,6 @@ class OmniDeckRuntime {
         return { action: 'setup', reason: this.setupReason };
       }
       await this.waitForApp({ silent: true });
-      this.markDiagnostic('startup', 'pass', 'Ready');
       this.setupReason = setupState?.reason || 'first-run';
       await this.saveSetupState('complete', this.setupReason);
       // A newer image is deliberately not acted on here. Opening the app must
@@ -746,7 +810,6 @@ class OmniDeckRuntime {
 
   async setup(reason = this.setupReason) {
     await this.prepare();
-    this.resetDiagnostics();
     this.setupReason = SETUP_REASONS.has(reason) ? reason : 'resume';
 
     const previousState = await readSetupState(this.userDataPath);
@@ -759,17 +822,13 @@ class OmniDeckRuntime {
       this.setupReason = 'update';
     }
     await this.saveSetupState('in-progress', this.setupReason);
-    this.beginDiagnostic('support');
-    this.emitWorking();
-    this.markDiagnostic('support', 'pass', 'Supported');
+    this.beginPhase('software');
 
     if (process.platform === 'win32') {
       await this.ensureWindowsPrerequisites().catch((error) => {
         throw tagError(error, 'support');
       });
     }
-    this.beginDiagnostic('components');
-    this.emitWorking();
     this.podmanPath = await this.findExecutable('podman');
     if (!this.podmanPath) {
       await this.installRuntime().catch((error) => {
@@ -784,31 +843,21 @@ class OmniDeckRuntime {
         );
       }
     }
-    this.markDiagnostic('components', 'pass', 'Ready');
 
-    this.beginDiagnostic('environment');
-    this.emitWorking();
+    this.beginPhase('environment');
     await this.ensureRuntimeReady().catch((error) => {
       throw tagError(error, 'environment');
     });
-    this.markDiagnostic('environment', 'pass', 'Ready');
-    this.beginDiagnostic('downloads');
-    this.emitWorking();
+    this.beginPhase('download');
     await this.ensureContainer().catch((error) => {
       throw error.diagnostic ? error : tagError(error, 'startup');
     });
-    this.markDiagnostic('downloads', 'pass', 'Available');
-    this.beginDiagnostic('startup');
+    this.beginPhase('startup');
     await this.waitForApp().catch((error) => {
       throw tagError(error, 'startup');
     });
-    this.markDiagnostic('startup', 'pass', 'Ready');
     await this.saveSetupState('complete', this.setupReason);
-    this.emitCopy('ready', 'ready', {
-      progress: 1,
-      canOpen: true,
-      diagnostics: this.diagnosticSnapshot(),
-    });
+    this.emitCopy('ready', 'ready', { progress: 1, canOpen: true });
   }
 
   async ensureWindowsPrerequisites() {
@@ -837,7 +886,7 @@ class OmniDeckRuntime {
         'components',
       );
     }
-    this.emitStep('preparing', 'permission', { indeterminate: true });
+    this.emitStep('preparing', 'permissionWindows', { indeterminate: true });
     const script = [
       "$process = Start-Process -FilePath $env:OMNIDECK_WSL_PATH -ArgumentList @('--install', '--no-distribution') -Verb RunAs -Wait -PassThru",
       'exit $process.ExitCode',
@@ -1082,9 +1131,8 @@ class OmniDeckRuntime {
 
   // Starts a container that is already known to be the current one. Returns
   // false when starting cannot succeed and the container has to be rebuilt.
-  async startCurrentContainer(info, { announce = true } = {}) {
+  async startCurrentContainer(info) {
     if (info.State?.Status === 'running') return true;
-    if (announce) this.emitStep('finishing', 'finishing', { indeterminate: true });
     try {
       await this.run(this.podmanPath, ['start', this.containerName], { label: 'start app' });
       return true;
@@ -1211,7 +1259,6 @@ class OmniDeckRuntime {
       }
     }
 
-    this.emitStep('finishing', 'finishing', { indeterminate: true });
     try {
       await this.runAppContainer();
     } catch (error) {
@@ -1254,7 +1301,6 @@ class OmniDeckRuntime {
   }
 
   async waitForApp({ silent = false } = {}) {
-    if (!silent) this.emitStep('finishing', 'finishing', { indeterminate: true });
     const deadline = Date.now() + 120_000;
     let delay = 150;
     while (Date.now() < deadline) {
@@ -1278,15 +1324,13 @@ class OmniDeckRuntime {
     void this.appendLog(`[failure] ${raw}`);
     const failureKind = classifyFailure(error, transcript);
     const copy = FAILURE_COPY[failureKind] || FAILURE_COPY.unknown;
-    const diagnostic = copy.diagnostic || failureKind;
-    this.markDiagnostic(diagnostic, 'issue', copy.value);
     this.emit('error', copy.title, copy.detail, {
       canRetry: copy.canRetry ?? false,
       primaryAction: copy.primaryAction ?? null,
       primaryLabel: copy.primaryLabel ?? null,
       secondaryAction: 'show-logs',
       secondaryLabel: 'Show diagnostic log',
-      diagnostics: this.diagnosticSnapshot(),
+      diagnostics: this.failureSnapshot(copy.phase, copy.value),
       diagnosticResult: copy.result,
       technical: raw.slice(0, 4_000),
     });
@@ -1295,7 +1339,7 @@ class OmniDeckRuntime {
 
 module.exports = {
   APP_VERSION,
-  DIAGNOSTIC_DEFINITIONS,
+  SETUP_PHASES,
   FAILURE_COPY,
   IMAGE,
   IMAGE_REF_LABEL,

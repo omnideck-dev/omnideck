@@ -384,18 +384,10 @@ h1 {
   letter-spacing: 0.14em;
 }
 
-.doctor-panel[data-mode='progress'] .doctor-heading span {
-  color: var(--accent);
-}
-
 .doctor-heading strong {
   color: var(--danger);
   font-size: 11px;
   font-weight: 600;
-}
-
-.doctor-heading strong[hidden] {
-  display: none;
 }
 
 .diagnostic-list {
@@ -473,10 +465,6 @@ h1 {
 .doctor-panel details {
   padding-top: var(--sp-2);
   border-top: 1px solid var(--border-subtle);
-}
-
-.doctor-panel details[hidden] {
-  display: none;
 }
 
 .doctor-panel summary {
@@ -558,6 +546,19 @@ canvas:focus-visible {
 .secondary:hover:not(:disabled) {
   color: var(--text-primary);
   background: var(--border-subtle);
+}
+
+/* What setup is doing right now, sat directly above the bar it belongs to. */
+.activity {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.activity[hidden] {
+  display: none;
 }
 
 .action-error {

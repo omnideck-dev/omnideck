@@ -35,15 +35,18 @@
             <h1 id="title">Starting omnideck</h1>
             <p id="detail" class="detail">Checking your environment…</p>
 
-            <!-- Doubles as the progress checklist while setup runs and as the
-                 diagnostics report once it fails. -->
+            <!-- The single line describing what setup is doing right now. -->
+            <p id="activity" class="activity" aria-live="polite" hidden></p>
+
+            <!-- Shown only after a failure: which step it reached, and which
+                 one stopped it. -->
             <section id="doctor-panel" class="doctor-panel" hidden>
               <div class="doctor-heading">
-                <span id="doctor-kicker">PROGRESS</span>
-                <strong id="doctor-result" hidden>Issue found</strong>
+                <span>DIAGNOSTICS</span>
+                <strong id="doctor-result">Issue found</strong>
               </div>
               <div id="diagnostic-list" class="diagnostic-list"></div>
-              <details id="technical-details">
+              <details>
                 <summary>Technical details</summary>
                 <pre id="technical-output"></pre>
               </details>
