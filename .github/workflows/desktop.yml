@@ -58,9 +58,56 @@ jobs:
         working-directory: desktop
         run: npm test
 
+      # Launches the packaged entry point for real. The suite above stubs the
+      # process boundary; this is what catches a window that never opens, a
+      # preload that no longer matches, or a screen missing an element the
+      # renderer writes to — none of which fail a unit test. podman is installed
+      # so the container tool's real stream and exit-code behaviour is checked
+      # too; nothing here pulls an image or starts a container.
+      - name: Install a virtual display and the container tool
+        run: sudo apt-get update && sudo apt-get install -y xvfb podman
+
+      - name: Smoke test the application
+        working-directory: desktop
+        env:
+          OMNIDECK_SMOKE_REQUIRE_PODMAN: "1"
+        run: xvfb-run -a npm run test:app
+
+  # The launch path on the other two platforms. Their runners have a real
+  # display session, so no virtual one is needed. podman is deliberately absent:
+  # this covers window creation, path handling and theme selection, which is the
+  # platform-specific code that Linux cannot exercise.
+  app_smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            runner: macos-15
+          - name: windows-x64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install application dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Smoke test the application
+        working-directory: desktop
+        run: npm run test:app
+
   runtime_image:
     if: github.event_name != 'pull_request'
-    needs: test
+    needs: [test, app_smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

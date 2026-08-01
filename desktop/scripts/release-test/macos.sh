@@ -29,6 +29,12 @@ TEST_NAMESPACE="release-test-${profile}"
 require_command hdiutil
 require_command shasum
 
+host_arch="$(uname -m)"
+if [[ "$host_arch" != "arm64" ]]; then
+  echo "Published macOS builds are Apple silicon only; this host reports $host_arch." >&2
+  exit 1
+fi
+
 state_root="$HOME/Library/Application Support/omnideck-release-testing"
 cache_root="$HOME/Library/Caches/omnideck-release-testing"
 profiles_root="$state_root/profiles"
@@ -46,8 +52,16 @@ gh release download "$selected_release" \
   --dir "$release_cache" \
   --skip-existing
 
-artifact="$(compgen -G "$release_cache/OmniDeck-*-mac-arm64.dmg" | head -n 1)"
+artifact="$(compgen -G "$release_cache/OmniDeck-*-mac-arm64.dmg" | head -n 1 || true)"
+if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+  echo "Release $selected_release has no macOS arm64 disk image, or the download failed." >&2
+  exit 1
+fi
 checksum="${artifact}.sha256"
+if [[ ! -f "$checksum" ]]; then
+  echo "Release $selected_release published no checksum for $(basename "$artifact")." >&2
+  exit 1
+fi
 (
   cd "$release_cache"
   shasum -a 256 --check "$(basename "$checksum")"

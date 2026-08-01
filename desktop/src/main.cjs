@@ -4,6 +4,7 @@ const {
   app,
   BrowserWindow,
   ipcMain,
+  nativeTheme,
   session,
   shell,
 } = require('electron');
@@ -19,7 +20,9 @@ const { shouldReloadForInput } = require('./window-shortcuts.cjs');
 
 const SETUP_PAGE = path.join(__dirname, 'setup', 'index.html');
 const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
-const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases/latest';
+// The releases index rather than /latest: GitHub excludes prereleases from
+// /latest, so it has nothing to show while every release is a prerelease.
+const DOWNLOAD_URL = 'https://github.com/omnideck-dev/omnideck/releases';
 const SUPPORTED_SYSTEMS_URL = 'https://github.com/omnideck-dev/omnideck#prerequisites';
 
 let mainWindow;
@@ -39,9 +42,21 @@ async function loadZoomPreference() {
   }
 }
 
-async function saveZoomPreference() {
-  await fsp.mkdir(app.getPath('userData'), { recursive: true });
-  await fsp.writeFile(zoomPreferencePath(), `${zoomFactor}\n`, { mode: 0o600 });
+// Held between keystrokes so a key repeat writes once when it settles instead
+// of once per event. A failure here is not worth interrupting anyone over, but
+// it must be caught: an unhandled rejection takes the process down.
+let zoomSaveTimer;
+
+function saveZoomPreference() {
+  clearTimeout(zoomSaveTimer);
+  zoomSaveTimer = setTimeout(async () => {
+    try {
+      await fsp.mkdir(app.getPath('userData'), { recursive: true });
+      await fsp.writeFile(zoomPreferencePath(), `${zoomFactor}\n`, { mode: 0o600 });
+    } catch {
+      // The zoom level is a convenience; losing it is not worth reporting.
+    }
+  }, 400);
 }
 
 function isAppUrl(candidate) {
@@ -61,7 +76,9 @@ function isSetupUrl(candidate) {
 }
 
 function assertSetupSender(event) {
-  if (!isSetupUrl(event.senderFrame.url)) {
+  // senderFrame is null once the sending frame has gone away, so an absent
+  // frame fails the check rather than throwing a type error out of it.
+  if (!isSetupUrl(event.senderFrame?.url)) {
     throw new Error('This action is only available on the omnideck setup screen.');
   }
 }
@@ -74,7 +91,9 @@ async function createWindow() {
     minHeight: 620,
     show: false,
     title: 'omnideck',
-    backgroundColor: '#0c0e14',
+    // The ground colour the window paints before the page renders. Both values
+    // are the canvas token from the shared design language.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0c0e14' : '#f8f9fb',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -98,7 +117,7 @@ async function createWindow() {
     event.preventDefault();
     zoomFactor = nextZoomFactor(zoomFactor, action);
     mainWindow.webContents.setZoomFactor(zoomFactor);
-    void saveZoomPreference();
+    saveZoomPreference();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -121,6 +140,10 @@ async function createWindow() {
   });
 
   await mainWindow.loadFile(SETUP_PAGE);
+  // Shown as soon as there is something to draw. The checks that follow can
+  // take several seconds against a cold container runtime, and leaving the
+  // window hidden until they finish reads as the app failing to launch.
+  mainWindow.show();
 }
 
 function publishState(state) {
@@ -130,7 +153,6 @@ function publishState(state) {
 
 async function openOmniDeck() {
   await mainWindow.loadURL(runtime.appUrl);
-  if (!mainWindow.isVisible()) mainWindow.show();
 }
 
 async function beginSetup(reason = runtime.setupReason) {
@@ -152,11 +174,9 @@ async function bootstrap() {
       await openOmniDeck();
       return;
     }
-    if (!mainWindow.isVisible()) mainWindow.show();
     if (result.action === 'setup') await beginSetup(result.reason);
   } catch (error) {
     runtime.reportFailure(error);
-    if (!mainWindow.isVisible()) mainWindow.show();
   }
 }
 
@@ -204,10 +224,6 @@ if (!hasLock) {
       assertSetupSender(event);
       return beginSetup(runtime.setupReason === 'update' ? 'update' : 'repair');
     });
-    ipcMain.handle('omnideck:show-logs', (event) => {
-      assertSetupSender(event);
-      return shell.showItemInFolder(runtime.logPath);
-    });
     ipcMain.handle('omnideck:open-app', async (event) => {
       assertSetupSender(event);
       if (runtime.currentState?.stage !== 'ready') {
@@ -215,15 +231,19 @@ if (!hasLock) {
       }
       return openOmniDeck();
     });
-    ipcMain.handle('omnideck:doctor-action', async (event, action) => {
+    ipcMain.handle('omnideck:action', async (event, action) => {
       assertSetupSender(event);
-      if (runtime.currentState?.stage !== 'error') {
-        throw new Error('This action is only available after a setup issue.');
+      // Only an action the current screen actually offers may run, so the
+      // renderer cannot invoke one that belongs to a different state.
+      const state = runtime.currentState;
+      if (!action || (action !== state?.primaryAction && action !== state?.secondaryAction)) {
+        throw new Error('That action is not available right now.');
       }
       if (action === 'supported-systems') return shell.openExternal(SUPPORTED_SYSTEMS_URL);
       if (action === 'download') return shell.openExternal(DOWNLOAD_URL);
       if (action === 'close') return app.quit();
-      throw new Error('Unknown diagnostic action.');
+      if (action === 'show-logs') return shell.showItemInFolder(runtime.logPath);
+      throw new Error('Unknown action.');
     });
 
     await createWindow();
