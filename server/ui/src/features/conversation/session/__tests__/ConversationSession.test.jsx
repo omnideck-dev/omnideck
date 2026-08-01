@@ -27,6 +27,7 @@ const harness = vi.hoisted(() => ({
         sendNudge: vi.fn(),
         stopGeneration: vi.fn(),
         loadConversation: vi.fn(),
+        reattachActiveRun: vi.fn(),
         newConversation: vi.fn(),
         setDraft: vi.fn(),
     },
@@ -114,6 +115,7 @@ describe('ConversationSessionProvider', () => {
         vi.clearAllMocks();
         harness.effects = [];
         harness.controller.loadConversation.mockResolvedValue(null);
+        harness.controller.reattachActiveRun.mockReset();
     });
 
     it('restores Workspace data without reopening historical Views', async () => {
@@ -182,6 +184,35 @@ describe('ConversationSessionProvider', () => {
                 .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
             payload: { conversationId: 'conversation-1' },
         });
+    });
+
+    it('reattaches an active run after restoring its state owners', async () => {
+        const loaded = {
+            conversationId: 'conversation-2',
+            events: [event('agent_started', {
+                parent_agent_id: null,
+                instruction: null,
+                correlation_id: null,
+            })],
+            browserTabs: [],
+            terminal: {},
+            profileId: 'profile-2',
+            activeRun: {
+                run_id: 'run-1',
+                status: 'running',
+                last_seq: 1,
+                resume_after_seq: 1,
+            },
+        };
+        harness.controller.loadConversation.mockResolvedValue(loaded);
+        const { getAgents, getSession } = renderSession();
+
+        await act(async () => {
+            expect(await getSession().loadConversation('conversation-2')).toBe(true);
+        });
+
+        expect(getAgents().agents['root-1'].status).toBe('running');
+        expect(harness.controller.reattachActiveRun).toHaveBeenCalledWith(loaded);
     });
 
     it('connects newly started conversations to the catalog owner', () => {

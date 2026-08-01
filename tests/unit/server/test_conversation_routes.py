@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import conversations._store as _store
+from agent_runtime import AgentRunInfo
 from conversations._folders import create_folder, list_folders
 from conversations._store import (
     conversation_exists,
@@ -16,6 +17,7 @@ from conversations._store import (
     load_conversation_metadata,
     save_conversation_title,
 )
+from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 from server._conversation_routes import (
     archive_conversation_handler,
     create_folder_handler,
@@ -45,11 +47,20 @@ def _conv_dir(tmp_path: Path, monkeypatch) -> Path:
     return conv_dir
 
 
-def _make_request(conversation_id: str, json_body) -> MagicMock:
+def _make_request(
+    conversation_id: str,
+    json_body,
+    *,
+    active_run_manager: MagicMock | None = None,
+) -> MagicMock:
     """Build a minimal aiohttp.web.Request-ish double."""
     req = MagicMock()
     req.match_info = {"conversation_id": conversation_id}
     req.json = AsyncMock(return_value=json_body)
+    manager = active_run_manager or MagicMock()
+    if active_run_manager is None:
+        manager.active_for_conversation.return_value = None
+    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
     return req
 
 
@@ -91,7 +102,86 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
 
     assert body["browser_tabs"] == [{"tab_id": 1, "agent_id": "root-1"}]
     assert body["terminal"] == {"root-1": [{"cmd_id": "command-1"}]}
-    resume.assert_awaited_once_with("conversation-1")
+    assert body["active_run"] is None
+    resume.assert_awaited_once_with("conversation-1", allow_empty=False)
+
+
+@pytest.mark.unit
+async def test_resume_route_returns_active_run_at_persisted_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cursor identifies the newest snapshot event from the active run."""
+    resume = AsyncMock(return_value={
+        "messages": [],
+        "events": [
+            {"id": "old-event", "type": "iteration"},
+            {"id": "run-started", "type": "agent_started"},
+            {"id": "run-user", "type": "user_message"},
+        ],
+        "browser_tabs": [],
+        "terminal": {},
+        "preview_state": None,
+        "profile_id": "general",
+    })
+    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    manager = MagicMock()
+    manager.active_for_conversation.return_value = AgentRunInfo(
+        run_id="run-1",
+        conversation_id="conversation-1",
+        last_seq=8,
+    )
+    manager.sequence_for_event.side_effect = lambda _run_id, event_id: {
+        "run-user": 3,
+        "run-started": 1,
+    }.get(event_id)
+
+    response = await resume_conversation_handler(_make_request(
+        "conversation-1",
+        None,
+        active_run_manager=manager,
+    ))
+    body = json.loads(response.body)
+
+    assert body["active_run"] == {
+        "run_id": "run-1",
+        "status": "running",
+        "last_seq": 8,
+        "resume_after_seq": 3,
+    }
+    resume.assert_awaited_once_with("conversation-1", allow_empty=True)
+    manager.sequence_for_event.assert_called_once_with("run-1", "run-user")
+
+
+@pytest.mark.unit
+async def test_resume_route_returns_active_run_before_first_persisted_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A just-reserved run is discoverable with a cursor of zero."""
+    resume = AsyncMock(return_value={
+        "messages": [],
+        "events": [],
+        "browser_tabs": [],
+        "terminal": {},
+        "preview_state": None,
+        "profile_id": None,
+    })
+    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    manager = MagicMock()
+    manager.active_for_conversation.return_value = AgentRunInfo(
+        run_id="run-new",
+        conversation_id="conversation-new",
+        last_seq=0,
+    )
+
+    response = await resume_conversation_handler(_make_request(
+        "conversation-new",
+        None,
+        active_run_manager=manager,
+    ))
+    body = json.loads(response.body)
+
+    assert body["active_run"]["run_id"] == "run-new"
+    assert body["active_run"]["resume_after_seq"] == 0
 
 
 @pytest.mark.unit

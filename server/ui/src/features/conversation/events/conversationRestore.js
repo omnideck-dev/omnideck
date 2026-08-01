@@ -46,14 +46,17 @@ export function getConversationRestorePlan(data) {
     }
 
     // A process can stop before writing agent_completed. Restored agents must
-    // not remain visually active forever, so freeze them at their last event.
-    for (const [agentId, timestamp] of unfinishedAgents) {
-        agentActions.push({
-            type: 'AGENT_COMPLETED',
-            agentId,
-            status: 'stopped',
-            timestamp,
-        });
+    // not remain visually active forever, except when the server explicitly
+    // reports that this conversation still has a run we are about to follow.
+    if (!data?.activeRun) {
+        for (const [agentId, timestamp] of unfinishedAgents) {
+            agentActions.push({
+                type: 'AGENT_COMPLETED',
+                agentId,
+                status: 'stopped',
+                timestamp,
+            });
+        }
     }
 
     for (const tab of (data?.browserTabs || [])) {

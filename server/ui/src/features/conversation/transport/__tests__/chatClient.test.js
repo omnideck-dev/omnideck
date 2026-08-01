@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { streamChatTurn } from '../chatClient.js';
+import {
+    ChatStreamHttpError,
+    streamAgentRun,
+    streamChatTurn,
+} from '../chatClient.js';
 
 const encoder = new TextEncoder();
 
@@ -158,5 +162,49 @@ describe('streamChatTurn', () => {
 
         await expect(collect(streamChatTurn({ message: 'hello' })))
             .rejects.toBe(error);
+    });
+
+    it('follows an active run after the supplied cursor', async () => {
+        const event = {
+            run_id: 'run/one',
+            seq: 19,
+            payload: { type: 'turn_end' },
+        };
+        const signal = new AbortController().signal;
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
+            body: bodyFromChunks([encoder.encode(`${JSON.stringify(event)}\n`)]),
+        });
+
+        await expect(collect(streamAgentRun({
+            runId: 'run/one',
+            afterSeq: 18,
+            signal,
+        }))).resolves.toEqual([event]);
+        expect(fetchSpy).toHaveBeenCalledWith(
+            '/api/chat/runs/run%2Fone/events?after=18',
+            { signal },
+        );
+    });
+
+    it('throws a typed HTTP error with the backend message', async () => {
+        vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: false,
+            status: 404,
+            json: async () => ({ error: 'Active run not found.' }),
+        });
+
+        await expect(collect(streamAgentRun({
+            runId: 'missing',
+            afterSeq: 3,
+        }))).rejects.toEqual(expect.objectContaining({
+            name: 'ChatStreamHttpError',
+            status: 404,
+            message: 'Active run not found.',
+        }));
+        await expect(collect(streamAgentRun({
+            runId: 'missing',
+            afterSeq: 3,
+        }))).rejects.toBeInstanceOf(ChatStreamHttpError);
     });
 });

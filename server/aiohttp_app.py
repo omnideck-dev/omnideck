@@ -9,8 +9,10 @@ static file serving through aiohttp's built-in static route helpers.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,34 +20,41 @@ from aiohttp import web
 from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import AsyncIterator, Awaitable, Callable
+    from collections.abc import AsyncGenerator, Awaitable, Callable
 
     from aiohttp.web_request import Request
     from aiohttp.web_response import Response, StreamResponse
 
-import asyncio
-
+from agent_runtime import (
+    ActiveRunConflictError,
+    ActiveRunManager,
+    ActiveRunManagerClosedError,
+    AgentRunRequest,
+    InvalidRunCursorError,
+    SequencedEvent,
+    UnknownActiveRunError,
+)
 from agents.types import Data
 from config import load_config
-from sdk.turn import is_turn_active, queue_nudge, request_stop
+from sdk.turn import is_turn_active, queue_nudge
+from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY, build_agent_runner
 from server._artifacts_routes import register_artifacts_routes
-from server._container_file_routes import register_container_file_routes
 from server._browser_control_routes import register_browser_control_routes
+from server._container_file_routes import register_container_file_routes
 from server._conversation_routes import register_conversation_routes
-from server._feature_routes import register_feature_routes
 from server._custom_app_routes import register_custom_app_routes
+from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._model_routes import register_model_routes
 from server._pack_routes import register_pack_routes
 from server._profile_routes import register_profile_routes
-from server._skill_routes import register_skill_routes
-from server._tool_category_routes import register_tool_category_routes
 from server._provider_routes import register_provider_routes
 from server._settings_routes import register_settings_routes
 from server._setup_routes import register_setup_routes
+from server._skill_routes import register_skill_routes
 from server._task_routes import register_task_routes
-from server.message_handler import handle_user_message
+from server._tool_category_routes import register_tool_category_routes
 from tools.custom_tools.registry import delete_tool, list_tools
 from tools.desktop._exec import DesktopExecError
 from tools.desktop._lifecycle import start_desktop
@@ -113,9 +122,11 @@ async def cors_and_error_middleware(
     # CSRF: mutating requests must carry X-Requested-With: XMLHttpRequest.
     # Same-origin JS can always set this header; cross-origin JS cannot because
     # the server does not list it in Access-Control-Allow-Headers.
-    if request.method in _CSRF_METHODS:
-        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
-            return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
+    if (
+        request.method in _CSRF_METHODS
+        and request.headers.get("X-Requested-With") != "XMLHttpRequest"
+    ):
+        return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
     try:
         resp: StreamResponse = await handler(request)
     except ValidationError as exc:  # pragma: no cover - handled uniformly
@@ -132,20 +143,16 @@ async def cors_and_error_middleware(
 # ---------------------------------------------------------------------------
 
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from sdk.events import AgentEvent
-
-
 async def stream_events(
     request: Request,
-    events: AsyncIterator[AgentEvent],  # iterator of AgentEvent
+    records: AsyncGenerator[SequencedEvent, None],
 ) -> StreamResponse:
-    """Stream JSONL events to the client.
+    """Stream sequenced agent-run records as JSONL.
 
     Args:
         request: Incoming aiohttp request.
-        events: Async iterator yielding `AgentEvent` instances produced by
-            `handle_user_message`.
+        records: Active-run subscription yielding replay followed by live
+            records.
 
     Returns:
         StreamResponse prepared and fully written (EOF sent).
@@ -163,23 +170,25 @@ async def stream_events(
     await resp.prepare(request)
 
     try:
-        async for event in events:
-            data_out = event.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+        async for record in records:
+            data_out = record.event.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_defaults=True,
+            )
+            data_out["run_id"] = record.run_id
+            data_out["seq"] = record.seq
             await resp.write((json.dumps(data_out) + "\n").encode("utf-8"))
     except ConnectionResetError:
         logger.debug("Client disconnected during event stream")
     except Exception:  # pragma: no cover - defensive logging
         logger.exception("Error while streaming events")
-        try:
-            error_data = {"error": "Server error", "payload": {"type": "turn_end"}}
-            await resp.write((json.dumps(error_data) + "\n").encode("utf-8"))
-        except ConnectionResetError:
-            pass
     finally:
-        try:
+        # Closing a subscription removes only its waiter. The manager-owned
+        # runner task remains alive and continues retaining records.
+        await records.aclose()
+        with suppress(ConnectionResetError):
             await resp.write_eof()
-        except ConnectionResetError:
-            pass
     return resp
 
 
@@ -209,15 +218,52 @@ async def chat_handler(request: Request) -> StreamResponse:
         data_objs = [
             Data(base64_encoded=a.base64, content_type=a.content_type, filename=a.filename) for a in payload.data
         ]
-    return await stream_events(
-        request,
-        handle_user_message(
-            user_query,
-            data_objs,
-            profile_id=payload.profile_id,
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    try:
+        info = await manager.start(AgentRunRequest(
             conversation_id=payload.conversation_id,
-        ),
-    )
+            message=user_query,
+            data=data_objs,
+            profile_id=payload.profile_id,
+        ))
+    except ActiveRunConflictError:
+        return web.json_response(
+            {"error": "This conversation already has an active run."},
+            status=409,
+        )
+    except ActiveRunManagerClosedError:
+        return web.json_response(
+            {"error": "Agent runtime is shutting down."},
+            status=503,
+        )
+
+    # Subscribe immediately after start, without another await. Even a runner
+    # that completes in one event-loop turn cannot be pruned before the initial
+    # response captures its run.
+    records = manager.subscribe(info.run_id, after_seq=0)
+    return await stream_events(request, records)
+
+
+async def chat_run_events_handler(request: Request) -> StreamResponse:
+    """Replay missed run records after a cursor, then follow live records."""
+    run_id = request.match_info["run_id"]
+    raw_after = request.query.get("after", "0")
+    try:
+        after_seq = int(raw_after)
+    except ValueError:
+        return web.json_response({"error": "after must be an integer."}, status=400)
+
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    try:
+        records = manager.subscribe(run_id, after_seq=after_seq)
+    except UnknownActiveRunError:
+        return web.json_response(
+            {"error": "Active run not found."},
+            status=404,
+        )
+    except InvalidRunCursorError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return await stream_events(request, records)
 
 
 async def nudge_handler(request: Request) -> Response:
@@ -263,7 +309,7 @@ async def stop_handler(request: Request) -> Response:
         return web.json_response(
             {"error": "conversation_id is required."}, status=400,
         )
-    request_stop(conversation_id=conversation_id)
+    request.app[ACTIVE_RUN_MANAGER_KEY].request_stop(conversation_id)
     return web.json_response({"ok": True})
 
 
@@ -344,19 +390,33 @@ async def desktop_start_handler(_request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
+def create_app(
+    *,
+    client_max_size: int = 50 * 1024**2,
+    active_run_manager: ActiveRunManager | None = None,
+) -> web.Application:
     """Create and configure the aiohttp application.
 
     Args:
         client_max_size: Maximum allowed request body size in bytes.
+        active_run_manager: Optional injected manager, primarily for focused
+            application tests.
 
     Returns:
         Configured aiohttp web.Application instance.
     """
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
+    app[ACTIVE_RUN_MANAGER_KEY] = active_run_manager or ActiveRunManager(
+        build_agent_runner(),
+    )
 
     # API routes
     app.router.add_route("POST", "/api/chat", chat_handler)
+    app.router.add_route(
+        "GET",
+        "/api/chat/runs/{run_id}/events",
+        chat_run_events_handler,
+    )
     app.router.add_route("POST", "/api/chat/stop", stop_handler)
     app.router.add_route("POST", "/api/nudge", nudge_handler)
     app.router.add_route("GET", "/api/custom-tools", list_custom_tools_handler)
@@ -447,8 +507,14 @@ def create_app(*, client_max_size: int = 50 * 1024**2) -> web.Application:
     # ``app["ready"]`` and then initializes everything that needed to wait.
     app.on_startup.append(_start_deferred_subsystems)
     app.on_cleanup.append(_stop_deferred_subsystems)
+    app.on_cleanup.append(_stop_active_run_manager)
 
     return app
+
+
+async def _stop_active_run_manager(app: web.Application) -> None:
+    """Gracefully stop process-owned agent runs during server shutdown."""
+    await app[ACTIVE_RUN_MANAGER_KEY].close()
 
 
 async def _run_data_migrations(_app: web.Application) -> None:
@@ -608,4 +674,4 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
         await runner.stop()
 
 
-__all__ = ["create_app"]
+__all__ = ["ACTIVE_RUN_MANAGER_KEY", "create_app"]

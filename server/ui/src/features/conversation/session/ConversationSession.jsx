@@ -83,12 +83,16 @@ export function ConversationSessionProvider({ children }) {
         for (const action of restore.agentActions) agentDispatch(action);
         for (const action of restore.workspaceActions) workspaceDispatch(action);
         isFreshConversationRef.current = false;
+        // Start replay only after the restored owners are ready. Otherwise a
+        // fast live event could be delivered and immediately erased by RESET.
+        if (loaded.activeRun) void session.reattachActiveRun(loaded);
         return true;
     }, [
         agentDispatch,
         appEffectDispatch,
         session.activeConversationId,
         session.loadConversation,
+        session.reattachActiveRun,
         workspaceDispatch,
     ]);
 

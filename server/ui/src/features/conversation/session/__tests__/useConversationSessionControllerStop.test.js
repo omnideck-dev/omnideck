@@ -10,6 +10,25 @@ function deferred() {
     return { promise, resolve };
 }
 
+function turnEndResponse() {
+    const bytes = new TextEncoder().encode(
+        `${JSON.stringify({ payload: { type: 'turn_end' } })}\n`,
+    );
+    let delivered = false;
+    return {
+        ok: true,
+        body: {
+            getReader: () => ({
+                read: async () => {
+                    if (delivered) return { done: true, value: undefined };
+                    delivered = true;
+                    return { done: false, value: bytes };
+                },
+            }),
+        },
+    };
+}
+
 describe('conversation session stop handling', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -43,7 +62,7 @@ describe('conversation session stop handling', () => {
         );
 
         await act(async () => {
-            chat.resolve({ body: null });
+            chat.resolve(turnEndResponse());
             await sendPromise;
         });
         expect(result.current.isStreaming).toBe(false);
@@ -77,7 +96,7 @@ describe('conversation session stop handling', () => {
         expect(nudgeResult).toBeNull();
 
         await act(async () => {
-            chat.resolve({ body: null });
+            chat.resolve(turnEndResponse());
             await sendPromise;
         });
     });

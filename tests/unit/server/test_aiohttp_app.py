@@ -12,7 +12,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from server.aiohttp_app import chat_handler, index_handler, stop_handler
+from agent_runtime import UnknownActiveRunError
+from server.aiohttp_app import (
+    ACTIVE_RUN_MANAGER_KEY,
+    chat_handler,
+    chat_run_events_handler,
+    index_handler,
+    stop_handler,
+)
 
 
 def _make_request(*, raw_body: str | None = None, query: dict | None = None) -> MagicMock:
@@ -99,6 +106,48 @@ async def test_stop_empty_conversation_id_returns_400() -> None:
     assert resp.status == 400
 
 
+@pytest.mark.unit
+async def test_stop_targets_active_run_manager() -> None:
+    """Stop sets the manager-owned signal rather than an HTTP-task signal."""
+    manager = MagicMock()
+    req = _make_request(query={"conversation_id": "conversation-1"})
+    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+
+    resp = await stop_handler(req)
+
+    assert resp.status == 200
+    manager.request_stop.assert_called_once_with("conversation-1")
+
+
+# -- run events handler ----------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_run_events_rejects_non_integer_cursor() -> None:
+    """Reconnect cursors must be unambiguous integer sequence numbers."""
+    req = _make_request(query={"after": "later"})
+    req.match_info = {"run_id": "run-1"}
+
+    resp = await chat_run_events_handler(req)
+
+    assert resp.status == 400
+
+
+@pytest.mark.unit
+async def test_run_events_returns_404_for_completed_run() -> None:
+    """Unknown and already-pruned runs tell the client to reload persistence."""
+    manager = MagicMock()
+    manager.subscribe.side_effect = UnknownActiveRunError("gone")
+    req = _make_request(query={"after": "3"})
+    req.match_info = {"run_id": "run-1"}
+    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+
+    resp = await chat_run_events_handler(req)
+
+    assert resp.status == 404
+    manager.subscribe.assert_called_once_with("run-1", after_seq=3)
+
+
 # -- index_handler ----------------------------------------------------------
 
 
@@ -113,4 +162,3 @@ async def test_index_handler_sets_no_cache_header(monkeypatch, tmp_path) -> None
     resp = await index_handler(_make_request())
 
     assert resp.headers["Cache-Control"] == "no-cache"
-

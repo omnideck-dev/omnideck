@@ -95,7 +95,11 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
-async def resume_conversation(conversation_id: str) -> dict | None:
+async def resume_conversation(
+    conversation_id: str,
+    *,
+    allow_empty: bool = False,
+) -> dict | None:
     """Load a conversation's history derived from events.jsonl.
 
     Returns a dict with:
@@ -113,14 +117,21 @@ async def resume_conversation(conversation_id: str) -> dict | None:
         profile_id: the agent profile last used in this conversation, or
             None if it predates per-conversation profiles.
 
-    Returns None when no events are present — conversations created before
-    the events-first cutover have no replay source and cannot be opened.
+    Args:
+        conversation_id: Conversation whose persisted state should be loaded.
+        allow_empty: Return an empty snapshot when no event has reached disk
+            yet. The resume route uses this only when a manager-owned run proves
+            the conversation currently exists.
+
+    Returns None when no events are present and ``allow_empty`` is false —
+    conversations created before the events-first cutover have no replay source
+    and cannot otherwise be opened.
     """
     # Disk is the durability contract for resume. The in-memory history keeps
     # only what the active LLM view needs and is deliberately not a second
     # persistence policy.
     events = load_events_jsonl(conversation_id)
-    if not events:
+    if not events and not allow_empty:
         return None
 
     if conversation_id in _conversations:

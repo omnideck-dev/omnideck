@@ -14,8 +14,10 @@ from server import _conversation_cache as cc
 
 
 def _seed_events_jsonl(conv_dir: Path, conv_id: str, user_content: str = "hi") -> None:
-    """Write a minimal events.jsonl so get_or_create_conversation treats the
-    conversation as not-new."""
+    """Write a minimal events.jsonl.
+
+    This makes get_or_create_conversation treat the conversation as not-new.
+    """
     import json
     d = conv_dir / conv_id
     d.mkdir(parents=True, exist_ok=True)
@@ -224,6 +226,16 @@ async def test_resume_conversation_marks_most_recently_used(
     assert list(cc._conversations)[-1] == "from-disk"
 
 
+async def test_resume_allows_empty_snapshot_for_reserved_active_run() -> None:
+    """An admitted run can be discovered before its first event is persisted."""
+    result = await cc.resume_conversation("just-reserved", allow_empty=True)
+
+    assert result is not None
+    assert result["messages"] == []
+    assert result["events"] == []
+    assert "just-reserved" in cc._conversations
+
+
 async def test_resume_returns_complete_persisted_event_log(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -282,8 +294,10 @@ async def test_resume_conversation_profile_none_when_unset(
 async def test_resume_returns_browser_tabs_sidecar(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Resume carries the latest-per-tab snapshots from browser_tabs.json —
-    screenshots are not in the event log."""
+    """Resume carries the latest-per-tab snapshots from browser_tabs.json.
+
+    Screenshots are not in the event log.
+    """
     import json
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
     _seed_events_jsonl(tmp_path, "c-tabs")
