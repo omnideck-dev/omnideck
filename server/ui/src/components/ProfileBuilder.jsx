@@ -320,7 +320,7 @@ export default function ProfileBuilder({
                                 <Popover
                                     anchorRef={skillPickerTriggerRef}
                                     onClose={() => setShowPicker(false)}
-                                    align="end"
+                                    align="start"
                                     width={380}
                                     maxHeight={340}
                                     flipThreshold={160}
