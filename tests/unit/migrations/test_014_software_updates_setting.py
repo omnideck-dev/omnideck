@@ -1,10 +1,10 @@
-"""Tests for migration 014: the automatic software updates preference."""
+"""Tests for migration 014: the software update preferences."""
 
 import json
 
 import pytest
 
-from migrations._014_software_updates_setting import _KEY, migrate
+from migrations._014_software_updates_setting import _DEFAULTS, migrate
 
 
 @pytest.fixture()
@@ -15,30 +15,35 @@ def state_dir(tmp_path):
 
 @pytest.mark.unit
 class TestMigration014:
-    """Seeding of software_updates_automatic into settings.json."""
+    """Seeding of the software update preferences into settings.json."""
 
     def test_no_settings_file_is_noop(self, state_dir):
         """Install without a settings.json does nothing — defaults apply on read."""
         migrate(state_dir)
         assert not (state_dir / "settings.json").exists()
 
-    def test_seeds_the_preference_switched_off(self, state_dir):
-        """An install that predates the preference is not opted in by the migration."""
+    def test_seeds_both_preferences(self, state_dir):
+        """An install that predates them gets the same defaults a new one starts with."""
         path = state_dir / "settings.json"
         path.write_text(json.dumps({"setup_complete": True}))
 
         migrate(state_dir)
 
-        assert json.loads(path.read_text())[_KEY] is False
+        data = json.loads(path.read_text())
+        assert data["software_updates_automatic"] is True
+        assert data["software_updates_notify"] is True
+        assert _DEFAULTS == {"software_updates_automatic": True, "software_updates_notify": True}
 
     def test_an_existing_choice_is_left_alone(self, state_dir):
-        """Someone who already turned it on does not get it turned back off."""
+        """Someone who already turned one off does not get it turned back on."""
         path = state_dir / "settings.json"
-        path.write_text(json.dumps({_KEY: True}))
+        path.write_text(json.dumps({"software_updates_automatic": False}))
 
         migrate(state_dir)
 
-        assert json.loads(path.read_text())[_KEY] is True
+        data = json.loads(path.read_text())
+        assert data["software_updates_automatic"] is False
+        assert data["software_updates_notify"] is True
 
     def test_other_settings_survive(self, state_dir):
         """Seeding one key rewrites the file, so the rest of it has to come back."""

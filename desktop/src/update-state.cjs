@@ -12,10 +12,14 @@ const path = require('node:path');
 const UPDATE_STATE_SCHEMA = 1;
 const UPDATE_STATE_FILENAME = 'update-state.json';
 
+// The two preferences start where the application's own defaults start, so a
+// launch that happens before they have ever been read behaves the same way the
+// application would.
 const EMPTY = Object.freeze({
   schemaVersion: UPDATE_STATE_SCHEMA,
   skippedVersion: null,
-  automatic: false,
+  automatic: true,
+  notify: true,
   checkedAt: null,
   version: null,
   imageRef: null,
@@ -31,6 +35,7 @@ function isUpdateState(value) {
     && value.schemaVersion === UPDATE_STATE_SCHEMA
     && isText(value.skippedVersion)
     && typeof value.automatic === 'boolean'
+    && typeof value.notify === 'boolean'
     && isText(value.checkedAt)
     && isText(value.version)
     && isText(value.imageRef),

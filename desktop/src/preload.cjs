@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('omnideckDesktop', {
   // Asked for on load, because a page that was not listening yet cannot have
   // been told. Everything after that arrives through onUpdate.
   currentUpdate: () => ipcRenderer.invoke('omnideck:update-current'),
+  checkForUpdate: () => ipcRenderer.invoke('omnideck:update-check'),
   installUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'install'),
   skipUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'skip'),
 });

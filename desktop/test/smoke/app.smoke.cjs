@@ -59,8 +59,8 @@ test('the preload exposes only the actions the two screens use', async (t) => {
   // setup screen using omnideck's actions, and omnideck using setup's, is the
   // origin check on the receiving end.
   assert.deepEqual(bridge, [
-    'beginSetup', 'currentUpdate', 'installUpdate', 'onState',
-    'onUpdate', 'openApp', 'retry', 'runAction', 'skipUpdate',
+    'beginSetup', 'checkForUpdate', 'currentUpdate', 'installUpdate',
+    'onState', 'onUpdate', 'openApp', 'retry', 'runAction', 'skipUpdate',
   ]);
 });
 

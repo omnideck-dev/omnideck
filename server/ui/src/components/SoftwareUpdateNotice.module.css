@@ -8,7 +8,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--sp-3);
-    width: min(24rem, calc(100vw - var(--sp-8)));
+    width: min(23rem, calc(100vw - var(--sp-8)));
     padding: var(--sp-3) var(--sp-4);
     background: var(--elevated);
     border: 1px solid var(--border);
@@ -47,9 +47,8 @@
 
 .actions {
     display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
-    flex-shrink: 0;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
 }
 
 .primary,
@@ -79,7 +78,7 @@
 .quiet {
     color: var(--text-secondary);
     background: transparent;
-    border: 1px solid transparent;
+    border: 1px solid var(--border);
 }
 
 .quiet:hover:not(:disabled) {
@@ -87,20 +86,35 @@
     background: var(--surface);
 }
 
-.primary:disabled,
-.quiet:disabled {
-    opacity: 0.5;
-    cursor: default;
+/* Quieter still. Turning the notice off for good should be findable without
+   competing with the two answers about this version. */
+.link {
+    margin-top: var(--sp-3);
+    padding: 0;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
 }
 
-@media (max-width: 480px) {
-    .notice {
-        flex-wrap: wrap;
-    }
+.link:hover:not(:disabled) {
+    color: var(--text-secondary);
+}
 
-    .actions {
-        flex-direction: row;
-        width: 100%;
-        justify-content: flex-end;
-    }
+.footnote {
+    margin: var(--sp-1) 0 0;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--text-tertiary);
+}
+
+.primary:disabled,
+.quiet:disabled,
+.link:disabled {
+    opacity: 0.5;
+    cursor: default;
 }

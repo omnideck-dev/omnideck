@@ -60,12 +60,16 @@ _DEFAULTS: dict[str, Any] = {
     "custom_tools_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
-    # Install updates without being asked. Off by default: an update that was
-    # not asked for should be offered, not applied. Only the desktop
-    # application acts on this — it reads it while Omnideck is running and
-    # applies an update the next time Omnideck is opened, never during a
-    # session.
-    "software_updates_automatic": False,
+    # Install updates without being asked. Only the desktop application acts on
+    # these two — it reads them while Omnideck is running, applies an update the
+    # next time Omnideck is opened, and never during a session. Running Omnideck
+    # from the command line ignores both: there is no installer to act on them,
+    # and updating is done by the command line tool instead.
+    "software_updates_automatic": True,
+    # Say something when a newer version appears. Turning this off does not stop
+    # updates; it moves them somewhere quieter, where the settings page is the
+    # only place they are mentioned.
+    "software_updates_notify": True,
 }
 
 _APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
@@ -109,6 +113,7 @@ class SettingsUpdate(BaseModel):
     custom_tools_enabled: bool | None = None
     home_app_slug: str | None = None
     software_updates_automatic: bool | None = None
+    software_updates_notify: bool | None = None
 
     @field_validator("home_app_slug")
     @classmethod

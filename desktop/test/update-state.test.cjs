@@ -22,17 +22,23 @@ test('a computer that has never checked has nothing skipped and nothing pending'
   assert.deepEqual(await readUpdateState(directory), {
     schemaVersion: 1,
     skippedVersion: null,
-    automatic: false,
+    automatic: true,
+    notify: true,
     checkedAt: null,
     version: null,
     imageRef: null,
   });
 });
 
-test('updates are not applied on their own until that is asked for', async (t) => {
+test('the preferences start where the application says they start', async (t) => {
   const directory = await profile(t);
 
-  assert.equal((await readUpdateState(directory)).automatic, false);
+  // A launch that happens before the application has ever been read has to
+  // behave the same way the application would, or the first launch after
+  // installing would behave unlike every launch after it.
+  const state = await readUpdateState(directory);
+  assert.equal(state.automatic, true);
+  assert.equal(state.notify, true);
 });
 
 test('a write keeps the fields it was not given', async (t) => {
@@ -65,7 +71,7 @@ test('a damaged file reads as a computer that has never checked', async (t) => {
   // Losing this file costs a re-check and a forgotten skip. Refusing to start
   // over it would cost far more.
   assert.equal(state.version, null);
-  assert.equal(state.automatic, false);
+  assert.equal(state.skippedVersion, null);
 });
 
 test('a file claiming an unknown shape is not trusted', async (t) => {
@@ -75,7 +81,8 @@ test('a file claiming an unknown shape is not trusted', async (t) => {
     JSON.stringify({ schemaVersion: 99, automatic: true, version: '9.9.9' }),
   );
 
-  assert.equal((await readUpdateState(directory)).automatic, false);
+  // Nothing in it is believed, including the version it claims to have found.
+  assert.equal((await readUpdateState(directory)).version, null);
 });
 
 test('a value of the wrong type is refused rather than written', async (t) => {

@@ -203,19 +203,20 @@ function publishUpdate() {
     : null);
 }
 
-// The application holds the preference; this copies it to where it can be read
-// at the one moment the application is not running. It follows that changing
-// the preference takes effect from the next launch.
-async function rememberAutomaticPreference() {
+// The application holds these preferences; this copies them to where they can
+// be read at the one moment the application is not running. It follows that
+// changing one takes effect from the next launch.
+async function rememberPreferences() {
   try {
     const response = await fetch(`${runtime.appUrl}/api/settings`);
     if (!response.ok) return;
     const settings = await response.json();
     await writeUpdateState(app.getPath('userData'), {
-      automatic: settings.software_updates_automatic === true,
+      automatic: settings.software_updates_automatic !== false,
+      notify: settings.software_updates_notify !== false,
     });
   } catch {
-    // The preference simply stays as last known.
+    // They simply stay as last known.
   }
 }
 
@@ -246,8 +247,10 @@ async function checkForUpdate() {
     imageRef: found?.imageRef || null,
   });
   // Announced once per release: a version already known about on the last check
-  // has already been mentioned.
-  if (found && found.version !== previous.version && Notification.isSupported()) {
+  // has already been mentioned. Someone who asked not to be told is not told —
+  // the settings page still shows it.
+  const worthAnnouncing = found && found.version !== previous.version && previous.notify;
+  if (worthAnnouncing && Notification.isSupported()) {
     new Notification({
       title: 'An omnideck update is ready',
       body: `Version ${found.version} can be installed from omnideck.`,
@@ -260,7 +263,7 @@ async function checkForUpdate() {
 function scheduleUpdateChecks() {
   if (updateTimer) return;
   const check = () => {
-    void rememberAutomaticPreference().then(checkForUpdate).catch(() => {});
+    void rememberPreferences().then(checkForUpdate).catch(() => {});
   };
   updateTimer = setTimeout(() => {
     check();
@@ -385,6 +388,15 @@ if (!hasLock) {
 
     ipcMain.handle('omnideck:update-current', (event) => {
       assertAppSender(event);
+      return availableUpdate ? { version: availableUpdate.version } : null;
+    });
+
+    // Looking now rather than waiting for the next scheduled look. This is what
+    // the settings page offers once someone has asked not to be told.
+    ipcMain.handle('omnideck:update-check', async (event) => {
+      assertAppSender(event);
+      await rememberPreferences();
+      await checkForUpdate();
       return availableUpdate ? { version: availableUpdate.version } : null;
     });
 

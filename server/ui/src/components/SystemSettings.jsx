@@ -9,10 +9,13 @@ import ToggleSwitch from './ToggleSwitch.jsx';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 import WrenchIcon from './icons/WrenchIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon';
+import SparkleIcon from './icons/SparkleIcon';
+import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
 
-// Omnideck also runs in a plain browser, where there is no installer to point
-// at and so nothing this setting could change.
-const inDesktopApp = typeof window !== 'undefined' && Boolean(window.omnideckDesktop);
+// Omnideck run from the command line, or opened in a plain browser, has no
+// installer behind it: there is nothing for these settings to act on, and
+// updating is done with the command line tool instead.
+const inDesktopApp = () => typeof window !== 'undefined' && Boolean(window.omnideckDesktop);
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -90,10 +93,13 @@ export default function SystemSettings() {
 
     return (
         <div className={styles.container}>
-            {/* Updates — only the desktop application can install one. */}
-            {inDesktopApp && (
+            {/* Updates — only the desktop application can install one, so this
+                whole section is absent when Omnideck is run any other way. */}
+            {inDesktopApp() && (
                 <>
                     <div className={styles.sectionLabel}>Updates</div>
+
+                    <SoftwareUpdateStatus />
 
                     <label className={styles.settingRow} data-testid="automatic-updates-toggle">
                         <div className={styles.settingIcon}>
@@ -102,13 +108,30 @@ export default function SystemSettings() {
                         <div className={styles.settingInfo}>
                             <span className={styles.settingTitle}>Install updates automatically</span>
                             <span className={styles.settingDesc}>
-                                Updates install the next time you open Omnideck, never while you are working. Leave this off to be asked each time.
+                                Updates install the next time you open Omnideck, never while you are working. Turn this off to be asked each time.
                             </span>
                         </div>
                         <ToggleSwitch
-                            checked={!!settings.software_updates_automatic}
+                            checked={settings.software_updates_automatic !== false}
                             onChange={(e) => updateSetting('software_updates_automatic', e.target.checked)}
                             aria-label="Install updates automatically"
+                        />
+                    </label>
+
+                    <label className={styles.settingRow} data-testid="update-notice-toggle">
+                        <div className={styles.settingIcon}>
+                            <SparkleIcon />
+                        </div>
+                        <div className={styles.settingInfo}>
+                            <span className={styles.settingTitle}>Tell me when an update is ready</span>
+                            <span className={styles.settingDesc}>
+                                Turning this off does not stop updates. They keep arriving, and this page is where you will see them.
+                            </span>
+                        </div>
+                        <ToggleSwitch
+                            checked={settings.software_updates_notify !== false}
+                            onChange={(e) => updateSetting('software_updates_notify', e.target.checked)}
+                            aria-label="Tell me when an update is ready"
                         />
                     </label>
                 </>

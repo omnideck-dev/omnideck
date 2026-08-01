@@ -5,16 +5,18 @@ import DownloadIcon from './icons/DownloadIcon';
 /**
  * Tells you a newer version of Omnideck is ready, and gets out of the way.
  *
- * Nothing is installed without being asked for, and nothing here blocks what
- * you were doing: the notice sits in a corner until it is answered, and
- * outlives a reload because the desktop application re-sends it.
+ * Nothing here blocks what you were doing: the notice sits in a corner until it
+ * is answered, and it can be turned off for good — after which updates are
+ * still found, and Settings is the only place that mentions them.
  *
- * Renders nothing outside the desktop application, which is the only place
- * that can install anything.
+ * Renders nothing outside the desktop application, which is the only place that
+ * can install anything. Running Omnideck from the command line never sees it.
  */
 export default function SoftwareUpdateNotice() {
     const [update, setUpdate] = useState(null);
+    const [wanted, setWanted] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
         const desktop = window.omnideckDesktop;
@@ -25,6 +27,12 @@ export default function SoftwareUpdateNotice() {
         let current = true;
         desktop.currentUpdate?.()
             .then((found) => { if (current) setUpdate(found); })
+            .catch(() => {});
+        fetch('/api/settings')
+            .then((response) => response.json())
+            .then((settings) => {
+                if (current) setWanted(settings.software_updates_notify !== false);
+            })
             .catch(() => {});
         return () => {
             current = false;
@@ -52,7 +60,24 @@ export default function SoftwareUpdateNotice() {
         }
     }, []);
 
-    if (!update) return null;
+    // Turning the notice off is a preference, not an answer about this version:
+    // the update stays available and Settings goes on offering it.
+    const stopShowing = useCallback(async () => {
+        setBusy(true);
+        setDismissed(true);
+        try {
+            await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ software_updates_notify: false }),
+            });
+        } catch {
+            setDismissed(false);
+            setBusy(false);
+        }
+    }, []);
+
+    if (!update || !wanted || dismissed) return null;
 
     return (
         <aside className={styles.notice} data-testid="software-update-notice">
@@ -64,24 +89,35 @@ export default function SoftwareUpdateNotice() {
                 <p className={styles.detail}>
                     Installing takes a few minutes and closes what you have open.
                 </p>
-            </div>
-            <div className={styles.actions}>
+                <div className={styles.actions}>
+                    <button
+                        type="button"
+                        className={styles.primary}
+                        onClick={install}
+                        disabled={busy}
+                    >
+                        Update now
+                    </button>
+                    <button
+                        type="button"
+                        className={styles.quiet}
+                        onClick={skip}
+                        disabled={busy}
+                    >
+                        Skip this version
+                    </button>
+                </div>
                 <button
                     type="button"
-                    className={styles.primary}
-                    onClick={install}
+                    className={styles.link}
+                    onClick={stopShowing}
                     disabled={busy}
                 >
-                    Update now
+                    Don&rsquo;t show this again
                 </button>
-                <button
-                    type="button"
-                    className={styles.quiet}
-                    onClick={skip}
-                    disabled={busy}
-                >
-                    Skip this version
-                </button>
+                <p className={styles.footnote}>
+                    Updates stay available in Settings.
+                </p>
             </div>
         </aside>
     );
