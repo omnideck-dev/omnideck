@@ -22,6 +22,7 @@ test('a computer that has never checked has nothing skipped and nothing pending'
   assert.deepEqual(await readUpdateState(directory), {
     schemaVersion: 1,
     skippedVersion: null,
+    deferredVersion: null,
     automatic: true,
     notify: true,
     checkedAt: null,
@@ -51,6 +52,16 @@ test('a write keeps the fields it was not given', async (t) => {
   assert.equal(state.skippedVersion, '0.2.0');
   assert.equal(state.automatic, true);
   assert.equal(state.version, '0.3.0');
+});
+
+test('putting one off is remembered, and is not the same as skipping it', async (t) => {
+  const directory = await profile(t);
+
+  await writeUpdateState(directory, { deferredVersion: '0.2.0' });
+
+  const state = await readUpdateState(directory);
+  assert.equal(state.deferredVersion, '0.2.0');
+  assert.equal(state.skippedVersion, null, 'putting off is not refusing');
 });
 
 test('a skip can be lifted by skipping nothing', async (t) => {

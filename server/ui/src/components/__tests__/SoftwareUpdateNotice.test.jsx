@@ -10,6 +10,7 @@ function bridge() {
         unsubscribed: false,
         currentUpdate: vi.fn().mockResolvedValue(null),
         installUpdate: vi.fn().mockResolvedValue(undefined),
+        deferUpdate: vi.fn().mockResolvedValue(undefined),
         skipUpdate: vi.fn().mockResolvedValue(undefined),
         onUpdate: (listener) => {
             desktop.announce = listener;
@@ -70,8 +71,9 @@ describe('SoftwareUpdateNotice', () => {
 
         expect(screen.getByText('Omnideck 0.2.0 is ready')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Update now' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Later' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Skip this version' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Don’t show this again/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Don’t show these again/ })).toBeInTheDocument();
         // Turning the notice off has to leave somewhere to go.
         expect(screen.getByText('Updates stay available in Settings.')).toBeInTheDocument();
     });
@@ -120,7 +122,7 @@ describe('SoftwareUpdateNotice', () => {
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
-        fireEvent.click(screen.getByRole('button', { name: /Don’t show this again/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Don’t show these again/ }));
 
         await waitFor(() => {
             expect(screen.queryByTestId('software-update-notice')).not.toBeInTheDocument();
@@ -130,6 +132,33 @@ describe('SoftwareUpdateNotice', () => {
         // The update itself is untouched, so Settings goes on offering it.
         expect(desktop.skipUpdate).not.toHaveBeenCalled();
         expect(desktop.installUpdate).not.toHaveBeenCalled();
+    });
+
+    it('later asks for it at the next open without turning anything on', async () => {
+        const desktop = bridge();
+        settings();
+        render(<SoftwareUpdateNotice />);
+        await settle();
+        act(() => desktop.announce({ version: '0.2.0' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+
+        expect(desktop.deferUpdate).toHaveBeenCalledTimes(1);
+        // It is neither installed now nor refused: it waits.
+        expect(desktop.installUpdate).not.toHaveBeenCalled();
+        expect(desktop.skipUpdate).not.toHaveBeenCalled();
+    });
+
+    it('an update already put off is not asked about again', async () => {
+        const desktop = bridge();
+        settings();
+        render(<SoftwareUpdateNotice />);
+        await settle();
+
+        act(() => desktop.announce({ version: '0.2.0', deferred: true }));
+
+        // Settled, so the notice says nothing. Settings still shows it.
+        expect(screen.queryByTestId('software-update-notice')).not.toBeInTheDocument();
     });
 
     it('an update found before this page existed is asked for, not waited on', async () => {

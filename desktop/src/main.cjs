@@ -38,6 +38,9 @@ let runtime;
 let setupRunning = false;
 let zoomFactor = 1;
 let availableUpdate = null;
+// The version already answered with Later, so the notice does not ask again
+// about one that is already settled.
+let deferredVersion = null;
 let updateTimer;
 
 function zoomPreferencePath() {
@@ -201,14 +204,20 @@ function windowIsInSight() {
   return isAppUrl(mainWindow.webContents.getURL());
 }
 
+function updatePayload() {
+  if (!availableUpdate) return null;
+  return {
+    version: availableUpdate.version,
+    deferred: deferredVersion === availableUpdate.version,
+  };
+}
+
 function publishUpdate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   // Only the application itself shows this. The setup screen has its own
   // reporting and is already saying something more urgent.
   if (!isAppUrl(mainWindow.webContents.getURL())) return;
-  mainWindow.webContents.send('omnideck:update', availableUpdate
-    ? { version: availableUpdate.version }
-    : null);
+  mainWindow.webContents.send('omnideck:update', updatePayload());
 }
 
 // The application holds these preferences; this copies them to where they can
@@ -249,6 +258,7 @@ async function checkForUpdate() {
   }
 
   availableUpdate = found;
+  deferredVersion = previous.deferredVersion;
   await writeUpdateState(userData, {
     checkedAt: new Date().toISOString(),
     version: found?.version || null,
@@ -291,7 +301,12 @@ function scheduleUpdateChecks() {
 // session found.
 async function updateToApplyAtLaunch() {
   const stored = await readUpdateState(app.getPath('userData'));
-  if (!stored.automatic || !stored.version || !stored.imageRef) return null;
+  if (!stored.version || !stored.imageRef) return null;
+  // Either updates are applied on their own, or this one was put off until
+  // now — which is the same request for one version, without turning anything
+  // on for the ones after it.
+  const asked = stored.automatic || stored.deferredVersion === stored.version;
+  if (!asked) return null;
   // Judged by the same rule the registry answer is judged by, so a release
   // installed by other means, or since skipped, cannot be applied here either.
   const chosen = selectUpdate({
@@ -310,8 +325,11 @@ async function bootstrap() {
       try {
         await runSetup('update');
         runtime.updateTarget = null;
-        await writeUpdateState(app.getPath('userData'), { version: null, imageRef: null });
+        await writeUpdateState(app.getPath('userData'), {
+          deferredVersion: null, version: null, imageRef: null,
+        });
         availableUpdate = null;
+        deferredVersion = null;
         return;
       } catch (error) {
         // An update nobody was waiting for must never become the reason
@@ -401,7 +419,7 @@ if (!hasLock) {
 
     ipcMain.handle('omnideck:update-current', (event) => {
       assertAppSender(event);
-      return availableUpdate ? { version: availableUpdate.version } : null;
+      return updatePayload();
     });
 
     // Looking now rather than waiting for the next scheduled look. This is what
@@ -410,7 +428,7 @@ if (!hasLock) {
       assertAppSender(event);
       await rememberPreferences();
       await checkForUpdate();
-      return availableUpdate ? { version: availableUpdate.version } : null;
+      return updatePayload();
     });
 
     // The application asks for the update it was told about, and answers for
@@ -422,10 +440,22 @@ if (!hasLock) {
       if (action === 'skip') {
         await writeUpdateState(app.getPath('userData'), {
           skippedVersion: availableUpdate.version,
+          deferredVersion: null,
           version: null,
           imageRef: null,
         });
         availableUpdate = null;
+        publishUpdate();
+        return;
+      }
+      // Later means the same thing whether or not updates are applied on their
+      // own: install it the next time omnideck is opened, when nothing is
+      // running to interrupt.
+      if (action === 'later') {
+        await writeUpdateState(app.getPath('userData'), {
+          deferredVersion: availableUpdate.version,
+        });
+        deferredVersion = availableUpdate.version;
         publishUpdate();
         return;
       }
@@ -434,8 +464,11 @@ if (!hasLock) {
       await mainWindow.loadFile(SETUP_PAGE);
       await beginSetup('update');
       runtime.updateTarget = null;
-      await writeUpdateState(app.getPath('userData'), { version: null, imageRef: null });
+      await writeUpdateState(app.getPath('userData'), {
+        deferredVersion: null, version: null, imageRef: null,
+      });
       availableUpdate = null;
+      deferredVersion = null;
     });
 
     await createWindow();

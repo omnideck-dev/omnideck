@@ -56,7 +56,9 @@ export default function SoftwareUpdateStatus() {
                 </span>
                 <span className={styles.desc}>
                     {update
-                        ? 'Installing takes a few minutes and closes what you have open.'
+                        ? update.deferred
+                            ? 'Installs the next time you open Omnideck. You can install it now instead.'
+                            : 'Installing takes a few minutes and closes what you have open.'
                         : checked
                             ? 'No newer version is available yet.'
                             : 'Omnideck looks for updates on its own while it is open.'}

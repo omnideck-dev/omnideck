@@ -23,5 +23,6 @@ contextBridge.exposeInMainWorld('omnideckDesktop', {
   currentUpdate: () => ipcRenderer.invoke('omnideck:update-current'),
   checkForUpdate: () => ipcRenderer.invoke('omnideck:update-check'),
   installUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'install'),
+  deferUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'later'),
   skipUpdate: () => ipcRenderer.invoke('omnideck:update-action', 'skip'),
 });

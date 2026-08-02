@@ -1,11 +1,12 @@
 // What the application remembers about updates between launches.
 //
-// Three things live here. The version someone chose to skip, so it stays
-// skipped. Whether they asked for updates to be applied on their own — read
-// from the application's own settings while it is running and kept here,
-// because at the moment it matters the application is not running yet. And the
-// last answer the registry gave, so a relaunch has something to show without
-// asking again straight away.
+// Four things live here. The version someone chose to skip, so it stays
+// skipped. The version they chose to put off until next time, which installs
+// itself at the next launch without turning anything else on. Whether they
+// asked for updates to be applied on their own — read from the application's
+// own settings while it is running and kept here, because at the moment it
+// matters the application is not running yet. And the last answer the registry
+// gave, so a relaunch has something to show without asking again straight away.
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
@@ -18,6 +19,7 @@ const UPDATE_STATE_FILENAME = 'update-state.json';
 const EMPTY = Object.freeze({
   schemaVersion: UPDATE_STATE_SCHEMA,
   skippedVersion: null,
+  deferredVersion: null,
   automatic: true,
   notify: true,
   checkedAt: null,
@@ -34,6 +36,7 @@ function isUpdateState(value) {
     value
     && value.schemaVersion === UPDATE_STATE_SCHEMA
     && isText(value.skippedVersion)
+    && isText(value.deferredVersion)
     && typeof value.automatic === 'boolean'
     && typeof value.notify === 'boolean'
     && isText(value.checkedAt)

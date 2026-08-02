@@ -51,6 +51,19 @@ export default function SoftwareUpdateNotice() {
         }
     }, []);
 
+    // Later means the same thing in every case: install it the next time
+    // omnideck is opened, when nothing is running to interrupt. With automatic
+    // updates on that is already what would happen; with them off, this asks
+    // for it once without turning them back on.
+    const later = useCallback(async () => {
+        setBusy(true);
+        try {
+            await window.omnideckDesktop.deferUpdate();
+        } catch {
+            setBusy(false);
+        }
+    }, []);
+
     const skip = useCallback(async () => {
         setBusy(true);
         try {
@@ -77,7 +90,8 @@ export default function SoftwareUpdateNotice() {
         }
     }, []);
 
-    if (!update || !wanted || dismissed) return null;
+    // An update already answered with Later is settled; Settings still has it.
+    if (!update || update.deferred || !wanted || dismissed) return null;
 
     return (
         <aside className={styles.notice} data-testid="software-update-notice">
@@ -88,6 +102,7 @@ export default function SoftwareUpdateNotice() {
                 <p className={styles.title}>Omnideck {update.version} is ready</p>
                 <p className={styles.detail}>
                     Installing takes a few minutes and closes what you have open.
+                    Later installs it the next time you open omnideck.
                 </p>
                 <div className={styles.actions}>
                     <button
@@ -101,20 +116,30 @@ export default function SoftwareUpdateNotice() {
                     <button
                         type="button"
                         className={styles.quiet}
+                        onClick={later}
+                        disabled={busy}
+                    >
+                        Later
+                    </button>
+                </div>
+                <div className={styles.choices}>
+                    <button
+                        type="button"
+                        className={styles.link}
                         onClick={skip}
                         disabled={busy}
                     >
                         Skip this version
                     </button>
+                    <button
+                        type="button"
+                        className={styles.link}
+                        onClick={stopShowing}
+                        disabled={busy}
+                    >
+                        Don&rsquo;t show these again
+                    </button>
                 </div>
-                <button
-                    type="button"
-                    className={styles.link}
-                    onClick={stopShowing}
-                    disabled={busy}
-                >
-                    Don&rsquo;t show this again
-                </button>
                 <p className={styles.footnote}>
                     Updates stay available in Settings.
                 </p>

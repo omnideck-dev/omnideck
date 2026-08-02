@@ -86,10 +86,16 @@
     background: var(--surface);
 }
 
-/* Quieter still. Turning the notice off for good should be findable without
-   competing with the two answers about this version. */
-.link {
+/* Quieter still. Skipping a version and turning the notice off for good should
+   both be findable without competing with the two answers about right now. */
+.choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1) var(--sp-3);
     margin-top: var(--sp-3);
+}
+
+.link {
     padding: 0;
     font-family: var(--font-body);
     font-size: 0.75rem;
