@@ -979,3 +979,75 @@ test('the failure screen offers the diagnostic log as its secondary action', () 
   assert.equal(states.at(-1).secondaryAction, 'show-logs');
   assert.equal(states.at(-1).secondaryLabel, 'Show diagnostic log');
 });
+
+test('an installer does not walk back an installation newer than itself', async (context) => {
+  // A container update outlives the copy of the application that installed it,
+  // so the installer's own pinned release can be older than what is running.
+  // Repairing that installation must reinstall what is there, not what the
+  // installer happens to carry.
+  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-floor-test-'));
+  context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
+  const runtimePath = path.join(resourcesPath, 'runtime');
+  await fs.mkdir(runtimePath);
+  const shippedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`;
+  const installedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
+  await fs.writeFile(
+    path.join(runtimePath, 'image-manifest.json'),
+    `${JSON.stringify({ schemaVersion: 2, appVersion: APP_VERSION, imageRef: shippedRef })}\n`,
+  );
+
+  const userDataPath = path.join(resourcesPath, 'user-data');
+  await fs.mkdir(userDataPath, { recursive: true });
+  await fs.writeFile(
+    path.join(userDataPath, 'setup-state.json'),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      status: 'complete',
+      reason: 'update',
+      appVersion: APP_VERSION,
+      imageVersion: '99.0.0',
+      imageRef: installedRef,
+      imageDigest: `sha256:${'b'.repeat(64)}`,
+      updatedAt: new Date().toISOString(),
+    })}\n`,
+  );
+
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  const desired = await runtime.desiredEnvironment();
+
+  assert.equal(desired.imageRef, installedRef, 'the newer installation is what gets kept');
+  assert.equal(desired.version, '99.0.0');
+});
+
+test('an installer newer than the installation still installs itself', async (context) => {
+  const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-floor-test-'));
+  context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
+  const runtimePath = path.join(resourcesPath, 'runtime');
+  await fs.mkdir(runtimePath);
+  const shippedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'c'.repeat(64)}`;
+  await fs.writeFile(
+    path.join(runtimePath, 'image-manifest.json'),
+    `${JSON.stringify({ schemaVersion: 2, appVersion: APP_VERSION, imageRef: shippedRef })}\n`,
+  );
+
+  const userDataPath = path.join(resourcesPath, 'user-data');
+  await fs.mkdir(userDataPath, { recursive: true });
+  await fs.writeFile(
+    path.join(userDataPath, 'setup-state.json'),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      status: 'complete',
+      reason: 'first-run',
+      appVersion: '0.0.1',
+      imageVersion: '0.0.1',
+      imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'d'.repeat(64)}`,
+      imageDigest: `sha256:${'d'.repeat(64)}`,
+      updatedAt: new Date().toISOString(),
+    })}\n`,
+  );
+
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+  const desired = await runtime.desiredEnvironment();
+
+  assert.equal(desired.imageRef, shippedRef, 'a newer installer is still an upgrade');
+});

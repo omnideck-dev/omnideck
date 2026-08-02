@@ -14,6 +14,7 @@ const {
   readSetupState,
   writeSetupState,
 } = require('./setup-state.cjs');
+const { compareVersions, parseVersion } = require('./updates.cjs');
 
 const DEFAULT_APP_PORT = 2337;
 const CONTAINER_NAME = 'omnideck-desktop';
@@ -427,13 +428,20 @@ class OmniDeckRuntime {
     return `http://127.0.0.1:${this.appPort}`;
   }
 
-  // The version currently installed on this computer, or null if nothing is.
+  // What is currently installed on this computer, or null if nothing is.
   // Installations made before the version was recorded fall back to the version
   // of the application that performed them, which is the one it shipped with.
-  async installedVersion() {
+  async installedRelease() {
     const state = await readSetupState(this.userDataPath);
     if (!state || state.status !== 'complete') return null;
-    return state.imageVersion || state.appVersion;
+    return {
+      version: state.imageVersion || state.appVersion,
+      imageRef: state.imageRef,
+    };
+  }
+
+  async installedVersion() {
+    return (await this.installedRelease())?.version || null;
   }
 
   emit(stage, title, detail, options = {}) {
@@ -578,10 +586,34 @@ class OmniDeckRuntime {
       } else {
         throw new Error('This omnideck installer does not identify its application image.');
       }
-      return this.currentEnvironment;
+      return this.keepNewerInstall();
     } catch (error) {
       throw tagError(error, 'release');
     }
+  }
+
+  // The release this copy shipped with is a floor, not a target. An update
+  // outlives the copy that installed it, so a computer can be running something
+  // newer than the installer sitting on it — and repairing that installation
+  // must not walk it back to what the installer happens to carry.
+  async keepNewerInstall() {
+    const shipped = this.currentEnvironment;
+    const installed = await this.installedRelease();
+    if (
+      !installed
+      || !/@sha256:[a-f0-9]{64}$/.test(installed.imageRef)
+      || !parseVersion(installed.version)
+      || !parseVersion(shipped.version)
+      || compareVersions(installed.version, shipped.version) <= 0
+    ) {
+      return this.currentEnvironment;
+    }
+    this.currentEnvironment = {
+      imageRef: installed.imageRef,
+      sourceImage: installed.imageRef,
+      version: installed.version,
+    };
+    return this.currentEnvironment;
   }
 
   async saveSetupState(status, reason = this.setupReason) {

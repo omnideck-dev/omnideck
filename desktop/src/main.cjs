@@ -193,6 +193,14 @@ async function beginSetup(reason = runtime.setupReason) {
   }
 }
 
+// Whether the window is somewhere a person would see what it is showing.
+// Minimised counts as out of sight; so does a window that never opened.
+function windowIsInSight() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  return isAppUrl(mainWindow.webContents.getURL());
+}
+
 function publishUpdate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   // Only the application itself shows this. The setup screen has its own
@@ -246,10 +254,15 @@ async function checkForUpdate() {
     version: found?.version || null,
     imageRef: found?.imageRef || null,
   });
-  // Announced once per release: a version already known about on the last check
-  // has already been mentioned. Someone who asked not to be told is not told —
-  // the settings page still shows it.
-  const worthAnnouncing = found && found.version !== previous.version && previous.notify;
+  // Announced once per release, and only when the notice inside omnideck
+  // cannot be seen — a window someone is looking at says this already, and
+  // saying it twice over their work is exactly what this is meant not to do.
+  // Someone who asked not to be told is not told anywhere; the settings page
+  // still shows it.
+  const worthAnnouncing = found
+    && found.version !== previous.version
+    && previous.notify
+    && !windowIsInSight();
   if (worthAnnouncing && Notification.isSupported()) {
     new Notification({
       title: 'An omnideck update is ready',
