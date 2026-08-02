@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
 import styles from './SoftwareUpdateStatus.module.css';
 
 /**
@@ -13,19 +14,20 @@ export default function SoftwareUpdateStatus() {
     const [checking, setChecking] = useState(false);
     const [installing, setInstalling] = useState(false);
     const [checked, setChecked] = useState(false);
+    const host = useOmnideckHost();
 
     useEffect(() => {
         let current = true;
-        window.omnideckDesktop?.currentUpdate?.()
+        host?.currentUpdate?.()
             .then((found) => { if (current) setUpdate(found); })
             .catch(() => {});
         return () => { current = false; };
-    }, []);
+    }, [host]);
 
     const check = useCallback(async () => {
         setChecking(true);
         try {
-            setUpdate(await window.omnideckDesktop.checkForUpdate());
+            setUpdate(await host.checkForUpdate());
             setChecked(true);
         } catch {
             // A check that could not reach anywhere says nothing rather than
@@ -33,16 +35,16 @@ export default function SoftwareUpdateStatus() {
         } finally {
             setChecking(false);
         }
-    }, []);
+    }, [host]);
 
     const install = useCallback(async () => {
         setInstalling(true);
         try {
-            await window.omnideckDesktop.installUpdate();
+            await host.installUpdate();
         } catch {
             setInstalling(false);
         }
-    }, []);
+    }, [host]);
 
     return (
         <div

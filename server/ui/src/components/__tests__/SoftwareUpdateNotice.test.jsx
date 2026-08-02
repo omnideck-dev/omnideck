@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SoftwareUpdateNotice from '../SoftwareUpdateNotice.jsx';
+import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 
 // Stands in for the desktop application's side of the bridge, holding on to the
 // listener so a test can announce an update the way the shell does.
@@ -17,8 +18,17 @@ function bridge() {
             return () => { desktop.unsubscribed = true; };
         },
     };
-    window.omnideckDesktop = desktop;
     return desktop;
+}
+
+// Renders as the desktop application would, or as a browser would when the
+// host is null.
+function renderNotice(host) {
+    return render(
+        <OmnideckHostProvider host={host}>
+            <SoftwareUpdateNotice />
+        </OmnideckHostProvider>,
+    );
 }
 
 // The notice reads one preference and writes one preference.
@@ -36,7 +46,6 @@ function settings({ notify = true } = {}) {
 const settle = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
 afterEach(() => {
-    delete window.omnideckDesktop;
     delete global.fetch;
     vi.restoreAllMocks();
 });
@@ -45,17 +54,17 @@ describe('SoftwareUpdateNotice', () => {
     it('shows nothing in a browser, where nothing could be installed', async () => {
         settings();
 
-        render(<SoftwareUpdateNotice />);
+        renderNotice(null);
         await settle();
 
         expect(screen.queryByTestId('software-update-notice')).not.toBeInTheDocument();
     });
 
     it('shows nothing until there is an update to show', async () => {
-        bridge();
+        const desktop = bridge();
         settings();
 
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
 
         expect(screen.queryByTestId('software-update-notice')).not.toBeInTheDocument();
@@ -64,7 +73,7 @@ describe('SoftwareUpdateNotice', () => {
     it('names the version and offers every answer', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
 
         act(() => desktop.announce({ version: '0.2.0' }));
@@ -81,7 +90,7 @@ describe('SoftwareUpdateNotice', () => {
     it('stays silent for someone who asked not to be told', async () => {
         const desktop = bridge();
         settings({ notify: false });
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
 
         act(() => desktop.announce({ version: '0.2.0' }));
@@ -92,7 +101,7 @@ describe('SoftwareUpdateNotice', () => {
     it('installs only when asked to', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
@@ -105,7 +114,7 @@ describe('SoftwareUpdateNotice', () => {
     it('skipping asks the shell to remember, and does not install', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
@@ -118,7 +127,7 @@ describe('SoftwareUpdateNotice', () => {
     it('never showing again is a preference, not an answer about this version', async () => {
         const desktop = bridge();
         const calls = settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
@@ -137,7 +146,7 @@ describe('SoftwareUpdateNotice', () => {
     it('later asks for it at the next open without turning anything on', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
@@ -152,7 +161,7 @@ describe('SoftwareUpdateNotice', () => {
     it('an update already put off is not asked about again', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
 
         act(() => desktop.announce({ version: '0.2.0', deferred: true }));
@@ -166,7 +175,7 @@ describe('SoftwareUpdateNotice', () => {
         desktop.currentUpdate = vi.fn().mockResolvedValue({ version: '0.3.0' });
         settings();
 
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
 
         expect(screen.getByText('Omnideck 0.3.0 is ready')).toBeInTheDocument();
@@ -175,7 +184,7 @@ describe('SoftwareUpdateNotice', () => {
     it('a withdrawn update takes its notice with it', async () => {
         const desktop = bridge();
         settings();
-        render(<SoftwareUpdateNotice />);
+        renderNotice(desktop);
         await settle();
         act(() => desktop.announce({ version: '0.2.0' }));
 
@@ -187,7 +196,7 @@ describe('SoftwareUpdateNotice', () => {
     it('stops listening once it is gone', async () => {
         const desktop = bridge();
         settings();
-        const { unmount } = render(<SoftwareUpdateNotice />);
+        const { unmount } = renderNotice(desktop);
         await settle();
 
         unmount();

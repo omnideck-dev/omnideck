@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
 import styles from './SoftwareUpdateNotice.module.css';
 import DownloadIcon from './icons/DownloadIcon';
 
@@ -17,15 +18,15 @@ export default function SoftwareUpdateNotice() {
     const [wanted, setWanted] = useState(false);
     const [busy, setBusy] = useState(false);
     const [dismissed, setDismissed] = useState(false);
+    const host = useOmnideckHost();
 
     useEffect(() => {
-        const desktop = window.omnideckDesktop;
-        if (!desktop?.onUpdate) return undefined;
-        const stopListening = desktop.onUpdate(setUpdate);
+        if (!host?.onUpdate) return undefined;
+        const stopListening = host.onUpdate(setUpdate);
         // An update found before this page existed was announced to nobody, so
         // it has to be asked for rather than waited on.
         let current = true;
-        desktop.currentUpdate?.()
+        host.currentUpdate?.()
             .then((found) => { if (current) setUpdate(found); })
             .catch(() => {});
         fetch('/api/settings')
@@ -38,18 +39,18 @@ export default function SoftwareUpdateNotice() {
             current = false;
             stopListening();
         };
-    }, []);
+    }, [host]);
 
     const install = useCallback(async () => {
         setBusy(true);
         try {
             // Installing replaces what is running, so the window leaves for the
             // progress screen and this notice goes with it.
-            await window.omnideckDesktop.installUpdate();
+            await host.installUpdate();
         } catch {
             setBusy(false);
         }
-    }, []);
+    }, [host]);
 
     // Later means the same thing in every case: install it the next time
     // omnideck is opened, when nothing is running to interrupt. With automatic
@@ -58,20 +59,20 @@ export default function SoftwareUpdateNotice() {
     const later = useCallback(async () => {
         setBusy(true);
         try {
-            await window.omnideckDesktop.deferUpdate();
+            await host.deferUpdate();
         } catch {
             setBusy(false);
         }
-    }, []);
+    }, [host]);
 
     const skip = useCallback(async () => {
         setBusy(true);
         try {
-            await window.omnideckDesktop.skipUpdate();
+            await host.skipUpdate();
         } catch {
             setBusy(false);
         }
-    }, []);
+    }, [host]);
 
     // Turning the notice off is a preference, not an answer about this version:
     // the update stays available and Settings goes on offering it.
@@ -88,7 +89,7 @@ export default function SoftwareUpdateNotice() {
             setDismissed(false);
             setBusy(false);
         }
-    }, []);
+    }, [host]);
 
     // An update already answered with Later is settled; Settings still has it.
     if (!update || update.deferred || !wanted || dismissed) return null;

@@ -52,7 +52,7 @@ test('the preload exposes only the actions the two screens use', async (t) => {
   const { window } = await launchApp(t);
 
   const bridge = await window.evaluate(
-    () => Object.keys(window.omnideckDesktop || {}).sort(),
+    () => Object.keys(window.omnideckHost || {}).sort(),
   );
 
   // Both pages load in this window and so see the same bridge. What stops the
@@ -97,8 +97,8 @@ test('the setup screen cannot act on updates', async (t) => {
       }
     };
     return {
-      install: await attempt(() => window.omnideckDesktop.installUpdate()),
-      skip: await attempt(() => window.omnideckDesktop.skipUpdate()),
+      install: await attempt(() => window.omnideckHost.installUpdate()),
+      skip: await attempt(() => window.omnideckHost.skipUpdate()),
     };
   });
 
