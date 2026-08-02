@@ -177,12 +177,14 @@ async function openOmniDeck() {
 
 // Runs setup and lets the caller decide what a failure means. Every entry point
 // but one wants it reported on screen; the one that does not is an update
-// nobody asked for.
+// nobody asked for. Returns whether setup actually ran to completion, so a
+// caller that clears state on success cannot mistake a declined run for one.
 async function runSetup(reason) {
-  if (setupRunning) return;
+  if (setupRunning) return false;
   setupRunning = true;
   try {
     await runtime.setup(reason);
+    return true;
   } finally {
     setupRunning = false;
   }
@@ -462,7 +464,17 @@ if (!hasLock) {
       if (action !== 'install') throw new Error('Unknown action.');
       runtime.updateTarget = availableUpdate;
       await mainWindow.loadFile(SETUP_PAGE);
-      await beginSetup('update');
+      try {
+        if (!await runSetup('update')) return;
+      } catch (error) {
+        // The update someone asked for is still the one they asked for. Nothing
+        // is forgotten: the target stays chosen so trying again from the setup
+        // screen applies it, and what was found stays recorded so the next
+        // launch can. Clearing either one here would quietly substitute the
+        // release this copy shipped with for the one that was requested.
+        runtime.reportFailure(error);
+        return;
+      }
       runtime.updateTarget = null;
       await writeUpdateState(app.getPath('userData'), {
         deferredVersion: null, version: null, imageRef: null,

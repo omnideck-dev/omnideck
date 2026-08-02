@@ -20,6 +20,14 @@ const { publishInstance } = require('./cli-instance.cjs');
 // running both does not have the two of them fighting over the same one. A port
 // is only ever chosen once, when omnideck is installed, and kept from then on.
 const DEFAULT_APP_PORT = 2338;
+// The port the command line tool installs on by default, and the one this
+// application used before it moved off. An installation made then is still on
+// it, which is the one arrangement where both cannot run at once, so it is
+// exchanged for a free one the next time omnideck opens.
+const LEGACY_APP_PORT = 2337;
+// The port omnideck listens on inside its container. Only the host side of the
+// mapping ever changes.
+const CONTAINER_PORT = 8080;
 const CONTAINER_NAME = 'omnideck-desktop';
 const HOME_VOLUME = 'omnideck-desktop-home';
 const STATE_VOLUME = 'omnideck-desktop-state';
@@ -373,6 +381,18 @@ async function reserveAvailablePort(preferredPort = DEFAULT_APP_PORT) {
   }
 }
 
+// The host port an existing container was built around, or null when the
+// inspection does not say. Null means "cannot tell", never "does not match":
+// rebuilding a working container over a reading that was never there would be
+// a needless reinstall.
+function containerHostPort(info) {
+  const key = `${CONTAINER_PORT}/tcp`;
+  const binding = info?.HostConfig?.PortBindings?.[key]?.[0]?.HostPort
+    ?? info?.NetworkSettings?.Ports?.[key]?.[0]?.HostPort;
+  const port = Number.parseInt(binding, 10);
+  return Number.isFinite(port) ? port : null;
+}
+
 async function sha256File(filename, onProgress = () => {}) {
   const { size } = await fsp.stat(filename);
   const hash = crypto.createHash('sha256');
@@ -431,9 +451,6 @@ class OmniDeckRuntime {
     return `http://127.0.0.1:${this.appPort}`;
   }
 
-  // What is currently installed on this computer, or null if nothing is.
-  // Installations made before the version was recorded fall back to the version
-  // of the application that performed them, which is the one it shipped with.
   // Refreshed whenever this installation changes, since the port and the image
   // it points at are what changes.
   async publishToCommandLine() {
@@ -447,9 +464,12 @@ class OmniDeckRuntime {
     });
   }
 
+  // What is on this computer, or null if nothing is. An unfinished install does
+  // not change the answer: until the new release is actually in place, the one
+  // it is replacing is still the one installed, and the record says so.
   async installedRelease() {
     const state = await readSetupState(this.userDataPath);
-    if (!state || state.status !== 'complete') return null;
+    if (!state) return null;
     return {
       version: state.imageVersion,
       imageRef: state.imageRef,
@@ -632,14 +652,21 @@ class OmniDeckRuntime {
     return this.currentEnvironment;
   }
 
+  // The recorded release is what is installed, not what is being installed. An
+  // install that is still running has not replaced anything yet, so the record
+  // keeps naming the release already on this computer until the new one is in
+  // place. Writing the target early would erase the only evidence that the
+  // computer had moved past the release this copy shipped with, and a failed
+  // install would then be followed by one that moves it back.
   async saveSetupState(status, reason = this.setupReason) {
     if (!this.currentEnvironment) throw new Error('The target environment is not known.');
+    const installed = status === 'in-progress' ? await this.installedRelease() : null;
     return writeSetupState(this.userDataPath, {
       status,
       reason,
       appVersion: APP_VERSION,
-      imageVersion: this.currentEnvironment.version,
-      imageRef: this.currentEnvironment.imageRef,
+      imageVersion: installed?.version || this.currentEnvironment.version,
+      imageRef: installed?.imageRef || this.currentEnvironment.imageRef,
     });
   }
 
@@ -666,6 +693,11 @@ class OmniDeckRuntime {
       );
       if (savedPort < 1 || savedPort > 65535) throw new Error('Invalid saved port.');
       this.appPort = savedPort;
+      // An installation still sitting on the command line tool's port is moved
+      // off it, so the two stop competing. The container carries the old
+      // mapping and is rebuilt around the new port, the same way it is when a
+      // port is lost to another program.
+      if (savedPort === LEGACY_APP_PORT) await this.reserveNewAppPort();
     } catch {
       await this.reserveNewAppPort();
     }
@@ -1210,6 +1242,11 @@ class OmniDeckRuntime {
   // Starts a container that is already known to be the current one. Returns
   // false when starting cannot succeed and the container has to be rebuilt.
   async startCurrentContainer(info) {
+    // A mapping is fixed when a container is created, so one built around a
+    // different host port cannot serve the port this installation now uses —
+    // running or not, it has to be rebuilt.
+    const hostPort = containerHostPort(info);
+    if (hostPort !== null && hostPort !== this.appPort) return false;
     if (info.State?.Status === 'running') return true;
     try {
       await this.run(this.podmanPath, ['start', this.containerName], { label: 'start app' });
@@ -1366,12 +1403,12 @@ class OmniDeckRuntime {
         '--label', `${IMAGE_REF_LABEL}=${this.currentEnvironment?.imageRef || IMAGE}`,
         '--memory', '2g',
         '--shm-size', '1024m',
-        '-p', `127.0.0.1:${this.appPort}:8080`,
+        '-p', `127.0.0.1:${this.appPort}:${CONTAINER_PORT}`,
         '-v', `${this.homeVolume}:/home/omnideck`,
         '-v', `${this.stateVolume}:/var/lib/omnideck`,
         '-e', 'ENABLE_DESKTOP=false',
         '-e', 'OLLAMA_HOST=http://host.containers.internal:11434',
-        '-e', 'PORT=8080',
+        '-e', `PORT=${CONTAINER_PORT}`,
         IMAGE,
       ],
       { label: 'start app' },
