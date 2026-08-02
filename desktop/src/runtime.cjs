@@ -15,8 +15,12 @@ const {
   writeSetupState,
 } = require('./setup-state.cjs');
 const { compareVersions, parseVersion } = require('./updates.cjs');
+const { publishInstance } = require('./cli-instance.cjs');
 
-const DEFAULT_APP_PORT = 2337;
+// One above the port the command line tool installs on by default, so a machine
+// running both does not have the two of them fighting over the same one. A port
+// is only ever chosen once, when omnideck is installed, and kept from then on.
+const DEFAULT_APP_PORT = 2338;
 const CONTAINER_NAME = 'omnideck-desktop';
 const HOME_VOLUME = 'omnideck-desktop-home';
 const STATE_VOLUME = 'omnideck-desktop-state';
@@ -431,6 +435,19 @@ class OmniDeckRuntime {
   // What is currently installed on this computer, or null if nothing is.
   // Installations made before the version was recorded fall back to the version
   // of the application that performed them, which is the one it shipped with.
+  // Refreshed whenever this installation changes, since the port and the image
+  // it points at are what changes.
+  async publishToCommandLine() {
+    return publishInstance({
+      containerName: this.containerName,
+      homeVolume: this.homeVolume,
+      stateVolume: this.stateVolume,
+      port: this.appPort,
+      image: this.currentEnvironment?.imageRef || IMAGE,
+      installedAt: new Date().toISOString(),
+    });
+  }
+
   async installedRelease() {
     const state = await readSetupState(this.userDataPath);
     if (!state || state.status !== 'complete') return null;
@@ -848,6 +865,9 @@ class OmniDeckRuntime {
       await this.waitForApp({ silent: true });
       this.setupReason = setupState?.reason || 'first-run';
       await this.saveSetupState('complete', this.setupReason);
+      // Also on an ordinary start, so an installation made before the command
+      // line tool could see it appears there without waiting for a reinstall.
+      await this.publishToCommandLine();
       // A newer image is deliberately not acted on here. Opening the app must
       // never be interrupted, by a prompt or by an install, so a healthy
       // installation opens as it is and the newer image waits.
@@ -915,6 +935,7 @@ class OmniDeckRuntime {
       throw tagError(error, 'startup');
     });
     await this.saveSetupState('complete', this.setupReason);
+    await this.publishToCommandLine();
     this.emitCopy('ready', 'ready', { progress: 1, canOpen: true });
   }
 
