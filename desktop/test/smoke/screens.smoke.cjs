@@ -48,6 +48,7 @@ function completedSetup(profile) {
       status: 'complete',
       reason: 'first-run',
       appVersion: 'previously-installed',
+      imageVersion: 'previously-installed',
       imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`,
       imageDigest: `sha256:${'a'.repeat(64)}`,
       updatedAt: new Date().toISOString(),

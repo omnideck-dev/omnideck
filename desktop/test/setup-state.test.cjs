@@ -6,7 +6,6 @@ const test = require('node:test');
 
 const {
   SETUP_STATE_FILENAME,
-  hasLegacySetupFootprint,
   isSetupState,
   readSetupState,
   writeSetupState,
@@ -21,6 +20,7 @@ test('setup state records the exact image digest used by a completed setup', asy
     status: 'complete',
     reason: 'update',
     appVersion: '0.1.0-alpha.4',
+    imageVersion: '0.1.0-alpha.4',
     imageRef,
   });
 
@@ -38,14 +38,4 @@ test('invalid or partial setup state is ignored safely', async (context) => {
 
   assert.equal(await readSetupState(userDataPath), null);
   assert.equal(isSetupState({ status: 'complete' }), false);
-});
-
-test('legacy setup detection is read-only and based on the saved app port', async (context) => {
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-state-test-'));
-  context.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
-
-  assert.equal(await hasLegacySetupFootprint(userDataPath), false);
-  await fs.mkdir(path.join(userDataPath, 'runtime'));
-  await fs.writeFile(path.join(userDataPath, 'runtime', 'app-port'), '2337\n');
-  assert.equal(await hasLegacySetupFootprint(userDataPath), true);
 });

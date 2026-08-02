@@ -10,7 +10,6 @@ const { Readable, Transform } = require('node:stream');
 const { version: APP_VERSION } = require('../package.json');
 const {
   SETUP_REASONS,
-  hasLegacySetupFootprint,
   readSetupState,
   writeSetupState,
 } = require('./setup-state.cjs');
@@ -452,7 +451,7 @@ class OmniDeckRuntime {
     const state = await readSetupState(this.userDataPath);
     if (!state || state.status !== 'complete') return null;
     return {
-      version: state.imageVersion || state.appVersion,
+      version: state.imageVersion,
       imageRef: state.imageRef,
     };
   }
@@ -639,7 +638,7 @@ class OmniDeckRuntime {
       status,
       reason,
       appVersion: APP_VERSION,
-      imageVersion: this.currentEnvironment.version ?? APP_VERSION,
+      imageVersion: this.currentEnvironment.version,
       imageRef: this.currentEnvironment.imageRef,
     });
   }
@@ -772,9 +771,8 @@ class OmniDeckRuntime {
 
   async startExisting() {
     const setupState = await readSetupState(this.userDataPath);
-    const legacyFootprint = !setupState && await hasLegacySetupFootprint(this.userDataPath);
 
-    if (!setupState && !legacyFootprint) {
+    if (!setupState) {
       this.setupReason = 'first-run';
       this.emitCopy('welcome', 'welcome', { canStart: true });
       return { action: 'welcome', reason: this.setupReason };
@@ -798,6 +796,7 @@ class OmniDeckRuntime {
         this.currentEnvironment = {
           imageRef: setupState.imageRef,
           sourceImage: setupState.imageRef,
+          version: setupState.imageVersion,
         };
       }
 

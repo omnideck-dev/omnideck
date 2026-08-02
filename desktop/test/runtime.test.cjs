@@ -399,6 +399,7 @@ test('interrupted setup resumes automatically without a separate resume screen',
     status: 'in-progress',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef,
   });
   const states = [];
@@ -423,6 +424,7 @@ test('a changed pinned image selects the update flow', async (context) => {
     status: 'complete',
     reason: 'first-run',
     appVersion: '0.1.0-alpha.0',
+    imageVersion: '0.1.0-alpha.0',
     imageRef: oldImageRef,
   });
   const states = [];
@@ -443,42 +445,13 @@ test('a changed pinned image selects the update flow', async (context) => {
   assert.notEqual(imageRef, oldImageRef);
 });
 
-test('a legacy desktop container without setup state migrates through update', async (context) => {
-  const { resourcesPath, userDataPath } = await runtimeFixture(context, '4');
-  await fs.mkdir(path.join(userDataPath, 'runtime'), { recursive: true });
-  await fs.writeFile(path.join(userDataPath, 'runtime', 'app-port'), '2337\n');
-  const states = [];
-  const runtime = new OmniDeckRuntime({
-    userDataPath,
-    resourcesPath,
-    onState: (state) => states.push(state),
-  });
-  runtime.findExecutable = async () => 'podman';
-  runtime.run = async (_executable, args) => {
-    if (args[0] === 'container') {
-      return inspectResult({
-        Config: {
-          Image: 'localhost/omnideck/runtime:0.1.0-alpha.3',
-          Labels: { 'dev.omnideck.version': '0.1.0-alpha.3' },
-        },
-        State: { Status: 'running' },
-      });
-    }
-    return { code: 0, output: '', stdout: '' };
-  };
-
-  const result = await runtime.startExisting();
-
-  assert.deepEqual(result, { action: 'setup', reason: 'update' });
-  assert.equal(states.at(-1).setupReason, 'update');
-});
-
 test('a healthy completed setup with the same digest opens directly', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, 'f');
   await writeSetupState(userDataPath, {
     status: 'complete',
     reason: 'first-run',
     appVersion: '0.1.0-alpha.0',
+    imageVersion: '0.1.0-alpha.0',
     imageRef,
   });
   const states = [];
@@ -524,6 +497,7 @@ test('an unhealthy existing install reports which phase failed', async (context)
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef,
   });
   const states = [];
@@ -556,6 +530,7 @@ test('a damaged installer blames no phase, because none had started', async (con
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'3'.repeat(64)}`,
   });
   await fs.writeFile(path.join(runtimePath, 'image-manifest.json'), '{"schemaVersion":1}\n');
@@ -771,6 +746,7 @@ test('a reachable container skips the separate runtime probe', async (context) =
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef,
   });
   const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
@@ -806,6 +782,7 @@ test('a missing container still falls back to probing the runtime', async (conte
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef,
   });
   const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
@@ -916,6 +893,7 @@ test('a healthy install opens without mentioning a newer image', async (context)
     status: 'complete',
     reason: 'first-run',
     appVersion: APP_VERSION,
+    imageVersion: APP_VERSION,
     imageRef: staleRef,
   });
   const states = [];
@@ -1005,6 +983,7 @@ test('an installer does not walk back an installation newer than itself', async 
       status: 'complete',
       reason: 'update',
       appVersion: APP_VERSION,
+      imageVersion: APP_VERSION,
       imageVersion: '99.0.0',
       imageRef: installedRef,
       imageDigest: `sha256:${'b'.repeat(64)}`,
@@ -1039,6 +1018,7 @@ test('an installer newer than the installation still installs itself', async (co
       status: 'complete',
       reason: 'first-run',
       appVersion: '0.0.1',
+      imageVersion: '0.0.1',
       imageVersion: '0.0.1',
       imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'d'.repeat(64)}`,
       imageDigest: `sha256:${'d'.repeat(64)}`,
