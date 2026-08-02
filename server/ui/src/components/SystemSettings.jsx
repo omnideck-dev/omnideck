@@ -11,7 +11,7 @@ import WrenchIcon from './icons/WrenchIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon';
 import SparkleIcon from './icons/SparkleIcon';
 import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
-import { useIsDesktopApp } from '../features/app/OmnideckHost.jsx';
+import { useIsHosted } from '../features/app/OmnideckHost.jsx';
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -23,7 +23,7 @@ export default function SystemSettings() {
     // Omnideck run from the command line, or opened in a plain browser, has no
     // installer behind it: there is nothing for these settings to act on, and
     // updating is done with the command line tool instead.
-    const inDesktopApp = useIsDesktopApp();
+    const hosted = useIsHosted();
 
     useEffect(() => {
         async function init() {
@@ -95,7 +95,7 @@ export default function SystemSettings() {
         <div className={styles.container}>
             {/* Updates — only the desktop application can install one, so this
                 whole section is absent when Omnideck is run any other way. */}
-            {inDesktopApp && (
+            {hosted && (
                 <>
                     <div className={styles.sectionLabel}>Updates</div>
 

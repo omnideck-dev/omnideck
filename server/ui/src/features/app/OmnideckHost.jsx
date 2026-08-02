@@ -39,7 +39,7 @@ export function useOmnideckHost() {
     return value;
 }
 
-/** Whether this is the desktop application, for deciding what to render. */
-export function useIsDesktopApp() {
+/** Whether a host is present, for deciding what is worth rendering. */
+export function useIsHosted() {
     return Boolean(useOmnideckHost());
 }
