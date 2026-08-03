@@ -49,6 +49,40 @@ function abortError() {
     return new DOMException('The operation was aborted.', 'AbortError');
 }
 
+function browserIsOffline() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function waitUntilOnline(signal) {
+    if (!browserIsOffline()) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            window.removeEventListener('online', onOnline);
+            signal.removeEventListener('abort', onAbort);
+        };
+        const onOnline = () => {
+            cleanup();
+            resolve();
+        };
+        const onAbort = () => {
+            cleanup();
+            reject(abortError());
+        };
+        window.addEventListener('online', onOnline, { once: true });
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+function createRequestController(parentSignal) {
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort();
+    parentSignal.addEventListener('abort', abortFromParent, { once: true });
+    return {
+        controller,
+        dispose: () => parentSignal.removeEventListener('abort', abortFromParent),
+    };
+}
+
 function waitBeforeReconnect(attempt, signal) {
     if (signal.aborted) return Promise.reject(abortError());
     const delay = Math.min(250 * (2 ** attempt), MAX_RECONNECT_DELAY_MS);
@@ -172,6 +206,10 @@ export default function useConversationSessionController({
     );
     const { events, inflightIteration, pendingUserPrompt } = conversationState;
     const eventsRef = useRef(events);
+    // Unlike eventsRef, this includes canonical records owned only by the
+    // agent/workspace views. It lets ambiguous-start recovery distinguish new
+    // persisted work from old events that are not part of the transcript.
+    const canonicalEventIdsRef = useRef(new Set());
     useEffect(() => {
         eventsRef.current = events;
     }, [events]);
@@ -195,9 +233,33 @@ export default function useConversationSessionController({
         _setStopRequested(val);
     }, []);
     const abortControllerRef = useRef(null);
+    const requestControllerRef = useRef(null);
+    const [connectionStatus, setConnectionStatus] = useState(
+        browserIsOffline() ? 'offline' : null,
+    );
+    useEffect(() => {
+        const onOffline = () => {
+            setConnectionStatus('offline');
+            // End only the current HTTP subscription. The outer controller and
+            // manager-owned agent run remain alive so runConnection can attach
+            // again when the browser comes online.
+            requestControllerRef.current?.abort();
+        };
+        const onOnline = () => {
+            setConnectionStatus(isStreamingRef.current ? 'reconnecting' : null);
+        };
+        window.addEventListener('offline', onOffline);
+        window.addEventListener('online', onOnline);
+        return () => {
+            window.removeEventListener('offline', onOffline);
+            window.removeEventListener('online', onOnline);
+        };
+    }, []);
     useEffect(() => () => {
         const controller = abortControllerRef.current;
         abortControllerRef.current = null;
+        requestControllerRef.current?.abort();
+        requestControllerRef.current = null;
         controller?.abort();
     }, []);
     // The open conversation id is this hook's primary key — every request it
@@ -238,7 +300,10 @@ export default function useConversationSessionController({
         for (const event of (snapshot.events || [])) {
             if (event?.id && knownEventIds.has(event.id)) continue;
             delivery.deliver(event);
-            if (event?.id) knownEventIds.add(event.id);
+            if (event?.id) {
+                knownEventIds.add(event.id);
+                canonicalEventIdsRef.current.add(event.id);
+            }
             addedEventCount += 1;
         }
 
@@ -314,7 +379,10 @@ export default function useConversationSessionController({
     }) => {
         const delivery = createEventDelivery();
         const knownEventIds = new Set(
-            persistedEvents.map((event) => event?.id).filter(Boolean),
+            [
+                ...canonicalEventIdsRef.current,
+                ...persistedEvents.map((event) => event?.id).filter(Boolean),
+            ],
         );
         let startRequest = initialRequest;
         let runId = activeRun?.run_id || null;
@@ -331,27 +399,45 @@ export default function useConversationSessionController({
         try {
             while (!reachedTurnEnd) {
                 if (controller.signal.aborted) throw abortError();
+                if (browserIsOffline()) {
+                    setConnectionStatus('offline');
+                    await waitUntilOnline(controller.signal);
+                    setConnectionStatus('reconnecting');
+                    reconnectAttempt = 0;
+                    continue;
+                }
 
                 if (!startRequest && !runId) {
                     let snapshot;
+                    const requestAttempt = createRequestController(controller.signal);
+                    requestControllerRef.current = requestAttempt.controller;
                     try {
                         const rawSnapshot = await fetchConversationSnapshot(
                             conversationId,
-                            controller.signal,
+                            requestAttempt.controller.signal,
                         );
                         snapshot = normalizeConversationLoadData(
                             conversationId,
                             rawSnapshot,
                         );
                     } catch (error) {
-                        if (error.name === 'AbortError') throw error;
+                        if (controller.signal.aborted) throw abortError();
                         if (error instanceof ChatStreamHttpError && error.status < 500) {
                             if (startFailure && !sawRunEvidence) throw startFailure;
                             throw error;
                         }
+                        setConnectionStatus(
+                            browserIsOffline() ? 'offline' : 'reconnecting',
+                        );
+                        if (browserIsOffline()) continue;
                         await waitBeforeReconnect(reconnectAttempt, controller.signal);
                         reconnectAttempt += 1;
                         continue;
+                    } finally {
+                        if (requestControllerRef.current === requestAttempt.controller) {
+                            requestControllerRef.current = null;
+                        }
+                        requestAttempt.dispose();
                     }
 
                     const addedEvents = applySnapshotGap(
@@ -364,6 +450,7 @@ export default function useConversationSessionController({
                         if (startFailure && !sawRunEvidence && addedEvents === 0) {
                             throw startFailure;
                         }
+                        setConnectionStatus(null);
                         break;
                     }
 
@@ -383,19 +470,21 @@ export default function useConversationSessionController({
                 const source = startRequest ? 'start' : 'run';
                 const request = startRequest;
                 startRequest = null;
-                const records = source === 'start'
-                    ? streamChatTurn({
-                        ...request,
-                        conversationId,
-                        signal: controller.signal,
-                    })
-                    : streamAgentRun({
-                        runId,
-                        afterSeq: lastSeq,
-                        signal: controller.signal,
-                    });
+                const requestAttempt = createRequestController(controller.signal);
+                requestControllerRef.current = requestAttempt.controller;
 
                 try {
+                    const records = source === 'start'
+                        ? streamChatTurn({
+                            ...request,
+                            conversationId,
+                            signal: requestAttempt.controller.signal,
+                        })
+                        : streamAgentRun({
+                            runId,
+                            afterSeq: lastSeq,
+                            signal: requestAttempt.controller.signal,
+                        });
                     for await (const data of records) {
                         if (controller.signal.aborted) throw abortError();
                         const recordRunId = typeof data?.run_id === 'string'
@@ -425,9 +514,13 @@ export default function useConversationSessionController({
                         if (recordSeq !== null) lastSeq = recordSeq;
                         const event = normalizeLiveEvent(data);
                         if (!event) continue;
+                        setConnectionStatus(null);
                         if (!event.id || !knownEventIds.has(event.id)) {
                             delivery.deliver(event);
-                            if (event.id) knownEventIds.add(event.id);
+                            if (event.id) {
+                                knownEventIds.add(event.id);
+                                canonicalEventIdsRef.current.add(event.id);
+                            }
                         }
                         sawRunEvidence = true;
                         reconnectAttempt = 0;
@@ -449,7 +542,10 @@ export default function useConversationSessionController({
                         runId = null;
                     }
                 } catch (error) {
-                    if (error.name === 'AbortError') throw error;
+                    if (controller.signal.aborted) throw abortError();
+                    setConnectionStatus(
+                        browserIsOffline() ? 'offline' : 'reconnecting',
+                    );
                     if (source === 'start') {
                         if (
                             error instanceof ChatStreamHttpError
@@ -457,8 +553,21 @@ export default function useConversationSessionController({
                         ) {
                             throw error;
                         }
-                        startFailure = error;
-                        runId = null;
+                        if (!sawRunEvidence) {
+                            startFailure = error.name === 'AbortError'
+                                ? new Error(
+                                    'The connection was lost before the run could be confirmed.',
+                                )
+                                : error;
+                            runId = null;
+                        }
+                        if (!browserIsOffline() && sawRunEvidence) {
+                            await waitBeforeReconnect(
+                                reconnectAttempt,
+                                controller.signal,
+                            );
+                            reconnectAttempt += 1;
+                        }
                         continue;
                     }
                     if (error instanceof ChatStreamHttpError && error.status === 404) {
@@ -468,8 +577,14 @@ export default function useConversationSessionController({
                     if (error instanceof ChatStreamHttpError && error.status < 500) {
                         throw error;
                     }
+                    if (browserIsOffline()) continue;
                     await waitBeforeReconnect(reconnectAttempt, controller.signal);
                     reconnectAttempt += 1;
+                } finally {
+                    if (requestControllerRef.current === requestAttempt.controller) {
+                        requestControllerRef.current = null;
+                    }
+                    requestAttempt.dispose();
                 }
             }
             delivery.flush();
@@ -495,6 +610,7 @@ export default function useConversationSessionController({
                 abortControllerRef.current = null;
                 setIsStreaming(false);
                 setStopRequested(false);
+                setConnectionStatus(browserIsOffline() ? 'offline' : null);
                 dispatchConversation({ type: 'FINALIZE_ITERATION' });
             }
         }
@@ -576,6 +692,9 @@ export default function useConversationSessionController({
             );
             if (abortControllerRef.current !== controller) return null;
             const data = normalizeConversationLoadData(conversationId, rawData);
+            canonicalEventIdsRef.current = new Set(
+                data.events.map((event) => event?.id).filter(Boolean),
+            );
             setConversationId(conversationId);
             const retainedEvents = [];
             rootAgentIdRef.current = null;
@@ -635,6 +754,7 @@ export default function useConversationSessionController({
         setStopRequested(false);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
         eventsRef.current = [];
+        canonicalEventIdsRef.current = new Set();
         rootAgentIdRef.current = null;
         // Seed the composer in the same batch as the new id, so the fresh
         // conversation's input gets the text.
@@ -691,6 +811,7 @@ export default function useConversationSessionController({
         turns,
         stalled,
         isStreaming,
+        connectionStatus,
         stopRequested,
         activeConversationId,
         draft,

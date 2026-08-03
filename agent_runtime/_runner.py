@@ -47,7 +47,12 @@ ConversationLoader = Callable[
 
 
 class AgentRunner:
-    """Set up and execute agent runs independently of any delivery channel."""
+    """Translate an application-level agent run into SDK turn execution.
+
+    This boundary owns the setup shared by every delivery channel. The current
+    implementation maps one run to one root turn, but callers depend on run
+    semantics rather than the lower-level turn lifecycle.
+    """
 
     def __init__(self, conversation_loader: ConversationLoader) -> None:
         self._conversation_loader = conversation_loader

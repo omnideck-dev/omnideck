@@ -17,7 +17,11 @@ EventSink = Callable[[AgentEvent], None]
 
 @dataclass(frozen=True, slots=True)
 class AgentRunRequest:
-    """Channel-neutral input required to run an agent with conversation context."""
+    """Channel-neutral application input for work that currently becomes a turn.
+
+    Channel adapters translate their native request into this type; the runner
+    translates it into the SDK's conversation and turn primitives.
+    """
 
     conversation_id: str
     message: str

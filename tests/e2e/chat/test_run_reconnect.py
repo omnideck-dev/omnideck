@@ -93,17 +93,21 @@ def test_temporary_network_loss_reconnects_without_resending(page: Page) -> None
     body = f"{prefix} " + ("network gap " * 180) + tail
     captured = _capture_conversation_id(page)
     chat_posts = 0
+    attach_requests: list[str] = []
     conversation_id = None
 
     def count_post(request) -> None:
         nonlocal chat_posts
         if request.method == "POST" and request.url.endswith("/api/chat"):
             chat_posts += 1
+        if "/api/chat/runs/" in request.url:
+            attach_requests.append(request.url)
 
     page.on("request", count_post)
 
     try:
         chat = ChatView(page).goto().new_conversation()
+        chat.send(say("existing conversation warmup")).wait_streaming()
         chat.send(slow() + say(body))
         expect(page.get_by_test_id("entry-content").last).to_contain_text(
             prefix,
@@ -112,7 +116,8 @@ def test_temporary_network_loss_reconnects_without_resending(page: Page) -> None
         conversation_id = captured["id"]
 
         page.context.set_offline(True)
-        page.wait_for_timeout(600)
+        expect(page.get_by_test_id("connection-status")).to_contain_text("Offline")
+        page.wait_for_timeout(2_000)
         expect(chat.stop_button).to_be_visible()
         page.context.set_offline(False)
 
@@ -121,7 +126,8 @@ def test_temporary_network_loss_reconnects_without_resending(page: Page) -> None
             timeout=30_000,
         )
         chat.wait_streaming(timeout=30_000)
-        assert chat_posts == 1
+        assert chat_posts == 2
+        assert attach_requests, "offline cycle never reattached to the active run"
     finally:
         page.context.set_offline(False)
         _cleanup(page, conversation_id)

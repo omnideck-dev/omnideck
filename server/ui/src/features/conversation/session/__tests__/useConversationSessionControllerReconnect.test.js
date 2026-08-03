@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useConversationSessionController from '../useConversationSessionController.js';
@@ -98,6 +98,87 @@ function activeSnapshot(events = [started, user]) {
 
 describe('conversation session run reconnection', () => {
     afterEach(() => vi.restoreAllMocks());
+
+    it('waits for the browser to come online before starting a new run', async () => {
+        let online = false;
+        vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(streamResponse([
+            envelope(1, 'start-new', 'agent_started', {
+                agent_id: 'root-1', agent_name: 'Root', parent_agent_id: null,
+            }),
+            envelope(2, 'user-new', 'user_message', {
+                content: 'hello', attachments: [],
+            }),
+            envelope(3, 'iteration-new', 'iteration', {
+                iteration_index: 0,
+                content: 'complete answer',
+                thinking: null,
+                tool_calls: [],
+            }),
+            envelope(4, 'completed-new', 'agent_completed', { status: 'success' }),
+            envelope(5, 'end-new', 'turn_end'),
+        ]));
+        const { result } = renderHook(() => useConversationSessionController());
+        let sendPromise;
+
+        act(() => {
+            sendPromise = result.current.sendMessage('hello', null, 'profile-1');
+        });
+
+        await waitFor(() => expect(result.current.connectionStatus).toBe('offline'));
+        expect(fetchSpy).not.toHaveBeenCalled();
+
+        online = true;
+        await act(async () => {
+            window.dispatchEvent(new Event('online'));
+            await sendPromise;
+        });
+
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy).toHaveBeenCalledWith('/api/chat', expect.any(Object));
+        expect(result.current.connectionStatus).toBeNull();
+        expect(result.current.turns[0].children).toContainEqual(
+            expect.objectContaining({ kind: 'iteration', content: 'complete answer' }),
+        );
+    });
+
+    it('does not mistake old non-transcript events for an accepted failed start', async () => {
+        const existingSnapshot = {
+            events: [started, user, completed],
+            browser_tabs: [],
+            terminal: {},
+            profile_id: 'profile-1',
+            active_run: null,
+        };
+        let resumeCount = 0;
+        vi.spyOn(global, 'fetch').mockImplementation((url) => {
+            if (url.endsWith('/resume')) {
+                resumeCount += 1;
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => existingSnapshot,
+                });
+            }
+            if (url === '/api/chat') {
+                return Promise.reject(new TypeError('offline before response'));
+            }
+            throw new Error(`Unexpected request: ${url}`);
+        });
+        const { result } = renderHook(() => useConversationSessionController());
+
+        await act(async () => {
+            await result.current.loadConversation('conversation-1');
+            await result.current.sendMessage('new message', null, 'profile-1');
+        });
+
+        expect(resumeCount).toBe(2);
+        expect(result.current.turns.flatMap((turn) => turn.children)).toContainEqual(
+            expect.objectContaining({
+                kind: 'error',
+                message: 'offline before response',
+            }),
+        );
+    });
 
     it('discovers and follows the same run after the initial stream disconnects', async () => {
         const initial = [

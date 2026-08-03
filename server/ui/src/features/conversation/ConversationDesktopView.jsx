@@ -30,6 +30,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         turns,
         draft,
         isStreaming,
+        connectionStatus,
         stopRequested,
         stalled,
         conversationProfileId,
@@ -95,6 +96,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
             <ChatPanel
                 turns={turns}
                 stalled={stalled}
+                connectionStatus={connectionStatus}
                 onSend={handleSend}
                 onStop={stopGeneration}
                 isStreaming={isStreaming}

@@ -1,4 +1,4 @@
-"""Tests for the public HTTP handlers in ``server.aiohttp_app``.
+"""Tests for the public agent-run and application HTTP handlers.
 
 Focused on input validation at the API edge — the chat and stop
 endpoints must reject requests without a ``conversation_id`` instead
@@ -13,13 +13,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agent_runtime import UnknownActiveRunError
-from server.aiohttp_app import (
-    ACTIVE_RUN_MANAGER_KEY,
+from server._agent_run_routes import (
     chat_handler,
     chat_run_events_handler,
-    index_handler,
     stop_handler,
 )
+from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._ui_routes import index_handler
 
 
 def _make_request(*, raw_body: str | None = None, query: dict | None = None) -> MagicMock:
@@ -157,7 +157,7 @@ async def test_index_handler_sets_no_cache_header(monkeypatch, tmp_path) -> None
     ui_dist = tmp_path / "dist"
     ui_dist.mkdir()
     (ui_dist / "index.html").write_text("<html></html>")
-    monkeypatch.setattr("server.aiohttp_app.UI_DIST_DIR", ui_dist)
+    monkeypatch.setattr("server._ui_routes.UI_DIST_DIR", ui_dist)
 
     resp = await index_handler(_make_request())
 
