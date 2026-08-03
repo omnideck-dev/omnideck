@@ -324,3 +324,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines 
 ## License
 
 Omnideck is open-source software licensed under the [Apache License 2.0](LICENSE). Fork it, modify it, use it commercially — no strings attached.
+
+## Roadmap
+
+See the public [Omnideck Roadmap](https://github.com/orgs/omnideck-dev/projects/1) board for what's planned, in progress, and recently shipped.

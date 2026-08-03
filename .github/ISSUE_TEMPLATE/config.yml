@@ -1,0 +1,4 @@
+contact_links:
+  - name: "Proposing a new feature or direction?"
+    url: https://github.com/omnideck-dev/roadmap/discussions
+    about: "Start a discussion in omnideck/roadmap →"
