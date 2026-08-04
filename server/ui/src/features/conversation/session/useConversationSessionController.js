@@ -234,19 +234,17 @@ export default function useConversationSessionController({
     }, []);
     const abortControllerRef = useRef(null);
     const requestControllerRef = useRef(null);
-    const [connectionStatus, setConnectionStatus] = useState(
-        browserIsOffline() ? 'offline' : null,
-    );
+    const [isOffline, setIsOffline] = useState(browserIsOffline);
     useEffect(() => {
         const onOffline = () => {
-            setConnectionStatus('offline');
+            setIsOffline(true);
             // End only the current HTTP subscription. The outer controller and
             // manager-owned agent run remain alive so runConnection can attach
             // again when the browser comes online.
             requestControllerRef.current?.abort();
         };
         const onOnline = () => {
-            setConnectionStatus(isStreamingRef.current ? 'reconnecting' : null);
+            setIsOffline(false);
         };
         window.addEventListener('offline', onOffline);
         window.addEventListener('online', onOnline);
@@ -340,7 +338,7 @@ export default function useConversationSessionController({
         return addedEventCount;
     }, [workspaceDispatch]);
     const sendNudge = useCallback(async (message, agentId) => {
-        if (!message || stopRequestedRef.current) return null;
+        if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
             message,
             conversation_id: conversationIdRef.current,
@@ -400,9 +398,9 @@ export default function useConversationSessionController({
             while (!reachedTurnEnd) {
                 if (controller.signal.aborted) throw abortError();
                 if (browserIsOffline()) {
-                    setConnectionStatus('offline');
+                    setIsOffline(true);
                     await waitUntilOnline(controller.signal);
-                    setConnectionStatus('reconnecting');
+                    setIsOffline(false);
                     reconnectAttempt = 0;
                     continue;
                 }
@@ -426,9 +424,7 @@ export default function useConversationSessionController({
                             if (startFailure && !sawRunEvidence) throw startFailure;
                             throw error;
                         }
-                        setConnectionStatus(
-                            browserIsOffline() ? 'offline' : 'reconnecting',
-                        );
+                        setIsOffline(browserIsOffline());
                         if (browserIsOffline()) continue;
                         await waitBeforeReconnect(reconnectAttempt, controller.signal);
                         reconnectAttempt += 1;
@@ -450,7 +446,6 @@ export default function useConversationSessionController({
                         if (startFailure && !sawRunEvidence && addedEvents === 0) {
                             throw startFailure;
                         }
-                        setConnectionStatus(null);
                         break;
                     }
 
@@ -514,7 +509,6 @@ export default function useConversationSessionController({
                         if (recordSeq !== null) lastSeq = recordSeq;
                         const event = normalizeLiveEvent(data);
                         if (!event) continue;
-                        setConnectionStatus(null);
                         if (!event.id || !knownEventIds.has(event.id)) {
                             delivery.deliver(event);
                             if (event.id) {
@@ -543,9 +537,7 @@ export default function useConversationSessionController({
                     }
                 } catch (error) {
                     if (controller.signal.aborted) throw abortError();
-                    setConnectionStatus(
-                        browserIsOffline() ? 'offline' : 'reconnecting',
-                    );
+                    setIsOffline(browserIsOffline());
                     if (source === 'start') {
                         if (
                             error instanceof ChatStreamHttpError
@@ -610,7 +602,7 @@ export default function useConversationSessionController({
                 abortControllerRef.current = null;
                 setIsStreaming(false);
                 setStopRequested(false);
-                setConnectionStatus(browserIsOffline() ? 'offline' : null);
+                setIsOffline(browserIsOffline());
                 dispatchConversation({ type: 'FINALIZE_ITERATION' });
             }
         }
@@ -622,7 +614,11 @@ export default function useConversationSessionController({
     ]);
 
     const sendMessage = useCallback(async (message, attachments, profileId) => {
-        if ((!message && !attachments?.length) || isStreamingRef.current) return;
+        if (
+            (!message && !attachments?.length)
+            || isStreamingRef.current
+            || browserIsOffline()
+        ) return;
 
         // The pending attachment list keeps upload order
         // and carries filename + content_type for every entry (images too), so
@@ -660,7 +656,11 @@ export default function useConversationSessionController({
     /** Ask the backend to stop generation, leaving the stream open until
      * turn_end so the backend can flush whatever it streamed so far. */
     const stopGeneration = useCallback(() => {
-        if (!isStreamingRef.current || stopRequestedRef.current) return;
+        if (
+            !isStreamingRef.current
+            || stopRequestedRef.current
+            || browserIsOffline()
+        ) return;
         setStopRequested(true);
         fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => { });
     }, [setStopRequested]);
@@ -673,7 +673,11 @@ export default function useConversationSessionController({
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
-        if (previousWasStreaming && previousConversationId !== conversationId) {
+        if (
+            previousWasStreaming
+            && previousConversationId !== conversationId
+            && !browserIsOffline()
+        ) {
             fetch(
                 `/api/chat/stop?conversation_id=${encodeURIComponent(previousConversationId)}`,
                 { method: 'POST' },
@@ -749,7 +753,9 @@ export default function useConversationSessionController({
             abortControllerRef.current = null;
         }
         const oldConversationId = conversationIdRef.current;
-        fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
+        if (!browserIsOffline()) {
+            fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
+        }
         setIsStreaming(false);
         setStopRequested(false);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
@@ -811,7 +817,7 @@ export default function useConversationSessionController({
         turns,
         stalled,
         isStreaming,
-        connectionStatus,
+        isOffline,
         stopRequested,
         activeConversationId,
         draft,

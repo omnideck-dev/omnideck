@@ -124,6 +124,39 @@ describe('ChatInput', () => {
         expect(screen.getByLabelText('Send message')).toBeDisabled();
     });
 
+    it('keeps the draft and blocks submission while offline', async () => {
+        const onSend = vi.fn();
+        const user = userEvent.setup();
+        render(
+            <ChatInput
+                onSend={onSend}
+                isStreaming={false}
+                isOffline={true}
+            />,
+        );
+
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
+        await user.type(textarea, 'send this later');
+        await user.keyboard('{Enter}');
+
+        expect(onSend).not.toHaveBeenCalled();
+        expect(textarea).toHaveValue('send this later');
+        expect(screen.getByLabelText('Send message')).toBeDisabled();
+    });
+
+    it('disables stop while offline', () => {
+        render(
+            <ChatInput
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                isStreaming={true}
+                isOffline={true}
+            />,
+        );
+
+        expect(screen.getByTestId('chat-stop-btn')).toBeDisabled();
+    });
+
     it('renders a file card (not an image) for a non-image attachment', async () => {
         render(<ChatInput onSend={vi.fn()} isStreaming={false}
             attachment={{ base64: 'YWJj', contentType: 'application/pdf', filename: 'report.pdf' }} />);

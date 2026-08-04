@@ -27,6 +27,7 @@ export default function AgentActivityView({
     availableViews = [],
     onOpenView,
     nudgeDisabled = false,
+    nudgeDisabledReason = 'Stopping...',
 }) {
     const { agents } = useAgentState();
     const agent = agentId ? agents[agentId] : null;
@@ -153,7 +154,7 @@ export default function AgentActivityView({
                 <input
                     className={styles.nudgeInput}
                     type="text"
-                    placeholder={nudgeDisabled ? 'Stopping...' : `Send a nudge to ${formatAgentName(agent.name)}...`}
+                    placeholder={nudgeDisabled ? nudgeDisabledReason : `Send a nudge to ${formatAgentName(agent.name)}...`}
                     disabled={nudgeDisabled}
                     onKeyDown={(e) => {
                         if (nudgeDisabled) return;

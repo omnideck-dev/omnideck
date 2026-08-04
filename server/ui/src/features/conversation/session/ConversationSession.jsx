@@ -38,6 +38,7 @@ export function ConversationSessionProvider({ children }) {
         if (!message && !attachments?.length) {
             return session.sendMessage(message, attachments, profileId);
         }
+        if (session.isOffline) return null;
         if (isFreshConversationRef.current) {
             isFreshConversationRef.current = false;
             addStartedConversation({
@@ -46,7 +47,12 @@ export function ConversationSessionProvider({ children }) {
             });
         }
         return session.sendMessage(message, attachments, profileId);
-    }, [addStartedConversation, session.activeConversationId, session.sendMessage]);
+    }, [
+        addStartedConversation,
+        session.activeConversationId,
+        session.isOffline,
+        session.sendMessage,
+    ]);
 
     const sendNudge = useCallback(async (message, agentId) => {
         const result = await session.sendNudge(message, agentId);
@@ -151,7 +157,7 @@ export function ConversationSessionProvider({ children }) {
         turns: session.turns,
         draft: session.draft,
         isStreaming: session.isStreaming,
-        connectionStatus: session.connectionStatus,
+        isOffline: session.isOffline,
         stopRequested: session.stopRequested,
         stalled: session.stalled,
         conversationProfileId,
@@ -159,8 +165,8 @@ export function ConversationSessionProvider({ children }) {
         conversationProfileId,
         session.activeConversationId,
         session.draft,
+        session.isOffline,
         session.isStreaming,
-        session.connectionStatus,
         session.stalled,
         session.stopRequested,
         session.turns,

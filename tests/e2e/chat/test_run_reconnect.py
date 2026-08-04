@@ -133,6 +133,45 @@ def test_temporary_network_loss_reconnects_without_resending(page: Page) -> None
         _cleanup(page, conversation_id)
 
 
+def test_offline_composer_keeps_draft_without_queuing_a_run(page: Page) -> None:
+    """Offline submission stays in the composer until the user retries online."""
+    message = say(f"OFFLINE-DRAFT-{time.time_ns()}")
+    captured = _capture_conversation_id(page)
+    chat_posts = 0
+    conversation_id = None
+
+    def count_posts(request) -> None:
+        nonlocal chat_posts
+        if request.method == "POST" and request.url.endswith("/api/chat"):
+            chat_posts += 1
+
+    page.on("request", count_posts)
+
+    try:
+        chat = ChatView(page).goto().new_conversation()
+        page.context.set_offline(True)
+        expect(page.get_by_test_id("connection-status")).to_have_text("Offline")
+
+        chat.composer.fill(message)
+        chat.composer.press("Enter")
+
+        expect(chat.composer).to_have_value(message)
+        expect(page.get_by_label("Send message")).to_be_disabled()
+        expect(page.get_by_test_id("message-user")).to_have_count(0)
+        assert chat_posts == 0
+
+        page.context.set_offline(False)
+        expect(page.get_by_test_id("connection-status")).to_be_hidden()
+        chat.composer.press("Enter")
+        chat.wait_streaming()
+
+        conversation_id = captured["id"]
+        assert chat_posts == 1
+    finally:
+        page.context.set_offline(False)
+        _cleanup(page, conversation_id)
+
+
 def test_completion_before_replay_attach_refetches_the_snapshot(page: Page) -> None:
     """A pruned run between resume and GET is recovered from durable state."""
     nonce = time.time_ns()

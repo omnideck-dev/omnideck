@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useConversationSessionController from '../useConversationSessionController.js';
@@ -99,47 +99,34 @@ function activeSnapshot(events = [started, user]) {
 describe('conversation session run reconnection', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('waits for the browser to come online before starting a new run', async () => {
+    it('does not start or queue a new run while the browser is offline', async () => {
         let online = false;
         vi.spyOn(window.navigator, 'onLine', 'get').mockImplementation(() => online);
-        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(streamResponse([
-            envelope(1, 'start-new', 'agent_started', {
-                agent_id: 'root-1', agent_name: 'Root', parent_agent_id: null,
-            }),
-            envelope(2, 'user-new', 'user_message', {
-                content: 'hello', attachments: [],
-            }),
-            envelope(3, 'iteration-new', 'iteration', {
-                iteration_index: 0,
-                content: 'complete answer',
-                thinking: null,
-                tool_calls: [],
-            }),
-            envelope(4, 'completed-new', 'agent_completed', { status: 'success' }),
-            envelope(5, 'end-new', 'turn_end'),
-        ]));
+        const fetchSpy = vi.spyOn(global, 'fetch');
         const { result } = renderHook(() => useConversationSessionController());
-        let sendPromise;
+        let sendResult;
 
-        act(() => {
-            sendPromise = result.current.sendMessage('hello', null, 'profile-1');
+        await act(async () => {
+            sendResult = await result.current.sendMessage(
+                'hello',
+                null,
+                'profile-1',
+            );
         });
 
-        await waitFor(() => expect(result.current.connectionStatus).toBe('offline'));
+        expect(sendResult).toBeUndefined();
+        expect(result.current.isOffline).toBe(true);
+        expect(result.current.isStreaming).toBe(false);
+        expect(result.current.turns).toEqual([]);
         expect(fetchSpy).not.toHaveBeenCalled();
 
         online = true;
-        await act(async () => {
+        act(() => {
             window.dispatchEvent(new Event('online'));
-            await sendPromise;
         });
 
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
-        expect(fetchSpy).toHaveBeenCalledWith('/api/chat', expect.any(Object));
-        expect(result.current.connectionStatus).toBeNull();
-        expect(result.current.turns[0].children).toContainEqual(
-            expect.objectContaining({ kind: 'iteration', content: 'complete answer' }),
-        );
+        expect(result.current.isOffline).toBe(false);
+        expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it('does not mistake old non-transcript events for an accepted failed start', async () => {

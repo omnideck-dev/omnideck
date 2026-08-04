@@ -18,7 +18,7 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
@@ -109,7 +109,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (stopRequested) return;
+        if (stopRequested || isOffline) return;
         if (!message.trim() && !attachments.length) return;
         onSend(message.trim(), attachments.length ? attachments : null);
         setMessage('');
@@ -247,7 +247,7 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                                 title={stopRequested ? 'Stopping…' : 'Stop generation'}
                                 aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
                                 onClick={onStop}
-                                disabled={stopRequested}
+                                disabled={stopRequested || isOffline}
                             >
                                 <StopIcon />
                             </button>
@@ -257,7 +257,10 @@ function ChatInput({ onSend, onStop, isStreaming, stopRequested = false, attachm
                                 className={styles.sendButton}
                                 title="Send message"
                                 aria-label="Send message"
-                                disabled={!message.trim() && !attachments.length}
+                                disabled={
+                                    isOffline
+                                    || (!message.trim() && !attachments.length)
+                                }
                             >
                                 <SendIcon />
                             </button>

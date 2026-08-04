@@ -107,6 +107,16 @@ describe('AgentActivityView', () => {
 
             expect(screen.getByPlaceholderText('Stopping...')).toBeDisabled();
         });
+
+        it('shows the supplied reason when nudges are unavailable', () => {
+            const { dispatch } = renderView({
+                nudgeDisabled: true,
+                nudgeDisabledReason: 'Offline',
+            });
+            startAgent(dispatch, 'a1');
+
+            expect(screen.getByPlaceholderText('Offline')).toBeDisabled();
+        });
     });
 
     describe('agent workspace resources', () => {
