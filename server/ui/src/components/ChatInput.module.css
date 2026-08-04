@@ -8,11 +8,11 @@
   gap: var(--sp-2);
   min-height: 34px;
   max-width: 760px;
-  margin: 0 auto -1px;
+  margin: 0 auto var(--sp-2);
   padding: 0 var(--sp-3);
   background: var(--warning-muted);
   border: 1px solid var(--warning-muted);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 11px;
 }
@@ -27,10 +27,6 @@
   font-family: var(--font-brand);
   font-size: 11px;
   letter-spacing: 0.02em;
-}
-
-.offlineWrapper .inputArea {
-  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
 
 /* ── Composer card ───────────────────────────────────── */
