@@ -111,13 +111,10 @@ async def resume_conversation(
 
     Args:
         conversation_id: Conversation whose persisted state should be loaded.
-        allow_empty: Return an empty snapshot when no event has reached disk
-            yet. The resume route uses this only when a manager-owned run proves
-            the conversation currently exists.
+        allow_empty: Return a snapshot before the first event is persisted.
 
-    Returns None when no events are present and ``allow_empty`` is false —
-    conversations created before the events-first cutover have no replay source
-    and cannot otherwise be opened.
+    Returns None when the conversation has no persisted events and empty
+    snapshots are not allowed.
     """
     # Disk is the durability contract for resume. The in-memory history keeps
     # only what the active LLM view needs and is deliberately not a second
