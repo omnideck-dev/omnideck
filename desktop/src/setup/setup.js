@@ -138,11 +138,11 @@ function render(state) {
 
 function runPrimaryAction() {
   if (currentState.primaryAction) {
-    return window.omnideckDesktop.runAction(currentState.primaryAction);
+    return window.omnideckHost.runAction(currentState.primaryAction);
   }
-  if (currentState.canOpen) return window.omnideckDesktop.openApp();
-  if (currentState.canRetry) return window.omnideckDesktop.retry();
-  return window.omnideckDesktop.beginSetup();
+  if (currentState.canOpen) return window.omnideckHost.openApp();
+  if (currentState.canRetry) return window.omnideckHost.retry();
+  return window.omnideckHost.beginSetup();
 }
 
 function reportActionFailure(error) {
@@ -170,11 +170,11 @@ secondary.addEventListener('click', async () => {
   secondary.disabled = true;
   actionError.hidden = true;
   try {
-    await window.omnideckDesktop.runAction(currentState.secondaryAction);
+    await window.omnideckHost.runAction(currentState.secondaryAction);
   } catch (error) {
     reportActionFailure(error);
   } finally {
     secondary.disabled = false;
   }
 });
-window.omnideckDesktop.onState(render);
+window.omnideckHost.onState(render);

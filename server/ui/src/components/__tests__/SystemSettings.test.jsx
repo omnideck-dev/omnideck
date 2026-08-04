@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SystemSettings from '../SystemSettings.jsx';
+import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 
 const refreshFeatures = vi.fn();
 const providersHook = { providers: [] };
@@ -48,7 +49,11 @@ describe('SystemSettings experimental feature toggles', () => {
 
     it('persists Apps and refreshes shell feature state', async () => {
         await act(async () => {
-            render(<SystemSettings />);
+            render(
+                <OmnideckHostProvider host={null}>
+                    <SystemSettings />
+                </OmnideckHostProvider>,
+            );
             await new Promise((resolve) => setTimeout(resolve, 0));
         });
 
@@ -74,7 +79,11 @@ describe('SystemSettings experimental feature toggles', () => {
 
     it('persists Custom Tools and refreshes shell feature state', async () => {
         await act(async () => {
-            render(<SystemSettings />);
+            render(
+                <OmnideckHostProvider host={null}>
+                    <SystemSettings />
+                </OmnideckHostProvider>,
+            );
             await new Promise((resolve) => setTimeout(resolve, 0));
         });
 

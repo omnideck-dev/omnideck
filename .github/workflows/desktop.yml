@@ -316,12 +316,26 @@ jobs:
         with:
           subject-path: dist/*
 
-      - name: Publish OmniDeck prerelease
+      # A tag carrying a suffix is a preview; a plain version is a release, and
+      # the two are published differently. The application follows the same
+      # rule when it looks for a newer version, so a tag that is a preview here
+      # is a preview there too.
+      - name: Classify the tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish OmniDeck release
         uses: softprops/action-gh-release@v3
         with:
           name: OmniDeck ${{ github.ref_name }}
           body_path: docs/releases/${{ github.ref_name }}.md
           files: dist/*
           fail_on_unmatched_files: true
-          prerelease: true
-          make_latest: false
+          prerelease: ${{ steps.tag.outputs.prerelease }}
+          make_latest: ${{ steps.tag.outputs.prerelease == 'false' }}

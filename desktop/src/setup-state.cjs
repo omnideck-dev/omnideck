@@ -1,7 +1,7 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const SETUP_STATE_SCHEMA = 1;
+const SETUP_STATE_SCHEMA = 2;
 const SETUP_STATE_FILENAME = 'setup-state.json';
 const SETUP_STATUSES = new Set(['in-progress', 'complete']);
 const SETUP_REASONS = new Set(['first-run', 'resume', 'update', 'repair']);
@@ -13,16 +13,30 @@ function isSetupState(value) {
     && SETUP_STATUSES.has(value.status)
     && SETUP_REASONS.has(value.reason)
     && typeof value.appVersion === 'string'
+    && typeof value.imageVersion === 'string'
     && typeof value.imageRef === 'string'
     && typeof value.updatedAt === 'string',
   );
 }
 
+// The first shape had no record of which version was installed. The
+// application that wrote it installed the release it shipped with, so that is
+// the answer — and reading it is what stops an installation made by an earlier
+// release being mistaken for no installation at all.
+function migrate(value) {
+  if (!value || value.schemaVersion !== 1) return value;
+  return {
+    ...value,
+    schemaVersion: SETUP_STATE_SCHEMA,
+    imageVersion: typeof value.appVersion === 'string' ? value.appVersion : null,
+  };
+}
+
 async function readSetupState(userDataPath) {
   try {
-    const value = JSON.parse(
+    const value = migrate(JSON.parse(
       await fsp.readFile(path.join(userDataPath, SETUP_STATE_FILENAME), 'utf8'),
-    );
+    ));
     return isSetupState(value) ? value : null;
   } catch {
     return null;
@@ -35,6 +49,7 @@ async function writeSetupState(userDataPath, state) {
     status: state.status,
     reason: state.reason,
     appVersion: state.appVersion,
+    imageVersion: state.imageVersion,
     imageRef: state.imageRef,
     imageDigest: state.imageRef.match(/@(?<digest>sha256:[a-f0-9]{64})$/)?.groups?.digest || null,
     updatedAt: new Date().toISOString(),
@@ -55,21 +70,12 @@ async function writeSetupState(userDataPath, state) {
   return value;
 }
 
-async function hasLegacySetupFootprint(userDataPath) {
-  try {
-    await fsp.access(path.join(userDataPath, 'runtime', 'app-port'));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 module.exports = {
   SETUP_REASONS,
   SETUP_STATE_FILENAME,
   SETUP_STATE_SCHEMA,
-  hasLegacySetupFootprint,
   isSetupState,
+  migrate,
   readSetupState,
   writeSetupState,
 };
