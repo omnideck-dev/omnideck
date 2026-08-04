@@ -12,10 +12,18 @@ async function main() {
     );
   }
 
+  const imageVersion = (
+    await fsp.readFile(path.join(__dirname, '..', 'container-version.txt'), 'utf8')
+  ).trim();
+  if (!/^\d+\.\d+\.\d+$/.test(imageVersion)) {
+    throw new Error('container-version.txt must contain a plain X.Y.Z container release.');
+  }
+
   const destinationRoot = path.resolve('build/runtime');
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     appVersion: version,
+    imageVersion,
     imageRef,
   };
   const destination = path.join(destinationRoot, 'image-manifest.json');

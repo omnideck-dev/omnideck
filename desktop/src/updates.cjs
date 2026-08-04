@@ -1,4 +1,4 @@
-// Finding a newer release of the application in the registry it is published to.
+// Finding a newer container release in the registry it is published to.
 //
 // Only plain version tags count — 1.2.3 and nothing else. A tag carrying a
 // suffix is a preview, and someone running the released application should

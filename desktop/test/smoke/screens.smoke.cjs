@@ -27,8 +27,9 @@ async function unidentifiableRelease(t) {
   await fs.promises.writeFile(
     MANIFEST,
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       appVersion: 'not-this-build',
+      imageVersion: '0.1.0',
       imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`,
     })}\n`,
   );

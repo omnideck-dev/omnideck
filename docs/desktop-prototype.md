@@ -89,7 +89,8 @@ fallback.
 ## Build local installers
 
 Packaged builds require `build/runtime/image-manifest.json`. Generate it from
-the immutable digest of a published multi-architecture image:
+the immutable digest of the published multi-architecture container release
+named by `desktop/container-version.txt`:
 
 ```bash
 node scripts/prepare-runtime-image.cjs \
@@ -128,12 +129,19 @@ SmartScreen warnings.
 ## GitHub builds and releases
 
 The application workflow can be run manually to produce test artifacts for all
-three operating systems. Pushing a version tag waits for the multi-architecture
-image built from that exact `main` commit, resolves its immutable digest, embeds
-the digest manifest in each installer, and publishes a prerelease in the
-OmniDeck repository. The workflow also promotes that same image to the matching
-version tag for CLI users. On first setup, packaged applications pull the pinned
+three operating systems. Pushing a `vX.Y.Z` version tag publishes only the
+matching desktop release. It resolves the immutable digest of the independent
+container release selected in `desktop/container-version.txt`, embeds both that
+container version and digest in each installer, and publishes the installers in
+the OmniDeck repository. On first setup, packaged applications pull the pinned
 digest from GHCR; later launches reuse the local image.
+
+Container releases have their own version line. Run the **Release container**
+workflow from `main` with a plain `X.Y.Z` version. It promotes the tested
+`main-<commit>` multi-architecture image to that GHCR tag without creating a Git
+tag or publishing desktop installers. An existing version can never be moved to
+a different digest. Update `desktop/container-version.txt` only when a desktop
+release should ship a different container release.
 
 The workflow accepts these optional repository secrets:
 
@@ -159,10 +167,12 @@ should move behind the shared Go workflow layer so the CLI and desktop app
 cannot drift.
 
 The runtime installer is pinned to Podman 6.0.2 and verified by SHA-256 before
-execution. The application image is tied to the `package.json` version and an
-immutable multi-architecture SHA-256 digest. Packaged builds never pull
-`latest`. Production releases should update each pin deliberately, retain the
-checks, and include complete third-party notices.
+execution. The application image is tied to the independent version in
+`desktop/container-version.txt` and an immutable multi-architecture SHA-256
+digest. The desktop `package.json` version identifies the host application;
+the two versions do not have to match. Packaged builds never pull `latest`.
+Production releases should update each pin deliberately, retain the checks,
+and include complete third-party notices.
 
 The local app is published only on a loopback port. It uses
 `127.0.0.1:2337` when available and automatically remembers another free port
