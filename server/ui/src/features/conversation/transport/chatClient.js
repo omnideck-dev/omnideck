@@ -25,10 +25,7 @@ export class ChatStreamHttpError extends Error {
 }
 
 async function throwIfResponseFailed(response) {
-    // A few focused tests use minimal response doubles without `ok`. Real
-    // Response objects always provide it, so only an explicit false is an
-    // HTTP failure.
-    if (response.ok !== false) return;
+    if (response.ok) return;
     let message = null;
     try {
         const body = await response.json();

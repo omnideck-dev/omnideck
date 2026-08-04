@@ -101,22 +101,17 @@ async def cors_and_error_middleware(
 def create_app(
     *,
     client_max_size: int = 50 * 1024**2,
-    active_run_manager: ActiveRunManager | None = None,
 ) -> web.Application:
     """Create and configure the aiohttp application.
 
     Args:
         client_max_size: Maximum allowed request body size in bytes.
-        active_run_manager: Optional injected manager, primarily for focused
-            application tests.
 
     Returns:
         Configured aiohttp web.Application instance.
     """
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
-    app[ACTIVE_RUN_MANAGER_KEY] = active_run_manager or ActiveRunManager(
-        build_agent_runner(),
-    )
+    app[ACTIVE_RUN_MANAGER_KEY] = ActiveRunManager(build_agent_runner())
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)

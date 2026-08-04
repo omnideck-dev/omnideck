@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class _RunExecutor(Protocol):
-    """Structural seam used by the manager and its focused test fakes."""
+    """Execution contract consumed by the active-run manager."""
 
     async def run(
         self,

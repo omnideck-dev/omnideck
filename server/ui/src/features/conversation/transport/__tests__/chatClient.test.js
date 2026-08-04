@@ -38,7 +38,7 @@ describe('streamChatTurn', () => {
 
     it('posts the turn request and removes UI-only attachment previews', async () => {
         const signal = new AbortController().signal;
-        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ body: null });
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
         const attachments = [{
             filename: 'diagram.png',
             content_type: 'image/png',
@@ -75,7 +75,7 @@ describe('streamChatTurn', () => {
     });
 
     it('omits optional request fields when they are not supplied', async () => {
-        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ body: null });
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 
         await collect(streamChatTurn({ message: 'hello' }));
 
@@ -91,6 +91,7 @@ describe('streamChatTurn', () => {
         const bytes = encoder.encode(`${JSON.stringify(expected)}\n`);
         const oneByteChunks = Array.from(bytes, (byte) => Uint8Array.of(byte));
         vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
             body: bodyFromChunks(oneByteChunks),
         });
 
@@ -103,6 +104,7 @@ describe('streamChatTurn', () => {
         const second = { payload: { type: 'turn_end' } };
         const jsonl = `  \n${JSON.stringify(first)}\n\n${JSON.stringify(second)}\n`;
         vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
@@ -115,6 +117,7 @@ describe('streamChatTurn', () => {
         const second = { payload: { type: 'content', content: 'two' } };
         const jsonl = [JSON.stringify(first), '{not-json}', JSON.stringify(second), ''].join('\n');
         vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
@@ -125,6 +128,7 @@ describe('streamChatTurn', () => {
     it('does not emit an unterminated trailing record', async () => {
         const record = { payload: { type: 'turn_end' } };
         vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
             body: bodyFromChunks([encoder.encode(JSON.stringify(record))]),
         });
 
@@ -133,7 +137,7 @@ describe('streamChatTurn', () => {
     });
 
     it('completes without records when the response has no body', async () => {
-        vi.spyOn(global, 'fetch').mockResolvedValue({ body: null });
+        vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 
         await expect(collect(streamChatTurn({ message: 'hello' })))
             .resolves.toEqual([]);
@@ -149,7 +153,10 @@ describe('streamChatTurn', () => {
 
     it('propagates reader failures', async () => {
         const error = new Error('stream disconnected');
-        vi.spyOn(global, 'fetch').mockResolvedValue({ body: bodyThatFails(error) });
+        vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
+            body: bodyThatFails(error),
+        });
 
         await expect(collect(streamChatTurn({ message: 'hello' })))
             .rejects.toBe(error);
