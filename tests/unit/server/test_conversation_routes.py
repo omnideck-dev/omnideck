@@ -96,6 +96,7 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
         "profile_id": "general",
     })
     monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: True)
 
     response = await resume_conversation_handler(_make_request("conversation-1", None))
     body = json.loads(response.body)
@@ -103,7 +104,20 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
     assert body["browser_tabs"] == [{"tab_id": 1, "agent_id": "root-1"}]
     assert body["terminal"] == {"root-1": [{"cmd_id": "command-1"}]}
     assert body["active_run"] is None
-    resume.assert_awaited_once_with("conversation-1", allow_empty=False)
+    resume.assert_awaited_once_with("conversation-1")
+
+
+@pytest.mark.unit
+async def test_resume_route_returns_404_for_unknown_conversation(monkeypatch) -> None:
+    """A missing conversation without an active run cannot be resumed."""
+    resume = AsyncMock()
+    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: False)
+
+    response = await resume_conversation_handler(_make_request("missing", None))
+
+    assert response.status == 404
+    resume.assert_not_awaited()
 
 
 @pytest.mark.unit
@@ -148,7 +162,7 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         "last_seq": 8,
         "resume_after_seq": 3,
     }
-    resume.assert_awaited_once_with("conversation-1", allow_empty=True)
+    resume.assert_awaited_once_with("conversation-1")
     manager.sequence_for_event.assert_called_once_with("run-1", "run-user")
 
 

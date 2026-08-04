@@ -196,12 +196,9 @@ async def resume_conversation_handler(request: Request) -> Response:
     conversation_id = request.match_info["conversation_id"]
     manager = request.app[ACTIVE_RUN_MANAGER_KEY]
     active = manager.active_for_conversation(conversation_id)
-    data = await resume_conversation(
-        conversation_id,
-        allow_empty=active is not None,
-    )
-    if data is None:
+    if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
+    data = await resume_conversation(conversation_id)
 
     active_run = None
     if active is not None:

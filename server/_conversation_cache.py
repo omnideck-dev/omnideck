@@ -87,11 +87,7 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
-async def resume_conversation(
-    conversation_id: str,
-    *,
-    allow_empty: bool = False,
-) -> dict | None:
+async def resume_conversation(conversation_id: str) -> dict:
     """Load a conversation's history derived from events.jsonl.
 
     Returns a dict with:
@@ -111,17 +107,11 @@ async def resume_conversation(
 
     Args:
         conversation_id: Conversation whose persisted state should be loaded.
-        allow_empty: Return a snapshot before the first event is persisted.
-
-    Returns None when the conversation has no persisted events and empty
-    snapshots are not allowed.
     """
     # Disk is the durability contract for resume. The in-memory history keeps
     # only what the active LLM view needs and is deliberately not a second
     # persistence policy.
     events = load_events_jsonl(conversation_id)
-    if not events and not allow_empty:
-        return None
 
     if conversation_id in _conversations:
         _conversations.move_to_end(conversation_id)

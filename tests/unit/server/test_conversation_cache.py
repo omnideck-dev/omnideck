@@ -221,11 +221,10 @@ async def test_resume_conversation_marks_most_recently_used(
     assert list(cc._conversations)[-1] == "from-disk"
 
 
-async def test_resume_allows_empty_snapshot_for_reserved_active_run() -> None:
-    """An admitted run can be discovered before its first event is persisted."""
-    result = await cc.resume_conversation("just-reserved", allow_empty=True)
+async def test_resume_returns_empty_snapshot_without_persisted_events() -> None:
+    """Loading before the first event returns the normal snapshot shape."""
+    result = await cc.resume_conversation("just-reserved")
 
-    assert result is not None
     assert result["messages"] == []
     assert result["events"] == []
     assert "just-reserved" in cc._conversations
