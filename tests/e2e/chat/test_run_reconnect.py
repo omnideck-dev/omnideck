@@ -150,7 +150,7 @@ def test_offline_composer_keeps_draft_without_queuing_a_run(page: Page) -> None:
     try:
         chat = ChatView(page).goto().new_conversation()
         page.context.set_offline(True)
-        expect(page.get_by_test_id("connection-status")).to_have_text("Offline")
+        expect(page.get_by_test_id("connection-status")).to_contain_text("Offline")
 
         chat.composer.fill(message)
         chat.composer.press("Enter")

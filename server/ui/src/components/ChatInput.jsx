@@ -172,7 +172,22 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const showCornerBtn = isGrown || expanded;
 
     return (
-        <div className={`${styles.inputAreaWrapper}${expanded ? ` ${styles.expandedWrapper}` : ''}`}>
+        <div className={[
+            styles.inputAreaWrapper,
+            expanded && styles.expandedWrapper,
+            isOffline && styles.offlineWrapper,
+        ].filter(Boolean).join(' ')}>
+            {isOffline && (
+                <div
+                    className={styles.offlineNotice}
+                    data-testid="connection-status"
+                    role="status"
+                >
+                    <i className="bi bi-wifi-off" aria-hidden="true" />
+                    <strong>Offline</strong>
+                    <span>Messages and controls are unavailable.</span>
+                </div>
+            )}
             <form className={styles.inputArea} onSubmit={handleSubmit}>
                 {attachments.length > 0 && (
                     <div className={styles.tray}>

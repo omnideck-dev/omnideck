@@ -142,6 +142,9 @@ describe('ChatInput', () => {
         expect(onSend).not.toHaveBeenCalled();
         expect(textarea).toHaveValue('send this later');
         expect(screen.getByLabelText('Send message')).toBeDisabled();
+        expect(screen.getByTestId('connection-status')).toHaveTextContent(
+            'OfflineMessages and controls are unavailable.',
+        );
     });
 
     it('disables stop while offline', () => {

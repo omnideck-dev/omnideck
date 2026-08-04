@@ -54,16 +54,6 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
                     </button>
                 )}
             </div>
-            {isOffline && (
-                <div
-                    className={styles.connectionStatus}
-                    data-testid="connection-status"
-                    role="status"
-                >
-                    <i className="bi bi-wifi-off" aria-hidden="true" />
-                    <span>Offline</span>
-                </div>
-            )}
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input,
                 discarding any unsent text instead of carrying it over. */}

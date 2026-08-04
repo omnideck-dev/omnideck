@@ -21,23 +21,6 @@
     flex-shrink: 0;
 }
 
-.connectionStatus {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--sp-2);
-    padding: 6px var(--sp-4);
-    border-bottom: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
-    background: color-mix(in srgb, var(--warning) 10%, var(--surface));
-    color: var(--text-secondary);
-    font-size: 12px;
-    flex-shrink: 0;
-}
-
-.connectionStatus i {
-    color: var(--warning);
-}
-
 /* left cell: title + turn count + context meter */
 .left {
     display: flex;
