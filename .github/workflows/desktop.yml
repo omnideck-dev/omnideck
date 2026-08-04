@@ -121,7 +121,7 @@ jobs:
         id: image
         shell: bash
         run: |
-          image_version=$(tr -d '\r\n' < container-version.txt)
+          image_version=$(tr -d '\r\n' < desktop/container-version.txt)
           [[ "${image_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "container-version.txt must contain a plain X.Y.Z container release"
             exit 1
