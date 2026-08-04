@@ -13,8 +13,7 @@ ACTIVE_RUN_MANAGER_KEY: web.AppKey[ActiveRunManager] = web.AppKey(
 
 
 async def _load_conversation(conversation_id: str) -> ConversationHistory:
-    history, _is_new = await get_or_create_conversation(conversation_id)
-    return history
+    return await get_or_create_conversation(conversation_id)
 
 
 def build_agent_runner() -> AgentRunner:

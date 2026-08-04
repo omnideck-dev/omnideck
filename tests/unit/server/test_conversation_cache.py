@@ -14,10 +14,7 @@ from server import _conversation_cache as cc
 
 
 def _seed_events_jsonl(conv_dir: Path, conv_id: str, user_content: str = "hi") -> None:
-    """Write a minimal events.jsonl.
-
-    This makes get_or_create_conversation treat the conversation as not-new.
-    """
+    """Write a minimal persisted event log."""
     import json
     d = conv_dir / conv_id
     d.mkdir(parents=True, exist_ok=True)
@@ -53,24 +50,26 @@ def _stub_conversation_exit_hooks():
         yield
 
 
-async def test_get_conversation_cold_cache_no_disk_creates_empty_and_marks_new() -> None:
-    """No in-memory entry, no on-disk history -> empty + is_new=True."""
-    conv, is_new = await cc.get_or_create_conversation("brand-new-id")
+async def test_get_conversation_cold_cache_no_disk_creates_empty() -> None:
+    """No in-memory entry or on-disk history creates an empty history."""
+    conv = await cc.get_or_create_conversation("brand-new-id")
     assert len(conv) == 0
-    assert is_new is True
 
 
-async def test_get_conversation_cold_cache_with_events_marks_not_new(
+async def test_get_conversation_cold_cache_hydrates_events(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """An existing events.jsonl on disk flips the is_new flag."""
+    """An existing events.jsonl is loaded on a cold cache."""
     monkeypatch.setattr(
         "conversations._store._get_conversations_dir", lambda: tmp_path,
     )
     _seed_events_jsonl(tmp_path, "existing")
 
-    _conv, is_new = await cc.get_or_create_conversation("existing")
-    assert is_new is False
+    conv = await cc.get_or_create_conversation("existing")
+    assert [event["type"] for event in conv.recorded_events] == [
+        "agent_started",
+        "user_message",
+    ]
 
 
 async def test_get_conversation_warm_cache_returns_in_memory_instance(
@@ -84,19 +83,16 @@ async def test_get_conversation_warm_cache_returns_in_memory_instance(
     cc._conversations["cid"] = cached
     _seed_events_jsonl(tmp_path, "cid", user_content="from-disk")
 
-    conv, is_new = await cc.get_or_create_conversation("cid")
+    conv = await cc.get_or_create_conversation("cid")
 
     assert conv is cached
-    assert is_new is False
 
 
 async def test_get_conversation_subsequent_call_returns_same_instance() -> None:
     """Two calls for the same id return the same ConversationHistory object."""
-    first, first_new = await cc.get_or_create_conversation("same-id")
-    second, second_new = await cc.get_or_create_conversation("same-id")
+    first = await cc.get_or_create_conversation("same-id")
+    second = await cc.get_or_create_conversation("same-id")
     assert first is second
-    assert first_new is True
-    assert second_new is False
 
 
 async def test_get_conversation_empty_id_raises() -> None:
@@ -114,10 +110,9 @@ async def test_get_conversation_corrupted_history_falls_back_to_empty(tmp_path: 
     conv_dir.mkdir(parents=True)
     (conv_dir / "history.json").write_text("{not valid json", encoding="utf-8")
 
-    conv, is_new = await cc.get_or_create_conversation(cid)
+    conv = await cc.get_or_create_conversation(cid)
 
     assert len(conv) == 0
-    assert is_new is True
 
 
 async def test_lru_evicts_oldest_when_cap_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:

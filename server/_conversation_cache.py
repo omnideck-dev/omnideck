@@ -36,15 +36,13 @@ async def _hydrate(conversation_id: str, events: list[dict[str, Any]]) -> Conver
     return history
 
 
-async def get_or_create_conversation(conversation_id: str) -> tuple[ConversationHistory, bool]:
-    """Return ``(history, is_new)`` for the given ID, creating it if needed.
+async def get_or_create_conversation(conversation_id: str) -> ConversationHistory:
+    """Return the history for the given ID, creating it if needed.
 
-    ``is_new`` is True only when the conversation has no in-memory entry
-    AND no on-disk history — a genuine first-time use. On any cache miss
-    we hydrate from disk so turns survive process restarts: the browser
-    preserves a conversation id across server bounces (e.g. ``just
-    restart-app``), and without hydration the next turn would build on an
-    empty history and the persistence hook would overwrite the saved file.
+    On any cache miss we hydrate from disk so turns survive process restarts:
+    the browser preserves a conversation id across server bounces (e.g.
+    ``just restart-app``), and without hydration the next turn would build on
+    an empty history and the persistence hook would overwrite the saved file.
 
     Cache hits move the entry to the end of the LRU; cache misses insert
     at the end and may evict the least-recently-used entry whose turn is
@@ -55,12 +53,11 @@ async def get_or_create_conversation(conversation_id: str) -> tuple[Conversation
         raise ValueError(msg)
     if conversation_id in _conversations:
         _conversations.move_to_end(conversation_id)
-        return _conversations[conversation_id], False
+        return _conversations[conversation_id]
     events = load_events_jsonl(conversation_id)
-    is_new = not events
-    if is_new:
+    if not events:
         logger.info("Creating new conversation %s", conversation_id)
-    return await _hydrate(conversation_id, events), is_new
+    return await _hydrate(conversation_id, events)
 
 
 async def _evict_lru_conversation(exclude: str | None = None) -> None:
