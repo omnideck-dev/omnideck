@@ -37,12 +37,7 @@ async def _hydrate(conversation_id: str, events: list[dict[str, Any]]) -> Conver
 
 
 async def get_or_create_conversation(conversation_id: str) -> ConversationHistory:
-    """Return the history for the given ID, creating it if needed.
-
-    On any cache miss we hydrate from disk so turns survive process restarts:
-    the browser preserves a conversation id across server bounces (e.g.
-    ``just restart-app``), and without hydration the next turn would build on
-    an empty history and the persistence hook would overwrite the saved file.
+    """Return cached history or restore it from persisted events.
 
     Cache hits move the entry to the end of the LRU; cache misses insert
     at the end and may evict the least-recently-used entry whose turn is
