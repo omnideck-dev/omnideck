@@ -13,7 +13,7 @@ const {
   readSetupState,
   writeSetupState,
 } = require('./setup-state.cjs');
-const { compareVersions, parseVersion } = require('./updates.cjs');
+const { compareVersions, isReleaseVersion, parseVersion } = require('./updates.cjs');
 const { publishInstance } = require('./cli-instance.cjs');
 
 // One above the port the command line tool installs on by default, so a machine
@@ -611,7 +611,7 @@ class OmniDeckRuntime {
         this.currentEnvironment = {
           imageRef: releaseImage.imageRef,
           sourceImage: releaseImage.imageRef,
-          version: APP_VERSION,
+          version: releaseImage.imageVersion,
         };
       } else if (this.allowDevelopmentImagePull) {
         this.currentEnvironment = {
@@ -1279,8 +1279,9 @@ class OmniDeckRuntime {
         throw new Error('The omnideck runtime image manifest is invalid.');
       }
       if (
-        manifest.schemaVersion !== 2
+        manifest.schemaVersion !== 3
         || manifest.appVersion !== APP_VERSION
+        || !isReleaseVersion(manifest.imageVersion)
         || !/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/.test(manifest.imageRef || '')
       ) {
         throw new Error('The omnideck runtime image does not match this application release.');

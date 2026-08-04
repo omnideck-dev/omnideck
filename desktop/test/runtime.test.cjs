@@ -26,6 +26,8 @@ const {
   writeSetupState,
 } = require('../src/setup-state.cjs');
 
+const CONTAINER_VERSION = '2.3.4';
+
 async function runtimeFixture(context, digestCharacter = 'a') {
   const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-runtime-test-'));
   context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
@@ -36,8 +38,9 @@ async function runtimeFixture(context, digestCharacter = 'a') {
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
       imageRef,
     })}\n`,
   );
@@ -264,8 +267,9 @@ test('release image manifest pins an immutable image digest', async (context) =>
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
       imageRef,
     })}\n`,
   );
@@ -278,7 +282,19 @@ test('release image manifest pins an immutable image digest', async (context) =>
   const releaseImage = await runtime.releaseImage();
 
   assert.equal(releaseImage.appVersion, APP_VERSION);
+  assert.equal(releaseImage.imageVersion, CONTAINER_VERSION);
   assert.equal(releaseImage.imageRef, imageRef);
+});
+
+test('a desktop release installs the independent container version it names', async (context) => {
+  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context);
+  const runtime = new OmniDeckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+
+  const desired = await runtime.desiredEnvironment();
+
+  assert.equal(desired.imageRef, imageRef);
+  assert.equal(desired.version, CONTAINER_VERSION);
+  assert.notEqual(desired.version, APP_VERSION);
 });
 
 test('first setup pulls the pinned release image and tags it locally', async (context) => {
@@ -290,8 +306,9 @@ test('first setup pulls the pinned release image and tags it locally', async (co
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
       imageRef,
     })}\n`,
   );
@@ -971,7 +988,12 @@ test('an installer does not walk back an installation newer than itself', async 
   const installedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
-    `${JSON.stringify({ schemaVersion: 2, appVersion: APP_VERSION, imageRef: shippedRef })}\n`,
+    `${JSON.stringify({
+      schemaVersion: 3,
+      appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
+      imageRef: shippedRef,
+    })}\n`,
   );
 
   const userDataPath = path.join(resourcesPath, 'user-data');
@@ -1008,7 +1030,12 @@ test('an update that does not finish cannot leave a newer installation behind', 
   const shippedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`;
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
-    `${JSON.stringify({ schemaVersion: 2, appVersion: APP_VERSION, imageRef: shippedRef })}\n`,
+    `${JSON.stringify({
+      schemaVersion: 3,
+      appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
+      imageRef: shippedRef,
+    })}\n`,
   );
   const userDataPath = path.join(resourcesPath, 'user-data');
   const installedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'b'.repeat(64)}`;
@@ -1099,7 +1126,12 @@ test('an installer newer than the installation still installs itself', async (co
   const shippedRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'c'.repeat(64)}`;
   await fs.writeFile(
     path.join(runtimePath, 'image-manifest.json'),
-    `${JSON.stringify({ schemaVersion: 2, appVersion: APP_VERSION, imageRef: shippedRef })}\n`,
+    `${JSON.stringify({
+      schemaVersion: 3,
+      appVersion: APP_VERSION,
+      imageVersion: CONTAINER_VERSION,
+      imageRef: shippedRef,
+    })}\n`,
   );
 
   const userDataPath = path.join(resourcesPath, 'user-data');
