@@ -375,8 +375,10 @@ describe('conversation session run reconnection', () => {
     });
 
     it('shows a start conflict in the transcript without reconnecting', async () => {
+        const message = 'Another message is already being processed for this conversation, '
+            + 'possibly in another tab or window. Wait for it to finish, then try again.';
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
-            httpError(409, 'This conversation already has an active run.'),
+            httpError(409, message),
         );
         const { result } = renderHook(() => useConversationSessionController());
 
@@ -389,7 +391,7 @@ describe('conversation session run reconnection', () => {
         expect(result.current.turns.flatMap((turn) => turn.children)).toContainEqual(
             expect.objectContaining({
                 kind: 'error',
-                message: 'This conversation already has an active run.',
+                message,
             }),
         );
     });

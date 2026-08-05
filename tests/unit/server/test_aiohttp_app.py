@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import UnknownActiveRunError
+from agent_runtime import ActiveRunConflictError, UnknownActiveRunError
 from server._agent_run_routes import (
     chat_handler,
     chat_run_events_handler,
@@ -83,6 +83,28 @@ async def test_chat_missing_message_returns_400() -> None:
     assert resp.status == 400
     body = json.loads(resp.body)
     assert body["error"] == "Message field is required."
+
+
+@pytest.mark.unit
+async def test_chat_active_run_conflict_returns_user_friendly_409() -> None:
+    """A second start explains the likely tab conflict without runtime jargon."""
+    req = _make_request(raw_body=json.dumps({
+        "message": "a second message",
+        "profile_id": "computron",
+        "conversation_id": "abc",
+    }))
+    manager = MagicMock()
+    manager.start = AsyncMock(side_effect=ActiveRunConflictError("conflict"))
+    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+
+    resp = await chat_handler(req)
+
+    assert resp.status == 409
+    body = json.loads(resp.body)
+    assert body["error"] == (
+        "Another message is already being processed for this conversation, "
+        "possibly in another tab or window. Wait for it to finish, then try again."
+    )
 
 
 # -- stop_handler -----------------------------------------------------------

@@ -148,7 +148,12 @@ async def chat_handler(request: Request) -> StreamResponse:
         ))
     except ActiveRunConflictError:
         return web.json_response(
-            {"error": "This conversation already has an active run."},
+            {
+                "error": (
+                    "Another message is already being processed for this conversation, "
+                    "possibly in another tab or window. Wait for it to finish, then try again."
+                ),
+            },
             status=409,
         )
     except ActiveRunManagerClosedError:
