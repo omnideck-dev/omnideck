@@ -186,7 +186,7 @@ describe('ConversationSessionProvider', () => {
         });
     });
 
-    it('reattaches an active run after restoring its state owners', async () => {
+    it('restores agent state before reattaching to an active run', async () => {
         const loaded = {
             conversationId: 'conversation-2',
             events: [event('agent_started', {
@@ -205,13 +205,28 @@ describe('ConversationSessionProvider', () => {
             },
         };
         harness.controller.loadConversation.mockResolvedValue(loaded);
+        harness.controller.reattachActiveRun.mockImplementation(() => {
+            // A reattached stream may deliver its first event immediately. If
+            // reattachment moves above RESET and restore, this update is lost.
+            harness.dispatchers.agentDispatch({
+                type: 'UPDATE_ITERATION',
+                agentId: 'root-1',
+                iteration: 2,
+                maxIterations: 10,
+                contextUsage: null,
+            });
+        });
         const { getAgents, getSession } = renderSession();
 
         await act(async () => {
             expect(await getSession().loadConversation('conversation-2')).toBe(true);
         });
 
-        expect(getAgents().agents['root-1'].status).toBe('running');
+        expect(getAgents().agents['root-1']).toMatchObject({
+            status: 'running',
+            iteration: 2,
+            maxIterations: 10,
+        });
         expect(harness.controller.reattachActiveRun).toHaveBeenCalledWith(loaded);
     });
 
