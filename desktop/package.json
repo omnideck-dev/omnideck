@@ -1,13 +1,13 @@
 {
   "name": "omnideck",
-  "desktopName": "OmniDeck.desktop",
+  "desktopName": "omnideck.desktop",
   "version": "0.1.0-alpha.6",
   "private": true,
-  "description": "OmniDeck",
+  "description": "omnideck",
   "homepage": "https://github.com/omnideck-dev/omnideck",
   "main": "src/main.cjs",
   "author": {
-    "name": "OmniDeck",
+    "name": "omnideck",
     "email": "omnideck-dev@users.noreply.github.com"
   },
   "license": "Apache-2.0",
@@ -37,10 +37,10 @@
   },
   "build": {
     "appId": "dev.omnideck.app",
-    "productName": "OmniDeck",
+    "productName": "omnideck",
     "asar": true,
     "compression": "maximum",
-    "artifactName": "OmniDeck-${version}-${os}-${arch}.${ext}",
+    "artifactName": "omnideck-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -90,8 +90,8 @@
         "deb",
         "rpm"
       ],
-      "maintainer": "OmniDeck <omnideck-dev@users.noreply.github.com>",
-      "vendor": "OmniDeck",
+      "maintainer": "omnideck <omnideck-dev@users.noreply.github.com>",
+      "vendor": "omnideck",
       "executableName": "omnideck"
     }
   }

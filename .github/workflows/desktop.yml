@@ -1,4 +1,4 @@
-name: OmniDeck application
+name: omnideck application
 
 on:
   workflow_dispatch:
@@ -301,10 +301,10 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish OmniDeck release
+      - name: Publish omnideck release
         uses: softprops/action-gh-release@v3
         with:
-          name: OmniDeck ${{ github.ref_name }}
+          name: omnideck ${{ github.ref_name }}
           body_path: docs/releases/${{ github.ref_name }}.md
           files: dist/*
           fail_on_unmatched_files: true

@@ -210,15 +210,15 @@ $ReleaseCache = Join-Path $CacheRoot "releases\$SelectedRelease\windows"
 New-Item -ItemType Directory -Path $ReleaseCache -Force | Out-Null
 & gh release download $SelectedRelease `
     --repo $Repository `
-    --pattern "OmniDeck-*-win-x64.exe" `
-    --pattern "OmniDeck-*-win-x64.exe.sha256" `
+    --pattern "omnideck-*-win-x64.exe" `
+    --pattern "omnideck-*-win-x64.exe.sha256" `
     --dir $ReleaseCache `
     --skip-existing
 if ($LASTEXITCODE -ne 0) {
     throw "The selected Windows release could not be downloaded."
 }
 
-$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "OmniDeck-*-win-x64.exe" |
+$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck-*-win-x64.exe" |
     Select-Object -First 1
 if (-not $Artifact) {
     throw "The selected release does not contain a Windows x64 installer."
@@ -240,7 +240,7 @@ if ($Installer.ExitCode -ne 0) {
 # has applied the test profile. That instance holds the single-instance lock, so
 # the launch below would only focus it and the run would silently exercise the
 # normal profile instead of the isolated one.
-$AutoLaunched = Get-Process -Name "OmniDeck" -ErrorAction SilentlyContinue
+$AutoLaunched = Get-Process -Name "omnideck" -ErrorAction SilentlyContinue
 if ($AutoLaunched) {
     Write-Host "Stopping the instance started by the installer so the test profile applies."
     $AutoLaunched | Stop-Process -Force
@@ -249,8 +249,7 @@ if ($AutoLaunched) {
 }
 
 $ExpectedApplications = @(
-    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\OmniDeck.exe"),
-    (Join-Path $env:LOCALAPPDATA "Programs\OmniDeck\OmniDeck.exe")
+    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
 )
 $Application = $ExpectedApplications |
     Where-Object { Test-Path -LiteralPath $_ } |
@@ -258,7 +257,7 @@ $Application = $ExpectedApplications |
 if (-not $Application) {
     $Application = Get-ChildItem `
         -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs") `
-        -Filter "OmniDeck.exe" `
+        -Filter "omnideck.exe" `
         -File `
         -Recurse `
         -ErrorAction SilentlyContinue |

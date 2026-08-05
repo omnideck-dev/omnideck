@@ -19,8 +19,8 @@ FROM docker.io/ubuntu:22.04
 ARG TARGETARCH
 ARG OMNIDECK_VERSION=development
 
-LABEL org.opencontainers.image.title="OmniDeck" \
-      org.opencontainers.image.description="Private OmniDeck application runtime" \
+LABEL org.opencontainers.image.title="omnideck" \
+      org.opencontainers.image.description="Private omnideck application runtime" \
       org.opencontainers.image.source="https://github.com/omnideck-dev/omnideck" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${OMNIDECK_VERSION}"

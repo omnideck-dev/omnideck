@@ -1,8 +1,8 @@
 # Desktop prototype
 
-The desktop prototype makes OmniDeck behave like a normal installed
+The desktop prototype makes omnideck behave like a normal installed
 application. It owns the first-run experience, prepares an isolated local
-runtime, downloads the fixed OmniDeck image selected for the release, and opens
+runtime, downloads the fixed omnideck image selected for the release, and opens
 the interface in an application window.
 
 The prototype targets:
@@ -55,7 +55,7 @@ prompt when needed.
 Linux deliberately does not run a Podman machine. Containers are already
 native Linux processes there, so adding a nested VM would increase first-run
 time, memory use, and failure modes without improving application consistency.
-All three platforms still use the same versioned OmniDeck image and application
+All three platforms still use the same versioned omnideck image and application
 lifecycle. A single pinned multi-architecture image digest selects amd64 for
 Windows and Linux x64, and arm64 for Apple Silicon macOS.
 
@@ -81,7 +81,7 @@ npm start
 ```
 
 The development build uses a separate private runtime and storage area under
-Electron's OmniDeck application-data directory. It does not reuse containers
+Electron's omnideck application-data directory. It does not reuse containers
 or volumes created by the standalone CLI. Source mode can pull the development
 image when no release manifest is present; packaged builds cannot use this
 fallback.
@@ -133,7 +133,7 @@ three operating systems. Pushing a `vX.Y.Z` version tag publishes only the
 matching desktop release. It resolves the immutable digest of the independent
 container release selected in `desktop/container-version.txt`, embeds both that
 container version and digest in each installer, and publishes the installers in
-the OmniDeck repository. On first setup, packaged applications pull the pinned
+the omnideck repository. On first setup, packaged applications pull the pinned
 digest from GHCR; later launches reuse the local image.
 
 Container releases have their own version line. Run the **Release container**

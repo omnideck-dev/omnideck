@@ -11,7 +11,7 @@ const {
 } = require('electron');
 const { pathToFileURL } = require('node:url');
 
-const { OmniDeckRuntime } = require('./runtime.cjs');
+const { OmnideckRuntime } = require('./runtime.cjs');
 const { findUpdate, selectUpdate } = require('./updates.cjs');
 const { readUpdateState, writeUpdateState } = require('./update-state.cjs');
 const {
@@ -170,7 +170,7 @@ function publishState(state) {
   mainWindow.webContents.send('omnideck:state', state);
 }
 
-async function openOmniDeck() {
+async function openOmnideck() {
   await mainWindow.loadURL(runtime.appUrl);
   scheduleUpdateChecks();
 }
@@ -344,7 +344,7 @@ async function bootstrap() {
 
     const result = await runtime.startExisting();
     if (result.action === 'open') {
-      await openOmniDeck();
+      await openOmnideck();
       return;
     }
     if (result.action === 'setup') await beginSetup(result.reason);
@@ -382,7 +382,7 @@ if (!hasLock) {
       }
     });
 
-    runtime = new OmniDeckRuntime({
+    runtime = new OmnideckRuntime({
       userDataPath: app.getPath('userData'),
       resourcesPath: process.resourcesPath,
       allowDevelopmentImagePull: !app.isPackaged,
@@ -402,7 +402,7 @@ if (!hasLock) {
       if (runtime.currentState?.stage !== 'ready') {
         throw new Error('omnideck has not finished setup.');
       }
-      return openOmniDeck();
+      return openOmnideck();
     });
     ipcMain.handle('omnideck:action', async (event, action) => {
       assertSetupSender(event);

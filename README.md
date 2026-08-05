@@ -32,9 +32,9 @@
 
 ## Quick Start
 
-Download the experimental OmniDeck application for Windows, macOS, or Linux
+Download the experimental omnideck application for Windows, macOS, or Linux
 from the [releases page](https://github.com/omnideck-dev/omnideck/releases).
-Install it, open **OmniDeck**, and follow the guided setup. The application
+Install it, open **omnideck**, and follow the guided setup. The application
 prepares its private runtime automatically; no container or command-line
 knowledge is required.
 
@@ -94,7 +94,7 @@ omnideck install
 
 ## Prerequisites
 
-- **OmniDeck application:** Windows 11 x64, Apple Silicon macOS, or a supported
+- **omnideck application:** Windows 11 x64, Apple Silicon macOS, or a supported
   x64 desktop Linux distribution. The application prepares its private Podman
   runtime during guided setup.
 - **CLI installs:** [Podman](https://podman.io/) 4.0+ (recommended) or [Docker](https://docs.docker.com/get-docker/) 20.10+. Other container engines such as Colima are not supported at this time. We recommend Podman for its open-source nature and smaller resource footprint.
@@ -105,10 +105,10 @@ omnideck install
 
 ## Installation
 
-### OmniDeck application (experimental)
+### omnideck application (experimental)
 
 Download the installer for your operating system from the
-[OmniDeck releases](https://github.com/omnideck-dev/omnideck/releases):
+[omnideck releases](https://github.com/omnideck-dev/omnideck/releases):
 
 | Platform | Installer |
 |----------|-----------|
@@ -118,9 +118,9 @@ Download the installer for your operating system from the
 | Fedora, RHEL, Rocky Linux, AlmaLinux, or openSUSE x64 | `.rpm` |
 | Other desktop Linux x64 | `.AppImage` |
 
-Open the installed application and select **Set up OmniDeck**. First setup can
+Open the installed application and select **Set up omnideck**. First setup can
 take several minutes and might display a normal operating-system permission
-prompt. It downloads the application image pinned to that OmniDeck release, so
+prompt. It downloads the application image pinned to that omnideck release, so
 an internet connection is required. The setup screen includes Agent Dash while
 the runtime is prepared.
 
