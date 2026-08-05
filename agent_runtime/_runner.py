@@ -233,7 +233,7 @@ def _resolve_profile(profile_id: str | None) -> AgentProfile:
         msg = f"Agent profile '{profile_id}' not found"
         raise RuntimeError(msg)
     if not profile.model:
-        msg = "No model configured. Complete the setup wizard to select a model."
+        msg = "No model configured. Select a model in the agent profile settings."
         raise ValueError(msg)
     return profile
 
