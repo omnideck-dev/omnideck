@@ -382,12 +382,12 @@ async def run_turn(
 
                 async def _run(
                     tc_item: ToolCall,
-                    semaphore: asyncio.Semaphore = sem,
+                    semaphore: asyncio.Semaphore,
                 ) -> None:
                     async with semaphore:
-                        return await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
+                        await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
 
-                await asyncio.gather(*[_run(tc) for tc in tool_calls])
+                await asyncio.gather(*[_run(tc, sem) for tc in tool_calls])
 
             except StopRequestedError:
                 logger.info("Agent '%s' tool loop stopped by user request", agent.name)
