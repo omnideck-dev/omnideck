@@ -3,30 +3,8 @@
 }
 
 .offlineNotice {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-height: 34px;
   max-width: 760px;
   margin: 0 auto var(--sp-2);
-  padding: 0 var(--sp-3);
-  background: var(--warning-muted);
-  border: 1px solid var(--warning-muted);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.offlineNotice i {
-  color: var(--warning);
-  font-size: 14px;
-}
-
-.offlineNotice strong {
-  color: var(--text-primary);
-  font-family: var(--font-brand);
-  font-size: 11px;
-  letter-spacing: 0.02em;
 }
 
 /* ── Composer card ───────────────────────────────────── */

@@ -85,8 +85,8 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                     onOpenWorkspaceResource={
                         openAgentWorkspaceResource
                     }
-                    nudgeDisabled={stopRequested || isOffline}
-                    nudgeDisabledReason={isOffline ? 'Offline' : 'Stopping...'}
+                    isOffline={isOffline}
+                    stopRequested={stopRequested}
                 />
             </div>
         );

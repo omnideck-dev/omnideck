@@ -29,8 +29,8 @@ export default function AgentNetworkView({
     onNudge,
     onPreview,
     onOpenWorkspaceResource,
-    nudgeDisabled = false,
-    nudgeDisabledReason,
+    isOffline = false,
+    stopRequested = false,
 }) {
     const { agents } = useAgentState();
     const { byAgentId: workspaceByAgentId } = useWorkspaceState();
@@ -122,8 +122,8 @@ export default function AgentNetworkView({
                         onOpenView={(resourceId) => (
                             onOpenWorkspaceResource?.(selectedAgent.id, resourceId)
                         )}
-                        nudgeDisabled={nudgeDisabled}
-                        nudgeDisabledReason={nudgeDisabledReason}
+                        isOffline={isOffline}
+                        stopRequested={stopRequested}
                     />
                 ) : (
                     <AgentNetwork

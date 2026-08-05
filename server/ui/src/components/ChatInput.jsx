@@ -3,6 +3,7 @@ import styles from './ChatInput.module.css';
 import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
 import StopIcon from './icons/StopIcon.jsx';
+import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 
@@ -175,18 +176,12 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         <div className={[
             styles.inputAreaWrapper,
             expanded && styles.expandedWrapper,
-            isOffline && styles.offlineWrapper,
         ].filter(Boolean).join(' ')}>
             {isOffline && (
-                <div
+                <OfflineNotice
                     className={styles.offlineNotice}
-                    data-testid="connection-status"
-                    role="status"
-                >
-                    <i className="bi bi-wifi-off" aria-hidden="true" />
-                    <strong>Offline</strong>
-                    <span>Messages and controls are unavailable.</span>
-                </div>
+                    description="Messages and controls are unavailable."
+                />
             )}
             <form className={styles.inputArea} onSubmit={handleSubmit}>
                 {attachments.length > 0 && (
