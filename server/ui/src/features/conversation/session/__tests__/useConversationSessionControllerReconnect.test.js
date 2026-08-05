@@ -374,7 +374,7 @@ describe('conversation session run reconnection', () => {
         expect(result.current.turns).toHaveLength(1);
     });
 
-    it('surfaces an explicit start conflict instead of attaching another sender run', async () => {
+    it('shows a start conflict in the transcript without reconnecting', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
             httpError(409, 'This conversation already has an active run.'),
         );
