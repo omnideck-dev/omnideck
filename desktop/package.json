@@ -1,7 +1,7 @@
 {
   "name": "omnideck",
   "desktopName": "OmniDeck.desktop",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.6",
   "private": true,
   "description": "OmniDeck",
   "homepage": "https://github.com/omnideck-dev/omnideck",
