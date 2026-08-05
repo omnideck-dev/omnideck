@@ -11,13 +11,13 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { OmniDeckRuntime } = require('../../src/runtime.cjs');
+const { OmnideckRuntime } = require('../../src/runtime.cjs');
 
 const SUITE = 'omnideck-podman-smoke';
 
 async function runtimeWithPodman() {
   const userDataPath = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'omnideck-podman-'));
-  const runtime = new OmniDeckRuntime({ userDataPath, onState: () => {} });
+  const runtime = new OmnideckRuntime({ userDataPath, onState: () => {} });
   runtime.podmanPath = await runtime.findExecutable('podman');
   return { runtime, userDataPath };
 }

@@ -46,12 +46,12 @@ prepare_test_scenario "$scenario" "$profile_root" "$profiles_root" "$skip_confir
 
 gh release download "$selected_release" \
   --repo "$RELEASE_REPOSITORY" \
-  --pattern 'OmniDeck-*-linux-x86_64.AppImage' \
-  --pattern 'OmniDeck-*-linux-x86_64.AppImage.sha256' \
+  --pattern 'omnideck-*-linux-x86_64.AppImage' \
+  --pattern 'omnideck-*-linux-x86_64.AppImage.sha256' \
   --dir "$release_cache" \
   --skip-existing
 
-artifact="$(compgen -G "$release_cache/OmniDeck-*-linux-x86_64.AppImage" | head -n 1 || true)"
+artifact="$(compgen -G "$release_cache/omnideck-*-linux-x86_64.AppImage" | head -n 1 || true)"
 if [[ -z "$artifact" || ! -f "$artifact" ]]; then
   echo "Release $selected_release has no Linux x86_64 AppImage, or the download failed." >&2
   exit 1

@@ -412,7 +412,7 @@ async function replaceDownloadedFile(source, destination) {
   await fsp.rename(source, destination);
 }
 
-class OmniDeckRuntime {
+class OmnideckRuntime {
   constructor({
     userDataPath,
     resourcesPath = path.join(__dirname, '..', 'build'),
@@ -1459,7 +1459,7 @@ module.exports = {
   FAILURE_COPY,
   IMAGE,
   IMAGE_REF_LABEL,
-  OmniDeckRuntime,
+  OmnideckRuntime,
   SETUP_COPY,
   installerUrl,
   linuxInstallCommands,
