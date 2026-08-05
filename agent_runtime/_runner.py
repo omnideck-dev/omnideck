@@ -10,9 +10,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from agent_runtime._models import AgentRunRequest, EventSink
+from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
 from agents import AgentProfile, build_agent, get_agent_profile
-from agents.types import Agent, Data
+from agents.types import Agent
 from artifacts import ArtifactsIndexWriter
 from conversations import (
     BrowserTabsWriter,
@@ -126,11 +126,11 @@ class AgentRunner:
                     _log_turn_start(profile)
 
                     user_content = request.message
-                    user_attachments: list[UserAttachment] = []
-                    if request.data:
-                        user_content, user_attachments = _augment_message_with_attachments(
+                    attachments: list[UserAttachment] = []
+                    if request.attachments:
+                        user_content, attachments = _augment_message_with_attachments(
                             request.message,
-                            request.data,
+                            request.attachments,
                         )
 
                     save_conversation_profile(conversation_id, profile.id)
@@ -170,7 +170,7 @@ class AgentRunner:
                             publish_event(AgentEvent(payload=UserMessagePayload(
                                 type="user_message",
                                 content=request.message,
-                                attachments=user_attachments,
+                                attachments=attachments,
                             )))
                         except Exception:  # pragma: no cover - defensive
                             logger.exception("Failed to publish user_message event")
@@ -245,12 +245,12 @@ def _build_agent_from_profile(profile: AgentProfile) -> Agent:
 
 def _augment_message_with_attachments(
     message: str,
-    data: Sequence[Data],
+    run_attachments: Sequence[RunAttachment],
 ) -> tuple[str, list[UserAttachment]]:
     """Write attachments and return model text plus structured event metadata."""
     file_lines = []
     attachments: list[UserAttachment] = []
-    for item in data:
+    for item in run_attachments:
         container_path = receive_attachment(
             base64_encoded=item.base64_encoded,
             content_type=item.content_type,

@@ -26,9 +26,9 @@ from agent_runtime import (
     ActiveRunManagerClosedError,
     AgentRunRequest,
     InvalidRunCursorError,
+    RunAttachment,
     UnknownActiveRunError,
 )
-from agents.types import Data
 from sdk.turn import is_turn_active, queue_nudge
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 
@@ -125,10 +125,10 @@ async def chat_handler(request: Request) -> StreamResponse:
             status=400,
         )
 
-    data_objects: list[Data] | None = None
+    run_attachments: list[RunAttachment] | None = None
     if payload.data:
-        data_objects = [
-            Data(
+        run_attachments = [
+            RunAttachment(
                 base64_encoded=attachment.base64,
                 content_type=attachment.content_type,
                 filename=attachment.filename,
@@ -143,7 +143,7 @@ async def chat_handler(request: Request) -> StreamResponse:
         info = await manager.start(AgentRunRequest(
             conversation_id=payload.conversation_id,
             message=user_query,
-            data=data_objects,
+            attachments=run_attachments,
             profile_id=payload.profile_id,
         ))
     except ActiveRunConflictError:

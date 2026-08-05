@@ -18,7 +18,7 @@ from ._active_runs import (
     InvalidRunCursorError,
     UnknownActiveRunError,
 )
-from ._models import AgentRunInfo, AgentRunRequest, EventSink, SequencedEvent
+from ._models import AgentRunInfo, AgentRunRequest, EventSink, RunAttachment, SequencedEvent
 from ._runner import AgentRunner, ConversationLoader
 
 __all__ = [
@@ -32,6 +32,7 @@ __all__ = [
     "ConversationLoader",
     "EventSink",
     "InvalidRunCursorError",
+    "RunAttachment",
     "SequencedEvent",
     "UnknownActiveRunError",
 ]

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from sdk.events import AgentEvent
 
-if TYPE_CHECKING:
-    from agents.types import Data
-
-
 EventSink = Callable[[AgentEvent], None]
+
+
+@dataclass(frozen=True, slots=True)
+class RunAttachment:
+    """One file attached to an agent run."""
+
+    base64_encoded: str
+    content_type: str
+    filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +29,7 @@ class AgentRunRequest:
 
     conversation_id: str
     message: str
-    data: Sequence[Data] | None
+    attachments: Sequence[RunAttachment] | None
     profile_id: str | None
 
 
@@ -47,4 +51,10 @@ class AgentRunInfo:
     last_seq: int
 
 
-__all__ = ["AgentRunInfo", "AgentRunRequest", "EventSink", "SequencedEvent"]
+__all__ = [
+    "AgentRunInfo",
+    "AgentRunRequest",
+    "EventSink",
+    "RunAttachment",
+    "SequencedEvent",
+]

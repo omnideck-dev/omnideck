@@ -28,7 +28,7 @@ def _request(conversation_id: str = "conversation-1") -> AgentRunRequest:
     return AgentRunRequest(
         conversation_id=conversation_id,
         message="hello",
-        data=None,
+        attachments=None,
         profile_id="profile-1",
     )
 

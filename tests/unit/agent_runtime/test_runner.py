@@ -7,10 +7,9 @@ from typing import Any
 
 import pytest
 
-from agent_runtime import ActiveRunManager, AgentRunner, AgentRunRequest
+from agent_runtime import ActiveRunManager, AgentRunner, AgentRunRequest, RunAttachment
 from agent_runtime import _runner as runner_module
 from agents._agent_profiles import AgentProfile
-from agents.types import Data
 from conversations import load_events_jsonl
 from sdk.context import ConversationHistory
 from sdk.events import (
@@ -29,7 +28,7 @@ def _request(conversation_id: str) -> AgentRunRequest:
     return AgentRunRequest(
         conversation_id=conversation_id,
         message="hello",
-        data=None,
+        attachments=None,
         profile_id="profile-1",
     )
 
@@ -67,14 +66,14 @@ def test_attachments_produce_model_text_and_structured_metadata(
     """Attachment setup retains both model paths and user-facing metadata."""
     paths = iter(["/virt/uploads/a.png", "/virt/uploads/b.csv"])
     monkeypatch.setattr(runner_module, "receive_attachment", lambda **_: next(paths))
-    data = [
-        Data(base64_encoded="aaaa", content_type="image/png", filename="a.png"),
-        Data(base64_encoded="bbbb", content_type="text/csv", filename="b.csv"),
+    attachments = [
+        RunAttachment(base64_encoded="aaaa", content_type="image/png", filename="a.png"),
+        RunAttachment(base64_encoded="bbbb", content_type="text/csv", filename="b.csv"),
     ]
 
     text, attachments = runner_module._augment_message_with_attachments(
         "describe these",
-        data,
+        attachments,
     )
 
     assert "/virt/uploads/a.png" in text
@@ -98,7 +97,7 @@ def test_attachment_without_filename_falls_back_to_unnamed(
 
     _text, attachments = runner_module._augment_message_with_attachments(
         "look",
-        [Data(base64_encoded="aaaa", content_type="image/png", filename=None)],
+        [RunAttachment(base64_encoded="aaaa", content_type="image/png", filename=None)],
     )
 
     assert attachments[0].filename == "unnamed"
