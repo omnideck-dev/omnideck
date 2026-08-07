@@ -13,8 +13,8 @@ require_command() {
 }
 
 validate_profile_name() {
-  if [[ ! "$1" =~ ^[a-z0-9][a-z0-9-]{0,17}$ ]]; then
-    echo "Profile names may contain up to 18 lowercase letters, numbers, and hyphens." >&2
+  if [[ ! "$1" =~ ^[a-z0-9][a-z0-9-]{0,11}$ ]]; then
+    echo "Profile names may contain up to 12 lowercase letters, numbers, and hyphens." >&2
     exit 1
   fi
 }
@@ -105,7 +105,17 @@ configure_test_environment() {
 test_container_name() { printf 'omnideck-desktop-%s\n' "$TEST_NAMESPACE"; }
 test_home_volume_name() { printf 'omnideck-desktop-home-%s\n' "$TEST_NAMESPACE"; }
 test_state_volume_name() { printf 'omnideck-desktop-state-%s\n' "$TEST_NAMESPACE"; }
-test_machine_name() { printf 'omnideck-runtime-%s\n' "$TEST_NAMESPACE"; }
+test_machine_name() { printf 'odrt-%s\n' "$TEST_NAMESPACE"; }
+
+run_test_engine_command() {
+  local podman_path="$1"
+  shift
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    "$podman_path" --connection "$(test_machine_name)" "$@"
+  else
+    "$podman_path" "$@"
+  fi
+}
 
 is_test_resource() {
   local name="$1"
@@ -129,8 +139,8 @@ report_resource_inventory() {
   local kind listing name
   for kind in container volume machine; do
     case "$kind" in
-      container) listing="$("$podman_path" ps --all --format '{{.Names}}' 2>/dev/null || true)" ;;
-      volume) listing="$("$podman_path" volume ls --format '{{.Name}}' 2>/dev/null || true)" ;;
+      container) listing="$(run_test_engine_command "$podman_path" ps --all --format '{{.Names}}' 2>/dev/null || true)" ;;
+      volume) listing="$(run_test_engine_command "$podman_path" volume ls --format '{{.Name}}' 2>/dev/null || true)" ;;
       machine) listing="$("$podman_path" machine list --format '{{.Name}}' 2>/dev/null || true)" ;;
     esac
     echo "${kind}s:"
@@ -157,7 +167,8 @@ remove_test_container() {
   if [[ -z "$podman_path" ]]; then
     return
   fi
-  "$podman_path" rm --force "omnideck-desktop-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
+  run_test_engine_command "$podman_path" \
+    rm --force "omnideck-desktop-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
 }
 
 remove_test_resources() {
@@ -167,12 +178,13 @@ remove_test_resources() {
     return
   fi
 
-  "$podman_path" rm --force "omnideck-desktop-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
-  "$podman_path" volume rm --force \
+  run_test_engine_command "$podman_path" \
+    rm --force "omnideck-desktop-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
+  run_test_engine_command "$podman_path" volume rm --force \
     "omnideck-desktop-home-${TEST_NAMESPACE}" \
     "omnideck-desktop-state-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
-  "$podman_path" machine stop "omnideck-runtime-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
-  "$podman_path" machine rm --force "omnideck-runtime-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
+  "$podman_path" machine stop "odrt-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
+  "$podman_path" machine rm --force "odrt-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
 }
 
 # Removes the podman package while leaving image and volume storage on disk.

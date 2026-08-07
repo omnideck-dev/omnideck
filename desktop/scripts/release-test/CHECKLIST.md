@@ -33,7 +33,7 @@ Don't spend manual time on these; a red build already tells you.
 
 ## Before you start
 
-Get the release onto the machine and confirm what is about to be touched.
+On Linux or macOS, confirm what the isolated reset is about to touch:
 
 ```bash
 ./reset-host.sh --inventory
@@ -49,9 +49,17 @@ Then return the machine to a pre-install state:
 ./reset-host.sh
 ```
 
-> **Windows** — use `.\reset-host.ps1`. Add `-IncludeWsl` only if you want to
-> test the Windows Subsystem for Linux path from cold; it uninstalls the feature
-> and keeps every Linux distribution's disk.
+On the disposable Windows test computer, use the destructive reset. It removes
+all WSL distributions and features, all Podman and omnideck state, and then
+restarts Windows. Nothing related to WSL or Podman is preserved.
+
+```powershell
+.\reset-host.ps1 -Inventory
+.\reset-host.ps1 -Yes -Restart
+```
+
+After sign-in, run `.\reset-host.ps1 -Inventory` again. Do not begin the pass
+until it reports no WSL, Podman, omnideck application, or installed state.
 
 ---
 

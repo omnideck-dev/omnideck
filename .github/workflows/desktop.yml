@@ -29,6 +29,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Read bundled CLI ref
+        id: cli_ref
+        shell: bash
+        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the shared CLI runtime
+        uses: actions/checkout@v6
+        with:
+          repository: omnideck-dev/cli
+          ref: ${{ steps.cli_ref.outputs.ref }}
+          path: _cli
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: _cli/go.mod
+          cache-dependency-path: _cli/go.sum
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -38,6 +55,16 @@ jobs:
       - name: Install application dependencies
         working-directory: desktop
         run: npm ci
+
+      - name: Build the shared CLI runtime contract
+        working-directory: desktop
+        env:
+          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
+        run: npm run build:cli
+
+      - name: Verify the shared CLI runtime contract
+        working-directory: desktop
+        run: node scripts/verify-cli.cjs
 
       - name: Validate release version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -73,7 +100,7 @@ jobs:
           OMNIDECK_SMOKE_REQUIRE_PODMAN: "1"
         run: xvfb-run -a npm run test:app
 
-  # The launch path on the other two platforms. Their runners have a real
+  # The native launch path on the other two platforms. Their runners have a real
   # display session, so no virtual one is needed. podman is deliberately absent:
   # this covers window creation, path handling and theme selection, which is the
   # platform-specific code that Linux cannot exercise.
@@ -91,6 +118,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Read bundled CLI ref
+        id: cli_ref
+        shell: bash
+        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the shared CLI runtime
+        uses: actions/checkout@v6
+        with:
+          repository: omnideck-dev/cli
+          ref: ${{ steps.cli_ref.outputs.ref }}
+          path: _cli
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: _cli/go.mod
+          cache-dependency-path: _cli/go.sum
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -101,12 +145,23 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Build the target CLI runtime
+        working-directory: desktop
+        env:
+          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
+        run: npm run build:cli
+
+      - name: Verify the target CLI runtime
+        working-directory: desktop
+        run: |
+          npm run verify:cli-target
+          node scripts/verify-cli.cjs
+
       - name: Smoke test the application
         working-directory: desktop
         run: npm run test:app
 
   runtime_image:
-    if: github.event_name != 'pull_request'
     needs: [test, app_smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -151,7 +206,6 @@ jobs:
           if-no-files-found: error
 
   build:
-    if: github.event_name != 'pull_request'
     needs: runtime_image
     timeout-minutes: 75
     strategy:
@@ -161,15 +215,53 @@ jobs:
           - name: linux-x64
             runner: ubuntu-24.04
             command: npm run dist:linux -- --x64
+            goos: linux
+            goarch: amd64
+          - name: linux-arm64
+            runner: ubuntu-24.04
+            command: npm run dist:linux -- --arm64
+            goos: linux
+            goarch: arm64
           - name: windows-x64
             runner: windows-2025
             command: npm run dist:windows -- --x64
+            goos: windows
+            goarch: amd64
+          - name: windows-arm64
+            runner: windows-2025
+            command: npm run dist:windows -- --arm64
+            goos: windows
+            goarch: arm64
+          - name: macos-x64
+            runner: macos-15
+            command: npm run dist:mac -- --x64
+            goos: darwin
+            goarch: amd64
           - name: macos-arm64
             runner: macos-15
             command: npm run dist:mac -- --arm64
+            goos: darwin
+            goarch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Read bundled CLI ref
+        id: cli_ref
+        shell: bash
+        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the shared CLI runtime
+        uses: actions/checkout@v6
+        with:
+          repository: omnideck-dev/cli
+          ref: ${{ steps.cli_ref.outputs.ref }}
+          path: _cli
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: _cli/go.mod
+          cache-dependency-path: _cli/go.sum
 
       - uses: actions/setup-node@v6
         with:
@@ -188,7 +280,7 @@ jobs:
         run: npm ci
 
       - name: Install Linux packaging tools
-        if: matrix.name == 'linux-x64'
+        if: startsWith(matrix.name, 'linux-')
         run: sudo apt-get update && sudo apt-get install -y binutils fakeroot rpm
 
       - name: Configure optional signing
@@ -217,7 +309,7 @@ jobs:
           }
 
           case "${TARGET_NAME}" in
-            macos-arm64)
+            macos-*)
               if [ -n "${MAC_CSC_LINK}" ]; then
                 append_env CSC_LINK "${MAC_CSC_LINK}"
                 append_env CSC_KEY_PASSWORD "${MAC_CSC_KEY_PASSWORD}"
@@ -229,7 +321,7 @@ jobs:
               append_env APPLE_APP_SPECIFIC_PASSWORD "${NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD}"
               append_env APPLE_TEAM_ID "${NOTARIZE_APPLE_TEAM_ID}"
               ;;
-            windows-x64)
+            windows-*)
               if [ -n "${WINDOWS_CSC_LINK}" ]; then
                 append_env CSC_LINK "${WINDOWS_CSC_LINK}"
                 append_env CSC_KEY_PASSWORD "${WINDOWS_CSC_KEY_PASSWORD}"
@@ -242,7 +334,18 @@ jobs:
 
       - name: Build installer
         working-directory: desktop
+        env:
+          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
+          OMNIDECK_CLI_GOOS: ${{ matrix.goos }}
+          OMNIDECK_CLI_GOARCH: ${{ matrix.goarch }}
         run: ${{ matrix.command }}
+
+      - name: Verify bundled CLI target
+        working-directory: desktop
+        env:
+          OMNIDECK_CLI_GOOS: ${{ matrix.goos }}
+          OMNIDECK_CLI_GOARCH: ${{ matrix.goarch }}
+        run: npm run verify:cli-target
 
       - name: Generate SHA-256 checksums
         working-directory: desktop
