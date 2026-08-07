@@ -3,6 +3,7 @@ const path = require('node:path');
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   nativeTheme,
   Notification,
@@ -20,6 +21,11 @@ const {
   zoomActionForInput,
 } = require('./zoom.cjs');
 const { shouldReloadForInput } = require('./window-shortcuts.cjs');
+const {
+  cancelWindowsSetupResume,
+  restartWindows,
+  scheduleWindowsSetupResume,
+} = require('./windows-restart.cjs');
 
 const SETUP_PAGE = path.join(__dirname, 'setup', 'index.html');
 const SETUP_URL = pathToFileURL(SETUP_PAGE).href;
@@ -414,6 +420,27 @@ if (!hasLock) {
       }
       if (action === 'supported-systems') return shell.openExternal(SUPPORTED_SYSTEMS_URL);
       if (action === 'download') return shell.openExternal(DOWNLOAD_URL);
+      if (action === 'restart') {
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          title: 'Restart Windows?',
+          message: 'Restart Windows now?',
+          detail: 'Save any open work first. Windows may ask about other applications that are still open. omnideck will reopen after you sign in and continue setup.',
+          buttons: ['Restart now', 'Cancel'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+        });
+        if (result.response !== 0) return;
+        await scheduleWindowsSetupResume({ executable: process.execPath });
+        try {
+          await restartWindows();
+        } catch (error) {
+          await cancelWindowsSetupResume().catch(() => {});
+          throw error;
+        }
+        return app.quit();
+      }
       if (action === 'close') return app.quit();
       if (action === 'show-logs') return shell.showItemInFolder(runtime.logPath);
       throw new Error('Unknown action.');

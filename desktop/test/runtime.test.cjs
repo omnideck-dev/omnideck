@@ -5,20 +5,27 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+// Tests that exercise the CLI boundary use an isolated profile so they can
+// never read or write the developer's real Omnideck instance state.
+const originalCLIConfigDir = process.env.OMNIDECK_CONFIG_DIR;
+const runtimeTestCLIConfigDir = path.join(
+  os.tmpdir(),
+  `omnideck-cli-runtime-tests-${process.pid}-${Date.now()}`,
+);
+process.env.OMNIDECK_CONFIG_DIR = runtimeTestCLIConfigDir;
+test.after(async () => {
+  if (originalCLIConfigDir === undefined) delete process.env.OMNIDECK_CONFIG_DIR;
+  else process.env.OMNIDECK_CONFIG_DIR = originalCLIConfigDir;
+  await fs.rm(runtimeTestCLIConfigDir, { recursive: true, force: true });
+});
+
 const {
   APP_VERSION,
   SETUP_PHASES,
   FAILURE_COPY,
-  IMAGE,
-  IMAGE_REF_LABEL,
   OmnideckRuntime,
   SETUP_COPY,
-  installerUrl,
-  linuxInstallCommands,
-  parseOsRelease,
-  replaceDownloadedFile,
   reserveAvailablePort,
-  sha256File,
   testResourceNames,
 } = require('../src/runtime.cjs');
 const {
@@ -27,6 +34,7 @@ const {
 } = require('../src/setup-state.cjs');
 
 const CONTAINER_VERSION = '2.3.4';
+const DEVELOPMENT_IMAGE = 'ghcr.io/omnideck-dev/omnideck:main';
 
 async function runtimeFixture(context, digestCharacter = 'a') {
   const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-runtime-test-'));
@@ -47,161 +55,119 @@ async function runtimeFixture(context, digestCharacter = 'a') {
   return { imageRef, resourcesPath, runtimePath, userDataPath };
 }
 
-// Shapes a fake `podman container inspect` the way run() reports one: the JSON
-// payload on stdout, and the transcript carrying podman's stderr chatter too.
-function inspectResult(container, stderrNoise = '') {
-  const payload = JSON.stringify([container]);
-  return {
-    code: 0,
-    stdout: payload,
-    output: stderrNoise ? `${stderrNoise}\n${payload}` : payload,
-  };
-}
-
-test('parseOsRelease accepts quoted and unquoted values', () => {
-  assert.deepEqual(
-    parseOsRelease('ID="ubuntu"\nVERSION_ID=24.04\n'),
-    { ID: 'ubuntu', VERSION_ID: '24.04' },
-  );
-});
-
-test('Ubuntu setup installs Podman without using a shell', () => {
-  const commands = linuxInstallCommands('ubuntu', (name) => `/usr/bin/${name}`);
-  assert.deepEqual(commands, [
-    ['/usr/bin/apt-get', ['update']],
-    ['/usr/bin/apt-get', ['install', '-y', 'podman']],
-  ]);
-});
-
-test('unknown Linux distributions do not guess an installer', () => {
-  assert.deepEqual(linuxInstallCommands('unknown', (name) => name), []);
-});
-
-test('installer URL is pinned to the reviewed Podman release', () => {
-  assert.equal(
-    installerUrl('podman-installer-windows-amd64.msi'),
-    'https://github.com/podman-container-tools/podman/releases/download/v6.0.2/podman-installer-windows-amd64.msi',
-  );
-});
-
-test('a fresh runtime download replaces a file left by a failed setup', async (context) => {
-  const downloadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-download-test-'));
-  context.after(() => fs.rm(downloadRoot, { recursive: true, force: true }));
-  const destination = path.join(downloadRoot, 'podman-installer.msi');
-  const partial = `${destination}.partial`;
-  await fs.writeFile(destination, 'stale download');
-  await fs.writeFile(partial, 'fresh verified download');
-
-  await replaceDownloadedFile(partial, destination);
-
-  assert.equal(await fs.readFile(destination, 'utf8'), 'fresh verified download');
-  await assert.rejects(fs.access(partial), { code: 'ENOENT' });
-});
-
-test('interrupted setup reuses a verified completed download', async (context) => {
-  const downloadRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-download-test-'));
-  context.after(() => fs.rm(downloadRoot, { recursive: true, force: true }));
-  const destination = path.join(downloadRoot, 'podman-installer.pkg');
-  await fs.writeFile(destination, 'verified cached installer');
-  const digest = await sha256File(destination);
-  const previousFetch = global.fetch;
-  context.after(() => {
-    global.fetch = previousFetch;
-  });
-  global.fetch = async () => {
-    throw new Error('A verified cached download must not be fetched again.');
-  };
-  const runtime = new OmnideckRuntime({
-    userDataPath: path.join(downloadRoot, 'user-data'),
-    onState: () => {},
-  });
-
-  await runtime.download('https://example.invalid/installer.pkg', destination, digest);
-
-  assert.equal(await fs.readFile(destination, 'utf8'), 'verified cached installer');
-});
-
-test('Windows installer verification passes the path through the child environment', async () => {
-  const runtime = new OmnideckRuntime({
-    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
-    onState: () => {},
-  });
-  const destination = String.raw`C:\Users\Test User\AppData\Roaming\omnideck\downloads\podman.msi`;
-  let invocation;
-  runtime.findExecutable = async () => 'powershell.exe';
-  runtime.run = async (executable, args, options) => {
-    invocation = { executable, args, options };
-    return { code: 0, output: '' };
-  };
-
-  await runtime.verifyWindowsInstaller(destination);
-
-  assert.equal(invocation.executable, 'powershell.exe');
-  assert.deepEqual(invocation.args.slice(0, 4), [
-    '-NoLogo',
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-  ]);
-  assert.equal(invocation.args.length, 5);
-  assert.match(invocation.args[4], /\$env:OMNIDECK_INSTALLER_PATH/);
-  assert.ok(!invocation.args.includes(destination));
-  assert.equal(invocation.options.env.OMNIDECK_INSTALLER_PATH, destination);
-  assert.equal(invocation.options.label, 'verify installer');
-});
-
-test('Windows WSL elevation passes the executable path through the child environment', async () => {
-  const runtime = new OmnideckRuntime({
-    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
-    onState: () => {},
-  });
-  const wsl = String.raw`C:\Windows\System32\wsl.exe`;
-  const calls = [];
-  runtime.findExecutable = async (name) => {
-    if (name === 'wsl.exe') return wsl;
-    if (name === 'powershell.exe') return 'powershell.exe';
-    return null;
-  };
-  runtime.run = async (executable, args, options) => {
-    calls.push({ executable, args, options });
-    if (executable === wsl && args[0] === '--status') {
-      const statusChecks = calls.filter((call) => (
-        call.executable === wsl && call.args[0] === '--status'
-      ));
-      return { code: statusChecks.length === 1 ? 1 : 0, output: '' };
-    }
-    return { code: 0, output: '' };
-  };
-
-  await runtime.ensureWindowsPrerequisites();
-
-  const elevation = calls.find((call) => call.options.label === 'Windows workspace setup');
-  assert.ok(elevation);
-  assert.equal(elevation.executable, 'powershell.exe');
-  assert.equal(elevation.args.length, 5);
-  assert.match(elevation.args[4], /\$env:OMNIDECK_WSL_PATH/);
-  assert.ok(!elevation.args.includes(wsl));
-  assert.equal(elevation.options.env.OMNIDECK_WSL_PATH, wsl);
-});
-
-test('runtime state stays under the desktop application data directory', () => {
+test('Podman connections stay shared while registry credentials remain private', () => {
   const runtime = new OmnideckRuntime({
     userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
     onState: () => {},
   });
   const env = runtime.runtimeEnv();
 
-  assert.equal(
-    env.XDG_CONFIG_HOME,
-    path.join(path.sep, 'tmp', 'omnideck-test', 'runtime', 'config'),
-  );
-  assert.equal(
-    env.XDG_DATA_HOME,
-    path.join(path.sep, 'tmp', 'omnideck-test', 'runtime', 'data'),
-  );
+  assert.equal(env.XDG_CONFIG_HOME, process.env.XDG_CONFIG_HOME);
+  assert.equal(env.XDG_DATA_HOME, process.env.XDG_DATA_HOME);
+  assert.equal(env.XDG_CACHE_HOME, process.env.XDG_CACHE_HOME);
   assert.equal(
     env.REGISTRY_AUTH_FILE,
     path.join(path.sep, 'tmp', 'omnideck-test', 'runtime', 'auth', 'auth.json'),
+  );
+});
+
+test('runtime readiness delegates machine setup to the shared CLI backend', async () => {
+  const calls = [];
+  const states = [];
+  const runtime = new OmnideckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    platform: 'win32',
+    onState: (state) => states.push(state),
+    cliBackend: {
+      status: async () => {
+        calls.push('status');
+        return {
+          schemaVersion: 4,
+          runtime: 'podman',
+          state: 'machine_missing',
+          ready: false,
+          machineName: 'omnideck-runtime',
+          resources: {
+            container: { memory: '4g', shmSize: '2048m' },
+            machine: { mode: 'wsl-managed' },
+          },
+        };
+      },
+      ensure: async ({ onEvent }) => {
+        calls.push('ensure');
+        onEvent({
+          stage: 'software',
+          state: 'waiting',
+          activity: 'Getting your computer ready…',
+          detail: 'Windows is still enabling WSL 2. Restart Windows if it does not finish.',
+        });
+        onEvent({ stage: 'software', state: 'done', progress: 1 });
+        onEvent({ stage: 'environment', state: 'start' });
+        onEvent({ stage: 'environment', state: 'done', progress: 1 });
+        return {
+          schemaVersion: 4,
+          runtime: 'podman',
+          state: 'ready',
+          ready: true,
+          machineName: 'omnideck-runtime',
+          resources: {
+            container: { memory: '4g', shmSize: '2048m' },
+            machine: { mode: 'wsl-managed' },
+          },
+        };
+      },
+    },
+  });
+
+  await runtime.ensureRuntimeReady();
+
+  assert.deepEqual(calls, ['status', 'ensure']);
+  assert.equal(runtime.machineName, 'omnideck-runtime');
+  assert.equal(runtime.containerMemory, '4g');
+  assert.equal(runtime.containerSHMSize, '2048m');
+  assert.ok(states.some((state) => /restart Windows/i.test(state.detail)));
+});
+
+test('a quiet child process surfaces wait guidance without being killed', async () => {
+  const runtime = new OmnideckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    onState: () => {},
+  });
+  let guidanceShown = false;
+
+  const result = await runtime.run(
+    process.execPath,
+    ['-e', 'setTimeout(() => {}, 40)'],
+    {
+      label: 'quiet test process',
+      inactivityMs: 5,
+      onInactivity: () => { guidanceShown = true; },
+    },
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(guidanceShown, true);
+});
+
+test('desktop rejects a shared CLI that targets another Podman machine', async () => {
+  const runtime = new OmnideckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    platform: 'darwin',
+    onState: () => {},
+    cliBackend: {
+      status: async () => ({
+        schemaVersion: 3,
+        runtime: 'podman',
+        state: 'ready',
+        ready: true,
+        machineName: 'developer-machine',
+      }),
+    },
+  });
+
+  await assert.rejects(
+    runtime.ensureRuntimeReady(),
+    /developer-machine instead of omnideck-runtime/,
   );
 });
 
@@ -210,9 +176,11 @@ test('test resources are isolated behind a validated namespace', () => {
     container: 'omnideck-desktop-release-test',
     homeVolume: 'omnideck-desktop-home-release-test',
     stateVolume: 'omnideck-desktop-state-release-test',
-    machine: 'omnideck-runtime-release-test',
+    machine: 'odrt-release-test',
   });
   assert.throws(() => testResourceNames('../unsafe'), /only lowercase/);
+  assert.throws(() => testResourceNames('a'.repeat(26)), /only lowercase/);
+  assert.equal(testResourceNames('a'.repeat(25)).machine.length, 30);
 });
 
 test('runtime selects another loopback port when the preferred port is occupied', async () => {
@@ -229,33 +197,60 @@ test('runtime selects another loopback port when the preferred port is occupied'
   }
 });
 
-test('new app container exposes only the loopback web port and disables the legacy desktop', async () => {
+test('desktop delegates the complete desired environment to the CLI', async () => {
+	let desired;
   const runtime = new OmnideckRuntime({
     userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    platform: 'win32',
     onState: () => {},
+	cliBackend: {
+	  ensureEnvironment: async (options) => {
+		desired = options;
+		return { action: 'created', changed: true };
+	  },
+	},
   });
-  const calls = [];
-  runtime.podmanPath = 'podman';
   runtime.appPort = 24444;
-  runtime.ensureImage = async () => {};
-  runtime.run = async (_executable, args) => {
-    calls.push(args);
-    if (args[0] === 'container' && args[1] === 'inspect') return { code: 125, output: '' };
-    if (args[0] === 'volume' && args[1] === 'inspect') return { code: 125, output: '' };
-    return { code: 0, output: '' };
-  };
+	runtime.currentEnvironment = { sourceImage: 'ghcr.io/omnideck-dev/omnideck@sha256:test' };
+  runtime.assertSharedMachine({
+    ready: true,
+    machineName: 'omnideck-runtime',
+    resources: {
+      container: { memory: '4g', shmSize: '2048m' },
+      machine: { mode: 'wsl-managed' },
+    },
+  });
 
   await runtime.ensureContainer();
 
-  const runArgs = calls.find((args) => args[0] === 'run');
-  assert.ok(runArgs);
-  assert.ok(runArgs.includes('127.0.0.1:24444:8080'));
-  assert.ok(runArgs.includes('ENABLE_DESKTOP=false'));
-  assert.ok(runArgs.includes(`dev.omnideck.version=${APP_VERSION}`));
-  assert.ok(runArgs.includes('k8s-file'));
-  assert.ok(runArgs.includes('max-size=150mb'));
-  assert.equal(runArgs.at(-1), IMAGE);
-  assert.ok(!runArgs.some((argument) => argument.includes('6080') || argument.includes('5900')));
+	assert.equal(desired.name, 'omnideck-desktop');
+	assert.equal(desired.image, runtime.currentEnvironment.sourceImage);
+	assert.equal(desired.port, 24444);
+	assert.equal(desired.memory, '4g');
+	assert.equal(desired.shmSize, '2048m');
+	assert.equal(desired.homeVolume, 'omnideck-desktop-home');
+	assert.equal(desired.stateVolume, 'omnideck-desktop-state');
+});
+
+test('desktop never invokes Podman while creating the Windows app environment', async () => {
+	let delegated = false;
+  const runtime = new OmnideckRuntime({
+    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+    platform: 'win32',
+    onState: () => {},
+	cliBackend: {
+	  ensureEnvironment: async () => {
+		delegated = true;
+		return { action: 'created', changed: true };
+	  },
+	},
+  });
+	runtime.appPort = 24444;
+	runtime.currentEnvironment = { sourceImage: DEVELOPMENT_IMAGE };
+	runtime.run = async () => { throw new Error('Desktop must not execute Podman.'); };
+
+	await runtime.ensureContainer();
+	assert.equal(delegated, true);
 });
 
 test('release image manifest pins an immutable image digest', async (context) => {
@@ -297,7 +292,7 @@ test('a desktop release installs the independent container version it names', as
   assert.notEqual(desired.version, APP_VERSION);
 });
 
-test('first setup pulls the pinned release image and tags it locally', async (context) => {
+test('first setup hands the pinned release image to the CLI', async (context) => {
   const resourcesPath = await fs.mkdtemp(path.join(os.tmpdir(), 'omnideck-pull-test-'));
   context.after(() => fs.rm(resourcesPath, { recursive: true, force: true }));
   const runtimePath = path.join(resourcesPath, 'runtime');
@@ -313,36 +308,23 @@ test('first setup pulls the pinned release image and tags it locally', async (co
     })}\n`,
   );
 
-  const calls = [];
-  const states = [];
-  let pulled = false;
+	let desired;
   const runtime = new OmnideckRuntime({
     userDataPath: path.join(resourcesPath, 'user-data'),
     resourcesPath,
-    onState: (state) => states.push(state),
+	onState: () => {},
+	cliBackend: {
+	  ensureEnvironment: async (options) => {
+		desired = options;
+		return { action: 'created', changed: true };
+	  },
+	},
   });
-  runtime.podmanPath = 'podman';
-  runtime.run = async (_executable, args) => {
-    calls.push(args);
-    if (args[0] === 'image' && args[1] === 'exists') {
-      return { code: pulled ? 0 : 1, output: '' };
-    }
-    if (args[0] === 'pull') pulled = true;
-    return { code: 0, output: '' };
-  };
+	runtime.appPort = 2338;
+	await runtime.desiredEnvironment();
+	await runtime.ensureContainer();
 
-  await runtime.ensureImage();
-
-  assert.ok(calls.some((args) => args[0] === 'pull' && args.at(-1) === imageRef));
-  assert.ok(calls.some((args) => (
-    args[0] === 'tag' && args[1] === imageRef && args[2] === IMAGE
-  )));
-  assert.ok(states.some((state) => (
-    state.stage === 'preparing'
-    && state.title === 'Preparing your environment'
-    && state.indeterminate
-  )));
-  assert.ok(!calls.some((args) => args[0] === 'load'));
+	assert.equal(desired.image, imageRef);
 });
 
 test('a packaged release refuses a missing runtime image manifest', async () => {
@@ -350,45 +332,35 @@ test('a packaged release refuses a missing runtime image manifest', async () => 
     userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
     onState: () => {},
   });
-  runtime.podmanPath = 'podman';
   runtime.releaseImage = async () => null;
 
   await assert.rejects(
-    runtime.ensureImage(),
+	runtime.desiredEnvironment(),
     /does not identify its application image/,
   );
 });
 
-test('an existing container is current only when both version label and image match', () => {
-  const runtime = new OmnideckRuntime({
-    userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
-    onState: () => {},
-  });
-
-  assert.equal(runtime.isCurrentContainer({
-    Config: {
-      Image: IMAGE,
-      Labels: { 'dev.omnideck.version': APP_VERSION },
-    },
-  }), true);
-  assert.equal(runtime.isCurrentContainer({
-    Config: {
-      Image: 'ghcr.io/omnideck-dev/omnideck:latest',
-      Labels: {},
-    },
-  }), false);
-
-  const imageRef = `ghcr.io/omnideck-dev/omnideck@sha256:${'c'.repeat(64)}`;
-  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
-  assert.equal(runtime.isCurrentContainer({
-    Config: {
-      Image: 'localhost/omnideck/runtime:an-older-wrapper',
-      Labels: {
-        'dev.omnideck.version': '0.1.0-alpha.0',
-        [IMAGE_REF_LABEL]: imageRef,
-      },
-    },
-  }), true);
+test('macOS and Linux also delegate app environment creation to the CLI', async () => {
+  for (const platform of ['darwin', 'linux']) {
+	let desired;
+    const runtime = new OmnideckRuntime({
+      userDataPath: path.join(path.sep, 'tmp', 'omnideck-test'),
+      platform,
+      onState: () => {},
+	  cliBackend: {
+		ensureEnvironment: async (options) => {
+		  desired = options;
+		  return { action: 'created', changed: true };
+		},
+	  },
+    });
+	runtime.appPort = 24444;
+	runtime.currentEnvironment = { sourceImage: DEVELOPMENT_IMAGE };
+	runtime.run = async () => { throw new Error('Desktop must not execute Podman.'); };
+	await runtime.ensureContainer();
+	assert.equal(desired.image, DEVELOPMENT_IMAGE);
+	assert.equal(desired.name, 'omnideck-desktop');
+  }
 });
 
 test('a new installation shows Welcome without running environment checks', async (context) => {
@@ -476,22 +448,14 @@ test('a healthy completed setup with the same digest opens directly', async (con
     userDataPath,
     resourcesPath,
     onState: (state) => states.push(state),
+	cliBackend: {
+	  instanceStatus: async () => ({
+		container: 'omnideck-desktop', status: 'running', image: imageRef, webUiPort: '2338',
+	  }),
+	},
   });
   runtime.prepare = async () => {
     runtime.appPort = 2338;
-  };
-  runtime.findExecutable = async () => 'podman';
-  runtime.run = async (_executable, args) => {
-    if (args[0] === 'container') {
-      return inspectResult({
-        Config: {
-          Image: 'localhost/omnideck/runtime:older-wrapper',
-          Labels: { [IMAGE_REF_LABEL]: imageRef },
-        },
-        State: { Status: 'running' },
-      });
-    }
-    return { code: 0, output: '', stdout: '' };
   };
   let waitedSilently = false;
   runtime.waitForApp = async (options) => {
@@ -525,11 +489,6 @@ test('an unhealthy existing install reports which phase failed', async (context)
   });
   runtime.prepare = async () => {
     runtime.appPort = 2338;
-  };
-  runtime.findExecutable = async () => 'podman';
-  runtime.run = async (_executable, args) => {
-    if (args[0] === 'container') return { code: 125, output: '', stdout: '' };
-    return { code: 0, output: '', stdout: '' };
   };
 
   const result = await runtime.startExisting();
@@ -578,6 +537,7 @@ test('setup remains resumable after failure and becomes complete only when ready
     onState: (state) => states.push(state),
   });
   runtime.findExecutable = async () => 'podman';
+  runtime.ensureWindowsPrerequisites = async () => {};
   runtime.ensureRuntimeReady = async () => {
     throw new Error('runtime unavailable');
   };
@@ -596,25 +556,6 @@ test('setup remains resumable after failure and becomes complete only when ready
   assert.equal(complete.status, 'complete');
   assert.equal(states.at(-1).stage, 'ready');
   assert.equal(states.at(-1).title, 'omnideck is ready');
-});
-
-test('podman warnings on stderr do not corrupt container inspection', async (context) => {
-  const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '5');
-  const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
-  runtime.podmanPath = 'podman';
-  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
-  runtime.run = async () => inspectResult(
-    {
-      Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: imageRef } },
-      State: { Status: 'running' },
-    },
-    'WARN[0000] Failed to add pause process to systemd sandbox cgroup',
-  );
-
-  const info = await runtime.containerInfo();
-
-  assert.equal(info.State.Status, 'running');
-  assert.equal(runtime.isCurrentContainer(info), true);
 });
 
 test('a tagged failure keeps its phase when the transcript mentions downloads', () => {
@@ -714,50 +655,57 @@ test('progress without a known total stays indeterminate', () => {
   assert.equal(states.at(-1).indeterminate, true);
 });
 
-test('a host port taken while omnideck was closed is exchanged for a free one', async (context) => {
+test('a CLI port conflict is retried with a newly reserved local port', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '6');
-  const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
-  runtime.podmanPath = 'podman';
+	const ports = [];
+	let attempt = 0;
+  const runtime = new OmnideckRuntime({
+	userDataPath,
+	resourcesPath,
+	onState: () => {},
+	cliBackend: {
+	  ensureEnvironment: async (options) => {
+		ports.push(options.port);
+		attempt += 1;
+		if (attempt === 1) {
+		  const error = new Error('port is occupied');
+		  error.code = 'PORT_IN_USE';
+		  throw error;
+		}
+		return { action: 'created', changed: true };
+	  },
+	},
+  });
   runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
   await runtime.prepare();
-  const originalPort = runtime.appPort;
+	await runtime.ensureContainer();
 
-  runtime.run = async (_executable, args) => {
-    if (args[0] === 'start') {
-      const error = new Error('start app exited with code 125');
-      error.output = 'rootlessport cannot expose 127.0.0.1:2337: address already in use';
-      throw error;
-    }
-    return { code: 0, output: '', stdout: '' };
-  };
-
-  const started = await runtime.startCurrentContainer({ State: { Status: 'exited' } });
-
-  assert.equal(started, false, 'the container must be rebuilt rather than started again');
-  assert.notEqual(runtime.appPort, originalPort);
+	assert.equal(ports.length, 2);
+	assert.notEqual(ports[0], ports[1]);
   const persisted = await fs.readFile(path.join(userDataPath, 'runtime', 'app-port'), 'utf8');
   assert.equal(Number.parseInt(persisted, 10), runtime.appPort);
 });
 
-test('an unrelated start failure is not mistaken for a port conflict', async (context) => {
+test('an unrelated CLI environment failure is not mistaken for a port conflict', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '7');
-  const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
-  runtime.podmanPath = 'podman';
+  const runtime = new OmnideckRuntime({
+	userDataPath,
+	resourcesPath,
+	onState: () => {},
+	cliBackend: {
+	  ensureEnvironment: async () => { throw new Error('environment unavailable'); },
+	},
+  });
   runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
   await runtime.prepare();
-  runtime.run = async () => {
-    const error = new Error('start app exited with code 125');
-    error.output = 'Error: no such container';
-    throw error;
-  };
 
   await assert.rejects(
-    runtime.startCurrentContainer({ State: { Status: 'exited' } }),
-    /exited with code 125/,
+	runtime.ensureContainer(),
+	/environment unavailable/,
   );
 });
 
-test('a reachable container skips the separate runtime probe', async (context) => {
+test('a healthy launch asks only the CLI for environment status', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '8');
   await writeSetupState(userDataPath, {
     status: 'complete',
@@ -766,34 +714,31 @@ test('a reachable container skips the separate runtime probe', async (context) =
     imageVersion: APP_VERSION,
     imageRef,
   });
-  const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+	const calls = [];
+  const runtime = new OmnideckRuntime({
+	userDataPath,
+	resourcesPath,
+	onState: () => {},
+	cliBackend: {
+	  instanceStatus: async () => {
+		calls.push('status');
+		return { container: 'omnideck-desktop', status: 'running', image: imageRef, webUiPort: '2338' };
+	  },
+	},
+  });
   runtime.prepare = async () => {
     runtime.appPort = 2338;
   };
-  runtime.findExecutable = async () => 'podman';
   runtime.waitForApp = async () => {};
-  const calls = [];
-  runtime.run = async (_executable, args) => {
-    calls.push(args);
-    if (args[0] === 'container') {
-      return inspectResult({
-        Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: imageRef } },
-        State: { Status: 'running' },
-      });
-    }
-    return { code: 0, output: '', stdout: '' };
-  };
+	runtime.run = async () => { throw new Error('Desktop must not probe Podman.'); };
 
   const result = await runtime.startExisting();
 
   assert.equal(result.action, 'open');
-  assert.ok(
-    !calls.some((args) => args[0] === 'info'),
-    'container state already proves the runtime is reachable',
-  );
+	assert.deepEqual(calls, ['status']);
 });
 
-test('a missing container still falls back to probing the runtime', async (context) => {
+test('a missing CLI-managed environment routes to repair without probing Podman', async (context) => {
   const { imageRef, resourcesPath, userDataPath } = await runtimeFixture(context, '9');
   await writeSetupState(userDataPath, {
     status: 'complete',
@@ -802,21 +747,22 @@ test('a missing container still falls back to probing the runtime', async (conte
     imageVersion: APP_VERSION,
     imageRef,
   });
-  const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
+	const missing = new Error('environment not installed');
+	missing.code = 'NOT_INSTALLED';
+  const runtime = new OmnideckRuntime({
+	userDataPath,
+	resourcesPath,
+	onState: () => {},
+	cliBackend: { instanceStatus: async () => { throw missing; } },
+  });
   runtime.prepare = async () => {
     runtime.appPort = 2338;
   };
-  runtime.findExecutable = async () => 'podman';
-  const calls = [];
-  runtime.run = async (_executable, args) => {
-    calls.push(args);
-    if (args[0] === 'container') return { code: 125, output: '', stdout: '' };
-    return { code: 0, output: '', stdout: '' };
-  };
+	runtime.run = async () => { throw new Error('Desktop must not probe Podman.'); };
 
-  await runtime.startExisting();
+	const result = await runtime.startExisting();
 
-  assert.ok(calls.some((args) => args[0] === 'info'), 'an absent container needs the probe');
+	assert.equal(result.action, 'doctor');
 });
 
 test('phases run in order and weigh the whole of setup', () => {
@@ -857,8 +803,12 @@ test('setup reports what it is doing, one activity at a time', async (context) =
     userDataPath,
     resourcesPath,
     onState: (state) => states.push(state),
+	cliBackend: {
+	  instanceStatus: async () => { throw new Error('prepared environment unavailable'); },
+	},
   });
   runtime.findExecutable = async () => 'podman';
+  runtime.ensureWindowsPrerequisites = async () => {};
   runtime.ensureRuntimeReady = async () => {};
   runtime.ensureContainer = async () => {};
   runtime.waitForApp = async () => {};
@@ -918,22 +868,16 @@ test('a healthy install opens without mentioning a newer image', async (context)
     userDataPath,
     resourcesPath,
     onState: (state) => states.push(state),
+	cliBackend: {
+	  instanceStatus: async () => ({
+		container: 'omnideck-desktop', status: 'running', image: staleRef, webUiPort: '2338',
+	  }),
+	},
   });
   runtime.prepare = async () => {
     runtime.appPort = 2338;
   };
-  runtime.findExecutable = async () => 'podman';
   runtime.waitForApp = async () => {};
-  runtime.run = async (_executable, args) => {
-    if (args[0] === 'container') {
-      // The container matches the installed version, not the newer one.
-      return inspectResult({
-        Config: { Image: IMAGE, Labels: { [IMAGE_REF_LABEL]: staleRef } },
-        State: { Status: 'running' },
-      });
-    }
-    return { code: 0, output: '', stdout: '' };
-  };
 
   const result = await runtime.startExisting();
 
@@ -973,6 +917,21 @@ test('the failure screen offers the diagnostic log as its secondary action', () 
 
   assert.equal(states.at(-1).secondaryAction, 'show-logs');
   assert.equal(states.at(-1).secondaryLabel, 'Show diagnostic log');
+});
+
+test('a pending Windows restart offers restart now and restart later', () => {
+  const states = [];
+  const runtime = new OmnideckRuntime({ userDataPath: '/nonexistent', onState: (s) => states.push(s) });
+  const error = new Error('Windows restart required after enabling WSL 2.');
+  error.diagnostic = 'components';
+  error.failureKind = 'restart';
+
+  runtime.reportFailure(error);
+
+  assert.equal(states.at(-1).primaryAction, 'restart');
+  assert.equal(states.at(-1).primaryLabel, 'Restart now');
+  assert.equal(states.at(-1).secondaryAction, 'close');
+  assert.equal(states.at(-1).secondaryLabel, 'Restart later');
 });
 
 test('an installer does not walk back an installation newer than itself', async (context) => {
@@ -1053,6 +1012,7 @@ test('an update that does not finish cannot leave a newer installation behind', 
     imageRef: `ghcr.io/omnideck-dev/omnideck@sha256:${'c'.repeat(64)}`,
   };
   runtime.findExecutable = async () => 'podman';
+  runtime.ensureWindowsPrerequisites = async () => {};
   runtime.ensureRuntimeReady = async () => {};
   runtime.ensureContainer = async () => {
     throw new Error('the download did not finish');
@@ -1078,8 +1038,6 @@ test('an installation on the command line tool’s port is moved off it', async 
   await fs.mkdir(path.join(userDataPath, 'runtime'), { recursive: true });
   await fs.writeFile(path.join(userDataPath, 'runtime', 'app-port'), '2337\n');
   const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
-  runtime.podmanPath = 'podman';
-  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
 
   await runtime.prepare();
 
@@ -1087,14 +1045,6 @@ test('an installation on the command line tool’s port is moved off it', async 
   const persisted = await fs.readFile(path.join(userDataPath, 'runtime', 'app-port'), 'utf8');
   assert.equal(Number.parseInt(persisted, 10), runtime.appPort);
 
-  // The mapping is fixed when a container is created, so the one still bound to
-  // the old port has to be rebuilt rather than started.
-  const started = await runtime.startCurrentContainer({
-    State: { Status: 'running' },
-    HostConfig: { PortBindings: { '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '2337' }] } },
-  });
-
-  assert.equal(started, false);
 });
 
 test('a port omnideck already uses is left alone', async (context) => {
@@ -1102,20 +1052,10 @@ test('a port omnideck already uses is left alone', async (context) => {
   await fs.mkdir(path.join(userDataPath, 'runtime'), { recursive: true });
   await fs.writeFile(path.join(userDataPath, 'runtime', 'app-port'), '2338\n');
   const runtime = new OmnideckRuntime({ userDataPath, resourcesPath, onState: () => {} });
-  runtime.podmanPath = 'podman';
-  runtime.currentEnvironment = { imageRef, sourceImage: imageRef };
 
   await runtime.prepare();
 
   assert.equal(runtime.appPort, 2338);
-  const started = await runtime.startCurrentContainer({
-    State: { Status: 'running' },
-    HostConfig: { PortBindings: { '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '2338' }] } },
-  });
-  assert.equal(started, true);
-  // An inspection that says nothing about the mapping is not evidence of a
-  // mismatch, and must not cause a working container to be rebuilt.
-  assert.equal(await runtime.startCurrentContainer({ State: { Status: 'running' } }), true);
 });
 
 test('an installer newer than the installation still installs itself', async (context) => {

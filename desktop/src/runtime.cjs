@@ -1,12 +1,7 @@
-const crypto = require('node:crypto');
-const fs = require('node:fs');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const net = require('node:net');
-const { pipeline } = require('node:stream/promises');
-const { Readable, Transform } = require('node:stream');
 const { version: APP_VERSION } = require('../package.json');
 const {
   SETUP_REASONS,
@@ -14,7 +9,8 @@ const {
   writeSetupState,
 } = require('./setup-state.cjs');
 const { compareVersions, isReleaseVersion, parseVersion } = require('./updates.cjs');
-const { publishInstance } = require('./cli-instance.cjs');
+const { OmnideckCliBackend } = require('./cli-backend.cjs');
+const { knownRuntimeDirectories } = require('./runtime-env.cjs');
 
 // One above the port the command line tool installs on by default, so a machine
 // running both does not have the two of them fighting over the same one. A port
@@ -27,38 +23,53 @@ const DEFAULT_APP_PORT = 2338;
 const LEGACY_APP_PORT = 2337;
 // The port omnideck listens on inside its container. Only the host side of the
 // mapping ever changes.
-const CONTAINER_PORT = 8080;
 const CONTAINER_NAME = 'omnideck-desktop';
 const HOME_VOLUME = 'omnideck-desktop-home';
 const STATE_VOLUME = 'omnideck-desktop-state';
-const IMAGE = `localhost/omnideck/runtime:${APP_VERSION}`;
 const DEVELOPMENT_IMAGE = 'ghcr.io/omnideck-dev/omnideck:main';
-const IMAGE_LABEL = 'dev.omnideck.version';
-const IMAGE_REF_LABEL = 'dev.omnideck.image-ref';
 const IMAGE_MANIFEST = 'image-manifest.json';
 const MACHINE_NAME = 'omnideck-runtime';
-const PODMAN_VERSION = 'v6.0.2';
 const MAX_CAPTURED_OUTPUT = 1_000_000;
 // Per-chunk progress callbacks fire thousands of times for a large download or
 // hash. Each emit crosses the process boundary and re-renders the setup screen,
 // so they are rate limited to something a person can actually perceive.
 const PROGRESS_INTERVAL_MS = 100;
-
-const INSTALLERS = {
-  'darwin-arm64': {
-    filename: 'podman-installer-macos-arm64.pkg',
-    sha256: '5a1d97f98f626cdb82dbd9932cf43102d1e9b6621627085fec2dcadf59743930',
-  },
-  'win32-x64': {
-    filename: 'podman-installer-windows-amd64.msi',
-    sha256: 'c094059880f033656092f5fb4306457e42aa068ee32137162299817c5f79396f',
-  },
-  'win32-arm64': {
-    filename: 'podman-installer-windows-arm64.msi',
-    sha256: '9f6bb7fb83acbfb13cbf67a40f407f098b2f3181a294e3264da260c49437437a',
-  },
-};
-
+const PLATFORM_WAIT_GUIDANCE = Object.freeze({
+  win32: Object.freeze({
+    wsl: Object.freeze({
+      title: 'Windows is still enabling WSL 2',
+      detail: 'Windows may be finishing updates in the background. Leave its setup window open. If the percentage has not changed for 10 minutes, cancel that setup, restart Windows, then open omnideck and try again.',
+    }),
+    installer: Object.freeze({
+      title: 'Podman is still installing',
+      detail: 'Leave the Windows installer open while it finishes. If its progress has not changed for 10 minutes, cancel it, restart Windows, then open omnideck and try again.',
+    }),
+    runtime: Object.freeze({
+      title: 'The secure space is still starting',
+      detail: 'The first start can take longer while Podman prepares WSL 2. If nothing changes for 10 minutes, close omnideck, restart Windows, then open omnideck and try again.',
+    }),
+  }),
+  darwin: Object.freeze({
+    installer: Object.freeze({
+      title: 'Podman is waiting to finish installing',
+      detail: 'Look for the macOS password prompt and approve it. If the installer still has not moved after 10 minutes, cancel it, restart your Mac, then open omnideck and try again.',
+    }),
+    runtime: Object.freeze({
+      title: 'The secure space is still starting',
+      detail: 'The first Podman start can take several minutes. If nothing changes for 10 minutes, close omnideck, restart your Mac, then open omnideck and try again.',
+    }),
+  }),
+  linux: Object.freeze({
+    installer: Object.freeze({
+      title: 'Podman is still installing',
+      detail: 'Your package manager may still be downloading files. If nothing changes for 10 minutes, cancel the system prompt, check your internet connection, then open omnideck and try again.',
+    }),
+    runtime: Object.freeze({
+      title: 'Podman is taking longer than expected',
+      detail: 'If nothing changes for 10 minutes, close omnideck, make sure Podman runs from a terminal, then open omnideck and try again.',
+    }),
+  }),
+});
 const SETUP_COPY = Object.freeze({
   welcome: Object.freeze({
     title: 'Welcome to omnideck',
@@ -211,11 +222,13 @@ const FAILURE_COPY = Object.freeze({
     phase: 'software',
     result: 'Restart required',
     title: 'Restart needed',
-    detail: 'Your progress is saved. Restart your computer, then open omnideck and setup continues on its own.',
+    detail: 'Windows must restart to finish enabling required features. Save any open work, then restart now or later. If you restart now, omnideck reopens after you sign in and continues setup.',
     value: 'Restart needed',
     canRetry: false,
-    primaryAction: 'close',
-    primaryLabel: 'Close omnideck',
+    primaryAction: 'restart',
+    primaryLabel: 'Restart now',
+    secondaryAction: 'close',
+    secondaryLabel: 'Restart later',
   }),
   unknown: Object.freeze({
     phase: null,
@@ -265,14 +278,6 @@ function classifyFailure(error, transcript = '') {
   return tagged;
 }
 
-// podman and its rootless port forwarder report an occupied host port in
-// several different wordings across platforms and versions.
-const PORT_CONFLICT_PATTERN = /address already in use|already allocated|cannot listen on the tcp port|ports are not available/i;
-
-function isPortConflict(error) {
-  return PORT_CONFLICT_PATTERN.test(`${error?.message || ''}\n${error?.output || ''}`);
-}
-
 function tagError(error, diagnostic, failureKind = diagnostic) {
   const tagged = error instanceof Error ? error : new Error(String(error));
   tagged.diagnostic ||= diagnostic;
@@ -289,14 +294,16 @@ function testResourceNames(namespace = process.env.OMNIDECK_DESKTOP_TEST_NAMESPA
       machine: MACHINE_NAME,
     };
   }
-  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(namespace)) {
+  if (!/^[a-z0-9][a-z0-9-]{0,24}$/.test(namespace)) {
     throw new Error('OMNIDECK_DESKTOP_TEST_NAMESPACE must contain only lowercase letters, numbers, and hyphens.');
   }
   return {
     container: `${CONTAINER_NAME}-${namespace}`,
     homeVolume: `${HOME_VOLUME}-${namespace}`,
     stateVolume: `${STATE_VOLUME}-${namespace}`,
-    machine: `${MACHINE_NAME}-${namespace}`,
+    // Podman 6 limits machine names to 30 characters. Production keeps the
+    // descriptive name above; isolated tests use a compact, unmistakable one.
+    machine: `odrt-${namespace}`,
   };
 }
 
@@ -311,55 +318,6 @@ function splitLines(onLine) {
     }
     if (flush && pending.trim()) onLine(pending.trim());
   };
-}
-
-function installerUrl(filename) {
-  return `https://github.com/podman-container-tools/podman/releases/download/${PODMAN_VERSION}/${filename}`;
-}
-
-function knownPodmanDirectories(platform, env) {
-  if (platform === 'darwin') return ['/opt/podman/bin', '/usr/local/bin', '/opt/homebrew/bin'];
-  if (platform === 'win32') {
-    return [
-      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Podman'),
-      env.ProgramFiles && path.join(env.ProgramFiles, 'Podman'),
-      env.ProgramFiles && path.join(env.ProgramFiles, 'RedHat', 'Podman'),
-    ].filter(Boolean);
-  }
-  return ['/usr/local/bin', '/usr/bin', '/bin'];
-}
-
-function parseOsRelease(contents) {
-  const values = {};
-  for (const line of contents.split(/\r?\n/)) {
-    const match = line.match(/^([A-Z_]+)=(.*)$/);
-    if (!match) continue;
-    values[match[1]] = match[2].trim().replace(/^"(.*)"$/, '$1');
-  }
-  return values;
-}
-
-function linuxInstallCommands(distroId, executable) {
-  const apt = ['ubuntu', 'debian', 'linuxmint', 'pop'];
-  if (apt.includes(distroId)) {
-    return [
-      [executable('apt-get'), ['update']],
-      [executable('apt-get'), ['install', '-y', 'podman']],
-    ];
-  }
-  if (['fedora', 'rhel', 'centos', 'rocky', 'almalinux'].includes(distroId)) {
-    return [[executable('dnf'), ['install', '-y', 'podman']]];
-  }
-  if (['arch', 'manjaro'].includes(distroId)) {
-    return [[executable('pacman'), ['-S', '--needed', '--noconfirm', 'podman']]];
-  }
-  if (['opensuse', 'opensuse-leap', 'opensuse-tumbleweed', 'sles'].includes(distroId)) {
-    return [[executable('zypper'), ['--non-interactive', 'install', 'podman']]];
-  }
-  if (distroId === 'alpine') {
-    return [[executable('apk'), ['add', 'podman']]];
-  }
-  return [];
 }
 
 async function reserveAvailablePort(preferredPort = DEFAULT_APP_PORT) {
@@ -381,47 +339,19 @@ async function reserveAvailablePort(preferredPort = DEFAULT_APP_PORT) {
   }
 }
 
-// The host port an existing container was built around, or null when the
-// inspection does not say. Null means "cannot tell", never "does not match":
-// rebuilding a working container over a reading that was never there would be
-// a needless reinstall.
-function containerHostPort(info) {
-  const key = `${CONTAINER_PORT}/tcp`;
-  const binding = info?.HostConfig?.PortBindings?.[key]?.[0]?.HostPort
-    ?? info?.NetworkSettings?.Ports?.[key]?.[0]?.HostPort;
-  const port = Number.parseInt(binding, 10);
-  return Number.isFinite(port) ? port : null;
-}
-
-async function sha256File(filename, onProgress = () => {}) {
-  const { size } = await fsp.stat(filename);
-  const hash = crypto.createHash('sha256');
-  let processed = 0;
-  for await (const chunk of fs.createReadStream(filename)) {
-    hash.update(chunk);
-    processed += chunk.length;
-    onProgress(size > 0 ? processed / size : 1);
-  }
-  return hash.digest('hex');
-}
-
-async function replaceDownloadedFile(source, destination) {
-  // fs.rename() does not replace an existing destination reliably on Windows.
-  // A failed setup may leave the previous verified download behind.
-  await fsp.rm(destination, { force: true });
-  await fsp.rename(source, destination);
-}
-
 class OmnideckRuntime {
   constructor({
     userDataPath,
     resourcesPath = path.join(__dirname, '..', 'build'),
     allowDevelopmentImagePull = false,
+    platform = process.platform,
     onState,
+    cliBackend = null,
   }) {
     this.userDataPath = userDataPath;
     this.resourcesPath = resourcesPath;
     this.allowDevelopmentImagePull = allowDevelopmentImagePull;
+    this.platform = platform;
     this.onState = onState;
     this.runtimeRoot = path.join(userDataPath, 'runtime');
     this.downloadRoot = path.join(userDataPath, 'downloads');
@@ -431,7 +361,8 @@ class OmnideckRuntime {
     this.homeVolume = names.homeVolume;
     this.stateVolume = names.stateVolume;
     this.machineName = names.machine;
-    this.podmanPath = null;
+    this.containerMemory = '2g';
+    this.containerSHMSize = '1024m';
     this.appPort = null;
     this.currentState = null;
     this.currentEnvironment = null;
@@ -441,27 +372,20 @@ class OmnideckRuntime {
     this.updateTarget = null;
     this.setupReason = 'first-run';
     this.lastProgressEmit = 0;
-    this.phases = phasesFor(process.platform);
+    this.phases = phasesFor(this.platform);
     this.phaseIndex = -1;
     this.phaseFraction = 0;
+    this.cliBackend = cliBackend || new OmnideckCliBackend({
+      resourcesPath: this.resourcesPath,
+      platform: this.platform,
+      env: () => this.runtimeEnv(),
+      run: (...args) => this.run(...args),
+    });
   }
 
   get appUrl() {
     if (!this.appPort) throw new Error('The omnideck runtime has not been prepared.');
     return `http://127.0.0.1:${this.appPort}`;
-  }
-
-  // Refreshed whenever this installation changes, since the port and the image
-  // it points at are what changes.
-  async publishToCommandLine() {
-    return publishInstance({
-      containerName: this.containerName,
-      homeVolume: this.homeVolume,
-      stateVolume: this.stateVolume,
-      port: this.appPort,
-      image: this.currentEnvironment?.imageRef || IMAGE,
-      installedAt: new Date().toISOString(),
-    });
   }
 
   // What is on this computer, or null if nothing is. An unfinished install does
@@ -557,6 +481,17 @@ class OmnideckRuntime {
       activity: this.currentActivity(),
       progress: this.overallProgress(),
       indeterminate: this.phaseIndex < 0,
+    });
+  }
+
+  emitWaitGuidance(step) {
+    const copy = PLATFORM_WAIT_GUIDANCE[this.platform]?.[step]
+      || PLATFORM_WAIT_GUIDANCE.linux.runtime;
+    const progress = this.overallProgress();
+    this.emit('preparing', copy.title, copy.detail, {
+      activity: this.currentActivity(),
+      progress,
+      indeterminate: !Number.isFinite(progress),
     });
   }
 
@@ -723,14 +658,14 @@ class OmnideckRuntime {
   }
 
   runtimeEnv() {
-    const directories = knownPodmanDirectories(process.platform, process.env);
+    const directories = knownRuntimeDirectories(this.platform, process.env);
     const currentPath = process.env.PATH || '';
     return {
       ...process.env,
       PATH: [...directories, currentPath].join(path.delimiter),
-      XDG_CACHE_HOME: path.join(this.runtimeRoot, 'cache'),
-      XDG_CONFIG_HOME: path.join(this.runtimeRoot, 'config'),
-      XDG_DATA_HOME: path.join(this.runtimeRoot, 'data'),
+      // Registry credentials remain application-private, but Podman's machine
+      // and connection configuration must be the user's normal configuration.
+      // That is how the desktop and CLI see the same omnideck-runtime machine.
       REGISTRY_AUTH_FILE: path.join(this.runtimeRoot, 'auth', 'auth.json'),
     };
   }
@@ -738,22 +673,6 @@ class OmnideckRuntime {
   async appendLog(line) {
     const timestamp = new Date().toISOString();
     await fsp.appendFile(this.logPath, `${timestamp} ${line}\n`).catch(() => {});
-  }
-
-  async findExecutable(name, env = this.runtimeEnv()) {
-    const extension = process.platform === 'win32' && !name.endsWith('.exe') ? '.exe' : '';
-    const filename = `${name}${extension}`;
-    const candidates = [];
-    for (const directory of (env.PATH || '').split(path.delimiter)) {
-      if (directory) candidates.push(path.join(directory, filename));
-    }
-    // PATH order decides which match wins, so every candidate is probed at once
-    // and the earliest one is taken rather than the first to finish. A long
-    // Windows PATH made the sequential walk noticeable.
-    const found = await Promise.all(candidates.map(
-      (candidate) => fsp.access(candidate, fs.constants.X_OK).then(() => candidate, () => null),
-    ));
-    return found.find(Boolean) || null;
   }
 
   async run(executable, args, options = {}) {
@@ -774,7 +693,30 @@ class OmnideckRuntime {
       // transcript is still what gets logged and attached to failures.
       let stdoutText = '';
       let transcript = '';
+      let settled = false;
+      let inactivityTimer = null;
+      let inactivityShown = false;
+      const clearInactivity = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+      };
+      const armInactivity = () => {
+        if (inactivityShown || !Number.isFinite(options.inactivityMs) || options.inactivityMs <= 0) return;
+        clearInactivity();
+        inactivityTimer = setTimeout(() => {
+          inactivityTimer = null;
+          inactivityShown = true;
+          options.onInactivity?.();
+        }, options.inactivityMs);
+      };
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearInactivity();
+        callback(value);
+      };
       const capture = (isStdout) => (line) => {
+        armInactivity();
         if (isStdout) stdoutText = `${stdoutText}${line}\n`.slice(-MAX_CAPTURED_OUTPUT);
         transcript = `${transcript}${line}\n`.slice(-MAX_CAPTURED_OUTPUT);
         void this.appendLog(`[${label}] ${line}`);
@@ -784,20 +726,21 @@ class OmnideckRuntime {
       const stderr = splitLines(capture(false));
       child.stdout?.on('data', (chunk) => stdout(chunk));
       child.stderr?.on('data', (chunk) => stderr(chunk));
-      child.on('error', (error) => reject(error));
+      child.on('error', (error) => finish(reject, error));
       child.on('close', (code) => {
         stdout('', true);
         stderr('', true);
         const output = transcript.trim();
         if (options.acceptAnyExitCode || accepted.includes(code)) {
-          resolve({ code, output, stdout: stdoutText.trim() });
+          finish(resolve, { code, output, stdout: stdoutText.trim() });
           return;
         }
         const error = new Error(`${label} exited with code ${code}`);
         error.code = code;
         error.output = output;
-        reject(error);
+        finish(reject, error);
       });
+      armInactivity();
     });
   }
 
@@ -832,73 +775,40 @@ class OmnideckRuntime {
         };
       }
 
-      this.podmanPath = await this.findExecutable('podman');
-      if (!this.podmanPath) {
-        if (!setupState) {
-          this.setupReason = 'first-run';
-          this.emitCopy('welcome', 'welcome', { canStart: true });
-          return { action: 'welcome', reason: this.setupReason };
-        }
-        throw tagError(
-          new Error('The required system component is unavailable.'),
-          'components',
-        );
-      }
-
-      // Container state answers the runtime question too: podman cannot report
-      // a container without being reachable. The separate version probe only
-      // runs when nothing came back, to tell an unreachable runtime apart from
-      // a missing container. Every podman call is a round trip to the virtual
-      // machine on macOS and Windows, and this one sat on every launch.
-      const info = await this.containerInfo();
-      if (!info) {
-        await this.run(this.podmanPath, ['info', '--format', '{{.Version.Version}}'], {
-          label: 'runtime check',
-        }).catch((error) => {
-          throw tagError(error, 'environment');
-        });
-      }
-
-      if (!this.isCurrentContainer(info)) {
+      let status;
+      try {
+        status = await this.cliBackend.instanceStatus(this.containerName);
+      } catch (error) {
         // Nothing working to fall back to, so there is no choice worth offering.
         if (updateAvailable) {
           this.setupReason = 'update';
           this.emitWorking();
           return { action: 'setup', reason: this.setupReason };
         }
-        if (!setupState && info) {
-          this.setupReason = 'update';
-          this.emitWorking();
-          return { action: 'setup', reason: this.setupReason };
-        }
-        if (!setupState) {
-          this.setupReason = 'first-run';
-          this.emitCopy('welcome', 'welcome', { canStart: true });
-          return { action: 'welcome', reason: this.setupReason };
-        }
-        throw tagError(
-          new Error('The prepared omnideck environment is unavailable.'),
-          'startup',
-        );
+        throw tagError(error, error.failureKind || 'startup');
       }
 
-      const started = await this.startCurrentContainer(info)
-        .catch((error) => {
-          throw tagError(error, 'startup');
-        });
-      if (!started) {
-        // The port moved, so the container has to be rebuilt around the new
-        // one. Setup already knows how to do that.
+      const expectedImage = this.currentEnvironment.sourceImage;
+      if (status.image !== expectedImage || Number.parseInt(status.webUiPort, 10) !== this.appPort) {
         this.setupReason = 'repair';
         this.emitWorking();
         return { action: 'setup', reason: this.setupReason };
       }
+
+      if (status.status !== 'running') {
+        try {
+          status = await this.cliBackend.startInstance(this.containerName);
+        } catch (error) {
+          if (error.code !== 'PORT_IN_USE') throw tagError(error, 'startup');
+          await this.reserveNewAppPort();
+          this.setupReason = 'repair';
+          this.emitWorking();
+          return { action: 'setup', reason: this.setupReason };
+        }
+      }
       await this.waitForApp({ silent: true });
       this.setupReason = setupState?.reason || 'first-run';
       await this.saveSetupState('complete', this.setupReason);
-      // Also on an ordinary start, so an installation made before the command
-      // line tool could see it appears there without waiting for a reinstall.
-      await this.publishToCommandLine();
       // A newer image is deliberately not acted on here. Opening the app must
       // never be interrupted, by a prompt or by an install, so a healthy
       // installation opens as it is and the newer image waits.
@@ -932,31 +842,18 @@ class OmnideckRuntime {
     }
     await this.saveSetupState('in-progress', this.setupReason);
     this.beginPhase('software');
-
-    if (process.platform === 'win32') {
-      await this.ensureWindowsPrerequisites().catch((error) => {
-        throw tagError(error, 'support');
-      });
-    }
-    this.podmanPath = await this.findExecutable('podman');
-    if (!this.podmanPath) {
-      await this.installRuntime().catch((error) => {
-        if (error.diagnostic) throw error;
-        throw tagError(error, 'components');
-      });
-      this.podmanPath = await this.findExecutable('podman');
-      if (!this.podmanPath) {
-        throw tagError(
-          new Error('The required system component was installed but could not be opened.'),
-          'components',
-        );
-      }
-    }
-
-    this.beginPhase('environment');
     await this.ensureRuntimeReady().catch((error) => {
-      throw tagError(error, 'environment');
+      throw error.diagnostic ? error : tagError(error, 'environment');
     });
+    // A machine that was already ready has no CLI environment events to
+    // stream. Briefly mark that applicable phase complete so fresh Desktop
+    // setup and bare CLI setup keep the same four-step story.
+    const environmentIndex = this.phases.findIndex((phase) => phase.id === 'environment');
+    if (environmentIndex >= 0 && this.phaseIndex < environmentIndex) {
+      this.beginPhase('environment');
+      this.phaseFraction = 1;
+      this.emitWorking();
+    }
     this.beginPhase('download');
     await this.ensureContainer().catch((error) => {
       throw error.diagnostic ? error : tagError(error, 'startup');
@@ -966,302 +863,58 @@ class OmnideckRuntime {
       throw tagError(error, 'startup');
     });
     await this.saveSetupState('complete', this.setupReason);
-    await this.publishToCommandLine();
     this.emitCopy('ready', 'ready', { progress: 1, canOpen: true });
   }
 
-  async ensureWindowsPrerequisites() {
-    const systemRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
-    const systemWsl = path.join(systemRoot, 'System32', 'wsl.exe');
-    const wsl = await this.findExecutable('wsl.exe', process.env)
-      || (fs.existsSync(systemWsl) ? systemWsl : null);
-    if (!wsl) {
-      throw tagError(
-        new Error('omnideck requires Windows 11 with WSL 2 support.'),
-        'support',
-      );
-    }
-
-    const status = await this.run(wsl, ['--status'], {
-      env: process.env,
-      label: 'Windows workspace check',
-      acceptAnyExitCode: true,
-    });
-    if (status.code === 0) return;
-
-    const powershell = await this.findExecutable('powershell.exe', process.env);
-    if (!powershell) {
-      throw tagError(
-        new Error('Windows could not prepare WSL 2 for omnideck.'),
-        'components',
-      );
-    }
-    this.emitStep('preparing', 'permissionWindows', { indeterminate: true });
-    const script = [
-      "$process = Start-Process -FilePath $env:OMNIDECK_WSL_PATH -ArgumentList @('--install', '--no-distribution') -Verb RunAs -Wait -PassThru",
-      'exit $process.ExitCode',
-    ].join('; ');
-    // RunAs raises the elevation prompt, so a non-zero exit that is not the
-    // reboot-pending code means the prompt was dismissed.
-    await this.run(
-      powershell,
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-      {
-        env: { ...process.env, OMNIDECK_WSL_PATH: wsl },
-        label: 'Windows workspace setup',
-        acceptExitCodes: [0, 3010],
-      },
-    ).catch((error) => {
-      throw tagError(error, 'components', 'permission');
-    });
-
-    const updatedStatus = await this.run(wsl, ['--status'], {
-      env: process.env,
-      label: 'Windows workspace check',
-      acceptAnyExitCode: true,
-    });
-    if (updatedStatus.code !== 0) {
-      throw tagError(
-        new Error('Windows restart required after enabling WSL 2.'),
-        'components',
-        'restart',
-      );
-    }
-  }
-
-  async installRuntime() {
-    if (process.platform === 'linux') {
-      await this.installRuntimeOnLinux();
-      return;
-    }
-
-    const key = `${process.platform}-${process.arch}`;
-    const installer = INSTALLERS[key];
-    if (!installer) {
-      throw tagError(
-        new Error('This release does not include the required component for this computer architecture.'),
-        'support',
-      );
-    }
-    const destination = path.join(this.downloadRoot, installer.filename);
-    await this.download(installerUrl(installer.filename), destination, installer.sha256);
-
-    if (process.platform === 'darwin') {
-      await this.run('/usr/sbin/pkgutil', ['--check-signature', destination], { label: 'verify installer' });
-      const script = [
-        'on run argv',
-        'do shell script "/usr/sbin/installer -pkg " & quoted form of item 1 of argv & " -target /" with administrator privileges',
-        'end run',
-      ].join('\n');
-      this.emitStep('preparing', 'permission', { indeterminate: true });
-      // The only interactive step is the system authorization prompt, so a
-      // failure here means it was declined or authentication did not succeed.
-      await this.run('/usr/bin/osascript', ['-e', script, destination], { label: 'system installer' })
-        .catch((error) => {
-          throw tagError(error, 'components', 'permission');
-        });
-      return;
-    }
-
-    await this.verifyWindowsInstaller(destination);
-    this.emitStep('preparing', 'permission', { indeterminate: true });
-    await this.run(
-      'msiexec.exe',
-      ['/i', destination, '/passive', '/norestart', 'ALLUSERS=2', 'MSIINSTALLPERUSER=1'],
-      { label: 'system installer', acceptExitCodes: [0, 3010] },
-    );
-  }
-
-  async installRuntimeOnLinux() {
-    const pkexec = await this.findExecutable('pkexec', process.env);
-    if (!pkexec) {
-      throw tagError(
-        new Error('This Linux desktop does not provide a graphical system-permission prompt.'),
-        'components',
-      );
-    }
-    const release = parseOsRelease(await fsp.readFile('/etc/os-release', 'utf8').catch(() => ''));
-    const executable = (name) => {
-      for (const directory of ['/usr/bin', '/usr/sbin', '/bin', '/sbin']) {
-        const candidate = path.join(directory, name);
-        if (fs.existsSync(candidate)) return candidate;
-      }
-      return name;
-    };
-    const commands = linuxInstallCommands(release.ID || '', executable);
-    if (commands.length === 0) {
-      throw tagError(
-        new Error('Automatic setup is not available for this Linux distribution yet.'),
-        'support',
-      );
-    }
-    for (const [command, args] of commands) {
-      this.emitStep('preparing', 'permission', { indeterminate: true });
-      // pkexec exits non-zero both when the prompt is dismissed and when the
-      // install itself fails, but a dismissed prompt is by far the common case
-      // and its guidance still points at the right next step.
-      await this.run(pkexec, [command, ...args], {
-        env: process.env,
-        label: 'system installer',
-      }).catch((error) => {
-        throw tagError(error, 'components', 'permission');
-      });
-    }
-  }
-
-  async verifyWindowsInstaller(destination) {
-    const powershell = await this.findExecutable('powershell.exe', process.env);
-    if (!powershell) {
-      throw new Error('Windows could not verify the downloaded system component.');
-    }
-    const script = [
-      '$signature = Get-AuthenticodeSignature -LiteralPath $env:OMNIDECK_INSTALLER_PATH',
-      'if ($signature.Status -ne "Valid") { exit 1 }',
-    ].join('; ');
-    await this.run(
-      powershell,
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-      {
-        env: { ...process.env, OMNIDECK_INSTALLER_PATH: destination },
-        label: 'verify installer',
-      },
-    );
-  }
-
-  async download(url, destination, expectedSha256) {
-    const partial = `${destination}.partial`;
-    try {
-      const cachedDigest = await sha256File(
-        destination,
-        (fraction) => this.emitProgressUpdate(fraction),
-      ).catch(() => null);
-      if (cachedDigest === expectedSha256) return;
-      if (cachedDigest) await fsp.rm(destination, { force: true });
-
-      const response = await fetch(url, { redirect: 'follow' });
-      if (!response.ok || !response.body) {
-        throw new Error(`Download failed with HTTP ${response.status}.`);
-      }
-      const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-      const totalBytes = Number.isFinite(declaredLength) && declaredLength > 0
-        ? declaredLength
-        : null;
-      const hash = crypto.createHash('sha256');
-      let receivedBytes = 0;
-      const progress = new Transform({
-        transform: (chunk, _encoding, callback) => {
-          hash.update(chunk);
-          receivedBytes += chunk.length;
-          this.emitProgressUpdate(totalBytes ? receivedBytes / totalBytes : null);
-          callback(null, chunk);
-        },
-      });
-      await pipeline(Readable.fromWeb(response.body), progress, fs.createWriteStream(partial));
-      const digest = hash.digest('hex');
-      if (digest !== expectedSha256) {
-        throw new Error('The downloaded system component did not pass its security check.');
-      }
-      await replaceDownloadedFile(partial, destination);
-    } catch (error) {
-      await fsp.rm(partial, { force: true });
-      throw tagError(error, 'downloads');
-    }
-  }
-
   async ensureRuntimeReady() {
-    try {
-      await this.run(this.podmanPath, ['info', '--format', '{{.Version.Version}}'], {
-        label: 'runtime check',
-      });
+    const sharedStatus = await this.cliBackend.status();
+    if (sharedStatus.ready) {
+      this.assertSharedMachine(sharedStatus);
       return;
-    } catch (error) {
-      if (process.platform === 'linux') throw error;
     }
 
-    this.emitWorking();
-    const inspection = await this.run(
-      this.podmanPath,
-      ['machine', 'inspect', this.machineName],
-      { label: 'workspace check', acceptExitCodes: [0, 125] },
-    );
-    if (inspection.code === 0) {
-      await this.run(this.podmanPath, ['machine', 'start', this.machineName], {
-        label: 'start workspace',
-        onLine: () => this.emitProgressUpdate(),
-      });
-    } else {
-      const hostMemoryGiB = os.totalmem() / (1024 ** 3);
-      const memoryMiB = hostMemoryGiB >= 16 ? '6144' : '4096';
-      await this.run(
-        this.podmanPath,
-        [
-          'machine', 'init',
-          '--cpus', String(Math.max(2, Math.min(4, os.cpus().length))),
-          '--memory', memoryMiB,
-          '--disk-size', '60',
-          '--now',
-          '--update-connection=true',
-          this.machineName,
-        ],
-        {
-          label: 'prepare workspace',
-          onLine: () => this.emitProgressUpdate(),
-        },
+    const completed = await this.cliBackend.ensure({
+      onEvent: (event) => {
+        if (['software', 'environment'].includes(event.stage) && event.state === 'start') {
+          this.beginPhase(event.stage);
+        }
+        if (Number.isFinite(event.progress)) {
+          this.phaseFraction = Math.max(0, Math.min(1, event.progress));
+        } else if (event.state === 'done') {
+          this.phaseFraction = 1;
+        }
+        if (event.state === 'permission') {
+          this.emit('preparing', 'Waiting for your permission', event.detail, {
+            activity: event.activity || this.currentActivity(),
+            progress: this.overallProgress(),
+            indeterminate: true,
+          });
+        } else if (event.state === 'waiting') {
+          this.emit('preparing', 'Setup is still working', event.detail, {
+            activity: event.activity || this.currentActivity(),
+            progress: this.overallProgress(),
+            indeterminate: !Number.isFinite(this.overallProgress()),
+          });
+        } else {
+          this.emitWorking();
+        }
+      },
+    });
+    this.assertSharedMachine(completed);
+    if (!completed.ready) throw new Error('Podman setup finished, but the Omnideck runtime is not ready.');
+  }
+
+  assertSharedMachine(status) {
+    const container = status.resources?.container;
+    if (typeof container?.memory === 'string') this.containerMemory = container.memory;
+    if (typeof container?.shmSize === 'string') this.containerSHMSize = container.shmSize;
+    if (!['darwin', 'win32'].includes(this.platform) || !status.ready) return;
+    if (status.machineName !== MACHINE_NAME) {
+      throw new Error(
+        `The bundled Omnideck CLI selected ${status.machineName || 'an unknown Podman machine'} instead of ${MACHINE_NAME}.`,
       );
     }
-    await this.run(this.podmanPath, ['info', '--format', '{{.Version.Version}}'], {
-      label: 'runtime check',
-    });
-  }
-
-  async containerInfo() {
-    const result = await this.run(
-      this.podmanPath,
-      ['container', 'inspect', this.containerName],
-      { label: 'app check', acceptExitCodes: [0, 125] },
-    );
-    if (result.code !== 0) return null;
-    try {
-      const inspection = JSON.parse(result.stdout);
-      return Array.isArray(inspection) ? inspection[0] || null : inspection;
-    } catch {
-      throw new Error('omnideck could not read the existing environment state.');
-    }
-  }
-
-  isCurrentContainer(info) {
-    if (!info) return false;
-    const environmentLabel = info.Config?.Labels?.[IMAGE_REF_LABEL];
-    if (environmentLabel && this.currentEnvironment) {
-      return environmentLabel === this.currentEnvironment.imageRef;
-    }
-    return info.Config?.Labels?.[IMAGE_LABEL] === APP_VERSION
-      && info.Config?.Image === IMAGE;
-  }
-
-  // Starts a container that is already known to be the current one. Returns
-  // false when starting cannot succeed and the container has to be rebuilt.
-  async startCurrentContainer(info) {
-    // A mapping is fixed when a container is created, so one built around a
-    // different host port cannot serve the port this installation now uses —
-    // running or not, it has to be rebuilt.
-    const hostPort = containerHostPort(info);
-    if (hostPort !== null && hostPort !== this.appPort) return false;
-    if (info.State?.Status === 'running') return true;
-    try {
-      await this.run(this.podmanPath, ['start', this.containerName], { label: 'start app' });
-      return true;
-    } catch (error) {
-      if (!isPortConflict(error)) throw error;
-      await this.reserveNewAppPort();
-      return false;
-    }
-  }
-
-  async startContainer() {
-    const info = await this.containerInfo();
-    if (!this.isCurrentContainer(info)) return false;
-    return this.startCurrentContainer(info);
+    this.machineName = MACHINE_NAME;
   }
 
   async releaseImage() {
@@ -1291,129 +944,34 @@ class OmnideckRuntime {
     return null;
   }
 
-  async imageExists(imageRef = IMAGE) {
-    const result = await this.run(
-      this.podmanPath,
-      ['image', 'exists', imageRef],
-      { label: 'application image check', acceptExitCodes: [0, 1, 125] },
-    );
-    return result.code === 0;
-  }
-
-  async ensureImage() {
-    const environment = this.currentEnvironment || await this.desiredEnvironment();
-    if (environment.sourceImage === DEVELOPMENT_IMAGE) {
-      if (await this.imageExists(DEVELOPMENT_IMAGE)) {
-        await this.run(this.podmanPath, ['tag', DEVELOPMENT_IMAGE, IMAGE], {
-          label: 'prepare development app',
-        });
-        return;
-      }
-      this.emitWorking();
-      await this.run(
-        this.podmanPath,
-        ['pull', DEVELOPMENT_IMAGE],
-        {
-          label: 'download development app',
-          onLine: () => this.emitProgressUpdate(),
-        },
-      ).catch((error) => {
-        throw tagError(error, 'downloads');
-      });
-      await this.run(this.podmanPath, ['tag', DEVELOPMENT_IMAGE, IMAGE], {
-        label: 'prepare development app',
-      });
-      return;
-    }
-
-    if (!await this.imageExists(environment.sourceImage)) {
-      this.emitWorking();
-      await this.run(
-        this.podmanPath,
-        ['pull', environment.sourceImage],
-        {
-          label: 'download application',
-          onLine: () => this.emitProgressUpdate(),
-        },
-      ).catch((error) => {
-        throw tagError(error, 'downloads');
-      });
-    }
-    if (!await this.imageExists(environment.sourceImage)) {
-      throw tagError(
-        new Error('The pinned omnideck image could not be downloaded.'),
-        'downloads',
-      );
-    }
-    await this.run(this.podmanPath, ['tag', environment.sourceImage, IMAGE], {
-      label: 'prepare application',
-    });
-  }
-
   async ensureContainer() {
-    if (await this.startContainer()) return;
-    await this.ensureImage();
-
-    const existing = await this.containerInfo();
-    if (existing) {
-      this.emitWorking();
-      await this.run(this.podmanPath, ['rm', '--force', this.containerName], {
-        label: 'replace app',
-      });
-    }
-
-    // volume exists reports through its exit status, so it avoids the second
-    // call that inspecting-then-creating needs.
-    for (const volume of [this.homeVolume, this.stateVolume]) {
-      const present = await this.run(
-        this.podmanPath,
-        ['volume', 'exists', volume],
-        { label: 'storage check', acceptExitCodes: [0, 1, 125] },
-      );
-      if (present.code !== 0) {
-        await this.run(this.podmanPath, ['volume', 'create', volume], { label: 'prepare storage' });
-      }
-    }
-
+    const reconcile = () => this.cliBackend.ensureEnvironment({
+      name: this.containerName,
+      image: this.currentEnvironment.sourceImage,
+      port: this.appPort,
+      memory: this.containerMemory,
+      shmSize: this.containerSHMSize,
+      homeVolume: this.homeVolume,
+      stateVolume: this.stateVolume,
+      onEvent: (event) => {
+        if (event.stage === 'pull_image') this.beginPhase('download');
+        if (['create_container', 'replace_container', 'start_container', 'save_config'].includes(event.stage)) {
+          this.beginPhase('startup');
+        }
+        if (event.state === 'progress') this.emitProgressUpdate();
+        else this.emitWorking();
+      },
+      onInactivity: () => this.emitWaitGuidance(
+        this.currentActivity() === 'Downloading omnideck…' ? 'installer' : 'runtime',
+      ),
+    });
     try {
-      await this.runAppContainer();
+      return await reconcile();
     } catch (error) {
-      if (!isPortConflict(error)) throw error;
-      // Another program took the port between reserving it and binding it. A
-      // run that fails on the port can still leave the container behind, so it
-      // is cleared before rebuilding against a free one.
+      if (error.code !== 'PORT_IN_USE') throw error;
       await this.reserveNewAppPort();
-      await this.run(this.podmanPath, ['rm', '--force', this.containerName], {
-        label: 'replace app',
-        acceptAnyExitCode: true,
-      });
-      await this.runAppContainer();
+      return reconcile();
     }
-  }
-
-  async runAppContainer() {
-    return this.run(
-      this.podmanPath,
-      [
-        'run', '-d',
-        '--name', this.containerName,
-        '--restart', 'always',
-        '--log-driver', 'k8s-file',
-        '--log-opt', 'max-size=150mb',
-        '--label', `${IMAGE_LABEL}=${APP_VERSION}`,
-        '--label', `${IMAGE_REF_LABEL}=${this.currentEnvironment?.imageRef || IMAGE}`,
-        '--memory', '2g',
-        '--shm-size', '1024m',
-        '-p', `127.0.0.1:${this.appPort}:${CONTAINER_PORT}`,
-        '-v', `${this.homeVolume}:/home/omnideck`,
-        '-v', `${this.stateVolume}:/var/lib/omnideck`,
-        '-e', 'ENABLE_DESKTOP=false',
-        '-e', 'OLLAMA_HOST=http://host.containers.internal:11434',
-        '-e', `PORT=${CONTAINER_PORT}`,
-        IMAGE,
-      ],
-      { label: 'start app' },
-    );
   }
 
   async waitForApp({ silent = false } = {}) {
@@ -1444,8 +1002,8 @@ class OmnideckRuntime {
       canRetry: copy.canRetry ?? false,
       primaryAction: copy.primaryAction ?? null,
       primaryLabel: copy.primaryLabel ?? null,
-      secondaryAction: 'show-logs',
-      secondaryLabel: 'Show diagnostic log',
+      secondaryAction: copy.secondaryAction ?? 'show-logs',
+      secondaryLabel: copy.secondaryLabel ?? 'Show diagnostic log',
       diagnostics: this.failureSnapshot(copy.phase, copy.value),
       diagnosticResult: copy.result,
       technical: raw.slice(0, 4_000),
@@ -1457,15 +1015,8 @@ module.exports = {
   APP_VERSION,
   SETUP_PHASES,
   FAILURE_COPY,
-  IMAGE,
-  IMAGE_REF_LABEL,
   OmnideckRuntime,
   SETUP_COPY,
-  installerUrl,
-  linuxInstallCommands,
-  parseOsRelease,
-  replaceDownloadedFile,
   reserveAvailablePort,
-  sha256File,
   testResourceNames,
 };
