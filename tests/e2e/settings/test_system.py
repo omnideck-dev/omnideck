@@ -62,6 +62,24 @@ def test_change_compaction_model(page: Page):
         page.wait_for_timeout(500)
 
 
+def test_change_title_model(page: Page):
+    """Change the title model and verify it persists."""
+    settings = SettingsPage(page).goto_system()
+
+    picker = settings.system.title_model_picker
+    original = picker.selected_value()
+    new_model = picker.select_different(original)
+    page.wait_for_timeout(500)
+
+    server_settings = page.request.get("/api/settings").json()
+    assert server_settings["title_model"] == new_model
+
+    # Restore
+    if original:
+        picker.select(original)
+        page.wait_for_timeout(500)
+
+
 def test_model_pickers_stay_inside_grouped_rows_at_zoom(page: Page):
     """Zoom must scroll the settings page instead of compressing model rows."""
     settings = SettingsPage(page).goto_system()

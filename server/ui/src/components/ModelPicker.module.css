@@ -123,6 +123,10 @@
     min-height: 0;
 }
 
+.popoverInline.popoverAbove {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
 /* Matching half of the join on the trigger when inline+open. The
    trigger's own glow is dropped so the combined trigger+popover reads as
    a single control framed by the shared accent border. */
@@ -131,6 +135,10 @@
     border-bottom-right-radius: 0;
     border-color: var(--accent);
     box-shadow: none;
+}
+
+.triggerInline.triggerOpen.triggerOpenAbove {
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 
 /* ── Tabs ───────────────────────────────────────────────────── */
