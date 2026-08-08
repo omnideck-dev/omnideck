@@ -5,12 +5,25 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-hardware.yml"
+      - ".github/workflows/desktop-release-contract.yml"
+      - ".github/actionlint.yaml"
       - "desktop/**"
       - "desktop/container-version.txt"
       - "docs/releases/**"
   push:
+    branches:
+      - main
     tags:
       - "v*"
+    paths:
+      - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-hardware.yml"
+      - ".github/workflows/desktop-release-contract.yml"
+      - ".github/actionlint.yaml"
+      - "desktop/**"
+      - "desktop/container-version.txt"
+      - "docs/releases/**"
 
 concurrency:
   group: omnideck-application-${{ github.ref }}
@@ -25,6 +38,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
@@ -61,6 +77,10 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo test --locked
 
+      - name: Check Rust formatting
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
       - name: Lint the Rust host
         working-directory: desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
@@ -69,6 +89,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Tag must be SemVer, for example v0.1.0-alpha.9 or v0.1.0"
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
+            echo "Desktop release tags must point to a commit already merged into main."
+            exit 1
+          fi
           version=$(node -p "require('./desktop/package.json').version")
           test "${GITHUB_REF_NAME}" = "v${version}" || {
             echo "Tag ${GITHUB_REF_NAME} does not match desktop version v${version}"
@@ -219,10 +249,48 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
+  artifact_contract:
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Download package matrix
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release artifact contract
+        shell: bash
+        run: |
+          version="v$(node -p "require('./desktop/package.json').version")"
+          node desktop/tests/releasecontract/verify-release.mjs \
+            --directory dist \
+            --version "${version}" \
+            --report artifacts/desktop-release-contract/report.json
+
+      - name: Upload release contract report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-release-contract-${{ github.run_id }}
+          path: artifacts/desktop-release-contract/
+          if-no-files-found: warn
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, artifact_contract]
+    runs-on: ubuntu-24.04
+    environment: release
     timeout-minutes: 15
     permissions:
       attestations: write
@@ -250,5 +318,5 @@ jobs:
           body_path: docs/releases/${{ github.ref_name }}.md
           files: dist/**/*
           fail_on_unmatched_files: true
-          prerelease: true
-          make_latest: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
