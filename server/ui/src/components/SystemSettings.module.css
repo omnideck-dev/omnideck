@@ -1,12 +1,20 @@
 .container {
     width: 100%;
     max-width: 640px;
+    min-height: 0;
     margin: 0 auto;
     padding: var(--sp-6) var(--sp-8);
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
     overflow-y: auto;
+}
+
+/* A scroll container's children must retain their intrinsic height. Without
+   this, browser zoom makes flexbox shrink the cards to fit the viewport and
+   their overflow rules clip fixed-height controls such as ModelPicker. */
+.container > * {
+    flex: 0 0 auto;
 }
 
 /* Section headers */
@@ -24,7 +32,7 @@
     margin-top: 0;
 }
 
-/* Setting rows — card-like */
+/* Setting rows — standalone by default, borderless when nested in a group. */
 .settingRow {
     display: flex;
     align-items: center;
@@ -69,6 +77,38 @@
     line-height: 1.3;
 }
 
+/* Related controls share one surface, with hairlines supplying hierarchy. */
+.settingsGroup,
+.modelDefaults {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+}
+
+.settingsGroup {
+    overflow: hidden;
+}
+
+.settingsGroup > .settingRow {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.settingsGroup > * + * {
+    border-top: 1px solid var(--border-subtle);
+}
+
+.groupFootnote {
+    padding: var(--sp-2) var(--sp-3);
+    color: var(--text-primary);
+    font-size: 0.68rem;
+    line-height: 1.45;
+    opacity: 0.4;
+}
+
 /* Dropdown select */
 .select {
     width: 180px;
@@ -93,31 +133,51 @@
     outline-offset: 2px;
 }
 
-
-/* Action buttons (Refresh, Run Setup Wizard) now render via the
- * Button primitive — see ./primitives/Button.jsx. */
-
-/* ── Group card: a row plus a nested disclosure + advanced body ── */
-.groupCard {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
+/* Model defaults are one semantic group with independently sized rows. */
+.modelDefaults {
+    overflow: visible;
 }
 
-.groupCard .settingRow {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
+.modelSetting {
+    padding: var(--sp-3);
 }
 
+.modelSetting + .modelSetting {
+    border-top: 1px solid var(--border-subtle);
+}
+
+.modelHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+
+.modelBody {
+    min-width: 0;
+    margin-top: var(--sp-2);
+    margin-left: calc(28px + var(--sp-3));
+}
+
+.pickerRow {
+    min-width: 0;
+}
+
+.modelRecommendation {
+    display: block;
+    margin-top: var(--sp-1);
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    line-height: 1.4;
+}
+
+/* Vision's advanced controls remain part of its model row. */
 .groupDisclosure {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
     width: 100%;
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) 0;
     background: transparent;
     border: none;
     border-top: 1px solid var(--border-subtle);
@@ -127,7 +187,6 @@
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    padding: var(--sp-2) var(--sp-3);
     cursor: pointer;
     text-align: left;
     transition: background 150ms var(--ease), color 150ms var(--ease);
@@ -135,11 +194,6 @@
 
 .groupDisclosure:hover {
     color: var(--text-primary);
-    background: var(--canvas);
-}
-
-[data-theme="dark"] .groupDisclosure:hover {
-    background: var(--elevated);
 }
 
 .chev {
@@ -158,7 +212,7 @@
 .groupBody {
     display: flex;
     flex-direction: column;
-    padding: var(--sp-1) var(--sp-3) var(--sp-2);
+    padding-top: var(--sp-1);
     border-top: 1px solid var(--border-subtle);
 }
 
@@ -175,9 +229,7 @@
     border-bottom: none;
 }
 
-/* Number input — follows design language .input primitive.
-   text-align: right and hidden spin buttons are app-wide conventions
-   for numeric fields (see ProfileBuilder .numInput, ModelSettingsPanel .numInput). */
+/* Number input — follows the app-wide input primitive. */
 .numberInput {
     width: 120px;
     height: 32px;
@@ -213,19 +265,25 @@
     box-shadow: var(--shadow-glow);
 }
 
-/* Picker row below a setting row */
-.pickerRow {
-    padding: 0 var(--sp-3) var(--sp-2);
-}
+@media (max-width: 520px) {
+    .container {
+        padding: var(--sp-5) var(--sp-4);
+    }
 
-/* Info note */
-.note {
-    font-size: 0.72rem;
-    color: var(--text-primary);
-    opacity: 0.5;
-    line-height: 1.5;
-    padding: var(--sp-2) var(--sp-3);
-    background: var(--accent-muted);
-    border-left: 3px solid var(--accent-muted);
-    border-radius: var(--radius-md);
+    .defaultAgentRow {
+        flex-wrap: wrap;
+    }
+
+    .defaultAgentRow .select {
+        width: calc(100% - 28px - var(--sp-3));
+        margin-left: calc(28px + var(--sp-3));
+    }
+
+    .modelBody {
+        margin-left: 0;
+    }
+
+    .numberInput {
+        width: 96px;
+    }
 }
