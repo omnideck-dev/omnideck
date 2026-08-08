@@ -1,32 +1,16 @@
-/* Matches the setting rows it sits above, so the section reads as one block
-   rather than a banner bolted onto a list. */
+/* The surrounding settings group supplies the shared card surface. */
 .status {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-3);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
-}
-
-/* SystemSettings supplies the shared card when update controls are grouped. */
-.grouped {
     background: transparent;
     border: none;
-    border-radius: 0;
-    box-shadow: none;
 }
 
 /* An update waiting is the one state worth drawing the eye to. */
 .status[data-available='true'] {
-    border-color: var(--accent);
     background: var(--accent-muted);
-}
-
-.grouped[data-available='true'] {
-    border: none;
 }
 
 .info {

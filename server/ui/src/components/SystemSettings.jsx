@@ -99,7 +99,7 @@ export default function SystemSettings() {
                 <>
                     <div className={styles.sectionLabel}>Updates</div>
                     <div className={styles.settingsGroup} data-testid="updates-settings-group">
-                        <SoftwareUpdateStatus grouped />
+                        <SoftwareUpdateStatus />
 
                         <label className={styles.settingRow} data-testid="automatic-updates-toggle">
                             <div className={styles.settingIcon}>

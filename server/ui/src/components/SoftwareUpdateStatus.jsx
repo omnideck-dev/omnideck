@@ -9,7 +9,7 @@ import styles from './SoftwareUpdateStatus.module.css';
  * asked not to be told anywhere else. It is also the only way to look for one
  * without waiting for the next scheduled check.
  */
-export default function SoftwareUpdateStatus({ grouped = false }) {
+export default function SoftwareUpdateStatus() {
     const [update, setUpdate] = useState(null);
     const [checking, setChecking] = useState(false);
     const [installing, setInstalling] = useState(false);
@@ -48,7 +48,7 @@ export default function SoftwareUpdateStatus({ grouped = false }) {
 
     return (
         <div
-            className={`${styles.status} ${grouped ? styles.grouped : ''}`}
+            className={styles.status}
             data-available={update ? 'true' : 'false'}
             data-testid="software-update-status"
         >
