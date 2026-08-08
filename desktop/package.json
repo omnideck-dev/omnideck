@@ -1,108 +1,25 @@
 {
-  "name": "omnideck",
-  "desktopName": "omnideck.desktop",
-  "version": "0.1.0-alpha.7",
+  "name": "omnideck-tauri-host",
+  "version": "0.1.0-alpha.8",
   "private": true,
-  "description": "omnideck",
-  "homepage": "https://github.com/omnideck-dev/omnideck",
-  "main": "src/main.cjs",
-  "author": {
-    "name": "omnideck",
-    "email": "omnideck-dev@users.noreply.github.com"
-  },
-  "license": "Apache-2.0",
-  "engines": {
-    "node": ">=22.12.0"
-  },
+  "description": "omnideck desktop host",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test test/*.test.cjs",
-    "build:cli": "node scripts/build-cli.cjs",
-    "verify:cli-target": "node scripts/verify-cli-target.cjs",
-    "prepack": "npm run build:cli",
-    "pack": "electron-builder --dir",
-    "predist": "npm run build:cli",
-    "dist": "electron-builder",
-    "predist:linux": "npm run build:cli",
-    "dist:linux": "electron-builder --linux",
-    "dist:linux:container": "bash scripts/build-linux-container.sh",
-    "predist:mac": "npm run build:cli",
-    "dist:mac": "electron-builder --mac",
-    "predist:windows": "npm run build:cli",
-    "dist:windows": "electron-builder --win",
-    "test:app": "node scripts/install-electron.cjs && node --test --test-concurrency=1 --test-timeout=120000 test/smoke/*.smoke.cjs"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "test": "node --test tests/*.test.mjs && node scripts/verify-sidecars.mjs",
+    "test:policy": "node --test tests/*.test.mjs",
+    "fetch:sidecars": "node scripts/fetch-sidecars.mjs",
+    "verify:sidecars": "node scripts/verify-sidecars.mjs",
+    "prepare:runtime-image": "node scripts/prepare-runtime-image.mjs",
+    "checksums": "node scripts/checksums.mjs",
+    "build:windows": "node scripts/fetch-sidecars.mjs x86_64-pc-windows-msvc && tauri build --bundles nsis --target x86_64-pc-windows-msvc",
+    "build:windows:arm64": "node scripts/fetch-sidecars.mjs aarch64-pc-windows-msvc && tauri build --bundles nsis --target aarch64-pc-windows-msvc",
+    "build:macos": "node scripts/fetch-sidecars.mjs aarch64-apple-darwin && tauri build --bundles dmg --target aarch64-apple-darwin",
+    "build:macos:x64": "node scripts/fetch-sidecars.mjs x86_64-apple-darwin && tauri build --bundles dmg --target x86_64-apple-darwin",
+    "build:linux": "node scripts/fetch-sidecars.mjs x86_64-unknown-linux-gnu && tauri build --bundles appimage deb rpm --target x86_64-unknown-linux-gnu",
+    "build:linux:arm64": "node scripts/fetch-sidecars.mjs aarch64-unknown-linux-gnu && tauri build --bundles appimage deb rpm --target aarch64-unknown-linux-gnu"
   },
   "devDependencies": {
-    "@electron/notarize": "3.1.1",
-    "electron": "43.2.0",
-    "electron-builder": "26.15.3",
-    "playwright-core": "^1.62.0"
-  },
-  "overrides": {
-    "brace-expansion": "5.0.9",
-    "fast-uri": "3.1.5",
-    "js-yaml": "4.3.1",
-    "minimatch": "10.2.5"
-  },
-  "build": {
-    "appId": "dev.omnideck.app",
-    "productName": "omnideck",
-    "asar": true,
-    "compression": "maximum",
-    "artifactName": "omnideck-${version}-${os}-${arch}.${ext}",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "src/**/*",
-      "LICENSE",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/runtime",
-        "to": "runtime",
-        "filter": [
-          "image-manifest.json",
-          "omnideck-cli*"
-        ]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.svg",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "target": [
-        "dmg"
-      ]
-    },
-    "afterSign": "scripts/notarize.cjs",
-    "win": {
-      "icon": "build/icon.svg",
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "allowElevation": true,
-      "deleteAppDataOnUninstall": false
-    },
-    "linux": {
-      "category": "Utility",
-      "icon": "build/icon.svg",
-      "syncDesktopName": true,
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "maintainer": "omnideck <omnideck-dev@users.noreply.github.com>",
-      "vendor": "omnideck",
-      "executableName": "omnideck"
-    }
+    "@tauri-apps/cli": "2.11.4"
   }
 }

@@ -5,12 +5,9 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop.yml"
-      - ".dockerignore"
-      - "container/**"
       - "desktop/**"
-      - "pyproject.toml"
-      - "server/**"
-      - "uv.lock"
+      - "desktop/container-version.txt"
+      - "docs/releases/**"
   push:
     tags:
       - "v*"
@@ -24,161 +21,79 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read bundled CLI ref
-        id: cli_ref
-        shell: bash
-        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out the shared CLI runtime
-        uses: actions/checkout@v6
-        with:
-          repository: omnideck-dev/cli
-          ref: ${{ steps.cli_ref.outputs.ref }}
-          path: _cli
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: _cli/go.mod
-          cache-dependency-path: _cli/go.sum
-
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          node-version: 24
 
-      - name: Install application dependencies
+      - name: Enable pnpm
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            unzip
+
+      - name: Install desktop dependencies
         working-directory: desktop
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Build the shared CLI runtime contract
+      - name: Verify installer parity and vendored sidecars
         working-directory: desktop
-        env:
-          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
-        run: npm run build:cli
+        run: |
+          pnpm run fetch:sidecars
+          pnpm test
 
-      - name: Verify the shared CLI runtime contract
-        working-directory: desktop
-        run: node scripts/verify-cli.cjs
+      - name: Test the Rust host
+        working-directory: desktop/src-tauri
+        run: cargo test --locked
 
-      - name: Validate release version
+      - name: Lint the Rust host
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate release version and notes
         if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: desktop
         shell: bash
         run: |
-          expected="v$(node -p "require('./package.json').version")"
-          test "${GITHUB_REF_NAME}" = "${expected}" || {
-            echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected}"
+          version=$(node -p "require('./desktop/package.json').version")
+          test "${GITHUB_REF_NAME}" = "v${version}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match desktop version v${version}"
             exit 1
           }
-          test -f "../docs/releases/${GITHUB_REF_NAME}.md" || {
+          test -f "docs/releases/${GITHUB_REF_NAME}.md" || {
             echo "Missing release notes for ${GITHUB_REF_NAME}"
             exit 1
           }
 
-      - name: Test application manager and setup game
-        working-directory: desktop
-        run: npm test
-
-      # Launches the packaged entry point for real. The suite above stubs the
-      # process boundary; this is what catches a window that never opens, a
-      # preload that no longer matches, or a screen missing an element the
-      # renderer writes to — none of which fail a unit test. podman is installed
-      # so the container tool's real stream and exit-code behaviour is checked
-      # too; nothing here pulls an image or starts a container.
-      - name: Install a virtual display and the container tool
-        run: sudo apt-get update && sudo apt-get install -y xvfb podman
-
-      - name: Smoke test the application
-        working-directory: desktop
-        env:
-          OMNIDECK_SMOKE_REQUIRE_PODMAN: "1"
-        run: xvfb-run -a npm run test:app
-
-  # The native launch path on the other two platforms. Their runners have a real
-  # display session, so no virtual one is needed. podman is deliberately absent:
-  # this covers window creation, path handling and theme selection, which is the
-  # platform-specific code that Linux cannot exercise.
-  app_smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macos-arm64
-            runner: macos-15
-          - name: windows-x64
-            runner: windows-2025
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Read bundled CLI ref
-        id: cli_ref
-        shell: bash
-        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out the shared CLI runtime
-        uses: actions/checkout@v6
-        with:
-          repository: omnideck-dev/cli
-          ref: ${{ steps.cli_ref.outputs.ref }}
-          path: _cli
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: _cli/go.mod
-          cache-dependency-path: _cli/go.sum
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-
-      - name: Install application dependencies
-        working-directory: desktop
-        run: npm ci
-
-      - name: Build the target CLI runtime
-        working-directory: desktop
-        env:
-          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
-        run: npm run build:cli
-
-      - name: Verify the target CLI runtime
-        working-directory: desktop
-        run: |
-          npm run verify:cli-target
-          node scripts/verify-cli.cjs
-
-      - name: Smoke test the application
-        working-directory: desktop
-        run: npm run test:app
-
   runtime_image:
-    needs: [test, app_smoke]
-    runs-on: ubuntu-latest
+    needs: test
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
-    outputs:
-      image_ref: ${{ steps.image.outputs.image_ref }}
     steps:
       - uses: actions/checkout@v6
 
       - uses: docker/setup-buildx-action@v4
 
-      - name: Pin runtime image
-        id: image
+      - name: Pin the runtime image
         shell: bash
         run: |
           image_version=$(tr -d '\r\n' < desktop/container-version.txt)
           [[ "${image_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "container-version.txt must contain a plain X.Y.Z container release"
+            echo "desktop/container-version.txt must contain a plain X.Y.Z release"
             exit 1
           }
           source_image="ghcr.io/${GITHUB_REPOSITORY}:${image_version}"
@@ -192,16 +107,14 @@ jobs:
             echo "Could not resolve ${source_image} to an immutable digest"
             exit 1
           }
-          image_ref="ghcr.io/${GITHUB_REPOSITORY}@${digest}"
-          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
-          cd desktop
-          node scripts/prepare-runtime-image.cjs "${image_ref}"
+          node desktop/scripts/prepare-runtime-image.mjs \
+            "ghcr.io/${GITHUB_REPOSITORY}@${digest}"
 
-      - name: Upload runtime image manifest
+      - name: Upload the runtime image manifest
         uses: actions/upload-artifact@v7
         with:
           name: runtime-image-manifest
-          path: desktop/build/runtime/image-manifest.json
+          path: desktop/src-tauri/resources/image-manifest.json
           retention-days: 7
           if-no-files-found: error
 
@@ -214,154 +127,94 @@ jobs:
         include:
           - name: linux-x64
             runner: ubuntu-24.04
-            command: npm run dist:linux -- --x64
-            goos: linux
-            goarch: amd64
+            target: x86_64-unknown-linux-gnu
+            command: build:linux
           - name: linux-arm64
-            runner: ubuntu-24.04
-            command: npm run dist:linux -- --arm64
-            goos: linux
-            goarch: arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            command: build:linux:arm64
           - name: windows-x64
             runner: windows-2025
-            command: npm run dist:windows -- --x64
-            goos: windows
-            goarch: amd64
+            target: x86_64-pc-windows-msvc
+            command: build:windows
           - name: windows-arm64
             runner: windows-2025
-            command: npm run dist:windows -- --arm64
-            goos: windows
-            goarch: arm64
+            target: aarch64-pc-windows-msvc
+            command: build:windows:arm64
           - name: macos-x64
-            runner: macos-15
-            command: npm run dist:mac -- --x64
-            goos: darwin
-            goarch: amd64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            command: build:macos:x64
           - name: macos-arm64
             runner: macos-15
-            command: npm run dist:mac -- --arm64
-            goos: darwin
-            goarch: arm64
+            target: aarch64-apple-darwin
+            command: build:macos
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read bundled CLI ref
-        id: cli_ref
-        shell: bash
-        run: echo "ref=$(tr -d '\r\n' < desktop/cli-ref.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out the shared CLI runtime
-        uses: actions/checkout@v6
-        with:
-          repository: omnideck-dev/cli
-          ref: ${{ steps.cli_ref.outputs.ref }}
-          path: _cli
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: _cli/go.mod
-          cache-dependency-path: _cli/go.sum
-
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          node-version: 24
 
-      - name: Download runtime image manifest
+      - name: Enable pnpm
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            fakeroot \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            rpm \
+            unzip
+
+      - name: Download the pinned runtime image manifest
         uses: actions/download-artifact@v8
         with:
           name: runtime-image-manifest
-          path: desktop/build/runtime
+          path: desktop/src-tauri/resources
 
-      - name: Install application dependencies
+      - name: Install desktop dependencies
         working-directory: desktop
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Install Linux packaging tools
-        if: startsWith(matrix.name, 'linux-')
-        run: sudo apt-get update && sudo apt-get install -y binutils fakeroot rpm
-
-      - name: Configure optional signing
-        shell: bash
-        env:
-          TARGET_NAME: ${{ matrix.name }}
-          MAC_CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
-          MAC_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
-          WINDOWS_CSC_LINK: ${{ secrets.DESKTOP_WINDOWS_CSC_LINK }}
-          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WINDOWS_CSC_KEY_PASSWORD }}
-          NOTARIZE_APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
-          NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APPLE_APP_SPECIFIC_PASSWORD }}
-          NOTARIZE_APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+      - name: Verify the target sidecar set
+        working-directory: desktop
         run: |
-          append_env() {
-            name="$1"
-            value="$2"
-            if [ -n "${value}" ]; then
-              delimiter="OMNIDECK_SIGNING_VALUE_${name}"
-              {
-                echo "${name}<<${delimiter}"
-                echo "${value}"
-                echo "${delimiter}"
-              } >> "${GITHUB_ENV}"
-            fi
-          }
+          pnpm run test:policy
+          pnpm run fetch:sidecars -- ${{ matrix.target }}
+          pnpm run verify:sidecars -- ${{ matrix.target }}
 
-          case "${TARGET_NAME}" in
-            macos-*)
-              if [ -n "${MAC_CSC_LINK}" ]; then
-                append_env CSC_LINK "${MAC_CSC_LINK}"
-                append_env CSC_KEY_PASSWORD "${MAC_CSC_KEY_PASSWORD}"
-              else
-                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
-                echo "Building unsigned macOS installer"
-              fi
-              append_env APPLE_ID "${NOTARIZE_APPLE_ID}"
-              append_env APPLE_APP_SPECIFIC_PASSWORD "${NOTARIZE_APPLE_APP_SPECIFIC_PASSWORD}"
-              append_env APPLE_TEAM_ID "${NOTARIZE_APPLE_TEAM_ID}"
-              ;;
-            windows-*)
-              if [ -n "${WINDOWS_CSC_LINK}" ]; then
-                append_env CSC_LINK "${WINDOWS_CSC_LINK}"
-                append_env CSC_KEY_PASSWORD "${WINDOWS_CSC_KEY_PASSWORD}"
-              else
-                echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "${GITHUB_ENV}"
-                echo "Building unsigned Windows installer"
-              fi
-              ;;
-          esac
-
-      - name: Build installer
+      - name: Build native installers
         working-directory: desktop
-        env:
-          OMNIDECK_CLI_SOURCE: ${{ github.workspace }}/_cli
-          OMNIDECK_CLI_GOOS: ${{ matrix.goos }}
-          OMNIDECK_CLI_GOARCH: ${{ matrix.goarch }}
-        run: ${{ matrix.command }}
-
-      - name: Verify bundled CLI target
-        working-directory: desktop
-        env:
-          OMNIDECK_CLI_GOOS: ${{ matrix.goos }}
-          OMNIDECK_CLI_GOARCH: ${{ matrix.goarch }}
-        run: npm run verify:cli-target
+        run: pnpm run ${{ matrix.command }}
 
       - name: Generate SHA-256 checksums
         working-directory: desktop
-        run: node scripts/checksums.cjs dist
+        run: node scripts/checksums.mjs src-tauri/target/${{ matrix.target }}/release/bundle
 
-      - name: Upload installers
+      - name: Upload native installers
         uses: actions/upload-artifact@v7
         with:
           name: omnideck-installers-${{ matrix.name }}
           path: |
-            desktop/dist/*.AppImage
-            desktop/dist/*.deb
-            desktop/dist/*.dmg
-            desktop/dist/*.exe
-            desktop/dist/*.rpm
-            desktop/dist/*.sha256
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sha256
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
@@ -369,7 +222,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       attestations: write
@@ -388,28 +241,14 @@ jobs:
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: dist/*
+          subject-path: dist/**/*
 
-      # A tag carrying a suffix is a preview; a plain version is a release, and
-      # the two are published differently. The application follows the same
-      # rule when it looks for a newer version, so a tag that is a preview here
-      # is a preview there too.
-      - name: Classify the tag
-        id: tag
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish omnideck release
+      - name: Publish the preview release
         uses: softprops/action-gh-release@v3
         with:
           name: omnideck ${{ github.ref_name }}
           body_path: docs/releases/${{ github.ref_name }}.md
-          files: dist/*
+          files: dist/**/*
           fail_on_unmatched_files: true
-          prerelease: ${{ steps.tag.outputs.prerelease }}
-          make_latest: ${{ steps.tag.outputs.prerelease == 'false' }}
+          prerelease: true
+          make_latest: false

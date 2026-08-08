@@ -13,8 +13,9 @@ tag such as `v0.1.0-alpha.6`.
 These scripts do not compile or launch the source tree. `windows.ps1` downloads
 and installs a published GitHub release. `reset-host.ps1` only resets the host;
 it is independent of which build created the installed state. To test a local
-build after resetting and restarting, launch `desktop/build/runtime/omnideck-cli.exe`
-or the installer under `desktop/dist` directly.
+build after resetting and restarting, launch the target-qualified CLI beside the
+release executable or the installer under
+`desktop/src-tauri/target/<target>/release/bundle` directly.
 
 Linux and macOS still support named test profiles. Windows intentionally does
 not. The Windows script uses the normal application state, the normal
@@ -87,7 +88,7 @@ the other:
 
 ```powershell
 # Clean host -> CLI test
-..\..\build\runtime\omnideck-cli.exe
+..\..\src-tauri\target\x86_64-pc-windows-msvc\release\omnideck-cli.exe
 
 # Reset and restart again -> desktop test
 .\windows.ps1 -Scenario FirstRun

@@ -47,12 +47,12 @@ prepare_test_scenario "$scenario" "$profile_root" "$profiles_root" "$skip_confir
 
 gh release download "$selected_release" \
   --repo "$RELEASE_REPOSITORY" \
-  --pattern 'omnideck-*-mac-arm64.dmg' \
-  --pattern 'omnideck-*-mac-arm64.dmg.sha256' \
+  --pattern 'omnideck_*_aarch64.dmg' \
+  --pattern 'omnideck_*_aarch64.dmg.sha256' \
   --dir "$release_cache" \
   --skip-existing
 
-artifact="$(compgen -G "$release_cache/omnideck-*-mac-arm64.dmg" | head -n 1 || true)"
+artifact="$(compgen -G "$release_cache/omnideck_*_aarch64.dmg" | head -n 1 || true)"
 if [[ -z "$artifact" || ! -f "$artifact" ]]; then
   echo "Release $selected_release has no macOS arm64 disk image, or the download failed." >&2
   exit 1

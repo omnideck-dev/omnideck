@@ -1,0 +1,49 @@
+{
+  "setupCopy": {
+    "welcome": {
+      "title": "Welcome to omnideck",
+      "detail": "A one-time setup will prepare everything omnideck needs on this computer."
+    },
+    "preparing": {
+      "title": "Preparing your environment",
+      "detail": "Setting omnideck up on this computer. This usually takes a few minutes."
+    },
+    "permission": {
+      "title": "Waiting for your permission",
+      "detail": "Your computer will ask you to approve installing Podman — the software omnideck uses to run in an isolated space. omnideck never sees or stores your password."
+    },
+    "permissionWindows": {
+      "title": "Waiting for your permission",
+      "detail": "Your computer will ask you to approve turning on Windows Subsystem for Linux, which omnideck needs to run in an isolated space. omnideck never sees or stores your password."
+    },
+    "updating": {
+      "title": "Preparing your environment",
+      "detail": "Bringing omnideck up to date. This usually takes a few minutes."
+    },
+    "resuming": {
+      "title": "Preparing your environment",
+      "detail": "Continuing from where the last attempt stopped. Anything already finished is kept."
+    },
+    "ready": {
+      "title": "omnideck is ready",
+      "detail": "Everything is prepared. Open omnideck whenever you’re ready."
+    }
+  },
+  "setupPhases": [
+    { "id": "software", "label": "Computer setup", "activity": "Getting your computer ready…", "weight": 25, "appliesTo": null },
+    { "id": "environment", "label": "Secure space", "activity": "Preparing a secure space to run in…", "weight": 15, "appliesTo": ["darwin", "win32"] },
+    { "id": "download", "label": "Application files", "activity": "Downloading omnideck’s files…", "weight": 50, "appliesTo": null },
+    { "id": "startup", "label": "Final checks", "activity": "Almost ready…", "weight": 10, "appliesTo": null }
+  ],
+  "failureCopy": {
+    "support": { "phase": null, "result": "Compatibility issue", "title": "This computer isn’t supported yet", "detail": "This version of omnideck can’t prepare the required environment on this computer.", "value": "Not supported", "canRetry": false, "primaryAction": "supported-systems", "primaryLabel": "View supported systems" },
+    "components": { "phase": "software", "result": "Component issue", "title": "Required software couldn’t be installed", "detail": "This can happen when an earlier attempt was interrupted. Trying again usually clears it.", "value": "Unavailable", "canRetry": true },
+    "permission": { "phase": "software", "result": "Permission needed", "title": "omnideck needs your permission", "detail": "Permission wasn’t granted. Try again and approve the request from your computer.", "value": "Permission denied", "canRetry": true },
+    "downloads": { "phase": "download", "result": "Download issue", "title": "The download didn’t finish", "detail": "Check your internet connection and try again. Anything already downloaded is kept.", "value": "Interrupted", "canRetry": true },
+    "environment": { "phase": "environment", "result": "Environment issue", "title": "The secure workspace isn’t responding", "detail": "It was set up but will not answer. Trying again will attempt to repair it.", "value": "Not responding", "canRetry": true },
+    "release": { "phase": null, "result": "Installer issue", "title": "Download omnideck again", "detail": "This installer is incomplete or damaged. Download a fresh copy before trying again.", "value": "Invalid", "canRetry": false, "primaryAction": "download", "primaryLabel": "Download omnideck" },
+    "startup": { "phase": "startup", "result": "Startup issue", "title": "omnideck didn’t finish starting", "detail": "Everything installed, but omnideck did not answer in time. Trying again runs the startup checks.", "value": "Timed out", "canRetry": true },
+    "restart": { "phase": "software", "result": "Restart required", "title": "Restart needed", "detail": "Windows must restart to finish enabling required features. Save any open work, then restart now or later. If you restart now, omnideck reopens after you sign in and continues setup.", "value": "Restart needed", "canRetry": false, "primaryAction": "restart", "primaryLabel": "Restart now", "secondaryAction": "close", "secondaryLabel": "Restart later" },
+    "unknown": { "phase": null, "result": "Setup issue", "title": "Setup didn’t finish", "detail": "Something stopped setup before it completed. Try again, or open the diagnostic log if it keeps happening.", "value": "Issue found", "canRetry": true }
+  }
+}

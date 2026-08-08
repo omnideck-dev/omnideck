@@ -1,0 +1,758 @@
+/* ═══════════════════════════════════════════════════════
+   SIGNAL Design Language — setup surface
+
+   Token names, values, scales and component idioms are the application's.
+   The webfont import the application uses cannot run here: this page is
+   served from the filesystem under a strict content policy, so the font
+   stacks fall back to their local families.
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Light mode ("Blueprint") is the default ── */
+  --canvas: #f8f9fb;
+  --surface: #eef0f5;
+  --elevated: #ffffff;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.08);
+  --accent-glow: rgba(37, 99, 235, 0.15);
+
+  --success: #16a34a;
+  --success-muted: rgba(22, 163, 74, 0.08);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.08);
+  --danger: #dc2626;
+  --danger-muted: rgba(220, 38, 38, 0.08);
+
+  --scrim: rgba(15, 23, 42, 0.40);
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 4px 16px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-glow: 0 0 0 3px var(--accent-glow);
+
+  --terminal-bg: #edf1fb;
+  --terminal-surface: #e2e9f7;
+  --terminal-border: #c8d4ec;
+  --terminal-text: #1e293b;
+  --terminal-comment: #8898b5;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  --font-brand: 'Roboto Mono', 'Consolas', monospace;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  color-scheme: light dark;
+}
+
+/* ── Dark mode ("Terminal") ── */
+/* The attribute is the source of truth, matching the application. The media
+   query only covers the moment before script has stamped it on, so the first
+   paint does not flash the wrong ground. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --canvas: #0c0e14;
+    --surface: #151821;
+    --elevated: #1e2130;
+
+    --text-primary: #e8ecf4;
+    --text-secondary: #8892a8;
+    --text-tertiary: #4a5168;
+
+    --border: #252a3a;
+    --border-subtle: #1a1e2a;
+    --border-strong: #363d52;
+
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-muted: rgba(59, 130, 246, 0.12);
+    --accent-glow: rgba(59, 130, 246, 0.20);
+
+    --success: #4ade80;
+    --success-muted: rgba(74, 222, 128, 0.12);
+    --warning: #fbbf24;
+    --warning-muted: rgba(251, 191, 36, 0.12);
+    --danger: #f87171;
+    --danger-muted: rgba(248, 113, 113, 0.12);
+
+    --scrim: rgba(0, 0, 0, 0.60);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+    --terminal-bg: #111318;
+    --terminal-surface: #1a1d26;
+    --terminal-border: #252a3a;
+    --terminal-text: #c8cdd8;
+    --terminal-comment: #4a5168;
+  }
+}
+
+:root[data-theme='dark'] {
+  --canvas: #0c0e14;
+  --surface: #151821;
+  --elevated: #1e2130;
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a8;
+  --text-tertiary: #4a5168;
+
+  --border: #252a3a;
+  --border-subtle: #1a1e2a;
+  --border-strong: #363d52;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-muted: rgba(59, 130, 246, 0.12);
+  --accent-glow: rgba(59, 130, 246, 0.20);
+
+  --success: #4ade80;
+  --success-muted: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-muted: rgba(251, 191, 36, 0.12);
+  --danger: #f87171;
+  --danger-muted: rgba(248, 113, 113, 0.12);
+
+  --scrim: rgba(0, 0, 0, 0.60);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  --terminal-bg: #111318;
+  --terminal-surface: #1a1d26;
+  --terminal-border: #252a3a;
+  --terminal-text: #c8cdd8;
+  --terminal-comment: #4a5168;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+body {
+  width: 100%;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Same treatment the application gives its scrollable regions. */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Shell — canvas holds an elevated window, as modals do
+   ═══════════════════════════════════════════════════════ */
+
+.shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: clamp(var(--sp-4), 3vw, var(--sp-8));
+}
+
+.window {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(480px, 1.45fr);
+  width: min(1120px, 100%);
+  min-height: min(680px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.setup-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* min-height lets the panel shrink below its content so its own scroll takes
+     over, rather than pushing the window past the viewport. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(var(--sp-6), 4vw, var(--sp-12));
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* ── Identity ── */
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.mark {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 3px;
+  width: 34px;
+  height: 34px;
+  padding: var(--sp-2);
+  background: var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.mark span {
+  display: block;
+  width: 3px;
+  background: #fff;
+  border-radius: var(--radius-full);
+}
+
+.mark span:nth-child(1) { height: 8px; }
+.mark span:nth-child(2) { height: 16px; }
+.mark span:nth-child(3) { height: 12px; }
+
+.brand,
+.eyebrow,
+.game-kicker {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 500 11px/1 var(--font-brand);
+  letter-spacing: 0.16em;
+}
+
+.brand {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* ── Status block ── */
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: auto 0;
+  padding: var(--sp-10) 0 var(--sp-6);
+}
+
+.eyebrow {
+  color: var(--accent-hover);
+}
+
+h1 {
+  max-width: 20ch;
+  margin: 0;
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.detail {
+  min-height: 60px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── Indeterminate spinner ── */
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-full);
+  animation: spin 700ms linear infinite;
+}
+
+/* ── Progress ── */
+
+.progress-wrap {
+  margin: 0;
+}
+
+.progress-track {
+  height: 4px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: var(--radius-full);
+}
+
+.progress {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 180ms var(--ease-out);
+}
+
+.progress-wrap.is-indeterminate .progress {
+  width: 34%;
+  animation: progress-slide 1.3s var(--ease) infinite;
+  transition: none;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Checklist — progress while setup runs, report once it fails
+   ═══════════════════════════════════════════════════════ */
+
+.doctor-panel {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.doctor-panel[hidden] {
+  display: none;
+}
+
+.doctor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.doctor-heading span {
+  color: var(--text-secondary);
+  font: 500 10px/1 var(--font-brand);
+  letter-spacing: 0.14em;
+}
+
+.doctor-heading strong {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.diagnostic-list {
+  display: grid;
+  gap: 1px;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 22px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Status carries a glyph as well as a colour, so the state does not depend on
+   colour alone. The tinted well is the application's status treatment. */
+.diagnostic-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: var(--radius-full);
+  font: 600 10px/1 var(--font-brand);
+}
+
+.diagnostic-row[data-status='pass'] .diagnostic-icon {
+  color: var(--success);
+  background: var(--success-muted);
+}
+
+.diagnostic-row[data-status='issue'] .diagnostic-icon {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
+.diagnostic-row[data-status='working'] {
+  color: var(--text-primary);
+}
+
+.diagnostic-row[data-status='working'] .diagnostic-icon {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+/* A pending step is quieter than an active one, but it is still the name of a
+   step someone has to read, so it does not drop to the tertiary token. */
+.diagnostic-row[data-status='waiting'] {
+  color: var(--text-secondary);
+}
+
+.diagnostic-value {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+
+.diagnostic-row[data-status='working'] .diagnostic-value {
+  color: var(--accent);
+}
+
+.diagnostic-row[data-status='issue'] .diagnostic-value {
+  color: var(--danger);
+}
+
+/* ── Technical details ── */
+
+.doctor-panel details {
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.doctor-panel summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.doctor-panel summary:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-glow);
+}
+
+.doctor-panel pre {
+  max-height: 92px;
+  overflow: auto;
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2);
+  color: var(--terminal-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--radius-md);
+  font: 400 10px/1.5 var(--font-code);
+}
+
+/* ═══════════════════════════════════════════════════════
+   Buttons — the application's Filled and Ghost variants
+   ═══════════════════════════════════════════════════════ */
+
+button {
+  width: 100%;
+  min-height: 36px;
+  padding: var(--sp-2) var(--sp-4);
+  border: none;
+  border-radius: var(--radius-md);
+  font: 500 13px/1.2 var(--font-body);
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease),
+    color 150ms var(--ease),
+    border-color 150ms var(--ease),
+    box-shadow 150ms var(--ease),
+    transform 60ms var(--ease);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:focus-visible,
+canvas:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.primary {
+  color: #fff;
+  background: var(--accent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.secondary {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.secondary:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+
+/* What setup is doing right now, sat directly above the bar it belongs to. */
+.activity {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.activity[hidden] {
+  display: none;
+}
+
+.action-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.footnote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Game panel
+   ═══════════════════════════════════════════════════════ */
+
+.game-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: clamp(var(--sp-6), 4vw, var(--sp-12));
+  background: var(--elevated);
+}
+
+.game-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-5);
+}
+
+.game-kicker {
+  margin-bottom: var(--sp-2);
+}
+
+h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.015em;
+}
+
+.scoreboard {
+  display: flex;
+  gap: var(--sp-5);
+  color: var(--text-secondary);
+  font: 500 10px/1.3 var(--font-brand);
+  letter-spacing: 0.12em;
+}
+
+.scoreboard span {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.scoreboard strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+/* The playfield is the application's terminal surface: a recessed screen. */
+.game-frame {
+  position: relative;
+  margin: auto 0;
+  overflow: hidden;
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--radius-lg);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
+  cursor: pointer;
+}
+
+.game-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: var(--sp-6);
+  text-align: center;
+  pointer-events: none;
+  background: var(--scrim);
+  transition: opacity 180ms var(--ease);
+}
+
+.game-overlay[hidden] {
+  display: none;
+}
+
+.game-overlay p {
+  margin: 0 0 var(--sp-2);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.game-overlay span {
+  color: rgba(255, 255, 255, 0.72);
+  font: 500 11px/1.4 var(--font-brand);
+  letter-spacing: 0.08em;
+}
+
+.game-help {
+  margin: var(--sp-4) 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Stage variations
+   ═══════════════════════════════════════════════════════ */
+
+html[data-stage='ready'] .eyebrow {
+  color: var(--success);
+}
+
+html[data-stage='ready'] .primary {
+  background: var(--success);
+}
+
+html[data-stage='ready'] .primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--success) 86%, #000);
+}
+
+html[data-stage='error'] .eyebrow {
+  color: var(--danger);
+}
+
+/* The checklist adds a block to a panel that is already full, so the copy above
+   it tightens to keep everything inside the shortest supported window. */
+html[data-checklist='shown'] .status {
+  gap: var(--sp-3);
+  padding: var(--sp-6) 0 var(--sp-4);
+}
+
+html[data-checklist='shown'] h1 {
+  font-size: 26px;
+}
+
+html[data-checklist='shown'] .detail {
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Motion
+   ═══════════════════════════════════════════════════════ */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1800ms;
+  }
+
+  .progress-wrap.is-indeterminate .progress {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
+  }
+}
