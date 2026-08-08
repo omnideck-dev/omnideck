@@ -30,6 +30,13 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.equal(config.productName, 'omnideck');
   assert.equal(config.version, '0.1.0-alpha.8');
   assert.equal(config.bundle.targets, 'all');
+  assert.deepEqual(config.bundle.icon, [
+    'icons/32x32.png',
+    'icons/128x128.png',
+    'icons/128x128@2x.png',
+    'icons/icon.icns',
+    'icons/icon.ico',
+  ]);
   assert.match(packageJson.scripts['build:windows'], /--bundles nsis/);
   assert.match(packageJson.scripts['build:macos'], /--bundles dmg/);
   assert.match(packageJson.scripts['build:linux'], /--bundles appimage deb rpm/);
