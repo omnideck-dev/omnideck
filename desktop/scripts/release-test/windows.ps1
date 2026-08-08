@@ -3,8 +3,12 @@ param(
     [string]$Release = "latest",
     [ValidateSet("Keep", "FirstRun", "Resume", "Update", "Doctor", "Returning")]
     [string]$Scenario = "Keep",
+    [ValidateSet("Auto", "x64", "arm64")]
+    [string]$Architecture = "Auto",
     [switch]$Yes,
-    [switch]$ResetOnly
+    [switch]$ResetOnly,
+    [switch]$Smoke,
+    [switch]$RequireReady
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +19,7 @@ $ContainerName = "omnideck-desktop"
 $HomeVolumeName = "omnideck-desktop-home"
 $StateVolumeName = "omnideck-desktop-state"
 $ConfirmationText = "RESET OMNIDECK"
+if ($RequireReady) { $Smoke = $true }
 
 if (-not $ResetOnly) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -198,26 +203,41 @@ if ($ResetOnly) {
 
 $ReleaseCache = Join-Path $CacheRoot "releases\$SelectedRelease\windows"
 New-Item -ItemType Directory -Path $ReleaseCache -Force | Out-Null
+$HostArchitecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
+    "Arm64" { "arm64" }
+    "X64" { "x64" }
+    default { throw "Published Windows builds do not support this host architecture." }
+}
+if ($Architecture -eq "Auto") {
+    $Architecture = $HostArchitecture
+}
+elseif ($Architecture -ne $HostArchitecture) {
+    throw "Requested $Architecture package does not match this native $HostArchitecture host."
+}
 & gh release download $SelectedRelease `
     --repo $Repository `
-    --pattern "omnideck_*_x64-setup.exe" `
-    --pattern "omnideck_*_x64-setup.exe.sha256" `
+    --pattern "omnideck_*_${Architecture}-setup.exe" `
+    --pattern "omnideck_*_${Architecture}-setup.exe.sha256" `
     --dir $ReleaseCache `
     --skip-existing
 if ($LASTEXITCODE -ne 0) {
     throw "The selected Windows release could not be downloaded."
 }
 
-$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck_*_x64-setup.exe" |
+$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck_*_${Architecture}-setup.exe" |
     Select-Object -First 1
 if (-not $Artifact) {
-    throw "The selected release does not contain a Windows x64 installer."
+    throw "The selected release does not contain a Windows $Architecture installer."
 }
 $ChecksumPath = "$($Artifact.FullName).sha256"
 $ExpectedHash = ((Get-Content -LiteralPath $ChecksumPath -Raw).Trim() -split "\s+")[0]
 $ActualHash = (Get-FileHash -LiteralPath $Artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ExpectedHash.ToLowerInvariant() -ne $ActualHash) {
     throw "The downloaded installer did not match its published SHA-256 checksum."
+}
+& gh attestation verify $Artifact.FullName --repo $Repository
+if ($LASTEXITCODE -ne 0) {
+    throw "The downloaded installer did not have valid GitHub provenance."
 }
 
 Write-Host "Installing $SelectedRelease..."
@@ -257,4 +277,12 @@ if (-not $Application) {
 }
 
 Write-Host "Launching $SelectedRelease with scenario '$Scenario' using normal user state."
+if ($Smoke) {
+    $SmokeArguments = @{
+        Application = $Application
+    }
+    if ($RequireReady) { $SmokeArguments.RequireReady = $true }
+    & (Join-Path $PSScriptRoot "..\..\tests\hardware\run.ps1") @SmokeArguments
+    exit 0
+}
 Start-Process -FilePath $Application -Wait

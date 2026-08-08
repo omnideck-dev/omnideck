@@ -20,6 +20,8 @@ htmlcov/
 .pytest_cache/
 test-results/
 playwright-report/
+artifacts/desktop-hardware/
+artifacts/desktop-release-contract/
 
 # Type checking and linting caches
 .mypy_cache/

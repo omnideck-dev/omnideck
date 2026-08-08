@@ -29,8 +29,10 @@ still enforced.
 
 ## Validation
 
-Run `pnpm test`, then `cargo test` and `cargo clippy --all-targets -- -D warnings`
-from `src-tauri`. Native installer builds are:
+[`TESTING.md`](TESTING.md) defines the authoritative test layers, matrices, and
+promotion gates. [`RELEASING.md`](RELEASING.md) defines tagging and publication.
+Run `pnpm run verify` for the canonical local source gate. Native installer
+builds are:
 
 - `pnpm run build:windows` and `pnpm run build:windows:arm64`
 - `pnpm run build:macos` and `pnpm run build:macos:x64`
@@ -39,3 +41,8 @@ from `src-tauri`. Native installer builds are:
 Windows produces NSIS, macOS produces DMG, and Linux produces AppImage, DEB,
 and RPM packages. Every platform must run its native packaged smoke test before
 a release; cross-compiling an installer is not a substitute for that gate.
+
+Static release-asset checks live under `tests/releasecontract`, read-only native
+package smoke lives under `tests/hardware`, and guided real-OS procedures live
+under `tests/manual`. Existing release download/reset helpers remain under
+`scripts/release-test`.

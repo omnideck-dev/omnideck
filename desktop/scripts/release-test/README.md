@@ -1,14 +1,15 @@
 # Desktop release scenario testing
 
-These scripts download and launch a published desktop release:
+These scripts download, verify, and launch a published desktop release:
 
 - `linux.sh`
 - `macos.sh`
 - `windows.ps1`
 
-They require an authenticated [GitHub CLI](https://cli.github.com/) session.
+They verify both the published SHA-256 file and GitHub provenance, and require
+an authenticated [GitHub CLI](https://cli.github.com/) session.
 Use `--release choose` / `-Release choose` to select a recent release, or pass a
-tag such as `v0.1.0-alpha.6`.
+tag such as `v0.1.0-alpha.8`.
 
 These scripts do not compile or launch the source tree. `windows.ps1` downloads
 and installs a published GitHub release. `reset-host.ps1` only resets the host;
@@ -24,9 +25,16 @@ Running a second, isolated WSL-backed Podman machine on the same Windows host
 can interfere with the real runtime, so it does not represent the experience we
 want to test.
 
-`CHECKLIST.md` is the manual release pass for elevation prompts, operating
-system install warnings, restarts, and real-screen behavior that CI cannot
-exercise.
+The authoritative manual passes for elevation prompts, operating-system trust
+warnings, restarts, recovery, desktop behavior, and visual fit live under
+[`desktop/tests/manual`](../../tests/manual/README.md). `CHECKLIST.md` is a
+compatibility pointer for older tester bookmarks.
+
+Pass `--smoke` on Linux/macOS or `-Smoke` on Windows to run the packaged
+read-only sidecar proof instead of leaving the app open for a manual pass. Add
+`--require-ready` or `-RequireReady` when a ready Podman runtime is part of the
+test contract. Smoke evidence is written beneath
+`artifacts/desktop-hardware/`.
 
 ## Scenarios
 
@@ -116,5 +124,11 @@ Windows examples:
 
 ```powershell
 .\windows.ps1 -Scenario FirstRun
-.\windows.ps1 -Release v0.1.0-alpha.6 -Scenario Update
+.\windows.ps1 -Release v0.1.0-alpha.8 -Scenario Update
+.\windows.ps1 -Release v0.1.0-alpha.8 -Scenario Keep -Smoke
 ```
+
+The helpers select x64 or ARM64 artifacts from the native host architecture.
+Windows also accepts `-Architecture x64` or `-Architecture arm64` for an
+explicit dedicated-machine run and rejects a value that does not match the
+native host.
