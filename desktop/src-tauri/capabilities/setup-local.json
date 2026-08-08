@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup-local",
+  "description": "The local bundled setup UI may drive the typed omnideck lifecycle.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": ["read-only-cli"]
+}

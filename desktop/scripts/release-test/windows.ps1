@@ -3,7 +3,8 @@ param(
     [string]$Release = "latest",
     [ValidateSet("Keep", "FirstRun", "Resume", "Update", "Doctor", "Returning")]
     [string]$Scenario = "Keep",
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$ResetOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,12 +16,14 @@ $HomeVolumeName = "omnideck-desktop-home"
 $StateVolumeName = "omnideck-desktop-state"
 $ConfirmationText = "RESET OMNIDECK"
 
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    throw "GitHub CLI (gh) is required."
-}
-& gh auth status *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "GitHub CLI is not authenticated. Run: gh auth login"
+if (-not $ResetOnly) {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required."
+    }
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub CLI is not authenticated. Run: gh auth login"
+    }
 }
 
 function Select-ReleaseTag {
@@ -157,7 +160,7 @@ if (-not $ProfileRoot.Equals(
     throw "Refusing to modify unexpected application state path: $ProfileRoot"
 }
 
-$SelectedRelease = Select-ReleaseTag $Release
+$SelectedRelease = if ($ResetOnly) { $null } else { Select-ReleaseTag $Release }
 
 switch ($Scenario) {
     "FirstRun" {
@@ -188,19 +191,24 @@ switch ($Scenario) {
     }
 }
 
+if ($ResetOnly) {
+    Write-Host "Reset complete. No release was downloaded or installed."
+    exit 0
+}
+
 $ReleaseCache = Join-Path $CacheRoot "releases\$SelectedRelease\windows"
 New-Item -ItemType Directory -Path $ReleaseCache -Force | Out-Null
 & gh release download $SelectedRelease `
     --repo $Repository `
-    --pattern "omnideck-*-win-x64.exe" `
-    --pattern "omnideck-*-win-x64.exe.sha256" `
+    --pattern "omnideck_*_x64-setup.exe" `
+    --pattern "omnideck_*_x64-setup.exe.sha256" `
     --dir $ReleaseCache `
     --skip-existing
 if ($LASTEXITCODE -ne 0) {
     throw "The selected Windows release could not be downloaded."
 }
 
-$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck-*-win-x64.exe" |
+$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck_*_x64-setup.exe" |
     Select-Object -First 1
 if (-not $Artifact) {
     throw "The selected release does not contain a Windows x64 installer."
@@ -229,6 +237,7 @@ if ($AutoLaunched) {
 }
 
 $ExpectedApplications = @(
+    (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
     (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
 )
 $Application = $ExpectedApplications |
