@@ -11,10 +11,22 @@
     box-shadow: var(--shadow-md);
 }
 
+/* SystemSettings supplies the shared card when update controls are grouped. */
+.grouped {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
 /* An update waiting is the one state worth drawing the eye to. */
 .status[data-available='true'] {
     border-color: var(--accent);
     background: var(--accent-muted);
+}
+
+.grouped[data-available='true'] {
+    border: none;
 }
 
 .info {

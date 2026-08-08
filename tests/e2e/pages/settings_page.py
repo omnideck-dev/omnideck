@@ -75,6 +75,10 @@ class SystemTab:
     def compaction_model_picker(self) -> ModelPickerLocator:
         return ModelPickerLocator(self.page.get_by_test_id("compaction-model-picker"))
 
+    @property
+    def title_model_picker(self) -> ModelPickerLocator:
+        return ModelPickerLocator(self.page.get_by_test_id("title-model-picker"))
+
     def open_vision_advanced(self) -> "SystemTab":
         self.page.get_by_test_id("vision-advanced-toggle").click()
         self.page.get_by_test_id("vision-advanced-panel").wait_for(state="visible")
