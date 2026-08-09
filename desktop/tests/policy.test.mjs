@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -23,6 +23,7 @@ const electronDash = await read('./fixtures/electron-setup/agent-dash.js');
 const css = await read('../web/setup.css');
 const setup = await read('../web/setup.js');
 const dash = await read('../web/agent-dash.js');
+const iconSource = await read('../src-tauri/icons/source.svg');
 
 test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
@@ -40,6 +41,22 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.match(packageJson.scripts['build:windows'], /--bundles nsis/);
   assert.match(packageJson.scripts['build:macos'], /--bundles dmg/);
   assert.match(packageJson.scripts['build:linux'], /--bundles appimage deb rpm/);
+});
+
+test('bundles the blue signal icon with readable Linux package assets', async () => {
+  assert.equal(config.build.beforeBundleCommand, 'node scripts/prepare-icon-assets.mjs');
+  assert.equal(packageJson.scripts['prepare:icons'], 'node scripts/prepare-icon-assets.mjs');
+  assert.match(iconSource, /fill="#2563eb"/);
+  assert.match(iconSource, /fill="#3b82f6"/);
+  assert.match(iconSource, /fill="#60a5fa"/);
+  assert.doesNotMatch(iconSource, /#7c5cff|#37d5d1|#f4b860/i);
+
+  if (process.platform !== 'win32') {
+    for (const icon of config.bundle.icon) {
+      const metadata = await stat(new URL(`../src-tauri/${icon}`, import.meta.url));
+      assert.equal(metadata.mode & 0o044, 0o044, `${icon} must be readable from a system package`);
+    }
+  }
 });
 
 test('local capability contains no generic or remote authority', () => {
@@ -155,4 +172,12 @@ test('setup DOM, CSS, behavior, and visible text are byte-for-byte Electron pari
     .replace('; connect-src ipc: http://ipc.localhost', '')
     .replace('    <script src="./host-adapter.js"></script>\n', '');
   assert.equal(normalizedTauriHtml, electronHtml.replaceAll('\r\n', '\n'));
+});
+
+test('setup progress and diagnostics stay in the primary surface', () => {
+  assert.match(setup, /progressContext\.hidden = !hasStep/);
+  assert.match(setup, /Step \$\{state\.step\} of \$\{state\.totalSteps\}/);
+  assert.doesNotMatch(setup, /secondaryAction === 'show-logs'/);
+  assert.match(setup, /technicalDetails\.open = false/);
+  assert.match(setup, /state\.stage === 'preparing'/);
 });

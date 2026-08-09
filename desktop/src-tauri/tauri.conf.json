@@ -4,6 +4,7 @@
   "version": "0.1.0-alpha.8",
   "identifier": "dev.omnideck.desktop",
   "build": {
+    "beforeBundleCommand": "node scripts/prepare-icon-assets.mjs",
     "frontendDist": "../web"
   },
   "app": {

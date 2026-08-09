@@ -8,7 +8,7 @@ use std::{
     fmt, fs,
     net::TcpListener,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
     },
     time::Duration,
@@ -56,6 +56,7 @@ struct BridgeError {
     code: String,
     message: String,
     stderr: Option<String>,
+    stage: Option<String>,
 }
 
 impl BridgeError {
@@ -64,6 +65,7 @@ impl BridgeError {
             code: code.into(),
             message: message.into(),
             stderr: None,
+            stage: None,
         }
     }
 
@@ -379,6 +381,54 @@ async fn run_fixed(app: &AppHandle, operation: FixedOperation) -> BridgeResult<P
     run_cli(app, operation.args(), operation.timeout(), |_| {}).await
 }
 
+fn setup_state_from_cli_event(
+    reason: &str,
+    event: &serde_json::Value,
+    last_step: &mut Option<String>,
+) -> Option<SetupState> {
+    let stage = event.get("stage").and_then(|value| value.as_str())?;
+    let state = event
+        .get("state")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let event_step = event
+        .get("substage")
+        .and_then(|value| value.as_str())
+        .filter(|value| parity::step_index(value).is_some())
+        .map(str::to_owned);
+    let step = event_step
+        .or_else(|| last_step.clone())
+        .or_else(|| match stage {
+            "environment" => Some("secure-space".to_owned()),
+            "download" | "pull_image" => Some("app-download".to_owned()),
+            "startup" => Some("startup".to_owned()),
+            _ => Some(parity::first_step().to_owned()),
+        });
+    if let Some(step) = &step {
+        *last_step = Some(step.clone());
+    }
+    let progress = event.get("progress").and_then(|value| value.as_f64());
+    let activity = event
+        .get("activity")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+        .filter(|value| !value.is_empty());
+    let status = event
+        .get("status")
+        .and_then(|value| value.as_str())
+        .or_else(|| event.get("detail").and_then(|value| value.as_str()))
+        .map(str::to_owned)
+        .filter(|value| !value.is_empty());
+    let progress = if state == "done" { Some(1.0) } else { progress };
+    Some(parity::working_step(
+        reason,
+        step.as_deref(),
+        progress,
+        activity,
+        status,
+    ))
+}
+
 fn is_local_setup_url(url: &tauri::Url) -> bool {
     matches!(
         (url.scheme(), url.host_str()),
@@ -561,7 +611,7 @@ fn cli_error(raw: &str) -> Option<BridgeError> {
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .find_map(|value| {
             let error = value.get("error")?;
-            Some(BridgeError::new(
+            let mut bridge_error = BridgeError::new(
                 error
                     .get("code")
                     .and_then(|value| value.as_str())
@@ -570,7 +620,15 @@ fn cli_error(raw: &str) -> Option<BridgeError> {
                     .get("message")
                     .and_then(|value| value.as_str())
                     .unwrap_or("The bundled CLI command failed."),
-            ))
+            );
+            bridge_error.stage = value
+                .get("stage")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            if let Some(detail) = error.get("detail").and_then(|value| value.as_str()) {
+                bridge_error = bridge_error.with_stderr(detail.to_owned());
+            }
+            Some(bridge_error)
         })
 }
 
@@ -758,10 +816,27 @@ fn send_state(
 }
 
 fn failure_kind(error: &BridgeError) -> &'static str {
+    failure_kind_for(platform::KEY, error)
+}
+
+fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
     match error.code.as_str() {
         "RESTART_REQUIRED" => "restart",
+        "PERMISSION_CANCELLED" => match platform {
+            "win32" => "windowsPermissionCancelled",
+            "darwin" => "macosPermissionCancelled",
+            _ => "permission",
+        },
         "PERMISSION_DENIED" => "permission",
-        "DOWNLOAD_FAILED" => "downloads",
+        "WINDOWS_FEATURES_FAILED" => "windowsFeatures",
+        "PACKAGE_INDEX_FAILED" => "packageIndex",
+        "INSTALLER_FAILED" => match platform {
+            "win32" => "windowsInstaller",
+            "darwin" => "macosInstaller",
+            _ => "linuxInstaller",
+        },
+        "DOWNLOAD_FAILED" if error.stage.as_deref() == Some("pull_image") => "downloads",
+        "DOWNLOAD_FAILED" => "podmanDownload",
         "UNSUPPORTED" => "support",
         "RUNTIME_SETUP_FAILED" | "ENGINE_NOT_FOUND" | "ENGINE_NOT_READY" => "environment",
         "PORT_IN_USE" | "CONTAINER_CONFLICT" | "APP_HEALTH_TIMEOUT" => "startup",
@@ -1042,13 +1117,20 @@ async fn begin_setup(
         .read()
         .map(|value| value.clone())
         .unwrap_or_else(|_| "resume".into());
+    let reached_phase = Arc::new(AtomicUsize::new(0));
     let result = async {
         let manifest = image_manifest()?;
         save_setup_record("in-progress", &reason, &manifest)?;
         send_state(
             &host,
             &on_event,
-            parity::working(&reason, parity::phase_index("software"), 0.0),
+            parity::working_step(
+                &reason,
+                Some(parity::first_step()),
+                None,
+                None,
+                Some("Starting setup".into()),
+            ),
         )?;
         validate_bundled_cli(&app).await?;
 
@@ -1056,29 +1138,26 @@ async fn begin_setup(
         if !runtime.ready {
             let channel = on_event.clone();
             let reason_for_events = reason.clone();
+            let reached_phase_for_events = reached_phase.clone();
+            let mut last_step = None;
             let ensured = run_cli(
                 &app,
                 FixedOperation::RuntimeEnsure.args(),
                 SETUP_TIMEOUT,
                 move |line| {
                     if let Ok(event) = serde_json::from_str::<serde_json::Value>(line) {
-                        let phase = event
-                            .get("stage")
-                            .and_then(|value| value.as_str())
-                            .and_then(parity::phase_index);
-                        let fraction = event
-                            .get("progress")
-                            .and_then(|value| value.as_f64())
-                            .unwrap_or_else(|| {
-                                if event.get("state").and_then(|value| value.as_str())
-                                    == Some("done")
-                                {
-                                    1.0
-                                } else {
-                                    0.0
-                                }
-                            });
-                        let _ = channel.send(parity::working(&reason_for_events, phase, fraction));
+                        if let Some(state) =
+                            setup_state_from_cli_event(&reason_for_events, &event, &mut last_step)
+                        {
+                            if let Some(phase) = event
+                                .get("stage")
+                                .and_then(|value| value.as_str())
+                                .and_then(parity::phase_index)
+                            {
+                                reached_phase_for_events.fetch_max(phase, Ordering::AcqRel);
+                            }
+                            let _ = channel.send(state);
+                        }
                     }
                 },
             )
@@ -1094,10 +1173,17 @@ async fn begin_setup(
         }
 
         if let Some(environment) = parity::phase_index("environment") {
+            reached_phase.fetch_max(environment, Ordering::AcqRel);
             send_state(
                 &host,
                 &on_event,
-                parity::working(&reason, Some(environment), 1.0),
+                parity::working_step(
+                    &reason,
+                    Some("secure-space"),
+                    Some(1.0),
+                    Some("Preparing a secure space to run in…".into()),
+                    Some("Secure space ready".into()),
+                ),
             )?;
         }
         let mut port = reserve_and_persist_port(false)?;
@@ -1126,26 +1212,28 @@ async fn begin_setup(
             ];
             let channel = on_event.clone();
             let reason_for_events = reason.clone();
+            let reached_phase_for_events = reached_phase.clone();
+            let mut last_step = Some("app-download".to_owned());
             let environment = run_cli(&app, args, SETUP_TIMEOUT, move |line| {
                 if let Ok(event) = serde_json::from_str::<serde_json::Value>(line) {
-                    let stage = event
-                        .get("stage")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("");
-                    let phase_id = if stage == "pull_image" {
-                        "download"
-                    } else {
-                        "startup"
-                    };
-                    let fraction = event
-                        .get("progress")
-                        .and_then(|value| value.as_f64())
-                        .unwrap_or(0.0);
-                    let _ = channel.send(parity::working(
-                        &reason_for_events,
-                        parity::phase_index(phase_id),
-                        fraction,
-                    ));
+                    if let Some(state) =
+                        setup_state_from_cli_event(&reason_for_events, &event, &mut last_step)
+                    {
+                        if let Some(phase) = event
+                            .get("stage")
+                            .and_then(|value| value.as_str())
+                            .and_then(|stage| {
+                                if stage == "pull_image" {
+                                    parity::phase_index("download")
+                                } else {
+                                    parity::phase_index("startup")
+                                }
+                            })
+                        {
+                            reached_phase_for_events.fetch_max(phase, Ordering::AcqRel);
+                        }
+                        let _ = channel.send(state);
+                    }
                 }
             })
             .await?;
@@ -1161,8 +1249,18 @@ async fn begin_setup(
         send_state(
             &host,
             &on_event,
-            parity::working(&reason, parity::phase_index("startup"), 0.5),
+            parity::working_step(
+                &reason,
+                Some("startup"),
+                Some(0.5),
+                Some("Starting omnideck and checking its connection…".into()),
+                Some("Checking 127.0.0.1".into()),
+            ),
         )?;
+        reached_phase.fetch_max(
+            parity::phase_index("startup").unwrap_or(0),
+            Ordering::AcqRel,
+        );
         let status = instance_status(&app).await?;
         let actual_port = status
             .web_ui_port
@@ -1180,11 +1278,15 @@ async fn begin_setup(
     host.setup_running.store(false, Ordering::Release);
     if let Err(error) = result {
         platform::append_diagnostic(&format!("[setup failure] {}", error.technical()));
-        let reached = parity::phase_index("startup").unwrap_or(3);
         send_state(
             &host,
             &on_event,
-            parity::error(failure_kind(&error), &reason, reached, error.technical()),
+            parity::error(
+                failure_kind(&error),
+                &reason,
+                reached_phase.load(Ordering::Acquire),
+                error.technical(),
+            ),
         )?;
     }
     Ok(())
@@ -1243,7 +1345,6 @@ fn run_action(
             app.exit(0);
             Ok(())
         }
-        "show-logs" => platform::reveal_log(),
         "supported-systems" => platform::open_url(SUPPORTED_SYSTEMS_URL),
         "download" => platform::open_url(DOWNLOAD_URL),
         "restart" => {
@@ -1440,6 +1541,24 @@ mod tests {
         append_bounded(&mut output, &[b'a'; 4], 5, "stdout").unwrap();
         append_bounded(&mut output, b"b", 5, "stdout").unwrap();
         assert!(append_bounded(&mut output, b"c", 5, "stdout").is_err());
+    }
+
+    #[test]
+    fn permission_cancellation_copy_is_platform_specific() {
+        let error = BridgeError::new("PERMISSION_CANCELLED", "approval cancelled");
+        assert_eq!(
+            failure_kind_for("win32", &error),
+            "windowsPermissionCancelled"
+        );
+        assert_eq!(
+            failure_kind_for("darwin", &error),
+            "macosPermissionCancelled"
+        );
+
+        let installer = BridgeError::new("INSTALLER_FAILED", "installer failed");
+        assert_eq!(failure_kind_for("win32", &installer), "windowsInstaller");
+        assert_eq!(failure_kind_for("darwin", &installer), "macosInstaller");
+        assert_eq!(failure_kind_for("linux", &installer), "linuxInstaller");
     }
 
     #[test]

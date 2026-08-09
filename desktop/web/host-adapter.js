@@ -43,7 +43,26 @@
     },
   });
 
+  function reportBootstrapFailure(error) {
+    // Reuse the setup screen's existing action-error affordance. This keeps a
+    // rejected automatic bootstrap visible without adding a new UI state or
+    // changing the setup copy/DOM contract.
+    const actionError = document.getElementById('action-error');
+    if (!actionError) return;
+    actionError.textContent = String(error?.message || error);
+    actionError.hidden = false;
+  }
+
+  async function bootstrap() {
+    try {
+      const result = await run('bootstrap', { onEvent: stateChannel() });
+      if (result?.action === 'setup') await beginSetup(result.reason);
+    } catch (error) {
+      reportBootstrapFailure(error);
+    }
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => void run('bootstrap', { onEvent: stateChannel() }), 0);
+    setTimeout(() => void bootstrap(), 0);
   }, { once: true });
 })();
