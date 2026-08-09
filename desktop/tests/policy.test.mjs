@@ -30,7 +30,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-alpha.9');
+  assert.equal(config.version, '0.1.0-alpha.10');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
