@@ -1,25 +1,28 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  binaryRoot,
+  manifest,
+  selectSidecarTargets,
+  sha256,
+  sidecarFilename,
+} from './sidecar-contract.mjs';
 
-const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
-const binaryRoot = path.resolve(scriptRoot, '../src-tauri/binaries');
-const manifest = JSON.parse(await readFile(path.join(binaryRoot, 'vendor-manifest.json'), 'utf8'));
 const archiveRoot = process.env.OMNIDECK_CLI_ARCHIVE_DIR
   ? path.resolve(process.env.OMNIDECK_CLI_ARCHIVE_DIR)
   : null;
-
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function filename(targetTriple) {
-  return `omnideck-cli-${targetTriple}${targetTriple.includes('windows') ? '.exe' : ''}`;
-}
 
 function run(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true });
@@ -45,15 +48,6 @@ async function findExtractedBinary(root, expectedName) {
   return candidates[0];
 }
 
-function selectTargets(requested) {
-  if (requested.length === 0) return manifest.targets;
-  const known = new Map(manifest.targets.map((target) => [target.targetTriple, target]));
-  return requested.map((targetTriple) => {
-    assert(known.has(targetTriple), `unsupported CLI target: ${targetTriple}`);
-    return known.get(targetTriple);
-  });
-}
-
 async function releaseAsset(name) {
   if (archiveRoot) return readFile(path.join(archiveRoot, name));
   const url = `${manifest.downloadBaseUrl}/${name}`;
@@ -76,7 +70,9 @@ assert.match(manifest.downloadBaseUrl, /^https:\/\/github\.com\/omnideck-dev\/cl
 
 await mkdir(binaryRoot, { recursive: true });
 await mkdir(path.join(binaryRoot, 'sbom'), { recursive: true });
-const selected = selectTargets(process.argv.slice(2).filter((argument) => argument !== '--'));
+const selected = selectSidecarTargets(
+  process.argv.slice(2).filter((argument) => argument !== '--'),
+);
 
 for (const target of selected) {
   const sbomDestination = path.join(binaryRoot, 'sbom', target.sbom);
@@ -92,7 +88,7 @@ for (const target of selected) {
     await writeFile(sbomDestination, sbom);
   }
 
-  const destination = path.join(binaryRoot, filename(target.targetTriple));
+  const destination = path.join(binaryRoot, sidecarFilename(target.targetTriple));
   try {
     if (sha256(await readFile(destination)) === target.binarySha256) {
       process.stdout.write(`Using verified ${target.targetTriple} sidecar.\n`);

@@ -1,22 +1,14 @@
 import assert from 'node:assert/strict';
 import { chmod, readdir, readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const scriptRoot = path.dirname(fileURLToPath(import.meta.url));
-const binaryRoot = path.resolve(scriptRoot, '../src-tauri/binaries');
-const manifest = JSON.parse(await readFile(path.join(binaryRoot, 'vendor-manifest.json'), 'utf8'));
-
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function filename(targetTriple) {
-  const extension = targetTriple.includes('windows') ? '.exe' : '';
-  return `omnideck-cli-${targetTriple}${extension}`;
-}
+import {
+  binaryRoot,
+  manifest,
+  selectSidecarTargets,
+  sha256,
+  sidecarFilename,
+} from './sidecar-contract.mjs';
 
 function verifyExecutableHeader(targetTriple, contents) {
   if (targetTriple.includes('windows')) {
@@ -43,17 +35,11 @@ assert.equal(manifest.schemaVersion, 1);
 assert.equal(manifest.targets.length, 6);
 assert.equal(new Set(manifest.targets.map(({ targetTriple }) => targetTriple)).size, 6);
 
-const knownTargets = new Map(manifest.targets.map((target) => [target.targetTriple, target]));
 const requestedTargets = process.argv.slice(2).filter((argument) => argument !== '--');
-const selectedTargets = requestedTargets.length === 0
-  ? manifest.targets
-  : requestedTargets.map((targetTriple) => {
-      assert(knownTargets.has(targetTriple), `unsupported CLI target: ${targetTriple}`);
-      return knownTargets.get(targetTriple);
-    });
+const selectedTargets = selectSidecarTargets(requestedTargets);
 
 for (const target of selectedTargets) {
-  const executable = path.join(binaryRoot, filename(target.targetTriple));
+  const executable = path.join(binaryRoot, sidecarFilename(target.targetTriple));
   const contents = await readFile(executable);
   assert.equal(sha256(contents), target.binarySha256, `${target.targetTriple} binary checksum mismatch`);
   verifyExecutableHeader(target.targetTriple, contents);
@@ -62,20 +48,25 @@ for (const target of selectedTargets) {
   assert.equal(sha256(sbom), target.sbomSha256, `${target.targetTriple} SBOM checksum mismatch`);
 }
 
-const expectedFiles = new Set(manifest.targets.map(({ targetTriple }) => filename(targetTriple)));
+const expectedFiles = new Set(
+  manifest.targets.map(({ targetTriple }) => sidecarFilename(targetTriple)),
+);
 const actualFiles = (await readdir(binaryRoot)).filter((entry) => entry.startsWith('omnideck-cli-'));
 for (const entry of actualFiles) {
   assert(expectedFiles.has(entry), `unexpected sidecar is not pinned by the manifest: ${entry}`);
 }
 for (const target of selectedTargets) {
-  assert(actualFiles.includes(filename(target.targetTriple)), `${target.targetTriple} sidecar is missing`);
+  assert(
+    actualFiles.includes(sidecarFilename(target.targetTriple)),
+    `${target.targetTriple} sidecar is missing`,
+  );
 }
 
 const hostArch = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : null;
 const hostPlatform = { win32: 'pc-windows-msvc', darwin: 'apple-darwin', linux: 'unknown-linux-gnu' }[process.platform];
 const hostTarget = hostArch && hostPlatform ? `${hostArch}-${hostPlatform}` : null;
 if (hostTarget && selectedTargets.some(({ targetTriple }) => targetTriple === hostTarget)) {
-  const executable = path.join(binaryRoot, filename(hostTarget));
+  const executable = path.join(binaryRoot, sidecarFilename(hostTarget));
   if (process.platform !== 'win32') await chmod(executable, 0o755);
   const result = spawnSync(executable, ['--version'], { encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stderr || 'native sidecar --version failed');
