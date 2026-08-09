@@ -352,7 +352,12 @@ set -e
   >/dev/null 2>&1 || true
 if "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip"; then
   mkdir -p "${evidence_dir}/guest"
-  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest"
+  unzip_status=0
+  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest" || unzip_status=$?
+  case "${unzip_status}" in
+    0|1) ;;
+    *) printf 'Could not extract Windows evidence (unzip exit %s).\n' "${unzip_status}" >&2; exit "${unzip_status}" ;;
+  esac
 fi
 
 [[ -f "${evidence_dir}/guest/summary.json" ]] || exit "${test_status}"

@@ -278,7 +278,11 @@ switch ($Phase) {
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         $State.status = "in-progress"
         $State.reason = "first-run"
-        $State | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
+        [IO.File]::WriteAllText(
+            $StatePath,
+            (($State | ConvertTo-Json) + "`n"),
+            [Text.UTF8Encoding]::new($false)
+        )
         Invoke-Engine rm --force $ContainerName | Out-Null
     }
     "Update" {
@@ -286,7 +290,11 @@ switch ($Phase) {
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         $State.status = "complete"
         $State.appVersion = "0.0.0-e2e-older"
-        $State | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
+        [IO.File]::WriteAllText(
+            $StatePath,
+            (($State | ConvertTo-Json) + "`n"),
+            [Text.UTF8Encoding]::new($false)
+        )
     }
     "Final" {
         Stop-Omnideck
