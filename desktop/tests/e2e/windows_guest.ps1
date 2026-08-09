@@ -1,0 +1,351 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("Prepare", "Runtime", "Doctor", "Resume", "Update", "Final")]
+    [string]$Phase,
+    [Parameter(Mandatory = $true)]
+    [string]$WorkDir,
+    [string]$ArtifactSha256,
+    [string]$ExpectedCliVersion,
+    [string]$ExpectedCliCommit
+)
+
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$WorkDir = [System.IO.Path]::GetFullPath($WorkDir)
+$Results = Join-Path $WorkDir "results"
+$UserData = Join-Path $WorkDir "user-data"
+$CliConfig = Join-Path $WorkDir "cli-config"
+$Installer = Join-Path $WorkDir "candidate-setup.exe"
+$ApplicationFile = Join-Path $WorkDir "application-path.txt"
+$StatePath = Join-Path $UserData "setup-state.json"
+$ContainerName = "omnideck-desktop"
+$HomeVolume = "omnideck-desktop-home"
+$StateVolume = "omnideck-desktop-state"
+$MachineName = "omnideck-runtime"
+
+New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
+$env:OMNIDECK_CONFIG_DIR = $CliConfig
+
+function Get-PodmanPath {
+    $Command = Get-Command podman.exe -ErrorAction SilentlyContinue
+    if ($Command) { return $Command.Source }
+    $Candidates = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Podman\podman.exe"),
+        (Join-Path $env:ProgramFiles "Podman\podman.exe"),
+        (Join-Path $env:ProgramFiles "RedHat\Podman\podman.exe")
+    )
+    return $Candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+}
+
+function Invoke-Engine {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+    $Podman = Get-PodmanPath
+    if (-not $Podman) { throw "Podman is not installed." }
+    & $Podman --connection $MachineName @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Podman command failed: $($Arguments -join ' ')"
+    }
+}
+
+function Start-PodmanMachine {
+    $Podman = Get-PodmanPath
+    if (-not $Podman) { throw "Podman is not installed." }
+    $Log = Join-Path $Results "podman-machine-start.txt"
+    $Distribution = "podman-$MachineName"
+    $HostDns = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" |
+        Where-Object { $_.NextHop -and $_.NextHop -ne "0.0.0.0" } |
+        Sort-Object RouteMetric,InterfaceMetric |
+        ForEach-Object {
+            (Get-DnsClientServerAddress -AddressFamily IPv4 -InterfaceIndex $_.InterfaceIndex).ServerAddresses
+        } |
+        Where-Object { $_ -and $_ -ne "127.0.0.1" -and $_ -ne "192.168.127.1" } |
+        Select-Object -First 1
+    if (-not $HostDns) { throw "The Windows default-route DNS server was not found." }
+    $ResolverUpdated = $false
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Podman machine start $MachineName *>> $Log
+        $Deadline = [DateTime]::UtcNow.AddMinutes(3)
+        while ([DateTime]::UtcNow -lt $Deadline) {
+            & $Podman --connection $MachineName info *> $null
+            if ($LASTEXITCODE -eq 0) {
+                if (-not $ResolverUpdated) {
+                    # Podman's user-mode WSL resolver can be written with the
+                    # unreachable 192.168.127.1 proxy. Pin the VM guest's real
+                    # default-route DNS in a regular resolv.conf and disable
+                    # WSL regeneration so it stays valid for the whole journey.
+                    $ResolverCommand = "printf '[network]\ngenerateResolvConf=false\n' > /etc/wsl.conf; rm -f /etc/resolv.conf; printf 'nameserver $HostDns\noptions timeout:2 attempts:3\n' > /etc/resolv.conf"
+                    & wsl.exe -d $Distribution -u root -- sh -c $ResolverCommand *>> $Log
+                    $ResolverUpdated = $true
+                }
+                & wsl.exe -d $Distribution -u root -- getent hosts ghcr.io *>> $Log
+                if ($LASTEXITCODE -eq 0) {
+                    & wsl.exe -d $Distribution -u root -- cat /etc/resolv.conf *>> $Log
+                    return
+                }
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    throw "Podman machine $MachineName did not become ready."
+}
+
+function Remove-CheckpointResources {
+    $Podman = Get-PodmanPath
+    if (-not $Podman) { throw "Podman is not installed." }
+    $Log = Join-Path $Results "preflight.txt"
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Podman --connection $MachineName rm --force $ContainerName *>> $Log
+        & $Podman --connection $MachineName volume rm --force $HomeVolume $StateVolume *>> $Log
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+}
+
+function Write-Inventory {
+    param([string]$Suffix)
+    $Lines = [System.Collections.Generic.List[string]]::new()
+    $Lines.Add("timestamp=$([DateTime]::UtcNow.ToString('o'))")
+    $Lines.Add("windows=$([Environment]::OSVersion.VersionString)")
+    $Lines.Add("architecture=$([Runtime.InteropServices.RuntimeInformation]::OSArchitecture)")
+    $Lines.Add("webview2=$((Get-WebViewVersion))")
+    $Podman = Get-PodmanPath
+    if ($Podman) {
+        $Lines.Add((& $Podman --version | Out-String).Trim())
+        foreach ($Line in @(& $Podman machine list --format "machine={{.Name}}|{{.Running}}" 2>&1)) {
+            if ($null -ne $Line) { $Lines.Add([string]$Line) }
+        }
+        foreach ($Line in @(& $Podman --connection $MachineName ps --all --format "container={{.Names}}|{{.Status}}|{{.Image}}" 2>&1)) {
+            if ($null -ne $Line) { $Lines.Add([string]$Line) }
+        }
+        foreach ($Line in @(& $Podman --connection $MachineName volume ls --format "volume={{.Name}}" 2>&1)) {
+            if ($null -ne $Line) { $Lines.Add([string]$Line) }
+        }
+        foreach ($Line in @(& $Podman --connection $MachineName images --format "image={{.Repository}}:{{.Tag}}|{{.Digest}}|{{.ID}}" 2>&1)) {
+            if ($null -ne $Line) { $Lines.Add([string]$Line) }
+        }
+    }
+    else {
+        $Lines.Add("podman=absent")
+    }
+    [IO.File]::WriteAllLines((Join-Path $Results "inventory-$Suffix.txt"), $Lines)
+}
+
+function Get-WebViewVersion {
+    $Roots = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application"),
+        (Join-Path $env:ProgramFiles "Microsoft\EdgeWebView\Application"),
+        (Join-Path $env:LOCALAPPDATA "Microsoft\EdgeWebView\Application")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    $Versions = foreach ($Root in $Roots) {
+        Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            ForEach-Object { [version]$_.Name }
+    }
+    $Version = $Versions | Sort-Object -Descending | Select-Object -First 1
+    if (-not $Version) { throw "Microsoft Edge WebView2 Runtime was not found." }
+    return $Version.ToString()
+}
+
+function Install-EdgeDriver {
+    $Version = Get-WebViewVersion
+    $DriverDirectory = Join-Path $WorkDir "edgedriver"
+    $Driver = Join-Path $DriverDirectory "msedgedriver.exe"
+    if (Test-Path -LiteralPath $Driver) { return $Driver }
+    New-Item -ItemType Directory -Path $DriverDirectory -Force | Out-Null
+    $Archive = Join-Path $WorkDir "edgedriver.zip"
+    $Urls = @(
+        "https://msedgedriver.microsoft.com/$Version/edgedriver_win64.zip",
+        "https://msedgedriver.microsoft.com/LATEST_RELEASE_$(([version]$Version).Major)_WINDOWS"
+    )
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $Urls[0] -OutFile $Archive
+    }
+    catch {
+        $Latest = (Invoke-WebRequest -UseBasicParsing -Uri $Urls[1]).Content.Trim()
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "https://msedgedriver.microsoft.com/$Latest/edgedriver_win64.zip" `
+            -OutFile $Archive
+    }
+    Expand-Archive -LiteralPath $Archive -DestinationPath $DriverDirectory -Force
+    if (-not (Test-Path -LiteralPath $Driver)) { throw "EdgeDriver archive had no msedgedriver.exe." }
+    $Record = [ordered]@{
+        webViewVersion = $Version
+        driverVersion = (& $Driver --version | Out-String).Trim()
+        driverSha256 = (Get-FileHash -LiteralPath $Driver -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $Record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "webdriver.json") -Encoding utf8
+    return $Driver
+}
+
+function Get-InstalledApplication {
+    $Candidates = @(
+        (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
+    )
+    $Application = $Candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $Application) {
+        $Application = Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Filter "omnideck.exe" -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notlike "$WorkDir*" } |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+    if (-not $Application) { throw "Installed omnideck.exe was not found." }
+    return [System.IO.Path]::GetFullPath($Application)
+}
+
+function Install-Candidate {
+    $Process = Start-Process -FilePath $Installer -ArgumentList "/S" -PassThru -Wait
+    if ($Process.ExitCode -ne 0) { throw "NSIS install failed with exit $($Process.ExitCode)." }
+    $Application = Get-InstalledApplication
+    [IO.File]::WriteAllText($ApplicationFile, "$Application`n", [Text.UTF8Encoding]::new($false))
+    return $Application
+}
+
+function Stop-Omnideck {
+    Get-Process -Name "omnideck" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Invoke-Smoke {
+    param([string]$Application)
+    $Smoke = Join-Path $Results "smoke"
+    $SmokeUserData = Join-Path $Smoke "user-data"
+    $Proof = Join-Path $Smoke "smoke-proof.json"
+    New-Item -ItemType Directory -Path $SmokeUserData -Force | Out-Null
+    Remove-Item -LiteralPath $Proof -Force -ErrorAction SilentlyContinue
+    $PreviousSmoke = $env:OMNIDECK_DESKTOP_SMOKE_FILE
+    $PreviousData = $env:OMNIDECK_DESKTOP_USER_DATA
+    try {
+        $env:OMNIDECK_DESKTOP_SMOKE_FILE = $Proof
+        $env:OMNIDECK_DESKTOP_USER_DATA = $SmokeUserData
+        $Process = Start-Process -FilePath $Application -PassThru
+        $Deadline = [DateTime]::UtcNow.AddSeconds(90)
+        while (-not (Test-Path -LiteralPath $Proof)) {
+            if ($Process.HasExited) { throw "Desktop host exited before writing smoke proof." }
+            if ([DateTime]::UtcNow -ge $Deadline) { throw "Desktop smoke proof timed out." }
+            Start-Sleep -Milliseconds 250
+        }
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        $ProofObject = Get-Content -LiteralPath $Proof -Raw | ConvertFrom-Json
+        if ($ProofObject.cliVersion -ne $ExpectedCliVersion) { throw "Smoke CLI version mismatch." }
+        if ($ProofObject.cliCommit -ne $ExpectedCliCommit) { throw "Smoke CLI commit mismatch." }
+        if ($ProofObject.schemaVersion -ne 4 -or $ProofObject.mutation -ne $false) {
+            throw "Smoke proof contract mismatch."
+        }
+    }
+    finally {
+        $env:OMNIDECK_DESKTOP_SMOKE_FILE = $PreviousSmoke
+        $env:OMNIDECK_DESKTOP_USER_DATA = $PreviousData
+        Stop-Omnideck
+    }
+}
+
+switch ($Phase) {
+    "Prepare" {
+        $Actual = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($Actual -ne $ArtifactSha256.ToLowerInvariant()) { throw "Installer SHA-256 mismatch." }
+        $Application = Install-Candidate
+        Get-FileHash -LiteralPath $Application -Algorithm SHA256 |
+            Format-List | Out-File -LiteralPath (Join-Path $Results "application.sha256.txt") -Encoding utf8
+        Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
+        Invoke-Smoke $Application
+        Write-Host "PREPARED application=$Application"
+    }
+    "Runtime" {
+        # Podman's WSL user-mode networking helper must be launched from the
+        # logged-in desktop session. Starting it through the short-lived SSH
+        # provisioning process leaves the packaged Tauri app with a dead
+        # helper after that process exits.
+        Start-PodmanMachine
+        Write-Inventory "before"
+        Remove-CheckpointResources
+        Write-Host "RUNTIME READY machine=$MachineName"
+    }
+    "Doctor" {
+        Stop-Omnideck
+        Invoke-Engine rm --force $ContainerName | Out-Null
+    }
+    "Resume" {
+        Stop-Omnideck
+        $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        $State.status = "in-progress"
+        $State.reason = "first-run"
+        [IO.File]::WriteAllText(
+            $StatePath,
+            (($State | ConvertTo-Json) + "`n"),
+            [Text.UTF8Encoding]::new($false)
+        )
+        Invoke-Engine rm --force $ContainerName | Out-Null
+    }
+    "Update" {
+        Stop-Omnideck
+        $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        $State.status = "complete"
+        $State.appVersion = "0.0.0-e2e-older"
+        [IO.File]::WriteAllText(
+            $StatePath,
+            (($State | ConvertTo-Json) + "`n"),
+            [Text.UTF8Encoding]::new($false)
+        )
+    }
+    "Final" {
+        Stop-Omnideck
+        Invoke-Engine container inspect $ContainerName |
+            Out-File -LiteralPath (Join-Path $Results "container-inspect.json") -Encoding utf8
+        Invoke-Engine volume inspect $HomeVolume $StateVolume |
+            Out-File -LiteralPath (Join-Path $Results "volume-inspect.json") -Encoding utf8
+        Copy-Item -LiteralPath $StatePath -Destination (Join-Path $Results "setup-state.json")
+
+        $Application = Get-Content -LiteralPath $ApplicationFile -Raw
+        $Application = $Application.Trim()
+        $InstallDirectory = Split-Path -Parent $Application
+        Get-ChildItem -LiteralPath $InstallDirectory -Recurse -Force |
+            Select-Object FullName,Length,Mode |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "installed-files.json") -Encoding utf8
+        $Uninstaller = Get-ChildItem -LiteralPath $InstallDirectory -Filter "*uninstall*.exe" -File |
+            Select-Object -First 1 -ExpandProperty FullName
+        if (-not $Uninstaller) { throw "NSIS uninstaller was not found." }
+        $Uninstall = Start-Process -FilePath $Uninstaller -ArgumentList "/S" -PassThru -Wait
+        if ($Uninstall.ExitCode -ne 0) { throw "NSIS uninstall failed with exit $($Uninstall.ExitCode)." }
+        Start-Sleep -Seconds 2
+        if (Test-Path -LiteralPath $Application) { throw "Installed application remained after uninstall." }
+        if (-not (Test-Path -LiteralPath $UserData)) { throw "Uninstall unexpectedly removed user data." }
+        $Reinstalled = Install-Candidate
+        if (-not (Test-Path -LiteralPath $Reinstalled)) { throw "Reinstall did not restore the application." }
+        Invoke-Smoke $Reinstalled
+
+        Invoke-Engine rm --force $ContainerName | Out-Null
+        Invoke-Engine volume rm --force $HomeVolume $StateVolume | Out-Null
+        Write-Inventory "after"
+        $Summary = [ordered]@{
+            status = "passed"
+            packageKind = "nsis"
+            artifactSha256 = $ArtifactSha256.ToLowerInvariant()
+            expectedCliVersion = $ExpectedCliVersion
+            expectedCliCommit = $ExpectedCliCommit
+            finishedAt = [DateTime]::UtcNow.ToString("o")
+        }
+        $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
+        @'
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="8" failures="0">
+  <testcase classname="desktop-vm-e2e" name="nsis-install"/>
+  <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
+  <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
+  <testcase classname="desktop-vm-e2e" name="hosted-open"/>
+  <testcase classname="desktop-vm-e2e" name="returning-user"/>
+  <testcase classname="desktop-vm-e2e" name="doctor-resume-update"/>
+  <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
+  <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
+</testsuite>
+'@ | Set-Content -LiteralPath (Join-Path $Results "junit.xml") -Encoding utf8
+    }
+}

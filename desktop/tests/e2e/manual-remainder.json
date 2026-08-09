@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "status": "not-run",
+  "rule": "These checks are never inferred from an automated pass.",
+  "procedures": [
+    {
+      "path": "desktop/tests/manual/published-artifact.md",
+      "covers": "browser download, provenance, checksum publication, and operating-system trust UI"
+    },
+    {
+      "path": "desktop/tests/manual/clean-first-run.md",
+      "covers": "permission cancellation/approval and the Windows restart-now RunOnce reopen path"
+    },
+    {
+      "path": "desktop/tests/manual/hosted-app-behavior.md",
+      "covers": "clipboard, system-browser routing, shortcuts, single-instance focus, and window-close behavior"
+    },
+    {
+      "path": "desktop/tests/manual/visual-platform.md",
+      "covers": "subjective visual quality, theme, DPI, multi-monitor, menus, and accessibility review"
+    },
+    {
+      "path": "desktop/tests/manual/recovery-lifecycle.md",
+      "covers": "live network interruption, sleep/wake, occupied ports, and destructive interruption timing"
+    }
+  ]
+}

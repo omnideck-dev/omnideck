@@ -55,11 +55,39 @@ state needs to change. The legacy `./lab.sh snapshot VM` form replaces the
 clean image and is only for intentionally creating or rebuilding a golden
 image.
 
-## Manual Windows desktop lane
+The Desktop lane's versioned install and verification contract is
+[`../e2e/golden-prerequisites.json`](../e2e/golden-prerequisites.json). Put
+stable graphical-session, SSH, WebKit/WebView2, and Podman prerequisites in a
+named checkpoint. Keep the exact Tauri driver, matching EdgeDriver, candidate,
+driver task, and evidence per-run; the harness owns those and removes them with
+the disposable state. After rebuilding a checkpoint, run both the AppImage and
+Windows lanes against its explicit name before making it the local default.
 
-The graphical viewer is required for setup prompts, restart/resume, visible
-terminal behavior, trust warnings, and visual evidence. Those steps are not
-represented as an automated pass:
+## Automated package journeys
+
+The native packaged behavior that can be controlled deterministically now runs
+through [`../e2e`](../e2e/README.md). That suite owns the VM lease, reset,
+package build/install, packaged smoke, live setup DOM/copy, hosted open,
+returning/Doctor/resume/update scenarios, package lifecycle, compact evidence,
+and safe overlay/TPM cleanup.
+
+Use it before opening a viewer for the remaining manual checks:
+
+```sh
+cd /path/to/omnideck/desktop
+export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
+export OMNIDECK_CLI_WORKTREE=/path/to/omnideck-cli
+pnpm run test:vm-e2e -- --vm appimage
+pnpm run test:vm-e2e -- --vm windows
+```
+
+## Manual Windows desktop remainder
+
+The graphical viewer remains required for secure-desktop cancellation/approval,
+the restart-now RunOnce reopen path, visible terminal behavior, trust warnings,
+and subjective visual evidence. The automated suite copies
+`manual-remainder.json` into its run folder and does not represent these steps
+as a pass:
 
 ```sh
 cd "$OMNIDECK_VM_LAB_DIR"
