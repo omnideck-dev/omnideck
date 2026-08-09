@@ -11,6 +11,7 @@ procedure could alter resources that were not created for the test.
 
 Required procedures:
 
+- [Setup UX principles](../setup-ux-principles.md)
 - [Setup progress UX mockup](setup-progress-mockup.html)
 - [Local VM lab controls](local-vm-lab.md)
 - [Published artifact and trust experience](published-artifact.md)
