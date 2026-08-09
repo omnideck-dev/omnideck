@@ -14,7 +14,6 @@ pub struct Phase {
     pub id: String,
     pub label: String,
     pub activity: String,
-    pub weight: f64,
     pub applies_to: Option<Vec<String>>,
 }
 
@@ -58,6 +57,9 @@ pub struct SetupState {
     pub detail: String,
     pub progress: Option<f64>,
     pub indeterminate: bool,
+    pub step: Option<usize>,
+    pub total_steps: usize,
+    pub status: Option<String>,
     pub can_start: bool,
     pub can_retry: bool,
     pub can_open: bool,
@@ -116,6 +118,9 @@ pub fn copy_state(
         detail: copy.detail.clone(),
         progress,
         indeterminate: false,
+        step: None,
+        total_steps: steps().len(),
+        status: None,
         can_start: false,
         can_retry: false,
         can_open: false,
@@ -143,15 +148,41 @@ pub fn working(reason: &str, phase_index: Option<usize>, fraction: f64) -> Setup
         "resume" => "resuming",
         _ => "preparing",
     };
-    let progress = phase_index.map(|index| overall_progress(index, fraction));
     let activity = phase_index.map(|index| phases()[index].activity.clone());
+    let progress = phase_index.map(|_| fraction.clamp(0.0, 1.0));
     let mut state = copy_state("preparing", copy, reason, progress, activity);
+    state.progress = phase_index.map(|_| fraction.clamp(0.0, 1.0));
     state.indeterminate = phase_index.is_none();
+    state.step = phase_index.map(|index| index + 1);
+    state
+}
+
+pub fn working_step(
+    reason: &str,
+    step_id: Option<&str>,
+    progress: Option<f64>,
+    activity: Option<String>,
+    status: Option<String>,
+) -> SetupState {
+    let copy = match step_id {
+        Some("wsl-permission") => "permissionWindows",
+        Some("macos-permission") => "permissionMacos",
+        Some("linux-permission") => "permission",
+        _ => match reason {
+            "update" => "updating",
+            "resume" => "resuming",
+            _ => "preparing",
+        },
+    };
+    let mut state = copy_state("preparing", copy, reason, progress, activity);
+    state.indeterminate = progress.is_none();
+    state.step = step_id.and_then(step_index);
+    state.status = status.filter(|value| !value.trim().is_empty());
     state
 }
 
 pub fn ready(reason: &str) -> SetupState {
-    let mut state = copy_state("ready", "ready", reason, Some(1.0), None);
+    let mut state = copy_state("ready", "ready", reason, None, None);
     state.can_open = true;
     state
 }
@@ -193,20 +224,17 @@ pub fn error(kind: &str, reason: &str, reached: usize, technical: String) -> Set
         detail: copy.detail.clone(),
         progress: None,
         indeterminate: false,
+        step: None,
+        total_steps: steps().len(),
+        status: None,
         can_start: false,
         can_retry: copy.can_retry,
         can_open: false,
         activity: None,
         primary_action: copy.primary_action.clone(),
         primary_label: copy.primary_label.clone(),
-        secondary_action: copy
-            .secondary_action
-            .clone()
-            .or_else(|| Some("show-logs".into())),
-        secondary_label: copy
-            .secondary_label
-            .clone()
-            .or_else(|| Some("Show diagnostic log".into())),
+        secondary_action: copy.secondary_action.clone(),
+        secondary_label: copy.secondary_label.clone(),
         setup_reason: reason.to_owned(),
         diagnostics: Some(diagnostics),
         diagnostic_result: Some(copy.result.clone()),
@@ -218,11 +246,53 @@ pub fn phase_index(id: &str) -> Option<usize> {
     phases().iter().position(|phase| phase.id == id)
 }
 
-fn overall_progress(index: usize, fraction: f64) -> f64 {
-    let total: f64 = phases().iter().map(|phase| phase.weight).sum();
-    let done: f64 = phases().iter().take(index).map(|phase| phase.weight).sum();
-    let current = phases()[index].weight * fraction.clamp(0.0, 1.0);
-    ((done + current) / total).clamp(0.0, 1.0)
+const WINDOWS_STEPS: &[&str] = &[
+    "wsl-permission",
+    "wsl-enable",
+    "windows-restart",
+    "podman-download",
+    "podman-install",
+    "secure-space",
+    "app-download",
+    "startup",
+];
+const MACOS_STEPS: &[&str] = &[
+    "podman-download",
+    "macos-permission",
+    "podman-install",
+    "secure-space",
+    "app-download",
+    "startup",
+];
+const LINUX_STEPS: &[&str] = &[
+    "linux-permission",
+    "package-index",
+    "podman-install",
+    "app-download",
+    "startup",
+];
+
+fn steps_for(platform: &str) -> &'static [&'static str] {
+    match platform {
+        "win32" => WINDOWS_STEPS,
+        "darwin" => MACOS_STEPS,
+        _ => LINUX_STEPS,
+    }
+}
+
+pub fn steps() -> &'static [&'static str] {
+    steps_for(crate::platform::KEY)
+}
+
+pub fn step_index(id: &str) -> Option<usize> {
+    steps()
+        .iter()
+        .position(|candidate| *candidate == id)
+        .map(|index| index + 1)
+}
+
+pub fn first_step() -> &'static str {
+    steps()[0]
 }
 
 #[cfg(test)]
@@ -237,7 +307,8 @@ mod tests {
             state.detail,
             "Everything is prepared. Open omnideck whenever you’re ready."
         );
-        assert_eq!(state.progress, Some(1.0));
+        assert_eq!(state.progress, None);
+        assert_eq!(state.total_steps, 5);
         assert!(state.can_open);
     }
 
@@ -258,6 +329,42 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["software", "download", "startup"]
         );
-        assert_eq!(phases.iter().map(|phase| phase.weight).sum::<f64>(), 85.0);
+    }
+
+    #[test]
+    fn macos_downloads_before_requesting_approval() {
+        assert_eq!(
+            steps_for("darwin"),
+            [
+                "podman-download",
+                "macos-permission",
+                "podman-install",
+                "secure-space",
+                "app-download",
+                "startup",
+            ]
+        );
+        let permission = working_step(
+            "first-run",
+            Some("macos-permission"),
+            None,
+            Some("Waiting for approval from macOS…".into()),
+            Some("Waiting for approval".into()),
+        );
+        assert_eq!(
+            permission.detail,
+            "Your Mac will ask you to approve installing Podman. omnideck never sees or stores your password."
+        );
+    }
+
+    #[test]
+    fn errors_use_the_inline_technical_details_without_a_redundant_action() {
+        let state = error("windowsFeatures", "first-run", 0, "details".into());
+        assert_eq!(state.secondary_action, None);
+        assert_eq!(state.secondary_label, None);
+
+        let restart = error("restart", "first-run", 0, "restart".into());
+        assert_eq!(restart.secondary_action.as_deref(), Some("close"));
+        assert_eq!(restart.secondary_label.as_deref(), Some("Restart later"));
     }
 }

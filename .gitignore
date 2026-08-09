@@ -29,6 +29,7 @@ artifacts/desktop-release-contract/
 
 # Runtime caches (created when source is mounted in container-dev)
 .cache/
+.pnpm-store/
 
 # Data migration state
 .migrations.json

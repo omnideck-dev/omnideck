@@ -1,6 +1,6 @@
 {
   "name": "omnideck-tauri-host",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "private": true,
   "description": "omnideck desktop host",
   "scripts": {
@@ -16,6 +16,7 @@
     "verify": "pnpm run fetch:sidecars && pnpm run test && pnpm run format:rust && pnpm run test:rust && pnpm run lint:rust",
     "fetch:sidecars": "node scripts/fetch-sidecars.mjs",
     "verify:sidecars": "node scripts/verify-sidecars.mjs",
+    "prepare:icons": "node scripts/prepare-icon-assets.mjs",
     "prepare:runtime-image": "node scripts/prepare-runtime-image.mjs",
     "checksums": "node scripts/checksums.mjs",
     "build:windows": "node scripts/fetch-sidecars.mjs x86_64-pc-windows-msvc && tauri build --bundles nsis --target x86_64-pc-windows-msvc",

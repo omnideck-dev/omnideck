@@ -561,6 +561,31 @@ canvas:focus-visible {
   display: none;
 }
 
+.progress-context {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: calc(var(--sp-2) * -1) 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.progress-context[hidden] {
+  display: none;
+}
+
+.progress-context strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .action-error {
   margin: 0;
   color: var(--danger);

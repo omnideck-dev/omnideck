@@ -1,9 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "omnideck",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "identifier": "dev.omnideck.desktop",
   "build": {
+    "beforeBundleCommand": "node scripts/prepare-icon-assets.mjs",
     "frontendDist": "../web"
   },
   "app": {

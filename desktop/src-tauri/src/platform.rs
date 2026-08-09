@@ -115,20 +115,6 @@ pub fn open_url(url: &str) -> BridgeResult<()> {
     return spawn("xdg-open", &[url.into()]);
 }
 
-pub fn reveal_log() -> BridgeResult<()> {
-    let log = diagnostic_log()?;
-    append_diagnostic("[desktop] Opening the diagnostic log.");
-    #[cfg(target_os = "windows")]
-    return spawn("explorer.exe", &[format!("/select,{}", log.display())]);
-    #[cfg(target_os = "macos")]
-    return spawn("open", &["-R".into(), log.display().to_string()]);
-    #[cfg(target_os = "linux")]
-    return spawn(
-        "xdg-open",
-        &[log.parent().unwrap_or(&log).display().to_string()],
-    );
-}
-
 #[cfg(target_os = "windows")]
 fn windows_tool(name: &str) -> PathBuf {
     std::env::var_os("SystemRoot")

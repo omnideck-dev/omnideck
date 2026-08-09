@@ -8,6 +8,9 @@ const spinner = document.getElementById('spinner');
 const progressWrap = document.getElementById('progress-wrap');
 const progressTrack = progressWrap.querySelector('[role="progressbar"]');
 const progress = document.getElementById('progress');
+const progressContext = document.getElementById('progress-context');
+const progressStep = document.getElementById('progress-step');
+const progressValue = document.getElementById('progress-value');
 const footnote = document.getElementById('footnote');
 const doctorPanel = document.getElementById('doctor-panel');
 const doctorResult = document.getElementById('doctor-result');
@@ -70,7 +73,7 @@ function renderDiagnostics(state) {
 
   doctorResult.textContent = state.diagnosticResult || 'Issue found';
   technicalDetails.open = false;
-  technicalOutput.textContent = state.technical || 'See the diagnostic log for more information.';
+  technicalOutput.textContent = state.technical || 'No additional technical details were provided.';
   diagnosticList.replaceChildren(...diagnostics.map((diagnostic) => {
     const row = document.createElement('div');
     row.className = 'diagnostic-row';
@@ -117,6 +120,23 @@ function render(state) {
   secondary.hidden = !state.secondaryAction;
   secondary.textContent = state.secondaryLabel || '';
   renderDiagnostics(state);
+
+  const hasStep = state.stage === 'preparing'
+    && Number.isInteger(state.step)
+    && Number.isInteger(state.totalSteps)
+    && state.step > 0
+    && state.totalSteps >= state.step;
+  progressContext.hidden = !hasStep;
+  if (hasStep) {
+    progressStep.textContent = `Step ${state.step} of ${state.totalSteps}`;
+    const status = String(state.status || '').trim();
+    if (Number.isFinite(state.progress)) {
+      const percentage = `${Math.round(state.progress * 100)}%`;
+      progressValue.textContent = status ? `${percentage} · ${status}` : percentage;
+    } else {
+      progressValue.textContent = status || 'In progress';
+    }
+  }
 
   const hasProgress = Number.isFinite(state.progress);
   const hasIndeterminateProgress = Boolean(state.indeterminate);

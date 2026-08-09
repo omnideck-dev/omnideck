@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -23,12 +23,13 @@ const electronDash = await read('./fixtures/electron-setup/agent-dash.js');
 const css = await read('../web/setup.css');
 const setup = await read('../web/setup.js');
 const dash = await read('../web/agent-dash.js');
+const iconSource = await read('../src-tauri/icons/source.svg');
 
 test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-alpha.8');
+  assert.equal(config.version, '0.1.0-alpha.9');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -40,6 +41,22 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.match(packageJson.scripts['build:windows'], /--bundles nsis/);
   assert.match(packageJson.scripts['build:macos'], /--bundles dmg/);
   assert.match(packageJson.scripts['build:linux'], /--bundles appimage deb rpm/);
+});
+
+test('bundles the blue signal icon with readable Linux package assets', async () => {
+  assert.equal(config.build.beforeBundleCommand, 'node scripts/prepare-icon-assets.mjs');
+  assert.equal(packageJson.scripts['prepare:icons'], 'node scripts/prepare-icon-assets.mjs');
+  assert.match(iconSource, /fill="#2563eb"/);
+  assert.match(iconSource, /fill="#3b82f6"/);
+  assert.match(iconSource, /fill="#60a5fa"/);
+  assert.doesNotMatch(iconSource, /#7c5cff|#37d5d1|#f4b860/i);
+
+  if (process.platform !== 'win32') {
+    for (const icon of config.bundle.icon) {
+      const metadata = await stat(new URL(`../src-tauri/${icon}`, import.meta.url));
+      assert.equal(metadata.mode & 0o044, 0o044, `${icon} must be readable from a system package`);
+    }
+  }
 });
 
 test('local capability contains no generic or remote authority', () => {
@@ -118,12 +135,12 @@ test('release builds are GUI applications and platform behavior is isolated', ()
 
 test('the latest CLI alpha is pinned with six target binaries and SBOMs', () => {
   assert.equal(vendor.repository, 'omnideck-dev/cli');
-  assert.equal(vendor.tag, 'v0.10.0-alpha.2');
-  assert.equal(vendor.version, 'v0.10.0-alpha.2');
-  assert.equal(vendor.commit, 'c36d248d69e5');
+  assert.equal(vendor.tag, 'v0.11.0-alpha.1');
+  assert.equal(vendor.version, 'v0.11.0-alpha.1');
+  assert.equal(vendor.commit, '48434a5f82c0');
   assert.equal(
     vendor.downloadBaseUrl,
-    'https://github.com/omnideck-dev/cli/releases/download/v0.10.0-alpha.2',
+    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-alpha.1',
   );
   assert.deepEqual(vendor.targets.map(({ targetTriple }) => targetTriple).sort(), [
     'aarch64-apple-darwin',
@@ -133,8 +150,8 @@ test('the latest CLI alpha is pinned with six target binaries and SBOMs', () => 
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(rust, /EXPECTED_CLI_VERSION: &str = "v0\.10\.0-alpha\.2"/);
-  assert.match(rust, /EXPECTED_CLI_COMMIT: &str = "c36d248d69e5"/);
+  assert.match(rust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-alpha\.1"/);
+  assert.match(rust, /EXPECTED_CLI_COMMIT: &str = "48434a5f82c0"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)
     .filter(([name]) => name.startsWith('build:'))
@@ -155,4 +172,12 @@ test('setup DOM, CSS, behavior, and visible text are byte-for-byte Electron pari
     .replace('; connect-src ipc: http://ipc.localhost', '')
     .replace('    <script src="./host-adapter.js"></script>\n', '');
   assert.equal(normalizedTauriHtml, electronHtml.replaceAll('\r\n', '\n'));
+});
+
+test('setup progress and diagnostics stay in the primary surface', () => {
+  assert.match(setup, /progressContext\.hidden = !hasStep/);
+  assert.match(setup, /Step \$\{state\.step\} of \$\{state\.totalSteps\}/);
+  assert.doesNotMatch(setup, /secondaryAction === 'show-logs'/);
+  assert.match(setup, /technicalDetails\.open = false/);
+  assert.match(setup, /state\.stage === 'preparing'/);
 });

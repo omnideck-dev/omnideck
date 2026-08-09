@@ -12,7 +12,7 @@ diagnostics, result, process list, and resource inventory.
 - `returning` briefly shows `Starting omnideck`, then opens the hosted app
   without Welcome, setup progress, or Agent Dash instructions.
 - `doctor` identifies the failed phase, preserves completed/pending phase
-  classification, and makes `Show diagnostic log` usable.
+  classification, and makes the inline `Technical details` disclosure usable.
 - `resume` shows `CONTINUING SETUP`, states that completed work was retained,
   and continues without another start button.
 - `update` shows `Bringing omnideck up to date` and does not request unrelated
