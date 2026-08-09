@@ -1,12 +1,22 @@
+mod cli;
 mod parity;
 mod platform;
+mod state;
 
+use cli::{
+    instance_status, parse_instance_status, require_success, run_cli, run_fixed, runtime_status,
+    validate_bundled_cli, FixedOperation, RuntimeStatus, EXPECTED_CLI_COMMIT, EXPECTED_CLI_VERSION,
+    SETUP_TIMEOUT,
+};
 use parity::SetupState;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use state::{
+    image_manifest, persisted_port, read_setup_record, reserve_and_persist_port, save_setup_record,
+    APP_VERSION,
+};
 use std::{
     collections::HashSet,
     fmt, fs,
-    net::TcpListener,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
@@ -17,23 +27,13 @@ use tauri::{
     ipc::Channel, webview::NewWindowResponse, AppHandle, Manager, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-const EXPECTED_SCHEMA_VERSION: u32 = 4;
-const EXPECTED_CLI_VERSION: &str = "v0.11.0-alpha.1";
-const EXPECTED_CLI_COMMIT: &str = "48434a5f82c0";
-const APP_VERSION: &str = "0.1.0-alpha.9";
-const DEFAULT_APP_PORT: u16 = 2338;
 const CONTAINER_NAME: &str = "omnideck-desktop";
 const HOME_VOLUME: &str = "omnideck-desktop-home";
 const STATE_VOLUME: &str = "omnideck-desktop-state";
 const DOWNLOAD_URL: &str = "https://github.com/omnideck-dev/omnideck/releases";
 const SUPPORTED_SYSTEMS_URL: &str = "https://github.com/omnideck-dev/omnideck#prerequisites";
-const STDOUT_LIMIT: usize = 1_000_000;
-const STDERR_LIMIT: usize = 256 * 1024;
-const INSPECTION_TIMEOUT: Duration = Duration::from_secs(15);
-const SETUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
 const HOSTED_SHORTCUTS_SCRIPT: &str = r#"
 (() => {
@@ -93,142 +93,6 @@ impl fmt::Display for BridgeError {
 impl std::error::Error for BridgeError {}
 type BridgeResult<T> = Result<T, BridgeError>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FixedOperation {
-    Version,
-    RuntimeStatus,
-    RuntimeEnsure,
-    InstanceStatus,
-    StartInstance,
-}
-
-impl FixedOperation {
-    fn args(self) -> Vec<String> {
-        let values: &[&str] = match self {
-            Self::Version => &["--version"],
-            Self::RuntimeStatus => &["--json", "runtime", "status"],
-            Self::RuntimeEnsure => &["--json", "runtime", "ensure"],
-            Self::InstanceStatus => {
-                return vec![
-                    "--json".into(),
-                    "--name".into(),
-                    platform::resource_name(CONTAINER_NAME),
-                    "status".into(),
-                ];
-            }
-            Self::StartInstance => {
-                return vec![
-                    "--json".into(),
-                    "--name".into(),
-                    platform::resource_name(CONTAINER_NAME),
-                    "start".into(),
-                ];
-            }
-        };
-        values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    fn timeout(self) -> Duration {
-        match self {
-            Self::RuntimeEnsure | Self::StartInstance => SETUP_TIMEOUT,
-            _ => INSPECTION_TIMEOUT,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ProcessResult {
-    exit_code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct CliVersion {
-    version: String,
-    commit: String,
-    raw: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeStatus {
-    schema_version: u32,
-    runtime: String,
-    state: String,
-    ready: bool,
-    path: Option<String>,
-    version: Option<String>,
-    machine_name: Option<String>,
-    phase: Option<String>,
-    activity: Option<String>,
-    resources: RuntimeResources,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeResources {
-    container: ContainerResources,
-    machine: MachineResources,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ContainerResources {
-    memory: String,
-    shm_size: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MachineResources {
-    mode: String,
-    memory_mb: Option<f64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InstanceStatus {
-    container: String,
-    status: String,
-    image: String,
-    web_ui_port: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SetupRecord {
-    schema_version: u32,
-    status: String,
-    reason: String,
-    app_version: String,
-    image_version: String,
-    image_ref: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SetupRecordWrite<'a> {
-    schema_version: u32,
-    status: &'a str,
-    reason: &'a str,
-    app_version: &'a str,
-    image_version: &'a str,
-    image_ref: &'a str,
-    image_digest: &'a str,
-    updated_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImageManifest {
-    schema_version: u32,
-    app_version: String,
-    image_version: String,
-    image_ref: String,
-}
-
 #[derive(Debug, Serialize)]
 struct BootstrapResult {
     action: &'static str,
@@ -254,131 +118,6 @@ impl Default for HostState {
             offered_actions: Arc::new(RwLock::new(HashSet::new())),
         }
     }
-}
-
-fn append_bounded(
-    destination: &mut Vec<u8>,
-    chunk: &[u8],
-    limit: usize,
-    stream: &str,
-) -> BridgeResult<()> {
-    if destination.len().saturating_add(chunk.len()) > limit {
-        return Err(BridgeError::new(
-            "OUTPUT_LIMIT",
-            format!("The bundled CLI exceeded the {stream} output limit."),
-        ));
-    }
-    destination.extend_from_slice(chunk);
-    Ok(())
-}
-
-#[derive(Default)]
-struct LineBuffer {
-    pending: Vec<u8>,
-}
-
-impl LineBuffer {
-    fn push<F>(&mut self, chunk: &[u8], on_line: &mut F)
-    where
-        F: FnMut(&str),
-    {
-        self.pending.extend_from_slice(chunk);
-        while let Some(index) = self.pending.iter().position(|byte| *byte == b'\n') {
-            let mut line: Vec<u8> = self.pending.drain(..=index).collect();
-            line.pop();
-            if line.last() == Some(&b'\r') {
-                line.pop();
-            }
-            Self::deliver(&line, on_line);
-        }
-    }
-
-    fn flush<F>(&mut self, on_line: &mut F)
-    where
-        F: FnMut(&str),
-    {
-        let pending = std::mem::take(&mut self.pending);
-        Self::deliver(&pending, on_line);
-    }
-
-    fn deliver<F>(line: &[u8], on_line: &mut F)
-    where
-        F: FnMut(&str),
-    {
-        let text = String::from_utf8_lossy(line);
-        let text = text.trim();
-        if !text.is_empty() {
-            on_line(text);
-        }
-    }
-}
-
-async fn run_cli<F>(
-    app: &AppHandle,
-    args: Vec<String>,
-    timeout_duration: Duration,
-    mut on_stdout: F,
-) -> BridgeResult<ProcessResult>
-where
-    F: FnMut(&str),
-{
-    let command = app
-        .shell()
-        .sidecar("omnideck-cli")
-        .map_err(|error| BridgeError::new("SIDECAR_NOT_BUNDLED", error.to_string()))?
-        .args(args);
-    let (mut events, child) = command
-        .spawn()
-        .map_err(|error| BridgeError::new("SIDECAR_SPAWN_FAILED", error.to_string()))?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let mut stdout_lines = LineBuffer::default();
-    let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
-
-    loop {
-        tokio::select! {
-            _ = &mut timeout => {
-                let _ = child.kill();
-                return Err(BridgeError::new("SIDECAR_TIMEOUT", "The bundled CLI did not finish in time."));
-            }
-            event = events.recv() => match event {
-                Some(CommandEvent::Stdout(line)) => {
-                    if let Err(error) = append_bounded(&mut stdout, &line, STDOUT_LIMIT, "stdout") {
-                        let _ = child.kill();
-                        return Err(error);
-                    }
-                    stdout_lines.push(&line, &mut on_stdout);
-                }
-                Some(CommandEvent::Stderr(line)) => {
-                    if let Err(error) = append_bounded(&mut stderr, &line, STDERR_LIMIT, "stderr") {
-                        let _ = child.kill();
-                        return Err(error);
-                    }
-                }
-                Some(CommandEvent::Error(error)) => {
-                    let _ = child.kill();
-                    return Err(BridgeError::new("SIDECAR_IO_FAILED", error));
-                }
-                Some(CommandEvent::Terminated(payload)) => {
-                    stdout_lines.flush(&mut on_stdout);
-                    return Ok(ProcessResult {
-                        exit_code: payload.code.unwrap_or(-1),
-                        stdout: String::from_utf8_lossy(&stdout).trim().to_owned(),
-                        stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
-                    });
-                }
-                Some(_) => {}
-                None => {
-                    let _ = child.kill();
-                    return Err(BridgeError::new("SIDECAR_IO_FAILED", "The bundled CLI event stream ended before process completion."));
-                }
-            }
-        }
-    }
-}
-
-async fn run_fixed(app: &AppHandle, operation: FixedOperation) -> BridgeResult<ProcessResult> {
-    run_cli(app, operation.args(), operation.timeout(), |_| {}).await
 }
 
 fn setup_state_from_cli_event(
@@ -429,6 +168,44 @@ fn setup_state_from_cli_event(
     ))
 }
 
+#[derive(Clone, Copy)]
+enum SetupEventSource {
+    Runtime,
+    Environment,
+}
+
+fn setup_event_phase(source: SetupEventSource, stage: &str) -> Option<usize> {
+    match source {
+        SetupEventSource::Runtime => parity::phase_index(stage),
+        SetupEventSource::Environment if stage == "pull_image" => parity::phase_index("download"),
+        SetupEventSource::Environment => parity::phase_index("startup"),
+    }
+}
+
+fn forward_setup_event(
+    line: &str,
+    reason: &str,
+    last_step: &mut Option<String>,
+    reached_phase: &AtomicUsize,
+    channel: &Channel<SetupState>,
+    source: SetupEventSource,
+) {
+    let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+        return;
+    };
+    let Some(state) = setup_state_from_cli_event(reason, &event, last_step) else {
+        return;
+    };
+    if let Some(phase) = event
+        .get("stage")
+        .and_then(|value| value.as_str())
+        .and_then(|stage| setup_event_phase(source, stage))
+    {
+        reached_phase.fetch_max(phase, Ordering::AcqRel);
+    }
+    let _ = channel.send(state);
+}
+
 fn is_local_setup_url(url: &tauri::Url) -> bool {
     matches!(
         (url.scheme(), url.host_str()),
@@ -477,322 +254,6 @@ fn authorize_local_setup(window: &WebviewWindow) -> BridgeResult<()> {
         ));
     }
     Ok(())
-}
-
-fn parse_cli_version(raw: &str) -> BridgeResult<CliVersion> {
-    let fields: Vec<_> = raw.split_whitespace().collect();
-    if fields.len() < 4 || fields[0] != "omnideck" || fields[1] != "version" {
-        return Err(BridgeError::new(
-            "INVALID_VERSION_OUTPUT",
-            "The bundled CLI returned an unrecognized version string.",
-        ));
-    }
-    let version = fields[2];
-    let commit = fields[3].trim_matches(['(', ')']);
-    if version != EXPECTED_CLI_VERSION || commit != EXPECTED_CLI_COMMIT {
-        return Err(BridgeError::new("UNEXPECTED_CLI_VERSION", format!(
-            "Expected {EXPECTED_CLI_VERSION} ({EXPECTED_CLI_COMMIT}), received {version} ({commit})."
-        )));
-    }
-    Ok(CliVersion {
-        version: version.into(),
-        commit: commit.into(),
-        raw: raw.into(),
-    })
-}
-
-fn parse_runtime_status(raw: &str) -> BridgeResult<RuntimeStatus> {
-    let status: RuntimeStatus = serde_json::from_str(raw).map_err(|error| {
-        cli_error(raw).unwrap_or_else(|| {
-            BridgeError::new(
-                "INVALID_RUNTIME_JSON",
-                format!("The bundled CLI returned malformed runtime JSON: {error}"),
-            )
-        })
-    })?;
-    if status.schema_version != EXPECTED_SCHEMA_VERSION {
-        return Err(BridgeError::new(
-            "UNEXPECTED_SCHEMA_VERSION",
-            format!(
-                "Expected runtime schema {EXPECTED_SCHEMA_VERSION}, received {}.",
-                status.schema_version
-            ),
-        ));
-    }
-    if status.runtime != "podman" {
-        return Err(BridgeError::new(
-            "UNEXPECTED_RUNTIME",
-            format!("Expected Podman, received {}.", status.runtime),
-        ));
-    }
-    if status.state.trim().is_empty() {
-        return Err(BridgeError::new(
-            "INVALID_RUNTIME_JSON",
-            "The bundled CLI returned an invalid runtime state.",
-        ));
-    }
-    let container_memory = resource_memory_mb(&status.resources.container.memory);
-    let shared_memory = resource_memory_mb(&status.resources.container.shm_size);
-    if container_memory.is_none()
-        || shared_memory.is_none()
-        || shared_memory > container_memory
-        || status.resources.machine.mode.trim().is_empty()
-    {
-        return Err(BridgeError::new(
-            "INVALID_RUNTIME_RESOURCES",
-            "The bundled CLI returned invalid resource defaults.",
-        ));
-    }
-    if status.resources.machine.mode == "podman-managed"
-        && status.resources.machine.memory_mb.is_none_or(|memory| {
-            !memory.is_finite() || memory < container_memory.unwrap_or(0.0) + 2048.0
-        })
-    {
-        return Err(BridgeError::new(
-            "INVALID_RUNTIME_RESOURCES",
-            "The Podman machine memory limit is too small for the application environment.",
-        ));
-    }
-    if status.ready
-        && platform::uses_managed_machine()
-        && status.machine_name.as_deref() != Some(platform::machine_name().as_str())
-    {
-        let expected = platform::machine_name();
-        return Err(BridgeError::new(
-            "UNEXPECTED_MACHINE",
-            format!(
-                "Expected Podman machine {expected}, received {}.",
-                status.machine_name.as_deref().unwrap_or("no machine name")
-            ),
-        ));
-    }
-    Ok(status)
-}
-
-fn resource_memory_mb(value: &str) -> Option<f64> {
-    let value = value.trim().to_ascii_lowercase();
-    let suffix_start = value.find(|character: char| character.is_ascii_alphabetic())?;
-    let (amount, suffix) = value.split_at(suffix_start);
-    let amount: f64 = amount.trim().parse().ok()?;
-    let multiplier = match suffix.trim_end_matches('b').trim_end_matches('i') {
-        "k" => 1.0 / 1024.0,
-        "m" => 1.0,
-        "g" => 1024.0,
-        "t" => 1024.0 * 1024.0,
-        _ => return None,
-    };
-    let memory = amount * multiplier;
-    (memory.is_finite() && memory > 0.0).then_some(memory)
-}
-
-fn parse_instance_status(raw: &str) -> BridgeResult<InstanceStatus> {
-    let status: InstanceStatus = serde_json::from_str(raw).map_err(|_| {
-        cli_error(raw).unwrap_or_else(|| {
-            BridgeError::new(
-                "INVALID_INSTANCE_JSON",
-                "The bundled CLI returned an invalid environment status.",
-            )
-        })
-    })?;
-    if status.container != platform::resource_name(CONTAINER_NAME)
-        || status.image.is_empty()
-        || status.web_ui_port.parse::<u16>().is_err()
-    {
-        return Err(BridgeError::new(
-            "INVALID_INSTANCE_JSON",
-            "The bundled CLI returned an invalid environment status.",
-        ));
-    }
-    Ok(status)
-}
-
-fn cli_error(raw: &str) -> Option<BridgeError> {
-    raw.lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .find_map(|value| {
-            let error = value.get("error")?;
-            let mut bridge_error = BridgeError::new(
-                error
-                    .get("code")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("CLI_FAILED"),
-                error
-                    .get("message")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("The bundled CLI command failed."),
-            );
-            bridge_error.stage = value
-                .get("stage")
-                .and_then(|value| value.as_str())
-                .map(str::to_owned);
-            if let Some(detail) = error.get("detail").and_then(|value| value.as_str()) {
-                bridge_error = bridge_error.with_stderr(detail.to_owned());
-            }
-            Some(bridge_error)
-        })
-}
-
-fn require_success(result: ProcessResult, label: &str) -> BridgeResult<ProcessResult> {
-    if result.exit_code == 0 {
-        return Ok(result);
-    }
-    if let Some(error) = cli_error(&result.stdout).or_else(|| cli_error(&result.stderr)) {
-        return Err(error.with_stderr(result.stderr));
-    }
-    Err(BridgeError::new(
-        "CLI_EXITED_NONZERO",
-        format!("{label} exited with code {}.", result.exit_code),
-    )
-    .with_stderr(result.stderr))
-}
-
-async fn validate_bundled_cli(app: &AppHandle) -> BridgeResult<()> {
-    let result = require_success(
-        run_fixed(app, FixedOperation::Version).await?,
-        "CLI version inspection",
-    )?;
-    parse_cli_version(&result.stdout)?;
-    Ok(())
-}
-
-async fn runtime_status(app: &AppHandle) -> BridgeResult<RuntimeStatus> {
-    let result = run_fixed(app, FixedOperation::RuntimeStatus).await?;
-    // Structured status is authoritative even when an older CLI reports a
-    // stopped runtime with a nonzero exit status.
-    parse_runtime_status(&result.stdout).map_err(|parse_error| {
-        if result.exit_code != 0 {
-            cli_error(&result.stdout)
-                .or_else(|| cli_error(&result.stderr))
-                .unwrap_or(parse_error)
-                .with_stderr(result.stderr)
-        } else {
-            parse_error
-        }
-    })
-}
-
-async fn instance_status(app: &AppHandle) -> BridgeResult<InstanceStatus> {
-    let result = run_fixed(app, FixedOperation::InstanceStatus).await?;
-    parse_instance_status(&result.stdout).map_err(|parse_error| {
-        if result.exit_code != 0 {
-            cli_error(&result.stdout)
-                .or_else(|| cli_error(&result.stderr))
-                .unwrap_or(parse_error)
-                .with_stderr(result.stderr)
-        } else {
-            parse_error
-        }
-    })
-}
-
-fn read_setup_record() -> Option<SetupRecord> {
-    let path = platform::user_data_dir().ok()?.join("setup-state.json");
-    let record: SetupRecord = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    if record.schema_version != 2
-        || !matches!(record.status.as_str(), "in-progress" | "complete")
-        || !matches!(
-            record.reason.as_str(),
-            "first-run" | "resume" | "update" | "repair"
-        )
-        || record.app_version.is_empty()
-        || record.image_version.is_empty()
-        || record.image_ref.is_empty()
-    {
-        return None;
-    }
-    Some(record)
-}
-
-fn persisted_port() -> Option<u16> {
-    let raw = fs::read_to_string(platform::user_data_dir().ok()?.join("runtime/app-port")).ok()?;
-    raw.trim().parse().ok().filter(|port| *port > 0)
-}
-
-fn reserve_and_persist_port(force_new: bool) -> BridgeResult<u16> {
-    if !force_new {
-        if let Some(port) = persisted_port() {
-            return Ok(port);
-        }
-    }
-    let listener = TcpListener::bind(("127.0.0.1", DEFAULT_APP_PORT))
-        .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
-        .map_err(|error| BridgeError::new("PORT_UNAVAILABLE", error.to_string()))?;
-    let port = listener
-        .local_addr()
-        .map_err(|error| BridgeError::new("PORT_UNAVAILABLE", error.to_string()))?
-        .port();
-    drop(listener);
-    let path = platform::user_data_dir()?.join("runtime/app-port");
-    fs::create_dir_all(path.parent().expect("runtime has a parent"))
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    fs::write(path, format!("{port}\n"))
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    Ok(port)
-}
-
-fn image_manifest() -> BridgeResult<ImageManifest> {
-    let manifest: ImageManifest =
-        serde_json::from_str(include_str!("../resources/image-manifest.json"))
-            .map_err(|error| BridgeError::new("INVALID_IMAGE_MANIFEST", error.to_string()))?;
-    let valid_ref = manifest.image_ref.starts_with("ghcr.io/")
-        && manifest.image_ref.contains("@sha256:")
-        && manifest
-            .image_ref
-            .rsplit("@sha256:")
-            .next()
-            .is_some_and(|digest| {
-                digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-            });
-    if manifest.schema_version != 3
-        || manifest.app_version != APP_VERSION
-        || manifest.image_version.is_empty()
-        || !valid_ref
-    {
-        return Err(BridgeError::new(
-            "INVALID_IMAGE_MANIFEST",
-            "The omnideck runtime image does not match this application release.",
-        ));
-    }
-    Ok(manifest)
-}
-
-fn save_setup_record(status: &str, reason: &str, manifest: &ImageManifest) -> BridgeResult<()> {
-    let digest = manifest.image_ref.rsplit('@').next().unwrap_or("");
-    let record = SetupRecordWrite {
-        schema_version: 2,
-        status,
-        reason,
-        app_version: APP_VERSION,
-        image_version: &manifest.image_version,
-        image_ref: &manifest.image_ref,
-        image_digest: digest,
-        updated_at: time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?,
-    };
-    let destination = platform::user_data_dir()?.join("setup-state.json");
-    fs::create_dir_all(destination.parent().expect("state has a parent"))
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    let temporary = destination.with_extension(format!("{}.partial", std::process::id()));
-    let mut encoded = serde_json::to_vec_pretty(&record)
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    encoded.push(b'\n');
-    fs::write(&temporary, encoded)
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    if destination.exists() {
-        fs::remove_file(&destination)
-            .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
-    }
-    fs::rename(temporary, destination)
-        .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))
-}
-
-fn resource_string(status: &RuntimeStatus, key: &str, fallback: &str) -> String {
-    match key {
-        "memory" => status.resources.container.memory.clone(),
-        "shmSize" => status.resources.container.shm_size.clone(),
-        _ => fallback.to_owned(),
-    }
 }
 
 fn send_state(
@@ -1145,20 +606,14 @@ async fn begin_setup(
                 FixedOperation::RuntimeEnsure.args(),
                 SETUP_TIMEOUT,
                 move |line| {
-                    if let Ok(event) = serde_json::from_str::<serde_json::Value>(line) {
-                        if let Some(state) =
-                            setup_state_from_cli_event(&reason_for_events, &event, &mut last_step)
-                        {
-                            if let Some(phase) = event
-                                .get("stage")
-                                .and_then(|value| value.as_str())
-                                .and_then(parity::phase_index)
-                            {
-                                reached_phase_for_events.fetch_max(phase, Ordering::AcqRel);
-                            }
-                            let _ = channel.send(state);
-                        }
-                    }
+                    forward_setup_event(
+                        line,
+                        &reason_for_events,
+                        &mut last_step,
+                        &reached_phase_for_events,
+                        &channel,
+                        SetupEventSource::Runtime,
+                    );
                 },
             )
             .await?;
@@ -1187,8 +642,8 @@ async fn begin_setup(
             )?;
         }
         let mut port = reserve_and_persist_port(false)?;
-        let memory = resource_string(&runtime, "memory", "2g");
-        let shm_size = resource_string(&runtime, "shmSize", "1g");
+        let memory = runtime.resources.container.memory.clone();
+        let shm_size = runtime.resources.container.shm_size.clone();
         for attempt in 0..2 {
             let port_text = port.to_string();
             let args = vec![
@@ -1215,26 +670,14 @@ async fn begin_setup(
             let reached_phase_for_events = reached_phase.clone();
             let mut last_step = Some("app-download".to_owned());
             let environment = run_cli(&app, args, SETUP_TIMEOUT, move |line| {
-                if let Ok(event) = serde_json::from_str::<serde_json::Value>(line) {
-                    if let Some(state) =
-                        setup_state_from_cli_event(&reason_for_events, &event, &mut last_step)
-                    {
-                        if let Some(phase) = event
-                            .get("stage")
-                            .and_then(|value| value.as_str())
-                            .and_then(|stage| {
-                                if stage == "pull_image" {
-                                    parity::phase_index("download")
-                                } else {
-                                    parity::phase_index("startup")
-                                }
-                            })
-                        {
-                            reached_phase_for_events.fetch_max(phase, Ordering::AcqRel);
-                        }
-                        let _ = channel.send(state);
-                    }
-                }
+                forward_setup_event(
+                    line,
+                    &reason_for_events,
+                    &mut last_step,
+                    &reached_phase_for_events,
+                    &channel,
+                    SetupEventSource::Environment,
+                );
             })
             .await?;
             match require_success(environment, "Reconcile application environment") {
@@ -1451,57 +894,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn operation_arguments_are_fixed() {
-        assert_eq!(FixedOperation::Version.args(), ["--version"]);
-        assert_eq!(
-            FixedOperation::RuntimeStatus.args(),
-            ["--json", "runtime", "status"]
-        );
-        assert_eq!(
-            FixedOperation::InstanceStatus.args(),
-            ["--json", "--name", CONTAINER_NAME, "status"]
-        );
-        assert_eq!(
-            FixedOperation::StartInstance.args(),
-            ["--json", "--name", CONTAINER_NAME, "start"]
-        );
-    }
-
-    #[test]
-    fn validates_the_immutable_cli_version() {
-        let parsed = parse_cli_version(
-            "omnideck version v0.11.0-alpha.1 (48434a5f82c0) built 2026-08-09T16:47:13Z",
-        )
-        .unwrap();
-        assert_eq!(parsed.version, EXPECTED_CLI_VERSION);
-        assert_eq!(parsed.commit, EXPECTED_CLI_COMMIT);
-        assert!(parse_cli_version("omnideck version v9.9.9 (deadbee)").is_err());
-    }
-
-    #[test]
-    fn validates_schema_four_podman_status() {
-        assert!(
-            parse_runtime_status(
-                r#"{"schemaVersion":4,"runtime":"podman","state":"ready","ready":true,"machineName":"omnideck-runtime","resources":{"container":{"memory":"4g","shmSize":"2g"},"machine":{"mode":"wsl-managed"}}}"#
-            )
-            .unwrap()
-            .ready
-        );
-        assert!(parse_runtime_status(
-            r#"{"schemaVersion":5,"runtime":"podman","state":"ready","ready":true,"resources":{"container":{"memory":"4g","shmSize":"2g"},"machine":{"mode":"wsl-managed"}}}"#
-        )
-        .is_err());
-        assert!(parse_runtime_status(
-            r#"{"schemaVersion":4,"runtime":"docker","state":"ready","ready":true,"resources":{"container":{"memory":"4g","shmSize":"2g"},"machine":{"mode":"wsl-managed"}}}"#
-        )
-        .is_err());
-        assert!(parse_runtime_status(
-            r#"{"schemaVersion":4,"runtime":"podman","state":"ready","ready":true,"machineName":"omnideck-runtime","resources":{"container":{"memory":"1g","shmSize":"2g"},"machine":{"mode":"wsl-managed"}}}"#
-        )
-        .is_err());
-    }
-
-    #[test]
     fn hosted_origin_is_dynamic_and_exact() {
         let url = "http://127.0.0.1:51208/settings".parse().unwrap();
         assert!(is_hosted_app_url(&url, Some(51208)));
@@ -1536,14 +928,6 @@ mod tests {
     }
 
     #[test]
-    fn output_is_bounded() {
-        let mut output = Vec::new();
-        append_bounded(&mut output, &[b'a'; 4], 5, "stdout").unwrap();
-        append_bounded(&mut output, b"b", 5, "stdout").unwrap();
-        assert!(append_bounded(&mut output, b"c", 5, "stdout").is_err());
-    }
-
-    #[test]
     fn permission_cancellation_copy_is_platform_specific() {
         let error = BridgeError::new("PERMISSION_CANCELLED", "approval cancelled");
         assert_eq!(
@@ -1559,26 +943,5 @@ mod tests {
         assert_eq!(failure_kind_for("win32", &installer), "windowsInstaller");
         assert_eq!(failure_kind_for("darwin", &installer), "macosInstaller");
         assert_eq!(failure_kind_for("linux", &installer), "linuxInstaller");
-    }
-
-    #[test]
-    fn json_lines_are_reassembled_across_process_chunks() {
-        let mut buffer = LineBuffer::default();
-        let mut lines = Vec::new();
-        buffer.push(br#"{"stage":"pull"#, &mut |line| {
-            lines.push(line.to_owned())
-        });
-        buffer.push(b"_image\"}\r\n{\"stage\":\"start", &mut |line| {
-            lines.push(line.to_owned())
-        });
-        buffer.push(b"_container\"}", &mut |line| lines.push(line.to_owned()));
-        buffer.flush(&mut |line| lines.push(line.to_owned()));
-        assert_eq!(
-            lines,
-            [
-                r#"{"stage":"pull_image"}"#,
-                r#"{"stage":"start_container"}"#
-            ]
-        );
     }
 }

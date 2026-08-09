@@ -24,12 +24,13 @@ const css = await read('../web/setup.css');
 const setup = await read('../web/setup.js');
 const dash = await read('../web/agent-dash.js');
 const iconSource = await read('../src-tauri/icons/source.svg');
+const cliRust = await read('../src-tauri/src/cli.rs');
 
 test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-alpha.9');
+  assert.equal(config.version, '0.1.0-alpha.10');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -81,11 +82,11 @@ test('permission exposes only the four typed lifecycle commands', () => {
 });
 
 test('Rust owns all CLI arguments and guards navigation plus command origin', () => {
-  assert.match(rust, /Self::Version => &\["--version"\]/);
-  assert.match(rust, /Self::RuntimeStatus => &\["--json", "runtime", "status"\]/);
-  assert.match(rust, /Self::InstanceStatus =>/);
-  assert.match(rust, /Self::StartInstance =>/);
-  assert.match(rust, /platform::resource_name\(CONTAINER_NAME\)/);
+  assert.match(cliRust, /Self::Version => &\["--version"\]/);
+  assert.match(cliRust, /Self::RuntimeStatus => &\["--json", "runtime", "status"\]/);
+  assert.match(cliRust, /Self::InstanceStatus =>/);
+  assert.match(cliRust, /Self::StartInstance =>/);
+  assert.match(cliRust, /platform::resource_name\(CONTAINER_NAME\)/);
   assert.match(rust, /"environment"\.into\(\),\s+"ensure"\.into\(\)/);
   assert.match(rust, /WebviewWindowBuilder::new\(app, "main"/);
   assert.match(rust, /\.on_navigation\(is_local_setup_url\)/);
@@ -150,8 +151,8 @@ test('the latest CLI alpha is pinned with six target binaries and SBOMs', () => 
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(rust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-alpha\.1"/);
-  assert.match(rust, /EXPECTED_CLI_COMMIT: &str = "48434a5f82c0"/);
+  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-alpha\.1"/);
+  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "48434a5f82c0"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)
     .filter(([name]) => name.startsWith('build:'))
