@@ -21,13 +21,17 @@ explicit non-goal; the frozen Electron fixtures test setup parity only.
 | Source | Node policy/parity and release-contract unit tests; Rust format, unit, and Clippy checks; pinned sidecar verification | Pull requests, `main`, and tags on hosted CI; locally | Exact commit and command or Actions run |
 | Release contract | [`tests/releasecontract`](tests/releasecontract/README.md) | Before publication and against public release assets | JSON report, checksums, and attestations |
 | Native packaged smoke | [`tests/hardware`](tests/hardware/README.md) | Dedicated real-OS machines or opt-in self-hosted workflow | Application hash, host inventory, logs, and read-only smoke proof |
+| Automated VM journey | [`tests/e2e`](tests/e2e/README.md) | Disposable local Linux/Windows VM lab | Package hash, live DOM/copy states, screenshots, inventories, JSON summary, and JUnit |
 | Manual journey | [`tests/manual`](tests/manual/README.md) | Disposable VMs or dedicated hardware | Completed procedure with screenshots, inventories, cleanup, and pass/fail/blocked result |
 
 Hosted CI owns deterministic source, supply-chain, build, and static artifact
 checks. Native hardware owns installation, display-server integration, GUI
-launch, packaged sidecar execution, and OS-specific behavior. Manual testing
-owns prompts, restart/resume, trust warnings, visual quality, and destructive
-recovery. No earlier layer substitutes for a later one.
+launch, packaged sidecar execution, and OS-specific behavior. The local VM E2E
+suite automates the real packaged setup/hosted/recovery and package lifecycle
+that native WebDriver and OS tooling can observe repeatably. Manual testing owns
+secure-desktop/reboot boundaries, trust warnings, subjective visual quality,
+and timing-dependent destructive recovery. No earlier layer substitutes for a
+later one, and the automated suite records its manual remainder as `not-run`.
 
 In this policy, `offline hardware/manual` means outside the always-on hosted CI
 path; it does not necessarily mean disconnected from the network. A genuinely
@@ -42,6 +46,7 @@ below.
 | Build + release contract | Release workflow | Six hosted build targets plus Ubuntu aggregator | None outside build artifacts | Up to 90 minutes | Protected publication approval |
 | Published release contract | Release owner | GitHub-hosted Ubuntu, public assets | None | 10-20 minutes | Candidate qualification |
 | Native packaged smoke | Platform tester assigned in the candidate record | Dedicated Windows/macOS/Linux desktop session | Windows installs the app; other runs mount/extract packages | 10-30 minutes per target | Architecture/package qualification |
+| Automated packaged journey | Desktop release owner | Disposable local Linux/Windows VM lab | Resets one leased guest and creates isolated app/runtime state | 20-90 minutes per lane | Local candidate regression gate |
 | Clean first run and recovery | Platform tester assigned in the candidate record | Disposable machine or restorable VM | May install runtimes, change WSL/features, reboot, and create containers/volumes | 1-3 hours per platform | Channel promotion |
 | Visual/platform fit | Human platform reviewer assigned in the candidate record | Representative displays and desktops | App/runtime state only | 30-60 minutes per platform | Beta, RC, and stable promotion |
 
@@ -180,6 +185,14 @@ Smoke must cover no terminal window, successful proof creation, and clean host
 termination. Product-level automation should additionally cover visible hosted
 UI, clipboard round trips, refresh, external browser routing, single-instance
 focus, both-window close behavior, and macOS Edit-menu accelerators.
+
+Before publishing a local candidate, run the disposable VM suite documented in
+[`tests/e2e`](tests/e2e/README.md). It builds or accepts an exact package,
+executes the existing packaged smoke, drives the live Tauri setup WebView
+against the frozen exact-copy mockup, opens the production-pinned hosted image,
+and covers returning, Doctor, resume, update, uninstall, and reinstall behavior.
+Its per-run folder is the local regression record; it is not provenance for an
+artifact that has not yet been published.
 
 ## Setup, failure, and lifecycle coverage
 
