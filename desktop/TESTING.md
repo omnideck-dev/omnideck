@@ -66,6 +66,43 @@ archives and SBOMs named by `src-tauri/binaries/vendor-manifest.json`, then set
 OMNIDECK_CLI_ARCHIVE_DIR=/verified/cli-assets pnpm run verify
 ```
 
+If the host does not provide Rust, Tauri's Linux dependencies, or the required
+Node/pnpm toolchain, run the same source gate in the pinned Linux builder:
+
+```sh
+./desktop/scripts/run-linux-builder.sh "pnpm run verify"
+```
+
+The containerized build owns only checkout-mounted files and runs as the host
+UID/GID so `desktop/src-tauri/target` and downloaded sidecars remain editable.
+It provides build/test tooling; it does not turn a Linux cross-build into
+native Windows or macOS evidence.
+
+To build a local Linux desktop candidate with the fixed CLI worktree embedded,
+use the temporary sidecar override helper. It reads the release-pinned vendor
+identity, temporarily replaces only the target sidecar, and restores that
+sidecar when the build exits:
+
+```sh
+./desktop/scripts/build-with-local-cli.sh /path/to/omnideck-cli \
+  "pnpm exec tauri build --bundles deb rpm --target x86_64-unknown-linux-gnu"
+```
+
+This is a local candidate workflow only; it is not release evidence until the
+CLI is published and the vendor manifest is intentionally updated.
+
+For a local Windows x64 candidate with a fixed CLI worktree, use the
+containerized cross-builder:
+
+```sh
+./desktop/scripts/build-with-local-cli-windows.sh /path/to/omnideck-cli
+```
+
+The helper builds the Windows CLI in `omnideck-cli-builder:local`, builds the
+unsigned GNU-target NSIS package in the pinned Windows builder, and restores
+the release sidecar before returning. This is a disposable VM candidate, not
+a replacement for the native Windows MSVC release build.
+
 The `omnideck application` workflow applies the same source checks to desktop
 pull requests, `main`, and tags. It also resolves the container tag once to an
 immutable digest and builds the package matrix on native build runners. A
@@ -170,6 +207,8 @@ The checked-in procedures cover:
   performance, sleep/wake, and platform fit.
 
 Use the evidence record in [`tests/manual/README.md`](tests/manual/README.md).
+For the disposable VM lab's ownership lease, viewer, and cleanup commands,
+use [`tests/manual/local-vm-lab.md`](tests/manual/local-vm-lab.md).
 Real published artifacts are required for trust and package UX evidence.
 
 ## Promotion gates

@@ -42,6 +42,34 @@ Windows produces NSIS, macOS produces DMG, and Linux produces AppImage, DEB,
 and RPM packages. Every platform must run its native packaged smoke test before
 a release; cross-compiling an installer is not a substitute for that gate.
 
+When the host does not have Rust, Tauri's Linux dependencies, or a suitable
+Node/pnpm toolchain, use the pinned containerized Linux builder. It keeps build
+outputs owned by the invoking user and mounts this checkout only:
+
+```sh
+./desktop/scripts/run-linux-builder.sh "pnpm run verify"
+./desktop/scripts/run-linux-builder.sh "pnpm run build:linux"
+```
+
+The builder pins the Node and Rust base-image digests and the pnpm version in
+[`containers/linux-builder/Dockerfile`](containers/linux-builder/Dockerfile).
+The resulting package is still a cross-build until it passes native Linux
+smoke and manual evidence.
+
+For a local Windows x64 candidate when a Windows build runner is unavailable,
+use the pinned GNU cross-builder. It builds the fixed CLI in the separate CLI
+container, temporarily stages it under the Windows target triple, and restores
+the release sidecar when finished:
+
+```sh
+./desktop/scripts/build-with-local-cli-windows.sh /path/to/omnideck-cli
+```
+
+This produces an unsigned NSIS candidate under
+`src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/`. The Windows CI
+build remains the release build of record (`x86_64-pc-windows-msvc`); the local
+GNU package is suitable for disposable VM diagnosis and manual testing only.
+
 Static release-asset checks live under `tests/releasecontract`, read-only native
 package smoke lives under `tests/hardware`, and guided real-OS procedures live
 under `tests/manual`. Existing release download/reset helpers remain under

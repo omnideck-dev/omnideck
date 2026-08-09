@@ -11,6 +11,8 @@ procedure could alter resources that were not created for the test.
 
 Required procedures:
 
+- [Setup progress UX mockup](setup-progress-mockup.html)
+- [Local VM lab controls](local-vm-lab.md)
 - [Published artifact and trust experience](published-artifact.md)
 - [Clean-machine first run](clean-first-run.md)
 - [Hosted application behavior](hosted-app-behavior.md)
