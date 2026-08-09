@@ -5,6 +5,10 @@ release evidence, supported package matrices, and promotion gates.
 [`RELEASING.md`](RELEASING.md) defines tagging, approval, and publication
 mechanics. Suite-specific instructions live beside each suite.
 
+The canonical setup experience contract lives in
+[`tests/setup-ux-principles.md`](tests/setup-ux-principles.md). Setup tests and
+manual procedures must preserve it across every operating system.
+
 A passing build proves only its stated layer. Compilation is not installation,
 a cross-build is not native execution, and an unexecuted manual procedure is
 `blocked` coverage rather than a pass. Electron user-state migration is an
