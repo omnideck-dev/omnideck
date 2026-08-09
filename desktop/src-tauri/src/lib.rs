@@ -21,9 +21,9 @@ use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const EXPECTED_SCHEMA_VERSION: u32 = 4;
-const EXPECTED_CLI_VERSION: &str = "v0.10.0-alpha.2";
-const EXPECTED_CLI_COMMIT: &str = "c36d248d69e5";
-const APP_VERSION: &str = "0.1.0-alpha.8";
+const EXPECTED_CLI_VERSION: &str = "v0.11.0-alpha.1";
+const EXPECTED_CLI_COMMIT: &str = "48434a5f82c0";
+const APP_VERSION: &str = "0.1.0-alpha.9";
 const DEFAULT_APP_PORT: u16 = 2338;
 const CONTAINER_NAME: &str = "omnideck-desktop";
 const HOME_VOLUME: &str = "omnideck-desktop-home";
@@ -1470,7 +1470,7 @@ mod tests {
     #[test]
     fn validates_the_immutable_cli_version() {
         let parsed = parse_cli_version(
-            "omnideck version v0.10.0-alpha.2 (c36d248d69e5) built 2026-08-08T00:59:59Z",
+            "omnideck version v0.11.0-alpha.1 (48434a5f82c0) built 2026-08-09T16:47:13Z",
         )
         .unwrap();
         assert_eq!(parsed.version, EXPECTED_CLI_VERSION);
