@@ -31,6 +31,7 @@ EOF
 
 while (($#)); do
   case "$1" in
+    --) shift ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
     --cli) cli_root="${2:?--cli requires a path}"; shift 2 ;;
