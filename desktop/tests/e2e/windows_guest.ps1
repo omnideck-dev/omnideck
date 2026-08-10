@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Runtime", "Doctor", "Resume", "Update", "Final")]
+    [ValidateSet("Prepare", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -259,6 +259,16 @@ switch ($Phase) {
         Invoke-Smoke $Application
         Write-Host "PREPARED application=$Application"
     }
+    "ConfigureClean" {
+        [Environment]::SetEnvironmentVariable("OMNIDECK_DESKTOP_USER_DATA", $UserData, "User")
+        [Environment]::SetEnvironmentVariable("OMNIDECK_CONFIG_DIR", $CliConfig, "User")
+        Remove-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+            -Name "omnideckSetupResume" `
+            -ErrorAction SilentlyContinue
+        Write-Inventory "clean"
+        Write-Host "CLEAN ENVIRONMENT CONFIGURED userData=$UserData"
+    }
     "Runtime" {
         # Podman's WSL user-mode networking helper must be launched from the
         # logged-in desktop session. Starting it through the short-lived SSH
@@ -268,6 +278,46 @@ switch ($Phase) {
         Write-Inventory "before"
         Remove-CheckpointResources
         Write-Host "RUNTIME READY machine=$MachineName"
+    }
+    "RuntimePreserve" {
+        Start-PodmanMachine
+        Write-Inventory "before"
+        Write-Host "RUNTIME PRESERVED machine=$MachineName"
+    }
+    "RunOnceProof" {
+        $RunOnce = Get-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+            -Name "omnideckSetupResume" `
+            -ErrorAction SilentlyContinue
+        $Processes = @(Get-Process -Name "omnideck" -ErrorAction SilentlyContinue |
+            Where-Object { $_.SessionId -gt 0 })
+        $State = if (Test-Path -LiteralPath $StatePath) {
+            Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        }
+        else { $null }
+        $Proof = [ordered]@{
+            observedAt = [DateTime]::UtcNow.ToString("o")
+            runOnceValueConsumed = ($null -eq $RunOnce)
+            interactiveProcessCount = $Processes.Count
+            processIds = @($Processes | Select-Object -ExpandProperty Id)
+            setupStatePresent = ($null -ne $State)
+            setupStatus = $(if ($State) { $State.status } else { $null })
+            setupReason = $(if ($State) { $State.reason } else { $null })
+        }
+        $Proof | ConvertTo-Json | Set-Content `
+            -LiteralPath (Join-Path $Results "runonce-proof.json") -Encoding utf8
+        if ($RunOnce) { throw "The omnideck RunOnce value was not consumed after sign-in." }
+        if (-not $Processes) { throw "RunOnce did not reopen omnideck in an interactive session." }
+        if (-not $State) { throw "RunOnce reopened without the persisted setup state." }
+        Write-Host "RUNONCE PROVED processCount=$($Processes.Count) status=$($State.status)"
+    }
+    "SetupStatus" {
+        if (-not (Test-Path -LiteralPath $StatePath)) {
+            Write-Host "missing"
+            return
+        }
+        $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        Write-Host $State.status
     }
     "Doctor" {
         Stop-Omnideck

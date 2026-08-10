@@ -171,7 +171,17 @@ class WebDriver:
         element_id = element.get("element-6066-11e4-a52e-4f735466cecf")
         if not element_id:
             raise WebDriverError(f"Element response had no identifier for {selector}: {element!r}")
-        self.command("POST", f"/element/{element_id}/click", {})
+        try:
+            self.command("POST", f"/element/{element_id}/click", {})
+        except WebDriverError as error:
+            if "unsupported operation" not in str(error):
+                raise
+            clicked = self.execute(
+                "const element = document.querySelector(" + json.dumps(selector) + ");"
+                "if (!element) return false; element.click(); return true;"
+            )
+            if clicked is not True:
+                raise WebDriverError(f"JavaScript click fallback could not find {selector}") from error
 
     def screenshot(self, destination: Path) -> None:
         encoded = self.command("GET", "/screenshot")
@@ -227,6 +237,7 @@ class Journey:
         webdriver_screenshots: bool,
         initial_copy: tuple[str, str],
         hosted_action: str = "",
+        restart_action: str = "later",
     ) -> None:
         self.driver = driver
         self.parity = parity
@@ -238,6 +249,7 @@ class Journey:
         self.seen: set[tuple[str, str, str, str]] = set()
         self.screenshot_count = 0
         self.hosted_action = hosted_action
+        self.restart_action = restart_action
         self.setup_handle: str | None = None
         self.copy_pairs = {
             (entry["title"], entry["detail"]): name
@@ -413,12 +425,46 @@ class Journey:
                     if text_of(final, "secondary") != "Restart later":
                         raise AssertionError("Restart-later wording changed")
                     self.markers.joinpath("restart-required").touch()
+                    if self.restart_action == "now":
+                        self.markers.joinpath("restart-now-selected").touch()
+                        try:
+                            self.driver.click("#primary")
+                        except WebDriverError:
+                            # A successful restart tears down the WebView while
+                            # the click request is still crossing the driver.
+                            pass
+                        # The click handler awaits the native restart command.
+                        # Keep the WebDriver session alive until that handler
+                        # tears down the WebView; closing the session here can
+                        # kill the app before shutdown.exe is spawned.
+                        restart_deadline = time.monotonic() + 30
+                        while time.monotonic() < restart_deadline:
+                            try:
+                                action = self.driver.execute(
+                                    "const error = document.querySelector('#action-error');"
+                                    "return {error: error?.hidden ? '' : error?.textContent || ''};"
+                                )
+                            except WebDriverError:
+                                break
+                            if isinstance(action, dict) and action.get("error"):
+                                raise AssertionError(
+                                    f"Restart action failed: {action['error']}"
+                                )
+                            time.sleep(0.25)
+                        else:
+                            raise AssertionError(
+                                "Restart now did not tear down the packaged WebView"
+                            )
+                        return "restart-started"
                     self.driver.click("#secondary")
                     return "restart-required"
                 if (contract in self.retryable_failures and retry_count < 2
                         and text_of(final, "primary") == "Try again"):
                     retry_count += 1
                     print(f"RETRY {contract} attempt={retry_count}", flush=True)
+                    self.markers.joinpath(f"permission-retry-{retry_count}").write_text(
+                        contract + "\n", encoding="utf-8"
+                    )
                     self.driver.click("#primary")
                     self.wait_for(
                         lambda value: value.get("stage") != "error",
@@ -484,7 +530,13 @@ class Journey:
         deadline = time.monotonic() + self.timeout
         observed: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
-            for handle in self.driver.handles():
+            try:
+                handles = self.driver.handles()
+            except WebDriverError as error:
+                observed.append({"driverError": str(error)})
+                time.sleep(0.5)
+                continue
+            for handle in handles:
                 try:
                     self.driver.switch_window(handle)
                     value = self.driver.execute(
@@ -569,6 +621,7 @@ def parse_args() -> argparse.Namespace:
         default='[data-testid="desktop-layout"], [role="dialog"][aria-labelledby="wizard-step-title"]',
     )
     parser.add_argument("--hosted-action", default="Get Started")
+    parser.add_argument("--restart-action", choices=("later", "now"), default="later")
     parser.add_argument("--webdriver-screenshots", action="store_true")
     return parser.parse_args()
 
@@ -597,7 +650,20 @@ def main() -> int:
                     start_new_session=True,
                 )
             driver.wait_ready(args.driver_timeout)
-            driver.new_session(args.application)
+            session_error: WebDriverError | None = None
+            for attempt in range(1, 4):
+                try:
+                    driver.new_session(args.application)
+                    session_error = None
+                    break
+                except WebDriverError as error:
+                    session_error = error
+                    print(f"SESSION RETRY attempt={attempt} error={error}", file=sys.stderr, flush=True)
+                    if attempt < 3:
+                        time.sleep(1)
+                        driver.wait_ready(args.driver_timeout)
+            if session_error is not None:
+                raise session_error
             args.evidence.joinpath("webdriver-session.txt").write_text(
                 f"{driver.session_id}\n", encoding="utf-8"
             )
@@ -610,6 +676,7 @@ def main() -> int:
                 args.webdriver_screenshots,
                 initial_copy,
                 args.hosted_action,
+                args.restart_action,
             )
             if args.scenario == "first-run":
                 result = journey.run_first_setup(

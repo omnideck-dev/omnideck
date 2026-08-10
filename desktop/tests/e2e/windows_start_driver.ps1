@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
-    [switch]$Register
+    [switch]$Register,
+    [switch]$SkipRuntime,
+    [switch]$PreserveRuntime
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +13,8 @@ $TaskName = "OmnideckDesktopE2E-$([System.IO.Path]::GetFileName($WorkDir))"
 if ($Register) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     $Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -WorkDir `"$WorkDir`""
+    if ($SkipRuntime) { $Arguments += " -SkipRuntime" }
+    if ($PreserveRuntime) { $Arguments += " -PreserveRuntime" }
     $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $Arguments
     $Principal = New-ScheduledTaskPrincipal -UserId "tester" -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Principal $Principal -Force | Out-Null
@@ -31,7 +35,12 @@ if (-not (Test-Path -LiteralPath $GuestScript)) { throw "Guest harness is missin
 $env:OMNIDECK_DESKTOP_USER_DATA = Join-Path $WorkDir "user-data"
 $env:OMNIDECK_CONFIG_DIR = Join-Path $WorkDir "cli-config"
 Remove-Item Env:OMNIDECK_DESKTOP_TEST_NAMESPACE -ErrorAction SilentlyContinue
-& $GuestScript -Phase Runtime -WorkDir $WorkDir *>> (Join-Path $WorkDir "runtime-start.log")
+if ($PreserveRuntime) {
+    & $GuestScript -Phase RuntimePreserve -WorkDir $WorkDir *>> (Join-Path $WorkDir "runtime-start.log")
+}
+elseif (-not $SkipRuntime) {
+    & $GuestScript -Phase Runtime -WorkDir $WorkDir *>> (Join-Path $WorkDir "runtime-start.log")
+}
 $Process = Start-Process -FilePath $Driver `
     -ArgumentList @("--native-driver", $EdgeDriver) `
     -RedirectStandardOutput (Join-Path $WorkDir "tauri-driver.stdout.log") `

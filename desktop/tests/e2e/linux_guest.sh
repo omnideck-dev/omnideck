@@ -14,6 +14,7 @@ user_data="${work_dir}/user-data"
 cli_config="${work_dir}/cli-config"
 artifact="${work_dir}/candidate.${package_kind}"
 application=""
+driver_application=""
 package_name=""
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 current_step="initialize"
@@ -99,7 +100,7 @@ inventory before
 
 current_step="lab preflight isolation"
 cleanup_resources
-if podman container exists omnideck-desktop; then
+if command -v podman >/dev/null 2>&1 && podman container exists omnideck-desktop; then
   printf 'Removing checkpoint container omnideck-desktop to release its reserved host port.\n' \
     | tee "${result_dir}/preflight.txt"
   podman rm --force omnideck-desktop >> "${result_dir}/preflight.txt"
@@ -127,8 +128,70 @@ case "${package_kind}" in
     ;;
 esac
 [[ -x "${application}" ]]
+driver_application="${application}"
 printf '%s\n' "${application}" > "${result_dir}/application-path.txt"
 sha256sum "${application}" > "${result_dir}/application.sha256"
+
+source /etc/os-release
+if [[ "${package_kind}" == "appimage" && "${VARIANT_ID:-}" == "silverblue" ]]; then
+  current_step="atomic AppImage native extraction"
+  extraction_dir="${work_dir}/appimage-extracted"
+  native_dir="${work_dir}/atomic-native"
+  mkdir -p "${extraction_dir}" "${native_dir}"
+  (
+    cd "${extraction_dir}"
+    "${artifact}" --appimage-extract >/dev/null
+  )
+  cp -- "${extraction_dir}/squashfs-root/usr/bin/omnideck" "${native_dir}/omnideck"
+  cp -- "${extraction_dir}/squashfs-root/usr/bin/omnideck-cli" "${native_dir}/omnideck-cli"
+  chmod 755 "${native_dir}/omnideck" "${native_dir}/omnideck-cli"
+  cmp --silent "${extraction_dir}/squashfs-root/usr/bin/omnideck" "${native_dir}/omnideck"
+  cmp --silent "${extraction_dir}/squashfs-root/usr/bin/omnideck-cli" "${native_dir}/omnideck-cli"
+  driver_application="${native_dir}/omnideck"
+  {
+    printf 'packagedSmoke=%s\n' "${artifact}"
+    printf 'attendedBinary=%s\n' "${driver_application}"
+    printf 'reason=use byte-identical shipped binaries with Silverblue native WebKitGTK\n'
+  } > "${result_dir}/atomic-execution-boundary.txt"
+fi
+printf '%s\n' "${driver_application}" > "${result_dir}/attended-application-path.txt"
+sha256sum "${driver_application}" > "${result_dir}/attended-application.sha256"
+
+current_step="target-scoped authorization agent"
+auth_password="${work_dir}/auth-password"
+auth_ready="${work_dir}/polkit-agent.ready"
+auth_log="${result_dir}/polkit-agent.log"
+auth_bin="${work_dir}/auth-bin"
+mkdir -p "${auth_bin}"
+printf '%s\n' 'omnideck-test' > "${auth_password}"
+chmod 600 "${auth_password}"
+cat > "${auth_bin}/pkexec" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ready="${auth_ready}.\$\$"
+rm -f -- "\${ready}"
+"${work_dir}/polkit_agent.py" \\
+  --process "\$\$" \\
+  --password-file "${auth_password}" \\
+  --ready-file "\${ready}" \\
+  --log "${auth_log}" &
+agent_pid=\$!
+for _ in \$(seq 1 100); do
+  [[ ! -e "\${ready}" ]] || break
+  kill -0 "\${agent_pid}" 2>/dev/null || { wait "\${agent_pid}"; exit 1; }
+  sleep 0.05
+done
+[[ -e "\${ready}" ]] || { echo 'The target-scoped PolicyKit agent did not register.' >&2; exit 1; }
+set +e
+/usr/bin/pkexec "\$@"
+status=\$?
+set -e
+kill "\${agent_pid}" 2>/dev/null || true
+wait "\${agent_pid}" 2>/dev/null || true
+rm -f -- "\${ready}"
+exit "\${status}"
+EOF
+chmod 700 "${auth_bin}/pkexec"
 
 current_step="WebDriver dependency"
 if ! command -v WebKitWebDriver >/dev/null 2>&1; then
@@ -155,6 +218,15 @@ done
 tr '\0' '\n' < "/proc/${desktop_pid}/environ" > "${result_dir}/desktop-session.env"
 display="$(sed -n 's/^DISPLAY=//p' "${result_dir}/desktop-session.env" | head -n 1)"
 xauthority="$(sed -n 's/^XAUTHORITY=//p' "${result_dir}/desktop-session.env" | head -n 1)"
+wayland_display="$(sed -n 's/^WAYLAND_DISPLAY=//p' "${result_dir}/desktop-session.env" | head -n 1)"
+if [[ -z "${wayland_display}" ]]; then
+  for candidate in /run/user/1000/wayland-*; do
+    if [[ -S "${candidate}" ]]; then
+      wayland_display="$(basename "${candidate}")"
+      break
+    fi
+  done
+fi
 if [[ -z "${xauthority}" ]]; then
   for candidate in /run/user/1000/.mutter-Xwaylandauth.* /run/user/1000/gdm/Xauthority; do
     if [[ -f "${candidate}" ]]; then
@@ -164,8 +236,11 @@ if [[ -z "${xauthority}" ]]; then
   done
 fi
 desktop_env=(
+  "PATH=${auth_bin}:${PATH}"
   "XDG_RUNTIME_DIR=/run/user/1000"
   "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+  "WEBKIT_DISABLE_DMABUF_RENDERER=1"
+  "WEBKIT_DISABLE_COMPOSITING_MODE=1"
   "OMNIDECK_DESKTOP_USER_DATA=${user_data}"
   "OMNIDECK_DESKTOP_TEST_NAMESPACE=${namespace}"
   "OMNIDECK_CONFIG_DIR=${cli_config}"
@@ -175,15 +250,6 @@ if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   printf 'backend=x11 display=%s xauthority=%s\n' "${display:-:0}" "${xauthority}" \
     > "${result_dir}/desktop-backend.txt"
 else
-  wayland_display="$(sed -n 's/^WAYLAND_DISPLAY=//p' "${result_dir}/desktop-session.env" | head -n 1)"
-  if [[ -z "${wayland_display}" ]]; then
-    for candidate in /run/user/1000/wayland-*; do
-      if [[ -S "${candidate}" ]]; then
-        wayland_display="$(basename "${candidate}")"
-        break
-      fi
-    done
-  fi
   [[ -n "${wayland_display}" && -S "/run/user/1000/${wayland_display}" ]] || {
     printf 'The tester GNOME session has neither an X11 authority file nor a Wayland socket.\n' >&2
     exit 1
@@ -234,7 +300,7 @@ run_journey() {
   mkdir -p "${scenario_dir}"
   env "${desktop_env[@]}" \
     "${work_dir}/webdriver_client.py" \
-      --application "${application}" \
+      --application "${driver_application}" \
       --tauri-driver "${work_dir}/tauri-driver" \
       --parity "${work_dir}/setup-parity.json" \
       --mockup-parity "${work_dir}/mockup-parity.json" \

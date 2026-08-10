@@ -27,6 +27,17 @@ class BridgeDriver(FakeDriver):
         }
 
 
+class RestartDriver(FakeDriver):
+    def __init__(self) -> None:
+        self.clicked: list[str] = []
+
+    def click(self, selector: str) -> None:
+        self.clicked.append(selector)
+
+    def execute(self, _script: str) -> dict[str, object]:
+        raise CLIENT.WebDriverError("the reboot tore down the WebView")
+
+
 class MultiWindowDriver(FakeDriver):
     def __init__(self) -> None:
         self.current = "hosted"
@@ -51,6 +62,46 @@ class MultiWindowDriver(FakeDriver):
                 "hidden": False,
             },
         }
+
+
+class TransientHostedDriver(FakeDriver):
+    def __init__(self) -> None:
+        self.handle_attempts = 0
+
+    def handles(self) -> list[str]:
+        self.handle_attempts += 1
+        if self.handle_attempts == 1:
+            raise CLIENT.WebDriverError("temporary native-driver disconnect")
+        return ["hosted"]
+
+    def switch_window(self, _handle: str) -> None:
+        return
+
+    def execute(self, _script: str) -> dict[str, object]:
+        return {
+            "url": "http://127.0.0.1:2338/",
+            "bodyText": "Welcome to Omnideck",
+            "buttonTexts": ["Get Started"],
+            "selectorFound": True,
+        }
+
+
+class UnsupportedClickDriver(CLIENT.WebDriver):
+    def __init__(self) -> None:
+        super().__init__("http://unused.invalid")
+        self.session_id = "session"
+        self.executed = ""
+
+    def command(self, method: str, suffix: str, payload=None):
+        if suffix == "/element":
+            return {"element-6066-11e4-a52e-4f735466cecf": "node"}
+        if suffix.endswith("/click"):
+            raise CLIENT.WebDriverError("unsupported operation")
+        raise AssertionError((method, suffix, payload))
+
+    def execute(self, script: str) -> bool:
+        self.executed = script
+        return True
 
 
 class WebDriverClientTests(unittest.TestCase):
@@ -171,6 +222,62 @@ class WebDriverClientTests(unittest.TestCase):
                 {"frozen": True, "keys": CLIENT.EXPECTED_UPDATE_BRIDGE},
             )
             self.assertTrue((markers / "update-bridge").is_file())
+
+    def test_hosted_wait_retries_a_transient_handle_disconnect(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            markers = root / "markers"
+            evidence.mkdir()
+            markers.mkdir()
+            driver = TransientHostedDriver()
+            journey = CLIENT.Journey(
+                driver, parity, evidence, markers, 2, False, initial,
+                hosted_action="Get Started",
+            )
+
+            value = journey.wait_for_hosted(
+                "Welcome to Omnideck", '[data-testid="desktop-layout"]'
+            )
+
+            self.assertEqual(value["url"], "http://127.0.0.1:2338/")
+            self.assertEqual(driver.handle_attempts, 2)
+
+    def test_click_uses_dom_only_when_native_driver_declares_unsupported(self) -> None:
+        driver = UnsupportedClickDriver()
+
+        driver.click("#primary")
+
+        self.assertIn('document.querySelector("#primary")', driver.executed)
+
+    def test_restart_now_wording_and_action_are_locked(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            driver = RestartDriver()
+            journey = CLIENT.Journey(
+                driver, parity, root, root, 5, False, initial,
+                restart_action="now",
+            )
+            restart = parity["failureCopy"]["restart"]
+            state = {
+                "stage": "error",
+                "title": {"text": restart["title"]},
+                "detail": {"text": restart["detail"]},
+                "primary": {"text": restart["primaryLabel"], "hidden": False},
+                "secondary": {"text": restart["secondaryLabel"], "hidden": False},
+            }
+            journey.wait_for = lambda *_args, **_kwargs: state
+
+            self.assertEqual(journey.finish_setup("", ""), "restart-started")
+            self.assertEqual(driver.clicked, ["#primary"])
+            self.assertTrue((root / "restart-required").is_file())
+            self.assertTrue((root / "restart-now-selected").is_file())
 
 
 if __name__ == "__main__":

@@ -58,7 +58,7 @@ if [[ -f "${manifest}" ]]; then
       exit 1
     }
     case "$(basename "${path}")" in
-      appimage.qcow2.*|deb.qcow2.*|rpm.qcow2.*|windows.qcow2.*)
+      appimage.qcow2.*|deb.qcow2.*|rpm.qcow2.*|atomic.qcow2.*|windows.qcow2.*)
         [[ -f "${path}" ]] || { printf 'Expected a discarded disk file: %s\n' "${path}" >&2; exit 1; }
         unlink "${path}"
         ;;

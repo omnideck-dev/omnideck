@@ -13,6 +13,8 @@
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
     "test:vm-e2e": "./tests/e2e/run.sh",
     "test:vm-e2e:purge": "./tests/e2e/purge.sh",
+    "test:release-e2e": "./tests/e2e/qualify-release.sh",
+    "test:release-e2e:purge": "./tests/e2e/purge-release.sh",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
     "verify": "pnpm run fetch:sidecars && pnpm run test && pnpm run format:rust && pnpm run test:rust && pnpm run lint:rust",

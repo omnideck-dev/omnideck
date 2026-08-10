@@ -17,10 +17,12 @@ usage() {
 Usage: ./desktop/tests/e2e/run-windows.sh [OPTIONS]
 
 Build and install the local NSIS candidate in the disposable Windows lab,
-then drive packaged smoke, setup/hosted/recovery, uninstall, and reinstall.
+then drive trust UI, packaged smoke, setup/hosted/recovery, uninstall, and
+reinstall. The clean baseline additionally drives UAC cancellation/approval,
+restart-now, a real reboot, and RunOnce reopening.
 
 Options:
-  --baseline NAME               Guest checkpoint (default: podman-ready)
+  --baseline clean|NAME         Guest checkpoint (default: podman-ready)
   --artifact PATH                Test this exact prebuilt NSIS installer
   --cli PATH                     CLI worktree embedded in a local candidate
   --yes                          Accept the destructive Windows reset
@@ -45,10 +47,8 @@ done
   printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
   exit 2
 }
-if [[ "${baseline}" == "clean" ]]; then
-  printf 'The automated Windows lane starts at podman-ready. Use desktop/tests/manual/clean-first-run.md for the real UAC/restart path.\n' >&2
-  exit 2
-fi
+security_mode=0
+[[ "${baseline}" != "clean" ]] || security_mode=1
 
 [[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
 [[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
@@ -63,7 +63,8 @@ grep -Eq '^windows stopped ' <<<"${status}" || {
   printf 'Refusing to use a running Windows guest. Stop it only if you own the lane.\n' >&2
   exit 1
 }
-"${lab_dir}/lab.sh" snapshots windows | grep -Fxq "${baseline}" || {
+windows_snapshots="$("${lab_dir}/lab.sh" snapshots windows)"
+grep -Fxq "${baseline}" <<<"${windows_snapshots}" || {
   printf 'The Windows guest has no %s checkpoint.\n' "${baseline}" >&2
   exit 1
 }
@@ -83,8 +84,8 @@ flock -n 8 || { printf 'The Windows Desktop lane is already leased.\n' >&2; exit
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
-cli_commit="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")"
-cli_version="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")"
+cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
+cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop-e2e/${safe_run_id}-windows}"
 build_dir="${output_dir}/build"
 evidence_dir="${output_dir}/evidence"
@@ -97,6 +98,7 @@ known_hosts="${lab_dir}/runtime/known_hosts"
 ssh_port=2225
 driver_forward_port="$((52000 + ($$ % 900)))"
 driver_task_name="OmnideckDesktopE2E-${safe_run_id}"
+trust_task_name="OmnideckDesktopTrust-${safe_run_id}"
 discarded_before="${output_dir}/discarded-before.txt"
 discarded_after="${output_dir}/discarded-after.txt"
 discarded_created="${output_dir}/discarded-created.txt"
@@ -132,6 +134,9 @@ cleanup() {
       >/dev/null 2>&1 || true
     "${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${driver_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
+      >/dev/null 2>&1 || true
+    "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${trust_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
       >/dev/null 2>&1 || true
     if [[ "${remote_staged}" == "1" && "${keep_vm}" != "1" ]]; then
       "${lab_dir}/lab.sh" run windows \
@@ -218,7 +223,7 @@ fi
 if ! "${lab_dir}/lab.sh" run windows \
   "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { exit 1 }" \
   >/dev/null 2>&1; then
-  "${lab_dir}/lab.sh" send-keys windows ret
+  "${lab_dir}/lab.sh" send-keys windows tab ret
   sleep 1
   "${lab_dir}/lab.sh" send-keys windows o m n i d e c k minus t e s t ret
   sleep 10
@@ -233,6 +238,7 @@ remote_staged=1
 "${lab_dir}/lab.sh" copy-to windows "${build_dir}/tauri-driver-root/bin/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_start_driver.ps1" "${remote_scp_root}/windows_start_driver.ps1"
+"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_trust.ps1" "${remote_scp_root}/windows_trust.ps1"
 
 phase_command() {
   local phase="$1"
@@ -240,7 +246,96 @@ phase_command() {
     "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase ${phase} -WorkDir ${remote_root} -ArtifactSha256 ${artifact_sha256} -ExpectedCliVersion ${cli_version} -ExpectedCliCommit ${cli_commit}"
 }
 
+send_windows_text() {
+  local value="$1"
+  local character key index
+  local -a keys=()
+  for ((index = 0; index < ${#value}; index++)); do
+    character="${value:index:1}"
+    case "${character}" in
+      [[:alpha:]]) key="${character,,}" ;;
+      [[:digit:]]) key="${character}" ;;
+      :) key="shift-semicolon" ;;
+      \\) key="backslash" ;;
+      .) key="dot" ;;
+      -) key="minus" ;;
+      _) key="shift-minus" ;;
+      *) printf 'Cannot type Windows console character: %s\n' "${character}" >&2; return 2 ;;
+    esac
+    keys+=("${key}")
+  done
+  "${lab_dir}/lab.sh" send-keys windows "${keys[@]}"
+}
+
+trust_launch_visible() {
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if ((Get-Process consent -ErrorAction SilentlyContinue) -or (Get-Process -Name candidate-setup -ErrorAction SilentlyContinue)) { exit 0 } else { exit 1 }" \
+    >/dev/null 2>&1
+}
+
+printf 'Probing the published installer through Windows Attachment Manager and SmartScreen.\n'
+"${lab_dir}/lab.sh" run windows \
+  "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root}"
+# A scheduled or SSH process does not traverse Attachment Manager in the same
+# way as a logged-in user. Open the exact marked artifact through Windows Run
+# with QEMU keys so the trust decision is the real interactive shell path.
+"${lab_dir}/lab.sh" send-keys windows meta_l-r
+sleep 1
+send_windows_text "${remote_root}\\candidate-setup.exe"
+"${lab_dir}/lab.sh" send-keys windows ret
+sleep 4
+if trust_launch_visible; then
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/installer-trusted-launch.png"
+  printf 'trusted-without-warning\n' > "${output_dir}/trust-ui-result.txt"
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -Result trusted-without-warning"
+  "${lab_dir}/lab.sh" send-keys windows esc
+else
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-warning.png"
+  # Drive the exact controls inside the logged-in desktop session. This locks
+  # the public wording without relying on boot-dependent keyboard focus order.
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -RegisterDriver"
+  more_info_captured=0
+  trust_driver_result=""
+  for _ in $(seq 1 160); do
+    trust_driver_result="$("${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Get-ChildItem -LiteralPath '${remote_root}\\trust-markers' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name\"" \
+      2>/dev/null | tr -d '\r' || true)"
+    if [[ "${more_info_captured}" == "0" ]] && grep -Fxq 'more-info-invoked' <<<"${trust_driver_result}"; then
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-more-info.png"
+      more_info_captured=1
+    fi
+    grep -Fxq 'run-anyway-invoked' <<<"${trust_driver_result}" && break
+    sleep 0.25
+  done
+  grep -Fxq 'run-anyway-invoked' <<<"${trust_driver_result}" || {
+    "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust-driver-error.txt" \
+      "${output_dir}/trust-driver-error.txt" >/dev/null 2>&1 || true
+    printf 'The interactive SmartScreen control driver did not invoke Run anyway.\n' >&2
+    exit 1
+  }
+  sleep 4
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-after-bypass.png"
+  if trust_launch_visible; then
+    printf 'warning-bypassed\n' > "${output_dir}/trust-ui-result.txt"
+    "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -Result warning-bypassed"
+  else
+    printf 'SmartScreen warning was visible, but the keyboard bypass did not reach the installer.\n' >&2
+    exit 1
+  fi
+fi
+"${lab_dir}/lab.sh" send-keys windows esc >/dev/null 2>&1 || true
+"${lab_dir}/lab.sh" run windows \
+  "taskkill.exe /F /IM candidate-setup.exe & taskkill.exe /F /IM smartscreen.exe" \
+  >/dev/null 2>&1 || true
+"${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust.json" "${output_dir}/trust.json"
+
 phase_command Prepare | tee "${output_dir}/prepare.log"
+if [[ "${security_mode}" == "1" ]]; then
+  phase_command ConfigureClean | tee "${output_dir}/configure-clean.log"
+fi
 application_windows="$("${lab_dir}/lab.sh" run windows \
   "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-Content -LiteralPath '${remote_root}\\application-path.txt' -Raw).Trim()\"" | tr -d '\r')"
 [[ "${application_windows}" == [A-Za-z]:\\* ]] || {
@@ -258,39 +353,91 @@ ssh_options=(
   -p "${ssh_port}"
   -L "${driver_forward_port}:127.0.0.1:4444"
 )
-printf 'Starting the native Windows WebView driver.\n'
-"${lab_dir}/lab.sh" run windows \
-  "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_start_driver.ps1 -WorkDir ${remote_root} -Register"
-ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel.log" 2>&1 &
-driver_ssh_pid=$!
-for _ in $(seq 1 480); do
-  if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
-    break
+driver_start_count=0
+stop_driver() {
+  set +e
+  if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
+    kill "${driver_ssh_pid}" 2>/dev/null || true
+    wait "${driver_ssh_pid}" 2>/dev/null || true
   fi
-  kill -0 "${driver_ssh_pid}" >/dev/null 2>&1 || {
-    tail -100 "${output_dir}/driver-tunnel.log" >&2
-    printf 'Windows tauri-driver exited before becoming ready.\n' >&2
-    exit 1
-  }
-  if (( _ % 10 == 0 )); then
-    task_state="$("${lab_dir}/lab.sh" run windows \
-      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-ScheduledTask -TaskName '${driver_task_name}').State\"" \
-      2>/dev/null | tr -d '\r' || true)"
-    if [[ "${task_state}" != "Running" ]]; then
-      "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/runtime-start.log" "${output_dir}/runtime-start.log" \
-        >/dev/null 2>&1 || true
-      tail -100 "${output_dir}/runtime-start.log" 2>/dev/null >&2 || true
-      printf 'Windows interactive runtime/driver task stopped before the driver became ready (state=%s).\n' "${task_state:-unknown}" >&2
-      exit 1
+  driver_ssh_pid=""
+  unlink "${output_dir}/driver-tunnel.pid" 2>/dev/null || true
+  "${lab_dir}/lab.sh" run windows \
+    "taskkill.exe /F /IM tauri-driver.exe & taskkill.exe /F /IM msedgedriver.exe" \
+    >/dev/null 2>&1 || true
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${driver_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
+    >/dev/null 2>&1 || true
+  set -e
+}
+
+start_driver() {
+  local runtime_mode="${1:-reset}"
+  local -a register_arguments=()
+  case "${runtime_mode}" in
+    reset) ;;
+    skip) register_arguments+=(-SkipRuntime) ;;
+    preserve) register_arguments+=(-PreserveRuntime) ;;
+    *) printf 'Unknown Windows driver runtime mode: %s\n' "${runtime_mode}" >&2; return 2 ;;
+  esac
+  driver_start_count=$((driver_start_count + 1))
+  printf 'Starting the native Windows WebView driver (runtime=%s).\n' "${runtime_mode}"
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_start_driver.ps1 -WorkDir ${remote_root} -Register ${register_arguments[*]}"
+  ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel-${driver_start_count}.log" 2>&1 &
+  driver_ssh_pid=$!
+  printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid"
+  for _ in $(seq 1 480); do
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
+      break
     fi
-  fi
-  sleep 0.5
-done
-curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null
+    kill -0 "${driver_ssh_pid}" >/dev/null 2>&1 || {
+      tail -100 "${output_dir}/driver-tunnel-${driver_start_count}.log" >&2
+      printf 'Windows tauri-driver exited before becoming ready.\n' >&2
+      return 1
+    }
+    if (( _ % 10 == 0 )); then
+      task_state="$("${lab_dir}/lab.sh" run windows \
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-ScheduledTask -TaskName '${driver_task_name}').State\"" \
+        2>/dev/null | tr -d '\r' || true)"
+      if [[ "${task_state}" != "Running" ]]; then
+        "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/runtime-start.log" "${output_dir}/runtime-start-${driver_start_count}.log" \
+          >/dev/null 2>&1 || true
+        tail -100 "${output_dir}/runtime-start-${driver_start_count}.log" 2>/dev/null >&2 || true
+        printf 'Windows interactive runtime/driver task stopped before the driver became ready (state=%s).\n' "${task_state:-unknown}" >&2
+        return 1
+      fi
+    fi
+    sleep 0.5
+  done
+  curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null
+}
+
+wait_for_consent() {
+  local attempt
+  for attempt in $(seq 1 240); do
+    if "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process consent -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  printf 'Windows did not expose the expected consent process.\n' >&2
+  return 1
+}
+
+if [[ "${security_mode}" == "1" ]]; then
+  start_driver skip
+else
+  start_driver reset
+fi
 
 run_journey() {
   local scenario="$1"
   local label="${2:-${scenario}}"
+  local restart_action="${3:-later}"
+  local uac_mode="${4:-none}"
   local scenario_dir="${evidence_dir}/${label}"
   local marker_dir="${marker_root}/${label}"
   mkdir -p "${scenario_dir}" "${marker_dir}"
@@ -304,6 +451,7 @@ run_journey() {
     --evidence "${scenario_dir}" \
     --markers "${marker_dir}" \
     --scenario "${scenario}" \
+    --restart-action "${restart_action}" \
     --timeout 2400 \
     > "${scenario_dir}/session.log" 2>&1 &
   local journey_pid=$!
@@ -315,6 +463,15 @@ run_journey() {
       [[ -z "${captured[${marker}]:-}" ]] || continue
       captured["${marker}"]=1
       "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/${label}-${marker}.png" >/dev/null 2>&1 || true
+      if [[ "${uac_mode}" == "cancel-approve" && "${marker}" == "permission-visible" ]]; then
+        wait_for_consent
+        "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/${label}-uac-cancel.png"
+        "${lab_dir}/lab.sh" send-keys windows esc
+      elif [[ "${uac_mode}" == "cancel-approve" && "${marker}" == permission-retry-* ]]; then
+        wait_for_consent
+        "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/${label}-uac-approve.png"
+        "${lab_dir}/lab.sh" send-keys windows alt-y
+      fi
     done < <(find "${marker_dir}" -maxdepth 1 -type f -print | sort)
     sleep 0.3
   done
@@ -326,22 +483,141 @@ run_journey() {
   return "${status}"
 }
 
+complete_clean_security_setup() {
+  local boot_before boot_after setup_status consent_pid last_consent_pid=""
+  boot_before="$("${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')\"" \
+    | tr -d '\r')"
+
+  run_journey first-run first-run now cancel-approve
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/restart-now-issued.png" >/dev/null 2>&1 || true
+
+  if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
+    kill "${driver_ssh_pid}" 2>/dev/null || true
+    wait "${driver_ssh_pid}" 2>/dev/null || true
+  fi
+  driver_ssh_pid=""
+
+  printf 'Waiting for the restart-now disconnect, reboot, and new Windows boot identity.\n'
+  observed_disconnect=0
+  for _ in $(seq 1 180); do
+    if ! "${lab_dir}/lab.sh" run windows "exit" >/dev/null 2>&1; then
+      observed_disconnect=1
+      break
+    fi
+    sleep 0.5
+  done
+  [[ "${observed_disconnect}" == "1" ]] || {
+    printf 'Restart now never disconnected Windows SSH.\n' >&2
+    return 1
+  }
+  "${lab_dir}/lab.sh" wait windows
+  "${lab_dir}/lab.sh" verify windows | tee "${output_dir}/guest-verify-after-restart.txt"
+  boot_after="$("${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')\"" \
+    | tr -d '\r')"
+  [[ "${boot_before}" != "${boot_after}" ]] || {
+    printf 'Restart now did not produce a new Windows boot identity.\n' >&2
+    return 1
+  }
+  printf 'before=%s\nafter=%s\n' "${boot_before}" "${boot_after}" > "${output_dir}/reboot-proof.txt"
+
+  printf 'Signing into the rebooted graphical session so Windows can consume RunOnce.\n'
+  if ! "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process explorer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+    >/dev/null 2>&1; then
+    "${lab_dir}/lab.sh" send-keys windows ret
+    sleep 1
+    "${lab_dir}/lab.sh" send-keys windows o m n i d e c k minus t e s t ret
+    for _ in $(seq 1 120); do
+      if "${lab_dir}/lab.sh" run windows \
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process explorer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+        >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.5
+    done
+  fi
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process explorer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+
+  printf 'Waiting for RunOnce to reopen the installed app after sign-in.\n'
+  for _ in $(seq 1 360); do
+    if "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process omnideck -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1; then
+      break
+    fi
+    if "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process consent -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1; then
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/post-reboot-uac-early.png" >/dev/null 2>&1 || true
+      "${lab_dir}/lab.sh" send-keys windows alt-y
+    fi
+    sleep 0.5
+  done
+  phase_command RunOnceProof | tee "${output_dir}/runonce-proof.log"
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-reopened.png"
+  "${lab_dir}/lab.sh" copy-from windows \
+    "${remote_scp_root}/results/runonce-proof.json" "${output_dir}/runonce-proof.json"
+
+  printf 'Allowing resumed setup to finish while approving any post-reboot installer prompt.\n'
+  setup_status=""
+  for _ in $(seq 1 1200); do
+    consent_pid="$("${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-Process consent -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id)\"" \
+      2>/dev/null | tr -d '\r' || true)"
+    if [[ -n "${consent_pid}" && "${consent_pid}" != "${last_consent_pid}" ]]; then
+      last_consent_pid="${consent_pid}"
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/post-reboot-uac-${consent_pid}.png" >/dev/null 2>&1 || true
+      "${lab_dir}/lab.sh" send-keys windows alt-y
+    fi
+    setup_status="$(phase_command SetupStatus 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+    [[ "${setup_status}" == "complete" ]] && break
+    sleep 2
+  done
+  [[ "${setup_status}" == "complete" ]] || {
+    printf 'RunOnce setup did not reach complete state (last status=%s).\n' "${setup_status:-missing}" >&2
+    return 1
+  }
+  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-setup-complete.png"
+  printf '{"status":"passed","uacCancellation":true,"uacApproval":true,"restartNow":true,"runOnceReopen":true,"bootBefore":"%s","bootAfter":"%s"}\n' \
+    "${boot_before}" "${boot_after}" > "${output_dir}/windows-security-summary.json"
+
+  "${lab_dir}/lab.sh" run windows "taskkill.exe /F /IM omnideck.exe" >/dev/null 2>&1 || true
+}
+
 set +e
-(
-  set -Eeuo pipefail
-  run_journey first-run
-  run_journey returning returning-initial
-  phase_command Doctor
-  run_journey doctor
-  phase_command Resume
-  run_journey resume
-  phase_command Update
-  run_journey update
-  run_journey returning returning-final
-  phase_command Final
-)
+if [[ "${security_mode}" == "1" ]]; then
+  (set -Eeuo pipefail; complete_clean_security_setup)
+else
+  (set -Eeuo pipefail; run_journey first-run)
+fi
 test_status=$?
 set -e
+
+if [[ "${test_status}" == "0" && "${security_mode}" == "1" ]]; then
+  stop_driver
+  start_driver preserve
+fi
+
+if [[ "${test_status}" == "0" ]]; then
+  set +e
+  (
+    set -Eeuo pipefail
+    run_journey returning returning-initial
+    phase_command Doctor
+    run_journey doctor
+    phase_command Resume
+    run_journey resume
+    phase_command Update
+    run_journey update
+    run_journey returning returning-final
+    phase_command Final
+  )
+  test_status=$?
+  set -e
+fi
 
 "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/tauri-driver.stdout.log" "${output_dir}/tauri-driver.stdout.log" \
   >/dev/null 2>&1 || true
@@ -370,6 +646,37 @@ with open(sys.argv[1], encoding="utf-8-sig") as stream:
     summary = json.load(stream)
 assert summary["status"] == "passed", summary
 PY
+python3 - "${output_dir}/trust.json" "${output_dir}/trust-ui-result.txt" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8-sig") as stream:
+    trust = json.load(stream)
+zone_identifier = trust["zoneIdentifier"]
+if isinstance(zone_identifier, dict):
+    zone_identifier = zone_identifier.get("value", "")
+assert "ZoneId=3" in zone_identifier, trust
+assert trust["smartScreen"] in {"warning-bypassed", "trusted-without-warning"}, trust
+result = open(sys.argv[2], encoding="utf-8").read().strip()
+assert result in {"warning-bypassed", "trusted-without-warning"}, result
+PY
+if [[ "${security_mode}" == "1" ]]; then
+  python3 - "${output_dir}/windows-security-summary.json" "${output_dir}/runonce-proof.json" <<'PY'
+import json
+import sys
+
+security = json.load(open(sys.argv[1], encoding="utf-8"))
+proof = json.load(open(sys.argv[2], encoding="utf-8-sig"))
+assert security["status"] == "passed", security
+assert all(security[key] is True for key in (
+    "uacCancellation", "uacApproval", "restartNow", "runOnceReopen"
+)), security
+assert security["bootBefore"] != security["bootAfter"], security
+assert proof["runOnceValueConsumed"] is True, proof
+assert proof["interactiveProcessCount"] >= 1, proof
+assert proof["setupStatePresent"] is True, proof
+PY
+fi
 node "${desktop_root}/tests/hardware/validate-proof.mjs" \
   --proof "${evidence_dir}/guest/smoke/smoke-proof.json" \
   --application "${artifact}" \
