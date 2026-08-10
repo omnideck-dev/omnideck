@@ -33,6 +33,7 @@ EOF
 
 while (($#)); do
   case "$1" in
+    --) shift ;;
     --vm) vm="${2:?--vm requires a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;

@@ -23,6 +23,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
 });
 
+test('documented pnpm argument separators are accepted by both VM lanes', () => {
+  assert.match(run, /--\) shift ;;/);
+  assert.match(windows, /--\) shift ;;/);
+});
+
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
   assert.match(run, /artifacts\/desktop-e2e/);
   assert.match(windows, /artifacts\/desktop-e2e/);
