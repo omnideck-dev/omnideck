@@ -5,11 +5,11 @@
   "procedures": [
     {
       "path": "desktop/tests/manual/published-artifact.md",
-      "covers": "browser download, provenance, checksum publication, and operating-system trust UI"
+      "covers": "normal-browser download warnings plus Gatekeeper on native macOS hardware"
     },
     {
       "path": "desktop/tests/manual/clean-first-run.md",
-      "covers": "permission cancellation/approval and the Windows restart-now RunOnce reopen path"
+      "covers": "native macOS permission handling and any clean-machine target without an available automation host"
     },
     {
       "path": "desktop/tests/manual/hosted-app-behavior.md",

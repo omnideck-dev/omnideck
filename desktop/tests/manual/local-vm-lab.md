@@ -83,11 +83,10 @@ pnpm run test:vm-e2e -- --vm windows
 
 ## Manual Windows desktop remainder
 
-The graphical viewer remains required for secure-desktop cancellation/approval,
-the restart-now RunOnce reopen path, visible terminal behavior, trust warnings,
-and subjective visual evidence. The automated suite copies
-`manual-remainder.json` into its run folder and does not represent these steps
-as a pass:
+The clean Windows E2E lane now drives SmartScreen, secure-desktop
+cancellation/approval, restart-now, and RunOnce reopening through QEMU. Open
+the graphical viewer only for subjective visual/accessibility review and the
+integration items still listed in `manual-remainder.json`:
 
 ```sh
 cd "$OMNIDECK_VM_LAB_DIR"
@@ -95,7 +94,7 @@ cd "$OMNIDECK_VM_LAB_DIR"
 ./lab.sh wait windows
 ./lab.sh verify windows
 ./lab.sh viewer windows
-# Perform desktop/tests/manual/clean-first-run.md in the viewer.
+# Perform only the not-run items named by manual-remainder.json.
 # Record screenshots, inventories, exact artifact checksum, and result.
 ./lab.sh stop windows
 ./lab.sh reset windows

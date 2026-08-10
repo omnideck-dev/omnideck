@@ -6,12 +6,13 @@
       "A GNOME graphical session for tester with GDM automatic login enabled in the disposable checkpoint",
       "OpenSSH server reachable through the lab's forwarded port",
       "Podman with the production runtime prerequisites already initialized",
-      "WebKitWebDriver from webkit2gtk-driver on Debian/Ubuntu or webkit2gtk6.0-driver on Fedora"
+      "WebKitWebDriver from webkit2gtk-driver on Debian/Ubuntu or the Fedora WebKitGTK package",
+      "A graphical PolicyKit authentication agent on clean Podman-free package lanes"
     ],
     "verify": [
       "pgrep -u tester -x gnome-shell",
       "command -v WebKitWebDriver",
-      "podman info"
+      "podman info for runtime checkpoints, or an explicit Podman-absent result for clean install checkpoints"
     ]
   },
   "windows": {
@@ -27,12 +28,18 @@
       "Read the WebView2 pv registry value and require a non-empty version",
       "podman machine inspect podman-omnideck-runtime",
       "wsl.exe -d podman-omnideck-runtime getent hosts ghcr.io"
+    ],
+    "cleanVerify": [
+      "An interactive Explorer session for tester",
+      "OpenSSH Server and Microsoft Edge WebView2 are present",
+      "Podman is absent and the disposable guest can enable WSL through real UAC"
     ]
   },
   "managedPerRun": [
     "tauri-driver 2.0.6 built from its locked crate and staged into the disposable guest",
     "Microsoft EdgeDriver downloaded for the exact installed WebView2 version",
     "The interactive Windows scheduled task used to launch tauri-driver",
-    "The candidate package, private CLI configuration, app user data, logs, and evidence"
+    "The candidate package, private CLI configuration, app user data, logs, and evidence",
+    "Windows Attachment Manager zone metadata plus SmartScreen, UAC, restart, and RunOnce host control"
   ]
 }

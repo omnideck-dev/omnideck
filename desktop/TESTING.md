@@ -194,6 +194,14 @@ and covers returning, Doctor, resume, update, uninstall, and reinstall behavior.
 Its per-run folder is the local regression record; it is not provenance for an
 artifact that has not yet been published.
 
+After publication, `pnpm run test:release-e2e -- --release latest --yes`
+groups the complete public package contract and the Ubuntu AppImage, Debian
+DEB, Fedora RPM, Silverblue atomic-host, and clean Windows NSIS journeys into
+one purgeable qualification record. The clean Windows journey includes
+SmartScreen, UAC cancellation/approval, restart-now, and RunOnce reopening.
+Native macOS and ARM64 execution still requires the opt-in dedicated-hardware
+workflow and remains explicit when those machines are unavailable.
+
 ## Setup, failure, and lifecycle coverage
 
 The setup state-machine suite must cover pristine first run, already-ready
@@ -213,9 +221,8 @@ reset is not an uninstaller test.
 
 The checked-in procedures cover:
 
-- browser download, checksum, attestation, and unsigned-package trust UX;
-- clean-machine installation, elevation cancellation/approval, setup parity,
-  Windows restart/resume, and hosted readiness;
+- normal-browser download warnings and native macOS unsigned-package trust UX;
+- clean-machine behavior on targets without an available automation host;
 - clipboard, refresh, exact-origin navigation, external links, denied schemes,
   single-instance focus, clean exit, and returning-user behavior;
 - resume, update, doctor, interruption, network, port, runtime, uninstall, and
@@ -243,8 +250,8 @@ An alpha requires:
 - all ten packages built and passing the pre-publication release contract;
 - immutable container digest, checksums, and provenance generated;
 - the published-release contract green after publication;
-- full clean-machine first-run and hosted-app manual evidence on Windows x64,
-  macOS ARM64, and Linux x64; and
+- full clean-machine first-run and hosted-app evidence on Windows x64,
+  macOS ARM64, and Linux x64 (automated where a lane exists); and
 - native packaged smoke for every remaining published architecture that has
   available hardware, with unavailable targets explicitly recorded as blocked.
 

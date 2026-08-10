@@ -21,7 +21,7 @@ Build a release-shaped Desktop package, reset a disposable local-lab guest,
 then run packaged smoke plus attended setup/hosted/recovery journeys.
 
 Options:
-  --vm appimage|deb|rpm|windows  Package/guest lane (default: appimage)
+  --vm appimage|deb|rpm|atomic|windows  Package/guest lane (default: appimage)
   --baseline NAME              Guest checkpoint (default: recommended available Linux checkpoint)
   --artifact PATH               Test this exact prebuilt package instead
   --cli PATH                    CLI worktree embedded in a local candidate
@@ -59,6 +59,7 @@ case "${vm}" in
   appimage) ssh_port=2221; bundle=appimage; artifact_glob='*.AppImage' ;;
   deb) ssh_port=2222; bundle=deb; artifact_glob='*.deb' ;;
   rpm) ssh_port=2223; bundle=rpm; artifact_glob='*.rpm' ;;
+  atomic) ssh_port=2224; bundle=appimage; artifact_glob='*.AppImage' ;;
   *) printf 'Unsupported Desktop VM lane: %s\n' "${vm}" >&2; exit 2 ;;
 esac
 
@@ -70,11 +71,17 @@ for dependency in docker flock node python3 sha256sum ssh tar; do
 done
 
 if [[ -z "${baseline}" ]]; then
-  recommended_baseline="$(node -e 'const c=require(process.argv[1]); process.stdout.write(c.recommendedBaseline)' "${script_dir}/golden-prerequisites.json")"
-  if "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "${recommended_baseline}"; then
-    baseline="${recommended_baseline}"
+  if [[ "${vm}" == "atomic" ]]; then
+    baseline="clean"
   else
-    baseline="podman-ready"
+    recommended_baseline="$(node -e 'const c=require(process.argv[1]); process.stdout.write(c.recommendedBaseline)' "${script_dir}/golden-prerequisites.json")"
+    if "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "${recommended_baseline}"; then
+      baseline="${recommended_baseline}"
+    elif "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "podman-ready"; then
+      baseline="podman-ready"
+    else
+      baseline="clean"
+    fi
   fi
 fi
 [[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
@@ -111,8 +118,8 @@ flock -n 8 || { printf 'The %s Desktop VM lane is already leased.\n' "${vm}" >&2
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
-cli_commit="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")"
-cli_version="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")"
+cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
+cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 namespace="de2e-$(printf '%s' "${safe_run_id}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | tail -c 28)"
 output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop-e2e/${safe_run_id}-${vm}}"
 build_dir="${output_dir}/build"
@@ -215,12 +222,17 @@ fi
 
 printf 'Starting an isolated graphical tester session.\n'
 "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/login.png"
-if ! "${lab_dir}/lab.sh" run "${vm}" "loginctl list-sessions --no-legend | grep -Eq 'tester[[:space:]]+seat0'" >/dev/null 2>&1; then
+gdm_config='[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=tester\n'
+if [[ "${vm}" == "atomic" ]]; then
+  gdm_config='[daemon]\nWaylandEnable=false\nAutomaticLoginEnable=true\nAutomaticLogin=tester\n'
+fi
+if [[ "${vm}" == "atomic" ]] ||
+  ! "${lab_dir}/lab.sh" run "${vm}" "loginctl list-sessions --no-legend | grep -Eq 'tester[[:space:]]+seat0'" >/dev/null 2>&1; then
   # Console key synthesis is deliberately avoided here: keyboard layouts and
   # GDM animations can alter or discard a disposable password. This file lives
   # only in the throwaway overlay and the final clean reset removes it.
   "${lab_dir}/lab.sh" run "${vm}" \
-    "printf '[daemon]\\nAutomaticLoginEnable=true\\nAutomaticLogin=tester\\n' | sudo tee /etc/gdm3/custom.conf >/dev/null && sudo systemctl restart gdm3"
+    "if test -d /etc/gdm3; then config=/etc/gdm3/custom.conf; else config=/etc/gdm/custom.conf; fi; printf '${gdm_config}' | sudo tee \"\$config\" >/dev/null && sudo systemctl restart display-manager"
 fi
 for _ in $(seq 1 90); do
   if "${lab_dir}/lab.sh" run "${vm}" "loginctl list-sessions --no-legend | grep -Eq 'tester[[:space:]]+seat0'" >/dev/null 2>&1; then
@@ -245,6 +257,7 @@ remote_staged=1
 "${lab_dir}/lab.sh" copy-to "${vm}" "${artifact}" "${remote_root}/candidate.${bundle}"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${build_dir}/tauri-driver-root/bin/tauri-driver" "${remote_root}/tauri-driver"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/webdriver_client.py" "${remote_root}/webdriver_client.py"
+"${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/polkit_agent.py" "${remote_root}/polkit_agent.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/linux_guest.sh" "${remote_root}/linux_guest.sh"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${desktop_root}/src-tauri/setup-parity.json" "${remote_root}/setup-parity.json"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${desktop_root}/tests/fixtures/electron-setup/setup-parity.json" "${remote_root}/mockup-parity.json"
@@ -258,11 +271,14 @@ ssh_options=(
   -o ConnectTimeout=8
   -p "${ssh_port}"
 )
-remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
+remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
 
 printf 'Running packaged smoke and attended Desktop journeys.\n'
+printf 'mode=target-scoped-pkttyagent; trigger=polkit-password; response=disposable-guest-password\n' \
+  > "${output_dir}/authentication-driver.txt"
 set +e
-ssh "${ssh_options[@]}" tester@127.0.0.1 "${remote_command}" > "${output_dir}/guest-session.log" 2>&1 &
+ssh "${ssh_options[@]}" tester@127.0.0.1 "${remote_command}" \
+  > "${output_dir}/guest-session.log" 2>&1 &
 journey_pid=$!
 set -e
 
@@ -275,11 +291,10 @@ while kill -0 "${journey_pid}" >/dev/null 2>&1; do
     captured["${marker}"]=1
     safe_marker="$(printf '%s' "${marker}" | tr -cd '[:alnum:]_.-')"
     "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/${safe_marker}.png" >/dev/null 2>&1 || true
-    if [[ "${marker}" == "permission-visible" && "${baseline}" == "clean" && "${permission_handled}" == "0" ]]; then
+    if [[ "${marker}" == "permission-visible" && "${permission_handled}" == "0" ]]; then
       permission_handled=1
       sleep 2
       "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/permission-prompt.png" >/dev/null 2>&1 || true
-      "${lab_dir}/lab.sh" send-keys "${vm}" o m n i d e c k minus t e s t ret || true
     fi
   done <<<"${marker_listing}"
   sleep 0.35

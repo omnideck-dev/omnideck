@@ -33,18 +33,33 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
+The Windows `clean` lane also automates the boundaries that WebDriver cannot
+cross by itself:
+
+- Windows Attachment Manager internet-zone metadata and either the real
+  SmartScreen warning/bypass or the trusted no-warning installer path;
+- real secure-desktop UAC cancellation, exact in-app cancellation copy,
+  retry, and approval through the QEMU console;
+- the exact Restart now/Restart later interface, selection of Restart now, a
+  verified SSH disconnect, and a changed Windows boot identity; and
+- console-driven sign-in, consumption of the product's real RunOnce value,
+  interactive app reopening, persisted setup state, post-reboot elevation, and
+  completion.
+
 On Linux, the harness automatically selects the versioned
 `recommendedBaseline` from `golden-prerequisites.json` when that checkpoint is
 present in the local lab, and otherwise falls back to the portable
-`podman-ready` checkpoint. Windows continues to default to `podman-ready`. The
-CLI VM E2E suite owns pristine Podman/WSL installation behavior; this Desktop
-lane starts from a reusable runtime checkpoint so it can exercise the complete
-desktop-owned lifecycle reliably on every pre-release run. Linux accepts
-`--baseline clean` and drives the graphical permission prompt. The automated
-Windows lane intentionally rejects `clean`: real UAC cancellation/approval,
-restart-now, and RunOnce reopen remain in
-`tests/manual/clean-first-run.md` because a WebDriver session cannot survive
-the secure-desktop/reboot boundary without changing product behavior.
+`podman-ready` checkpoint. Silverblue uses its `clean` atomic deployment and
+the x64 AppImage. Its unattended smoke launches the AppImage itself; its
+attended WebDriver journeys extract and hash-check the byte-identical shipped
+`omnideck` and `omnideck-cli` binaries, then run them outside the AppDir so they
+bind to Silverblue's native WebKitGTK. This avoids combining the AppImage's
+Ubuntu WebKit libraries with Fedora's WebDriver while still proving both the
+package loader and the distro-native Tauri behavior. Windows defaults to
+`podman-ready` for a faster development
+loop, while `--baseline clean` owns the full UAC/restart/RunOnce path. The
+published-release orchestrator always selects `clean` for Windows. Linux also
+accepts `--baseline clean` and drives its graphical permission prompt.
 
 The production-pinned runtime image is used by default. There is no tiny
 fixture image in the full Desktop journey. This makes the hosted proof a check
@@ -87,7 +102,42 @@ with that named checkpoint uses it automatically; `podman-ready` remains the
 portable fallback. `--baseline` and `OMNIDECK_DESKTOP_VM_E2E_BASELINE` always
 override automatic selection.
 
-## Run before publication
+## Qualify the latest published release with one command
+
+From `desktop/`, with every selected disposable guest stopped:
+
+```sh
+export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
+pnpm run test:release-e2e -- --release latest --yes
+```
+
+`latest` includes published prereleases. The command downloads the exact
+public release assets, verifies all ten packages and their checksums, validates
+package format and architecture, verifies GitHub attestations, reads the
+bundled CLI identity from the release tag, and runs these local x64 lanes
+sequentially:
+
+| Lane | Guest | Public package | Native journey |
+|---|---|---|---|
+| `appimage` | Ubuntu 24.04 GNOME | AppImage | full |
+| `deb` | Debian 13 GNOME | DEB | full plus install/uninstall/reinstall |
+| `rpm` | Fedora 44 Workstation | RPM | full plus install/uninstall/reinstall |
+| `atomic` | Fedora Silverblue 44 | AppImage | packaged smoke plus full byte-identical native-binary journey |
+| `windows` | Windows 11 Pro 25H2 clean | NSIS | trust, UAC, reboot, RunOnce, and full lifecycle |
+
+The same artifact contract statically proves the published macOS and ARM64
+packages; it labels them as static coverage, never as native execution. If the
+dedicated self-hosted Windows ARM64, Linux ARM64, Intel macOS, and Apple Silicon
+machines are online, add `--remote-native`. The command dispatches the existing
+`desktop-hardware.yml` lanes, waits for them, downloads their evidence, and
+requires them to pass. Without those machines, the corresponding native lanes
+remain explicit `not-run` entries in `summary.json`.
+
+Use `--lanes appimage,windows` for a shorter subset. A selected guest that is
+already running blocks the qualification before packages are downloaded; the
+harness never stops or resets a guest it does not own.
+
+## Run a development candidate before publication
 
 From `desktop/`:
 
@@ -103,6 +153,7 @@ Additional Linux package lanes:
 ```sh
 pnpm run test:vm-e2e -- --vm deb
 pnpm run test:vm-e2e -- --vm rpm
+pnpm run test:vm-e2e -- --vm atomic
 ```
 
 Run an exact already-built package without rebuilding it:
@@ -146,17 +197,35 @@ pnpm run test:vm-e2e:purge -- \
 The purge command accepts only a marked direct child of `artifacts/desktop-e2e`,
 shows disk usage, and requires the exact run-directory name.
 
+A published qualification groups every lane folder, release contract,
+provenance log, aggregate `summary.json`, and aggregate `junit.xml` under:
+
+```text
+$OMNIDECK_VM_LAB_DIR/artifacts/desktop-release/<run>/
+```
+
+Downloaded package bytes are deleted automatically at the end, including on
+failure; pass `--keep-downloads` only when debugging. Purge one qualification
+and any retained disposable overlays named by its nested lane manifests with:
+
+```sh
+pnpm run test:release-e2e:purge -- \
+  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop-release/<run>"
+```
+
 ## Manual remainder
 
-`manual-remainder.json` is copied into every run with status `not-run`. It
-routes a person or testing agent to the checked-in procedures for published
-trust UI, Windows UAC/restart-now, external-browser and clipboard integration,
-subjective visuals/accessibility, and timing-dependent interruption tests.
-Those checks stay explicit `not-run`/`blocked` until their own evidence exists.
+`manual-remainder.json` is copied into every native lane with status `not-run`.
+It routes a person or testing agent to the checked-in procedures for normal
+browser download warnings, native macOS Gatekeeper/permission behavior,
+external-browser and clipboard integration, subjective visuals/accessibility,
+and timing-dependent interruption tests. Windows SmartScreen, UAC,
+restart-now, and RunOnce are no longer classified as manual. Remaining checks
+stay explicit `not-run`/`blocked` until their own evidence exists.
 
 Fast source checks for the harness are:
 
 ```sh
-bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/linux_guest.sh
+bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/qualify-release.sh tests/e2e/linux_guest.sh
 python3 -m unittest tests/e2e/test_webdriver_client.py
 ```
