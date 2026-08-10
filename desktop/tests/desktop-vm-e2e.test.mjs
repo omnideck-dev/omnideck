@@ -48,10 +48,13 @@ test('manual-only behavior is explicit and never inferred as passed', () => {
 
 test('golden prerequisites are versioned while exact drivers remain per-run', () => {
   assert.equal(golden.schemaVersion, 1);
+  assert.equal(golden.recommendedBaseline, 'desktop-e2e-v2');
   assert.ok(golden.linux.checkpointInstall.some((item) => item.includes('WebKitWebDriver')));
   assert.ok(golden.windows.checkpointInstall.some((item) => item.includes('WebView2')));
   assert.ok(golden.managedPerRun.some((item) => item.includes('tauri-driver 2.0.6')));
   assert.ok(golden.managedPerRun.some((item) => item.includes('exact installed WebView2 version')));
   assert.match(run, /golden-prerequisites\.json/);
+  assert.match(run, /recommended_baseline/);
+  assert.match(run, /baseline="podman-ready"/);
   assert.match(windows, /golden-prerequisites\.json/);
 });

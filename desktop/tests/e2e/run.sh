@@ -8,7 +8,7 @@ repo_root="$(cd "${desktop_root}/.." && pwd)"
 lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
 vm="${OMNIDECK_DESKTOP_VM_E2E_VM:-appimage}"
-baseline="${OMNIDECK_DESKTOP_VM_E2E_BASELINE:-podman-ready}"
+baseline="${OMNIDECK_DESKTOP_VM_E2E_BASELINE:-}"
 artifact=""
 assume_yes=0
 keep_vm=0
@@ -22,7 +22,7 @@ then run packaged smoke plus attended setup/hosted/recovery journeys.
 
 Options:
   --vm appimage|deb|rpm|windows  Package/guest lane (default: appimage)
-  --baseline NAME              Guest checkpoint (default: podman-ready)
+  --baseline NAME              Guest checkpoint (default: recommended available Linux checkpoint)
   --artifact PATH               Test this exact prebuilt package instead
   --cli PATH                    CLI worktree embedded in a local candidate
   --yes                         Accept the destructive guest reset
@@ -46,7 +46,8 @@ while (($#)); do
 done
 
 if [[ "${vm}" == "windows" ]]; then
-  arguments=(--baseline "${baseline}")
+  arguments=()
+  [[ -n "${baseline}" ]] && arguments+=(--baseline "${baseline}")
   [[ -n "${cli_root}" ]] && arguments+=(--cli "${cli_root}")
   [[ -n "${artifact}" ]] && arguments+=(--artifact "${artifact}")
   [[ "${assume_yes}" == "1" ]] && arguments+=(--yes)
@@ -60,10 +61,6 @@ case "${vm}" in
   rpm) ssh_port=2223; bundle=rpm; artifact_glob='*.rpm' ;;
   *) printf 'Unsupported Desktop VM lane: %s\n' "${vm}" >&2; exit 2 ;;
 esac
-[[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
-  printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
-  exit 2
-}
 
 [[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
 [[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
@@ -71,6 +68,19 @@ lab_dir="$(cd "${lab_dir}" && pwd -P)"
 for dependency in docker flock node python3 sha256sum ssh tar; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
+
+if [[ -z "${baseline}" ]]; then
+  recommended_baseline="$(node -e 'const c=require(process.argv[1]); process.stdout.write(c.recommendedBaseline)' "${script_dir}/golden-prerequisites.json")"
+  if "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "${recommended_baseline}"; then
+    baseline="${recommended_baseline}"
+  else
+    baseline="podman-ready"
+  fi
+fi
+[[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
+  printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
+  exit 2
+}
 
 status="$("${lab_dir}/lab.sh" status "${vm}")"
 printf '%s\n' "${status}"

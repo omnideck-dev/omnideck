@@ -33,15 +33,18 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
-The default checkpoint is `podman-ready`. The CLI VM E2E suite owns pristine
-Podman/WSL installation behavior; this Desktop lane starts from the reusable
-runtime checkpoint so it can exercise the complete desktop-owned lifecycle
-reliably on every pre-release run. Linux accepts `--baseline clean` and drives
-the graphical permission prompt. The automated Windows lane intentionally
-rejects `clean`: real UAC cancellation/approval, restart-now, and RunOnce
-reopen remain in `tests/manual/clean-first-run.md` because a WebDriver session
-cannot survive the secure-desktop/reboot boundary without changing product
-behavior.
+On Linux, the harness automatically selects the versioned
+`recommendedBaseline` from `golden-prerequisites.json` when that checkpoint is
+present in the local lab, and otherwise falls back to the portable
+`podman-ready` checkpoint. Windows continues to default to `podman-ready`. The
+CLI VM E2E suite owns pristine Podman/WSL installation behavior; this Desktop
+lane starts from a reusable runtime checkpoint so it can exercise the complete
+desktop-owned lifecycle reliably on every pre-release run. Linux accepts
+`--baseline clean` and drives the graphical permission prompt. The automated
+Windows lane intentionally rejects `clean`: real UAC cancellation/approval,
+restart-now, and RunOnce reopen remain in
+`tests/manual/clean-first-run.md` because a WebDriver session cannot survive
+the secure-desktop/reboot boundary without changing product behavior.
 
 The production-pinned runtime image is used by default. There is no tiny
 fixture image in the full Desktop journey. This makes the hosted proof a check
@@ -66,19 +69,23 @@ inside the logged-in desktop session and proves registry DNS before exposing
 the driver. A golden image can therefore be refreshed without silently
 changing what drives the candidate.
 
-To revise a golden, start from `clean`, install only the checkpoint items in
-the contract, initialize Podman, run each listed verification command, shut
-the guest down cleanly, and create a new named checkpoint such as
-`desktop-e2e-v1`. Do not replace `clean`. Prove the new checkpoint before
-adopting it:
+To revise a golden, start from `clean` or the preceding named checkpoint,
+install only the checkpoint items in the contract, initialize Podman, run each
+listed verification command, shut the guest down cleanly, and create a new
+named checkpoint such as `desktop-e2e-v2`. Do not replace `clean`. Prove the
+new checkpoint before adopting it:
 
 ```sh
-pnpm run test:vm-e2e -- --vm appimage --baseline desktop-e2e-v1
-pnpm run test:vm-e2e -- --vm windows --baseline desktop-e2e-v1
+pnpm run test:vm-e2e -- --vm appimage --baseline desktop-e2e-v2
+pnpm run test:vm-e2e -- --vm windows --baseline podman-ready
 ```
 
-Once both lanes pass, set `OMNIDECK_DESKTOP_VM_E2E_BASELINE` or continue to
-pass `--baseline`; `podman-ready` remains the portable default.
+`desktop-e2e-v2` masks `systemd-networkd-wait-online.service` only after
+proving that NetworkManager owns the guest link and networkd reports it as
+unmanaged. It also bakes `WebKitWebDriver` into the checkpoint. A verified lab
+with that named checkpoint uses it automatically; `podman-ready` remains the
+portable fallback. `--baseline` and `OMNIDECK_DESKTOP_VM_E2E_BASELINE` always
+override automatic selection.
 
 ## Run before publication
 
