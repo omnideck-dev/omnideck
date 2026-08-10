@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recommendedBaseline": "podman-ready",
+  "recommendedBaseline": "desktop-e2e-v2",
   "linux": {
     "checkpointInstall": [
       "A GNOME graphical session for tester with GDM automatic login enabled in the disposable checkpoint",
