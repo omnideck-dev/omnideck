@@ -228,7 +228,7 @@ jobs:
 
       - name: Build native installers
         working-directory: desktop
-        run: pnpm run ${{ matrix.command }}
+        run: node scripts/build-with-retry.mjs ${{ matrix.command }}
 
       - name: Verify the packaged macOS app signature
         if: runner.os == 'macOS'
