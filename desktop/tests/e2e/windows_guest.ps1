@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -140,28 +140,50 @@ function Write-Inventory {
 }
 
 function Get-WebViewVersion {
-    $Roots = @(
-        (Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application"),
-        (Join-Path $env:ProgramFiles "Microsoft\EdgeWebView\Application"),
-        (Join-Path $env:LOCALAPPDATA "Microsoft\EdgeWebView\Application")
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-    $Versions = foreach ($Root in $Roots) {
-        Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
-            ForEach-Object { [version]$_.Name }
+    $WebViewClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    $RegistryPaths = @(
+        "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$WebViewClientId",
+        "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$WebViewClientId",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$WebViewClientId"
+    )
+    foreach ($RegistryPath in $RegistryPaths) {
+        $Version = (Get-ItemProperty -LiteralPath $RegistryPath -Name pv -ErrorAction SilentlyContinue).pv
+        if ($Version -and $Version -match '^\d+\.\d+\.\d+\.\d+$') {
+            return [pscustomobject]@{
+                Version = $Version
+                RegistryPath = $RegistryPath
+            }
+        }
     }
-    $Version = $Versions | Sort-Object -Descending | Select-Object -First 1
-    if (-not $Version) { throw "Microsoft Edge WebView2 Runtime was not found." }
-    return $Version.ToString()
+    throw "The active Microsoft Edge WebView2 Runtime pv registry value was not found."
 }
 
 function Install-EdgeDriver {
-    $Version = Get-WebViewVersion
+    $WebView = Get-WebViewVersion
+    $Version = $WebView.Version
     $DriverDirectory = Join-Path $WorkDir "edgedriver"
     $Driver = Join-Path $DriverDirectory "msedgedriver.exe"
-    if (Test-Path -LiteralPath $Driver) { return $Driver }
+    $DriverVersionPattern = '^(?:MSEdgeDriver|Microsoft Edge WebDriver)\s+(\d+)\.'
+    if (Test-Path -LiteralPath $Driver) {
+        $ExistingVersion = (& $Driver --version | Out-String).Trim()
+        if ($ExistingVersion -match $DriverVersionPattern) {
+            $ExistingMajor = [int]$Matches[1]
+            if ($ExistingMajor -eq ([version]$Version).Major) {
+                $Record = [ordered]@{
+                    webViewVersion = $Version
+                    webViewRegistryPath = $WebView.RegistryPath
+                    driverVersion = $ExistingVersion
+                    driverSha256 = (Get-FileHash -LiteralPath $Driver -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+                $Record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "webdriver.json") -Encoding utf8
+                return $Driver
+            }
+        }
+        Remove-Item -LiteralPath $DriverDirectory -Recurse -Force
+    }
     New-Item -ItemType Directory -Path $DriverDirectory -Force | Out-Null
     $Archive = Join-Path $WorkDir "edgedriver.zip"
+    Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
     $Urls = @(
         "https://msedgedriver.microsoft.com/$Version/edgedriver_win64.zip",
         "https://msedgedriver.microsoft.com/LATEST_RELEASE_$(([version]$Version).Major)_WINDOWS"
@@ -177,9 +199,18 @@ function Install-EdgeDriver {
     }
     Expand-Archive -LiteralPath $Archive -DestinationPath $DriverDirectory -Force
     if (-not (Test-Path -LiteralPath $Driver)) { throw "EdgeDriver archive had no msedgedriver.exe." }
+    $DriverVersion = (& $Driver --version | Out-String).Trim()
+    if ($DriverVersion -notmatch $DriverVersionPattern) {
+        throw "Could not parse the installed EdgeDriver version: $DriverVersion"
+    }
+    $DriverMajor = [int]$Matches[1]
+    if ($DriverMajor -ne ([version]$Version).Major) {
+        throw "EdgeDriver major $DriverMajor does not match WebView2 $Version."
+    }
     $Record = [ordered]@{
         webViewVersion = $Version
-        driverVersion = (& $Driver --version | Out-String).Trim()
+        webViewRegistryPath = $WebView.RegistryPath
+        driverVersion = $DriverVersion
         driverSha256 = (Get-FileHash -LiteralPath $Driver -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     $Record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "webdriver.json") -Encoding utf8
@@ -249,6 +280,10 @@ function Invoke-Smoke {
 }
 
 switch ($Phase) {
+    "Driver" {
+        Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
+        Write-Host "DRIVER READY"
+    }
     "Prepare" {
         $Actual = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($Actual -ne $ArtifactSha256.ToLowerInvariant()) { throw "Installer SHA-256 mismatch." }

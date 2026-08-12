@@ -29,8 +29,11 @@ if ($RegisterDriver) {
 if ($Drive) {
     try {
         Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
-        function Invoke-ExactControl([string]$Name, [string]$Marker) {
-            $Deadline = [DateTime]::UtcNow.AddSeconds(20)
+        function New-EvidenceMarker([string]$Name) {
+            New-Item -ItemType File -Path (Join-Path $Markers $Name) -Force | Out-Null
+        }
+        function Find-ExactControl([string]$Name, [int]$TimeoutSeconds = 20) {
+            $Deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
             $Condition = [System.Windows.Automation.PropertyCondition]::new(
                 [System.Windows.Automation.AutomationElement]::NameProperty,
                 $Name
@@ -40,19 +43,39 @@ if ($Drive) {
                     [System.Windows.Automation.TreeScope]::Descendants,
                     $Condition
                 )
-                if ($Element) {
-                    $Pattern = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-                    $Pattern.Invoke()
-                    New-Item -ItemType File -Path (Join-Path $Markers $Marker) -Force | Out-Null
-                    return
-                }
+                if ($Element) { return $Element }
                 Start-Sleep -Milliseconds 250
             }
-            throw "Timed out waiting for the exact SmartScreen control: $Name"
+            return $null
         }
-        Invoke-ExactControl -Name "More info" -Marker "more-info-invoked"
-        Start-Sleep -Seconds 2
-        Invoke-ExactControl -Name "Run anyway" -Marker "run-anyway-invoked"
+
+        # Start-Process runs inside this limited, interactive tester task. It
+        # therefore traverses the same Explorer/Attachment Manager path as a
+        # double-click without depending on QEMU keyboard focus or timing.
+        Start-Process -FilePath (Join-Path $env:WINDIR "explorer.exe") -ArgumentList "`"$Installer`""
+        New-EvidenceMarker -Name "launch-invoked"
+
+        $MoreInfo = Find-ExactControl -Name "More info"
+        if (-not $MoreInfo) {
+            $Consent = Get-Process consent -ErrorAction SilentlyContinue
+            $InstallerProcess = Get-Process -Name "candidate-setup" -ErrorAction SilentlyContinue
+            if ($Consent -or $InstallerProcess) {
+                New-EvidenceMarker -Name "trusted-without-warning"
+                return
+            }
+            throw "The interactive installer launch produced neither SmartScreen nor an installer process."
+        }
+
+        New-EvidenceMarker -Name "warning-observed"
+        Start-Sleep -Seconds 3
+        $MoreInfo.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        New-EvidenceMarker -Name "more-info-invoked"
+        Start-Sleep -Seconds 3
+
+        $RunAnyway = Find-ExactControl -Name "Run anyway"
+        if (-not $RunAnyway) { throw "Timed out waiting for the exact SmartScreen control: Run anyway" }
+        $RunAnyway.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        New-EvidenceMarker -Name "run-anyway-invoked"
     }
     catch {
         $_ | Out-String | Set-Content -LiteralPath (Join-Path $Results "trust-driver-error.txt") -Encoding utf8

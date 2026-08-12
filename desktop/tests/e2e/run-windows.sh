@@ -246,87 +246,63 @@ phase_command() {
     "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase ${phase} -WorkDir ${remote_root} -ArtifactSha256 ${artifact_sha256} -ExpectedCliVersion ${cli_version} -ExpectedCliCommit ${cli_commit}"
 }
 
-send_windows_text() {
-  local value="$1"
-  local character key index
-  local -a keys=()
-  for ((index = 0; index < ${#value}; index++)); do
-    character="${value:index:1}"
-    case "${character}" in
-      [[:alpha:]]) key="${character,,}" ;;
-      [[:digit:]]) key="${character}" ;;
-      :) key="shift-semicolon" ;;
-      \\) key="backslash" ;;
-      .) key="dot" ;;
-      -) key="minus" ;;
-      _) key="shift-minus" ;;
-      *) printf 'Cannot type Windows console character: %s\n' "${character}" >&2; return 2 ;;
-    esac
-    keys+=("${key}")
-  done
-  "${lab_dir}/lab.sh" send-keys windows "${keys[@]}"
-}
-
 trust_launch_visible() {
   "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if ((Get-Process consent -ErrorAction SilentlyContinue) -or (Get-Process -Name candidate-setup -ErrorAction SilentlyContinue)) { exit 0 } else { exit 1 }" \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"\$deadline = [DateTime]::UtcNow.AddSeconds(45); do { if ((Get-Process consent -ErrorAction SilentlyContinue) -or (Get-Process -Name candidate-setup -ErrorAction SilentlyContinue)) { exit 0 }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt \$deadline); exit 1\"" \
     >/dev/null 2>&1
 }
 
 printf 'Probing the published installer through Windows Attachment Manager and SmartScreen.\n'
 "${lab_dir}/lab.sh" run windows \
   "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root}"
-# A scheduled or SSH process does not traverse Attachment Manager in the same
-# way as a logged-in user. Open the exact marked artifact through Windows Run
-# with QEMU keys so the trust decision is the real interactive shell path.
-"${lab_dir}/lab.sh" send-keys windows meta_l-r
-sleep 1
-send_windows_text "${remote_root}\\candidate-setup.exe"
-"${lab_dir}/lab.sh" send-keys windows ret
-sleep 4
-if trust_launch_visible; then
+# The limited scheduled task launches through the logged-in tester session,
+# observes the exact English controls, and drives them with UI Automation. This
+# exercises the real internet-zone trust path without keyboard-focus races.
+"${lab_dir}/lab.sh" run windows \
+  "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -RegisterDriver"
+warning_captured=0
+more_info_captured=0
+trust_driver_result=""
+for _ in $(seq 1 160); do
+  trust_driver_result="$("${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Get-ChildItem -LiteralPath '${remote_root}\\trust-markers' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name\"" \
+    2>/dev/null | tr -d '\r' || true)"
+  if [[ "${warning_captured}" == "0" ]] && grep -Fxq 'warning-observed' <<<"${trust_driver_result}"; then
+    "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-warning.png"
+    warning_captured=1
+  fi
+  if [[ "${more_info_captured}" == "0" ]] && grep -Fxq 'more-info-invoked' <<<"${trust_driver_result}"; then
+    "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-more-info.png"
+    more_info_captured=1
+  fi
+  if grep -Eq '^(run-anyway-invoked|trusted-without-warning)$' <<<"${trust_driver_result}"; then
+    break
+  fi
+  sleep 0.25
+done
+
+if grep -Fxq 'trusted-without-warning' <<<"${trust_driver_result}"; then
   "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/installer-trusted-launch.png"
-  printf 'trusted-without-warning\n' > "${output_dir}/trust-ui-result.txt"
-  "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -Result trusted-without-warning"
-  "${lab_dir}/lab.sh" send-keys windows esc
-else
-  "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-warning.png"
-  # Drive the exact controls inside the logged-in desktop session. This locks
-  # the public wording without relying on boot-dependent keyboard focus order.
-  "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -RegisterDriver"
-  more_info_captured=0
-  trust_driver_result=""
-  for _ in $(seq 1 160); do
-    trust_driver_result="$("${lab_dir}/lab.sh" run windows \
-      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Get-ChildItem -LiteralPath '${remote_root}\\trust-markers' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name\"" \
-      2>/dev/null | tr -d '\r' || true)"
-    if [[ "${more_info_captured}" == "0" ]] && grep -Fxq 'more-info-invoked' <<<"${trust_driver_result}"; then
-      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-more-info.png"
-      more_info_captured=1
-    fi
-    grep -Fxq 'run-anyway-invoked' <<<"${trust_driver_result}" && break
-    sleep 0.25
-  done
-  grep -Fxq 'run-anyway-invoked' <<<"${trust_driver_result}" || {
-    "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust-driver-error.txt" \
-      "${output_dir}/trust-driver-error.txt" >/dev/null 2>&1 || true
-    printf 'The interactive SmartScreen control driver did not invoke Run anyway.\n' >&2
-    exit 1
-  }
+  trust_result=trusted-without-warning
+elif grep -Fxq 'run-anyway-invoked' <<<"${trust_driver_result}"; then
   sleep 4
   "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/smartscreen-after-bypass.png"
-  if trust_launch_visible; then
-    printf 'warning-bypassed\n' > "${output_dir}/trust-ui-result.txt"
-    "${lab_dir}/lab.sh" run windows \
-      "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -Result warning-bypassed"
-  else
-    printf 'SmartScreen warning was visible, but the keyboard bypass did not reach the installer.\n' >&2
-    exit 1
-  fi
+  trust_result=warning-bypassed
+else
+  "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust-driver-error.txt" \
+    "${output_dir}/trust-driver-error.txt" >/dev/null 2>&1 || true
+  printf 'The interactive SmartScreen driver did not reach an installer decision.\n' >&2
+  exit 1
 fi
-"${lab_dir}/lab.sh" send-keys windows esc >/dev/null 2>&1 || true
+
+if ! trust_launch_visible; then
+  printf 'The interactive trust decision did not reach the installer.\n' >&2
+  exit 1
+fi
+printf '%s\n' "${trust_result}" > "${output_dir}/trust-ui-result.txt"
+"${lab_dir}/lab.sh" run windows \
+  "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_trust.ps1 -WorkDir ${remote_root} -Result ${trust_result}"
+"${lab_dir}/lab.sh" send-keys windows esc
 "${lab_dir}/lab.sh" run windows \
   "taskkill.exe /F /IM candidate-setup.exe & taskkill.exe /F /IM smartscreen.exe" \
   >/dev/null 2>&1 || true
@@ -382,6 +358,7 @@ start_driver() {
   esac
   driver_start_count=$((driver_start_count + 1))
   printf 'Starting the native Windows WebView driver (runtime=%s).\n' "${runtime_mode}"
+  phase_command Driver | tee -a "${output_dir}/webdriver-refresh.log"
   "${lab_dir}/lab.sh" run windows \
     "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_start_driver.ps1 -WorkDir ${remote_root} -Register ${register_arguments[*]}"
   ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel-${driver_start_count}.log" 2>&1 &
