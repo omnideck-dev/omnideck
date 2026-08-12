@@ -9,6 +9,7 @@ const windows = await read('../scripts/release-test/windows.ps1');
 const resetWindows = await read('../scripts/release-test/reset-host.ps1');
 const common = await read('../scripts/release-test/_common.sh');
 const macosBundleVerifier = await read('../scripts/verify-macos-bundle.sh');
+const buildWithRetry = await read('../scripts/build-with-retry.mjs');
 const desktopWorkflow = await read('../../.github/workflows/desktop.yml');
 const hardwareWorkflow = await read('../../.github/workflows/desktop-hardware.yml');
 const publishedWorkflow = await read('../../.github/workflows/desktop-release-contract.yml');
@@ -50,6 +51,13 @@ test('hosted CI, public artifact validation, and native hardware remain distinct
   assert.match(hardwareWorkflow, /workflow_dispatch:/);
   assert.match(hardwareWorkflow, /runs-on: \[self-hosted, omnideck-desktop/);
   assert.doesNotMatch(hardwareWorkflow, /pull_request:/);
+});
+
+test('native package builds retry transient Tauri helper downloads', () => {
+  assert.match(desktopWorkflow, /node scripts\/build-with-retry\.mjs \$\{\{ matrix\.command \}\}/);
+  assert.match(buildWithRetry, /const maxAttempts = 3/);
+  assert.match(buildWithRetry, /attempt \* 5_000/);
+  assert.match(buildWithRetry, /spawnSync\(`pnpm run \$\{packageScript\}`/);
 });
 
 test('macOS release packages contain a strict bundle-level signature', () => {
