@@ -23,8 +23,8 @@ apps=("${bundle_root}/macos/"*.app)
 dmgs=("${bundle_root}/dmg/"*.dmg)
 shopt -u nullglob
 
-if [[ "${#apps[@]}" -ne 1 ]]; then
-  echo "expected exactly one app bundle under ${bundle_root}/macos, found ${#apps[@]}" >&2
+if [[ "${#apps[@]}" -gt 1 ]]; then
+  echo "expected at most one app bundle under ${bundle_root}/macos, found ${#apps[@]}" >&2
   exit 1
 fi
 if [[ "${#dmgs[@]}" -ne 1 ]]; then
@@ -54,8 +54,12 @@ verify_app() {
   fi
 }
 
-echo "Verifying generated app bundle ${apps[0]}"
-verify_app "${apps[0]}"
+if [[ "${#apps[@]}" -eq 1 ]]; then
+  echo "Verifying retained app bundle ${apps[0]}"
+  verify_app "${apps[0]}"
+else
+  echo "Tauri removed the intermediate app after creating the DMG; verifying the packaged app"
+fi
 
 mount_point="$(mktemp -d "${TMPDIR:-/tmp}/omnideck-dmg.XXXXXX")"
 mounted=0

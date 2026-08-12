@@ -58,6 +58,8 @@ test('macOS release packages contain a strict bundle-level signature', () => {
   assert.match(desktopWorkflow, /verify-macos-bundle\.sh \$\{\{ matrix\.target \}\}/);
   assert.match(macosBundleVerifier, /codesign --verify --deep --strict --verbose=4/);
   assert.match(macosBundleVerifier, /hdiutil attach -readonly -nobrowse/);
+  assert.match(macosBundleVerifier, /Tauri removed the intermediate app/);
+  assert.match(macosBundleVerifier, /mounted_apps=/);
   assert.match(macosBundleVerifier, /Info\.plist=not bound/);
   assert.match(macosBundleVerifier, /Sealed Resources=none/);
   assert.match(macosBundleVerifier, /linker-signed/);
