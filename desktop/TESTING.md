@@ -255,9 +255,11 @@ An alpha requires:
 - native packaged smoke for every remaining published architecture that has
   available hardware, with unavailable targets explicitly recorded as blocked.
 
-Unsigned alpha warnings are acceptable only when documented and distinguished
-from corruption or launch failure. A post-publication failure does not mutate
-the alpha; it makes that alpha unqualified for later promotion.
+Ad-hoc-signed alpha warnings are acceptable only when documented and
+distinguished from corruption, an invalid bundle signature, or launch failure.
+Every macOS DMG must contain an application that passes strict recursive
+`codesign` verification. A post-publication failure does not mutate the alpha;
+it makes that alpha unqualified for later promotion.
 
 ### Beta
 

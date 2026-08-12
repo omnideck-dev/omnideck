@@ -230,6 +230,11 @@ jobs:
         working-directory: desktop
         run: pnpm run ${{ matrix.command }}
 
+      - name: Verify the packaged macOS app signature
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: ./scripts/verify-macos-bundle.sh ${{ matrix.target }}
+
       - name: Generate SHA-256 checksums
         working-directory: desktop
         run: node scripts/checksums.mjs src-tauri/target/${{ matrix.target }}/release/bundle

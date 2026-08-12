@@ -25,12 +25,16 @@ const setup = await read('../web/setup.js');
 const dash = await read('../web/agent-dash.js');
 const iconSource = await read('../src-tauri/icons/source.svg');
 const cliRust = await read('../src-tauri/src/cli.rs');
+const cargoToml = await read('../src-tauri/Cargo.toml');
+const cargoLock = await read('../src-tauri/Cargo.lock');
+const stateRust = await read('../src-tauri/src/state.rs');
+const imageManifest = JSON.parse(await read('../src-tauri/resources/image-manifest.json'));
 
 test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-alpha.11');
+  assert.equal(config.version, '0.1.0-beta.1');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -42,6 +46,19 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.match(packageJson.scripts['build:windows'], /--bundles nsis/);
   assert.match(packageJson.scripts['build:macos'], /--bundles dmg/);
   assert.match(packageJson.scripts['build:linux'], /--bundles appimage deb rpm/);
+});
+
+test('desktop version mirrors stay locked to the release version', () => {
+  assert.equal(packageJson.version, config.version);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.1"$/m);
+  assert.match(cargoLock, /name = "omnideck"\nversion = "0\.1\.0-beta\.1"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.1"/);
+  assert.equal(imageManifest.appVersion, config.version);
+});
+
+test('macOS previews receive a complete bundle-level ad-hoc signature', () => {
+  assert.equal(config.bundle.macOS.signingIdentity, '-');
+  assert.equal(config.bundle.macOS.hardenedRuntime, true);
 });
 
 test('bundles the blue signal icon with readable Linux package assets', async () => {
@@ -134,14 +151,14 @@ test('release builds are GUI applications and platform behavior is isolated', ()
   assert.match(platformRust, /target_os = "linux"/);
 });
 
-test('the latest CLI alpha is pinned with six target binaries and SBOMs', () => {
+test('the promoted CLI beta is pinned with six target binaries and SBOMs', () => {
   assert.equal(vendor.repository, 'omnideck-dev/cli');
-  assert.equal(vendor.tag, 'v0.11.0-alpha.2');
-  assert.equal(vendor.version, 'v0.11.0-alpha.2');
+  assert.equal(vendor.tag, 'v0.11.0-beta.1');
+  assert.equal(vendor.version, 'v0.11.0-beta.1');
   assert.equal(vendor.commit, '6ea721020691');
   assert.equal(
     vendor.downloadBaseUrl,
-    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-alpha.2',
+    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.1',
   );
   assert.deepEqual(vendor.targets.map(({ targetTriple }) => targetTriple).sort(), [
     'aarch64-apple-darwin',
@@ -151,7 +168,7 @@ test('the latest CLI alpha is pinned with six target binaries and SBOMs', () => 
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-alpha\.2"/);
+  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.1"/);
   assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "6ea721020691"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)

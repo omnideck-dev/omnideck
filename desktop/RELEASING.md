@@ -11,7 +11,9 @@ and published assets are immutable.
 
 ## Prepare the candidate
 
-1. Update `package.json` and `src-tauri/tauri.conf.json` to the same version.
+1. Update `package.json`, `src-tauri/tauri.conf.json`, the Rust package/lock,
+   `src-tauri/src/state.rs`, and the checked-in runtime image manifest to the
+   same version. Source policy tests lock these mirrors together.
 2. Update the pinned CLI vendor manifest deliberately; never weaken its archive,
    binary, SBOM, version, commit, or architecture checks.
 3. Set `container-version.txt` to the intended container release and confirm it
@@ -105,7 +107,12 @@ merely to a version family or time spent in a channel.
 
 ## Signing status
 
-Preview packages may be unsigned. SmartScreen and Gatekeeper warnings must be
-documented for testers and recorded separately from functional defects.
-Signing, notarization, and publisher identity must be resolved before a stable
-release can satisfy the stable gate.
+Preview macOS packages use Tauri's complete bundle-level ad-hoc signature. The
+macOS build mounts the generated DMG and requires its contained application to
+pass strict recursive `codesign` verification; an executable-only linker
+signature is a release failure. Ad-hoc signatures do not establish publisher
+identity, so Gatekeeper may still require the tester to approve the application
+in Privacy & Security. SmartScreen and Gatekeeper warnings must be documented
+and recorded separately from corruption, an invalid bundle signature, or a
+launch failure. Developer ID signing, notarization, and publisher identity must
+be resolved before a stable release can satisfy the stable gate.
