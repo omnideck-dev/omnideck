@@ -24,12 +24,14 @@ diagnostics, result, process list, and resource inventory.
    is retained.
 2. Disconnect the network during download, restore it, and verify bounded,
    actionable recovery.
-3. Occupy the candidate local port and verify the host retries another dynamic
-   port without weakening exact-origin navigation rules.
-4. Stop the runtime or application container while OmniDeck is open. Verify
+3. Stop the runtime or application container while OmniDeck is open. Verify
    diagnostics and recovery do not expose raw internals as the only guidance.
-5. Reboot after partial setup and verify a single resume path.
-6. Relaunch after a failed action and verify recovery remains possible.
+4. Reboot after partial setup and verify a single resume path.
+5. Relaunch after a failed action and verify recovery remains possible.
+
+Occupied saved-port recovery is no longer manual. Every Linux and Windows VM
+lane creates the conflict, locks the visible wording, and proves automatic
+selection and persistence of another port; see `tests/e2e/README.md`.
 
 ## Package lifecycle
 

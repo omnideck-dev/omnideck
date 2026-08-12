@@ -438,8 +438,13 @@ run_journey() {
   local label="${2:-${scenario}}"
   local restart_action="${3:-later}"
   local uac_mode="${4:-none}"
+  local expected_port_conflict="${5:-}"
   local scenario_dir="${evidence_dir}/${label}"
   local marker_dir="${marker_root}/${label}"
+  local -a driver_args=()
+  if [[ -n "${expected_port_conflict}" ]]; then
+    driver_args+=(--expected-port-conflict "${expected_port_conflict}")
+  fi
   mkdir -p "${scenario_dir}" "${marker_dir}"
   python3 "${script_dir}/webdriver_client.py" \
     --application "${application_windows}" \
@@ -452,6 +457,7 @@ run_journey() {
     --markers "${marker_dir}" \
     --scenario "${scenario}" \
     --restart-action "${restart_action}" \
+    "${driver_args[@]}" \
     --timeout 2400 \
     > "${scenario_dir}/session.log" 2>&1 &
   local journey_pid=$!
@@ -612,6 +618,10 @@ if [[ "${test_status}" == "0" ]]; then
     run_journey resume
     phase_command Update
     run_journey update
+    occupied_port="$(phase_command PortConflict | tr -d '\r' | tail -n 1)"
+    [[ "${occupied_port}" =~ ^[0-9]+$ ]]
+    run_journey port-conflict port-conflict later none "${occupied_port}"
+    phase_command VerifyPortConflict
     run_journey returning returning-final
     phase_command Final
   )

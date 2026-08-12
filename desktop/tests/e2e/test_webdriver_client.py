@@ -223,6 +223,44 @@ class WebDriverClientTests(unittest.TestCase):
             )
             self.assertTrue((markers / "update-bridge").is_file())
 
+    def test_port_conflict_copy_and_automatic_recovery_are_locked(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        self.assertEqual(
+            CLIENT.PORT_CONFLICT_ACTIVITY, "Choosing another private address…"
+        )
+        self.assertEqual(
+            CLIENT.PORT_CONFLICT_STATUS.format(port=2337),
+            "Port 2337 is already in use",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            markers = root / "markers"
+            evidence.mkdir()
+            markers.mkdir()
+            journey = CLIENT.Journey(
+                BridgeDriver(), parity, evidence, markers, 5, False, initial
+            )
+            updating = parity["setupCopy"]["updating"]
+            state = {
+                "stage": "preparing",
+                "title": {"text": updating["title"]},
+                "detail": {"text": updating["detail"]},
+                "activity": {"text": CLIENT.PORT_CONFLICT_ACTIVITY},
+                "progressValue": {"text": "Port 2337 is already in use"},
+                "primary": {"text": "", "hidden": True},
+            }
+            journey.wait_for = lambda *_args, **_kwargs: state
+            journey.finish_setup = lambda *_args, **_kwargs: "opened"
+
+            self.assertEqual(journey.run_port_conflict(2337, "", ""), "opened")
+            self.assertEqual(
+                (markers / "port-conflict-recovered").read_text(),
+                "Port 2337 is already in use\n",
+            )
+
     def test_hosted_wait_retries_a_transient_handle_disconnect(self) -> None:
         parity, initial = CLIENT.load_contract(
             self.parity, self.mockup_parity, self.mockup_html

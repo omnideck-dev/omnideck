@@ -77,6 +77,9 @@ EXPECTED_UPDATE_BRIDGE = [
     "runAction",
 ]
 
+PORT_CONFLICT_ACTIVITY = "Choosing another private address…"
+PORT_CONFLICT_STATUS = "Port {port} is already in use"
+
 
 class WebDriverError(RuntimeError):
     pass
@@ -246,7 +249,7 @@ class Journey:
         self.timeout = timeout
         self.webdriver_screenshots = webdriver_screenshots
         self.states: list[dict[str, Any]] = []
-        self.seen: set[tuple[str, str, str, str]] = set()
+        self.seen: set[tuple[str, str, str, str, str]] = set()
         self.screenshot_count = 0
         self.hosted_action = hosted_action
         self.restart_action = restart_action
@@ -334,6 +337,7 @@ class Journey:
             text_of(state, "activity")
             if text_of(state, "activity") in self.phase_activities
             else "",
+            text_of(state, "progressValue"),
         )
         if key in self.seen and not force:
             return contract
@@ -526,6 +530,27 @@ class Journey:
         self.driver.click("#primary")
         return self.finish_setup(fixture_text, hosted_selector)
 
+    def run_port_conflict(
+        self, expected_port: int, fixture_text: str, hosted_selector: str
+    ) -> str:
+        expected_status = PORT_CONFLICT_STATUS.format(port=expected_port)
+        state = self.wait_for(
+            lambda value: (
+                text_of(value, "activity") == PORT_CONFLICT_ACTIVITY
+                and text_of(value, "progressValue") == expected_status
+            ),
+            "automatic occupied-port recovery",
+        )
+        if self.validate_copy(state) != "setup:updating":
+            raise AssertionError(f"Port recovery left the update surface: {state!r}")
+        if is_visible(state, "primary"):
+            raise AssertionError("Automatic port recovery unexpectedly requires an action")
+        self.assert_update_bridge()
+        self.markers.joinpath("port-conflict-recovered").write_text(
+            expected_status + "\n", encoding="utf-8"
+        )
+        return self.finish_setup(fixture_text, hosted_selector)
+
     def wait_for_hosted(self, fixture_text: str, hosted_selector: str) -> dict[str, Any]:
         deadline = time.monotonic() + self.timeout
         observed: list[dict[str, Any]] = []
@@ -613,8 +638,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--driver-timeout", type=float, default=30)
     parser.add_argument("--stop-after", choices=("welcome", "open"), default="open")
     parser.add_argument(
-        "--scenario", choices=("first-run", "returning", "resume", "update", "doctor"), default="first-run"
+        "--scenario",
+        choices=("first-run", "returning", "resume", "update", "doctor", "port-conflict"),
+        default="first-run",
     )
+    parser.add_argument("--expected-port-conflict", type=int, default=2338)
     parser.add_argument("--fixture-text", default="Welcome to Omnideck")
     parser.add_argument(
         "--hosted-selector",
@@ -692,6 +720,10 @@ def main() -> int:
             elif args.scenario == "update":
                 result = journey.run_continuation(
                     "setup:updating", args.fixture_text, args.hosted_selector
+                )
+            elif args.scenario == "port-conflict":
+                result = journey.run_port_conflict(
+                    args.expected_port_conflict, args.fixture_text, args.hosted_selector
                 )
             else:
                 result = journey.run_doctor(args.fixture_text, args.hosted_selector)

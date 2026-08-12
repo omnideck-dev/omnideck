@@ -152,12 +152,22 @@ fn setup_state_from_cli_event(
         .and_then(|value| value.as_str())
         .map(str::to_owned)
         .filter(|value| !value.is_empty());
+    let event_detail = event
+        .get("detail")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+        .filter(|value| !value.is_empty());
     let status = event
         .get("status")
         .and_then(|value| value.as_str())
-        .or_else(|| event.get("detail").and_then(|value| value.as_str()))
+        .or(event_detail.as_deref())
         .map(str::to_owned)
         .filter(|value| !value.is_empty());
+    let activity = if status.as_deref() == Some("Switching Podman machines") {
+        event_detail.or(activity)
+    } else {
+        activity
+    };
     let progress = if state == "done" { Some(1.0) } else { progress };
     Some(parity::working_step(
         reason,
@@ -278,6 +288,20 @@ fn send_state(
 
 fn failure_kind(error: &BridgeError) -> &'static str {
     failure_kind_for(platform::KEY, error)
+}
+
+fn should_retry_environment_port(error: &BridgeError, attempt: usize) -> bool {
+    error.code == "PORT_IN_USE" && attempt == 0
+}
+
+fn port_retry_state(reason: &str, port: u16) -> SetupState {
+    parity::working_step(
+        reason,
+        Some("startup"),
+        None,
+        Some("Choosing another private address…".into()),
+        Some(format!("Port {port} is already in use")),
+    )
 }
 
 fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
@@ -682,7 +706,9 @@ async fn begin_setup(
             .await?;
             match require_success(environment, "Reconcile application environment") {
                 Ok(_) => break,
-                Err(error) if error.code == "PORT_IN_USE" && attempt == 0 => {
+                Err(error) if should_retry_environment_port(&error, attempt) => {
+                    send_state(&host, &on_event, port_retry_state(&reason, port))?;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                     port = reserve_and_persist_port(true)?;
                 }
                 Err(error) => return Err(error),
@@ -943,5 +969,49 @@ mod tests {
         assert_eq!(failure_kind_for("win32", &installer), "windowsInstaller");
         assert_eq!(failure_kind_for("darwin", &installer), "macosInstaller");
         assert_eq!(failure_kind_for("linux", &installer), "linuxInstaller");
+    }
+
+    #[test]
+    fn mac_machine_switch_copy_is_visible_and_wording_locked() {
+        let explanation = "macOS can run only one Podman machine at a time. Stopping \"podman-machine-default\" keeps its files but also stops its running containers.";
+        let event = serde_json::json!({
+            "stage": "environment",
+            "substage": "secure-space",
+            "state": "start",
+            "activity": "Preparing a secure space to run in…",
+            "status": "Switching Podman machines",
+            "detail": explanation,
+        });
+        let state = setup_state_from_cli_event("repair", &event, &mut None).unwrap();
+        assert_eq!(state.status.as_deref(), Some("Switching Podman machines"));
+        assert_eq!(state.activity.as_deref(), Some(explanation));
+    }
+
+    #[test]
+    fn a_classified_port_conflict_gets_one_automatic_retry() {
+        let conflict = BridgeError::new(
+            "PORT_IN_USE",
+            "another Omnideck installation already uses port 2337",
+        );
+        assert!(should_retry_environment_port(&conflict, 0));
+        assert!(!should_retry_environment_port(&conflict, 1));
+        assert!(!should_retry_environment_port(
+            &BridgeError::new("INTERNAL_ERROR", "unclassified failure"),
+            0
+        ));
+    }
+
+    #[test]
+    fn port_conflict_recovery_copy_is_wording_locked() {
+        let state = port_retry_state("repair", 2337);
+        assert_eq!(state.stage, "preparing");
+        assert_eq!(state.step, parity::step_index("startup"));
+        assert!(state.indeterminate);
+        assert_eq!(
+            state.activity.as_deref(),
+            Some("Choosing another private address…")
+        );
+        assert_eq!(state.status.as_deref(), Some("Port 2337 is already in use"));
+        assert!(!state.can_retry);
     }
 }

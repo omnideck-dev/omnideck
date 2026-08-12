@@ -29,6 +29,9 @@ system exposes:
 - live exact-copy and DOM evidence from the packaged setup WebView;
 - returning-user direct open, missing-container Doctor/retry, interrupted setup
   resume, and candidate update reconciliation;
+- a second saved installation occupying Desktop's persisted port, the exact
+  inline recovery wording, no-action automatic retry, and successful launch on
+  a newly persisted port;
 - namespaced Linux container/volume isolation and cleanup;
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
@@ -119,11 +122,11 @@ sequentially:
 
 | Lane | Guest | Public package | Native journey |
 |---|---|---|---|
-| `appimage` | Ubuntu 24.04 GNOME | AppImage | full |
-| `deb` | Debian 13 GNOME | DEB | full plus install/uninstall/reinstall |
-| `rpm` | Fedora 44 Workstation | RPM | full plus install/uninstall/reinstall |
-| `atomic` | Fedora Silverblue 44 | AppImage | packaged smoke plus full byte-identical native-binary journey |
-| `windows` | Windows 11 Pro 25H2 clean | NSIS | trust, UAC, reboot, RunOnce, and full lifecycle |
+| `appimage` | Ubuntu 24.04 GNOME | AppImage | full, including occupied-port recovery |
+| `deb` | Debian 13 GNOME | DEB | full, occupied-port recovery, and install/uninstall/reinstall |
+| `rpm` | Fedora 44 Workstation | RPM | full, occupied-port recovery, and install/uninstall/reinstall |
+| `atomic` | Fedora Silverblue 44 | AppImage | packaged smoke plus full byte-identical native-binary journey, including occupied-port recovery |
+| `windows` | Windows 11 Pro 25H2 clean | NSIS | trust, UAC, reboot, RunOnce, occupied-port recovery, and full lifecycle |
 
 The same artifact contract statically proves the published macOS and ARM64
 packages; it labels them as static coverage, never as native execution. If the
@@ -222,6 +225,14 @@ external-browser and clipboard integration, subjective visuals/accessibility,
 and timing-dependent interruption tests. Windows SmartScreen, UAC,
 restart-now, and RunOnce are no longer classified as manual. Remaining checks
 stay explicit `not-run`/`blocked` until their own evidence exists.
+
+Occupied-port recovery is automated on every local Linux and Windows lane. It
+creates a second saved CLI instance using Desktop's persisted port, records the
+live packaged WebView showing `Choosing another private address…` and
+`Port <number> is already in use`, proves no user action is exposed, and then
+verifies that the running instance and persisted configuration use a different
+port. The fixture and all evidence remain inside that lane's single purgeable
+run directory.
 
 Fast source checks for the harness are:
 

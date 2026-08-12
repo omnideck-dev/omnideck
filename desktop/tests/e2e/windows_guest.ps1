@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "Final")]
+    [ValidateSet("Prepare", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -346,6 +346,56 @@ switch ($Phase) {
             [Text.UTF8Encoding]::new($false)
         )
     }
+    "PortConflict" {
+        Stop-Omnideck
+        $PortPath = Join-Path $UserData "runtime\app-port"
+        $OldPort = (Get-Content -LiteralPath $PortPath -Raw).Trim()
+        if ($OldPort -notmatch '^\d+$') { throw "The persisted Desktop port is invalid." }
+        $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+        $State.status = "complete"
+        $State.appVersion = "0.0.0-e2e-port-conflict"
+        [IO.File]::WriteAllText(
+            $StatePath,
+            (($State | ConvertTo-Json) + "`n"),
+            [Text.UTF8Encoding]::new($false)
+        )
+
+        $InstancePath = Join-Path $CliConfig "instances\$ContainerName.yaml"
+        $ConflictPath = Join-Path $CliConfig "instances\$ContainerName-occupied-port.yaml"
+        $Source = Get-Content -LiteralPath $InstancePath -Raw
+        $ExpectedName = "container_name: $ContainerName"
+        if (-not $Source.Contains($ExpectedName)) { throw "The saved Desktop instance name changed." }
+        if (-not $Source.Contains("web_ui_port: `"$OldPort`"")) {
+            throw "The saved Desktop instance does not use port $OldPort."
+        }
+        $Conflict = $Source.Replace(
+            $ExpectedName,
+            "container_name: $ContainerName-occupied-port"
+        )
+        [IO.File]::WriteAllText($ConflictPath, $Conflict, [Text.UTF8Encoding]::new($false))
+        [ordered]@{ occupiedPort = [int]$OldPort } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "port-conflict-pending.json") -Encoding utf8
+        Write-Host $OldPort
+    }
+    "VerifyPortConflict" {
+        Stop-Omnideck
+        $Pending = Get-Content -LiteralPath (Join-Path $Results "port-conflict-pending.json") -Raw |
+            ConvertFrom-Json
+        $OldPort = [string]$Pending.occupiedPort
+        $NewPort = (Get-Content -LiteralPath (Join-Path $UserData "runtime\app-port") -Raw).Trim()
+        if ($NewPort -eq $OldPort) { throw "Desktop did not select a new port automatically." }
+        $InstancePath = Join-Path $CliConfig "instances\$ContainerName.yaml"
+        $ConflictPath = Join-Path $CliConfig "instances\$ContainerName-occupied-port.yaml"
+        if (-not (Get-Content -LiteralPath $ConflictPath -Raw).Contains("web_ui_port: `"$OldPort`"")) {
+            throw "The occupied-port fixture no longer owns the original port."
+        }
+        if (-not (Get-Content -LiteralPath $InstancePath -Raw).Contains("web_ui_port: `"$NewPort`"")) {
+            throw "Desktop did not persist the replacement port."
+        }
+        [ordered]@{ occupiedPort = [int]$OldPort; selectedPort = [int]$NewPort } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "port-conflict-recovery.json") -Encoding utf8
+        Write-Host "PORT CONFLICT RECOVERED occupied=$OldPort selected=$NewPort"
+    }
     "Final" {
         Stop-Omnideck
         Invoke-Engine container inspect $ContainerName |
@@ -386,13 +436,14 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="8" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="9" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
   <testcase classname="desktop-vm-e2e" name="returning-user"/>
   <testcase classname="desktop-vm-e2e" name="doctor-resume-update"/>
+  <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
   <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
 </testsuite>
