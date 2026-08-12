@@ -73,7 +73,7 @@ write_evidence() {
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-vm-e2e" tests="7" failures="0">
+<testsuite name="omnideck-desktop-vm-e2e" tests="8" failures="0">
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
@@ -81,6 +81,7 @@ write_evidence() {
   <testcase classname="desktop-vm-e2e" name="doctor-recovery"/>
   <testcase classname="desktop-vm-e2e" name="resume"/>
   <testcase classname="desktop-vm-e2e" name="update"/>
+  <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
 </testsuite>
 XML
   else
@@ -296,7 +297,12 @@ PY
 
 run_journey() {
   local scenario="$1"
+  local expected_port_conflict="${2:-}"
   local scenario_dir="${result_dir}/${scenario}"
+  local driver_args=()
+  if [[ -n "${expected_port_conflict}" ]]; then
+    driver_args+=(--expected-port-conflict "${expected_port_conflict}")
+  fi
   mkdir -p "${scenario_dir}"
   env "${desktop_env[@]}" \
     "${work_dir}/webdriver_client.py" \
@@ -308,6 +314,7 @@ run_journey() {
       --evidence "${scenario_dir}" \
       --markers "${markers}" \
       --scenario "${scenario}" \
+      "${driver_args[@]}" \
       --timeout 1800
 }
 
@@ -355,6 +362,52 @@ with open(path, "w", encoding="utf-8") as stream:
 PY
 run_journey update
 
+current_step="occupied saved port recovery"
+old_port="$(tr -d '[:space:]' < "${user_data}/runtime/app-port")"
+instance_path="${cli_config}/instances/${container_name}.yaml"
+conflict_path="${cli_config}/instances/${container_name}-occupied-port.yaml"
+python3 - "${state_path}" "${instance_path}" "${conflict_path}" "${container_name}" "${old_port}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+state_path = Path(sys.argv[1])
+instance_path = Path(sys.argv[2])
+conflict_path = Path(sys.argv[3])
+container_name = sys.argv[4]
+old_port = sys.argv[5]
+
+with state_path.open(encoding="utf-8") as stream:
+    state = json.load(stream)
+state["status"] = "complete"
+state["appVersion"] = "0.0.0-e2e-port-conflict"
+with state_path.open("w", encoding="utf-8") as stream:
+    json.dump(state, stream, indent=2, ensure_ascii=False)
+    stream.write("\n")
+
+source = instance_path.read_text(encoding="utf-8")
+expected_name = f"container_name: {container_name}\n"
+if expected_name not in source:
+    raise AssertionError(f"saved instance did not contain {expected_name!r}")
+if f'web_ui_port: "{old_port}"\n' not in source:
+    raise AssertionError(f"saved instance did not use port {old_port}")
+conflict_path.write_text(
+    source.replace(
+        expected_name,
+        f"container_name: {container_name}-occupied-port\n",
+        1,
+    ),
+    encoding="utf-8",
+)
+PY
+run_journey port-conflict "${old_port}"
+new_port="$(tr -d '[:space:]' < "${user_data}/runtime/app-port")"
+[[ "${new_port}" != "${old_port}" ]]
+grep -Fq "web_ui_port: \"${old_port}\"" "${conflict_path}"
+grep -Fq "web_ui_port: \"${new_port}\"" "${instance_path}"
+printf 'occupiedPort=%s\nselectedPort=%s\n' "${old_port}" "${new_port}" \
+  > "${result_dir}/port-conflict-recovery.txt"
+
 current_step="final returning user"
 run_journey returning
 
@@ -395,4 +448,4 @@ current_step="cleanup"
 cleanup_resources
 test_status="passed"
 current_step="complete"
-printf 'PASS: package smoke, exact-copy setup, hosted, returning, doctor, resume, and update completed.\n'
+printf 'PASS: package smoke, exact-copy setup, hosted, returning, doctor, resume, update, and occupied-port recovery completed.\n'

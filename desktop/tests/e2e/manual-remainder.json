@@ -21,7 +21,7 @@
     },
     {
       "path": "desktop/tests/manual/recovery-lifecycle.md",
-      "covers": "live network interruption, sleep/wake, occupied ports, and destructive interruption timing"
+      "covers": "live network interruption, sleep/wake, and destructive interruption timing"
     }
   ]
 }
