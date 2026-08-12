@@ -81,8 +81,12 @@ verifies these capabilities and records the contract with every run.
 
 Keep version-coupled tooling out of the golden image. The harness builds and
 stages locked `tauri-driver` 2.0.6 for every run, downloads the EdgeDriver that
-exactly matches the installed WebView2 runtime, and creates/removes the Windows
-interactive driver task. That task also starts Podman's WSL networking helper
+matches the active EdgeWebView client's registry `pv`, rejects a driver with a
+different major version, and creates/removes the Windows interactive driver
+task. This avoids selecting an inactive update directory left beside the
+runtime Tauri actually loads. The active value is checked again after a real
+reboot so an Evergreen update refreshes the staged driver before the next
+WebDriver session. That task also starts Podman's WSL networking helper
 inside the logged-in desktop session and proves registry DNS before exposing
 the driver. A golden image can therefore be refreshed without silently
 changing what drives the candidate.
