@@ -103,6 +103,7 @@ pub(crate) struct ContainerResources {
 #[serde(rename_all = "camelCase")]
 struct MachineResources {
     mode: String,
+    #[serde(rename = "memoryMB")]
     memory_mb: Option<f64>,
 }
 
@@ -502,6 +503,21 @@ mod tests {
             r#"{"schemaVersion":4,"runtime":"podman","state":"ready","ready":true,"machineName":"omnideck-runtime","resources":{"container":{"memory":"1g","shmSize":"2g"},"machine":{"mode":"wsl-managed"}}}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn accepts_the_cli_memory_mb_wire_field_on_macos() {
+        let status = parse_runtime_status(
+            r#"{"schemaVersion":4,"runtime":"podman","state":"machine_missing","ready":false,"resources":{"container":{"memory":"4g","shmSize":"2g"},"machine":{"mode":"podman-managed","memoryMB":8192}}}"#,
+        )
+        .unwrap();
+        assert_eq!(status.resources.machine.memory_mb, Some(8192.0));
+
+        let error = parse_runtime_status(
+            r#"{"schemaVersion":4,"runtime":"podman","state":"machine_missing","ready":false,"resources":{"container":{"memory":"4g","shmSize":"2g"},"machine":{"mode":"podman-managed","memoryMb":8192}}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "INVALID_RUNTIME_RESOURCES");
     }
 
     #[test]
