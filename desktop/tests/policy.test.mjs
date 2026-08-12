@@ -51,7 +51,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
   assert.match(cargoToml, /^version = "0\.1\.0-beta\.4"$/m);
-  assert.match(cargoLock, /name = "omnideck"\nversion = "0\.1\.0-beta\.4"/);
+  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.4"/);
   assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.4"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
