@@ -31,7 +31,8 @@
     "externalBin": ["binaries/omnideck-cli"],
     "useLocalToolsDir": true,
     "macOS": {
-      "hardenedRuntime": true
+      "hardenedRuntime": true,
+      "signingIdentity": "-"
     },
     "windows": {
       "webviewInstallMode": {

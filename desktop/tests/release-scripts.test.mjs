@@ -8,6 +8,7 @@ const macos = await read('../scripts/release-test/macos.sh');
 const windows = await read('../scripts/release-test/windows.ps1');
 const resetWindows = await read('../scripts/release-test/reset-host.ps1');
 const common = await read('../scripts/release-test/_common.sh');
+const macosBundleVerifier = await read('../scripts/verify-macos-bundle.sh');
 const desktopWorkflow = await read('../../.github/workflows/desktop.yml');
 const hardwareWorkflow = await read('../../.github/workflows/desktop-hardware.yml');
 const publishedWorkflow = await read('../../.github/workflows/desktop-release-contract.yml');
@@ -49,4 +50,15 @@ test('hosted CI, public artifact validation, and native hardware remain distinct
   assert.match(hardwareWorkflow, /workflow_dispatch:/);
   assert.match(hardwareWorkflow, /runs-on: \[self-hosted, omnideck-desktop/);
   assert.doesNotMatch(hardwareWorkflow, /pull_request:/);
+});
+
+test('macOS release packages contain a strict bundle-level signature', () => {
+  assert.match(desktopWorkflow, /Verify the packaged macOS app signature/);
+  assert.match(desktopWorkflow, /if: runner\.os == 'macOS'/);
+  assert.match(desktopWorkflow, /verify-macos-bundle\.sh \$\{\{ matrix\.target \}\}/);
+  assert.match(macosBundleVerifier, /codesign --verify --deep --strict --verbose=4/);
+  assert.match(macosBundleVerifier, /hdiutil attach -readonly -nobrowse/);
+  assert.match(macosBundleVerifier, /Info\.plist=not bound/);
+  assert.match(macosBundleVerifier, /Sealed Resources=none/);
+  assert.match(macosBundleVerifier, /linker-signed/);
 });

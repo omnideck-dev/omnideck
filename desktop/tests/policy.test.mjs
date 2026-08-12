@@ -44,6 +44,11 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.match(packageJson.scripts['build:linux'], /--bundles appimage deb rpm/);
 });
 
+test('macOS previews receive a complete bundle-level ad-hoc signature', () => {
+  assert.equal(config.bundle.macOS.signingIdentity, '-');
+  assert.equal(config.bundle.macOS.hardenedRuntime, true);
+});
+
 test('bundles the blue signal icon with readable Linux package assets', async () => {
   assert.equal(config.build.beforeBundleCommand, 'node scripts/prepare-icon-assets.mjs');
   assert.equal(packageJson.scripts['prepare:icons'], 'node scripts/prepare-icon-assets.mjs');

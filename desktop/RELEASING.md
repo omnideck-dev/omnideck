@@ -105,7 +105,12 @@ merely to a version family or time spent in a channel.
 
 ## Signing status
 
-Preview packages may be unsigned. SmartScreen and Gatekeeper warnings must be
-documented for testers and recorded separately from functional defects.
-Signing, notarization, and publisher identity must be resolved before a stable
-release can satisfy the stable gate.
+Preview macOS packages use Tauri's complete bundle-level ad-hoc signature. The
+macOS build mounts the generated DMG and requires its contained application to
+pass strict recursive `codesign` verification; an executable-only linker
+signature is a release failure. Ad-hoc signatures do not establish publisher
+identity, so Gatekeeper may still require the tester to approve the application
+in Privacy & Security. SmartScreen and Gatekeeper warnings must be documented
+and recorded separately from corruption, an invalid bundle signature, or a
+launch failure. Developer ID signing, notarization, and publisher identity must
+be resolved before a stable release can satisfy the stable gate.
