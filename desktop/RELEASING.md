@@ -11,7 +11,9 @@ and published assets are immutable.
 
 ## Prepare the candidate
 
-1. Update `package.json` and `src-tauri/tauri.conf.json` to the same version.
+1. Update `package.json`, `src-tauri/tauri.conf.json`, the Rust package/lock,
+   `src-tauri/src/state.rs`, and the checked-in runtime image manifest to the
+   same version. Source policy tests lock these mirrors together.
 2. Update the pinned CLI vendor manifest deliberately; never weaken its archive,
    binary, SBOM, version, commit, or architecture checks.
 3. Set `container-version.txt` to the intended container release and confirm it
