@@ -165,7 +165,11 @@ class WebDriver:
     def execute(self, script: str) -> Any:
         return self.command("POST", "/execute/sync", {"script": script, "args": []})
 
-    def click(self, selector: str) -> None:
+    def execute_async(self, script: str, timeout: float = 20) -> Any:
+        self.command("POST", "/timeouts", {"script": int(timeout * 1000)})
+        return self.command("POST", "/execute/async", {"script": script, "args": []})
+
+    def element_id(self, selector: str) -> str:
         element = self.command(
             "POST", "/element", {"using": "css selector", "value": selector}
         )
@@ -174,6 +178,10 @@ class WebDriver:
         element_id = element.get("element-6066-11e4-a52e-4f735466cecf")
         if not element_id:
             raise WebDriverError(f"Element response had no identifier for {selector}: {element!r}")
+        return element_id
+
+    def click(self, selector: str) -> None:
+        element_id = self.element_id(selector)
         try:
             self.command("POST", f"/element/{element_id}/click", {})
         except WebDriverError as error:
@@ -185,6 +193,14 @@ class WebDriver:
             )
             if clicked is not True:
                 raise WebDriverError(f"JavaScript click fallback could not find {selector}") from error
+
+    def send_keys(self, selector: str, value: str) -> None:
+        element_id = self.element_id(selector)
+        self.command(
+            "POST",
+            f"/element/{element_id}/value",
+            {"text": value, "value": list(value)},
+        )
 
     def screenshot(self, destination: Path) -> None:
         encoded = self.command("GET", "/screenshot")

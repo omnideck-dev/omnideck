@@ -12,6 +12,9 @@ Capture screenshots for each setup phase and any defect.
   uninstall icons.
 - Keyboard-only navigation, visible focus, selection, focus order, contrast,
   and setup status announcements.
+- Native select/dropdown closed-state and popup styling compared with the
+  established Electron appearance; record platform webview differences rather
+  than accepting them as equivalent from DOM assertions alone.
 - macOS menus and Intel/Apple Silicon package behavior.
 - Linux launcher integration for AppImage, DEB, and RPM on the claimed desktop
   environments; record X11 or Wayland and WebKit versions.

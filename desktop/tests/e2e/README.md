@@ -32,6 +32,12 @@ system exposes:
 - a second saved installation occupying Desktop's persisted port, the exact
   inline recovery wording, no-action automatic retry, and successful launch on
   a newly persisted port;
+- profile export through the real Agents UI, with the hosted URL held stable
+  while the native webview writes the expected file into the guest Downloads
+  folder, followed by filename, JSON pack, version, and payload validation;
+- profile import through the real native-driver file-input command, using that
+  guest-local downloaded file and proving both the created profile and success
+  notification;
 - namespaced Linux container/volume isolation and cleanup;
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
@@ -185,7 +191,8 @@ $OMNIDECK_VM_LAB_DIR/artifacts/desktop-e2e/<run>-<lane>/
 ```
 
 It contains `run.json`, package checksum/identity, guest inventories, live DOM
-states, VM-console screenshots, host/driver logs, packaged smoke proof,
+states, VM-console screenshots, host/driver logs, downloaded-file validation,
+host-boundary download/import reports, packaged smoke proof,
 `summary.json`, `junit.xml`, `manual-remainder.json`, and the exact golden-image
 prerequisite contract. The package bytes are not duplicated into evidence; the
 SHA-256 identifies the exact input while the normal Tauri target directory
@@ -225,10 +232,20 @@ pnpm run test:release-e2e:purge -- \
 `manual-remainder.json` is copied into every native lane with status `not-run`.
 It routes a person or testing agent to the checked-in procedures for normal
 browser download warnings, native macOS Gatekeeper/permission behavior,
-external-browser and clipboard integration, subjective visuals/accessibility,
-and timing-dependent interruption tests. Windows SmartScreen, UAC,
-restart-now, and RunOnce are no longer classified as manual. Remaining checks
-stay explicit `not-run`/`blocked` until their own evidence exists.
+native file-picker presentation, external-browser and clipboard integration,
+subjective visuals/accessibility, and timing-dependent interruption tests.
+The data-transfer result of download/upload is automated on every Windows and
+Linux lane; only the native picker's visible OS chrome remains manual. Windows
+SmartScreen, UAC, restart-now, and RunOnce are no longer classified as manual.
+Remaining checks stay explicit `not-run`/`blocked` until their own evidence
+exists.
+
+The boundary client deliberately speaks the same W3C protocol as the existing
+setup journey and adds no production bridge or test-only host command. Current
+Linux and Windows lanes use `tauri-driver`. When a macOS lab host is added, use
+the WebdriverIO Tauri service's embedded driver for that lane and preserve the
+same download/upload assertions and evidence fields; direct `tauri-driver`
+remains a Linux/Windows transport.
 
 Occupied-port recovery is automated on every local Linux and Windows lane. It
 creates a second saved CLI instance using Desktop's persisted port, records the
@@ -242,5 +259,5 @@ Fast source checks for the harness are:
 
 ```sh
 bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/qualify-release.sh tests/e2e/linux_guest.sh
-python3 -m unittest tests/e2e/test_webdriver_client.py
+python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py
 ```

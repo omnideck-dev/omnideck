@@ -10,6 +10,7 @@ const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
+const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
 const releasePurge = await read('../tests/e2e/purge-release.sh');
@@ -18,6 +19,7 @@ const golden = JSON.parse(await read('../tests/e2e/golden-prerequisites.json'));
 
 test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => {
   assert.match(run, /build-with-local-cli\.sh/);
+  assert.match(run, /\/etc\/gdm3\/daemon\.conf/);
   assert.match(run, /\/etc\/gdm\/custom\.conf/);
   assert.match(run, /restart display-manager/);
   assert.match(run, /WaylandEnable=false/);
@@ -56,6 +58,15 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /EXPECTED_UPDATE_BRIDGE/);
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
+  assert.match(run, /host_boundary_client\.py/);
+  assert.match(windows, /host_boundary_client\.py/);
+  assert.match(linuxGuest, /native host download/);
+  assert.match(linuxGuest, /native host upload/);
+  assert.match(windowsGuest, /HostBoundaryDownload/);
+  assert.match(windows, /-FixtureName \\\"\$\{fixture_name\}\\\"/);
+  assert.match(hostBoundaryDriver, /send_keys/);
+  assert.match(hostBoundaryDriver, /Export navigated the hosted application/);
+  assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
 });
 
