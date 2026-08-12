@@ -1,13 +1,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "HostBoundaryDownload", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
     [string]$ArtifactSha256,
     [string]$ExpectedCliVersion,
-    [string]$ExpectedCliCommit
+    [string]$ExpectedCliCommit,
+    [string]$FixtureName,
+    [string]$FixtureFilename
 )
 
 $ErrorActionPreference = "Stop"
@@ -431,6 +433,42 @@ switch ($Phase) {
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "port-conflict-recovery.json") -Encoding utf8
         Write-Host "PORT CONFLICT RECOVERED occupied=$OldPort selected=$NewPort"
     }
+    "HostBoundaryDownload" {
+        if (-not $FixtureName -or -not $FixtureFilename) {
+            throw "HostBoundaryDownload requires FixtureName and FixtureFilename."
+        }
+        if ([IO.Path]::GetFileName($FixtureFilename) -ne $FixtureFilename) {
+            throw "FixtureFilename must be a leaf filename."
+        }
+        $Downloads = Join-Path $env:USERPROFILE "Downloads"
+        New-Item -ItemType Directory -Path $Downloads -Force | Out-Null
+        $Download = Join-Path $Downloads $FixtureFilename
+        $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not (Test-Path -LiteralPath $Download -PathType Leaf)) {
+            if ([DateTime]::UtcNow -ge $Deadline) {
+                throw "Native download did not create $Download."
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        $Pack = Get-Content -LiteralPath $Download -Raw | ConvertFrom-Json
+        if ($Pack.kind -ne "omnideck.pack") { throw "Downloaded file has the wrong pack kind." }
+        if ($Pack.version -ne 1) { throw "Downloaded file has the wrong pack version." }
+        if (@($Pack.profiles).Count -ne 1) { throw "Downloaded file did not contain one profile." }
+        if ($Pack.profiles[0].name -ne $FixtureName) {
+            throw "Downloaded profile name did not match the fixture."
+        }
+        $BoundaryResults = Join-Path $Results "host-boundaries"
+        New-Item -ItemType Directory -Path $BoundaryResults -Force | Out-Null
+        [ordered]@{
+            status = "passed"
+            path = $Download
+            size = (Get-Item -LiteralPath $Download).Length
+            kind = $Pack.kind
+            version = $Pack.version
+            profileName = $Pack.profiles[0].name
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $BoundaryResults "filesystem.json") -Encoding utf8
+        Write-Host $Download
+    }
     "Final" {
         Stop-Omnideck
         Invoke-Engine container inspect $ContainerName |
@@ -471,7 +509,7 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="9" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="11" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
@@ -479,6 +517,8 @@ switch ($Phase) {
   <testcase classname="desktop-vm-e2e" name="returning-user"/>
   <testcase classname="desktop-vm-e2e" name="doctor-resume-update"/>
   <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
+  <testcase classname="desktop-vm-e2e" name="native-host-download"/>
+  <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
   <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
 </testsuite>

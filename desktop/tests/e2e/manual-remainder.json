@@ -13,7 +13,7 @@
     },
     {
       "path": "desktop/tests/manual/hosted-app-behavior.md",
-      "covers": "clipboard, system-browser routing, shortcuts, single-instance focus, and window-close behavior"
+      "covers": "native file-picker presentation, clipboard, system-browser routing, shortcuts, single-instance focus, and window-close behavior; downloaded and uploaded data transfer is automated separately"
     },
     {
       "path": "desktop/tests/manual/visual-platform.md",

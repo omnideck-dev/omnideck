@@ -104,6 +104,21 @@ class UnsupportedClickDriver(CLIENT.WebDriver):
         return True
 
 
+class SendKeysDriver(CLIENT.WebDriver):
+    def __init__(self) -> None:
+        super().__init__("http://unused.invalid")
+        self.session_id = "session"
+        self.sent = None
+
+    def command(self, method: str, suffix: str, payload=None):
+        if suffix == "/element":
+            return {"element-6066-11e4-a52e-4f735466cecf": "file-input"}
+        if suffix == "/element/file-input/value":
+            self.sent = (method, payload)
+            return None
+        raise AssertionError((method, suffix, payload))
+
+
 class WebDriverClientTests(unittest.TestCase):
     def setUp(self) -> None:
         self.desktop_root = Path(__file__).resolve().parents[2]
@@ -290,6 +305,15 @@ class WebDriverClientTests(unittest.TestCase):
         driver.click("#primary")
 
         self.assertIn('document.querySelector("#primary")', driver.executed)
+
+    def test_send_keys_uses_the_native_w3c_file_input_command(self) -> None:
+        driver = SendKeysDriver()
+
+        driver.send_keys('[type="file"]', "/home/tester/Downloads/profile.json")
+
+        self.assertEqual(driver.sent[0], "POST")
+        self.assertEqual(driver.sent[1]["text"], "/home/tester/Downloads/profile.json")
+        self.assertEqual(driver.sent[1]["value"], list("/home/tester/Downloads/profile.json"))
 
     def test_restart_now_wording_and_action_are_locked(self) -> None:
         parity, initial = CLIENT.load_contract(

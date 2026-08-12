@@ -83,6 +83,10 @@ flock -n 8 || { printf 'The Windows Desktop lane is already leased.\n' >&2; exit
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
+fixture_suffix="$(printf '%s' "${safe_run_id}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | tail -c 28)"
+fixture_id="desktop_host_boundary_${fixture_suffix}"
+fixture_name="Desktop Host Boundary ${fixture_suffix}"
+fixture_filename="Desktop-Host-Boundary-${fixture_suffix}.agent.omnideck.json"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
@@ -466,6 +470,33 @@ run_journey() {
   return "${status}"
 }
 
+run_host_boundary() {
+  local operation="$1"
+  local upload_path="${2:-}"
+  local scenario_dir="${evidence_dir}/host-boundaries/${operation}"
+  local -a operation_args=()
+  if [[ "${operation}" == "upload" ]]; then
+    operation_args+=(--upload-path "${upload_path}")
+  fi
+  mkdir -p "${scenario_dir}"
+  python3 "${script_dir}/host_boundary_client.py" \
+    --application "${application_windows}" \
+    --external-driver \
+    --driver-url "http://127.0.0.1:${driver_forward_port}" \
+    --operation "${operation}" \
+    --fixture-id "${fixture_id}" \
+    --fixture-name "${fixture_name}" \
+    --evidence "${scenario_dir}" \
+    "${operation_args[@]}" \
+    --timeout 240 \
+    > "${scenario_dir}/session.log" 2>&1
+}
+
+verify_host_download() {
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase HostBoundaryDownload -WorkDir ${remote_root} -FixtureName \"${fixture_name}\" -FixtureFilename ${fixture_filename}"
+}
+
 complete_clean_security_setup() {
   local boot_before boot_after setup_status consent_pid last_consent_pid=""
   boot_before="$("${lab_dir}/lab.sh" run windows \
@@ -600,6 +631,10 @@ if [[ "${test_status}" == "0" ]]; then
     run_journey port-conflict port-conflict later none "${occupied_port}"
     phase_command VerifyPortConflict
     run_journey returning returning-final
+    run_host_boundary download
+    download_path="$(verify_host_download | tr -d '\r' | tail -n 1)"
+    [[ "${download_path}" == [A-Za-z]:\\* ]]
+    run_host_boundary upload "${download_path}"
     phase_command Final
   )
   test_status=$?

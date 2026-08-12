@@ -2,7 +2,7 @@ use crate::{platform, BridgeError, BridgeResult};
 use serde::{Deserialize, Serialize};
 use std::{fs, net::TcpListener, path::Path};
 
-pub(crate) const APP_VERSION: &str = "0.1.0-beta.3";
+pub(crate) const APP_VERSION: &str = "0.1.0-beta.4";
 const DEFAULT_APP_PORT: u16 = 2338;
 
 #[derive(Debug, Deserialize)]

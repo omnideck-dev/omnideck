@@ -12,6 +12,11 @@
 function triggerDownload(url) {
     const a = document.createElement('a');
     a.href = url;
+    // Content-Disposition is sufficient in a normal browser, but native
+    // webviews do not consistently promote a same-origin JSON navigation to a
+    // host download. The download attribute tells WebKit/WKWebView/WebView2 to
+    // enter their download path instead of replacing the hosted application.
+    a.download = '';
     a.rel = 'noopener';
     // Some browsers only honor a programmatic download click when the anchor
     // is in the document, so attach it briefly.

@@ -232,7 +232,7 @@ if [[ "${vm}" == "atomic" ]] ||
   # GDM animations can alter or discard a disposable password. This file lives
   # only in the throwaway overlay and the final clean reset removes it.
   "${lab_dir}/lab.sh" run "${vm}" \
-    "if test -d /etc/gdm3; then config=/etc/gdm3/custom.conf; else config=/etc/gdm/custom.conf; fi; printf '${gdm_config}' | sudo tee \"\$config\" >/dev/null && sudo systemctl restart display-manager"
+    "if test -f /etc/gdm3/daemon.conf; then config=/etc/gdm3/daemon.conf; elif test -d /etc/gdm3; then config=/etc/gdm3/custom.conf; else config=/etc/gdm/custom.conf; fi; printf '${gdm_config}' | sudo tee \"\$config\" >/dev/null && sudo systemctl restart display-manager"
 fi
 for _ in $(seq 1 90); do
   if "${lab_dir}/lab.sh" run "${vm}" "loginctl list-sessions --no-legend | grep -Eq 'tester[[:space:]]+seat0'" >/dev/null 2>&1; then
@@ -257,6 +257,7 @@ remote_staged=1
 "${lab_dir}/lab.sh" copy-to "${vm}" "${artifact}" "${remote_root}/candidate.${bundle}"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${build_dir}/tauri-driver-root/bin/tauri-driver" "${remote_root}/tauri-driver"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/webdriver_client.py" "${remote_root}/webdriver_client.py"
+"${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/host_boundary_client.py" "${remote_root}/host_boundary_client.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/polkit_agent.py" "${remote_root}/polkit_agent.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/linux_guest.sh" "${remote_root}/linux_guest.sh"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${desktop_root}/src-tauri/setup-parity.json" "${remote_root}/setup-parity.json"
@@ -271,7 +272,7 @@ ssh_options=(
   -o ConnectTimeout=8
   -p "${ssh_port}"
 )
-remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
+remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/host_boundary_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
 
 printf 'Running packaged smoke and attended Desktop journeys.\n'
 printf 'mode=target-scoped-pkttyagent; trigger=polkit-password; response=disposable-guest-password\n' \

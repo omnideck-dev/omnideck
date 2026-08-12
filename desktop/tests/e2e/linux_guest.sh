@@ -73,7 +73,7 @@ write_evidence() {
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-vm-e2e" tests="8" failures="0">
+<testsuite name="omnideck-desktop-vm-e2e" tests="10" failures="0">
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
@@ -82,6 +82,8 @@ write_evidence() {
   <testcase classname="desktop-vm-e2e" name="resume"/>
   <testcase classname="desktop-vm-e2e" name="update"/>
   <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
+  <testcase classname="desktop-vm-e2e" name="native-host-download"/>
+  <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
 </testsuite>
 XML
   else
@@ -411,6 +413,68 @@ printf 'occupiedPort=%s\nselectedPort=%s\n' "${old_port}" "${new_port}" \
 current_step="final returning user"
 run_journey returning
 
+fixture_id="desktop_host_boundary_${namespace}"
+fixture_name="Desktop Host Boundary ${namespace}"
+fixture_filename="Desktop-Host-Boundary-${namespace}.agent.omnideck.json"
+download_dir="$(xdg-user-dir DOWNLOAD 2>/dev/null || true)"
+[[ -n "${download_dir}" ]] || download_dir="${HOME}/Downloads"
+mkdir -p "${download_dir}"
+download_path="${download_dir}/${fixture_filename}"
+
+run_host_boundary() {
+  local operation="$1"
+  local operation_dir="${result_dir}/host-boundaries/${operation}"
+  local -a operation_args=()
+  if [[ "${operation}" == "upload" ]]; then
+    operation_args+=(--upload-path "${download_path}")
+  fi
+  mkdir -p "${operation_dir}"
+  env "${desktop_env[@]}" \
+    "${work_dir}/host_boundary_client.py" \
+      --application "${driver_application}" \
+      --tauri-driver "${work_dir}/tauri-driver" \
+      --operation "${operation}" \
+      --fixture-id "${fixture_id}" \
+      --fixture-name "${fixture_name}" \
+      --evidence "${operation_dir}" \
+      "${operation_args[@]}" \
+      --timeout 240
+}
+
+current_step="native host download"
+run_host_boundary download
+python3 - "${download_path}" "${fixture_name}" "${result_dir}/host-boundaries/filesystem.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+import time
+
+path = Path(sys.argv[1])
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline and not path.is_file():
+    time.sleep(0.25)
+if not path.is_file():
+    raise AssertionError(f"native download did not create {path}")
+with path.open(encoding="utf-8") as stream:
+    pack = json.load(stream)
+assert pack["kind"] == "omnideck.pack", pack
+assert pack["version"] == 1, pack
+assert len(pack["profiles"]) == 1, pack
+assert pack["profiles"][0]["name"] == sys.argv[2], pack
+evidence = {
+    "status": "passed",
+    "path": str(path),
+    "size": path.stat().st_size,
+    "kind": pack["kind"],
+    "version": pack["version"],
+    "profileName": pack["profiles"][0]["name"],
+}
+Path(sys.argv[3]).write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+PY
+
+current_step="native host upload"
+run_host_boundary upload
+
 current_step="resource contract"
 podman container inspect "${container_name}" > "${result_dir}/container-inspect.json"
 podman volume inspect "${home_volume}" "${state_volume}" > "${result_dir}/volume-inspect.json"
@@ -448,4 +512,4 @@ current_step="cleanup"
 cleanup_resources
 test_status="passed"
 current_step="complete"
-printf 'PASS: package smoke, exact-copy setup, hosted, returning, doctor, resume, update, and occupied-port recovery completed.\n'
+printf 'PASS: package smoke, setup/recovery, native host download/upload, and package lifecycle completed.\n'
