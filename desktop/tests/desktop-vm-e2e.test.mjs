@@ -12,6 +12,7 @@ const linuxBuilder = await read('../scripts/run-linux-builder.sh');
 const windowsBuilder = await read('../scripts/run-windows-builder.sh');
 const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
+const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
@@ -81,6 +82,9 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windows, /phase_command CustomAppFixture/);
   assert.match(windows, /run_journey custom-app/);
   assert.match(windowsGuest, /"CustomAppFixture"/);
+  assert.match(windowsStartDriver, /ToLowerInvariant\(\)/);
+  assert.match(windowsStartDriver, /replace '\[\^a-z0-9-\]'/);
+  assert.match(windowsStartDriver, /Length -gt 40/);
   assert.match(windowsGuest, /os\.environ\['E2E_ARTIFACT_FILENAME'\]/);
   assert.doesNotMatch(windowsGuest, /os\.environ\["E2E_ARTIFACT_FILENAME"\]/);
   assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);

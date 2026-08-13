@@ -34,7 +34,10 @@ if (-not (Test-Path -LiteralPath $GuestScript)) { throw "Guest harness is missin
 
 $env:OMNIDECK_DESKTOP_USER_DATA = Join-Path $WorkDir "user-data"
 $env:OMNIDECK_CONFIG_DIR = Join-Path $WorkDir "cli-config"
-$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = [System.IO.Path]::GetFileName($WorkDir)
+$TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
+if ($TestNamespace.Length -gt 40) { $TestNamespace = $TestNamespace.Substring(0, 40) }
+if (-not $TestNamespace) { throw "The Windows test namespace is empty after normalization." }
+$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = $TestNamespace
 $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
 $env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = $UpdateFixture
 if ($PreserveRuntime) {
