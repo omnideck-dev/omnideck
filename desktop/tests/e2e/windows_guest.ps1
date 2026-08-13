@@ -22,10 +22,13 @@ $CliConfig = Join-Path $WorkDir "cli-config"
 $Installer = Join-Path $WorkDir "candidate-setup.exe"
 $ApplicationFile = Join-Path $WorkDir "application-path.txt"
 $StatePath = Join-Path $UserData "setup-state.json"
-$ContainerName = "omnideck-desktop"
-$HomeVolume = "omnideck-desktop-home"
-$StateVolume = "omnideck-desktop-state"
-$MachineName = "omnideck-runtime"
+$TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
+if ($TestNamespace.Length -gt 40) { $TestNamespace = $TestNamespace.Substring(0, 40) }
+if (-not $TestNamespace) { throw "The Windows test namespace is empty after normalization." }
+$ContainerName = "omnideck-desktop-$TestNamespace"
+$HomeVolume = "omnideck-desktop-home-$TestNamespace"
+$StateVolume = "omnideck-desktop-state-$TestNamespace"
+$MachineName = "odrt-$TestNamespace"
 
 New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
 $env:OMNIDECK_CONFIG_DIR = $CliConfig

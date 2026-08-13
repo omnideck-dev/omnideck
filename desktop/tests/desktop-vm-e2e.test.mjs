@@ -85,6 +85,10 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsStartDriver, /ToLowerInvariant\(\)/);
   assert.match(windowsStartDriver, /replace '\[\^a-z0-9-\]'/);
   assert.match(windowsStartDriver, /Length -gt 40/);
+  assert.match(windowsGuest, /\$ContainerName = "omnideck-desktop-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$HomeVolume = "omnideck-desktop-home-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$MachineName = "odrt-\$TestNamespace"/);
   assert.match(windowsGuest, /os\.environ\['E2E_ARTIFACT_FILENAME'\]/);
   assert.doesNotMatch(windowsGuest, /os\.environ\["E2E_ARTIFACT_FILENAME"\]/);
   assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);
