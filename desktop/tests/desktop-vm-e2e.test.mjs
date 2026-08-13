@@ -89,6 +89,13 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /\$HomeVolume = "omnideck-desktop-home-\$TestNamespace"/);
   assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
   assert.match(windowsGuest, /\$MachineName = "odrt-\$TestNamespace"/);
+  assert.match(
+    windowsGuest,
+    /SetEnvironmentVariable\("OMNIDECK_DESKTOP_TEST_NAMESPACE", \$TestNamespace, "User"\)/,
+  );
+  assert.match(windowsGuest, /"OMNIDECK_DESKTOP_UPDATE_FIXTURE"/);
+  assert.match(windows, /for attempt in \$\(seq 1 480\)/);
+  assert.match(windows, /attempt % 10 == 0/);
   assert.match(windowsGuest, /os\.environ\['E2E_ARTIFACT_FILENAME'\]/);
   assert.doesNotMatch(windowsGuest, /os\.environ\["E2E_ARTIFACT_FILENAME"\]/);
   assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);

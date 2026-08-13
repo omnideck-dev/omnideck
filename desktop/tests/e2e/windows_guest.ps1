@@ -294,6 +294,12 @@ switch ($Phase) {
     "ConfigureClean" {
         [Environment]::SetEnvironmentVariable("OMNIDECK_DESKTOP_USER_DATA", $UserData, "User")
         [Environment]::SetEnvironmentVariable("OMNIDECK_CONFIG_DIR", $CliConfig, "User")
+        [Environment]::SetEnvironmentVariable("OMNIDECK_DESKTOP_TEST_NAMESPACE", $TestNamespace, "User")
+        [Environment]::SetEnvironmentVariable(
+            "OMNIDECK_DESKTOP_UPDATE_FIXTURE",
+            (Join-Path $WorkDir "update-fixture.json"),
+            "User"
+        )
         Remove-ItemProperty `
             -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
             -Name "omnideckSetupResume" `

@@ -395,7 +395,7 @@ start_driver() {
   ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel-${driver_start_count}.log" 2>&1 &
   driver_ssh_pid=$!
   printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid"
-  for _ in $(seq 1 480); do
+  for attempt in $(seq 1 480); do
     if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
       break
     fi
@@ -404,7 +404,7 @@ start_driver() {
       printf 'Windows tauri-driver exited before becoming ready.\n' >&2
       return 1
     }
-    if (( _ % 10 == 0 )); then
+    if (( attempt % 10 == 0 )); then
       task_state="$("${lab_dir}/lab.sh" run windows \
         "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-ScheduledTask -TaskName '${driver_task_name}').State\"" \
         2>/dev/null | tr -d '\r' || true)"
