@@ -69,6 +69,57 @@ return (() => {
 })();
 """
 
+CUSTOM_APP_NAVIGATE_SCRIPT = r"""
+return (() => {
+  const navigation = document.querySelector('[data-testid="sidebar-nav-apps"]');
+  if (!navigation) return {navigationFound: false};
+  navigation.click();
+  return {navigationFound: true};
+})();
+"""
+
+CUSTOM_APP_OPEN_SCRIPT = r"""
+return (() => {
+  const card = [...document.querySelectorAll('[data-testid="custom-app-card"]')]
+    .find((candidate) => candidate.textContent.includes('Desktop Custom App Smoke'));
+  if (!card) return {cardFound: false};
+  if (!card.dataset.desktopSmokeOpened) {
+    card.dataset.desktopSmokeOpened = 'true';
+    card.click();
+  }
+  return {cardFound: true};
+})();
+"""
+
+CUSTOM_APP_STATE_SCRIPT = r"""
+return (() => {
+  const frame = document.querySelector('[data-testid="custom-app-frame"]');
+  if (!frame) return {frameFound: false};
+  try {
+    const frameWindow = frame.contentWindow;
+    const document = frameWindow.document;
+    const button = document.querySelector('#smoke-invoke');
+    const output = document.querySelector('#smoke-result');
+    if (button && !button.dataset.desktopSmokeInvoked) {
+      button.dataset.desktopSmokeInvoked = 'true';
+      button.click();
+    }
+    return {
+      frameFound: true,
+      frameUrl: frameWindow.location.href,
+      title: document.querySelector('h1')?.textContent || '',
+      bridgeAvailable: Boolean(frameWindow.omnideck && frameWindow.omnideck.invoke),
+      result: output?.textContent || '',
+    };
+  } catch (error) {
+    return {frameFound: true, error: String(error)};
+  }
+})();
+"""
+
+CUSTOM_APP_TITLE = "Desktop Custom App Smoke"
+CUSTOM_APP_RESULT = "Action result: tauri-webview"
+
 EXPECTED_UPDATE_BRIDGE = [
     "beginSetup",
     "onState",
@@ -605,6 +656,58 @@ class Journey:
             time.sleep(0.5)
         raise AssertionError(f"Hosted application did not open: {observed[-10:]!r}")
 
+    def wait_for_hosted_value(
+        self, script: str, predicate: Any, label: str
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + self.timeout
+        last_value: Any = None
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                last_value = self.driver.execute(script)
+                if isinstance(last_value, dict) and predicate(last_value):
+                    return last_value
+                last_error = None
+            except WebDriverError as error:
+                last_error = error
+            time.sleep(0.35)
+        if last_error:
+            raise AssertionError(f"Timed out waiting for {label}: {last_error}") from last_error
+        raise AssertionError(f"Timed out waiting for {label}; last value: {last_value!r}")
+
+    def run_custom_app(self, phase: str) -> str:
+        """Render and invoke the fixture through the packaged hosted WebView."""
+        self.hosted_action = ""
+        self.wait_for_hosted("", '[data-testid="desktop-layout"]')
+        self.wait_for_hosted_value(
+            CUSTOM_APP_NAVIGATE_SCRIPT,
+            lambda value: value.get("navigationFound") is True,
+            "Custom App navigation",
+        )
+        self.wait_for_hosted_value(
+            CUSTOM_APP_OPEN_SCRIPT,
+            lambda value: value.get("cardFound") is True,
+            "the Desktop Custom App card",
+        )
+        value = self.wait_for_hosted_value(
+            CUSTOM_APP_STATE_SCRIPT,
+            lambda state: (
+                state.get("title") == CUSTOM_APP_TITLE
+                and state.get("bridgeAvailable") is True
+                and state.get("result") == CUSTOM_APP_RESULT
+            ),
+            "the Custom App action result",
+        )
+        evidence_name = f"custom-app-{slug(phase)}"
+        self.evidence.joinpath(f"{evidence_name}.json").write_text(
+            json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        if self.webdriver_screenshots:
+            self.driver.screenshot(self.evidence / f"{evidence_name}.png")
+        self.markers.joinpath(evidence_name).write_text(CUSTOM_APP_RESULT + "\n", encoding="utf-8")
+        print(f"CUSTOM_APP {phase} {value.get('frameUrl', '')}", flush=True)
+        return CUSTOM_APP_RESULT
+
 
 class InitialCopyParser(HTMLParser):
     def __init__(self) -> None:
@@ -655,7 +758,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stop-after", choices=("welcome", "open"), default="open")
     parser.add_argument(
         "--scenario",
-        choices=("first-run", "returning", "resume", "update", "doctor", "port-conflict"),
+        choices=(
+            "first-run",
+            "returning",
+            "resume",
+            "update",
+            "doctor",
+            "port-conflict",
+            "custom-app",
+        ),
         default="first-run",
     )
     parser.add_argument("--expected-port-conflict", type=int, default=2338)
@@ -668,6 +779,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--restart-action", choices=("later", "now"), default="later")
     parser.add_argument("--webdriver-screenshots", action="store_true")
     return parser.parse_args()
+
+
+def open_driver_session(driver: WebDriver, application: str) -> str:
+    session_error: WebDriverError | None = None
+    for attempt in range(1, 4):
+        try:
+            driver.new_session(application)
+            session_error = None
+            break
+        except WebDriverError as error:
+            session_error = error
+            print(f"SESSION RETRY attempt={attempt} error={error}", file=sys.stderr, flush=True)
+            if attempt < 3:
+                time.sleep(1)
+                driver.wait_ready(30)
+    if session_error is not None:
+        raise session_error
+    if not driver.session_id:
+        raise WebDriverError("WebDriver opened a session without an identifier")
+    return driver.session_id
 
 
 def main() -> int:
@@ -694,22 +825,9 @@ def main() -> int:
                     start_new_session=True,
                 )
             driver.wait_ready(args.driver_timeout)
-            session_error: WebDriverError | None = None
-            for attempt in range(1, 4):
-                try:
-                    driver.new_session(args.application)
-                    session_error = None
-                    break
-                except WebDriverError as error:
-                    session_error = error
-                    print(f"SESSION RETRY attempt={attempt} error={error}", file=sys.stderr, flush=True)
-                    if attempt < 3:
-                        time.sleep(1)
-                        driver.wait_ready(args.driver_timeout)
-            if session_error is not None:
-                raise session_error
+            first_session = open_driver_session(driver, args.application)
             args.evidence.joinpath("webdriver-session.txt").write_text(
-                f"{driver.session_id}\n", encoding="utf-8"
+                f"{first_session}\n", encoding="utf-8"
             )
             journey = Journey(
                 driver,
@@ -741,6 +859,16 @@ def main() -> int:
                 result = journey.run_port_conflict(
                     args.expected_port_conflict, args.fixture_text, args.hosted_selector
                 )
+            elif args.scenario == "custom-app":
+                journey.run_custom_app("initial")
+                driver.close()
+                time.sleep(1)
+                restarted_session = open_driver_session(driver, args.application)
+                args.evidence.joinpath("webdriver-restarted-session.txt").write_text(
+                    f"{restarted_session}\n", encoding="utf-8"
+                )
+                journey.run_custom_app("after-restart")
+                result = "invoked-after-restart"
             else:
                 result = journey.run_doctor(args.fixture_text, args.hosted_selector)
             status = "passed"

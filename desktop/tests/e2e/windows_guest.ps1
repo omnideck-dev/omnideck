@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "HostBoundaryDownload", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -433,6 +433,37 @@ switch ($Phase) {
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "port-conflict-recovery.json") -Encoding utf8
         Write-Host "PORT CONFLICT RECOVERED occupied=$OldPort selected=$NewPort"
     }
+    "CustomAppFixture" {
+        Stop-Omnideck
+        $Fixture = Join-Path $WorkDir "custom_app_fixture.py"
+        if (-not (Test-Path -LiteralPath $Fixture -PathType Leaf)) {
+            throw "The Custom App fixture script is missing."
+        }
+        Invoke-Engine cp $Fixture "${ContainerName}:/tmp/omnideck-custom-app-fixture.py" | Out-Null
+        Invoke-Engine exec --user omnideck $ContainerName `
+            python3 /tmp/omnideck-custom-app-fixture.py | Out-Null
+
+        $PortPath = Join-Path $UserData "runtime\app-port"
+        $Port = (Get-Content -LiteralPath $PortPath -Raw).Trim()
+        if ($Port -notmatch '^\d+$') { throw "The persisted Desktop port is invalid." }
+        $Headers = @{ "X-Requested-With" = "XMLHttpRequest" }
+        $Settings = Invoke-RestMethod `
+            -Uri "http://127.0.0.1:$Port/api/settings" `
+            -Method Put `
+            -Headers $Headers `
+            -ContentType "application/json" `
+            -Body '{"custom_apps_enabled":true,"setup_complete":true}'
+        $Catalog = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/custom-apps"
+        $App = @($Catalog.apps | Where-Object { $_.slug -eq "desktop-smoke" })
+        if ($App.Count -ne 1 -or $App[0].title -ne "Desktop Custom App Smoke" -or -not $App[0].has_actions) {
+            throw "The Desktop Custom App fixture was not discovered."
+        }
+        $Settings | ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $Results "custom-app-settings.json") -Encoding utf8
+        $Catalog | ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $Results "custom-app-catalog.json") -Encoding utf8
+        Write-Host "CUSTOM APP FIXTURE READY port=$Port"
+    }
     "HostBoundaryDownload" {
         if (-not $FixtureName -or -not $FixtureFilename) {
             throw "HostBoundaryDownload requires FixtureName and FixtureFilename."
@@ -509,7 +540,7 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="11" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="12" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
@@ -517,6 +548,7 @@ switch ($Phase) {
   <testcase classname="desktop-vm-e2e" name="returning-user"/>
   <testcase classname="desktop-vm-e2e" name="doctor-resume-update"/>
   <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
+  <testcase classname="desktop-vm-e2e" name="custom-app-webview-action-and-restart"/>
   <testcase classname="desktop-vm-e2e" name="native-host-download"/>
   <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>

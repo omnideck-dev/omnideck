@@ -226,6 +226,7 @@ remote_staged=1
 "${lab_dir}/lab.sh" copy-to windows "${artifact}" "${remote_scp_root}/candidate-setup.exe"
 "${lab_dir}/lab.sh" copy-to windows "${build_dir}/tauri-driver-root/bin/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
+"${lab_dir}/lab.sh" copy-to windows "${script_dir}/custom_app_fixture.py" "${remote_scp_root}/custom_app_fixture.py"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_start_driver.ps1" "${remote_scp_root}/windows_start_driver.ps1"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_trust.ps1" "${remote_scp_root}/windows_trust.ps1"
 
@@ -616,6 +617,8 @@ if [[ "${test_status}" == "0" ]]; then
     run_journey port-conflict port-conflict later none "${occupied_port}"
     phase_command VerifyPortConflict
     run_journey returning returning-final
+    phase_command CustomAppFixture
+    run_journey custom-app
     run_host_boundary download
     download_path="$(verify_host_download | tr -d '\r' | tail -n 1)"
     [[ "${download_path}" == [A-Za-z]:\\* ]]

@@ -36,6 +36,9 @@ system exposes:
 - a second saved installation occupying Desktop's persisted port, the exact
   inline recovery wording, no-action automatic retry, and successful launch on
   a newly persisted port;
+- a real Custom App installed into the existing Desktop home volume, rendered
+  in the packaged platform WebView, invoked through the same-origin SDK bridge
+  and Python action runner, then invoked again after restarting the Tauri app;
 - profile export through the real Agents UI, with the hosted URL held stable
   while the native webview writes the expected file into the guest Downloads
   folder, followed by filename, JSON pack, version, and payload validation;
@@ -78,6 +81,14 @@ The production-pinned runtime image is used by default. There is no tiny
 fixture image in the full Desktop journey. This makes the hosted proof a check
 of the same application image the package declares, at the cost of a larger
 first pull inside the disposable overlay.
+
+The full lane pays the expensive costs once: one guest reset, one candidate
+build/install, and one production image pull. Lifecycle journeys intentionally
+open fresh desktop sessions because they prove returning, repair, resume,
+update, and port-recovery behavior, but they reuse the same run-scoped
+container volumes. The Custom App check also reuses that final healthy runtime;
+one driver process opens two application sessions only to prove the app and its
+action survive a real Tauri restart.
 
 ## Golden-image automation prerequisites
 

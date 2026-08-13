@@ -73,7 +73,7 @@ write_evidence() {
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-vm-e2e" tests="10" failures="0">
+<testsuite name="omnideck-desktop-vm-e2e" tests="11" failures="0">
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
@@ -82,6 +82,7 @@ write_evidence() {
   <testcase classname="desktop-vm-e2e" name="resume"/>
   <testcase classname="desktop-vm-e2e" name="update"/>
   <testcase classname="desktop-vm-e2e" name="occupied-port-auto-recovery"/>
+  <testcase classname="desktop-vm-e2e" name="custom-app-webview-action-and-restart"/>
   <testcase classname="desktop-vm-e2e" name="native-host-download"/>
   <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
 </testsuite>
@@ -413,6 +414,35 @@ printf 'occupiedPort=%s\nselectedPort=%s\n' "${old_port}" "${new_port}" \
 current_step="final returning user"
 run_journey returning
 
+current_step="Custom App fixture"
+podman cp "${work_dir}/custom_app_fixture.py" "${container_name}:/tmp/omnideck-custom-app-fixture.py"
+podman exec --user omnideck "${container_name}" \
+  python3 /tmp/omnideck-custom-app-fixture.py
+custom_app_port="$(tr -d '[:space:]' < "${user_data}/runtime/app-port")"
+curl --fail --silent --show-error --max-time 15 \
+  --request PUT \
+  --header 'Content-Type: application/json' \
+  --header 'X-Requested-With: XMLHttpRequest' \
+  --data '{"custom_apps_enabled":true,"setup_complete":true}' \
+  "http://127.0.0.1:${custom_app_port}/api/settings" \
+  > "${result_dir}/custom-app-settings.json"
+curl --fail --silent --show-error --max-time 15 \
+  "http://127.0.0.1:${custom_app_port}/api/custom-apps" \
+  > "${result_dir}/custom-app-catalog.json"
+python3 - "${result_dir}/custom-app-catalog.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    catalog = json.load(stream)
+apps = {app["slug"]: app for app in catalog["apps"]}
+assert apps["desktop-smoke"]["title"] == "Desktop Custom App Smoke", catalog
+assert apps["desktop-smoke"]["has_actions"] is True, catalog
+PY
+
+current_step="Custom App packaged WebView"
+run_journey custom-app
+
 fixture_id="desktop_host_boundary_${namespace}"
 fixture_name="Desktop Host Boundary ${namespace}"
 fixture_filename="Desktop-Host-Boundary-${namespace}.agent.omnideck.json"
@@ -512,4 +542,4 @@ current_step="cleanup"
 cleanup_resources
 test_status="passed"
 current_step="complete"
-printf 'PASS: package smoke, setup/recovery, native host download/upload, and package lifecycle completed.\n'
+printf 'PASS: package smoke, setup/recovery, Custom App WebView, native host boundaries, and package lifecycle completed.\n'
