@@ -498,7 +498,10 @@ switch ($Phase) {
             throw "ArtifactFilename must be a leaf filename."
         }
         $Contents = "native artifact download $ArtifactFilename"
-        $Python = 'import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ["E2E_ARTIFACT_FILENAME"]; path=Path("/home/computron") / name; path.write_text(os.environ["E2E_ARTIFACT_CONTENTS"], encoding="utf-8"); record_artifact(conversation_id="desktop-vm-artifact", path=str(path), filename=name, content_type="text/plain", agent_name="Desktop VM", sent_at="2026-08-12T00:00:00Z")'
+        # Windows PowerShell strips embedded double quotes when forwarding a
+        # native-process argument. Keep this Python payload single-quoted so
+        # podman passes it to `python -c` byte-for-byte.
+        $Python = "import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ['E2E_ARTIFACT_FILENAME']; path=Path('/home/computron') / name; path.write_text(os.environ['E2E_ARTIFACT_CONTENTS'], encoding='utf-8'); record_artifact(conversation_id='desktop-vm-artifact', path=str(path), filename=name, content_type='text/plain', agent_name='Desktop VM', sent_at='2026-08-12T00:00:00Z')"
         Invoke-Engine exec --env "E2E_ARTIFACT_FILENAME=$ArtifactFilename" --env "E2E_ARTIFACT_CONTENTS=$Contents" $ContainerName python -c $Python | Out-Null
         Write-Host $Contents
     }

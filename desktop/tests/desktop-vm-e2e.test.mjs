@@ -81,8 +81,12 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windows, /phase_command CustomAppFixture/);
   assert.match(windows, /run_journey custom-app/);
   assert.match(windowsGuest, /"CustomAppFixture"/);
+  assert.match(windowsGuest, /os\.environ\['E2E_ARTIFACT_FILENAME'\]/);
+  assert.doesNotMatch(windowsGuest, /os\.environ\["E2E_ARTIFACT_FILENAME"\]/);
   assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);
   assert.match(driver, /invoked-after-restart/);
+  assert.match(driver, /desktopSmokeLastAttempt/);
+  assert.match(driver, /button && bridgeAvailable/);
   assert.match(customAppFixture, /Desktop Custom App Smoke/);
   assert.match(customAppFixture, /window\.omnideck\.invoke/);
   assert.match(run, /host_boundary_client\.py/);

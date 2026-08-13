@@ -100,15 +100,18 @@ return (() => {
     const document = frameWindow.document;
     const button = document.querySelector('#smoke-invoke');
     const output = document.querySelector('#smoke-result');
-    if (button && !button.dataset.desktopSmokeInvoked) {
-      button.dataset.desktopSmokeInvoked = 'true';
+    const bridgeAvailable = Boolean(frameWindow.omnideck && frameWindow.omnideck.invoke);
+    const lastAttempt = Number(button?.dataset.desktopSmokeLastAttempt || 0);
+    if (button && bridgeAvailable && output?.textContent !== 'Action result: tauri-webview'
+        && Date.now() - lastAttempt >= 2000) {
+      button.dataset.desktopSmokeLastAttempt = String(Date.now());
       button.click();
     }
     return {
       frameFound: true,
       frameUrl: frameWindow.location.href,
       title: document.querySelector('h1')?.textContent || '',
-      bridgeAvailable: Boolean(frameWindow.omnideck && frameWindow.omnideck.invoke),
+      bridgeAvailable,
       result: output?.textContent || '',
     };
   } catch (error) {
