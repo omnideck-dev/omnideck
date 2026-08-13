@@ -130,6 +130,12 @@ test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
   assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);
   assert.match(windows, /evidence-finish/);
+  assert.match(run, /qualification_complete=0/);
+  assert.match(run, /stopped before its evidence was validated/);
+  assert.match(run, /qualification_complete=1/);
+  assert.match(windows, /qualification_complete=0/);
+  assert.match(windows, /stopped before its evidence was validated/);
+  assert.match(windows, /qualification_complete=1/);
   assert.match(purge, /runs purge/);
   assert.match(qualifier, /artifact-path desktop release/);
   assert.match(qualifier, /releasecontract\/verify-release\.mjs/);

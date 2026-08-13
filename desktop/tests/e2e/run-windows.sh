@@ -160,6 +160,7 @@ initial_reset=0
 remote_staged=0
 driver_ssh_pid=""
 test_status=1
+qualification_complete=0
 
 mkdir -p "${build_dir}" "${evidence_dir}" "${screenshot_dir}" "${marker_root}"
 desktop_builder_id="$(<"${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE:?prepared tauri-driver cache required}/builder-image.txt")"
@@ -180,6 +181,10 @@ fi
 cleanup() {
   local exit_code=$?
   set +e
+  if [[ "${exit_code}" == "0" && "${qualification_complete}" != "1" ]]; then
+    printf 'Desktop E2E stopped before its evidence was validated.\n' >&2
+    exit_code=1
+  fi
   if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
     kill "${driver_ssh_pid}" 2>/dev/null || true
     wait "${driver_ssh_pid}" 2>/dev/null || true
@@ -746,4 +751,7 @@ node "${desktop_root}/tests/hardware/validate-proof.mjs" \
   --application "${artifact}" \
   --report "${evidence_dir}/guest/smoke/report.json"
 
+if [[ "${test_status}" == "0" ]]; then
+  qualification_complete=1
+fi
 exit "${test_status}"

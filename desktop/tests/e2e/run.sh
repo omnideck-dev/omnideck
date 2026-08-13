@@ -164,6 +164,7 @@ vm_started=0
 initial_reset=0
 remote_staged=0
 test_status=1
+qualification_complete=0
 
 mkdir -p "${build_dir}" "${screenshot_dir}"
 desktop_builder_id="$(<"${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE:?prepared tauri-driver cache required}/builder-image.txt")"
@@ -184,6 +185,10 @@ fi
 cleanup() {
   local exit_code=$?
   set +e
+  if [[ "${exit_code}" == "0" && "${qualification_complete}" != "1" ]]; then
+    printf 'Desktop E2E stopped before its evidence was validated.\n' >&2
+    exit_code=1
+  fi
   if [[ "${remote_staged}" == "1" && "${vm_started}" == "1" && "${keep_vm}" != "1" ]]; then
     "${lab_dir}/lab.sh" run "${vm}" "rm -rf -- '${remote_root}'" >/dev/null 2>&1 || true
   fi
@@ -335,4 +340,7 @@ node "${desktop_root}/tests/hardware/validate-proof.mjs" \
   --application "${artifact}" \
   --report "${output_dir}/evidence/smoke/report.json"
 
+if [[ "${test_status}" == "0" ]]; then
+  qualification_complete=1
+fi
 exit "${test_status}"
