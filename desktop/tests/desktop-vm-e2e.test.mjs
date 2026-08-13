@@ -119,9 +119,15 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(linuxGuest, /--native-input-tool/);
   assert.match(linuxGuest, /"\$\{operation\}" == "zoom" && "\$\{ID\}" == "ubuntu"/);
   assert.match(hostBoundaryDriver, /checkForUpdate/);
+  assert.match(hostBoundaryDriver, /error\?\.message/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(customAppFixture, /mockIPC|mock_invoke|dev server/i);
+  assert.ok(
+    windows.indexOf('phase_command SeedUpdateFixture')
+      < windows.indexOf('start_driver skip'),
+    'the Windows update fixture must exist before the first app launch',
+  );
 });
 
 test('documented pnpm argument separators are accepted by both VM lanes', () => {

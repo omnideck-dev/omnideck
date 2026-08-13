@@ -446,7 +446,12 @@ const finish = (value) => done(JSON.stringify(value));
     skipped,
     events,
   });
-})().catch((error) => finish({ok: false, error: String(error)}));
+})().catch((error) => finish({
+  ok: false,
+  error: error?.message || String(error),
+  code: error?.code || null,
+  detail: error && typeof error === 'object' ? JSON.stringify(error) : null,
+}));
 """)
         if isinstance(result, str):
             result = json.loads(result)

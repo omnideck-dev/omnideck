@@ -339,6 +339,7 @@ printf '%s\n' "${trust_result}" > "${output_dir}/trust-ui-result.txt"
 "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust.json" "${output_dir}/trust.json"
 
 phase_command Prepare | tee "${output_dir}/prepare.log"
+phase_command SeedUpdateFixture | tee "${output_dir}/update-fixture-path.txt"
 if [[ "${security_mode}" == "1" ]]; then
   phase_command ConfigureClean | tee "${output_dir}/configure-clean.log"
 fi
@@ -680,7 +681,6 @@ if [[ "${test_status}" == "0" ]]; then
     artifact_download_path="$(verify_artifact_download | tr -d '\r' | tail -n 1)"
     [[ "${artifact_download_path}" == [A-Za-z]:\\* ]]
     run_host_boundary zoom
-    phase_command SeedUpdateFixture
     run_host_boundary update-bridge
     phase_command Final
   )
