@@ -153,16 +153,28 @@ fetch(%s, options).then(async (response) => {
         )
 
     def wait_for_download_toast(self, filename: str) -> bool:
-        return wait_until(
-            f"the native download completion notification for {filename}",
-            15,
-            lambda: self.driver.execute(
-                "const text = document.body?.innerText || ''; "
-                "return text.includes('Download complete') && text.includes(" +
-                json.dumps(f"{filename} was saved to Downloads.") +
-                ");"
-            ),
-        ) is True
+        deadline = time.monotonic() + 15
+        last: Any = None
+        while time.monotonic() < deadline:
+            try:
+                last = self.driver.execute(
+                    "const text = document.body?.innerText || ''; "
+                    "const expected = "
+                    + json.dumps(f"{filename} was saved to Downloads.")
+                    + "; "
+                    "return { observed: text.includes('Download complete') && text.includes(expected), "
+                    "bodyText: text.slice(-2000), "
+                    "pending: window.__omnideckPendingDownload || null };"
+                )
+                if isinstance(last, dict) and last.get("observed") is True:
+                    return True
+            except WebDriverError as error:
+                last = error
+            time.sleep(0.25)
+        raise AssertionError(
+            f"Timed out waiting for the native download completion notification for "
+            f"{filename}; last={last!r}"
+        )
 
     def download(self, fixture_id: str, fixture_name: str) -> str:
         initial = self.select_hosted_window()

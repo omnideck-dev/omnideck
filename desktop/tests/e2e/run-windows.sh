@@ -13,7 +13,6 @@ baseline=""
 artifact=""
 assume_yes=0
 keep_vm=0
-original_args=("$@")
 
 usage() {
   cat <<'EOF'

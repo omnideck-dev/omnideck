@@ -559,7 +559,10 @@ fn download_feedback_script(
         })
         .unwrap_or_else(|| "download".into());
     let payload = serde_json::json!({ "filename": filename, "success": success });
-    format!("window.dispatchEvent(new CustomEvent('omnideck:download',{{detail:{payload}}}));")
+    format!(
+        "(() => {{ const detail = {payload}; window.__omnideckPendingDownload = detail; \
+         window.dispatchEvent(new CustomEvent('omnideck:download', {{ detail }})); }})();"
+    )
 }
 
 fn send_state(
@@ -1472,6 +1475,20 @@ mod tests {
         assert_eq!(target.image_ref, image_ref);
         assert!(interrupted_update_target("complete", "update", "0.1.2", "unused").is_none());
         assert!(interrupted_update_target("in-progress", "repair", "0.1.2", "unused").is_none());
+    }
+
+    #[test]
+    fn download_feedback_is_retained_until_the_ui_consumes_it() {
+        let url = "http://127.0.0.1:2337/api/profiles/export".parse().unwrap();
+        let script = download_feedback_script(
+            &url,
+            Some(std::path::Path::new("/home/tester/Downloads/agent.json")),
+            true,
+        );
+        assert!(script.contains("__omnideckPendingDownload = detail"));
+        assert!(script.contains("omnideck:download"));
+        assert!(script.contains(r#""filename":"agent.json""#));
+        assert!(script.contains(r#""success":true"#));
     }
 
     #[test]
