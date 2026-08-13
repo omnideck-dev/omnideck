@@ -82,9 +82,11 @@ def _seed_profile(page: Page, profile_id: str, name: str, *, skills: list[str]) 
 
 def _download_json(page: Page, trigger) -> tuple[dict, str]:
     """Run ``trigger`` (which starts a download) and return (json, filename)."""
+    url_before = page.url
     with page.expect_download() as dl_info:
         trigger()
     download = dl_info.value
+    assert page.url == url_before, "Browser export navigated away instead of downloading"
     data = json.loads(Path(download.path()).read_text(encoding="utf-8"))
     return data, download.suggested_filename
 

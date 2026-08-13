@@ -5,7 +5,9 @@ import test from 'node:test';
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const config = JSON.parse(await read('../src-tauri/tauri.conf.json'));
 const capability = JSON.parse(await read('../src-tauri/capabilities/setup-local.json'));
+const hostedCapability = JSON.parse(await read('../src-tauri/capabilities/hosted-desktop.json'));
 const permission = await read('../src-tauri/permissions/read-only-cli.toml');
+const hostedPermission = await read('../src-tauri/permissions/hosted-desktop.toml');
 const adapter = await read('../web/host-adapter.js');
 const html = await read('../web/index.html');
 const rust = await read('../src-tauri/src/lib.rs');
@@ -34,7 +36,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-beta.4');
+  assert.equal(config.version, '0.1.0-beta.5');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -50,9 +52,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.4"$/m);
-  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.4"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.4"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.5"$/m);
+  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.5"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.5"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 
@@ -86,7 +88,28 @@ test('local capability contains no generic or remote authority', () => {
   assert.doesNotMatch(JSON.stringify(capability), /shell:|process:|fs:|updater:|dialog:|opener:|core:event/i);
 });
 
-test('permission exposes only the four typed lifecycle commands', () => {
+test('hosted capability exposes only typed desktop affordances to loopback', () => {
+  assert.deepEqual(hostedCapability.windows, ['hosted-app']);
+  assert.deepEqual(hostedCapability.remote.urls, ['http://127.0.0.1:*']);
+  assert.deepEqual(hostedCapability.permissions, ['hosted-desktop']);
+  assert.match(hostedPermission, /current_update/);
+  assert.match(hostedPermission, /check_for_update/);
+  assert.match(hostedPermission, /install_update/);
+  assert.match(hostedPermission, /defer_update/);
+  assert.match(hostedPermission, /skip_update/);
+  assert.doesNotMatch(hostedPermission, /desktop_zoom/);
+  assert.doesNotMatch(`${JSON.stringify(hostedCapability)}${hostedPermission}`, /shell:|process:|fs:|updater:|dialog:|opener:|core:event|spawn|execute/i);
+});
+
+test('desktop zoom uses webview input without introducing a native menu', () => {
+  assert.equal((rust.match(/\.initialization_script\(ZOOM_CONTROL_SCRIPT\)/g) || []).length, 2);
+  assert.match(rust, /addEventListener\('wheel'/);
+  assert.match(rust, /addEventListener\('keydown'/);
+  assert.match(rust, /document\.documentElement\.style\.zoom = String\(zoomLevel\)/);
+  assert.doesNotMatch(rust, /\.set_menu\(|\.hide_menu\(|\.on_menu_event\(|MenuItem|Submenu/);
+});
+
+test('permissions expose only their narrow typed command sets', () => {
   assert.match(permission, /commands\.allow = \["bootstrap", "begin_setup", "open_app", "run_action"\]/);
   assert.doesNotMatch(permission, /spawn|execute|shell|filesystem|process/i);
   assert.deepEqual([...adapter.matchAll(/run\('([^']+)'/g)].map((match) => match[1]), [
@@ -113,12 +136,12 @@ test('Rust owns all CLI arguments and guards navigation plus command origin', ()
   assert.doesNotMatch(adapter, /plugin-shell|Command\.sidecar|executable|argv|workingDirectory/);
 });
 
-test('hosted container window starts inert, resolves an exact dynamic origin, and has no capability', () => {
+test('hosted container window starts inert and resolves an exact dynamic origin', () => {
   assert.deepEqual(config.app.windows, []);
   assert.match(rust, /WebviewUrl::App\("hosted-placeholder\.html"\.into\(\)\)/);
   assert.match(rust, /\.visible\(false\)/);
   assert.match(rust, /\.enable_clipboard_access\(\)/);
-  assert.match(rust, /\.initialization_script\(HOSTED_SHORTCUTS_SCRIPT\)/);
+  assert.match(rust, /\.initialization_script\(HOSTED_BRIDGE_SCRIPT\)/);
   assert.match(rust, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(rust, /key === 'f5'/);
   assert.match(rust, /key === 'r'/);
@@ -126,11 +149,31 @@ test('hosted container window starts inert, resolves an exact dynamic origin, an
   assert.match(rust, /HostedNavigation::OpenExternal/);
   assert.match(rust, /matches!\(url\.scheme\(\), "http" \| "https"\)/);
   assert.match(rust, /platform::open_url\(url\.as_str\(\)\)/);
-  assert.equal(capability.windows.includes('hosted-app'), false);
+  assert.match(rust, /fn authorize_hosted\(window: &WebviewWindow, host: &HostState\)/);
   assert.doesNotMatch(rust, /const HOSTED_APP_PORT/);
   assert.match(rust, /url\.host_str\(\) == Some\("127\.0\.0\.1"\)/);
   assert.match(rust, /url\.port\(\) == expected_port/);
   assert.match(rust, /format!\("http:\/\/127\.0\.0\.1:\{port\}"\)/);
+});
+
+test('native desktop enhancements are bounded and observable', () => {
+  assert.match(rust, /const minZoom = 0\.2/);
+  assert.match(rust, /const maxZoom = 10/);
+  assert.match(rust, /const zoomStep = 0\.2/);
+  assert.match(rust, /passive: false/);
+  assert.match(rust, /\.on_download\(/);
+  assert.match(rust, /omnideck:download/);
+  assert.match(rust, /omnideck:update/);
+  assert.match(rust, /background_color\(Color\(12, 14, 20, 255\)\)/);
+});
+
+test('desktop ships the current immutable container release', async () => {
+  assert.equal((await read('../container-version.txt')).trim(), '0.1.1');
+  assert.equal(imageManifest.imageVersion, '0.1.1');
+  assert.equal(
+    imageManifest.imageRef,
+    'ghcr.io/omnideck-dev/omnideck@sha256:9af6549e9941bf369ba7339e89e974bafc78eb30e956eb7e6a8ce6b0cdf042e8',
+  );
 });
 
 test('packaged UI bootstraps through the typed lifecycle bridge', () => {

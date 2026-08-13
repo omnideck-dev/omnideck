@@ -30,6 +30,10 @@ fn test_namespace() -> Option<String> {
     .then_some(namespace)
 }
 
+pub fn is_test_run() -> bool {
+    test_namespace().is_some()
+}
+
 pub fn resource_name(base: &str) -> String {
     test_namespace()
         .map(|namespace| format!("{base}-{namespace}"))

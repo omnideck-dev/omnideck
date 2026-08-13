@@ -5,6 +5,7 @@ import ImageIcon from './icons/ImageIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
+import { bytesDownload, triggerDownload } from '../utils/downloads.js';
 
 function FileOutputIcon({ contentType, filename }) {
     if (contentType?.startsWith('image/') || filename?.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
@@ -23,22 +24,13 @@ export default function FileOutput({ item, onPreview }) {
     const handleDownload = (e) => {
         e.stopPropagation();
         if (path) {
-            const a = document.createElement('a');
-            a.href = path;
-            a.download = filename;
-            a.click();
+            triggerDownload(path, filename);
             return;
         }
         const byteChars = atob(content);
         const bytes = new Uint8Array(byteChars.length);
         for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-        const blob = new Blob([bytes], { type: content_type || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 100);
+        bytesDownload(bytes, content_type, filename);
     };
 
     const handleClick = () => {

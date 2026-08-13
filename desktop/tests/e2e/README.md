@@ -2,6 +2,8 @@
 
 This suite runs the real packaged Tauri desktop in the disposable local VM lab.
 It does not use a dev server, a browser substitute, or a mocked host bridge.
+Each runner acquires the lab's per-guest lease before any reset, start, console,
+or copy operation, so concurrent suites cannot mutate the same guest.
 The default pre-release path builds the current checkout with the same
 AppImage/DEB/RPM/NSIS packaging commands used by the release build and embeds
 the selected local CLI worktree. `--artifact PATH` runs the same suite against
@@ -41,10 +43,19 @@ system exposes:
   and Python action runner, then invoked again after restarting the Tauri app;
 - profile export through the real Agents UI, with the hosted URL held stable
   while the native webview writes the expected file into the guest Downloads
-  folder, followed by filename, JSON pack, version, and payload validation;
+  folder, followed by filename, JSON pack, version, payload, and visible
+  completion-toast validation;
 - profile import through the real native-driver file-input command, using that
   guest-local downloaded file and proving both the created profile and success
   notification;
+- artifact download from the real Artifacts preview, with guest filesystem
+  contents and the native completion toast verified;
+- Ctrl/Cmd keyboard and standardized mouse-wheel events through the packaged
+  desktop-only webview zoom control, plus trusted OS-level keyboard and wheel
+  input in the Linux guests, proving each path updates the rendered page zoom;
+  and
+- deterministic test-only update discovery, defer, skip, event delivery, and
+  the exact frozen hosted bridge surface (without replacing the runtime image);
 - namespaced Linux container/volume isolation and cleanup;
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.

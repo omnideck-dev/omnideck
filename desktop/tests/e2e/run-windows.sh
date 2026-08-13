@@ -2,6 +2,8 @@
 
 set -Eeuo pipefail
 
+original_args=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
@@ -11,7 +13,6 @@ baseline=""
 artifact=""
 assume_yes=0
 keep_vm=0
-original_args=("$@")
 
 usage() {
   cat <<'EOF'
@@ -71,6 +72,12 @@ security_mode=0
 [[ "${baseline}" != "clean" ]] || security_mode=1
 eval "$("${lab_dir}/lab.sh" describe windows --shell)"
 
+if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
+  lease_run_id="desktop-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  exec "${lab_dir}/lab.sh" lease windows omnideck-desktop-e2e "${lease_run_id}" -- \
+    env OMNIDECK_VM_LAB_DIR="${lab_dir}" "$0" "${original_args[@]}"
+fi
+
 status="$("${lab_dir}/lab.sh" status windows)"
 printf '%s\n' "${status}"
 grep -Eq '^windows stopped ' <<<"${status}" || {
@@ -96,6 +103,7 @@ fixture_suffix="$(printf '%s' "${safe_run_id}" | tr '[:upper:]' '[:lower:]' | tr
 fixture_id="desktop_host_boundary_${fixture_suffix}"
 fixture_name="Desktop Host Boundary ${fixture_suffix}"
 fixture_filename="Desktop-Host-Boundary-${fixture_suffix}.agent.omnideck.json"
+artifact_filename="desktop-artifact-${fixture_suffix}.txt"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
@@ -463,6 +471,8 @@ run_host_boundary() {
   local -a operation_args=()
   if [[ "${operation}" == "upload" ]]; then
     operation_args+=(--upload-path "${upload_path}")
+  elif [[ "${operation}" == "artifact-download" ]]; then
+    operation_args+=(--artifact-filename "${artifact_filename}")
   fi
   mkdir -p "${scenario_dir}"
   python3 "${script_dir}/host_boundary_client.py" \
@@ -481,6 +491,16 @@ run_host_boundary() {
 verify_host_download() {
   "${lab_dir}/lab.sh" run windows \
     "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase HostBoundaryDownload -WorkDir ${remote_root} -FixtureName \"${fixture_name}\" -FixtureFilename ${fixture_filename}"
+}
+
+seed_artifact() {
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase SeedArtifact -WorkDir ${remote_root} -ArtifactFilename ${artifact_filename}"
+}
+
+verify_artifact_download() {
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase HostBoundaryArtifactDownload -WorkDir ${remote_root} -ArtifactFilename ${artifact_filename}"
 }
 
 complete_clean_security_setup() {
@@ -623,6 +643,13 @@ if [[ "${test_status}" == "0" ]]; then
     download_path="$(verify_host_download | tr -d '\r' | tail -n 1)"
     [[ "${download_path}" == [A-Za-z]:\\* ]]
     run_host_boundary upload "${download_path}"
+    seed_artifact
+    run_host_boundary artifact-download
+    artifact_download_path="$(verify_artifact_download | tr -d '\r' | tail -n 1)"
+    [[ "${artifact_download_path}" == [A-Za-z]:\\* ]]
+    run_host_boundary zoom
+    phase_command SeedUpdateFixture
+    run_host_boundary update-bridge
     phase_command Final
   )
   test_status=$?

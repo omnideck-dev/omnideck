@@ -34,7 +34,9 @@ if (-not (Test-Path -LiteralPath $GuestScript)) { throw "Guest harness is missin
 
 $env:OMNIDECK_DESKTOP_USER_DATA = Join-Path $WorkDir "user-data"
 $env:OMNIDECK_CONFIG_DIR = Join-Path $WorkDir "cli-config"
-Remove-Item Env:OMNIDECK_DESKTOP_TEST_NAMESPACE -ErrorAction SilentlyContinue
+$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = [System.IO.Path]::GetFileName($WorkDir)
+$UpdateFixture = Join-Path $WorkDir "update-fixture.json"
+$env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = $UpdateFixture
 if ($PreserveRuntime) {
     & $GuestScript -Phase RuntimePreserve -WorkDir $WorkDir *>> (Join-Path $WorkDir "runtime-start.log")
 }

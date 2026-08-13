@@ -2,6 +2,7 @@ mod cli;
 mod parity;
 mod platform;
 mod state;
+mod updates;
 
 use cli::{
     instance_status, parse_instance_status, require_success, run_cli, run_fixed, runtime_status,
@@ -12,7 +13,7 @@ use parity::SetupState;
 use serde::Serialize;
 use state::{
     image_manifest, persisted_port, read_setup_record, reserve_and_persist_port, save_setup_record,
-    APP_VERSION,
+    ImageManifest, APP_VERSION,
 };
 use std::{
     collections::HashSet,
@@ -24,9 +25,11 @@ use std::{
     time::Duration,
 };
 use tauri::{
-    ipc::Channel, webview::NewWindowResponse, AppHandle, Manager, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    ipc::Channel,
+    webview::{Color, DownloadEvent, NewWindowResponse},
+    AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
+use tauri_plugin_notification::NotificationExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const CONTAINER_NAME: &str = "omnideck-desktop";
@@ -35,8 +38,79 @@ const STATE_VOLUME: &str = "omnideck-desktop-state";
 const DOWNLOAD_URL: &str = "https://github.com/omnideck-dev/omnideck/releases";
 const SUPPORTED_SYSTEMS_URL: &str = "https://github.com/omnideck-dev/omnideck#prerequisites";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
-const HOSTED_SHORTCUTS_SCRIPT: &str = r#"
+const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(10);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+const ZOOM_CONTROL_SCRIPT: &str = r#"
 (() => {
+  if (window.__omnideckZoomControlsInstalled) return;
+  window.__omnideckZoomControlsInstalled = true;
+
+  const minZoom = 0.2;
+  const maxZoom = 10;
+  const zoomStep = 0.2;
+  let zoomLevel = 1;
+
+  const setZoom = (next) => {
+    zoomLevel = Math.min(Math.max(next, minZoom), maxZoom);
+    window.__omnideckRequestedZoom = zoomLevel;
+    document.documentElement.style.zoom = String(zoomLevel);
+    window.__omnideckDesktopZoom = zoomLevel;
+    window.dispatchEvent(new CustomEvent('omnideck:zoom-changed', {
+      detail: zoomLevel,
+    }));
+  };
+
+  window.addEventListener('keydown', (event) => {
+    window.__omnideckLastZoomInput = {
+      type: 'keydown', key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+    };
+    if (event.altKey) return;
+    const accelerator = event.ctrlKey || event.metaKey;
+    const key = String(event.key || '').toLowerCase();
+    if (!accelerator || !['+', '=', 'add', '-', '_', 'subtract', '0'].includes(key)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (key === '0') setZoom(1);
+    else if (['+', '=', 'add'].includes(key)) setZoom(zoomLevel + zoomStep);
+    else setZoom(zoomLevel - zoomStep);
+  }, { capture: true });
+
+  window.addEventListener('wheel', (event) => {
+    window.__omnideckLastZoomInput = {
+      type: 'wheel', deltaY: event.deltaY, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+    };
+    if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setZoom(zoomLevel + (event.deltaY < 0 ? zoomStep : -zoomStep));
+  }, { capture: true, passive: false });
+})();
+"#;
+const HOSTED_BRIDGE_SCRIPT: &str = r#"
+(() => {
+  const updateListeners = new Set();
+  const invoke = (command, args = {}) => {
+    const core = window.__TAURI__?.core;
+    if (!core?.invoke) return Promise.reject(new Error('The desktop host bridge is unavailable.'));
+    return core.invoke(command, args);
+  };
+
+  window.omnideckHost = Object.freeze({
+    currentUpdate: () => invoke('current_update'),
+    checkForUpdate: () => invoke('check_for_update'),
+    installUpdate: () => invoke('install_update'),
+    deferUpdate: () => invoke('defer_update'),
+    skipUpdate: () => invoke('skip_update'),
+    onUpdate(listener) {
+      updateListeners.add(listener);
+      return () => updateListeners.delete(listener);
+    },
+  });
+
+  window.addEventListener('omnideck:update', (event) => {
+    updateListeners.forEach((listener) => listener(event.detail ?? null));
+  });
+
   window.addEventListener('keydown', (event) => {
     if (event.altKey) return;
     const key = String(event.key || '').toLowerCase();
@@ -106,18 +180,54 @@ struct HostState {
     setup_running: Arc<AtomicBool>,
     app_ready: Arc<AtomicBool>,
     offered_actions: Arc<RwLock<HashSet<String>>>,
+    available_update: Arc<RwLock<Option<updates::UpdateTarget>>>,
+    deferred_version: Arc<RwLock<Option<String>>>,
+    update_target: Arc<RwLock<Option<updates::UpdateTarget>>>,
+    update_checks_started: Arc<AtomicBool>,
 }
 
 impl Default for HostState {
     fn default() -> Self {
+        let update_state = updates::read_state();
+        let setup_record = read_setup_record();
+        let available_update = setup_record
+            .as_ref()
+            .and_then(|record| updates::known_update(&record.image_version));
+        // An update writes its selected immutable image into setup-state before
+        // reconciling the environment. Rehydrate that selection after a crash
+        // so Resume cannot accidentally fall back to the packaged older image.
+        let update_target = setup_record.as_ref().and_then(|record| {
+            interrupted_update_target(
+                &record.status,
+                &record.reason,
+                &record.image_version,
+                &record.image_ref,
+            )
+        });
         Self {
             hosted_port: Arc::new(RwLock::new(None)),
             setup_reason: Arc::new(RwLock::new("first-run".into())),
             setup_running: Arc::new(AtomicBool::new(false)),
             app_ready: Arc::new(AtomicBool::new(false)),
             offered_actions: Arc::new(RwLock::new(HashSet::new())),
+            available_update: Arc::new(RwLock::new(available_update)),
+            deferred_version: Arc::new(RwLock::new(update_state.deferred_version)),
+            update_target: Arc::new(RwLock::new(update_target)),
+            update_checks_started: Arc::new(AtomicBool::new(false)),
         }
     }
+}
+
+fn interrupted_update_target(
+    status: &str,
+    reason: &str,
+    version: &str,
+    image_ref: &str,
+) -> Option<updates::UpdateTarget> {
+    (status == "in-progress" && reason == "update").then(|| updates::UpdateTarget {
+        version: version.to_owned(),
+        image_ref: image_ref.to_owned(),
+    })
 }
 
 fn setup_state_from_cli_event(
@@ -266,6 +376,195 @@ fn authorize_local_setup(window: &WebviewWindow) -> BridgeResult<()> {
     Ok(())
 }
 
+fn authorize_hosted(window: &WebviewWindow, host: &HostState) -> BridgeResult<()> {
+    let url = window
+        .url()
+        .map_err(|error| BridgeError::new("ORIGIN_DENIED", error.to_string()))?;
+    let expected_port = host.hosted_port.read().ok().and_then(|port| *port);
+    if window.label() != "hosted-app" || !is_hosted_app_url(&url, expected_port) {
+        return Err(BridgeError::new(
+            "ORIGIN_DENIED",
+            "Only the active omnideck application can use the desktop bridge.",
+        ));
+    }
+    Ok(())
+}
+
+fn publish_update(app: &AppHandle, host: &HostState) {
+    let target = host
+        .available_update
+        .read()
+        .ok()
+        .and_then(|value| value.clone());
+    let deferred = host
+        .deferred_version
+        .read()
+        .ok()
+        .and_then(|value| value.clone());
+    let payload = target
+        .as_ref()
+        .map(|target| updates::payload(target, deferred.as_deref()));
+    let Ok(encoded) = serde_json::to_string(&payload) else {
+        return;
+    };
+    if let Some(window) = app.get_webview_window("hosted-app") {
+        let _ = window.eval(format!(
+            "window.dispatchEvent(new CustomEvent('omnideck:update',{{detail:{encoded}}}));"
+        ));
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SoftwareUpdatePreferences {
+    software_updates_automatic: Option<bool>,
+    software_updates_notify: Option<bool>,
+}
+
+async fn remember_update_preferences(host: &HostState) -> BridgeResult<()> {
+    let port = host
+        .hosted_port
+        .read()
+        .ok()
+        .and_then(|value| *value)
+        .or_else(persisted_port)
+        .ok_or_else(|| BridgeError::new("PORT_MISSING", "The saved omnideck port is missing."))?;
+    let preferences = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/api/settings"))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| BridgeError::new("UPDATE_PREFERENCES_FAILED", error.to_string()))?
+        .json::<SoftwareUpdatePreferences>()
+        .await
+        .map_err(|error| BridgeError::new("UPDATE_PREFERENCES_FAILED", error.to_string()))?;
+    updates::set_preferences(
+        preferences.software_updates_automatic.unwrap_or(true),
+        preferences.software_updates_notify.unwrap_or(true),
+    )
+}
+
+fn window_is_in_sight(app: &AppHandle) -> bool {
+    app.get_webview_window("hosted-app").is_some_and(|window| {
+        let visible = window.is_visible().unwrap_or(false);
+        let minimized = window.is_minimized().unwrap_or(true);
+        let expected_port = app
+            .state::<HostState>()
+            .hosted_port
+            .read()
+            .ok()
+            .and_then(|value| *value);
+        visible
+            && !minimized
+            && window
+                .url()
+                .is_ok_and(|url| is_hosted_app_url(&url, expected_port))
+    })
+}
+
+async fn perform_update_check(
+    app: &AppHandle,
+    host: &HostState,
+) -> BridgeResult<Option<updates::UpdateTarget>> {
+    let installed = read_setup_record()
+        .map(|record| record.image_version)
+        .unwrap_or_else(|| {
+            image_manifest()
+                .map(|manifest| manifest.image_version)
+                .unwrap_or_default()
+        });
+    if installed.is_empty() {
+        return Ok(None);
+    }
+    let previous = updates::read_state();
+    let found = updates::check(&installed).await?;
+    if let Ok(mut available) = host.available_update.write() {
+        *available = found.clone();
+    }
+    let persisted = updates::read_state();
+    if let Ok(mut deferred) = host.deferred_version.write() {
+        *deferred = persisted.deferred_version;
+    }
+    publish_update(app, host);
+    if let Some(found) = &found {
+        let newly_found = previous.version.as_deref() != Some(found.version.as_str());
+        if newly_found && previous.notify && !window_is_in_sight(app) {
+            if let Err(error) = app
+                .notification()
+                .builder()
+                .title("An omnideck update is ready")
+                .body(format!(
+                    "Version {} can be installed from omnideck.",
+                    found.version
+                ))
+                .show()
+            {
+                platform::append_diagnostic(&format!("[update notification] {error}"));
+            }
+        }
+    }
+    Ok(found)
+}
+
+fn schedule_update_checks(app: &AppHandle, host: &HostState) {
+    if host.update_checks_started.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    let host = host.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(UPDATE_FIRST_CHECK).await;
+        loop {
+            if let Err(error) = remember_update_preferences(&host).await {
+                platform::append_diagnostic(&format!("[update preferences] {}", error.technical()));
+            }
+            if let Err(error) = perform_update_check(&app, &host).await {
+                platform::append_diagnostic(&format!("[update check] {}", error.technical()));
+            }
+            tokio::time::sleep(UPDATE_INTERVAL).await;
+        }
+    });
+}
+
+fn selected_manifest(host: &HostState) -> BridgeResult<ImageManifest> {
+    if let Some(target) = host
+        .update_target
+        .read()
+        .ok()
+        .and_then(|value| value.clone())
+    {
+        return Ok(ImageManifest {
+            schema_version: 3,
+            app_version: APP_VERSION.into(),
+            image_version: target.version,
+            image_ref: target.image_ref,
+        });
+    }
+    image_manifest()
+}
+
+fn download_feedback_script(
+    url: &tauri::Url,
+    path: Option<&std::path::Path>,
+    success: bool,
+) -> String {
+    let filename = path
+        .and_then(std::path::Path::file_name)
+        .and_then(|value| value.to_str())
+        .map(str::to_owned)
+        .or_else(|| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "download".into());
+    let payload = serde_json::json!({ "filename": filename, "success": success });
+    format!(
+        "(() => {{ const detail = {payload}; window.__omnideckPendingDownload = detail; \
+         window.dispatchEvent(new CustomEvent('omnideck:download', {{ detail }})); }})();"
+    )
+}
+
 fn send_state(
     host: &HostState,
     channel: &Channel<SetupState>,
@@ -397,6 +696,7 @@ fn show_hosted(app: &AppHandle, host: &HostState, port: u16) -> BridgeResult<()>
         main.hide()
             .map_err(|error| BridgeError::new("WINDOW_UPDATE_FAILED", error.to_string()))?;
     }
+    schedule_update_checks(app, host);
     Ok(())
 }
 
@@ -421,8 +721,10 @@ fn create_desktop_windows(
 ) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("omnideck")
+        .background_color(Color(12, 14, 20, 255))
         .inner_size(1280.0, 820.0)
         .min_inner_size(880.0, 620.0)
+        .initialization_script(ZOOM_CONTROL_SCRIPT)
         .on_navigation(is_local_setup_url)
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()?;
@@ -439,8 +741,16 @@ fn create_desktop_windows(
     .visible(false)
     .inner_size(1440.0, 900.0)
     .min_inner_size(960.0, 640.0)
+    .background_color(Color(12, 14, 20, 255))
     .enable_clipboard_access()
-    .initialization_script(HOSTED_SHORTCUTS_SCRIPT)
+    .initialization_script(ZOOM_CONTROL_SCRIPT)
+    .initialization_script(HOSTED_BRIDGE_SCRIPT)
+    .on_download(|webview, event| {
+        if let DownloadEvent::Finished { url, path, success } = event {
+            let _ = webview.eval(download_feedback_script(&url, path.as_deref(), success));
+        }
+        true
+    })
     .on_navigation(move |url| {
         match hosted_navigation(url, navigation_port.read().ok().and_then(|port| *port)) {
             HostedNavigation::Allow => true,
@@ -505,6 +815,35 @@ async fn bootstrap(
         });
     }
 
+    if host
+        .update_target
+        .read()
+        .ok()
+        .is_some_and(|target| target.is_none())
+    {
+        if let Some(target) = updates::pending_at_launch(&record.image_version) {
+            if let Ok(mut selected) = host.update_target.write() {
+                *selected = Some(target);
+            }
+        }
+    }
+    if host
+        .update_target
+        .read()
+        .ok()
+        .is_some_and(|target| target.is_some())
+    {
+        *host.setup_reason.write().map_err(|_| {
+            BridgeError::new("STATE_LOCK_FAILED", "The setup reason lock was poisoned.")
+        })? = "update".into();
+        send_state(&host, &on_event, parity::working("update", None, 0.0))?;
+        show_setup(&app)?;
+        return Ok(BootstrapResult {
+            action: "setup",
+            reason: "update".into(),
+        });
+    }
+
     let result = async {
         validate_bundled_cli(&app).await?;
         let runtime = runtime_status(&app).await?;
@@ -515,9 +854,12 @@ async fn bootstrap(
             ));
         }
         let manifest = image_manifest()?;
+        let installed_is_newer =
+            updates::is_newer_release(&record.image_version, &manifest.image_version);
         if record.app_version != APP_VERSION
-            || record.image_version != manifest.image_version
-            || record.image_ref != manifest.image_ref
+            || (!installed_is_newer
+                && (record.image_version != manifest.image_version
+                    || record.image_ref != manifest.image_ref))
         {
             *host.setup_reason.write().map_err(|_| {
                 BridgeError::new("STATE_LOCK_FAILED", "The setup reason lock was poisoned.")
@@ -534,7 +876,6 @@ async fn bootstrap(
         })?;
         let mut status = instance_status(&app).await?;
         if status.image != record.image_ref
-            || status.image != manifest.image_ref
             || status.web_ui_port.parse::<u16>().ok() != Some(expected_port)
         {
             *host.setup_reason.write().map_err(|_| {
@@ -604,7 +945,7 @@ async fn begin_setup(
         .unwrap_or_else(|_| "resume".into());
     let reached_phase = Arc::new(AtomicUsize::new(0));
     let result = async {
-        let manifest = image_manifest()?;
+        let manifest = selected_manifest(&host)?;
         save_setup_record("in-progress", &reason, &manifest)?;
         send_state(
             &host,
@@ -737,6 +1078,18 @@ async fn begin_setup(
             .map_err(|error| BridgeError::new("INVALID_APP_PORT", error.to_string()))?;
         wait_for_http(actual_port).await?;
         save_setup_record("complete", &reason, &manifest)?;
+        if reason == "update" {
+            updates::complete()?;
+            if let Ok(mut selected) = host.update_target.write() {
+                *selected = None;
+            }
+            if let Ok(mut available) = host.available_update.write() {
+                *available = None;
+            }
+            if let Ok(mut deferred) = host.deferred_version.write() {
+                *deferred = None;
+            }
+        }
         *host.hosted_port.write().map_err(|_| {
             BridgeError::new("STATE_LOCK_FAILED", "The hosted origin lock was poisoned.")
         })? = Some(actual_port);
@@ -828,6 +1181,114 @@ fn run_action(
     }
 }
 
+#[tauri::command]
+fn current_update(
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<Option<updates::UpdatePayload>> {
+    authorize_hosted(&window, &host)?;
+    let target = host
+        .available_update
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone();
+    let deferred = host
+        .deferred_version
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone();
+    Ok(target
+        .as_ref()
+        .map(|target| updates::payload(target, deferred.as_deref())))
+}
+
+#[tauri::command]
+async fn check_for_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<Option<updates::UpdatePayload>> {
+    authorize_hosted(&window, &host)?;
+    remember_update_preferences(&host).await?;
+    perform_update_check(&app, &host).await?;
+    current_update(window, host)
+}
+
+fn available_update(host: &HostState) -> BridgeResult<updates::UpdateTarget> {
+    host.available_update
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone()
+        .ok_or_else(|| BridgeError::new("UPDATE_MISSING", "There is no update to act on."))
+}
+
+#[tauri::command]
+fn defer_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    updates::defer(&target)?;
+    *host
+        .deferred_version
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        Some(target.version);
+    publish_update(&app, &host);
+    Ok(())
+}
+
+#[tauri::command]
+fn skip_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    updates::skip(&target)?;
+    *host
+        .available_update
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        None;
+    *host
+        .deferred_version
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        None;
+    publish_update(&app, &host);
+    Ok(())
+}
+
+#[tauri::command]
+fn install_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    *host
+        .update_target
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        Some(target);
+    *host.setup_reason.write().map_err(|_| {
+        BridgeError::new("STATE_LOCK_FAILED", "The setup reason lock was poisoned.")
+    })? = "update".into();
+    host.app_ready.store(false, Ordering::Release);
+    let setup = app
+        .get_webview_window("main")
+        .ok_or_else(|| BridgeError::new("WINDOW_MISSING", "The setup window is unavailable."))?;
+    setup
+        .reload()
+        .map_err(|error| BridgeError::new("WINDOW_UPDATE_FAILED", error.to_string()))?;
+    show_setup(&app)
+}
+
 fn record_packaged_smoke(status: &RuntimeStatus) -> BridgeResult<()> {
     let Some(path) = std::env::var_os("OMNIDECK_DESKTOP_SMOKE_FILE") else {
         return Ok(());
@@ -883,12 +1344,18 @@ pub fn run() {
             }
         }))
         .manage(host)
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             begin_setup,
             open_app,
-            run_action
+            run_action,
+            current_update,
+            check_for_update,
+            install_update,
+            defer_update,
+            skip_update
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
@@ -898,8 +1365,6 @@ pub fn run() {
             }
         })
         .setup(move |app| {
-            #[cfg(target_os = "macos")]
-            app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
             create_desktop_windows(app, window_port.clone())?;
             if std::env::var_os("OMNIDECK_DESKTOP_SMOKE_FILE").is_some() {
                 let handle = app.handle().clone();
@@ -999,6 +1464,31 @@ mod tests {
             &BridgeError::new("INTERNAL_ERROR", "unclassified failure"),
             0
         ));
+    }
+
+    #[test]
+    fn interrupted_update_resumes_the_selected_immutable_image() {
+        let image_ref = format!("ghcr.io/omnideck-dev/omnideck@sha256:{}", "a".repeat(64));
+        let target =
+            interrupted_update_target("in-progress", "update", "0.1.2", &image_ref).unwrap();
+        assert_eq!(target.version, "0.1.2");
+        assert_eq!(target.image_ref, image_ref);
+        assert!(interrupted_update_target("complete", "update", "0.1.2", "unused").is_none());
+        assert!(interrupted_update_target("in-progress", "repair", "0.1.2", "unused").is_none());
+    }
+
+    #[test]
+    fn download_feedback_is_retained_until_the_ui_consumes_it() {
+        let url = "http://127.0.0.1:2337/api/profiles/export".parse().unwrap();
+        let script = download_feedback_script(
+            &url,
+            Some(std::path::Path::new("/home/tester/Downloads/agent.json")),
+            true,
+        );
+        assert!(script.contains("__omnideckPendingDownload = detail"));
+        assert!(script.contains("omnideck:download"));
+        assert!(script.contains(r#""filename":"agent.json""#));
+        assert!(script.contains(r#""success":true"#));
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 set -Eeuo pipefail
 
+original_args=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
