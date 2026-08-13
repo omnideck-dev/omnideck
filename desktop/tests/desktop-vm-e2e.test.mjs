@@ -89,7 +89,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /\$ContainerName = "omnideck-desktop-\$TestNamespace"/);
   assert.match(windowsGuest, /\$HomeVolume = "omnideck-desktop-home-\$TestNamespace"/);
   assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
-  assert.match(windowsGuest, /\$MachineName = "odrt-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$MachineName = "omnideck-runtime"/);
   assert.match(windowsGuest, /"PatchRunOnce"/);
   assert.match(windowsGuest, /windows_resume\.ps1/);
   assert.match(

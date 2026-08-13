@@ -28,7 +28,7 @@ if (-not $TestNamespace) { throw "The Windows test namespace is empty after norm
 $ContainerName = "omnideck-desktop-$TestNamespace"
 $HomeVolume = "omnideck-desktop-home-$TestNamespace"
 $StateVolume = "omnideck-desktop-state-$TestNamespace"
-$MachineName = "odrt-$TestNamespace"
+$MachineName = "omnideck-runtime"
 
 New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
 $env:OMNIDECK_CONFIG_DIR = $CliConfig
