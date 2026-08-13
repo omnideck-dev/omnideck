@@ -187,19 +187,8 @@ function Install-EdgeDriver {
     New-Item -ItemType Directory -Path $DriverDirectory -Force | Out-Null
     $Archive = Join-Path $WorkDir "edgedriver.zip"
     Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
-    $Urls = @(
-        "https://msedgedriver.microsoft.com/$Version/edgedriver_win64.zip",
-        "https://msedgedriver.microsoft.com/LATEST_RELEASE_$(([version]$Version).Major)_WINDOWS"
-    )
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri $Urls[0] -OutFile $Archive
-    }
-    catch {
-        $Latest = (Invoke-WebRequest -UseBasicParsing -Uri $Urls[1]).Content.Trim()
-        Invoke-WebRequest -UseBasicParsing `
-            -Uri "https://msedgedriver.microsoft.com/$Latest/edgedriver_win64.zip" `
-            -OutFile $Archive
-    }
+    $DriverUrl = "https://msedgedriver.microsoft.com/$Version/edgedriver_win64.zip"
+    Invoke-WebRequest -UseBasicParsing -Uri $DriverUrl -OutFile $Archive
     Expand-Archive -LiteralPath $Archive -DestinationPath $DriverDirectory -Force
     if (-not (Test-Path -LiteralPath $Driver)) { throw "EdgeDriver archive had no msedgedriver.exe." }
     $DriverVersion = (& $Driver --version | Out-String).Trim()
@@ -215,6 +204,8 @@ function Install-EdgeDriver {
         webViewRegistryPath = $WebView.RegistryPath
         driverVersion = $DriverVersion
         driverSha256 = (Get-FileHash -LiteralPath $Driver -Algorithm SHA256).Hash.ToLowerInvariant()
+        driverArchiveSha256 = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        driverUrl = $DriverUrl
     }
     $Record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "webdriver.json") -Encoding utf8
     return $Driver

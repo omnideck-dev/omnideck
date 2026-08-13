@@ -8,6 +8,8 @@ import test from 'node:test';
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const run = await read('../tests/e2e/run.sh');
 const windows = await read('../tests/e2e/run-windows.sh');
+const linuxBuilder = await read('../scripts/run-linux-builder.sh');
+const windowsBuilder = await read('../scripts/run-windows-builder.sh');
 const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
@@ -21,6 +23,7 @@ const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
 const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
+const smokeMatrixGuest = await read('../tests/e2e/smoke-matrix-guest.sh');
 const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
 const packageSmokePurge = await read('../tests/e2e/purge-package-smoke.sh');
 const remainder = JSON.parse(await read('../tests/e2e/manual-remainder.json'));
@@ -46,6 +49,12 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(polkitAgent, /pkttyagent/);
   assert.match(polkitAgent, /disposable password supplied/);
   assert.match(windows, /build-with-local-cli-windows\.sh/);
+  assert.match(run, /OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR/);
+  assert.match(windows, /OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR/);
+  assert.match(linuxBuilder, /CARGO_TARGET_DIR=\/out/);
+  assert.match(windowsBuilder, /CARGO_TARGET_DIR=\/out/);
+  assert.doesNotMatch(run, /desktop_root\}\/src-tauri\/target/);
+  assert.doesNotMatch(windows, /desktop_root\}\/src-tauri\/target/);
   assert.match(windows, /windows_snapshots=/);
   assert.match(windows, /cancel-approve/);
   assert.match(windows, /RunOnceProof/);
@@ -113,12 +122,12 @@ test('documented pnpm argument separators are accepted by both VM lanes', () => 
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
-  assert.match(run, /artifacts\/desktop\/e2e/);
-  assert.match(windows, /artifacts\/desktop\/e2e/);
+  assert.match(run, /artifact-path desktop e2e/);
+  assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);
   assert.match(windows, /evidence-finish/);
   assert.match(purge, /runs purge/);
-  assert.match(qualifier, /artifacts\/desktop\/release/);
+  assert.match(qualifier, /artifact-path desktop release/);
   assert.match(qualifier, /releasecontract\/verify-release\.mjs/);
   assert.match(qualifier, /gh attestation verify/);
   assert.match(qualifier, /appimage,deb,rpm,atomic,windows/);
@@ -150,6 +159,9 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
   assert.match(smokeMatrix, /finish_incomplete_matrix/);
   assert.match(smokeMatrix, /evidence_status=canceled/);
+  assert.match(smokeMatrix, /lease "\$\{vm\}" desktop-smoke-matrix/);
+  assert.match(smokeMatrixGuest, /OMNIDECK_DESKTOP_VM_SMOKE_REUSE_GUEST=1/);
+  assert.match(smokeMatrixGuest, /Preparing %s once/);
 });
 
 test('cross-distro smoke report retains every cell and fails the aggregate', async (t) => {
@@ -210,8 +222,12 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.ok(golden.managedPerRun.some((item) => item.includes('exact installed WebView2 version')));
   assert.ok(golden.managedPerRun.some((item) => item.includes('SmartScreen')));
   assert.match(run, /golden-prerequisites\.json/);
-  assert.match(run, /lab\.sh" baseline/);
+  assert.match(run, /lab\.sh" profile/);
+  assert.match(run, /lab\.sh" preflight/);
   assert.match(run, /lab\.sh" describe/);
   assert.match(windows, /golden-prerequisites\.json/);
-  assert.match(windows, /lab\.sh" baseline windows desktop/);
+  assert.match(windows, /lab\.sh" profile/);
+  assert.match(windows, /lab\.sh" preflight/);
+  assert.match(run, /--cleanup-baseline clean/);
+  assert.match(windows, /--cleanup-baseline clean/);
 });

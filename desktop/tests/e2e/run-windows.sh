@@ -7,10 +7,11 @@ original_args=("$@")
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
-lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
+source "${script_dir}/_lab.sh"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
 baseline=""
-artifact=""
+artifact="${OMNIDECK_DESKTOP_PREPARED_ARTIFACT:-}"
 assume_yes=0
 keep_vm=0
 
@@ -25,6 +26,7 @@ restart-now, a real reboot, and RunOnce reopening.
 
 Options:
   --baseline clean|NAME         Guest checkpoint (default: podman-ready)
+  --profile NAME                Deterministic lab profile (default: dev-fast)
   --artifact PATH                Test this exact prebuilt NSIS installer
   --cli PATH                     CLI worktree embedded in a local candidate
   --yes                          Accept the destructive Windows reset
@@ -37,6 +39,7 @@ while (($#)); do
   case "$1" in
     --) shift ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
+    --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
     --cli) cli_root="${2:?--cli requires a path}"; shift 2 ;;
     --yes) assume_yes=1; shift ;;
@@ -45,25 +48,57 @@ while (($#)); do
     *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
-[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
-[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
-lab_dir="$(cd "${lab_dir}" && pwd -P)"
-[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
-  printf 'Desktop VM E2E requires OmniDeck VM lab controller 2.x.\n' >&2
-  exit 2
-}
+require_lab
 for dependency in curl docker node python3 sha256sum ssh unzip; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
 
 if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
+  [[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" profile "${profile}" windows)"
+  "${lab_dir}/lab.sh" preflight desktop "${profile}" --lanes windows --baseline "${baseline}" >/dev/null
   lease_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  lease_args=(lease windows desktop "${lease_run_id}")
+  desktop_source_state
+  prepare_output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop e2e "${lease_run_id}-windows")}"
+  mkdir -p "${prepare_output_dir}"
+  "${lab_dir}/lab.sh" evidence-init "${prepare_output_dir}" desktop e2e "${lease_run_id}" \
+    "${source_commit}" windows "${baseline}" "phase=preparing" "profile=${profile}" \
+    "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}"
+  trap '"${lab_dir}/lab.sh" evidence-finish "${prepare_output_dir}" failed || true' EXIT
+  prepare_tauri_driver windows
+  if [[ -z "${artifact}" ]]; then
+    [[ -d "${cli_root}" ]] || { printf 'CLI worktree not found: %s\n' "${cli_root}" >&2; exit 2; }
+    ensure_cli_builder
+    create_desktop_build_output windows
+    OMNIDECK_CLI_BUILDER_IMAGE="${cli_builder_image}" \
+    OMNIDECK_DESKTOP_WINDOWS_BUILDER_IMAGE="${desktop_builder_image}" \
+    OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR="${desktop_build_output}" \
+      "${desktop_root}/scripts/build-with-local-cli-windows.sh" "${cli_root}"
+    artifact="$(find "${desktop_build_output}/x86_64-pc-windows-gnu/release/bundle/nsis" \
+      -maxdepth 1 -type f -name '*-setup.exe' -print | sort | head -n 1)"
+  fi
+  cache_candidate_artifact "${artifact}" nsis
+  remove_desktop_build_output
+  artifact="${prepared_artifact}"
+  "${lab_dir}/lab.sh" evidence-set "${prepare_output_dir}" "phase=prepared" \
+    "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}"
+  lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline clean)
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
-  lease_args+=(-- "$0" "${original_args[@]}")
-  exec "${lab_dir}/lab.sh" "${lease_args[@]}"
+  lease_args+=(-- env OMNIDECK_DESKTOP_PREPARED_ARTIFACT="${artifact}" \
+    OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE="${tauri_driver_cache}" \
+    OMNIDECK_DESKTOP_TAURI_DRIVER_KEY="${tauri_driver_key}" \
+    OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY="${prepared_artifact_key}" \
+    OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME="${prepared_artifact_original_name}" \
+    OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR="${prepare_output_dir}" \
+    "$0" --baseline "${baseline}" "${original_args[@]}")
+  lease_status=0
+  "${lab_dir}/lab.sh" "${lease_args[@]}" || lease_status=$?
+  trap - EXIT
+  if [[ "${lease_status}" != "0" ]]; then
+    "${lab_dir}/lab.sh" evidence-finish "${prepare_output_dir}" failed || true
+  fi
+  exit "${lease_status}"
 fi
-[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" baseline windows desktop)"
+[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" profile "${profile}" windows)"
 [[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
   printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
   exit 2
@@ -104,10 +139,10 @@ fixture_id="desktop_host_boundary_${fixture_suffix}"
 fixture_name="Desktop Host Boundary ${fixture_suffix}"
 fixture_filename="Desktop-Host-Boundary-${fixture_suffix}.agent.omnideck.json"
 artifact_filename="desktop-artifact-${fixture_suffix}.txt"
-source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
+desktop_source_state
 cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
-output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop/e2e/${safe_run_id}-windows}"
+output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop e2e "${safe_run_id}-windows")}"
 build_dir="${output_dir}/build"
 evidence_dir="${output_dir}/evidence"
 screenshot_dir="${output_dir}/screenshots"
@@ -127,10 +162,20 @@ driver_ssh_pid=""
 test_status=1
 
 mkdir -p "${build_dir}" "${evidence_dir}" "${screenshot_dir}" "${marker_root}"
+desktop_builder_id="$(<"${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE:?prepared tauri-driver cache required}/builder-image.txt")"
+write_desktop_source_metadata
 cp -- "${script_dir}/manual-remainder.json" "${output_dir}/manual-remainder.json"
 cp -- "${script_dir}/golden-prerequisites.json" "${output_dir}/golden-prerequisites.json"
-"${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
-  "${source_commit}" windows "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}"
+if [[ -f "${output_dir}/run.json" ]]; then
+  "${lab_dir}/lab.sh" evidence-set "${output_dir}" "phase=executing" \
+    "cliVersion=${cli_version}" "cliCommit=${cli_commit}"
+else
+  "${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
+    "${source_commit}" windows "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}" \
+    "profile=${profile}" "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}" \
+    "tauriDriverKey=${OMNIDECK_DESKTOP_TAURI_DRIVER_KEY}"
+fi
+"${lab_dir}/lab.sh" evidence-set "${output_dir}" "artifactCacheKey=${OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY:-external}"
 
 cleanup() {
   local exit_code=$?
@@ -180,29 +225,11 @@ printf 'Resetting the leased Windows guest to %s.\n' "${baseline}"
 "${lab_dir}/lab.sh" reset windows "${baseline}"
 initial_reset=1
 
-printf 'Building Windows tauri-driver 2.0.6.\n'
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --env HOME=/tmp/omnideck-driver-home \
-  --env CARGO_HOME=/tmp/omnideck-driver-cargo \
-  --env RUSTUP_HOME=/usr/local/rustup \
-  --volume "${build_dir}:/out" \
-  omnideck-desktop-windows-builder:local \
-  bash -c 'mkdir -p "$HOME" "$CARGO_HOME" && cargo install tauri-driver --version 2.0.6 --locked --target x86_64-pc-windows-gnu --root /out/tauri-driver-root'
-
-if [[ -z "${artifact}" ]]; then
-  [[ -d "${cli_root}" ]] || { printf 'CLI worktree not found: %s\n' "${cli_root}" >&2; exit 2; }
-  printf 'Building the local NSIS candidate from Desktop %s and CLI %s.\n' \
-    "${source_commit}" "$(git -C "${cli_root}" rev-parse --short=12 HEAD)"
-  "${desktop_root}/scripts/build-with-local-cli-windows.sh" "${cli_root}"
-  artifact="$(find "${desktop_root}/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis" \
-    -maxdepth 1 -type f -name '*-setup.exe' -print | sort | head -n 1)"
-fi
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
 printf '%s  %s\n' "${artifact_sha256}" "$(basename "${artifact}")" > "${build_dir}/artifact.sha256"
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
-  "artifact=$(basename "${artifact}")" "artifactSha256=${artifact_sha256}"
+  "artifact=${OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME:-$(basename "${artifact}")}" "artifactSha256=${artifact_sha256}"
 
 printf 'Starting and verifying Windows.\n'
 "${lab_dir}/lab.sh" start windows
@@ -232,7 +259,7 @@ printf 'Staging and installing the exact NSIS artifact.\n'
 "${lab_dir}/lab.sh" run windows "cmd.exe /d /c if not exist ${remote_root} mkdir ${remote_root}"
 remote_staged=1
 "${lab_dir}/lab.sh" copy-to windows "${artifact}" "${remote_scp_root}/candidate-setup.exe"
-"${lab_dir}/lab.sh" copy-to windows "${build_dir}/tauri-driver-root/bin/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
+"${lab_dir}/lab.sh" copy-to windows "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/custom_app_fixture.py" "${remote_scp_root}/custom_app_fixture.py"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_start_driver.ps1" "${remote_scp_root}/windows_start_driver.ps1"

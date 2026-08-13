@@ -18,7 +18,7 @@ keeps the full HTML, CSS, JavaScript, Agent Dash, DOM, and parity JSON
 byte-for-byte equal to the mockup.
 
 The controller is maintained in the standalone `omnideck-vm-lab` repository,
-not this application repository. Install controller 2.x into the external lab
+not this application repository. Install controller 2.1 or newer into the external lab
 before running these consumers.
 
 ## Automated coverage
@@ -73,10 +73,11 @@ cross by itself:
   interactive app reopening, persisted setup state, post-reboot elevation, and
   completion.
 
-On Linux, the harness automatically selects the versioned
-`recommendedBaseline` from `golden-prerequisites.json` when that checkpoint is
-present in the local lab, and otherwise falls back to the portable
-`podman-ready` checkpoint. Silverblue uses its `clean` atomic deployment and
+The harness resolves every baseline from an explicit lab profile and fails
+preflight when that exact checkpoint or its provenance is missing. `dev-fast`
+selects the versioned Desktop checkpoint on Ubuntu and Fedora, clean Debian and
+Silverblue, and Windows `podman-ready`; `release-clean` selects clean everywhere.
+Silverblue uses its `clean` atomic deployment and
 the x64 AppImage. Its unattended smoke launches the AppImage itself; its
 attended WebDriver journeys extract and hash-check the byte-identical shipped
 `omnideck` and `omnideck-cli` binaries, then run them outside the AppDir so they
@@ -137,9 +138,8 @@ pnpm run test:vm-e2e -- --vm windows --baseline podman-ready
 `desktop-e2e-v2` masks `systemd-networkd-wait-online.service` only after
 proving that NetworkManager owns the guest link and networkd reports it as
 unmanaged. It also bakes `WebKitWebDriver` into the checkpoint. A verified lab
-with that named checkpoint uses it automatically; `podman-ready` remains the
-portable fallback. `--baseline` and `OMNIDECK_DESKTOP_VM_E2E_BASELINE` always
-override automatic selection.
+with that named checkpoint uses it through `dev-fast`. `--baseline` explicitly
+overrides profile resolution but still must pass provenance preflight.
 
 ## Qualify the latest published release with one command
 
@@ -178,8 +178,9 @@ harness never stops or resets a guest it does not own.
 
 Add `--cross-distro-smoke` to reuse the downloaded AppImage, DEB, and RPM in
 the launch-only compatibility matrix described below. Its aggregate result is
-included in the qualification summary. The flag is opt-in because the extra
-cells each boot and reset a disposable guest; Flatpak is not included because
+included in the qualification summary. The flag is opt-in because it adds
+compatibility cells; the matrix leases, boots, verifies, and resets each
+selected guest once for all of its cells. Flatpak is not included because
 the release does not publish a Flatpak bundle.
 
 ## Run a development candidate before publication
@@ -200,6 +201,19 @@ pnpm run test:vm-e2e -- --vm deb
 pnpm run test:vm-e2e -- --vm rpm
 pnpm run test:vm-e2e -- --vm atomic
 ```
+
+The canonical all-lane candidate command is:
+
+```sh
+pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes
+```
+
+Candidate packages and pinned `tauri-driver` binaries are prepared in an
+immutable, content-addressed lab cache before each lease. Compilation and
+driver installation therefore never consume guest time. Rust/Tauri target
+trees are also routed through the lab cache instead of the checkout; successful
+preparation removes the large transient tree after preserving the exact
+candidate, and interrupted trees expire under the cache policy.
 
 Run an exact already-built package without rebuilding it:
 
@@ -270,9 +284,9 @@ It contains `run.json`, package checksum/identity, guest inventories, live DOM
 states, VM-console screenshots, host/driver logs, downloaded-file validation,
 host-boundary download/import reports, packaged smoke proof,
 `summary.json`, `junit.xml`, `manual-remainder.json`, and the exact golden-image
-prerequisite contract. The package bytes are not duplicated into evidence; the
-SHA-256 identifies the exact input while the normal Tauri target directory
-remains a reusable build cache.
+prerequisite contract. The exact tested candidate is stored once in the shared
+content-addressed `$OMNIDECK_VM_LAB_DIR/cache/desktop/` tree. Evidence records
+its SHA-256 and cache key instead of duplicating it per run.
 
 The lab archives reset state inside one transaction. Successful transaction
 state is deleted immediately. Failed or `--keep-vm` state and compact evidence
@@ -284,6 +298,16 @@ pnpm run test:vm-e2e:purge -- \
 ```
 
 The purge command delegates validation and deletion to `lab.sh runs purge`.
+
+Preview or apply the shared retention policy for all Desktop and CLI evidence,
+prepared caches, and failed reset state with:
+
+```sh
+pnpm run test:vm-lab:cleanup
+pnpm run test:vm-lab:cleanup:apply
+pnpm run test:vm-lab:cleanup:all
+pnpm run test:vm-lab:cleanup:all:apply
+```
 
 Single cross-distro smokes are stored under `artifacts/desktop/package-smoke`;
 aggregate runs are stored under `artifacts/desktop/smoke-matrix`, with one
