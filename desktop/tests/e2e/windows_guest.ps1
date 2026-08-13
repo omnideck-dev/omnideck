@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -321,6 +321,36 @@ switch ($Phase) {
         Start-PodmanMachine
         Write-Inventory "before"
         Write-Host "RUNTIME PRESERVED machine=$MachineName"
+    }
+    "PatchRunOnce" {
+        $RunOncePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        $Registered = Get-ItemPropertyValue `
+            -Path $RunOncePath `
+            -Name "omnideckSetupResume" `
+            -ErrorAction Stop
+        if ($Registered -ne "`"$Application`"") {
+            throw "The omnideck RunOnce command does not target the installed application."
+        }
+        $ResumeScript = Join-Path $WorkDir "windows_resume.ps1"
+        $EscapeLiteral = {
+            param([string]$Value)
+            $Value.Replace("'", "''")
+        }
+        $Lines = @(
+            "`$ErrorActionPreference = 'Stop'",
+            "`$env:OMNIDECK_DESKTOP_USER_DATA = '$(& $EscapeLiteral $UserData)'",
+            "`$env:OMNIDECK_CONFIG_DIR = '$(& $EscapeLiteral $CliConfig)'",
+            "`$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = '$(& $EscapeLiteral $TestNamespace)'",
+            "`$env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = '$(& $EscapeLiteral (Join-Path $WorkDir 'update-fixture.json'))'",
+            "Start-Process -FilePath '$(& $EscapeLiteral $Application)'"
+        )
+        [IO.File]::WriteAllLines($ResumeScript, $Lines, [Text.UTF8Encoding]::new($false))
+        $ResumeCommand = "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$ResumeScript`""
+        Set-ItemProperty `
+            -Path $RunOncePath `
+            -Name "omnideckSetupResume" `
+            -Value $ResumeCommand
+        Write-Host "RUNONCE PATCHED namespace=$TestNamespace"
     }
     "RunOnceProof" {
         $RunOnce = Get-ItemProperty `

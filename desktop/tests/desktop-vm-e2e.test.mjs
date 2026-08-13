@@ -59,6 +59,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windows, /windows_snapshots=/);
   assert.match(windows, /cancel-approve/);
   assert.match(windows, /RunOnceProof/);
+  assert.match(windows, /phase_command PatchRunOnce/);
   assert.match(windows, /LastBootUpTime/);
   assert.match(windows, /smartscreen-warning/);
   assert.match(windows, /warning-observed/);
@@ -89,6 +90,8 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /\$HomeVolume = "omnideck-desktop-home-\$TestNamespace"/);
   assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
   assert.match(windowsGuest, /\$MachineName = "odrt-\$TestNamespace"/);
+  assert.match(windowsGuest, /"PatchRunOnce"/);
+  assert.match(windowsGuest, /windows_resume\.ps1/);
   assert.match(
     windowsGuest,
     /SetEnvironmentVariable\("OMNIDECK_DESKTOP_TEST_NAMESPACE", \$TestNamespace, "User"\)/,

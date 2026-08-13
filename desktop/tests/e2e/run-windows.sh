@@ -574,6 +574,7 @@ complete_clean_security_setup() {
     return 1
   }
   printf 'before=%s\nafter=%s\n' "${boot_before}" "${boot_after}" > "${output_dir}/reboot-proof.txt"
+  phase_command PatchRunOnce | tee "${output_dir}/runonce-patch.log"
 
   printf 'Signing into the rebooted graphical session so Windows can consume RunOnce.\n'
   if ! "${lab_dir}/lab.sh" run windows \
