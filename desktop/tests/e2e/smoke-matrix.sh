@@ -116,6 +116,21 @@ mkdir -p "${run_root}/cells"
   "${source_commit}" multi qualification "scope=cross-distro-package-open-smoke" \
   "guests=${vms_csv}" "cellCount=${cell_count}"
 
+matrix_finalized=0
+finish_incomplete_matrix() {
+  local exit_status=$? evidence_status=failed
+  set +e
+  if [[ "${matrix_finalized}" != "1" ]]; then
+    case "${exit_status}" in
+      129|130|143) evidence_status=canceled ;;
+    esac
+    "${lab_dir}/lab.sh" evidence-finish "${run_root}" "${evidence_status}" || true
+    printf 'Cross-distro smoke matrix evidence: %s\n' "${run_root}"
+  fi
+  return "${exit_status}"
+}
+trap finish_incomplete_matrix EXIT
+
 record() {
   local guest="$1" package="$2" status="$3" evidence="$4" detail="$5"
   detail="${detail//$'\t'/ }"
@@ -159,5 +174,6 @@ if [[ "${report_status}" == "0" ]]; then
 else
   "${lab_dir}/lab.sh" evidence-finish "${run_root}" failed || true
 fi
+matrix_finalized=1
 printf 'Cross-distro smoke matrix evidence: %s\n' "${run_root}"
 exit "${report_status}"

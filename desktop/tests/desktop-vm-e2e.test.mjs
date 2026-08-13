@@ -119,6 +119,8 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(packageSmokeGuest, /\["--version", "--json runtime status"\]/);
   assert.match(smokeMatrix, /appimage:appimage\|deb:deb\|rpm:rpm\|atomic:appimage/);
   assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
+  assert.match(smokeMatrix, /finish_incomplete_matrix/);
+  assert.match(smokeMatrix, /evidence_status=canceled/);
 });
 
 test('cross-distro smoke report retains every cell and fails the aggregate', async (t) => {
