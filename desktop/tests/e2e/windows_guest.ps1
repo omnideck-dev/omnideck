@@ -328,7 +328,7 @@ switch ($Phase) {
             -Path $RunOncePath `
             -Name "omnideckSetupResume" `
             -ErrorAction Stop
-        if ($Registered -ne "`"$Application`"") {
+        if (-not ([string]$Registered).Contains($Application)) {
             throw "The omnideck RunOnce command does not target the installed application."
         }
         $ResumeScript = Join-Path $WorkDir "windows_resume.ps1"
