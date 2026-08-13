@@ -62,6 +62,47 @@ pub(crate) struct ProcessResult {
     pub(crate) stderr: String,
 }
 
+#[derive(Default)]
+struct ProcessOutput {
+    exit_code: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+impl ProcessOutput {
+    fn push_stdout(&mut self, chunk: &[u8]) -> BridgeResult<()> {
+        append_bounded(&mut self.stdout, chunk, STDOUT_LIMIT, "stdout")
+    }
+
+    fn push_stderr(&mut self, chunk: &[u8]) -> BridgeResult<()> {
+        append_bounded(&mut self.stderr, chunk, STDERR_LIMIT, "stderr")
+    }
+
+    fn terminate(&mut self, exit_code: i32) -> BridgeResult<()> {
+        if self.exit_code.replace(exit_code).is_some() {
+            return Err(BridgeError::new(
+                "SIDECAR_IO_FAILED",
+                "The bundled CLI reported process termination more than once.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> BridgeResult<ProcessResult> {
+        let exit_code = self.exit_code.ok_or_else(|| {
+            BridgeError::new(
+                "SIDECAR_IO_FAILED",
+                "The bundled CLI event stream ended before process termination.",
+            )
+        })?;
+        Ok(ProcessResult {
+            exit_code,
+            stdout: String::from_utf8_lossy(&self.stdout).trim().to_owned(),
+            stderr: String::from_utf8_lossy(&self.stderr).trim().to_owned(),
+        })
+    }
+}
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct CliVersion {
@@ -190,8 +231,7 @@ where
     let (mut events, child) = command
         .spawn()
         .map_err(|error| BridgeError::new("SIDECAR_SPAWN_FAILED", error.to_string()))?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let mut output = ProcessOutput::default();
     let mut stdout_lines = LineBuffer::default();
     let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
 
@@ -203,14 +243,14 @@ where
             }
             event = events.recv() => match event {
                 Some(CommandEvent::Stdout(line)) => {
-                    if let Err(error) = append_bounded(&mut stdout, &line, STDOUT_LIMIT, "stdout") {
+                    if let Err(error) = output.push_stdout(&line) {
                         let _ = child.kill();
                         return Err(error);
                     }
                     stdout_lines.push(&line, &mut on_stdout);
                 }
                 Some(CommandEvent::Stderr(line)) => {
-                    if let Err(error) = append_bounded(&mut stderr, &line, STDERR_LIMIT, "stderr") {
+                    if let Err(error) = output.push_stderr(&line) {
                         let _ = child.kill();
                         return Err(error);
                     }
@@ -220,17 +260,15 @@ where
                     return Err(BridgeError::new("SIDECAR_IO_FAILED", error));
                 }
                 Some(CommandEvent::Terminated(payload)) => {
-                    stdout_lines.flush(&mut on_stdout);
-                    return Ok(ProcessResult {
-                        exit_code: payload.code.unwrap_or(-1),
-                        stdout: String::from_utf8_lossy(&stdout).trim().to_owned(),
-                        stderr: String::from_utf8_lossy(&stderr).trim().to_owned(),
-                    });
+                    // The stream readers run independently from the process
+                    // waiter, so their final events can arrive after this one.
+                    // Keep draining until every event sender has closed.
+                    output.terminate(payload.code.unwrap_or(-1))?;
                 }
                 Some(_) => {}
                 None => {
-                    let _ = child.kill();
-                    return Err(BridgeError::new("SIDECAR_IO_FAILED", "The bundled CLI event stream ended before process completion."));
+                    stdout_lines.flush(&mut on_stdout);
+                    return output.finish();
                 }
             }
         }
@@ -480,6 +518,19 @@ mod tests {
         assert_eq!(parsed.version, EXPECTED_CLI_VERSION);
         assert_eq!(parsed.commit, EXPECTED_CLI_COMMIT);
         assert!(parse_cli_version("omnideck version v9.9.9 (deadbee)").is_err());
+    }
+
+    #[test]
+    fn collects_output_that_arrives_after_process_termination() {
+        let mut output = ProcessOutput::default();
+        output.terminate(0).unwrap();
+        output.push_stdout(b"late stdout").unwrap();
+        output.push_stderr(b"late stderr").unwrap();
+
+        let result = output.finish().unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout, "late stdout");
+        assert_eq!(result.stderr, "late stderr");
     }
 
     #[test]
