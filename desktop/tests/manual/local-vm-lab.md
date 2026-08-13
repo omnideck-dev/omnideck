@@ -12,16 +12,18 @@ cd "$OMNIDECK_VM_LAB_DIR"
 ./lab.sh status
 ```
 
-Acquire a lane lease before starting a guest. QEMU inherits the lock
-descriptor, so the lease remains held while the guest is running:
+Acquire a lab-owned lane lease before starting a guest. Manual and automated
+work use the same owner metadata and reset transaction:
 
 ```sh
-flock -n /tmp/omnideck-desktop-windows-lease.lock bash -c \
-  'cd "$OMNIDECK_VM_LAB_DIR" && ./lab.sh start windows && ./lab.sh wait windows && ./lab.sh verify windows'
-fuser -v /tmp/omnideck-desktop-windows-lease.lock
+./lab.sh lease windows desktop-manual -- bash
+./lab.sh start windows
+./lab.sh wait windows
+./lab.sh verify windows
+# Keep this shell open through stop/reset, then exit to release the lane.
 ```
 
-If the lease is held, inspect its owner and do not stop, reset, or snapshot
+If the lease is held, inspect its owner with `lab.sh status` and do not stop, reset, or snapshot
 that guest. Keep the Windows guest stopped when it is reserved for another
 desktop run.
 
@@ -34,6 +36,7 @@ disk plus UEFI state and, for Windows, TPM state:
 ```sh
 cd "$OMNIDECK_VM_LAB_DIR"
 ./lab.sh snapshots windows
+./lab.sh lease windows checkpoint-maintenance -- bash
 ./lab.sh reset windows clean
 ./lab.sh reset windows wsl-ready
 ./lab.sh reset windows podman-ready
@@ -51,9 +54,9 @@ refuses to overwrite an existing checkpoint:
 Use lowercase names containing only letters, numbers, `.`, `_`, and `-`.
 `clean` is reserved for the original golden state. Do not replace the clean
 golden image with a configured state; recreate a named checkpoint when the
-state needs to change. The legacy `./lab.sh snapshot VM` form replaces the
-clean image and is only for intentionally creating or rebuilding a golden
-image.
+state needs to change. The unsafe legacy `./lab.sh snapshot VM` form is
+disabled. Clean-image rebuilds follow the lab's separate provenance and
+verification procedure.
 
 The Desktop lane's versioned install and verification contract is
 [`../e2e/golden-prerequisites.json`](../e2e/golden-prerequisites.json). Put
@@ -80,6 +83,20 @@ export OMNIDECK_CLI_WORKTREE=/path/to/omnideck-cli
 pnpm run test:vm-e2e -- --vm appimage
 pnpm run test:vm-e2e -- --vm windows
 ```
+
+For launch-only compatibility coverage across Linux distributions, supply the
+already-built packages to the smoke matrix. It uses the same lane leases and
+clean resets but skips setup, recovery, and lifecycle journeys:
+
+```sh
+pnpm run test:vm-smoke-matrix -- \
+  --appimage /absolute/path/candidate.AppImage \
+  --deb /absolute/path/candidate.deb \
+  --rpm /absolute/path/candidate.rpm
+```
+
+Add `--flatpak /absolute/path/candidate.flatpak` when a Flatpak bundle exists;
+the current published package set does not include one.
 
 ## Manual Windows desktop remainder
 

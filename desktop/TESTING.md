@@ -21,6 +21,7 @@ explicit non-goal; the frozen Electron fixtures test setup parity only.
 | Source | Node policy/parity and release-contract unit tests; Rust format, unit, and Clippy checks; pinned sidecar verification | Pull requests, `main`, and tags on hosted CI; locally | Exact commit and command or Actions run |
 | Release contract | [`tests/releasecontract`](tests/releasecontract/README.md) | Before publication and against public release assets | JSON report, checksums, and attestations |
 | Native packaged smoke | [`tests/hardware`](tests/hardware/README.md) | Dedicated real-OS machines or opt-in self-hosted workflow | Application hash, host inventory, logs, and read-only smoke proof |
+| Cross-distro package smoke | [`tests/e2e`](tests/e2e/README.md#cross-distro-package-open-smoke-matrix) | Disposable Ubuntu, Debian, Fedora, and Silverblue VM lab | Package hash, guest inventory, launch screenshot, read-only smoke proof, JSON, and JUnit |
 | Automated VM journey | [`tests/e2e`](tests/e2e/README.md) | Disposable local Linux/Windows VM lab | Package hash, live DOM/copy states, screenshots, inventories, JSON summary, and JUnit |
 | Manual journey | [`tests/manual`](tests/manual/README.md) | Disposable VMs or dedicated hardware | Completed procedure with screenshots, inventories, cleanup, and pass/fail/blocked result |
 
@@ -46,6 +47,7 @@ below.
 | Build + release contract | Release workflow | Six hosted build targets plus Ubuntu aggregator | None outside build artifacts | Up to 90 minutes | Protected publication approval |
 | Published release contract | Release owner | GitHub-hosted Ubuntu, public assets | None | 10-20 minutes | Candidate qualification |
 | Native packaged smoke | Platform tester assigned in the candidate record | Dedicated Windows/macOS/Linux desktop session | Windows installs the app; other runs mount/extract packages | 10-30 minutes per target | Architecture/package qualification |
+| Cross-distro package smoke | Desktop release owner | Disposable local Linux VM lab | Resets one leased guest; foreign DEB/RPM payloads are extracted per run | 5-15 minutes per cell | Additional compatibility evidence, not native lifecycle qualification |
 | Automated packaged journey | Desktop release owner | Disposable local Linux/Windows VM lab | Resets one leased guest and creates isolated app/runtime state | 20-90 minutes per lane | Local candidate regression gate |
 | Clean first run and recovery | Platform tester assigned in the candidate record | Disposable machine or restorable VM | May install runtimes, change WSL/features, reboot, and create containers/volumes | 1-3 hours per platform | Channel promotion |
 | Visual/platform fit | Human platform reviewer assigned in the candidate record | Representative displays and desktops | App/runtime state only | 30-60 minutes per platform | Beta, RC, and stable promotion |
@@ -185,6 +187,15 @@ Smoke must cover no terminal window, successful proof creation, and clean host
 termination. Product-level automation should additionally cover visible hosted
 UI, clipboard round trips, refresh, external browser routing, single-instance
 focus, both-window close behavior, and macOS Edit-menu accelerators.
+
+The cross-distro smoke matrix reuses that proof without claiming the full
+journey. It separates guest selection from artifact format, so an RPM can be
+extracted and launched on Ubuntu or a supplied Flatpak bundle can be installed
+and launched on each Linux guest. A foreign-package cell proves that the exact
+payload opens with that distro's native desktop libraries; it does not qualify
+APT to manage RPMs, DNF to manage DEBs, setup/recovery behavior, or package
+uninstall/reinstall. Flatpak is an optional input because it is not part of the
+current ten-package release contract.
 
 Before publishing a local candidate, run the disposable VM suite documented in
 [`tests/e2e`](tests/e2e/README.md). It builds or accepts an exact package,

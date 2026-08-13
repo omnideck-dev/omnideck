@@ -51,7 +51,6 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(summary, indent=2, ensure_ascii=False) + "\n"
     (args.output / "summary.json").write_text(rendered, encoding="utf-8")
-    (args.output / "run.json").write_text(rendered, encoding="utf-8")
 
     suite = ET.Element(
         "testsuite",

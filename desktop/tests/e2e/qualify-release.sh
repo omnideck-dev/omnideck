@@ -10,6 +10,7 @@ lanes_csv="appimage,deb,rpm,atomic,windows"
 assume_yes=0
 keep_downloads=0
 remote_native=0
+cross_distro_smoke=0
 
 usage() {
   cat <<'EOF'
@@ -24,6 +25,7 @@ Options:
   --release latest|TAG       Published release (default: latest, prereleases included)
   --lanes LIST               Comma-separated local lanes (default: appimage,deb,rpm,atomic,windows)
   --remote-native            Also dispatch and wait for missing ARM64/macOS hardware lanes
+  --cross-distro-smoke       Run non-native AppImage/DEB/RPM launch-smoke cells in Linux VMs
   --keep-downloads           Retain downloaded package bytes after the run
   --yes                      Accept all destructive disposable-guest resets
   -h, --help                 Show this help
@@ -35,6 +37,7 @@ while (($#)); do
     --release) release="${2:?--release requires a value}"; shift 2 ;;
     --lanes) lanes_csv="${2:?--lanes requires a value}"; shift 2 ;;
     --remote-native) remote_native=1; shift ;;
+    --cross-distro-smoke) cross_distro_smoke=1; shift ;;
     --keep-downloads) keep_downloads=1; shift ;;
     --yes) assume_yes=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -45,6 +48,10 @@ done
 [[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
 [[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
 lab_dir="$(cd "${lab_dir}" && pwd -P)"
+[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
+  printf 'Desktop qualification requires OmniDeck VM lab controller 2.x.\n' >&2
+  exit 2
+}
 for dependency in gh node python3 sha256sum; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
@@ -75,7 +82,8 @@ fi
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$-${selected_release#v}"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
-run_root="${lab_dir}/artifacts/desktop-release/${safe_run_id}"
+source_commit="$(git -C "${desktop_root}" rev-parse --short=12 HEAD)"
+run_root="${lab_dir}/artifacts/desktop/release/${safe_run_id}"
 download_dir="${run_root}/downloads"
 lane_root="${run_root}/lanes"
 remote_root="${run_root}/remote"
@@ -83,6 +91,8 @@ status_file="${run_root}/lane-status.tsv"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "${download_dir}" "${lane_root}" "${remote_root}"
 : > "${status_file}"
+"${lab_dir}/lab.sh" evidence-init "${run_root}" desktop release "${safe_run_id}" \
+  "${source_commit}" multi qualification "release=${selected_release}" "lanes=${lanes_csv}"
 
 record() {
   local name="$1" status="$2" requirement="$3" evidence="$4" detail="$5"
@@ -106,19 +116,36 @@ finish_report() {
     --status-file "${status_file}" \
     --output "${run_root}"
   report_status=$?
+  final_status="${report_status}"
+  [[ "${original_status}" == "0" ]] || final_status="${original_status}"
+  if [[ "${final_status}" == "0" ]]; then
+    "${lab_dir}/lab.sh" evidence-finish "${run_root}" passed || final_status=1
+  else
+    "${lab_dir}/lab.sh" evidence-finish "${run_root}" failed || true
+  fi
   finalized=1
   printf 'Published-release qualification evidence: %s\n' "${run_root}"
-  if [[ "${original_status}" != "0" ]]; then exit "${original_status}"; fi
-  exit "${report_status}"
+  exit "${final_status}"
 }
 trap '[[ "${finalized}" == "1" ]] || finish_report' EXIT
 
 preflight_failed=0
+cross_preflight_recorded=0
 for lane in appimage deb rpm atomic windows; do
-  [[ -n "${selected[${lane}]:-}" ]] || continue
+  if [[ -z "${selected[${lane}]:-}" ]]; then
+    if [[ "${cross_distro_smoke}" != "1" || "${lane}" == "windows" ]]; then
+      continue
+    fi
+  fi
   lane_status="$("${lab_dir}/lab.sh" status "${lane}")"
   if ! grep -Eq "^${lane} stopped " <<<"${lane_status}"; then
-    record "${lane}-x64-vm" blocked required "lanes/${lane}" "guest is already running; ownership was preserved"
+    if [[ -n "${selected[${lane}]:-}" ]]; then
+      record "${lane}-x64-vm" blocked required "lanes/${lane}" "guest is already running; ownership was preserved"
+    fi
+    if [[ "${cross_distro_smoke}" == "1" && "${lane}" != "windows" && "${cross_preflight_recorded}" == "0" ]]; then
+      record linux-cross-distro-smoke-matrix blocked required cross-distro-smoke "${lane} guest is already running; ownership was preserved"
+      cross_preflight_recorded=1
+    fi
     preflight_failed=1
   fi
 done
@@ -129,6 +156,9 @@ if [[ "${preflight_failed}" == "1" ]]; then
       record "${lane}-x64-vm" blocked required "lanes/${lane}" "qualification did not start because another selected guest was occupied"
     fi
   done
+  if [[ "${cross_distro_smoke}" == "1" && "${cross_preflight_recorded}" == "0" ]]; then
+    record linux-cross-distro-smoke-matrix blocked required cross-distro-smoke "qualification did not start because another selected guest was occupied"
+  fi
   record artifact-matrix blocked required reports/release-contract.json "guest preflight failed before package download"
   finish_report
 fi
@@ -202,6 +232,28 @@ for lane in appimage deb rpm atomic windows; do
     record "${lane}-x64-vm" failed required "lanes/${lane}" "native VM journey exited ${lane_status}"
   fi
 done
+
+if [[ "${cross_distro_smoke}" == "1" ]]; then
+  cross_smoke_dir="${run_root}/cross-distro-smoke"
+  mkdir -p "${cross_smoke_dir}"
+  printf 'Running the non-native Linux package-open smoke matrix.\n'
+  cross_smoke_status=0
+  OMNIDECK_DESKTOP_VM_SMOKE_MATRIX_OUTPUT_DIR="${cross_smoke_dir}" \
+  OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION="${release_cli_version}" \
+  OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT="${release_cli_commit}" \
+    "${script_dir}/smoke-matrix.sh" \
+      --appimage "$(artifact_for_lane appimage)" \
+      --deb "$(artifact_for_lane deb)" \
+      --rpm "$(artifact_for_lane rpm)" \
+      --yes > >(tee "${cross_smoke_dir}/host.log") 2>&1 || cross_smoke_status=$?
+  if [[ "${cross_smoke_status}" == "0" ]]; then
+    record linux-cross-distro-smoke-matrix passed required cross-distro-smoke "every non-native AppImage, DEB, and RPM launch-smoke cell passed"
+  else
+    record linux-cross-distro-smoke-matrix failed required cross-distro-smoke "cross-distro package smoke exited ${cross_smoke_status}"
+  fi
+else
+  record linux-cross-distro-smoke-matrix not-run optional cross-distro-smoke "pass --cross-distro-smoke to run non-native AppImage, DEB, and RPM launch cells"
+fi
 
 record windows-arm64-static passed required reports/release-contract.json "package architecture, checksum, and provenance verified; no local ARM64 Windows VM exists"
 record linux-arm64-static passed required reports/release-contract.json "AppImage, DEB, and RPM architectures, checksums, and provenance verified; no local ARM64 Linux VM exists"

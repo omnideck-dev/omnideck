@@ -12,6 +12,7 @@ baseline="${OMNIDECK_DESKTOP_VM_E2E_BASELINE:-}"
 artifact=""
 assume_yes=0
 keep_vm=0
+original_args=("$@")
 
 usage() {
   cat <<'EOF'
@@ -56,34 +57,35 @@ if [[ "${vm}" == "windows" ]]; then
 fi
 
 case "${vm}" in
-  appimage) ssh_port=2221; bundle=appimage; artifact_glob='*.AppImage' ;;
-  deb) ssh_port=2222; bundle=deb; artifact_glob='*.deb' ;;
-  rpm) ssh_port=2223; bundle=rpm; artifact_glob='*.rpm' ;;
-  atomic) ssh_port=2224; bundle=appimage; artifact_glob='*.AppImage' ;;
+  appimage|ubuntu) vm=appimage; bundle=appimage; artifact_glob='*.AppImage' ;;
+  deb|debian) vm=deb; bundle=deb; artifact_glob='*.deb' ;;
+  rpm|fedora) vm=rpm; bundle=rpm; artifact_glob='*.rpm' ;;
+  atomic|silverblue) vm=atomic; bundle=appimage; artifact_glob='*.AppImage' ;;
   *) printf 'Unsupported Desktop VM lane: %s\n' "${vm}" >&2; exit 2 ;;
 esac
 
 [[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
 [[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
 lab_dir="$(cd "${lab_dir}" && pwd -P)"
-for dependency in docker flock node python3 sha256sum ssh tar; do
+[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
+  printf 'Desktop VM E2E requires OmniDeck VM lab controller 2.x.\n' >&2
+  exit 2
+}
+for dependency in docker node python3 sha256sum ssh tar; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
 
-if [[ -z "${baseline}" ]]; then
-  if [[ "${vm}" == "atomic" ]]; then
-    baseline="clean"
-  else
-    recommended_baseline="$(node -e 'const c=require(process.argv[1]); process.stdout.write(c.recommendedBaseline)' "${script_dir}/golden-prerequisites.json")"
-    if "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "${recommended_baseline}"; then
-      baseline="${recommended_baseline}"
-    elif "${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "podman-ready"; then
-      baseline="podman-ready"
-    else
-      baseline="clean"
-    fi
-  fi
+if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
+  lease_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  lease_args=(lease "${vm}" desktop "${lease_run_id}")
+  [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
+  lease_args+=(-- "$0" "${original_args[@]}")
+  exec "${lab_dir}/lab.sh" "${lease_args[@]}"
 fi
+eval "$("${lab_dir}/lab.sh" describe "${vm}" --shell)"
+ssh_port="${LAB_VM_SSH_PORT}"
+
+[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" baseline "${vm}" desktop)"
 [[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
   printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
   exit 2
@@ -108,28 +110,18 @@ if [[ "${assume_yes}" != "1" ]]; then
   [[ "${confirmation}" == "${vm}" ]] || { printf 'Canceled.\n'; exit 1; }
 fi
 
-# Share the CLI lane's existing lock name as well as the Desktop-specific name.
-# That keeps the two black-box suites from racing on the same guest.
-exec 9>"${TMPDIR:-/tmp}/omnideck-cli-vm-e2e-${vm}.lock"
-flock -n 9 || { printf 'The %s VM lane is leased by the CLI E2E suite.\n' "${vm}" >&2; exit 1; }
-exec 8>"${TMPDIR:-/tmp}/omnideck-desktop-vm-e2e-${vm}.lock"
-flock -n 8 || { printf 'The %s Desktop VM lane is already leased.\n' "${vm}" >&2; exit 1; }
-
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+run_id="${OMNIDECK_VM_LAB_RUN_ID}"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 namespace="de2e-$(printf '%s' "${safe_run_id}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | tail -c 28)"
-output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop-e2e/${safe_run_id}-${vm}}"
+output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop/e2e/${safe_run_id}-${vm}}"
 build_dir="${output_dir}/build"
 screenshot_dir="${output_dir}/screenshots"
 remote_root="/home/tester/omnideck-desktop-e2e-${safe_run_id}"
-key_file="${lab_dir}/keys/id_ed25519"
-known_hosts="${lab_dir}/runtime/known_hosts"
-discarded_before="${output_dir}/discarded-before.txt"
-discarded_after="${output_dir}/discarded-after.txt"
-discarded_created="${output_dir}/discarded-created.txt"
+key_file="${LAB_VM_KEY}"
+known_hosts="${LAB_VM_KNOWN_HOSTS}"
 vm_started=0
 initial_reset=0
 remote_staged=0
@@ -138,9 +130,8 @@ test_status=1
 mkdir -p "${build_dir}" "${screenshot_dir}"
 cp -- "${script_dir}/manual-remainder.json" "${output_dir}/manual-remainder.json"
 cp -- "${script_dir}/golden-prerequisites.json" "${output_dir}/golden-prerequisites.json"
-find "${lab_dir}/discarded" -maxdepth 1 -type f -name "${vm}.qcow2.*" -print | sort > "${discarded_before}"
-printf '{\n  "runId": "%s",\n  "vm": "%s",\n  "baseline": "%s",\n  "sourceCommit": "%s",\n  "status": "building"\n}\n' \
-  "${safe_run_id}" "${vm}" "${baseline}" "${source_commit}" > "${output_dir}/run.json"
+"${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
+  "${source_commit}" "${vm}" "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}"
 
 cleanup() {
   local exit_code=$?
@@ -157,21 +148,10 @@ cleanup() {
   elif [[ "${keep_vm}" == "1" ]]; then
     printf 'Guest kept stopped for debugging: %s\n' "${vm}"
   fi
-  find "${lab_dir}/discarded" -maxdepth 1 -type f -name "${vm}.qcow2.*" -print | sort > "${discarded_after}"
-  comm -13 "${discarded_before}" "${discarded_after}" > "${discarded_created}"
-  if [[ "${exit_code}" == "0" && "${keep_vm}" != "1" ]]; then
-    while IFS= read -r path; do
-      [[ -n "${path}" ]] || continue
-      if [[ "$(dirname "${path}")" != "${lab_dir}/discarded" || "$(basename "${path}")" != "${vm}.qcow2."* ]]; then
-        printf 'Refusing unexpected discarded overlay: %s\n' "${path}" >&2
-        exit_code=1
-        continue
-      fi
-      unlink "${path}"
-    done < "${discarded_created}"
-    printf 'Disposable overlays created by this successful run were purged.\n'
-  elif [[ -s "${discarded_created}" ]]; then
-    printf 'Debug overlays retained. Purge with: %s %s\n' "${script_dir}/purge.sh" "${output_dir}"
+  if [[ "${exit_code}" == "0" ]]; then
+    "${lab_dir}/lab.sh" evidence-finish "${output_dir}" passed || exit_code=1
+  else
+    "${lab_dir}/lab.sh" evidence-finish "${output_dir}" failed || true
   fi
   printf 'Desktop E2E artifacts: %s\n' "${output_dir}"
   exit "${exit_code}"
@@ -204,9 +184,8 @@ fi
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
 printf '%s  %s\n' "${artifact_sha256}" "$(basename "${artifact}")" > "${build_dir}/artifact.sha256"
-printf '{\n  "runId": "%s",\n  "vm": "%s",\n  "baseline": "%s",\n  "sourceCommit": "%s",\n  "cliVersion": "%s",\n  "cliCommit": "%s",\n  "artifact": "%s",\n  "artifactSha256": "%s"\n}\n' \
-  "${safe_run_id}" "${vm}" "${baseline}" "${source_commit}" "${cli_version}" "${cli_commit}" \
-  "$(basename "${artifact}")" "${artifact_sha256}" > "${output_dir}/run.json"
+"${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+  "artifact=$(basename "${artifact}")" "artifactSha256=${artifact_sha256}"
 
 printf 'Starting and verifying the %s guest.\n' "${vm}"
 "${lab_dir}/lab.sh" start "${vm}"
