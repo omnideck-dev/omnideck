@@ -5,25 +5,7 @@
 // picked file's bytes to /api/pack/import untouched; the server owns parsing
 // and validation, so this stays correct for pack formats that aren't text.
 
-// Save the file at `url` without leaving the app. Export is a plain GET that
-// responds with a Content-Disposition attachment, so a synthetic <a> click lets
-// the browser download it in place — unlike setting window.location, which would
-// navigate the SPA away, or fetch(), which can't write a file to disk.
-function triggerDownload(url) {
-    const a = document.createElement('a');
-    a.href = url;
-    // Content-Disposition is sufficient in a normal browser, but native
-    // webviews do not consistently promote a same-origin JSON navigation to a
-    // host download. The download attribute tells WebKit/WKWebView/WebView2 to
-    // enter their download path instead of replacing the hosted application.
-    a.download = '';
-    a.rel = 'noopener';
-    // Some browsers only honor a programmatic download click when the anchor
-    // is in the document, so attach it briefly.
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-}
+import { triggerDownload } from './downloads.js';
 
 export function downloadProfilePack(id, { includeSkills = false, includeModel = true } = {}) {
     const params = new URLSearchParams({

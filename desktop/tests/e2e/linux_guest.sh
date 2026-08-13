@@ -73,7 +73,7 @@ write_evidence() {
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-vm-e2e" tests="11" failures="0">
+<testsuite name="omnideck-desktop-vm-e2e" tests="14" failures="0">
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
@@ -85,6 +85,9 @@ write_evidence() {
   <testcase classname="desktop-vm-e2e" name="custom-app-webview-action-and-restart"/>
   <testcase classname="desktop-vm-e2e" name="native-host-download"/>
   <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
+  <testcase classname="desktop-vm-e2e" name="native-artifact-download-and-toast"/>
+  <testcase classname="desktop-vm-e2e" name="native-zoom"/>
+  <testcase classname="desktop-vm-e2e" name="native-update-bridge"/>
 </testsuite>
 XML
   else
@@ -197,16 +200,17 @@ exit "\${status}"
 EOF
 chmod 700 "${auth_bin}/pkexec"
 
-current_step="WebDriver dependency"
-if ! command -v WebKitWebDriver >/dev/null 2>&1; then
+current_step="desktop input dependencies"
+if ! command -v WebKitWebDriver >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver xdotool
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y webkit2gtk6.0-driver
+    sudo dnf install -y webkit2gtk6.0-driver xdotool
   fi
 fi
 command -v WebKitWebDriver
+command -v xdotool
 
 current_step="desktop session"
 desktop_pid=""
@@ -249,6 +253,8 @@ desktop_env=(
   "OMNIDECK_DESKTOP_TEST_NAMESPACE=${namespace}"
   "OMNIDECK_CONFIG_DIR=${cli_config}"
 )
+update_fixture="${result_dir}/update-fixture.json"
+desktop_env+=("OMNIDECK_DESKTOP_UPDATE_FIXTURE=${update_fixture}")
 if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   desktop_env+=("DISPLAY=${display:-:0}" "XAUTHORITY=${xauthority}" "GDK_BACKEND=x11")
   printf 'backend=x11 display=%s xauthority=%s\n' "${display:-:0}" "${xauthority}" \
@@ -446,6 +452,8 @@ run_journey custom-app
 fixture_id="desktop_host_boundary_${namespace}"
 fixture_name="Desktop Host Boundary ${namespace}"
 fixture_filename="Desktop-Host-Boundary-${namespace}.agent.omnideck.json"
+artifact_filename="desktop-artifact-${namespace}.txt"
+artifact_contents="native artifact download ${namespace}"
 download_dir="$(xdg-user-dir DOWNLOAD 2>/dev/null || true)"
 [[ -n "${download_dir}" ]] || download_dir="${HOME}/Downloads"
 mkdir -p "${download_dir}"
@@ -457,6 +465,10 @@ run_host_boundary() {
   local -a operation_args=()
   if [[ "${operation}" == "upload" ]]; then
     operation_args+=(--upload-path "${download_path}")
+  elif [[ "${operation}" == "artifact-download" ]]; then
+    operation_args+=(--artifact-filename "${artifact_filename}")
+  elif [[ "${operation}" == "zoom" ]]; then
+    operation_args+=(--native-input-tool "$(command -v xdotool)")
   fi
   mkdir -p "${operation_dir}"
   env "${desktop_env[@]}" \
@@ -505,6 +517,54 @@ PY
 current_step="native host upload"
 run_host_boundary upload
 
+current_step="native artifact fixture"
+podman exec \
+  --env "E2E_ARTIFACT_FILENAME=${artifact_filename}" \
+  --env "E2E_ARTIFACT_CONTENTS=${artifact_contents}" \
+  "${container_name}" python -c \
+  'import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ["E2E_ARTIFACT_FILENAME"]; path=Path("/home/computron") / name; path.write_text(os.environ["E2E_ARTIFACT_CONTENTS"], encoding="utf-8"); record_artifact(conversation_id="desktop-vm-artifact", path=str(path), filename=name, content_type="text/plain", agent_name="Desktop VM", sent_at="2026-08-12T00:00:00Z")'
+
+current_step="native artifact download"
+run_host_boundary artifact-download
+artifact_download_path="${download_dir}/${artifact_filename}"
+python3 - "${artifact_download_path}" "${artifact_contents}" "${result_dir}/host-boundaries/artifact-filesystem.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+import time
+
+path = Path(sys.argv[1])
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline and not path.is_file():
+    time.sleep(0.25)
+if not path.is_file():
+    raise AssertionError(f"native artifact download did not create {path}")
+contents = path.read_text(encoding="utf-8")
+assert contents == sys.argv[2], contents
+Path(sys.argv[3]).write_text(json.dumps({
+    "status": "passed",
+    "path": str(path),
+    "size": path.stat().st_size,
+    "contents": contents,
+}, indent=2) + "\n", encoding="utf-8")
+PY
+
+current_step="native zoom bridge"
+run_host_boundary zoom
+
+current_step="native update bridge"
+python3 - "${update_fixture}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "version": "0.1.2",
+    "imageRef": "ghcr.io/omnideck-dev/omnideck@sha256:" + ("a" * 64),
+}, indent=2) + "\n", encoding="utf-8")
+PY
+run_host_boundary update-bridge
+
 current_step="resource contract"
 podman container inspect "${container_name}" > "${result_dir}/container-inspect.json"
 podman volume inspect "${home_volume}" "${state_volume}" > "${result_dir}/volume-inspect.json"
@@ -542,4 +602,4 @@ current_step="cleanup"
 cleanup_resources
 test_status="passed"
 current_step="complete"
-printf 'PASS: package smoke, setup/recovery, Custom App WebView, native host boundaries, and package lifecycle completed.\n'
+printf 'PASS: package smoke, setup/recovery, Custom App WebView, native download/upload/artifact/zoom/update boundaries, and package lifecycle completed.\n'

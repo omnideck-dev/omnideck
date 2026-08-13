@@ -90,6 +90,7 @@ def test_browser_hides_desktop_update_controls_and_notice(page: Page) -> None:
     """A normal browser does not expose controls that require the desktop host."""
     SettingsPage(page).goto_system()
 
+    assert page.evaluate("() => typeof window.omnideckHost") == "undefined"
     expect(page.get_by_test_id("updates-settings-group")).to_have_count(0)
     expect(page.get_by_test_id("software-update-notice")).to_have_count(0)
 

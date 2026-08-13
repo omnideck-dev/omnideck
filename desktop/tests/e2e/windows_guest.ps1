@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -9,7 +9,8 @@ param(
     [string]$ExpectedCliVersion,
     [string]$ExpectedCliCommit,
     [string]$FixtureName,
-    [string]$FixtureFilename
+    [string]$FixtureFilename,
+    [string]$ArtifactFilename
 )
 
 $ErrorActionPreference = "Stop"
@@ -500,6 +501,50 @@ switch ($Phase) {
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $BoundaryResults "filesystem.json") -Encoding utf8
         Write-Host $Download
     }
+    "SeedArtifact" {
+        if (-not $ArtifactFilename) { throw "SeedArtifact requires ArtifactFilename." }
+        if ([IO.Path]::GetFileName($ArtifactFilename) -ne $ArtifactFilename) {
+            throw "ArtifactFilename must be a leaf filename."
+        }
+        $Contents = "native artifact download $ArtifactFilename"
+        $Python = 'import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ["E2E_ARTIFACT_FILENAME"]; path=Path("/home/computron") / name; path.write_text(os.environ["E2E_ARTIFACT_CONTENTS"], encoding="utf-8"); record_artifact(conversation_id="desktop-vm-artifact", path=str(path), filename=name, content_type="text/plain", agent_name="Desktop VM", sent_at="2026-08-12T00:00:00Z")'
+        Invoke-Engine exec --env "E2E_ARTIFACT_FILENAME=$ArtifactFilename" --env "E2E_ARTIFACT_CONTENTS=$Contents" $ContainerName python -c $Python | Out-Null
+        Write-Host $Contents
+    }
+    "HostBoundaryArtifactDownload" {
+        if (-not $ArtifactFilename) {
+            throw "HostBoundaryArtifactDownload requires ArtifactFilename."
+        }
+        $Expected = "native artifact download $ArtifactFilename"
+        $Download = Join-Path (Join-Path $env:USERPROFILE "Downloads") $ArtifactFilename
+        $Deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not (Test-Path -LiteralPath $Download -PathType Leaf)) {
+            if ([DateTime]::UtcNow -ge $Deadline) {
+                throw "Native artifact download did not create $Download."
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        $Contents = Get-Content -LiteralPath $Download -Raw
+        if ($Contents -ne $Expected) { throw "Downloaded artifact contents did not match." }
+        $BoundaryResults = Join-Path $Results "host-boundaries"
+        New-Item -ItemType Directory -Path $BoundaryResults -Force | Out-Null
+        [ordered]@{
+            status = "passed"
+            path = $Download
+            size = (Get-Item -LiteralPath $Download).Length
+            contents = $Contents
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $BoundaryResults "artifact-filesystem.json") -Encoding utf8
+        Write-Host $Download
+    }
+    "SeedUpdateFixture" {
+        $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
+        $Value = [ordered]@{
+            version = "0.1.2"
+            imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
+        } | ConvertTo-Json
+        [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
+        Write-Host $UpdateFixture
+    }
     "Final" {
         Stop-Omnideck
         Invoke-Engine container inspect $ContainerName |
@@ -540,7 +585,7 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="12" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="15" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
@@ -551,6 +596,9 @@ switch ($Phase) {
   <testcase classname="desktop-vm-e2e" name="custom-app-webview-action-and-restart"/>
   <testcase classname="desktop-vm-e2e" name="native-host-download"/>
   <testcase classname="desktop-vm-e2e" name="native-host-upload"/>
+  <testcase classname="desktop-vm-e2e" name="native-artifact-download-and-toast"/>
+  <testcase classname="desktop-vm-e2e" name="native-zoom"/>
+  <testcase classname="desktop-vm-e2e" name="native-update-bridge"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
   <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
 </testsuite>

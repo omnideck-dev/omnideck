@@ -2,7 +2,7 @@ use crate::{platform, BridgeError, BridgeResult};
 use serde::{Deserialize, Serialize};
 use std::{fs, net::TcpListener, path::Path};
 
-pub(crate) const APP_VERSION: &str = "0.1.0-beta.4";
+pub(crate) const APP_VERSION: &str = "0.1.0-beta.5";
 const DEFAULT_APP_PORT: u16 = 2338;
 
 #[derive(Debug, Deserialize)]
@@ -29,11 +29,11 @@ struct SetupRecordWrite<'a> {
     updated_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImageManifest {
-    schema_version: u32,
-    app_version: String,
+    pub(crate) schema_version: u32,
+    pub(crate) app_version: String,
     pub(crate) image_version: String,
     pub(crate) image_ref: String,
 }
@@ -133,7 +133,7 @@ pub(crate) fn save_setup_record(
     )
 }
 
-fn write_atomic(destination: &Path, contents: &[u8]) -> BridgeResult<()> {
+pub(crate) fn write_atomic(destination: &Path, contents: &[u8]) -> BridgeResult<()> {
     fs::create_dir_all(destination.parent().expect("state path has a parent"))
         .map_err(|error| BridgeError::new("STATE_WRITE_FAILED", error.to_string()))?;
     let temporary = destination.with_extension(format!("{}.partial", std::process::id()));

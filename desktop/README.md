@@ -4,18 +4,24 @@ This directory contains the Tauri v2 desktop host that replaces the Electron
 shell while preserving the existing setup experience.
 
 The installer UI assets and copy are checked against the Electron source by the
-policy tests. The hosted application runs in a separate webview with no Tauri
-capability. The local setup webview receives only four typed lifecycle commands;
-Rust owns every CLI argument, validates the CLI and JSON contracts, and limits
-process output and execution time.
+policy tests. The hosted application runs in a separate webview with only typed
+software-update commands; it receives no shell, filesystem, process,
+dialog, opener, updater-plugin, or generic event authority. Rust revalidates its
+exact dynamic loopback origin on every call. The local setup webview receives
+only four typed lifecycle commands; Rust owns every CLI argument, validates the
+CLI and JSON contracts, and limits process output and execution time.
 
 The hosted webview enables native clipboard access, keeps copy/paste keyboard
 shortcuts available, refreshes with Ctrl/Cmd+R or F5, opens external HTTP(S)
-links in the system browser, and denies all other new-window requests.
+links in the system browser, and denies all other new-window requests. Native
+zoom uses the webview's native Ctrl/Cmd + `=`, Ctrl/Cmd + `-`, and Ctrl/Cmd +
+mouse-wheel handling without adding an application menu. Completed native downloads
+are reported through the application's existing top-center toast stack; the
+persistent software-update notice remains in its quieter bottom-right location.
 
 ## Bundled CLI
 
-The official `omnideck-dev/cli` `v0.10.0-alpha.2` release is bundled for x64
+The official `omnideck-dev/cli` `v0.11.0-beta.2` release is bundled for x64
 and ARM64 on Windows, macOS, and Linux. The executables are not committed to
 this repository. `src-tauri/binaries/vendor-manifest.json` pins the release URL,
 archive checksums, extracted-binary checksums, version, commit, and SBOM
