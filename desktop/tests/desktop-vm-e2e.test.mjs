@@ -128,6 +128,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
       < windows.indexOf('start_driver skip'),
     'the Windows update fixture must exist before the first app launch',
   );
+  assert.ok(
+    windows.indexOf('phase_command PromoteUpdateFixture')
+      < windows.indexOf('run_host_boundary update-bridge'),
+    'the Windows update fixture must become newer immediately before its bridge journey',
+  );
 });
 
 test('documented pnpm argument separators are accepted by both VM lanes', () => {

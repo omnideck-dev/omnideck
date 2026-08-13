@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -531,6 +531,15 @@ switch ($Phase) {
         Write-Host $Download
     }
     "SeedUpdateFixture" {
+        $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
+        $Value = [ordered]@{
+            version = "0.1.4"
+            imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
+        } | ConvertTo-Json
+        [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
+        Write-Host $UpdateFixture
+    }
+    "PromoteUpdateFixture" {
         $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
         $Value = [ordered]@{
             version = "0.1.5"

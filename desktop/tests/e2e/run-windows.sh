@@ -681,6 +681,7 @@ if [[ "${test_status}" == "0" ]]; then
     artifact_download_path="$(verify_artifact_download | tr -d '\r' | tail -n 1)"
     [[ "${artifact_download_path}" == [A-Za-z]:\\* ]]
     run_host_boundary zoom
+    phase_command PromoteUpdateFixture
     run_host_boundary update-bridge
     phase_command Final
   )
