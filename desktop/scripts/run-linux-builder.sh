@@ -26,14 +26,26 @@ docker image inspect "${image}" >/dev/null 2>&1 || {
 command_string="${*:-pnpm run verify}"
 uid="$(id -u)"
 gid="$(id -g)"
+docker_args=(
+  run --rm
+  --user "${uid}:${gid}"
+  --env HOME=/tmp/omnideck-desktop-home
+  --env CARGO_HOME=/tmp/omnideck-cargo
+  --env RUSTUP_HOME=/usr/local/rustup
+  --env XDG_CACHE_HOME=/tmp/omnideck-cache
+)
+container_workdir=/workspace/desktop
+stage_source=''
+if [[ -n "${OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR:-}" ]]; then
+  mkdir -p "${OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR}"
+  build_output="$(realpath -e "${OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR}")"
+  container_workdir=/tmp
+  stage_source='mkdir -p /tmp/workspace && tar -C /source --exclude=.git --exclude=.pnpm-store --exclude="*/node_modules" --exclude="*/target" -cf - . | tar -C /tmp/workspace -xf - && cd /tmp/workspace/desktop && '
+  docker_args+=(--env CARGO_TARGET_DIR=/out --volume "${repo_root}:/source:ro" --volume "${build_output}:/out")
+else
+  docker_args+=(--volume "${repo_root}:/workspace")
+fi
+docker_args+=(--workdir "${container_workdir}" "${image}")
 
-docker run --rm \
-  --user "${uid}:${gid}" \
-  --env HOME=/tmp/omnideck-desktop-home \
-  --env CARGO_HOME=/tmp/omnideck-cargo \
-  --env RUSTUP_HOME=/usr/local/rustup \
-  --env XDG_CACHE_HOME=/tmp/omnideck-cache \
-  --volume "${repo_root}:/workspace" \
-  --workdir /workspace/desktop \
-  "${image}" \
-  bash -c "mkdir -p \"\${HOME}\" \"\${CARGO_HOME}\" \"\${XDG_CACHE_HOME}\" && pnpm install --frozen-lockfile && ${command_string}"
+docker "${docker_args[@]}" \
+  bash -c "${stage_source}mkdir -p \"\${HOME}\" \"\${CARGO_HOME}\" \"\${XDG_CACHE_HOME}\" && pnpm install --frozen-lockfile && ${command_string}"

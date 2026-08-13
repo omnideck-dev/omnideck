@@ -1,5 +1,14 @@
 # Clean-machine first-run test
 
+## Automation boundary
+
+The Linux and Windows VM journeys automate clean install, setup copy/DOM,
+permission cancellation/approval, hosted open, recovery, and package lifecycle.
+The clean Windows lane also drives SmartScreen, restart-now, and RunOnce
+reopening. Run this procedure manually for native macOS or another target without
+an available automation host; otherwise use it only for subjective visual or
+accessibility review listed in `manual-remainder.json`.
+
 ## Starting state and safety
 
 - Use a disposable VM snapshot or a dedicated, restorable machine.

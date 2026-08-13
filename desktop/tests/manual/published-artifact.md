@@ -15,8 +15,10 @@ the operating system's unsigned-preview warning.
    package. Record both results.
 4. Record browser download warnings. Confirm the filename, version, format,
    architecture, and icon are correct.
-5. Open the package through the normal user path and record SmartScreen,
-   Gatekeeper, or Linux desktop/package-manager warnings.
+5. Open the package through the normal user path. Record Gatekeeper on native
+   macOS and any Linux desktop/package-manager warning. Windows SmartScreen is
+   driven and captured by the clean Windows E2E lane; review it manually only
+   when diagnosing a failure or qualifying a target without that lane.
 6. Confirm any warning is attributable to the documented unsigned alpha status,
    not corruption, a wrong architecture, or malformed packaging.
 7. Complete installation or copy the `.app` to `/Applications` as the platform

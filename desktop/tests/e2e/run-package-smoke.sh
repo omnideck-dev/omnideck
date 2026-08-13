@@ -5,8 +5,9 @@ set -Eeuo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
-lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
+source "${script_dir}/_lab.sh"
 vm=""
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
 baseline=""
 artifact=""
 package_kind=""
@@ -14,6 +15,7 @@ expected_cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=
 expected_cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 assume_yes=0
 keep_vm=0
+reuse_guest="${OMNIDECK_DESKTOP_VM_SMOKE_REUSE_GUEST:-0}"
 original_args=("$@")
 
 usage() {
@@ -29,6 +31,7 @@ Options:
   --artifact PATH                    Exact AppImage, DEB, RPM, or Flatpak bundle (required)
   --package appimage|deb|rpm|flatpak Override package type inferred from PATH
   --baseline NAME                    Guest checkpoint (default: recommended available checkpoint)
+  --profile NAME                     Deterministic lab profile (default: dev-fast)
   --cli-version VERSION              Expected bundled CLI version
   --cli-commit COMMIT                Expected bundled CLI commit
   --yes                              Accept the destructive guest reset
@@ -44,6 +47,7 @@ while (($#)); do
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
     --package) package_kind="${2:?--package requires a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
+    --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --cli-version) expected_cli_version="${2:?--cli-version requires a value}"; shift 2 ;;
     --cli-commit) expected_cli_commit="${2:?--cli-commit requires a value}"; shift 2 ;;
     --yes) assume_yes=1; shift ;;
@@ -85,41 +89,44 @@ esac
   exit 2
 }
 
-[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
-[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
-lab_dir="$(cd "${lab_dir}" && pwd -P)"
-[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
-  printf 'Desktop package smoke requires OmniDeck VM lab controller 2.x.\n' >&2
-  exit 2
-}
+require_lab
 for dependency in node python3 sha256sum ssh tar; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
 
 if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
+  [[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" profile "${profile}" "${vm}")"
+  "${lab_dir}/lab.sh" preflight desktop "${profile}" --lanes "${vm}" --baseline "${baseline}" >/dev/null
   lease_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  lease_args=(lease "${vm}" desktop-smoke "${lease_run_id}")
+  lease_args=(lease "${vm}" desktop-smoke "${lease_run_id}" --cleanup-baseline clean)
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
-  lease_args+=(-- "$0" "${original_args[@]}")
+  lease_args+=(-- "$0" --baseline "${baseline}" "${original_args[@]}")
   exec "${lab_dir}/lab.sh" "${lease_args[@]}"
 fi
 eval "$("${lab_dir}/lab.sh" describe "${vm}" --shell)"
 ssh_port="${LAB_VM_SSH_PORT}"
 
-[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" baseline "${vm}" desktop)"
+[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" profile "${profile}" "${vm}")"
 [[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2; exit 2; }
 
 status="$("${lab_dir}/lab.sh" status "${vm}")"
 printf '%s\n' "${status}"
-grep -Eq "^${vm} stopped " <<<"${status}" || {
-  printf 'Refusing to use a running guest. Stop it only if you own that VM lane.\n' >&2
-  exit 1
-}
-"${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fxq "${baseline}" || {
+if [[ "${reuse_guest}" == "1" ]]; then
+  grep -Eq "^${vm} running " <<<"${status}" || {
+    printf 'The grouped smoke runner expected the leased %s guest to be running.\n' "${vm}" >&2
+    exit 1
+  }
+else
+  grep -Eq "^${vm} stopped " <<<"${status}" || {
+    printf 'Refusing to use a running guest. Stop it only if you own that VM lane.\n' >&2
+    exit 1
+  }
+fi
+"${lab_dir}/lab.sh" snapshots "${vm}" | grep -Fx "${baseline}" >/dev/null || {
   printf 'The %s guest has no %s checkpoint.\n' "${vm}" "${baseline}" >&2
   exit 1
 }
-if [[ "${assume_yes}" != "1" ]]; then
+if [[ "${reuse_guest}" != "1" && "${assume_yes}" != "1" ]]; then
   [[ -t 0 ]] || { printf 'Re-run interactively or pass --yes.\n' >&2; exit 2; }
   printf 'This resets only the stopped %s VM to %s before the smoke and clean afterward.\n' "${vm}" "${baseline}"
   printf 'Type %s to continue: ' "${vm}"
@@ -131,12 +138,12 @@ run_id="${OMNIDECK_VM_LAB_RUN_ID}"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
-output_dir="${OMNIDECK_DESKTOP_VM_SMOKE_OUTPUT_DIR:-${lab_dir}/artifacts/desktop/package-smoke/${safe_run_id}-${vm}-${package_kind}}"
+output_dir="${OMNIDECK_DESKTOP_VM_SMOKE_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop package-smoke "${safe_run_id}-${vm}-${package_kind}")}"
 screenshot_dir="${output_dir}/screenshots"
 remote_root="/home/tester/omnideck-desktop-smoke-${safe_run_id}"
 key_file="${LAB_VM_KEY}"
 known_hosts="${LAB_VM_KNOWN_HOSTS}"
-vm_started=0
+vm_started="${reuse_guest}"
 initial_reset=0
 remote_staged=0
 
@@ -151,7 +158,7 @@ cleanup() {
   if [[ "${remote_staged}" == "1" && "${vm_started}" == "1" && "${keep_vm}" != "1" ]]; then
     "${lab_dir}/lab.sh" run "${vm}" "rm -rf -- '${remote_root}'" >/dev/null 2>&1 || true
   fi
-  if [[ "${vm_started}" == "1" ]]; then
+  if [[ "${vm_started}" == "1" && "${reuse_guest}" != "1" ]]; then
     "${lab_dir}/lab.sh" stop "${vm}" || exit_code=1
     vm_started=0
   fi
@@ -170,14 +177,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf 'Resetting the leased %s guest to %s.\n' "${vm}" "${baseline}"
-"${lab_dir}/lab.sh" reset "${vm}" "${baseline}"
-initial_reset=1
-printf 'Starting and verifying the %s guest.\n' "${vm}"
-"${lab_dir}/lab.sh" start "${vm}"
-vm_started=1
-"${lab_dir}/lab.sh" wait "${vm}"
-"${lab_dir}/lab.sh" verify "${vm}" | tee "${output_dir}/guest-verify.txt"
+if [[ "${reuse_guest}" != "1" ]]; then
+  printf 'Resetting the leased %s guest to %s.\n' "${vm}" "${baseline}"
+  "${lab_dir}/lab.sh" reset "${vm}" "${baseline}"
+  initial_reset=1
+  printf 'Starting and verifying the %s guest.\n' "${vm}"
+  "${lab_dir}/lab.sh" start "${vm}"
+  vm_started=1
+  "${lab_dir}/lab.sh" wait "${vm}"
+  "${lab_dir}/lab.sh" verify "${vm}" | tee "${output_dir}/guest-verify.txt"
+fi
 
 printf 'Starting an isolated graphical tester session.\n'
 "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/login.png"

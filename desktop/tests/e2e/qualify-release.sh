@@ -4,7 +4,8 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 desktop_root="$(cd "${script_dir}/../.." && pwd)"
-lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
+repo_root="$(cd "${desktop_root}/.." && pwd)"
+source "${script_dir}/_lab.sh"
 release="latest"
 lanes_csv="appimage,deb,rpm,atomic,windows"
 assume_yes=0
@@ -45,13 +46,7 @@ while (($#)); do
   esac
 done
 
-[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
-[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
-lab_dir="$(cd "${lab_dir}" && pwd -P)"
-[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
-  printf 'Desktop qualification requires OmniDeck VM lab controller 2.x.\n' >&2
-  exit 2
-}
+require_lab
 for dependency in gh node python3 sha256sum; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
 done
@@ -83,7 +78,7 @@ fi
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$-${selected_release#v}"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${desktop_root}" rev-parse --short=12 HEAD)"
-run_root="${lab_dir}/artifacts/desktop/release/${safe_run_id}"
+run_root="$("${lab_dir}/lab.sh" artifact-path desktop release "${safe_run_id}")"
 download_dir="${run_root}/downloads"
 lane_root="${run_root}/lanes"
 remote_root="${run_root}/remote"
@@ -215,7 +210,7 @@ for lane in appimage deb rpm atomic windows; do
   lane_dir="${lane_root}/${lane}"
   mkdir -p "${lane_dir}"
   artifact="$(artifact_for_lane "${lane}")"
-  lane_arguments=(--vm "${lane}" --artifact "${artifact}" --yes)
+  lane_arguments=(--vm "${lane}" --artifact "${artifact}" --profile release-clean --yes)
   if [[ "${lane}" == "windows" ]]; then
     lane_arguments+=(--baseline clean)
   fi
@@ -245,7 +240,7 @@ if [[ "${cross_distro_smoke}" == "1" ]]; then
       --appimage "$(artifact_for_lane appimage)" \
       --deb "$(artifact_for_lane deb)" \
       --rpm "$(artifact_for_lane rpm)" \
-      --yes > >(tee "${cross_smoke_dir}/host.log") 2>&1 || cross_smoke_status=$?
+      --profile release-clean --yes > >(tee "${cross_smoke_dir}/host.log") 2>&1 || cross_smoke_status=$?
   if [[ "${cross_smoke_status}" == "0" ]]; then
     record linux-cross-distro-smoke-matrix passed required cross-distro-smoke "every non-native AppImage, DEB, and RPM launch-smoke cell passed"
   else

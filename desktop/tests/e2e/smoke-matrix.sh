@@ -3,7 +3,10 @@
 set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
+source "${script_dir}/_lab.sh"
+desktop_root="$(cd "${script_dir}/../.." && pwd)"
+repo_root="$(cd "${desktop_root}/.." && pwd)"
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
 vms_csv="appimage,deb,rpm,atomic"
 assume_yes=0
 include_native=0
@@ -23,6 +26,7 @@ Options:
   --rpm PATH                   RPM candidate
   --flatpak PATH               Flatpak bundle (optional; not currently published)
   --vms LIST                   Comma-separated guests (default: appimage,deb,rpm,atomic)
+  --profile NAME               Deterministic lab profile (default: dev-fast)
   --include-native             Also smoke native cells already covered by full lanes
   --yes                        Accept all destructive disposable-guest resets
   -h, --help                   Show this help
@@ -37,6 +41,7 @@ while (($#)); do
     --rpm) artifacts[rpm]="${2:?--rpm requires a path}"; shift 2 ;;
     --flatpak) artifacts[flatpak]="${2:?--flatpak requires a path}"; shift 2 ;;
     --vms) vms_csv="${2:?--vms requires a value}"; shift 2 ;;
+    --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --include-native) include_native=1; shift ;;
     --yes) assume_yes=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -49,13 +54,7 @@ done
   usage >&2
   exit 2
 }
-[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
-[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
-lab_dir="$(cd "${lab_dir}" && pwd -P)"
-[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
-  printf 'Desktop smoke matrix requires OmniDeck VM lab controller 2.x.\n' >&2
-  exit 2
-}
+require_lab
 for package_kind in "${!artifacts[@]}"; do
   artifacts[${package_kind}]="$(realpath -e "${artifacts[${package_kind}]}")"
 done
@@ -76,6 +75,7 @@ for vm in appimage deb rpm atomic; do
     exit 1
   }
 done
+"${lab_dir}/lab.sh" preflight desktop "${profile}" --lanes "${vms_csv}" >/dev/null
 
 is_native_cell() {
   local guest="$1" package="$2"
@@ -107,7 +107,7 @@ fi
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${script_dir}/../../.." rev-parse --short=12 HEAD)"
-run_root="${OMNIDECK_DESKTOP_VM_SMOKE_MATRIX_OUTPUT_DIR:-${lab_dir}/artifacts/desktop/smoke-matrix/${safe_run_id}}"
+run_root="${OMNIDECK_DESKTOP_VM_SMOKE_MATRIX_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop smoke-matrix "${safe_run_id}")}"
 status_file="${run_root}/cell-status.tsv"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "${run_root}/cells"
@@ -140,27 +140,23 @@ record() {
 
 for vm in appimage deb rpm atomic; do
   [[ -n "${selected_vms[${vm}]:-}" ]] || continue
+  guest_cells=()
   for package_kind in appimage deb rpm flatpak; do
     artifact="${artifacts[${package_kind}]:-}"
     [[ -n "${artifact}" ]] || continue
     if [[ "${include_native}" != "1" ]] && is_native_cell "${vm}" "${package_kind}"; then continue; fi
-    cell_name="${vm}-${package_kind}"
-    cell_dir="${run_root}/cells/${cell_name}"
-    mkdir -p "${cell_dir}"
-    printf 'Running %s package smoke on the %s guest.\n' "${package_kind}" "${vm}"
-    cell_status=0
-    OMNIDECK_DESKTOP_VM_SMOKE_OUTPUT_DIR="${cell_dir}" \
-      "${script_dir}/run-package-smoke.sh" \
-        --vm "${vm}" \
-        --package "${package_kind}" \
-        --artifact "${artifact}" \
-        --yes > >(tee "${cell_dir}/host.log") 2>&1 || cell_status=$?
-    if [[ "${cell_status}" == "0" ]]; then
-      record "${vm}" "${package_kind}" passed "cells/${cell_name}" "package opened and completed its read-only smoke"
-    else
-      record "${vm}" "${package_kind}" failed "cells/${cell_name}" "package smoke exited ${cell_status}"
-    fi
+    guest_cells+=("${package_kind}=${artifact}")
   done
+  [[ "${#guest_cells[@]}" -gt 0 ]] || continue
+  guest_status=0
+  "${lab_dir}/lab.sh" lease "${vm}" desktop-smoke-matrix "${safe_run_id}-${vm}" \
+    --cleanup-baseline clean -- \
+    "${script_dir}/smoke-matrix-guest.sh" "${vm}" "${profile}" "${run_root}" "${status_file}" \
+    "${guest_cells[@]}" || guest_status=$?
+  if [[ "${guest_status}" != "0" ]]; then
+    record "${vm}" infrastructure failed "cells/${vm}-guest-verify.txt" \
+      "grouped guest preparation or cleanup exited ${guest_status}"
+  fi
 done
 
 report_status=0

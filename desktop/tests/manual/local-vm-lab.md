@@ -1,182 +1,149 @@
 # Local VM lab controls
 
-Use the external disposable VM lab for desktop manual work. The lab path is
-machine-specific and must not be committed to repository documentation.
+Use the external disposable VM lab for Desktop automation and the remaining
+manual observations. The lab path is machine-specific and must not be committed.
 
-## Inventory and ownership
+## Inventory, preflight, and ownership
 
 ```sh
 export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
 test -x "$OMNIDECK_VM_LAB_DIR/lab.sh"
 cd "$OMNIDECK_VM_LAB_DIR"
-./lab.sh status
+./lab.sh doctor --strict
+./lab.sh preflight desktop release-clean --lanes appimage,deb,rpm,atomic,windows
 ```
 
-Acquire a lab-owned lane lease before starting a guest. Manual and automated
-work use the same owner metadata and reset transaction:
+Automated suites acquire their own leases. For a manual viewer run, acquire a
+lease with an explicit cleanup baseline before changing the guest:
 
 ```sh
-./lab.sh lease windows desktop-manual -- bash
+./lab.sh lease windows desktop-manual --cleanup-baseline clean -- bash
 ./lab.sh start windows
 ./lab.sh wait windows
 ./lab.sh verify windows
-# Keep this shell open through stop/reset, then exit to release the lane.
+./lab.sh viewer windows
+# Perform only the remaining manual observations, then exit this shell.
+exit
 ```
 
-If the lease is held, inspect its owner with `lab.sh status` and do not stop, reset, or snapshot
-that guest. Keep the Windows guest stopped when it is reserved for another
-desktop run.
+The cleanup baseline restores the guest if the shell succeeds, fails, or is
+interrupted. If a lease is held, inspect its owner with `lab.sh status` and do
+not stop, reset, or snapshot that guest. Do not issue another reset after the
+cleanup-owning lease exits.
 
-## Reusable guest checkpoints
+## Canonical automated candidate run
 
-Treat each `*-clean.qcow2` image as the immutable fresh baseline. Use
-named checkpoints for expensive setup states; a checkpoint includes the guest
-disk plus UEFI state and, for Windows, TPM state:
-
-```sh
-cd "$OMNIDECK_VM_LAB_DIR"
-./lab.sh snapshots windows
-./lab.sh lease windows checkpoint-maintenance -- bash
-./lab.sh reset windows clean
-./lab.sh reset windows wsl-ready
-./lab.sh reset windows podman-ready
-```
-
-Create a checkpoint only after the guest is in the intended state and has
-been cleanly powered off. The command stops the guest if it is running and
-refuses to overwrite an existing checkpoint:
-
-```sh
-./lab.sh snapshot windows wsl-ready
-./lab.sh snapshot windows podman-ready
-```
-
-Use lowercase names containing only letters, numbers, `.`, `_`, and `-`.
-`clean` is reserved for the original golden state. Do not replace the clean
-golden image with a configured state; recreate a named checkpoint when the
-state needs to change. The unsafe legacy `./lab.sh snapshot VM` form is
-disabled. Clean-image rebuilds follow the lab's separate provenance and
-verification procedure.
-
-The Desktop lane's versioned install and verification contract is
-[`../e2e/golden-prerequisites.json`](../e2e/golden-prerequisites.json). Put
-stable graphical-session, SSH, WebKit/WebView2, and Podman prerequisites in a
-named checkpoint. Keep the exact Tauri driver, matching EdgeDriver, candidate,
-driver task, and evidence per-run; the harness owns those and removes them with
-the disposable state. After rebuilding a checkpoint, run both the AppImage and
-Windows lanes against its explicit name before making it the local default.
-
-## Automated package journeys
-
-The native packaged behavior that can be controlled deterministically now runs
-through [`../e2e`](../e2e/README.md). That suite owns the VM lease, reset,
-package build/install, packaged smoke, live setup DOM/copy, hosted open,
-returning/Doctor/resume/update scenarios, package lifecycle, compact evidence,
-and safe overlay/TPM cleanup.
-
-Use it before opening a viewer for the remaining manual checks:
+Run the deterministic candidate matrix before opening a viewer:
 
 ```sh
 cd /path/to/omnideck/desktop
 export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
 export OMNIDECK_CLI_WORKTREE=/path/to/omnideck-cli
+pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes
+```
+
+The matrix preflights the selected profile, builds Linux and Windows candidates
+once into the lab's content-addressed cache, groups work by guest, owns every
+lease/reset, and writes aggregate evidence under
+`$OMNIDECK_VM_LAB_DIR/artifacts/desktop/candidate-matrix/`. Cargo, pnpm, sidecar,
+driver, and package build outputs used by the candidate workflow are routed
+through the lab cache instead of accumulating in the checkout.
+
+For deliberate single-lane diagnosis:
+
+```sh
 pnpm run test:vm-e2e -- --vm appimage
 pnpm run test:vm-e2e -- --vm windows
 ```
 
-For launch-only compatibility coverage across Linux distributions, supply the
-already-built packages to the smoke matrix. It uses the same lane leases and
-clean resets but skips setup, recovery, and lifecycle journeys:
+For launch-only cross-distribution compatibility, supply exact existing packages
+to `pnpm run test:vm-smoke-matrix`; see `tests/e2e/README.md`. Do not substitute
+that smoke for setup, recovery, or package-lifecycle coverage.
+
+The clean Windows lane drives SmartScreen, secure-desktop UAC cancellation and
+approval, restart-now, RunOnce reopening, setup/recovery, and package lifecycle.
+Open the viewer only for items listed in `tests/e2e/manual-remainder.json`:
+
+- normal-browser warnings and native macOS Gatekeeper;
+- native macOS or another target without an automation host;
+- native picker/clipboard/browser/shortcut/window integration;
+- subjective visual, accessibility, DPI, multi-monitor, and platform fit; and
+- live network interruption, sleep/wake, and destructive interruption timing.
+
+## Marked manual evidence
+
+Create the evidence record before acquiring the manual lease. This keeps every
+generated report, screenshot, and log under the lab's single artifact root:
 
 ```sh
-pnpm run test:vm-smoke-matrix -- \
-  --appimage /absolute/path/candidate.AppImage \
-  --deb /absolute/path/candidate.deb \
-  --rpm /absolute/path/candidate.rpm
-```
-
-Add `--flatpak /absolute/path/candidate.flatpak` when a Flatpak bundle exists;
-the current published package set does not include one.
-
-## Manual Windows desktop remainder
-
-The clean Windows E2E lane now drives SmartScreen, secure-desktop
-cancellation/approval, restart-now, and RunOnce reopening through QEMU. Open
-the graphical viewer only for subjective visual/accessibility review and the
-integration items still listed in `manual-remainder.json`:
-
-```sh
+repo_root=/path/to/omnideck
+source_commit="$(git -C "$repo_root" rev-parse HEAD)"
 cd "$OMNIDECK_VM_LAB_DIR"
+run_id="desktop-manual-$(date -u +%Y%m%dT%H%M%SZ)"
+evidence_dir="$(./lab.sh artifact-path desktop manual "$run_id")"
+export evidence_dir
+./lab.sh evidence-init "$evidence_dir" desktop manual "$run_id" \
+  "$source_commit" windows clean
+./lab.sh lease windows desktop-manual "$run_id" --cleanup-baseline clean -- bash
 ./lab.sh start windows
 ./lab.sh wait windows
 ./lab.sh verify windows
 ./lab.sh viewer windows
-# Perform only the not-run items named by manual-remainder.json.
-# Record screenshots, inventories, exact artifact checksum, and result.
-./lab.sh stop windows
-./lab.sh reset windows
-./lab.sh status windows
+# Write only compact manual-remainder evidence beneath $evidence_dir, then exit.
+exit
+./lab.sh evidence-finish "$evidence_dir" passed
 ```
 
-Use the same explicit sequence for a recovery run, substituting
-`recovery-lifecycle.md` for the first-run procedure. Do not run the destructive
-host reset against a development machine.
+Use `failed` instead of `passed` when an assertion fails. Record the exact
+package checksum, guest/display/runtime inventory, timestamps, observations, and
+final result. Do not copy candidates, raw disks, or large recordings into the
+repository.
 
-## Repeatable non-visual checks
+## Reusable guest checkpoints
 
-Build a local Linux desktop candidate with the fixed CLI worktree before
-copying it to the guest:
-
-```sh
-cd /path/to/omnideck
-./desktop/scripts/build-with-local-cli.sh /path/to/omnideck-cli \
-  "pnpm exec tauri build --bundles appimage --target x86_64-unknown-linux-gnu"
-```
-
-The helper builds Go in the pinned CLI container, temporarily stages the local
-Linux sidecar, builds the AppImage in the pinned desktop container, and restores
-the release sidecar before returning. The resulting AppImage is under
-`desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/`.
-
-Build the local Windows candidate with the same CLI worktree:
-
-```sh
-cd /path/to/omnideck
-./desktop/scripts/build-with-local-cli-windows.sh /path/to/omnideck-cli
-sha256sum desktop/src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/*-setup.exe
-```
-
-Copy that installer into the disposable Windows guest, install it with the
-default current-user options, and verify the installed
-`AppData\\Local\\omnideck\\omnideck-cli.exe` hash before setup. The local GNU
-package is intentionally for lab testing; native Windows CI produces the
-release MSVC package.
-
-The CLI worktree contains the reusable containerized lifecycle helper:
-
-```sh
-cd /path/to/omnideck-cli
-export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
-OMNIDECK_VM_LAB_VM=atomic \
-OMNIDECK_HARDWARE_ENGINE=podman \
-./tests/manual/run-local-hardware.sh
-```
-
-It builds Go inside `omnideck-cli-builder:local`, runs the Podman lifecycle in
-an isolated Linux guest, and stores checksum/log evidence under the external
-lab. It does not replace the desktop viewer procedure above.
-
-## Evidence and cleanup
-
-Record the source commit, package checksum, guest OS/version, display server,
-Podman/runtime baseline, exact commands, timestamps, result, screenshots/logs,
-and final inventory. Redact credentials and personal paths.
-
-Only after evidence is copied out, clean the disposable overlay:
+Treat each clean image as immutable. Named checkpoints may hold stable graphical
+session, WebKit/WebView2, SSH, and Podman prerequisites, but never a candidate,
+exact driver, or per-run evidence. Create a checkpoint only inside a maintenance
+lease and only after a clean shutdown:
 
 ```sh
 cd "$OMNIDECK_VM_LAB_DIR"
+./lab.sh lease windows checkpoint-maintenance --cleanup-baseline clean -- bash
+./lab.sh start windows
+# Prepare and verify the intended reusable prerequisite state.
 ./lab.sh stop windows
-./lab.sh reset windows
-./lab.sh status windows
+./lab.sh snapshot windows podman-ready-v2
+exit
+./lab.sh provenance capture windows podman-ready-v2
 ```
+
+Validate both AppImage and Windows lanes against the explicit checkpoint before
+selecting it in a shared profile. Then update the versioned lab manifest and
+install that controller into the deployed lab. Because provenance binds the
+complete manifest, recapture every clean or named baseline referenced by the new
+manifest before running `lab.sh doctor --strict` and the exact Desktop profile
+preflight. Provenance capture runs after a lease exits because it refuses a
+running or leased guest. Never use snapshot or installer commands as test
+cleanup.
+
+## Evidence and generated-file cleanup
+
+Successful reset transactions disappear immediately. Unpinned evidence and
+failed state expire after 48 hours; unused content-addressed candidates and
+drivers expire after seven days. Preview or apply routine cleanup from Desktop:
+
+```sh
+pnpm run test:vm-lab:cleanup
+pnpm run test:vm-lab:cleanup:apply
+```
+
+For an intentional complete removal of generated artifacts, caches, and retained
+reset state:
+
+```sh
+pnpm run test:vm-lab:cleanup:all
+pnpm run test:vm-lab:cleanup:all:apply
+```
+
+Cleanup never targets golden images, named checkpoints, base images, automation,
+or keys.

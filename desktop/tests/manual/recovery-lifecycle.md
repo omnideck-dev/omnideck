@@ -1,10 +1,21 @@
 # Recovery and package lifecycle test
 
+## Automation boundary
+
+The disposable Linux and Windows VM suite owns deterministic returning, Doctor,
+resume, update, occupied-port recovery, interrupted-window recovery, install,
+reinstall, uninstall, and reinstall-after-uninstall assertions. Do not repeat
+those as manual release gates after their automated lane passes. This procedure
+retains only live network interruption, sleep/wake, destructive interruption
+timing, native platforms without an automation lane, and investigation of an
+automated failure.
+
 ## Scenario helpers
 
-After a successful first run, use the published-release helpers for `returning`,
-`doctor`, `resume`, and `update`. Linux and macOS use isolated named profiles.
-Windows deliberately uses the product's normal WSL-backed runtime path.
+When investigating an automated failure or covering an unavailable native
+platform, use the published-release helpers for `returning`, `doctor`, `resume`,
+and `update`. Linux and macOS use isolated named profiles. Windows deliberately
+uses the product's normal WSL-backed runtime path.
 
 For each scenario, record the starting state, helper command, visible phases,
 diagnostics, result, process list, and resource inventory.
@@ -20,14 +31,15 @@ diagnostics, result, process list, and resource inventory.
 
 ## Controlled interruptions
 
-1. Close the setup window during download, relaunch, and verify completed work
-   is retained.
-2. Disconnect the network during download, restore it, and verify bounded,
+1. Disconnect the network during download, restore it, and verify bounded,
    actionable recovery.
-3. Stop the runtime or application container while OmniDeck is open. Verify
+2. Suspend and resume the host while setup or the hosted application is active;
+   verify recovery and process ownership remain coherent.
+3. Interrupt power or the process at a deliberately selected destructive timing
+   boundary, then restore the disposable host and verify recovery.
+4. Stop the runtime or application container while OmniDeck is open only when
+   investigating the corresponding automated assertion. Verify
    diagnostics and recovery do not expose raw internals as the only guidance.
-4. Reboot after partial setup and verify a single resume path.
-5. Relaunch after a failed action and verify recovery remains possible.
 
 Occupied saved-port recovery is no longer manual. Every Linux and Windows VM
 lane creates the conflict, locks the visible wording, and proves automatic
@@ -35,8 +47,9 @@ selection and persistence of another port; see `tests/e2e/README.md`.
 
 ## Package lifecycle
 
-For each shipped package format on its representative OS, perform clean install,
-reinstall, uninstall, and reinstall-after-uninstall. Verify launchers, shortcuts,
+Linux and Windows package lifecycle is automated. Perform clean install,
+reinstall, uninstall, and reinstall-after-uninstall manually only on native
+targets without an available automation lane. Verify launchers, shortcuts,
 receipts, mounted images, executables, and host processes. Confirm ordinary app
 uninstall does not remove unrelated Podman resources or user container data.
 
