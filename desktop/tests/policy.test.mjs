@@ -168,11 +168,11 @@ test('native desktop enhancements are bounded and observable', () => {
 });
 
 test('desktop ships the current immutable container release', async () => {
-  assert.equal((await read('../container-version.txt')).trim(), '0.1.3');
-  assert.equal(imageManifest.imageVersion, '0.1.3');
+  assert.equal((await read('../container-version.txt')).trim(), '0.1.4');
+  assert.equal(imageManifest.imageVersion, '0.1.4');
   assert.equal(
     imageManifest.imageRef,
-    'ghcr.io/omnideck-dev/omnideck@sha256:4b1ccb829c22a2101ceb218d348c5589e64f7b74cdbfea0cfe4d5df9541e749e',
+    'ghcr.io/omnideck-dev/omnideck@sha256:b04615f5373a8e57fe54820abde664f8943df66323467a30219e34b4a6b8a9bf',
   );
 });
 
@@ -192,6 +192,12 @@ test('release builds are GUI applications and platform behavior is isolated', ()
   assert.match(platformRust, /target_os = "windows"/);
   assert.match(platformRust, /target_os = "macos"/);
   assert.match(platformRust, /target_os = "linux"/);
+});
+
+test('the AppImage isolates bundled GLib from incompatible host GIO modules', async () => {
+  const main = await read('../src-tauri/src/main.rs');
+  assert.match(main, /var_os\("APPDIR"\)/);
+  assert.match(main, /set_var\("GIO_MODULE_DIR", module_dir\)/);
 });
 
 test('the promoted CLI beta is pinned with six target binaries and SBOMs', () => {

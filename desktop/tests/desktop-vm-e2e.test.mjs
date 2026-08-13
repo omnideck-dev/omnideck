@@ -109,6 +109,9 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /document\.documentElement\.style\.zoom/);
   assert.match(hostBoundaryDriver, /trustedWheelZoom/);
   assert.match(hostBoundaryDriver, /windowactivate/);
+  assert.match(hostBoundaryDriver, /windowfocus/);
+  assert.match(hostBoundaryDriver, /getwindowgeometry/);
+  assert.match(hostBoundaryDriver, /center_x/);
   assert.match(linuxGuest, /--native-input-tool/);
   assert.match(hostBoundaryDriver, /checkForUpdate/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
@@ -230,4 +233,36 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.match(windows, /lab\.sh" preflight/);
   assert.match(run, /--cleanup-baseline clean/);
   assert.match(windows, /--cleanup-baseline clean/);
+});
+
+test('current Fedora and atomic guests install trusted-input dependencies per run', () => {
+  assert.match(linuxGuest, /dnf install -y webkitgtk6\.0 xdotool/);
+  assert.match(
+    linuxGuest,
+    /rpm-ostree install --apply-live --assumeyes --idempotent xdotool/,
+  );
+  assert.match(JSON.stringify(golden), /xdotool installed per-run/);
+});
+
+test('host-boundary journeys retry only transient WebDriver disconnects', () => {
+  assert.match(linuxGuest, /for attempt in 1 2 3/);
+  assert.match(
+    linuxGuest,
+    /WebDriverError:\.\*\(Remote end closed\|Connection reset\|Connection refused\)/,
+  );
+  assert.match(linuxGuest, /transient-failure-attempt-/);
+});
+
+test('the updater bridge fixture is newer than the bundled runtime image', async () => {
+  const fixtureVersion = linuxGuest.match(/update_version="([^"]+)"/)?.[1];
+  const imageVersion = JSON.parse(
+    await read('../src-tauri/resources/image-manifest.json'),
+  ).imageVersion;
+  assert.ok(fixtureVersion);
+  assert.ok(
+    fixtureVersion.localeCompare(imageVersion, undefined, { numeric: true }) > 0,
+    `${fixtureVersion} must be newer than ${imageVersion}`,
+  );
+  assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
+  assert.match(windowsGuest, /version = "0\.1\.5"/);
 });

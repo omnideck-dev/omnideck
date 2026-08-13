@@ -206,7 +206,9 @@ if ! command -v WebKitWebDriver >/dev/null 2>&1 || ! command -v xdotool >/dev/nu
     sudo apt-get update -qq
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver xdotool
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y webkit2gtk6.0-driver xdotool
+    sudo dnf install -y webkitgtk6.0 xdotool
+  elif command -v rpm-ostree >/dev/null 2>&1; then
+    sudo rpm-ostree install --apply-live --assumeyes --idempotent xdotool
   fi
 fi
 command -v WebKitWebDriver
@@ -254,6 +256,7 @@ desktop_env=(
   "OMNIDECK_CONFIG_DIR=${cli_config}"
 )
 update_fixture="${result_dir}/update-fixture.json"
+update_version="0.1.5"
 desktop_env+=("OMNIDECK_DESKTOP_UPDATE_FIXTURE=${update_fixture}")
 if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   desktop_env+=("DISPLAY=${display:-:0}" "XAUTHORITY=${xauthority}" "GDK_BACKEND=x11")
@@ -462,6 +465,7 @@ download_path="${download_dir}/${fixture_filename}"
 run_host_boundary() {
   local operation="$1"
   local operation_dir="${result_dir}/host-boundaries/${operation}"
+  local attempt
   local -a operation_args=()
   if [[ "${operation}" == "upload" ]]; then
     operation_args+=(--upload-path "${download_path}")
@@ -469,18 +473,37 @@ run_host_boundary() {
     operation_args+=(--artifact-filename "${artifact_filename}")
   elif [[ "${operation}" == "zoom" ]]; then
     operation_args+=(--native-input-tool "$(command -v xdotool)")
+  elif [[ "${operation}" == "update-bridge" ]]; then
+    operation_args+=(--expected-update-version "${update_version}")
   fi
   mkdir -p "${operation_dir}"
-  env "${desktop_env[@]}" \
-    "${work_dir}/host_boundary_client.py" \
-      --application "${driver_application}" \
-      --tauri-driver "${work_dir}/tauri-driver" \
-      --operation "${operation}" \
-      --fixture-id "${fixture_id}" \
-      --fixture-name "${fixture_name}" \
-      --evidence "${operation_dir}" \
-      "${operation_args[@]}" \
-      --timeout 240
+  for attempt in 1 2 3; do
+    rm -f "${operation_dir}/failure.txt"
+    if env "${desktop_env[@]}" \
+      "${work_dir}/host_boundary_client.py" \
+        --application "${driver_application}" \
+        --tauri-driver "${work_dir}/tauri-driver" \
+        --operation "${operation}" \
+        --fixture-id "${fixture_id}" \
+        --fixture-name "${fixture_name}" \
+        --evidence "${operation_dir}" \
+        "${operation_args[@]}" \
+        --timeout 240; then
+      return 0
+    fi
+    if [[ "${attempt}" == "3" ]] ||
+      ! grep -Eq 'WebDriverError:.*(Remote end closed|Connection reset|Connection refused)' \
+        "${operation_dir}/failure.txt"; then
+      return 1
+    fi
+    cp "${operation_dir}/failure.txt" \
+      "${operation_dir}/transient-failure-attempt-${attempt}.txt"
+    cp "${operation_dir}/tauri-driver.log" \
+      "${operation_dir}/transient-driver-attempt-${attempt}.log"
+    printf 'Retrying %s after a transient WebDriver disconnect (attempt %s of 3).\n' \
+      "${operation}" "$((attempt + 1))"
+    sleep 1
+  done
 }
 
 current_step="native host download"
@@ -553,13 +576,13 @@ current_step="native zoom bridge"
 run_host_boundary zoom
 
 current_step="native update bridge"
-python3 - "${update_fixture}" <<'PY'
+python3 - "${update_fixture}" "${update_version}" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 Path(sys.argv[1]).write_text(json.dumps({
-    "version": "0.1.2",
+    "version": sys.argv[2],
     "imageRef": "ghcr.io/omnideck-dev/omnideck@sha256:" + ("a" * 64),
 }, indent=2) + "\n", encoding="utf-8")
 PY
