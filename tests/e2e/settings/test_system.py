@@ -10,19 +10,21 @@ def test_change_default_agent(page: Page):
     settings = SettingsPage(page).goto_system()
 
     select = settings.system.default_agent_select
-    options = select.locator("option").all()
+    select.click()
+    options = page.get_by_role("option").all()
     assert len(options) >= 2, "Need at least 2 profiles to test switching"
 
-    current = select.input_value()
-    new_value = next(o.get_attribute("value") for o in options if o.get_attribute("value") != current)
-    select.select_option(new_value)
+    current = select.get_attribute("data-value")
+    new_value = next(o.get_attribute("data-value") for o in options if o.get_attribute("data-value") != current)
+    page.locator(f'[role="option"][data-value="{new_value}"]').click()
     page.wait_for_timeout(500)
 
     server_settings = page.request.get("/api/settings").json()
     assert server_settings["default_agent"] == new_value
 
     # Restore
-    select.select_option(current)
+    select.click()
+    page.locator(f'[role="option"][data-value="{current}"]').click()
     page.wait_for_timeout(500)
 
 

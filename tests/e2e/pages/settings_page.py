@@ -65,7 +65,7 @@ class SystemTab:
 
     @property
     def default_agent_select(self) -> Locator:
-        return self.page.get_by_test_id("settings-page").locator("select").first
+        return self.page.get_by_test_id("default-agent-select")
 
     @property
     def vision_model_picker(self) -> ModelPickerLocator:
