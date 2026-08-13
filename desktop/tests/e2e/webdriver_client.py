@@ -621,7 +621,10 @@ class Journey:
     def wait_for_hosted(self, fixture_text: str, hosted_selector: str) -> dict[str, Any]:
         deadline = time.monotonic() + self.timeout
         observed: list[dict[str, Any]] = []
+        ready_observations = 0
+        recovery_clicks = 0
         while time.monotonic() < deadline:
+            ready_handle: str | None = None
             try:
                 handles = self.driver.handles()
             except WebDriverError as error:
@@ -651,8 +654,37 @@ class Journey:
                             self.markers.joinpath("hosted-app").touch()
                             print(f"HOSTED {value['url']}", flush=True)
                             return value
+                        if (value.get("url", "").startswith("tauri://localhost")
+                                and "Open omnideck" in value.get("buttonTexts", [])):
+                            ready_handle = handle
                 except WebDriverError:
                     continue
+            if ready_handle is None:
+                ready_observations = 0
+            else:
+                ready_observations += 1
+                if ready_observations >= 4 and recovery_clicks < 2:
+                    try:
+                        self.driver.switch_window(ready_handle)
+                        self.driver.click("#primary")
+                        recovery_clicks += 1
+                        ready_observations = 0
+                        recovery = {
+                            "status": "recovered",
+                            "action": "Open omnideck",
+                            "attempts": recovery_clicks,
+                        }
+                        self.evidence.joinpath("hosted-open-recovery.json").write_text(
+                            json.dumps(recovery, indent=2) + "\n", encoding="utf-8"
+                        )
+                        self.markers.joinpath("hosted-open-recovery").write_text(
+                            f"attempt={recovery_clicks}\n", encoding="utf-8"
+                        )
+                        print(
+                            f"RECOVERY hosted-open attempt={recovery_clicks}", flush=True
+                        )
+                    except WebDriverError as error:
+                        observed.append({"hostedOpenRecoveryError": str(error)})
             time.sleep(0.5)
         raise AssertionError(f"Hosted application did not open: {observed[-10:]!r}")
 

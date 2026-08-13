@@ -7,7 +7,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "test": "pnpm run test:source && pnpm run verify:sidecars",
-    "test:source": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs",
+    "test:source": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs && python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py",
     "test:policy": "node --test tests/*.test.mjs",
     "test:release-contract": "node --test tests/releasecontract/*.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
