@@ -40,7 +40,7 @@
     "Microsoft EdgeDriver downloaded for the exact installed WebView2 version",
     "The interactive Windows scheduled task used to launch tauri-driver",
     "The candidate package, private CLI configuration, app user data, logs, and evidence",
-    "xdotool installed per-run when a Linux checkpoint does not already provide trusted mouse-wheel input",
+    "xdotool installed per-run when an Ubuntu checkpoint does not already provide trusted mouse-wheel input",
     "Windows Attachment Manager zone metadata plus SmartScreen, UAC, restart, and RunOnce host control"
   ]
 }

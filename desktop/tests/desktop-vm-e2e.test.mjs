@@ -113,6 +113,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /getwindowgeometry/);
   assert.match(hostBoundaryDriver, /center_x/);
   assert.match(linuxGuest, /--native-input-tool/);
+  assert.match(linuxGuest, /"\$\{operation\}" == "zoom" && "\$\{ID\}" == "ubuntu"/);
   assert.match(hostBoundaryDriver, /checkForUpdate/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
@@ -235,13 +236,11 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.match(windows, /--cleanup-baseline clean/);
 });
 
-test('current Fedora and atomic guests install trusted-input dependencies per run', () => {
-  assert.match(linuxGuest, /dnf install -y webkitgtk6\.0 xdotool/);
-  assert.match(
-    linuxGuest,
-    /rpm-ostree install --apply-live --assumeyes --idempotent xdotool/,
-  );
-  assert.match(JSON.stringify(golden), /xdotool installed per-run/);
+test('current Linux guests install only the input dependencies their lane uses', () => {
+  assert.match(linuxGuest, /apt-get install -y -qq webkit2gtk-driver xdotool/);
+  assert.match(linuxGuest, /dnf install -y webkitgtk6\.0/);
+  assert.doesNotMatch(linuxGuest, /dnf install -y webkitgtk6\.0 xdotool/);
+  assert.match(JSON.stringify(golden), /xdotool installed per-run.*Ubuntu/);
 });
 
 test('host-boundary journeys retry only transient WebDriver disconnects', () => {

@@ -201,18 +201,19 @@ EOF
 chmod 700 "${auth_bin}/pkexec"
 
 current_step="desktop input dependencies"
-if ! command -v WebKitWebDriver >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1; then
+if ! command -v WebKitWebDriver >/dev/null 2>&1 ||
+  [[ "${ID}" == "ubuntu" && ! -x "$(command -v xdotool 2>/dev/null || true)" ]]; then
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver xdotool
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y webkitgtk6.0 xdotool
-  elif command -v rpm-ostree >/dev/null 2>&1; then
-    sudo rpm-ostree install --apply-live --assumeyes --idempotent xdotool
+    sudo dnf install -y webkitgtk6.0
   fi
 fi
 command -v WebKitWebDriver
-command -v xdotool
+if [[ "${ID}" == "ubuntu" ]]; then
+  command -v xdotool
+fi
 
 current_step="desktop session"
 desktop_pid=""
@@ -471,7 +472,7 @@ run_host_boundary() {
     operation_args+=(--upload-path "${download_path}")
   elif [[ "${operation}" == "artifact-download" ]]; then
     operation_args+=(--artifact-filename "${artifact_filename}")
-  elif [[ "${operation}" == "zoom" ]]; then
+  elif [[ "${operation}" == "zoom" && "${ID}" == "ubuntu" ]]; then
     operation_args+=(--native-input-tool "$(command -v xdotool)")
   elif [[ "${operation}" == "update-bridge" ]]; then
     operation_args+=(--expected-update-version "${update_version}")
