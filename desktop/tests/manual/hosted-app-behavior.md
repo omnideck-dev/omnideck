@@ -5,6 +5,11 @@
 Verify desktop integration and the boundary between the exact hosted loopback
 origin and the privileged local setup webview.
 
+The VM suite already proves hosted launch, downloaded/uploaded data transfer,
+and returning-user routing. This procedure reviews native picker presentation,
+clipboard, browser routing, shortcuts, single-instance focus, and close behavior
+that `manual-remainder.json` deliberately records as `not-run`.
+
 ## Procedure
 
 1. Start from a completed healthy setup and record the exact dynamic hosted
@@ -28,7 +33,8 @@ origin and the privileged local setup webview.
 9. On macOS, verify standard Edit-menu copy/paste accelerators.
 10. Close with the window control and the platform keyboard shortcut in separate
    runs. Confirm no OmniDeck host or orphaned sidecar process remains.
-11. Relaunch and confirm returning-user routing.
+11. Relaunch only to confirm the platform focuses the existing/single expected
+    application instance; use the automated result for returning-user routing.
 
 ## Security observation
 

@@ -29,10 +29,12 @@ Hosted CI owns deterministic source, supply-chain, build, and static artifact
 checks. Native hardware owns installation, display-server integration, GUI
 launch, packaged sidecar execution, and OS-specific behavior. The local VM E2E
 suite automates the real packaged setup/hosted/recovery and package lifecycle
-that native WebDriver and OS tooling can observe repeatably. Manual testing owns
-secure-desktop/reboot boundaries, trust warnings, subjective visual quality,
-and timing-dependent destructive recovery. No earlier layer substitutes for a
-later one, and the automated suite records its manual remainder as `not-run`.
+that native WebDriver and OS tooling can observe repeatably, including Windows
+SmartScreen, secure-desktop UAC, restart-now, and RunOnce reopening. Manual
+testing owns normal-browser and native macOS trust UX, unavailable targets,
+subjective desktop/visual behavior, live network or sleep transitions, and
+timing-dependent destructive recovery. No earlier layer substitutes for a later
+one, and the automated suite records its manual remainder as `not-run`.
 
 In this policy, `offline hardware/manual` means outside the always-on hosted CI
 path; it does not necessarily mean disconnected from the network. A genuinely
@@ -47,7 +49,7 @@ below.
 | Build + release contract | Release workflow | Six hosted build targets plus Ubuntu aggregator | None outside build artifacts | Up to 90 minutes | Protected publication approval |
 | Published release contract | Release owner | GitHub-hosted Ubuntu, public assets | None | 10-20 minutes | Candidate qualification |
 | Native packaged smoke | Platform tester assigned in the candidate record | Dedicated Windows/macOS/Linux desktop session | Windows installs the app; other runs mount/extract packages | 10-30 minutes per target | Architecture/package qualification |
-| Cross-distro package smoke | Desktop release owner | Disposable local Linux VM lab | Resets one leased guest; foreign DEB/RPM payloads are extracted per run | 5-15 minutes per cell | Additional compatibility evidence, not native lifecycle qualification |
+| Cross-distro package smoke | Desktop release owner | Disposable local Linux VM lab | Groups package cells by leased guest; foreign DEB/RPM payloads are extracted per run | 5-15 minutes per guest group | Additional compatibility evidence, not native lifecycle qualification |
 | Automated packaged journey | Desktop release owner | Disposable local Linux/Windows VM lab | Resets one leased guest and creates isolated app/runtime state | 20-90 minutes per lane | Local candidate regression gate |
 | Clean first run and recovery | Platform tester assigned in the candidate record | Disposable machine or restorable VM | May install runtimes, change WSL/features, reboot, and create containers/volumes | 1-3 hours per platform | Channel promotion |
 | Visual/platform fit | Human platform reviewer assigned in the candidate record | Representative displays and desktops | App/runtime state only | 30-60 minutes per platform | Beta, RC, and stable promotion |
@@ -84,10 +86,17 @@ Node/pnpm toolchain, run the same source gate in the pinned Linux builder:
 ./desktop/scripts/run-linux-builder.sh "pnpm run verify"
 ```
 
-The containerized build owns only checkout-mounted files and runs as the host
-UID/GID so `desktop/src-tauri/target` and downloaded sidecars remain editable.
-It provides build/test tooling; it does not turn a Linux cross-build into
-native Windows or macOS evidence.
+The generic containerized builder defaults to checkout-mounted output and runs
+as the host UID/GID. Automated candidate runs override Cargo, pnpm, and sidecar
+output roots into the lab's content-addressed cache so generated test files do
+not accumulate in the checkout. The builder provides build/test tooling; it
+does not turn a Linux cross-build into native Windows or macOS evidence.
+
+For VM qualification, do not invoke the build helpers separately: run
+`pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes`.
+It resolves immutable builder identities, builds once before leasing, caches the
+outputs, and runs the selected lanes. The direct helpers below remain available
+only for standalone package-development work.
 
 To build a local Linux desktop candidate with the fixed CLI worktree embedded,
 use the temporary sidecar override helper. It reads the release-pinned vendor
@@ -230,14 +239,16 @@ reset is not an uninstaller test.
 
 ## Manual requirements
 
-The checked-in procedures cover:
+The `tests/e2e/manual-remainder.json` record is authoritative. The checked-in
+procedures cover:
 
 - normal-browser download warnings and native macOS unsigned-package trust UX;
 - clean-machine behavior on targets without an available automation host;
 - clipboard, refresh, exact-origin navigation, external links, denied schemes,
   single-instance focus, clean exit, and returning-user behavior;
-- resume, update, doctor, interruption, network, port, runtime, uninstall, and
-  reinstall scenarios; and
+- live network interruption, sleep/wake, and destructive interruption timing;
+  deterministic resume, update, Doctor, occupied-port recovery, uninstall, and
+  reinstall are automated; and
 - theme, DPI, multi-monitor, accessibility, menus, icons, desktop integration,
   performance, sleep/wake, and platform fit.
 

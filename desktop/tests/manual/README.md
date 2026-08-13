@@ -1,8 +1,11 @@
 # Manual and agent-operated desktop release tests
 
-These procedures cover behavior that hosted CI cannot safely or reliably
-prove: OS trust prompts, runtime installation and elevation, restart/resume,
-real desktop integration, visual quality, and destructive recovery.
+These procedures cover the remainder that hosted CI and the disposable VM E2E
+suite cannot reliably prove: normal-browser warnings and native macOS trust UX,
+targets without an automation host, subjective desktop integration and visual
+quality, live network/sleep transitions, and timing-dependent destructive
+recovery. Windows SmartScreen, UAC, restart-now, RunOnce reopening, deterministic
+setup/recovery, and package lifecycle are automated VM coverage.
 
 Run them with the real published packages on disposable VMs or dedicated test
 machines. Never run the Windows reset on a development or personal computer.
@@ -24,6 +27,11 @@ The helpers under [`../../scripts/release-test`](../../scripts/release-test/READ
 download a selected release, verify its checksum and GitHub provenance, prepare
 the requested scenario, and launch it. They do not turn a visual/manual
 procedure into an automated pass.
+
+[`../e2e/manual-remainder.json`](../e2e/manual-remainder.json) is the
+machine-readable boundary. Perform only its `not-run` items after the automated
+candidate or published-release suite succeeds; never infer them from automation
+or count duplicated automated steps as separate manual evidence.
 
 Every execution must record:
 
