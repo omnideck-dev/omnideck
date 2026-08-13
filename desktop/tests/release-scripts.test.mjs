@@ -58,6 +58,8 @@ test('native package builds retry transient Tauri helper downloads', () => {
   assert.match(buildWithRetry, /const maxAttempts = 3/);
   assert.match(buildWithRetry, /attempt \* 5_000/);
   assert.match(buildWithRetry, /spawnSync\(`pnpm run \$\{packageScript\}`/);
+  assert.match(buildWithRetry, /targetByPackageScript/);
+  assert.match(buildWithRetry, /rmSync\(bundleDirectory, \{ recursive: true, force: true \}\)/);
 });
 
 test('macOS release packages contain a strict bundle-level signature', () => {
