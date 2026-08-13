@@ -13,6 +13,7 @@ const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
+const customAppFixture = await read('../tests/e2e/custom_app_fixture.py');
 const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
@@ -66,6 +67,15 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /EXPECTED_UPDATE_BRIDGE/);
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
+  assert.match(run, /custom_app_fixture\.py/);
+  assert.match(linuxGuest, /run_journey custom-app/);
+  assert.match(windows, /phase_command CustomAppFixture/);
+  assert.match(windows, /run_journey custom-app/);
+  assert.match(windowsGuest, /"CustomAppFixture"/);
+  assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);
+  assert.match(driver, /invoked-after-restart/);
+  assert.match(customAppFixture, /Desktop Custom App Smoke/);
+  assert.match(customAppFixture, /window\.omnideck\.invoke/);
   assert.match(run, /host_boundary_client\.py/);
   assert.match(windows, /host_boundary_client\.py/);
   assert.match(linuxGuest, /native host download/);
@@ -76,6 +86,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /Export navigated the hosted application/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
+  assert.doesNotMatch(customAppFixture, /mockIPC|mock_invoke|dev server/i);
 });
 
 test('documented pnpm argument separators are accepted by both VM lanes', () => {

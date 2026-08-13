@@ -236,6 +236,7 @@ remote_staged=1
 "${lab_dir}/lab.sh" copy-to "${vm}" "${artifact}" "${remote_root}/candidate.${bundle}"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${build_dir}/tauri-driver-root/bin/tauri-driver" "${remote_root}/tauri-driver"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/webdriver_client.py" "${remote_root}/webdriver_client.py"
+"${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/custom_app_fixture.py" "${remote_root}/custom_app_fixture.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/host_boundary_client.py" "${remote_root}/host_boundary_client.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/polkit_agent.py" "${remote_root}/polkit_agent.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/linux_guest.sh" "${remote_root}/linux_guest.sh"
@@ -251,7 +252,7 @@ ssh_options=(
   -o ConnectTimeout=8
   -p "${ssh_port}"
 )
-remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/host_boundary_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
+remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/custom_app_fixture.py' '${remote_root}/host_boundary_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
 
 printf 'Running packaged smoke and attended Desktop journeys.\n'
 printf 'mode=target-scoped-pkttyagent; trigger=polkit-password; response=disposable-guest-password\n' \

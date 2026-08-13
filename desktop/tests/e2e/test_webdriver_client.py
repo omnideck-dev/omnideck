@@ -86,6 +86,34 @@ class TransientHostedDriver(FakeDriver):
         }
 
 
+class CustomAppDriver(FakeDriver):
+    def handles(self) -> list[str]:
+        return ["hosted"]
+
+    def switch_window(self, _handle: str) -> None:
+        return
+
+    def execute(self, script: str) -> dict[str, object]:
+        if script == CLIENT.CUSTOM_APP_NAVIGATE_SCRIPT:
+            return {"navigationFound": True}
+        if script == CLIENT.CUSTOM_APP_OPEN_SCRIPT:
+            return {"cardFound": True}
+        if script == CLIENT.CUSTOM_APP_STATE_SCRIPT:
+            return {
+                "frameFound": True,
+                "frameUrl": "http://127.0.0.1:2338/api/custom-apps/desktop-smoke/web/",
+                "title": CLIENT.CUSTOM_APP_TITLE,
+                "bridgeAvailable": True,
+                "result": CLIENT.CUSTOM_APP_RESULT,
+            }
+        return {
+            "url": "http://127.0.0.1:2338/",
+            "bodyText": "",
+            "buttonTexts": [],
+            "selectorFound": True,
+        }
+
+
 class UnsupportedClickDriver(CLIENT.WebDriver):
     def __init__(self) -> None:
         super().__init__("http://unused.invalid")
@@ -298,6 +326,33 @@ class WebDriverClientTests(unittest.TestCase):
 
             self.assertEqual(value["url"], "http://127.0.0.1:2338/")
             self.assertEqual(driver.handle_attempts, 2)
+
+    def test_custom_app_invokes_through_the_hosted_iframe_and_records_evidence(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            markers = root / "markers"
+            evidence.mkdir()
+            markers.mkdir()
+            journey = CLIENT.Journey(
+                CustomAppDriver(), parity, evidence, markers, 2, False, initial
+            )
+
+            result = journey.run_custom_app("initial")
+
+            self.assertEqual(result, CLIENT.CUSTOM_APP_RESULT)
+            recorded = json.loads(
+                (evidence / "custom-app-initial.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(recorded["bridgeAvailable"])
+            self.assertEqual(recorded["result"], CLIENT.CUSTOM_APP_RESULT)
+            self.assertEqual(
+                (markers / "custom-app-initial").read_text(encoding="utf-8"),
+                CLIENT.CUSTOM_APP_RESULT + "\n",
+            )
 
     def test_click_uses_dom_only_when_native_driver_declares_unsupported(self) -> None:
         driver = UnsupportedClickDriver()
