@@ -86,6 +86,37 @@ class TransientHostedDriver(FakeDriver):
         }
 
 
+class StalledReadyDriver(FakeDriver):
+    def __init__(self) -> None:
+        self.opened = False
+        self.clicked: list[str] = []
+
+    def handles(self) -> list[str]:
+        return ["hosted" if self.opened else "setup"]
+
+    def switch_window(self, _handle: str) -> None:
+        return
+
+    def click(self, selector: str) -> None:
+        self.clicked.append(selector)
+        self.opened = True
+
+    def execute(self, _script: str) -> dict[str, object]:
+        if self.opened:
+            return {
+                "url": "http://127.0.0.1:2338/",
+                "bodyText": "Welcome to Omnideck",
+                "buttonTexts": ["Get Started"],
+                "selectorFound": True,
+            }
+        return {
+            "url": "tauri://localhost/",
+            "bodyText": "omnideck is ready",
+            "buttonTexts": ["Open omnideck"],
+            "selectorFound": False,
+        }
+
+
 class CustomAppDriver(FakeDriver):
     def handles(self) -> list[str]:
         return ["hosted"]
@@ -326,6 +357,36 @@ class WebDriverClientTests(unittest.TestCase):
 
             self.assertEqual(value["url"], "http://127.0.0.1:2338/")
             self.assertEqual(driver.handle_attempts, 2)
+
+    def test_hosted_wait_recovers_a_stalled_ready_window_with_evidence(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            markers = root / "markers"
+            evidence.mkdir()
+            markers.mkdir()
+            driver = StalledReadyDriver()
+            journey = CLIENT.Journey(
+                driver, parity, evidence, markers, 4, False, initial,
+                hosted_action="Get Started",
+            )
+
+            value = journey.wait_for_hosted(
+                "Welcome to Omnideck", '[data-testid="desktop-layout"]'
+            )
+
+            self.assertEqual(value["url"], "http://127.0.0.1:2338/")
+            self.assertEqual(driver.clicked, ["#primary"])
+            self.assertEqual(
+                json.loads((evidence / "hosted-open-recovery.json").read_text()),
+                {"status": "recovered", "action": "Open omnideck", "attempts": 1},
+            )
+            self.assertEqual(
+                (markers / "hosted-open-recovery").read_text(), "attempt=1\n"
+            )
 
     def test_custom_app_invokes_through_the_hosted_iframe_and_records_evidence(self) -> None:
         parity, initial = CLIENT.load_contract(

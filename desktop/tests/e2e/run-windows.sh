@@ -160,6 +160,7 @@ initial_reset=0
 remote_staged=0
 driver_ssh_pid=""
 test_status=1
+qualification_complete=0
 
 mkdir -p "${build_dir}" "${evidence_dir}" "${screenshot_dir}" "${marker_root}"
 desktop_builder_id="$(<"${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE:?prepared tauri-driver cache required}/builder-image.txt")"
@@ -180,6 +181,10 @@ fi
 cleanup() {
   local exit_code=$?
   set +e
+  if [[ "${exit_code}" == "0" && "${qualification_complete}" != "1" ]]; then
+    printf 'Desktop E2E stopped before its evidence was validated.\n' >&2
+    exit_code=1
+  fi
   if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
     kill "${driver_ssh_pid}" 2>/dev/null || true
     wait "${driver_ssh_pid}" 2>/dev/null || true
@@ -334,6 +339,7 @@ printf '%s\n' "${trust_result}" > "${output_dir}/trust-ui-result.txt"
 "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/trust.json" "${output_dir}/trust.json"
 
 phase_command Prepare | tee "${output_dir}/prepare.log"
+phase_command SeedUpdateFixture | tee "${output_dir}/update-fixture-path.txt"
 if [[ "${security_mode}" == "1" ]]; then
   phase_command ConfigureClean | tee "${output_dir}/configure-clean.log"
 fi
@@ -389,7 +395,7 @@ start_driver() {
   ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel-${driver_start_count}.log" 2>&1 &
   driver_ssh_pid=$!
   printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid"
-  for _ in $(seq 1 480); do
+  for attempt in $(seq 1 480); do
     if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
       break
     fi
@@ -398,7 +404,7 @@ start_driver() {
       printf 'Windows tauri-driver exited before becoming ready.\n' >&2
       return 1
     }
-    if (( _ % 10 == 0 )); then
+    if (( attempt % 10 == 0 )); then
       task_state="$("${lab_dir}/lab.sh" run windows \
         "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-ScheduledTask -TaskName '${driver_task_name}').State\"" \
         2>/dev/null | tr -d '\r' || true)"
@@ -568,6 +574,7 @@ complete_clean_security_setup() {
     return 1
   }
   printf 'before=%s\nafter=%s\n' "${boot_before}" "${boot_after}" > "${output_dir}/reboot-proof.txt"
+  phase_command PatchRunOnce | tee "${output_dir}/runonce-patch.log"
 
   printf 'Signing into the rebooted graphical session so Windows can consume RunOnce.\n'
   if ! "${lab_dir}/lab.sh" run windows \
@@ -675,7 +682,7 @@ if [[ "${test_status}" == "0" ]]; then
     artifact_download_path="$(verify_artifact_download | tr -d '\r' | tail -n 1)"
     [[ "${artifact_download_path}" == [A-Za-z]:\\* ]]
     run_host_boundary zoom
-    phase_command SeedUpdateFixture
+    phase_command PromoteUpdateFixture
     run_host_boundary update-bridge
     phase_command Final
   )
@@ -746,4 +753,7 @@ node "${desktop_root}/tests/hardware/validate-proof.mjs" \
   --application "${artifact}" \
   --report "${evidence_dir}/guest/smoke/report.json"
 
+if [[ "${test_status}" == "0" ]]; then
+  qualification_complete=1
+fi
 exit "${test_status}"

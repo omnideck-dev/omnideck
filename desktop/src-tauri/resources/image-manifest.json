@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
   "appVersion": "0.1.0-beta.5",
-  "imageVersion": "0.1.3",
-  "imageRef": "ghcr.io/omnideck-dev/omnideck@sha256:4b1ccb829c22a2101ceb218d348c5589e64f7b74cdbfea0cfe4d5df9541e749e"
+  "imageVersion": "0.1.4",
+  "imageRef": "ghcr.io/omnideck-dev/omnideck@sha256:b04615f5373a8e57fe54820abde664f8943df66323467a30219e34b4a6b8a9bf"
 }

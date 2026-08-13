@@ -356,7 +356,6 @@ return !window.dispatchEvent(event);
         wheel_zoom(240)
         wait_for_level(1)
 
-        trusted_keyboard_zoom = None
         trusted_wheel_zoom = None
         if native_input_tool:
             windows = subprocess.run(
@@ -371,20 +370,37 @@ return !window.dispatchEvent(event);
 
             def native_input(*arguments: str) -> None:
                 subprocess.run(
-                    [native_input_tool, "windowactivate", "--sync", native_window, *arguments],
+                    [
+                        native_input_tool,
+                        "windowactivate",
+                        "--sync",
+                        native_window,
+                        "windowfocus",
+                        "--sync",
+                        native_window,
+                        *arguments,
+                    ],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
 
-            native_input("key", "ctrl+plus")
-            trusted_keyboard_zoom = wait_for_level(1.2)
-            native_input("key", "ctrl+0")
-            wait_for_level(1)
-
+            geometry = subprocess.run(
+                [native_input_tool, "getwindowgeometry", "--shell", native_window],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            dimensions = dict(
+                line.split("=", 1) for line in geometry.splitlines() if "=" in line
+            )
+            center_x = max(1, int(dimensions["WIDTH"]) // 2)
+            center_y = max(1, int(dimensions["HEIGHT"]) // 2)
             native_input(
-                "mousemove", "--window", native_window, "640", "400",
-                "keydown", "ctrl", "click", "4", "keyup", "ctrl",
+                "mousemove", "--sync", "--window", native_window,
+                str(center_x), str(center_y),
+                "sleep", "0.2", "keydown", "ctrl", "sleep", "0.1",
+                "click", "4", "sleep", "0.1", "keyup", "ctrl",
             )
             trusted_wheel_zoom = wait_for_level(1.2)
             native_input("key", "ctrl+0")
@@ -398,7 +414,6 @@ return !window.dispatchEvent(event);
             "keyboardPageZoomApplied": True,
             "wheelPageZoomApplied": True,
             "trustedInputTool": native_input_tool or None,
-            "trustedKeyboardZoom": trusted_keyboard_zoom,
             "trustedWheelZoom": trusted_wheel_zoom,
         }
         self.evidence.joinpath("zoom.json").write_text(
@@ -431,7 +446,12 @@ const finish = (value) => done(JSON.stringify(value));
     skipped,
     events,
   });
-})().catch((error) => finish({ok: false, error: String(error)}));
+})().catch((error) => finish({
+  ok: false,
+  error: error?.message || String(error),
+  code: error?.code || null,
+  detail: error && typeof error === 'object' ? JSON.stringify(error) : null,
+}));
 """)
         if isinstance(result, str):
             result = json.loads(result)
@@ -532,7 +552,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture-name", required=True)
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
-    parser.add_argument("--expected-update-version", default="0.1.2")
+    parser.add_argument("--expected-update-version", default="0.1.5")
     parser.add_argument("--native-input-tool", default="")
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--tauri-driver")

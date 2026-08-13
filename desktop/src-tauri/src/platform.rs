@@ -41,9 +41,7 @@ pub fn resource_name(base: &str) -> String {
 }
 
 pub fn machine_name() -> String {
-    test_namespace()
-        .map(|namespace| format!("odrt-{namespace}"))
-        .unwrap_or_else(|| "omnideck-runtime".to_owned())
+    "omnideck-runtime".to_owned()
 }
 
 pub fn user_data_dir() -> BridgeResult<PathBuf> {
@@ -210,7 +208,7 @@ mod tests {
     fn production_resource_names_are_stable() {
         if std::env::var_os("OMNIDECK_DESKTOP_TEST_NAMESPACE").is_none() {
             assert_eq!(resource_name("omnideck-desktop"), "omnideck-desktop");
-            assert_eq!(machine_name(), "omnideck-runtime");
         }
+        assert_eq!(machine_name(), "omnideck-runtime");
     }
 }

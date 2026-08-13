@@ -12,6 +12,7 @@ const linuxBuilder = await read('../scripts/run-linux-builder.sh');
 const windowsBuilder = await read('../scripts/run-windows-builder.sh');
 const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
+const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
@@ -58,6 +59,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windows, /windows_snapshots=/);
   assert.match(windows, /cancel-approve/);
   assert.match(windows, /RunOnceProof/);
+  assert.match(windows, /phase_command PatchRunOnce/);
   assert.match(windows, /LastBootUpTime/);
   assert.match(windows, /smartscreen-warning/);
   assert.match(windows, /warning-observed/);
@@ -81,8 +83,28 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windows, /phase_command CustomAppFixture/);
   assert.match(windows, /run_journey custom-app/);
   assert.match(windowsGuest, /"CustomAppFixture"/);
+  assert.match(windowsStartDriver, /ToLowerInvariant\(\)/);
+  assert.match(windowsStartDriver, /replace '\[\^a-z0-9-\]'/);
+  assert.match(windowsStartDriver, /Length -gt 40/);
+  assert.match(windowsGuest, /\$ContainerName = "omnideck-desktop-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$HomeVolume = "omnideck-desktop-home-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
+  assert.match(windowsGuest, /\$MachineName = "omnideck-runtime"/);
+  assert.match(windowsGuest, /"PatchRunOnce"/);
+  assert.match(windowsGuest, /windows_resume\.ps1/);
+  assert.match(
+    windowsGuest,
+    /SetEnvironmentVariable\("OMNIDECK_DESKTOP_TEST_NAMESPACE", \$TestNamespace, "User"\)/,
+  );
+  assert.match(windowsGuest, /"OMNIDECK_DESKTOP_UPDATE_FIXTURE"/);
+  assert.match(windows, /for attempt in \$\(seq 1 480\)/);
+  assert.match(windows, /attempt % 10 == 0/);
+  assert.match(windowsGuest, /os\.environ\['E2E_ARTIFACT_FILENAME'\]/);
+  assert.doesNotMatch(windowsGuest, /os\.environ\["E2E_ARTIFACT_FILENAME"\]/);
   assert.match(driver, /CUSTOM_APP_STATE_SCRIPT/);
   assert.match(driver, /invoked-after-restart/);
+  assert.match(driver, /desktopSmokeLastAttempt/);
+  assert.match(driver, /button && bridgeAvailable/);
   assert.match(customAppFixture, /Desktop Custom App Smoke/);
   assert.match(customAppFixture, /window\.omnideck\.invoke/);
   assert.match(run, /host_boundary_client\.py/);
@@ -109,11 +131,26 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /document\.documentElement\.style\.zoom/);
   assert.match(hostBoundaryDriver, /trustedWheelZoom/);
   assert.match(hostBoundaryDriver, /windowactivate/);
+  assert.match(hostBoundaryDriver, /windowfocus/);
+  assert.match(hostBoundaryDriver, /getwindowgeometry/);
+  assert.match(hostBoundaryDriver, /center_x/);
   assert.match(linuxGuest, /--native-input-tool/);
+  assert.match(linuxGuest, /"\$\{operation\}" == "zoom" && "\$\{ID\}" == "ubuntu"/);
   assert.match(hostBoundaryDriver, /checkForUpdate/);
+  assert.match(hostBoundaryDriver, /error\?\.message/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(driver, /mockIPC|mock_invoke|dev server/i);
   assert.doesNotMatch(customAppFixture, /mockIPC|mock_invoke|dev server/i);
+  assert.ok(
+    windows.indexOf('phase_command SeedUpdateFixture')
+      < windows.indexOf('start_driver skip'),
+    'the Windows update fixture must exist before the first app launch',
+  );
+  assert.ok(
+    windows.indexOf('phase_command PromoteUpdateFixture')
+      < windows.indexOf('run_host_boundary update-bridge'),
+    'the Windows update fixture must become newer immediately before its bridge journey',
+  );
 });
 
 test('documented pnpm argument separators are accepted by both VM lanes', () => {
@@ -126,6 +163,12 @@ test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
   assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);
   assert.match(windows, /evidence-finish/);
+  assert.match(run, /qualification_complete=0/);
+  assert.match(run, /stopped before its evidence was validated/);
+  assert.match(run, /qualification_complete=1/);
+  assert.match(windows, /qualification_complete=0/);
+  assert.match(windows, /stopped before its evidence was validated/);
+  assert.match(windows, /qualification_complete=1/);
   assert.match(purge, /runs purge/);
   assert.match(qualifier, /artifact-path desktop release/);
   assert.match(qualifier, /releasecontract\/verify-release\.mjs/);
@@ -230,4 +273,34 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.match(windows, /lab\.sh" preflight/);
   assert.match(run, /--cleanup-baseline clean/);
   assert.match(windows, /--cleanup-baseline clean/);
+});
+
+test('current Linux guests install only the input dependencies their lane uses', () => {
+  assert.match(linuxGuest, /apt-get install -y -qq webkit2gtk-driver xdotool/);
+  assert.match(linuxGuest, /dnf install -y webkitgtk6\.0/);
+  assert.doesNotMatch(linuxGuest, /dnf install -y webkitgtk6\.0 xdotool/);
+  assert.match(JSON.stringify(golden), /xdotool installed per-run.*Ubuntu/);
+});
+
+test('host-boundary journeys retry only transient WebDriver disconnects', () => {
+  assert.match(linuxGuest, /for attempt in 1 2 3/);
+  assert.match(
+    linuxGuest,
+    /WebDriverError:\.\*\(Remote end closed\|Connection reset\|Connection refused\)/,
+  );
+  assert.match(linuxGuest, /transient-failure-attempt-/);
+});
+
+test('the updater bridge fixture is newer than the bundled runtime image', async () => {
+  const fixtureVersion = linuxGuest.match(/update_version="([^"]+)"/)?.[1];
+  const imageVersion = JSON.parse(
+    await read('../src-tauri/resources/image-manifest.json'),
+  ).imageVersion;
+  assert.ok(fixtureVersion);
+  assert.ok(
+    fixtureVersion.localeCompare(imageVersion, undefined, { numeric: true }) > 0,
+    `${fixtureVersion} must be newer than ${imageVersion}`,
+  );
+  assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
+  assert.match(windowsGuest, /version = "0\.1\.5"/);
 });

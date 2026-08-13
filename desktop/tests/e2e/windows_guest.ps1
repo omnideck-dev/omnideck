@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -22,9 +22,12 @@ $CliConfig = Join-Path $WorkDir "cli-config"
 $Installer = Join-Path $WorkDir "candidate-setup.exe"
 $ApplicationFile = Join-Path $WorkDir "application-path.txt"
 $StatePath = Join-Path $UserData "setup-state.json"
-$ContainerName = "omnideck-desktop"
-$HomeVolume = "omnideck-desktop-home"
-$StateVolume = "omnideck-desktop-state"
+$TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
+if ($TestNamespace.Length -gt 40) { $TestNamespace = $TestNamespace.Substring(0, 40) }
+if (-not $TestNamespace) { throw "The Windows test namespace is empty after normalization." }
+$ContainerName = "omnideck-desktop-$TestNamespace"
+$HomeVolume = "omnideck-desktop-home-$TestNamespace"
+$StateVolume = "omnideck-desktop-state-$TestNamespace"
 $MachineName = "omnideck-runtime"
 
 New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
@@ -291,6 +294,12 @@ switch ($Phase) {
     "ConfigureClean" {
         [Environment]::SetEnvironmentVariable("OMNIDECK_DESKTOP_USER_DATA", $UserData, "User")
         [Environment]::SetEnvironmentVariable("OMNIDECK_CONFIG_DIR", $CliConfig, "User")
+        [Environment]::SetEnvironmentVariable("OMNIDECK_DESKTOP_TEST_NAMESPACE", $TestNamespace, "User")
+        [Environment]::SetEnvironmentVariable(
+            "OMNIDECK_DESKTOP_UPDATE_FIXTURE",
+            (Join-Path $WorkDir "update-fixture.json"),
+            "User"
+        )
         Remove-ItemProperty `
             -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
             -Name "omnideckSetupResume" `
@@ -312,6 +321,40 @@ switch ($Phase) {
         Start-PodmanMachine
         Write-Inventory "before"
         Write-Host "RUNTIME PRESERVED machine=$MachineName"
+    }
+    "PatchRunOnce" {
+        $Application = (Get-Content -LiteralPath $ApplicationFile -Raw).Trim()
+        if (-not (Test-Path -LiteralPath $Application -PathType Leaf)) {
+            throw "The installed application is missing before RunOnce patching."
+        }
+        $RunOncePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        $Registered = Get-ItemPropertyValue `
+            -Path $RunOncePath `
+            -Name "omnideckSetupResume" `
+            -ErrorAction Stop
+        if (-not ([string]$Registered).Contains($Application)) {
+            throw "The omnideck RunOnce command does not target the installed application."
+        }
+        $ResumeScript = Join-Path $WorkDir "windows_resume.ps1"
+        $EscapeLiteral = {
+            param([string]$Value)
+            $Value.Replace("'", "''")
+        }
+        $Lines = @(
+            "`$ErrorActionPreference = 'Stop'",
+            "`$env:OMNIDECK_DESKTOP_USER_DATA = '$(& $EscapeLiteral $UserData)'",
+            "`$env:OMNIDECK_CONFIG_DIR = '$(& $EscapeLiteral $CliConfig)'",
+            "`$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = '$(& $EscapeLiteral $TestNamespace)'",
+            "`$env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = '$(& $EscapeLiteral (Join-Path $WorkDir 'update-fixture.json'))'",
+            "Start-Process -FilePath '$(& $EscapeLiteral $Application)'"
+        )
+        [IO.File]::WriteAllLines($ResumeScript, $Lines, [Text.UTF8Encoding]::new($false))
+        $ResumeCommand = "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$ResumeScript`""
+        Set-ItemProperty `
+            -Path $RunOncePath `
+            -Name "omnideckSetupResume" `
+            -Value $ResumeCommand
+        Write-Host "RUNONCE PATCHED namespace=$TestNamespace"
     }
     "RunOnceProof" {
         $RunOnce = Get-ItemProperty `
@@ -498,7 +541,10 @@ switch ($Phase) {
             throw "ArtifactFilename must be a leaf filename."
         }
         $Contents = "native artifact download $ArtifactFilename"
-        $Python = 'import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ["E2E_ARTIFACT_FILENAME"]; path=Path("/home/computron") / name; path.write_text(os.environ["E2E_ARTIFACT_CONTENTS"], encoding="utf-8"); record_artifact(conversation_id="desktop-vm-artifact", path=str(path), filename=name, content_type="text/plain", agent_name="Desktop VM", sent_at="2026-08-12T00:00:00Z")'
+        # Windows PowerShell strips embedded double quotes when forwarding a
+        # native-process argument. Keep this Python payload single-quoted so
+        # podman passes it to `python -c` byte-for-byte.
+        $Python = "import os; from pathlib import Path; from artifacts import record_artifact; name=os.environ['E2E_ARTIFACT_FILENAME']; path=Path('/home/computron') / name; path.write_text(os.environ['E2E_ARTIFACT_CONTENTS'], encoding='utf-8'); record_artifact(conversation_id='desktop-vm-artifact', path=str(path), filename=name, content_type='text/plain', agent_name='Desktop VM', sent_at='2026-08-12T00:00:00Z')"
         Invoke-Engine exec --env "E2E_ARTIFACT_FILENAME=$ArtifactFilename" --env "E2E_ARTIFACT_CONTENTS=$Contents" $ContainerName python -c $Python | Out-Null
         Write-Host $Contents
     }
@@ -530,7 +576,16 @@ switch ($Phase) {
     "SeedUpdateFixture" {
         $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
         $Value = [ordered]@{
-            version = "0.1.2"
+            version = "0.1.4"
+            imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
+        } | ConvertTo-Json
+        [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
+        Write-Host $UpdateFixture
+    }
+    "PromoteUpdateFixture" {
+        $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
+        $Value = [ordered]@{
+            version = "0.1.5"
             imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
         } | ConvertTo-Json
         [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
