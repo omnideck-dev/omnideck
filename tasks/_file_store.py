@@ -273,6 +273,8 @@ class FileTaskStore:
             run_path = routine_dir / "runs" / f"{run_id}.json"
             if run_path.exists():
                 data = self._read_json(run_path)
+                if data is None:
+                    return []
                 conv_ids = [
                     tr["conversation_id"]
                     for tr in data.get("task_results", [])

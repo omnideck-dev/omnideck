@@ -4,6 +4,7 @@ import importlib
 import logging
 import os
 from pathlib import Path
+from typing import Any, cast
 
 from config import load_config
 from settings import load_settings
@@ -46,7 +47,7 @@ def _proxy_socket_path(provider: str) -> Path:
     return sockets_dir / f"llm_{provider}.sock"
 
 
-def _provider_class(provider_name: str) -> type:
+def _provider_class(provider_name: str) -> type[Provider]:
     """Resolve the provider class for a name, raising on unknown names."""
     path = _PROVIDER_PATHS.get(provider_name)
     if path is None:
@@ -54,7 +55,7 @@ def _provider_class(provider_name: str) -> type:
         raise ValueError(msg)
     module_path, cls_name = path.rsplit(":", 1)
     module = importlib.import_module(module_path)
-    return getattr(module, cls_name)
+    return cast(type[Provider], getattr(module, cls_name))
 
 
 def _create_provider(provider_name: str) -> Provider:
@@ -75,7 +76,7 @@ def _create_provider(provider_name: str) -> Provider:
 
     proxy_socket = _proxy_socket_path(provider_name)
     if proxy_socket.exists():
-        instance = cls(proxy_socket=proxy_socket)
+        instance = cast(Any, cls)(proxy_socket=proxy_socket)
         logger.info("Initialized LLM provider: %s (via broker at %s)", provider_name, proxy_socket)
         return instance
 

@@ -7,13 +7,18 @@ categories the flags expose, grounding tools following visual grounding, and
 integration categories resolving (or staying empty) by connection state.
 """
 
+import inspect
 from types import SimpleNamespace
 
 import pytest
 
 from config import FeaturesConfig
 from integrations.permissions import Access, Capability
+from sdk.skills._resolve import _base_tools
+from sdk.skills._tool_categories import _custom_tools_category
 from sdk.skills._tool_categories import _static_tool_categories, tool_categories
+from sdk.tools._callable_schema import callable_to_json_schema
+from tools.integrations._tool_resolution import _BUILDERS
 from tools.integrations.types import RegisteredIntegration
 
 _STATIC_IDS = {
@@ -83,6 +88,41 @@ async def test_each_category_has_metadata():
     for c in (await tool_categories()).values():
         assert c.label, f"{c.id} missing label"
         assert c.description, f"{c.id} missing description"
+
+
+@pytest.mark.unit
+async def test_agent_tools_have_schema_ready_google_docstrings():
+    """Require agent-visible descriptions and Google-style argument docs."""
+    exposed_tools = _base_tools(allow_spawn=True, allow_load_skills=True)
+    for category in (await tool_categories()).values():
+        exposed_tools.extend(category.tools)
+    exposed_tools.extend(_custom_tools_category().tools)
+    for tiers in _BUILDERS.values():
+        for builders in tiers.values():
+            exposed_tools.extend(build(["example"]) for build in builders)
+
+    errors: list[str] = []
+    for tool in {tool.__name__: tool for tool in exposed_tools}.values():
+        signature = inspect.signature(tool)
+        missing_types = [
+            name for name, parameter in signature.parameters.items()
+            if parameter.annotation is inspect.Parameter.empty
+        ]
+        if missing_types:
+            errors.append(f"{tool.__name__}: untyped args: {', '.join(missing_types)}")
+        if signature.return_annotation is inspect.Signature.empty:
+            errors.append(f"{tool.__name__}: missing return type")
+        schema = callable_to_json_schema(tool)["function"]
+        if not schema["description"]:
+            errors.append(f"{tool.__name__}: missing summary")
+        properties = schema["parameters"]["properties"]
+        if properties and "Args:" not in (inspect.getdoc(tool) or ""):
+            errors.append(f"{tool.__name__}: parameters must use a Google-style Args: section")
+        missing_args = [name for name, prop in properties.items() if not prop.get("description")]
+        if missing_args:
+            errors.append(f"{tool.__name__}: undocumented args: {', '.join(missing_args)}")
+
+    assert not errors, "\n".join(errors)
 
 
 @pytest.mark.unit

@@ -172,7 +172,7 @@ class Tab:
             options["quality"] = quality
         if timeout_ms is not None:
             options["timeout"] = timeout_ms
-        return await self._page.screenshot(**options)  # type: ignore[arg-type]
+        return await self._page.screenshot(**options)
 
     @asynccontextmanager
     async def capture_console(self) -> AsyncIterator[list[str]]:
