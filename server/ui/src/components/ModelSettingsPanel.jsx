@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 import ToggleSwitch from './ToggleSwitch.jsx';
+import Select from './primitives/Select.jsx';
 import localStyles from './ModelSettingsPanel.module.css';
 
 const SETTING_TIPS = {
@@ -89,20 +90,20 @@ export default function ModelSettingsPanel({ settings, disabled }) {
     return (
         <div className={localStyles.body}>
             {/* Model selector */}
-            <label className={localStyles.row}>
+            <div className={localStyles.row}>
                 <span className={localStyles.label}>Model<InfoTip text={SETTING_TIPS.model} /></span>
-                <select
+                <Select
                     className={localStyles.select}
                     value={selectedModel}
-                    onChange={(e) => onModelChange(e.target.value)}
+                    onChange={onModelChange}
                     disabled={disabled}
-                    aria-label="Model name"
-                >
-                    {(models || []).map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-            </label>
+                    ariaLabel="Model name"
+                    options={(models || []).map((model) => ({
+                        value: model,
+                        label: model,
+                    }))}
+                />
+            </div>
 
             {/* Preset cards */}
             <div className={localStyles.sectionLabel}>

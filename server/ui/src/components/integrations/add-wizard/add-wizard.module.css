@@ -696,25 +696,8 @@
 
 .accessSelect {
     flex-shrink: 0;
-    height: 30px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--canvas);
-    color: var(--text-primary);
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-    transition: border-color 150ms var(--ease);
-}
-
-.accessSelect:focus {
-    border-color: var(--accent);
-}
-
-.accessSelect:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
+    --select-width: 190px;
+    --select-font-size: 12px;
 }
 
 /* Buttons: footer Cancel / Back / Next / Save / etc. now render via the

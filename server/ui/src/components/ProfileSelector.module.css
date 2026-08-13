@@ -1,31 +1,5 @@
 .select {
-    font-family: var(--font-brand);
-    font-size: 0.75rem;
-    height: 26px;
-    padding: 0 0.4rem;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-primary);
-    cursor: pointer;
-    appearance: auto;
-    outline: none;
-    transition: border-color 120ms ease;
-}
-
-.select option {
-    background: var(--surface);
-    color: var(--text-primary);
-}
-
-.select:hover:not(:disabled) {
-    border-color: var(--border-strong);
-}
-
-/* No focus accent of its own — the composer card's focus-within ring is
-   the focus signal; a second accent border here just reads as clutter. */
-
-.select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    min-width: 150px;
+    --select-font-family: var(--font-brand);
+    --select-font-size: 0.75rem;
 }

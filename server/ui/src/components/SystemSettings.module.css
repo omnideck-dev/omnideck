@@ -111,26 +111,9 @@
 
 /* Dropdown select */
 .select {
-    width: 180px;
+    --select-width: 180px;
     flex-shrink: 0;
-    height: 30px;
-    font-size: 0.8rem;
-    padding: 0 0.4rem;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    background: var(--canvas);
-    color: var(--text-primary);
-    cursor: pointer;
-}
-
-.select option {
-    background: var(--surface);
-    color: var(--text-primary);
-}
-
-.select:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    --select-font-size: 0.8rem;
 }
 
 /* Model defaults are one semantic group with independently sized rows. */

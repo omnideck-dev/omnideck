@@ -11,6 +11,7 @@ import WrenchIcon from './icons/WrenchIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon';
 import SparkleIcon from './icons/SparkleIcon';
 import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
+import Select from './primitives/Select.jsx';
 import { useIsHosted } from '../features/app/OmnideckHost.jsx';
 
 export default function SystemSettings() {
@@ -191,15 +192,17 @@ export default function SystemSettings() {
                     <span className={styles.settingTitle}>Default Agent</span>
                     <span className={styles.settingDesc}>The agent profile used as the system agent.</span>
                 </div>
-                <select
+                <Select
                     className={styles.select}
                     value={settings.default_agent || 'omnideck'}
-                    onChange={(e) => updateSetting('default_agent', e.target.value)}
-                >
-                    {profiles.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                </select>
+                    onChange={(value) => updateSetting('default_agent', value)}
+                    ariaLabel="Default agent"
+                    testId="default-agent-select"
+                    options={profiles.map((profile) => ({
+                        value: profile.id,
+                        label: profile.name,
+                    }))}
+                />
             </div>
 
             {/* Model defaults */}
