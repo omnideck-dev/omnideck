@@ -284,9 +284,7 @@ function restoreLayoutState(rawLayout) {
     const restoredFocusedFloatingViewId = restoredViewId(
         rawLayout.focusedFloatingViewId,
     );
-    const focusedFloatingViewId = Boolean(
-        floatingByViewId[restoredFocusedFloatingViewId],
-    )
+    const focusedFloatingViewId = floatingByViewId[restoredFocusedFloatingViewId]
         ? restoredFocusedFloatingViewId
         : null;
     const floatingZCounter = Math.max(

@@ -83,8 +83,10 @@ def _emit(payload: dict[str, Any]) -> None:
             "ok": False,
             "error": {"code": "RESULT_NOT_JSON", "message": f"Action result is not JSON-compatible: {exc}"},
         })
-    sys.__stdout__.write(encoded)
-    sys.__stdout__.flush()
+    output = sys.__stdout__
+    assert output is not None
+    output.write(encoded)
+    output.flush()
 
 
 def main() -> None:

@@ -79,11 +79,14 @@ class AppSockHandler:
         perms_raw = args.get("permissions")
         if not isinstance(perms_raw, dict):
             raise RpcError("BAD_REQUEST", "'permissions' required (dict)")
+        auth_blob = args.get("auth_blob")
+        if not isinstance(auth_blob, dict):
+            raise RpcError("BAD_REQUEST", "auth_blob must be a dict")
         record = await self._manager.add(
             slug=_require_str(args, "slug"),
             user_suffix=args.get("user_suffix") or None,
             label=_require_str(args, "label"),
-            auth_blob=args.get("auth_blob"),
+            auth_blob=auth_blob,
             permissions=permissions_from_dict(perms_raw),
         )
         return _record_to_dict(record)

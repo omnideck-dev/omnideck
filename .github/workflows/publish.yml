@@ -76,6 +76,33 @@ jobs:
       - name: Run UI tests
         run: just test-ui run
 
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/ui/package-lock.json
+
+      - name: Install quality dependencies
+        run: |
+          uv sync --frozen --extra dev --extra test
+          npm ci --prefix server/ui
+
+      - name: Run agent quality gate
+        run: just check
+
   # Full-stack e2e against the image that was just built, by digest, before
   # any tag points at it — so a commit that fails here never becomes the image
   # anyone pulls. `just e2e` runs the app with MOCK_LLM=1 (in-process
@@ -134,7 +161,7 @@ jobs:
 
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
-    needs: [unit-tests, browser-tools, ui-tests]
+    needs: [unit-tests, browser-tools, ui-tests, quality]
     if: github.event_name == 'push'
     strategy:
       matrix:

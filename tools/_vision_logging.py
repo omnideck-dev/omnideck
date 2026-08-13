@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 logger = logging.getLogger(__name__)
 
 # Lazy-initialised Rich console for panel logging.
-_console = None
+_console: Console | None = None
 
 
-def _get_console():
+def _get_console() -> Console:
     global _console  # noqa: PLW0603
     if _console is None:
         from rich.console import Console

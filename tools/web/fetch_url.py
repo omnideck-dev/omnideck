@@ -168,25 +168,26 @@ async def fetch_url(url: str) -> str:
 
     # Save the full content so large pages can be read from the file rather
     # than pulled entirely inline.
-    dest = _SAVE_DIR / f"fetch_{digest}.md"
+    webpage_dest = _SAVE_DIR / f"fetch_{digest}.md"
     try:
-        dest.write_text(full_content, encoding="utf-8")
-        size = dest.stat().st_size
+        webpage_dest.write_text(full_content, encoding="utf-8")
+        size = webpage_dest.stat().st_size
+        saved_path: Path | None = webpage_dest
     except OSError:
         logger.exception("fetch_url could not save content for %r", url)
-        dest = None
+        saved_path = None
         size = len(full_content.encode("utf-8"))
 
     truncated = len(full_content) > _INLINE_BUDGET
     inline = full_content[:_INLINE_BUDGET] if truncated else full_content
 
-    saved = f" | saved: {dest}" if dest is not None else " | save failed"
+    saved = f" | saved: {saved_path}" if saved_path is not None else " | save failed"
     trunc = " | truncated" if truncated else ""
     header = f"[Fetched: {url} | HTTP {result.status} | {size:,} bytes{saved}{trunc}]"
-    if truncated and dest is not None:
+    if truncated and saved_path is not None:
         header += (
             f"\n[Showing the first {_INLINE_BUDGET:,} chars — the full page "
-            f"is saved at {dest}.]"
+            f"is saved at {saved_path}.]"
         )
     return f"{header}\n\n{inline}"
 

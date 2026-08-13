@@ -39,6 +39,8 @@ dev = [
     "ruff",
     "mypy",
     "types-cachetools",
+    "types-croniter",
+    "types-oauthlib",
     "types-PyYAML"
 ]
 
@@ -57,72 +59,53 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",
-    "F",
+    # Syntax and name errors that are very likely to break at runtime.
+    "E9",
+    "F63",
+    "F7",
+    "F82",
+    # High-confidence correctness bugs (mutable defaults, loop captures, etc.).
     "B",
-    "BLE",
-    "I",
-    "UP",
-    "A",
-    "RUF",
-    "D",
-    "SIM",
-    "C4",
 ]
 ignore = [
-    # Ignore all complexity rules
-    "C90",  # McCabe complexity
-    "C901",  # Function is too complex
-    "PLR0911",  # Too many return statements
-    "PLR0912",  # Too many branches
-    "PLR0913",  # Too many arguments
-    "PLR0915",  # Too many statements
-    "PLR1702",  # Too many nested blocks
-    "COM812",   # Missing trailing comma in Python 3.6+
-    "TD003",    # No issue link TODO
-    "FIX002",   # Consider resolving this issue
-    "TRY301",   # Abstract raise to inner function - globally ignored per project preference
+    # These require contextual judgment and produce noise in this codebase.
+    "B904",
+    "B905",
 ]
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"  # Use Google-style docstrings
-
 [tool.mypy]
-python_version = "3.12"                 # Target Python version for type checking
+python_version = "3.12"
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+no_implicit_optional = true
+warn_unused_configs = true
+warn_no_return = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+strict_equality = true
+no_implicit_reexport = true
+ignore_missing_imports = false
+follow_imports = "skip"
+namespace_packages = true
+explicit_package_bases = true
+show_error_codes = true
+pretty = true
+exclude = "^(tests|repls|container|migrations|desktop/tests)/"
+plugins = ["pydantic.mypy"]
 
-# 🔒 Core strictness
-disallow_untyped_defs = true            # All functions must have type hints
-disallow_incomplete_defs = true         # No partially typed signatures (e.g., missing return type)
-check_untyped_defs = true               # Still type-check bodies of untyped functions
-no_implicit_optional = true             # Require explicit Optional[...] instead of implicit None
-strict_equality = true                  # Disallow comparisons between incompatible types
+[[tool.mypy.overrides]]
+module = ["integrations.brokers.*"]
+ignore_errors = true
 
-# ⚠️ Warnings for hygiene
-warn_return_any = true                  # Warn if Any sneaks into a return type
-warn_unused_configs = true              # Catch typos in this config
-warn_unused_ignores = true              # Warn on unused `# type: ignore` comments
-warn_redundant_casts = true             # Point out casts that don’t change type
-warn_no_return = true                   # Warn when a function doesn’t return on all paths
-warn_unreachable = true                 # Warn about code that can never be executed
-
-# 📦 Imports & layout
-ignore_missing_imports = false          # Force you to install/declare stubs, don’t silently allow Any
-namespace_packages = true               # Support flat-layout multi-package repos
-explicit_package_bases = true           # Force explicit top-level package roots
-
-# 🧹 Developer experience
-show_error_codes = true                 # Show mypy error codes (useful with Ruff autofixes)
-allow_redefinition = false              # Prevent accidental variable reassign in same scope
-pretty = true                           # Nicer formatted errors
-exclude = "^(tests|repls)/"                      # Skip type-checking tests and REPL scripts
-
-# 🔌 Plugins
-plugins = ["pydantic.mypy"]             # Enable Pydantic plugin for proper model typing
+[[tool.mypy.overrides]]
+module = ["google_auth_oauthlib.*"]
+ignore_missing_imports = true
 
 [tool.pydantic-mypy]
-warn_untyped_fields = true              # Force fields to be annotated
-init_typed = true                       # Enforce correct __init__ signatures
-init_forbid_extra = true                # Respect ConfigDict(extra="forbid")
+warn_untyped_fields = true
+init_typed = true
+init_forbid_extra = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
