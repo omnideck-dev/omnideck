@@ -323,6 +323,10 @@ switch ($Phase) {
         Write-Host "RUNTIME PRESERVED machine=$MachineName"
     }
     "PatchRunOnce" {
+        $Application = (Get-Content -LiteralPath $ApplicationFile -Raw).Trim()
+        if (-not (Test-Path -LiteralPath $Application -PathType Leaf)) {
+            throw "The installed application is missing before RunOnce patching."
+        }
         $RunOncePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
         $Registered = Get-ItemPropertyValue `
             -Path $RunOncePath `
