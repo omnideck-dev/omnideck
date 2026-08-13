@@ -7,10 +7,11 @@ desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
 lab_dir="${OMNIDECK_VM_LAB_DIR:-}"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
-baseline="podman-ready"
+baseline=""
 artifact=""
 assume_yes=0
 keep_vm=0
+original_args=("$@")
 
 usage() {
   cat <<'EOF'
@@ -43,19 +44,32 @@ while (($#)); do
     *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
+[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
+lab_dir="$(cd "${lab_dir}" && pwd -P)"
+[[ "$("${lab_dir}/lab.sh" --version 2>/dev/null || true)" == "omnideck-vm-lab 2."* ]] || {
+  printf 'Desktop VM E2E requires OmniDeck VM lab controller 2.x.\n' >&2
+  exit 2
+}
+for dependency in curl docker node python3 sha256sum ssh unzip; do
+  command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
+done
+
+if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
+  lease_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  lease_args=(lease windows desktop "${lease_run_id}")
+  [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
+  lease_args+=(-- "$0" "${original_args[@]}")
+  exec "${lab_dir}/lab.sh" "${lease_args[@]}"
+fi
+[[ -n "${baseline}" ]] || baseline="$("${lab_dir}/lab.sh" baseline windows desktop)"
 [[ "${baseline}" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
   printf 'Unsafe checkpoint name: %s\n' "${baseline}" >&2
   exit 2
 }
 security_mode=0
 [[ "${baseline}" != "clean" ]] || security_mode=1
-
-[[ -n "${lab_dir}" ]] || { printf 'Set OMNIDECK_VM_LAB_DIR to the external VM lab root.\n' >&2; exit 2; }
-[[ -x "${lab_dir}/lab.sh" ]] || { printf 'Missing executable lab.sh under %s\n' "${lab_dir}" >&2; exit 2; }
-lab_dir="$(cd "${lab_dir}" && pwd -P)"
-for dependency in curl docker flock node python3 sha256sum ssh unzip; do
-  command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
-done
+eval "$("${lab_dir}/lab.sh" describe windows --shell)"
 
 status="$("${lab_dir}/lab.sh" status windows)"
 printf '%s\n' "${status}"
@@ -76,12 +90,7 @@ if [[ "${assume_yes}" != "1" ]]; then
   [[ "${confirmation}" == "windows" ]] || { printf 'Canceled.\n'; exit 1; }
 fi
 
-exec 9>"${TMPDIR:-/tmp}/omnideck-cli-vm-e2e-windows.lock"
-flock -n 9 || { printf 'The Windows lane is leased by the CLI E2E suite.\n' >&2; exit 1; }
-exec 8>"${TMPDIR:-/tmp}/omnideck-desktop-vm-e2e-windows.lock"
-flock -n 8 || { printf 'The Windows Desktop lane is already leased.\n' >&2; exit 1; }
-
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+run_id="${OMNIDECK_VM_LAB_RUN_ID}"
 safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 fixture_suffix="$(printf '%s' "${safe_run_id}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | tail -c 28)"
 fixture_id="desktop_host_boundary_${fixture_suffix}"
@@ -90,22 +99,19 @@ fixture_filename="Desktop-Host-Boundary-${fixture_suffix}.agent.omnideck.json"
 source_commit="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 cli_commit="${OMNIDECK_DESKTOP_VM_E2E_CLI_COMMIT:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.commit)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
 cli_version="${OMNIDECK_DESKTOP_VM_E2E_CLI_VERSION:-$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.version)' "${desktop_root}/src-tauri/binaries/vendor-manifest.json")}"
-output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop-e2e/${safe_run_id}-windows}"
+output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-${lab_dir}/artifacts/desktop/e2e/${safe_run_id}-windows}"
 build_dir="${output_dir}/build"
 evidence_dir="${output_dir}/evidence"
 screenshot_dir="${output_dir}/screenshots"
 marker_root="${output_dir}/markers"
 remote_root="C:\\OmnideckDesktopE2E\\${safe_run_id}"
 remote_scp_root="C:/OmnideckDesktopE2E/${safe_run_id}"
-key_file="${lab_dir}/keys/id_ed25519"
-known_hosts="${lab_dir}/runtime/known_hosts"
-ssh_port=2225
+key_file="${LAB_VM_KEY}"
+known_hosts="${LAB_VM_KNOWN_HOSTS}"
+ssh_port="${LAB_VM_SSH_PORT}"
 driver_forward_port="$((52000 + ($$ % 900)))"
 driver_task_name="OmnideckDesktopE2E-${safe_run_id}"
 trust_task_name="OmnideckDesktopTrust-${safe_run_id}"
-discarded_before="${output_dir}/discarded-before.txt"
-discarded_after="${output_dir}/discarded-after.txt"
-discarded_created="${output_dir}/discarded-created.txt"
 vm_started=0
 initial_reset=0
 remote_staged=0
@@ -115,11 +121,8 @@ test_status=1
 mkdir -p "${build_dir}" "${evidence_dir}" "${screenshot_dir}" "${marker_root}"
 cp -- "${script_dir}/manual-remainder.json" "${output_dir}/manual-remainder.json"
 cp -- "${script_dir}/golden-prerequisites.json" "${output_dir}/golden-prerequisites.json"
-find "${lab_dir}/discarded" -maxdepth 1 \
-  \( -type f -name 'windows.qcow2.*' -o -type d -name 'windows-tpm.*' \) \
-  -print | sort > "${discarded_before}"
-printf '{\n  "runId": "%s",\n  "vm": "windows",\n  "baseline": "%s",\n  "sourceCommit": "%s",\n  "status": "building"\n}\n' \
-  "${safe_run_id}" "${baseline}" "${source_commit}" > "${output_dir}/run.json"
+"${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
+  "${source_commit}" windows "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}"
 
 cleanup() {
   local exit_code=$?
@@ -155,27 +158,10 @@ cleanup() {
   elif [[ "${keep_vm}" == "1" ]]; then
     printf 'Windows guest kept stopped for debugging.\n'
   fi
-  find "${lab_dir}/discarded" -maxdepth 1 \
-    \( -type f -name 'windows.qcow2.*' -o -type d -name 'windows-tpm.*' \) \
-    -print | sort > "${discarded_after}"
-  comm -13 "${discarded_before}" "${discarded_after}" > "${discarded_created}"
-  if [[ "${exit_code}" == "0" && "${keep_vm}" != "1" ]]; then
-    while IFS= read -r path; do
-      [[ -n "${path}" ]] || continue
-      [[ "$(dirname "${path}")" == "${lab_dir}/discarded" ]] || {
-        printf 'Refusing unexpected discarded path: %s\n' "${path}" >&2
-        exit_code=1
-        continue
-      }
-      case "$(basename "${path}")" in
-        windows.qcow2.*) [[ -f "${path}" ]] && unlink "${path}" ;;
-        windows-tpm.*) [[ -d "${path}" ]] && rm -r -- "${path}" ;;
-        *) printf 'Refusing unexpected discarded name: %s\n' "${path}" >&2; exit_code=1 ;;
-      esac
-    done < "${discarded_created}"
-    printf 'Windows disk and TPM state created by this successful run were purged.\n'
-  elif [[ -s "${discarded_created}" ]]; then
-    printf 'Debug disk/TPM retained. Purge with: %s %s\n' "${script_dir}/purge.sh" "${output_dir}"
+  if [[ "${exit_code}" == "0" ]]; then
+    "${lab_dir}/lab.sh" evidence-finish "${output_dir}" passed || exit_code=1
+  else
+    "${lab_dir}/lab.sh" evidence-finish "${output_dir}" failed || true
   fi
   printf 'Desktop E2E artifacts: %s\n' "${output_dir}"
   exit "${exit_code}"
@@ -207,9 +193,8 @@ fi
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
 printf '%s  %s\n' "${artifact_sha256}" "$(basename "${artifact}")" > "${build_dir}/artifact.sha256"
-printf '{\n  "runId": "%s",\n  "vm": "windows",\n  "baseline": "%s",\n  "sourceCommit": "%s",\n  "cliVersion": "%s",\n  "cliCommit": "%s",\n  "artifact": "%s",\n  "artifactSha256": "%s"\n}\n' \
-  "${safe_run_id}" "${baseline}" "${source_commit}" "${cli_version}" "${cli_commit}" \
-  "$(basename "${artifact}")" "${artifact_sha256}" > "${output_dir}/run.json"
+"${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+  "artifact=$(basename "${artifact}")" "artifactSha256=${artifact_sha256}"
 
 printf 'Starting and verifying Windows.\n'
 "${lab_dir}/lab.sh" start windows

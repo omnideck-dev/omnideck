@@ -15,6 +15,10 @@ Electron UX mockup before the driver starts. The existing source test also
 keeps the full HTML, CSS, JavaScript, Agent Dash, DOM, and parity JSON
 byte-for-byte equal to the mockup.
 
+The controller is maintained in the standalone `omnideck-vm-lab` repository,
+not this application repository. Install controller 2.x into the external lab
+before running these consumers.
+
 ## Automated coverage
 
 Each lane performs as much deterministic native automation as its operating
@@ -150,6 +154,12 @@ Use `--lanes appimage,windows` for a shorter subset. A selected guest that is
 already running blocks the qualification before packages are downloaded; the
 harness never stops or resets a guest it does not own.
 
+Add `--cross-distro-smoke` to reuse the downloaded AppImage, DEB, and RPM in
+the launch-only compatibility matrix described below. Its aggregate result is
+included in the qualification summary. The flag is opt-in because the extra
+cells each boot and reset a disposable guest; Flatpak is not included because
+the release does not publish a Flatpak bundle.
+
 ## Run a development candidate before publication
 
 From `desktop/`:
@@ -182,12 +192,56 @@ golden afterward, and refuses to treat a manual item as an automated pass.
 Pass `--yes` only in trusted local automation. `--keep-vm` retains a stopped
 debug guest and its exact discarded-state manifest.
 
+## Cross-distro package-open smoke matrix
+
+The full lanes above intentionally pair each installable package with its
+native package manager. Use the smaller smoke runner to answer the separate
+compatibility question: can these exact package bytes open on another distro
+and complete the bundled CLI's read-only `--version` and runtime-status proof?
+For example, `appimage` selects the Ubuntu guest even when the artifact is an
+RPM:
+
+```sh
+pnpm run test:vm-smoke -- \
+  --vm appimage \
+  --artifact /absolute/path/omnideck-0.1.0-1.x86_64.rpm
+```
+
+Run every non-native combination for the artifacts you supply with:
+
+```sh
+pnpm run test:vm-smoke-matrix -- \
+  --appimage /absolute/path/omnideck_0.1.0_amd64.AppImage \
+  --deb /absolute/path/omnideck_0.1.0_amd64.deb \
+  --rpm /absolute/path/omnideck-0.1.0-1.x86_64.rpm
+```
+
+The default guests are Ubuntu (`appimage`), Debian (`deb`), Fedora (`rpm`), and
+Silverblue (`atomic`). Native cells already covered by the full lanes are
+skipped unless `--include-native` is passed. On a matching distro the smoke
+uses APT or DNF to install the package. On a foreign distro it extracts the
+DEB or RPM payload into the disposable run directory and launches the shipped
+binary from there; this proves payload compatibility, not support for using a
+foreign system package manager.
+
+Flatpak is supported by the smoke harness when a bundle is supplied:
+
+```sh
+pnpm run test:vm-smoke-matrix -- \
+  --flatpak /absolute/path/dev.omnideck.desktop.flatpak
+```
+
+The current release contract does not publish a Flatpak, so Flatpak cells are
+not inferred or reported as passing unless an exact `.flatpak` bundle is
+provided. The harness installs that bundle for the disposable user, launches
+it through `flatpak run`, and requires the same packaged smoke proof.
+
 ## Evidence and disk cleanup
 
 Everything unique to a run is under exactly one directory:
 
 ```text
-$OMNIDECK_VM_LAB_DIR/artifacts/desktop-e2e/<run>-<lane>/
+$OMNIDECK_VM_LAB_DIR/artifacts/desktop/e2e/<run>-<lane>/
 ```
 
 It contains `run.json`, package checksum/identity, guest inventories, live DOM
@@ -198,24 +252,32 @@ prerequisite contract. The package bytes are not duplicated into evidence; the
 SHA-256 identifies the exact input while the normal Tauri target directory
 remains a reusable build cache.
 
-The lab archives an overlay on each reset. A successful run deletes only the
-disk and Windows TPM archives that appeared during that run. A failed or
-`--keep-vm` run retains those exact paths in `discarded-created.txt`. Purge the
-entire run and its retained disposable state with:
+The lab archives reset state inside one transaction. Successful transaction
+state is deleted immediately. Failed or `--keep-vm` state and compact evidence
+expire after 48 hours unless explicitly pinned. Purge a marked run with:
 
 ```sh
 pnpm run test:vm-e2e:purge -- \
-  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop-e2e/<run>-<lane>"
+  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop/e2e/<run>-<lane>"
 ```
 
-The purge command accepts only a marked direct child of `artifacts/desktop-e2e`,
-shows disk usage, and requires the exact run-directory name.
+The purge command delegates validation and deletion to `lab.sh runs purge`.
+
+Single cross-distro smokes are stored under `artifacts/desktop/package-smoke`;
+aggregate runs are stored under `artifacts/desktop/smoke-matrix`, with one
+evidence folder per guest/package cell plus aggregate JSON and JUnit reports.
+Purge either marked run and its retained overlays with:
+
+```sh
+pnpm run test:vm-smoke:purge -- \
+  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop/smoke-matrix/<run>"
+```
 
 A published qualification groups every lane folder, release contract,
 provenance log, aggregate `summary.json`, and aggregate `junit.xml` under:
 
 ```text
-$OMNIDECK_VM_LAB_DIR/artifacts/desktop-release/<run>/
+$OMNIDECK_VM_LAB_DIR/artifacts/desktop/release/<run>/
 ```
 
 Downloaded package bytes are deleted automatically at the end, including on
@@ -224,7 +286,7 @@ and any retained disposable overlays named by its nested lane manifests with:
 
 ```sh
 pnpm run test:release-e2e:purge -- \
-  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop-release/<run>"
+  "$OMNIDECK_VM_LAB_DIR/artifacts/desktop/release/<run>"
 ```
 
 ## Manual remainder
@@ -258,6 +320,8 @@ run directory.
 Fast source checks for the harness are:
 
 ```sh
-bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/qualify-release.sh tests/e2e/linux_guest.sh
+bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/qualify-release.sh \
+  tests/e2e/linux_guest.sh tests/e2e/run-package-smoke.sh \
+  tests/e2e/linux_package_smoke.sh tests/e2e/smoke-matrix.sh
 python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py
 ```

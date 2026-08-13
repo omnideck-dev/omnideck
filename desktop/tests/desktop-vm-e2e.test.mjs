@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -14,6 +17,11 @@ const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
 const releasePurge = await read('../tests/e2e/purge-release.sh');
+const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
+const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
+const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
+const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
+const packageSmokePurge = await read('../tests/e2e/purge-package-smoke.sh');
 const remainder = JSON.parse(await read('../tests/e2e/manual-remainder.json'));
 const golden = JSON.parse(await read('../tests/e2e/golden-prerequisites.json'));
 
@@ -76,19 +84,82 @@ test('documented pnpm argument separators are accepted by both VM lanes', () => 
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
-  assert.match(run, /artifacts\/desktop-e2e/);
-  assert.match(windows, /artifacts\/desktop-e2e/);
-  assert.match(run, /discarded-created\.txt/);
-  assert.match(windows, /windows-tpm/);
-  assert.match(purge, /dirname "\$\{run_dir\}"/);
-  assert.match(purge, /run\.json/);
-  assert.match(qualifier, /artifacts\/desktop-release/);
+  assert.match(run, /artifacts\/desktop\/e2e/);
+  assert.match(windows, /artifacts\/desktop\/e2e/);
+  assert.match(run, /evidence-init/);
+  assert.match(windows, /evidence-finish/);
+  assert.match(purge, /runs purge/);
+  assert.match(qualifier, /artifacts\/desktop\/release/);
   assert.match(qualifier, /releasecontract\/verify-release\.mjs/);
   assert.match(qualifier, /gh attestation verify/);
   assert.match(qualifier, /appimage,deb,rpm,atomic,windows/);
-  assert.match(releasePurge, /artifacts\/desktop-release/);
+  assert.match(qualifier, /--cross-distro-smoke/);
+  assert.match(qualifier, /smoke-matrix\.sh/);
+  assert.match(releasePurge, /runs purge/);
+  assert.match(packageSmokePurge, /runs purge/);
+  assert.match(run, /lease "\$\{vm\}" desktop/);
+  assert.match(windows, /lease windows desktop/);
+  assert.match(packageSmoke, /lease "\$\{vm\}" desktop-smoke/);
+  assert.doesNotMatch(run, /omnideck-cli-vm-e2e|discarded-before/);
+  assert.doesNotMatch(windows, /omnideck-desktop-vm-e2e|discarded-before/);
+  assert.doesNotMatch(packageSmoke, /omnideck-cli-vm-e2e|discarded-before/);
   assert.doesNotMatch(purge, /rm -rf/);
   assert.doesNotMatch(releasePurge, /rm -rf/);
+  assert.doesNotMatch(packageSmokePurge, /rm -rf/);
+});
+
+test('cross-distro smoke separates the guest from the package format', () => {
+  assert.match(packageSmoke, /--vm appimage\|deb\|rpm\|atomic/);
+  assert.match(packageSmoke, /--package appimage\|deb\|rpm\|flatpak/);
+  assert.match(packageSmoke, /linux_package_smoke\.sh/);
+  assert.doesNotMatch(packageSmoke, /tauri-driver|webdriver_client/);
+  assert.match(packageSmokeGuest, /rpm2cpio/);
+  assert.match(packageSmokeGuest, /flatpak install --user --noninteractive/);
+  assert.match(packageSmokeGuest, /OMNIDECK_DESKTOP_SMOKE_FILE/);
+  assert.match(packageSmokeGuest, /\["--version", "--json runtime status"\]/);
+  assert.match(smokeMatrix, /appimage:appimage\|deb:deb\|rpm:rpm\|atomic:appimage/);
+  assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
+});
+
+test('cross-distro smoke report retains every cell and fails the aggregate', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-smoke-matrix-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const statusFile = join(directory, 'status.tsv');
+  await writeFile(
+    statusFile,
+    'appimage\trpm\tpassed\tcells/appimage-rpm\topened\n' +
+      'rpm\tdeb\tfailed\tcells/rpm-deb\texited 1\n',
+  );
+  const result = spawnSync(
+    'python3',
+    [
+      smokeMatrixReportUrl.pathname,
+      '--status-file',
+      statusFile,
+      '--output',
+      directory,
+      '--run-id',
+      'test-run',
+      '--started-at',
+      '2026-01-01T00:00:00Z',
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(result.status, 1, result.stderr);
+  const summary = JSON.parse(await readFile(join(directory, 'summary.json'), 'utf8'));
+  assert.equal(summary.status, 'failed');
+  assert.deepEqual(
+    summary.cells.map(({ guest, package: packageKind, status }) => ({
+      guest,
+      package: packageKind,
+      status,
+    })),
+    [
+      { guest: 'appimage', package: 'rpm', status: 'passed' },
+      { guest: 'rpm', package: 'deb', status: 'failed' },
+    ],
+  );
+  assert.match(await readFile(join(directory, 'junit.xml'), 'utf8'), /failures="1"/);
 });
 
 test('manual-only behavior is explicit and never inferred as passed', () => {
@@ -108,7 +179,8 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.ok(golden.managedPerRun.some((item) => item.includes('exact installed WebView2 version')));
   assert.ok(golden.managedPerRun.some((item) => item.includes('SmartScreen')));
   assert.match(run, /golden-prerequisites\.json/);
-  assert.match(run, /recommended_baseline/);
-  assert.match(run, /baseline="podman-ready"/);
+  assert.match(run, /lab\.sh" baseline/);
+  assert.match(run, /lab\.sh" describe/);
   assert.match(windows, /golden-prerequisites\.json/);
+  assert.match(windows, /lab\.sh" baseline windows desktop/);
 });
