@@ -3,6 +3,21 @@
 Use the external disposable VM lab for Desktop automation and the remaining
 manual observations. The lab path is machine-specific and must not be committed.
 
+The lab also exposes a leased, application-disposable Apple Silicon target for
+exact-DMG installation and shared-container-runtime smoke:
+
+```sh
+export OMNIDECK_VM_LAB_DIR=/mnt/data/VMs/omnideck-release-lab
+cd /path/to/omnideck/desktop
+pnpm run test:macos-lab -- --artifact /path/to/omnideck_aarch64.dmg
+```
+
+The runner resets application state, installs the exact app as
+`~/Applications/Omnideck Lab.app`, and leases cleanup back to `runtime-ready`. Podman and its VM
+stay warm to fit the 8 GB host; the lane claims clean-application, not clean-OS
+or snapshot coverage. Cleanup is restricted to lab-namespaced state and
+resources, so a normal long-term OmniDeck installation remains usable.
+
 ## Inventory, preflight, and ownership
 
 ```sh

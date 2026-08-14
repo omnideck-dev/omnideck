@@ -17,6 +17,29 @@ Electron UX mockup before the driver starts. The existing source test also
 keeps the full HTML, CSS, JavaScript, Agent Dash, DOM, and parity JSON
 byte-for-byte equal to the mockup.
 
+The Apple Silicon lane uses the production DMG and macOS Accessibility instead
+of embedding or enabling a WebDriver in the shipped app. A stable, lab-owned
+native helper reads and presses the live WebKit accessibility tree and captures
+the app through its separately granted Screen Recording identity. Run it with:
+
+```sh
+export OMNIDECK_VM_LAB_DIR=/mnt/data/VMs/omnideck-release-lab
+pnpm run test:macos-e2e -- --artifact /absolute/path/omnideck_0.1.0_aarch64.dmg
+```
+
+The physical `macos-arm64` host is serialized through the same lease and
+evidence APIs as VM lanes. Its reset removes only `Omnideck Lab.app`, the
+lab-managed CLI, namespaced state, and `release-test-macos` Podman resources;
+a normal long-term OmniDeck installation and its data are preserved.
+
+That full Mac journey uses Accessibility presses and trusted Cmd shortcuts for
+setup, recovery, Custom Apps, profile export/import through the native file
+picker, artifact download, zoom, and update skip. It verifies the resulting
+files, API state, visible notifications, and screenshots. Linux and Windows
+retain an additional WebDriver-level assertion of the frozen JavaScript bridge
+and synthetic wheel-event internals; the Mac lane covers their user-visible
+native outcomes without adding a test endpoint to the product.
+
 The controller is maintained in the standalone `omnideck-vm-lab` repository,
 not this application repository. Install controller 2.1 or newer into the external lab
 before running these consumers.
@@ -51,8 +74,9 @@ system exposes:
 - artifact download from the real Artifacts preview, with guest filesystem
   contents and the native completion toast verified;
 - Ctrl/Cmd keyboard and standardized mouse-wheel events through the packaged
-  desktop-only webview zoom control, plus trusted OS-level keyboard and wheel
-  input in the Linux guests, proving each path updates the rendered page zoom;
+  desktop-only webview zoom control on the WebDriver lanes, plus trusted
+  OS-level input on Linux and a trusted Cmd shortcut on macOS, proving the
+  rendered page zoom changes; and
   and
 - deterministic test-only update discovery, defer, skip, event delivery, and
   the exact frozen hosted bridge surface (without replacing the runtime image);
@@ -342,18 +366,19 @@ It routes a person or testing agent to the checked-in procedures for normal
 browser download warnings, native macOS Gatekeeper/permission behavior,
 native file-picker presentation, external-browser and clipboard integration,
 subjective visuals/accessibility, and timing-dependent interruption tests.
-The data-transfer result of download/upload is automated on every Windows and
-Linux lane; only the native picker's visible OS chrome remains manual. Windows
-SmartScreen, UAC, restart-now, and RunOnce are no longer classified as manual.
-Remaining checks stay explicit `not-run`/`blocked` until their own evidence
-exists.
+The data-transfer result of download/upload is automated on Windows, Linux,
+and macOS. The Mac lane also drives the native file picker through trusted OS
+input and captures its result; subjective visual review of the picker remains
+manual. Windows SmartScreen, UAC, restart-now, and RunOnce are no longer
+classified as manual. Remaining checks stay explicit `not-run`/`blocked` until
+their own evidence exists.
 
 The boundary client deliberately speaks the same W3C protocol as the existing
-setup journey and adds no production bridge or test-only host command. Current
-Linux and Windows lanes use `tauri-driver`. When a macOS lab host is added, use
-the WebdriverIO Tauri service's embedded driver for that lane and preserve the
-same download/upload assertions and evidence fields; direct `tauri-driver`
-remains a Linux/Windows transport.
+setup journey and adds no production bridge or test-only host command. The
+macOS lane deliberately does not add a latent WebDriver endpoint to the
+product. Its exact-copy setup, returning, Doctor, resume, update, port-conflict,
+Custom App, native file, zoom, and hosted-window assertions use the OS
+Accessibility surface. Direct `tauri-driver` remains a Linux/Windows transport.
 
 Occupied-port recovery is automated on every local Linux and Windows lane. It
 creates a second saved CLI instance using Desktop's persisted port, records the
@@ -368,6 +393,7 @@ Fast source checks for the harness are:
 ```sh
 bash -n tests/e2e/run.sh tests/e2e/run-windows.sh tests/e2e/qualify-release.sh \
   tests/e2e/linux_guest.sh tests/e2e/run-package-smoke.sh \
-  tests/e2e/linux_package_smoke.sh tests/e2e/smoke-matrix.sh
+  tests/e2e/linux_package_smoke.sh tests/e2e/smoke-matrix.sh \
+  tests/e2e/run-macos-lab.sh tests/e2e/macos_accessibility_guest.sh
 python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py
 ```
