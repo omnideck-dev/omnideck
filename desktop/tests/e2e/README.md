@@ -33,9 +33,11 @@ lab-managed CLI, namespaced state, and `release-test-macos` Podman resources;
 a normal long-term OmniDeck installation and its data are preserved.
 
 That full Mac journey uses Accessibility presses and trusted Cmd shortcuts for
-setup, recovery, Custom Apps, profile export/import through the native file
-picker, artifact download, zoom, and update skip. It verifies the resulting
-files, API state, visible notifications, and screenshots. Linux and Windows
+setup, recovery, Custom Apps before and after a Tauri restart, profile
+export/import through the native file picker, artifact download, zoom, update
+skip, and DMG removal/reinstallation with preserved state. It verifies the
+resulting files, API state, visible notifications, and screenshots. Linux and
+Windows
 retain an additional WebDriver-level assertion of the frozen JavaScript bridge
 and synthetic wheel-event internals; the Mac lane covers their user-visible
 native outcomes without adding a test endpoint to the product.
