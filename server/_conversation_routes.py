@@ -71,6 +71,12 @@ async def list_conversations_handler(_request: Request) -> Response:
 async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    if manager.active_for_conversation(conversation_id) is not None:
+        return web.json_response(
+            {"error": "This conversation is still running. Stop it before deleting."},
+            status=409,
+        )
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
@@ -87,6 +93,12 @@ async def list_archived_handler(_request: Request) -> Response:
 async def archive_conversation_handler(request: Request) -> Response:
     """Archive a conversation, moving it out of the active list."""
     conversation_id = request.match_info["conversation_id"]
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    if manager.active_for_conversation(conversation_id) is not None:
+        return web.json_response(
+            {"error": "This conversation is still running. Stop it before archiving."},
+            status=409,
+        )
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)

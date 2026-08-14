@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import time
 
+import pytest
+
 from tests.e2e._api import ApiClient
 from tests.e2e._protocol import provider_fail, say, slow
 
@@ -66,6 +68,22 @@ def _delete_conversation(
     api_client.delete(f"/api/conversations/sessions/{conversation_id}")
 
 
+def _stop_and_delete_conversation(
+    api_client: ApiClient,
+    conversation_id: str,
+) -> None:
+    """Stop a process-owned run, wait for pruning, then remove its fixture."""
+    api_client.post(f"/api/chat/stop?conversation_id={conversation_id}")
+    for _ in range(50):
+        resumed = api_client.post(
+            f"/api/conversations/sessions/{conversation_id}/resume",
+        )
+        if resumed.status != 200 or resumed.json().get("active_run") is None:
+            break
+        time.sleep(0.1)
+    _delete_conversation(api_client, conversation_id)
+
+
 def _payload_types(events: list[dict]) -> list[str]:
     return [event["payload"]["type"] for event in events]
 
@@ -93,6 +111,69 @@ def _assert_one_complete_lifecycle(events: list[dict], *, status: str) -> None:
     run_ids = {event["run_id"] for event in events}
     assert len(run_ids) == 1
     assert [event["seq"] for event in events] == list(range(1, len(events) + 1))
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix", "message"),
+    [
+        (
+            "DELETE",
+            "",
+            "This conversation is still running. Stop it before deleting.",
+        ),
+        (
+            "POST",
+            "/archive",
+            "This conversation is still running. Stop it before archiving.",
+        ),
+    ],
+    ids=["delete", "archive"],
+)
+def test_active_run_blocks_conversation_storage_mutation(
+    api_client: ApiClient,
+    method: str,
+    suffix: str,
+    message: str,
+) -> None:
+    """Delete and archive preserve a conversation while its run owns it."""
+    conversation_id = _conversation_id(f"active_{method.lower()}")
+    profile_id = _default_profile_id(api_client)
+    response = api_client.open_stream(
+        "POST",
+        "/api/chat",
+        data={
+            "conversation_id": conversation_id,
+            "profile_id": profile_id,
+            "message": slow() + say("still streaming " * 300),
+        },
+        timeout=10,
+    )
+
+    try:
+        assert response.status == 200
+        while True:
+            raw = response.readline()
+            assert raw, "run completed before the mutation conflict could be exercised"
+            event = json.loads(raw)
+            if event["payload"]["type"] == "content":
+                break
+
+        conflict = api_client.request(
+            method,
+            f"/api/conversations/sessions/{conversation_id}{suffix}",
+        )
+        assert conflict.status == 409
+        assert conflict.json() == {"error": message}
+
+        resumed = _resume(api_client, conversation_id)
+        assert resumed["active_run"] is not None
+        active = api_client.get("/api/conversations/sessions").json()
+        archived = api_client.get("/api/conversations/archived").json()
+        assert conversation_id in {item["conversation_id"] for item in active}
+        assert conversation_id not in {item["conversation_id"] for item in archived}
+    finally:
+        response.close()
+        _stop_and_delete_conversation(api_client, conversation_id)
 
 
 def test_resume_discovers_disconnected_run_and_replays_to_completion(

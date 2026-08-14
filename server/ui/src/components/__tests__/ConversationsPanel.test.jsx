@@ -2,11 +2,19 @@ import { fireEvent, render as _render, screen, waitFor, within } from '@testing-
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConversationsPanel from '../ConversationsPanel.jsx';
+import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 
 // ConversationsPanel reads its list from the conversations context, so every
 // render goes through the provider (which fetches the list on mount).
-const render = (ui, options) => _render(ui, { wrapper: ConversationCatalogProvider, ...options });
+function Providers({ children }) {
+    return (
+        <ToastProvider>
+            <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+        </ToastProvider>
+    );
+}
+const render = (ui, options) => _render(ui, { wrapper: Providers, ...options });
 
 // A fixed mid-day instant. Both the session timestamps and the component's
 // own `new Date()` are pinned to this, so the day-bucket assignments don't
@@ -279,6 +287,39 @@ describe('ConversationsPanel — delete', () => {
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
         expect(onNewConversation).not.toHaveBeenCalled();
     });
+
+    it('keeps an active conversation selected and shows the 409 warning', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        const warning = 'This conversation is still running. Stop it before deleting.';
+        const defaultFetch = global.fetch;
+        global.fetch = vi.fn((url, opts) => {
+            if (url === '/api/conversations/sessions/c1' && opts?.method === 'DELETE') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 409,
+                    json: () => Promise.resolve({ error: warning }),
+                });
+            }
+            return defaultFetch(url, opts);
+        });
+        render(
+            <ConversationsPanel
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c1"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(screen.getByTestId('recent-menu-delete'));
+        await user.click(screen.getByTestId('recent-menu-delete'));
+
+        expect(await screen.findByText(warning)).toBeInTheDocument();
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+        expect(onNewConversation).not.toHaveBeenCalled();
+    });
 });
 
 describe('ConversationsPanel — archive', () => {
@@ -322,6 +363,38 @@ describe('ConversationsPanel — archive', () => {
         await user.click(within(menu).getByTestId('recent-menu-archive'));
 
         await waitFor(() => expect(onNewConversation).toHaveBeenCalledTimes(1));
+    });
+
+    it('keeps an active conversation selected and shows the archive 409 warning', async () => {
+        const user = userEvent.setup();
+        const onNewConversation = vi.fn();
+        const warning = 'This conversation is still running. Stop it before archiving.';
+        const defaultFetch = global.fetch;
+        global.fetch = vi.fn((url, opts) => {
+            if (url === '/api/conversations/sessions/c1/archive' && opts?.method === 'POST') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 409,
+                    json: () => Promise.resolve({ error: warning }),
+                });
+            }
+            return defaultFetch(url, opts);
+        });
+        render(
+            <ConversationsPanel
+                onLoadConversation={vi.fn()}
+                onNewConversation={onNewConversation}
+                activeConversationId="c1"
+            />,
+        );
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        await user.click(within(menu).getByTestId('recent-menu-archive'));
+
+        expect(await screen.findByText(warning)).toBeInTheDocument();
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+        expect(onNewConversation).not.toHaveBeenCalled();
     });
 
     it('shows the archived count while collapsed, then reveals + restores on expand', async () => {

@@ -21,6 +21,7 @@ from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 from server._conversation_routes import (
     archive_conversation_handler,
     create_folder_handler,
+    delete_conversation_handler,
     delete_folder_handler,
     generate_title_handler,
     list_archived_handler,
@@ -387,6 +388,23 @@ class TestArchiveRoutes:
         resp = await archive_conversation_handler(_make_request("ghost", None))
         assert resp.status == 404
 
+    async def test_archive_active_conversation_409(self, _conv_dir: Path) -> None:
+        """Archiving cannot move storage while its run is still writing."""
+        _seed("c1")
+        manager = MagicMock()
+        manager.active_for_conversation.return_value = object()
+
+        resp = await archive_conversation_handler(
+            _make_request("c1", None, active_run_manager=manager),
+        )
+
+        assert resp.status == 409
+        assert json.loads(resp.body) == {
+            "error": "This conversation is still running. Stop it before archiving.",
+        }
+        assert conversation_exists("c1") is True
+        assert list_archived_conversations() == []
+
     async def test_unarchive_restores_conversation(self, _conv_dir: Path) -> None:
         """Restoring brings the conversation back into the active store."""
         _seed("c1")
@@ -409,6 +427,24 @@ class TestArchiveRoutes:
         assert resp.status == 200
         data = json.loads(resp.body)
         assert [row["conversation_id"] for row in data] == ["c1"]
+
+
+@pytest.mark.unit
+async def test_delete_active_conversation_409(_conv_dir: Path) -> None:
+    """Deleting cannot remove storage while its run is still writing."""
+    _seed("c1")
+    manager = MagicMock()
+    manager.active_for_conversation.return_value = object()
+
+    resp = await delete_conversation_handler(
+        _make_request("c1", None, active_run_manager=manager),
+    )
+
+    assert resp.status == 409
+    assert json.loads(resp.body) == {
+        "error": "This conversation is still running. Stop it before deleting.",
+    }
+    assert conversation_exists("c1") is True
 
 
 @pytest.mark.unit
