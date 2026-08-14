@@ -50,6 +50,71 @@ class HostBoundaryClientTests(unittest.TestCase):
 
         self.assertFalse(driver.clicked)
 
+    def test_zoom_layout_accepts_an_anchored_menu_without_overflow(self) -> None:
+        snapshot = {
+            "cssZoom": "",
+            "viewport": {
+                "overflow": {"documentX": 0, "documentY": 0, "bodyX": 0, "bodyY": 0},
+            },
+            "menu": {
+                "anchorError": {"x": 0.25, "y": 0.5},
+                "insideViewport": True,
+            },
+            "frames": [
+                {"insideViewport": True, "viewportWidthError": 1},
+            ],
+        }
+
+        self.assertIs(CLIENT.assert_zoom_layout(snapshot, 0.8), snapshot)
+
+    def test_zoom_layout_rejects_the_css_zoom_coordinate_failure(self) -> None:
+        snapshot = {
+            "cssZoom": "0.8",
+            "viewport": {"overflow": {"documentX": 512}},
+            "menu": {
+                "anchorError": {"x": 270, "y": 140},
+                "insideViewport": True,
+            },
+            "frames": [],
+        }
+
+        with self.assertRaisesRegex(AssertionError, "CSS zoom remained active"):
+            CLIENT.assert_zoom_layout(snapshot, 0.8)
+
+    def test_zoom_layout_requires_an_iframe_viewport_measurement(self) -> None:
+        snapshot = {
+            "cssZoom": "",
+            "viewport": {
+                "overflow": {"documentX": 0, "documentY": 0, "bodyX": 0, "bodyY": 0},
+            },
+            "menu": {
+                "anchorError": {"x": 0, "y": 0},
+                "insideViewport": True,
+            },
+            "frames": [],
+        }
+
+        with self.assertRaisesRegex(AssertionError, "no iframe viewport measurement"):
+            CLIENT.assert_zoom_layout(snapshot, 1.2)
+
+    def test_zoom_layout_rejects_iframe_viewport_desynchronization(self) -> None:
+        snapshot = {
+            "cssZoom": "",
+            "viewport": {
+                "overflow": {"documentX": 0, "documentY": 0, "bodyX": 0, "bodyY": 0},
+            },
+            "menu": {
+                "anchorError": {"x": 0, "y": 0},
+                "insideViewport": True,
+            },
+            "frames": [
+                {"insideViewport": True, "viewportWidthError": 320},
+            ],
+        }
+
+        with self.assertRaisesRegex(AssertionError, "desynchronized iframe layouts"):
+            CLIENT.assert_zoom_layout(snapshot, 1.2)
+
 
 if __name__ == "__main__":
     unittest.main()

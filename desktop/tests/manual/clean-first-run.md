@@ -4,10 +4,13 @@
 
 The Linux and Windows VM journeys automate clean install, setup copy/DOM,
 permission cancellation/approval, hosted open, recovery, and package lifecycle.
+The Apple Silicon lab lane automates the packaged macOS setup, recovery, hosted
+boundaries, and app lifecycle after its runtime and Accessibility preflight.
 The clean Windows lane also drives SmartScreen, restart-now, and RunOnce
-reopening. Run this procedure manually for native macOS or another target without
-an available automation host; otherwise use it only for subjective visual or
-accessibility review listed in `manual-remainder.json`.
+reopening. Run this procedure manually for a target without an available
+automation host; on macOS, retain only the native trust/permission presentation
+and subjective visual or accessibility review listed in
+`manual-remainder.json`.
 
 ## Starting state and safety
 

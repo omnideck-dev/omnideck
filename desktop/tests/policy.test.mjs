@@ -36,7 +36,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-beta.7');
+  assert.equal(config.version, '0.1.0-beta.8');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -52,9 +52,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.7"$/m);
-  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.7"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.7"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.8"$/m);
+  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.8"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.8"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 
@@ -84,14 +84,14 @@ test('local capability contains no generic or remote authority', () => {
   assert.equal('remote' in capability, false);
   assert.deepEqual(capability.windows, ['main']);
   assert.equal(capability.windows.includes('hosted-app'), false);
-  assert.deepEqual(capability.permissions, ['read-only-cli']);
+  assert.deepEqual(capability.permissions, ['read-only-cli', 'core:webview:allow-set-webview-zoom']);
   assert.doesNotMatch(JSON.stringify(capability), /shell:|process:|fs:|updater:|dialog:|opener:|core:event/i);
 });
 
 test('hosted capability exposes only typed desktop affordances to loopback', () => {
   assert.deepEqual(hostedCapability.windows, ['hosted-app']);
   assert.deepEqual(hostedCapability.remote.urls, ['http://127.0.0.1:*']);
-  assert.deepEqual(hostedCapability.permissions, ['hosted-desktop']);
+  assert.deepEqual(hostedCapability.permissions, ['hosted-desktop', 'core:webview:allow-set-webview-zoom']);
   assert.match(hostedPermission, /current_update/);
   assert.match(hostedPermission, /check_for_update/);
   assert.match(hostedPermission, /install_update/);
@@ -101,11 +101,11 @@ test('hosted capability exposes only typed desktop affordances to loopback', () 
   assert.doesNotMatch(`${JSON.stringify(hostedCapability)}${hostedPermission}`, /shell:|process:|fs:|updater:|dialog:|opener:|core:event|spawn|execute/i);
 });
 
-test('desktop zoom uses webview input without introducing a native menu', () => {
-  assert.equal((rust.match(/\.initialization_script\(ZOOM_CONTROL_SCRIPT\)/g) || []).length, 2);
-  assert.match(rust, /addEventListener\('wheel'/);
-  assert.match(rust, /addEventListener\('keydown'/);
-  assert.match(rust, /document\.documentElement\.style\.zoom = String\(zoomLevel\)/);
+test('desktop zoom uses the native Tauri webview capability without a custom controller', () => {
+  assert.equal((rust.match(/\.zoom_hotkeys_enabled\(true\)/g) || []).length, 2);
+  assert.doesNotMatch(rust, /desktop_zoom|zoom_control_script|MIN_ZOOM/);
+  assert.doesNotMatch(rust, /__omnideckDesktopZoom|__omnideckZoomControlsInstalled/);
+  assert.doesNotMatch(rust, /document\.documentElement\.style\.zoom/);
   assert.doesNotMatch(rust, /\.set_menu\(|\.hide_menu\(|\.on_menu_event\(|MenuItem|Submenu/);
 });
 
@@ -157,10 +157,7 @@ test('hosted container window starts inert and resolves an exact dynamic origin'
 });
 
 test('native desktop enhancements are bounded and observable', () => {
-  assert.match(rust, /const minZoom = 0\.2/);
-  assert.match(rust, /const maxZoom = 10/);
-  assert.match(rust, /const zoomStep = 0\.2/);
-  assert.match(rust, /passive: false/);
+  assert.match(rust, /\.zoom_hotkeys_enabled\(true\)/);
   assert.match(rust, /\.on_download\(/);
   assert.match(rust, /omnideck:download/);
   assert.match(rust, /omnideck:update/);
@@ -204,12 +201,12 @@ test('the AppImage isolates bundled GLib from incompatible host GIO modules', as
 
 test('the promoted CLI beta is pinned with six target binaries and SBOMs', () => {
   assert.equal(vendor.repository, 'omnideck-dev/cli');
-  assert.equal(vendor.tag, 'v0.11.0-beta.2');
-  assert.equal(vendor.version, 'v0.11.0-beta.2');
-  assert.equal(vendor.commit, 'a32d3ad95f44');
+  assert.equal(vendor.tag, 'v0.11.0-beta.5');
+  assert.equal(vendor.version, 'v0.11.0-beta.5');
+  assert.equal(vendor.commit, 'f7f70de2caf5');
   assert.equal(
     vendor.downloadBaseUrl,
-    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.2',
+    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.5',
   );
   assert.deepEqual(vendor.targets.map(({ targetTriple }) => targetTriple).sort(), [
     'aarch64-apple-darwin',
@@ -219,8 +216,8 @@ test('the promoted CLI beta is pinned with six target binaries and SBOMs', () =>
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.2"/);
-  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "a32d3ad95f44"/);
+  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.5"/);
+  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "f7f70de2caf5"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)
     .filter(([name]) => name.startsWith('build:'))

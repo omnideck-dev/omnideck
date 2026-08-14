@@ -25,7 +25,6 @@ class MacOSLabContractTest(unittest.TestCase):
             "native host download",
             "native host upload",
             "native artifact download and toast",
-            "native zoom shortcut",
             "native update bridge visible contract",
             "DMG removal preserves user and runtime data",
             "DMG reinstall and packaged sidecar smoke",

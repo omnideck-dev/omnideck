@@ -40,52 +40,6 @@ const SUPPORTED_SYSTEMS_URL: &str = "https://github.com/omnideck-dev/omnideck#pr
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
 const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(10);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
-const ZOOM_CONTROL_SCRIPT: &str = r#"
-(() => {
-  if (window.__omnideckZoomControlsInstalled) return;
-  window.__omnideckZoomControlsInstalled = true;
-
-  const minZoom = 0.2;
-  const maxZoom = 10;
-  const zoomStep = 0.2;
-  let zoomLevel = 1;
-
-  const setZoom = (next) => {
-    zoomLevel = Math.min(Math.max(next, minZoom), maxZoom);
-    window.__omnideckRequestedZoom = zoomLevel;
-    document.documentElement.style.zoom = String(zoomLevel);
-    window.__omnideckDesktopZoom = zoomLevel;
-    window.dispatchEvent(new CustomEvent('omnideck:zoom-changed', {
-      detail: zoomLevel,
-    }));
-  };
-
-  window.addEventListener('keydown', (event) => {
-    window.__omnideckLastZoomInput = {
-      type: 'keydown', key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
-    };
-    if (event.altKey) return;
-    const accelerator = event.ctrlKey || event.metaKey;
-    const key = String(event.key || '').toLowerCase();
-    if (!accelerator || !['+', '=', 'add', '-', '_', 'subtract', '0'].includes(key)) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (key === '0') setZoom(1);
-    else if (['+', '=', 'add'].includes(key)) setZoom(zoomLevel + zoomStep);
-    else setZoom(zoomLevel - zoomStep);
-  }, { capture: true });
-
-  window.addEventListener('wheel', (event) => {
-    window.__omnideckLastZoomInput = {
-      type: 'wheel', deltaY: event.deltaY, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
-    };
-    if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    setZoom(zoomLevel + (event.deltaY < 0 ? zoomStep : -zoomStep));
-  }, { capture: true, passive: false });
-})();
-"#;
 const HOSTED_BRIDGE_SCRIPT: &str = r#"
 (() => {
   const updateListeners = new Set();
@@ -724,7 +678,7 @@ fn create_desktop_windows(
         .background_color(Color(12, 14, 20, 255))
         .inner_size(1280.0, 820.0)
         .min_inner_size(880.0, 620.0)
-        .initialization_script(ZOOM_CONTROL_SCRIPT)
+        .zoom_hotkeys_enabled(true)
         .on_navigation(is_local_setup_url)
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()?;
@@ -743,7 +697,7 @@ fn create_desktop_windows(
     .min_inner_size(960.0, 640.0)
     .background_color(Color(12, 14, 20, 255))
     .enable_clipboard_access()
-    .initialization_script(ZOOM_CONTROL_SCRIPT)
+    .zoom_hotkeys_enabled(true)
     .initialization_script(HOSTED_BRIDGE_SCRIPT)
     .on_download(|webview, event| {
         if let DownloadEvent::Finished { url, path, success } = event {

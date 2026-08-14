@@ -80,7 +80,7 @@ approval, restart-now, RunOnce reopening, setup/recovery, and package lifecycle.
 Open the viewer only for items listed in `tests/e2e/manual-remainder.json`:
 
 - normal-browser warnings and native macOS Gatekeeper;
-- native macOS or another target without an automation host;
+- a supported target without an available automation host;
 - native picker/clipboard/browser/shortcut/window integration;
 - subjective visual, accessibility, DPI, multi-monitor, and platform fit; and
 - live network interruption, sleep/wake, and destructive interruption timing.

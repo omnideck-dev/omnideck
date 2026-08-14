@@ -50,7 +50,7 @@ below.
 | Published release contract | Release owner | GitHub-hosted Ubuntu, public assets | None | 10-20 minutes | Candidate qualification |
 | Native packaged smoke | Platform tester assigned in the candidate record | Dedicated Windows/macOS/Linux desktop session | Windows installs the app; other runs mount/extract packages | 10-30 minutes per target | Architecture/package qualification |
 | Cross-distro package smoke | Desktop release owner | Disposable local Linux VM lab | Groups package cells by leased guest; foreign DEB/RPM payloads are extracted per run | 5-15 minutes per guest group | Additional compatibility evidence, not native lifecycle qualification |
-| Automated packaged journey | Desktop release owner | Disposable local Linux/Windows VM lab | Resets one leased guest and creates isolated app/runtime state | 20-90 minutes per lane | Local candidate regression gate |
+| Automated packaged journey | Desktop release owner | Disposable local Linux/Windows VM lab and leased Apple Silicon host | Resets one leased guest or namespaced host application state and creates isolated app/runtime state | 20-90 minutes per lane | Local candidate regression gate |
 | Clean first run and recovery | Platform tester assigned in the candidate record | Disposable machine or restorable VM | May install runtimes, change WSL/features, reboot, and create containers/volumes | 1-3 hours per platform | Channel promotion |
 | Visual/platform fit | Human platform reviewer assigned in the candidate record | Representative displays and desktops | App/runtime state only | 30-60 minutes per platform | Beta, RC, and stable promotion |
 

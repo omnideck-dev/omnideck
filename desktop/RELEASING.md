@@ -22,11 +22,12 @@ and published assets are immutable.
 4. Add `docs/releases/v<version>.md` with user-visible changes, upgrade notes,
    known limitations, unsigned-build guidance where applicable, and explicit
    build-only or blocked platform coverage.
-5. From `desktop/`, run:
+5. From the repository root, run the pinned Docker-backed verifier. This is the
+   canonical local gate and does not require Node, pnpm, Rust, or Cargo on the
+   host:
 
    ```sh
-   pnpm install --frozen-lockfile
-   pnpm run verify
+   ./desktop/scripts/run-linux-builder.sh
    ```
 
    For a disconnected build, use the exact offline archive procedure in
