@@ -168,6 +168,15 @@ _REQUIRED_SKILL: dict[str, str] = {
     "write_file": "coder",
     "read_file": "coder",
     "replace_in_file": "coder",
+    # Routine-planning tools. Keeping these behind the real skill load lets
+    # deterministic E2E prompts exercise the same load_skill -> tool path as a
+    # cooperative model instead of granting planning tools only in test mode.
+    "begin_routine": "routine_planner",
+    "add_task": "routine_planner",
+    "commit_routine": "routine_planner",
+    "list_routines": "routine_planner",
+    "list_tasks": "routine_planner",
+    "trigger_routine": "routine_planner",
     # Browser skill tools (reachable via the generic TOOL directive).
     "new_tab": "browser",
     "close_tab": "browser",
