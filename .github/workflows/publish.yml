@@ -76,14 +76,41 @@ jobs:
       - name: Run UI tests
         run: just test-ui run
 
-  # Full-stack e2e, post-merge on main. Runs after the multi-arch image is
-  # built and published, then pulls that exact image and runs the suite against
-  # it — no build here. `just e2e` runs the app with MOCK_LLM=1 (in-process
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/ui/package-lock.json
+
+      - name: Install quality dependencies
+        run: |
+          uv sync --frozen --extra dev --extra test
+          npm ci --prefix server/ui
+
+      - name: Run agent quality gate
+        run: just check
+
+  # Full-stack e2e against the image that was just built, by digest, before
+  # any tag points at it — so a commit that fails here never becomes the image
+  # anyone pulls. `just e2e` runs the app with MOCK_LLM=1 (in-process
   # FakeProvider — no Ollama, GPU, or API keys) and drives the real UI with
-  # Playwright from the host. Since the image was just published from this same
-  # commit, its baked source/deps/UI already match the checkout.
+  # Playwright from the host. The image was built from this same commit, so its
+  # baked source/deps/UI already match the checkout.
   e2e-tests:
-    needs: merge
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -111,19 +138,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull published image
-        run: docker pull "ghcr.io/${{ github.repository }}:latest"
+      - name: Download the digest built for this runner's architecture
+        uses: actions/download-artifact@v8
+        with:
+          name: digests-linux-amd64
+          path: /tmp/digests
+
+      - name: Pull the image by digest
+        id: image
+        run: |
+          digest=$(cat /tmp/digests/linux-amd64.txt)
+          image="ghcr.io/${{ github.repository }}@${digest}"
+          docker pull "${image}"
+          echo "ref=${image}" >> "$GITHUB_OUTPUT"
 
       # E2E_SKIP_BUILD runs the pulled image as-is instead of building one.
       - name: Run e2e tests
         env:
-          E2E_IMAGE: ghcr.io/${{ github.repository }}:latest
+          E2E_IMAGE: ${{ steps.image.outputs.ref }}
           E2E_SKIP_BUILD: "1"
         run: just e2e
 
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
-    needs: [unit-tests, browser-tools, ui-tests]
+    needs: [unit-tests, browser-tools, ui-tests, quality]
     if: github.event_name == 'push'
     strategy:
       matrix:
@@ -168,22 +206,26 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
       - name: Store digest
+        id: platform
         run: |
           mkdir -p /tmp/digests
           platform=${{ matrix.platform }}
-          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${platform//\//-}.txt"
+          slug="${platform//\//-}"
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${slug}.txt"
+          echo "slug=${slug}" >> "$GITHUB_OUTPUT"
 
       - name: Upload digest
         uses: actions/upload-artifact@v7
         with:
-          name: digests-${{ strategy.job-index }}
+          name: digests-${{ steps.platform.outputs.slug }}
           path: /tmp/digests/*.txt
           retention-days: 1
 
   # Merge per-platform images into a single multi-arch manifest and tag it.
+  # Runs after e2e so latest never points at an image that failed it.
   merge:
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, e2e-tests]
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8

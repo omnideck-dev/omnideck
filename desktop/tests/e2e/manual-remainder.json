@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "status": "not-run",
+  "rule": "These checks are never inferred from an automated pass.",
+  "procedures": [
+    {
+      "path": "desktop/tests/manual/published-artifact.md",
+      "covers": "normal-browser download warnings plus Gatekeeper on native macOS hardware"
+    },
+    {
+      "path": "desktop/tests/manual/clean-first-run.md",
+      "covers": "native macOS permission handling and any clean-machine target without an available automation host"
+    },
+    {
+      "path": "desktop/tests/manual/hosted-app-behavior.md",
+      "covers": "native file-picker presentation, clipboard, system-browser routing, shortcuts, single-instance focus, and window-close behavior; downloaded and uploaded data transfer is automated separately"
+    },
+    {
+      "path": "desktop/tests/manual/visual-platform.md",
+      "covers": "subjective visual quality, theme, DPI, multi-monitor, menus, and accessibility review"
+    },
+    {
+      "path": "desktop/tests/manual/recovery-lifecycle.md",
+      "covers": "live network interruption, sleep/wake, and destructive interruption timing"
+    }
+  ]
+}

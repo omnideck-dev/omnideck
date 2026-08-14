@@ -333,6 +333,8 @@ dev = [
     { name = "mypy" },
     { name = "ruff" },
     { name = "types-cachetools" },
+    { name = "types-croniter" },
+    { name = "types-oauthlib" },
     { name = "types-pyyaml" },
 ]
 test = [
@@ -375,6 +377,8 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "trafilatura", specifier = ">=2.0" },
     { name = "types-cachetools", marker = "extra == 'dev'" },
+    { name = "types-croniter", marker = "extra == 'dev'" },
+    { name = "types-oauthlib", marker = "extra == 'dev'" },
     { name = "types-pyyaml", marker = "extra == 'dev'" },
 ]
 provides-extras = ["test", "dev"]
@@ -1967,6 +1971,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/03/d0/55ff0eeda141436c1bd2142cd026906870c661b3f7755070d6da7ea7210f/types_cachetools-6.0.0.20250525.tar.gz", hash = "sha256:baf06f234cac3aeb44c07893447ba03ecdb6c0742ba2607e28a35d38e6821b02", size = 8925, upload-time = "2025-05-25T03:13:53.498Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/47/8c/4ab0a17ece30fe608270b89cf066387051862899fff9f54ab12511fc7fdd/types_cachetools-6.0.0.20250525-py3-none-any.whl", hash = "sha256:1de8f0fe4bdcb187a48d2026c1e3672830f67943ad2bf3486abe031b632f1252", size = 8938, upload-time = "2025-05-25T03:13:52.406Z" },
+]
+
+[[package]]
+name = "types-croniter"
+version = "6.2.4.20260711"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/e1/ef8900515a103efa41b29ce81e59efb18e72bc9642139c5a3a17f6022641/types_croniter-6.2.4.20260711.tar.gz", hash = "sha256:807793e109f4e0d51ec18f6277a1a5f1d133e425ac6bee3a7c3254ab1793e0ea", size = 12164, upload-time = "2026-07-11T04:51:18.624Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c8/3f/896a98180a55f855bd068b97e8c99fd4ce1885a4b43f68fd7b29641084f6/types_croniter-6.2.4.20260711-py3-none-any.whl", hash = "sha256:601b68139a47fe1b2177f433132cc81fd91155f3059a49c5cb63404c389dff01", size = 9746, upload-time = "2026-07-11T04:51:17.662Z" },
+]
+
+[[package]]
+name = "types-oauthlib"
+version = "3.3.0.20260724"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/ed/72823bc9c60e8f5354827eec6b85aa1baec94b3ca6c62f8e104c3717c31b/types_oauthlib-3.3.0.20260724.tar.gz", hash = "sha256:00c7dab6a2f764e991180bff4bdb1ba8bddb1d546013b1c81f903192c30f2386", size = 26194, upload-time = "2026-07-24T04:58:57.564Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/e8/96d1e19015c1384022a296a2e73d7843739ccc2f13afcaed5c2f797c86e4/types_oauthlib-3.3.0.20260724-py3-none-any.whl", hash = "sha256:73bc776c00ed00957bc1422a3a53696d8aa18f24c47a628e08566c0d4e0a6bbd", size = 48967, upload-time = "2026-07-24T04:58:56.634Z" },
 ]
 
 [[package]]

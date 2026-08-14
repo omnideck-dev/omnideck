@@ -1,0 +1,77 @@
+name: Release container
+run-name: Release container ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Container version (X.Y.Z)
+        required: true
+        type: string
+
+concurrency:
+  group: omnideck-container-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote tested image
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          [[ "${GITHUB_REF}" = "refs/heads/main" ]] || {
+            echo "Container releases must run from main"
+            exit 1
+          }
+          [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Container version must be plain X.Y.Z"
+            exit 1
+          }
+
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${GITHUB_SHA:0:7}"
+          release_image="ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"
+          source_digest=$(docker buildx imagetools inspect \
+            "${source_image}" \
+            --format '{{.Manifest.Digest}}')
+          [[ "${source_digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "${source_image} is not a tested multi-architecture image"
+            exit 1
+          }
+
+          if release_digest=$(docker buildx imagetools inspect \
+            "${release_image}" \
+            --format '{{.Manifest.Digest}}' 2>/dev/null); then
+            [[ "${release_digest}" = "${source_digest}" ]] || {
+              echo "${release_image} already points at ${release_digest}"
+              exit 1
+            }
+            echo "${release_image} already points at ${source_digest}"
+            exit 0
+          fi
+
+          source_ref="ghcr.io/${GITHUB_REPOSITORY}@${source_digest}"
+          docker buildx imagetools create --tag "${release_image}" "${source_ref}"
+          release_digest=$(docker buildx imagetools inspect \
+            "${release_image}" \
+            --format '{{.Manifest.Digest}}')
+          [[ "${release_digest}" = "${source_digest}" ]] || {
+            echo "${release_image} does not match ${source_ref}"
+            exit 1
+          }
+          echo "Released ${release_image} at ${release_digest}"

@@ -155,6 +155,7 @@ def _iter_directives(task: str) -> list[tuple[str, str, str]]:
             out.append(("PARALLEL", "", task[m.end():close.start()]))
             pos = close.end()
         else:
+            assert cm is not None
             out.append((cm.group("name").upper(), cm.group("arg"), cm.group("body")))
             pos = cm.end()
     return out

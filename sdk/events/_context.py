@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
@@ -41,6 +42,10 @@ class EventSink(Protocol):
     """
 
     def add_event(self, event: AgentEvent) -> None: ...
+
+    def subscribe(self, handler: Callable[[AgentEvent], object]) -> None: ...
+
+    def unsubscribe(self, handler: Callable[[AgentEvent], object]) -> None: ...
 
 
 # Event sink bound for the current coroutine context. Set by turn_scope.

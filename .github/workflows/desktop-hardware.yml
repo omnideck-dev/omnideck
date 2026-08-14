@@ -1,0 +1,241 @@
+name: Native desktop package smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published desktop release tag"
+        required: true
+        type: string
+      target:
+        description: "Dedicated hardware target"
+        required: true
+        default: primary
+        type: choice
+        options:
+          - primary
+          - windows-x64
+          - windows-arm64
+          - macos-arm64
+          - macos-x64
+          - linux-x64
+          - linux-arm64
+      require_ready:
+        description: "Require the machine's Podman runtime to be ready"
+        required: true
+        default: false
+        type: boolean
+      confirm:
+        description: "I confirm these are dedicated desktop test machines"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: desktop-hardware-${{ inputs.version }}-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require dedicated-machine confirmation
+        if: ${{ !inputs.confirm }}
+        run: |
+          echo "Native desktop smoke may run only on confirmed dedicated test machines."
+          exit 1
+
+  windows_x64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && (inputs.target == 'primary' || inputs.target == 'windows-x64') }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, windows, x64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install and smoke the published package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          $arguments = @{
+            Release = $env:RELEASE_VERSION
+            Scenario = "Keep"
+            Architecture = "x64"
+            Smoke = $true
+          }
+          if ($env:REQUIRE_READY -eq "true") { $arguments.RequireReady = $true }
+          ./desktop/scripts/release-test/windows.ps1 @arguments
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-windows-x64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn
+
+  windows_arm64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && inputs.target == 'windows-arm64' }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, windows, arm64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install and smoke the published package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          $arguments = @{
+            Release = $env:RELEASE_VERSION
+            Scenario = "Keep"
+            Architecture = "arm64"
+            Smoke = $true
+          }
+          if ($env:REQUIRE_READY -eq "true") { $arguments.RequireReady = $true }
+          ./desktop/scripts/release-test/windows.ps1 @arguments
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-windows-arm64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn
+
+  macos_arm64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && (inputs.target == 'primary' || inputs.target == 'macos-arm64') }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, macos, arm64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Smoke the published package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          arguments=(--release "${RELEASE_VERSION}" --scenario keep --smoke)
+          if [[ "${REQUIRE_READY}" == "true" ]]; then arguments+=(--require-ready); fi
+          ./desktop/scripts/release-test/macos.sh "${arguments[@]}"
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-macos-arm64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn
+
+  macos_x64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && inputs.target == 'macos-x64' }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, macos, x64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Smoke the published package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          arguments=(--release "${RELEASE_VERSION}" --scenario keep --smoke)
+          if [[ "${REQUIRE_READY}" == "true" ]]; then arguments+=(--require-ready); fi
+          ./desktop/scripts/release-test/macos.sh "${arguments[@]}"
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-macos-x64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn
+
+  linux_x64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && (inputs.target == 'primary' || inputs.target == 'linux-x64') }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, linux, x64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Smoke the published package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          arguments=(--release "${RELEASE_VERSION}" --scenario keep --smoke)
+          if [[ "${REQUIRE_READY}" == "true" ]]; then arguments+=(--require-ready); fi
+          ./desktop/scripts/release-test/linux.sh "${arguments[@]}"
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-linux-x64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn
+
+  linux_arm64:
+    if: ${{ github.repository == 'omnideck-dev/omnideck' && inputs.confirm && inputs.target == 'linux-arm64' }}
+    needs: authorize
+    runs-on: [self-hosted, omnideck-desktop, linux, arm64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Smoke the published package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUIRE_READY: ${{ inputs.require_ready }}
+        run: |
+          arguments=(--release "${RELEASE_VERSION}" --scenario keep --smoke)
+          if [[ "${REQUIRE_READY}" == "true" ]]; then arguments+=(--require-ready); fi
+          ./desktop/scripts/release-test/linux.sh "${arguments[@]}"
+      - name: Upload hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-hardware-linux-arm64-${{ github.run_id }}
+          path: artifacts/desktop-hardware/
+          if-no-files-found: warn

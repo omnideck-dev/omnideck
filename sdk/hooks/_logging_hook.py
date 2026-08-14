@@ -30,7 +30,7 @@ class LoggingHook:
         if not logger.isEnabledFor(logging.DEBUG):
             return
         msg_count = len(history.messages)
-        roles = {}
+        roles: dict[str, int] = {}
         for msg in history.messages:
             role = msg.get("role", "unknown")
             roles[role] = roles.get(role, 0) + 1
@@ -125,7 +125,7 @@ class LoggingHook:
                 tool_calls_text = "\n".join(tool_calls_parts)
 
         # Compose output
-        parts = []
+        parts: list[Any] = []
         if stats_table:
             parts.append(stats_table)
         if thinking_text:

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "hosted-desktop"
+description = "Allows the exact loopback application origin to use typed update commands."
+commands.allow = ["current_update", "check_for_update", "install_update", "defer_update", "skip_update"]

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 
 import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js';
 import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
+import { bytesDownload, triggerDownload } from '../utils/downloads.js';
 
 // How often to re-check a disk-backed file for changes while its preview is open.
 const POLL_INTERVAL_MS = 4000;
@@ -205,22 +206,23 @@ export default function useFileContent(item) {
     }, [text]);
 
     const handleDownload = useCallback(() => {
-        const link = document.createElement('a');
-        if (text) {
-            const blob = new Blob([text], { type: content_type || 'text/plain' });
-            link.href = URL.createObjectURL(blob);
+        // Prefer the same-origin file route even when its text is already in
+        // memory. Native webviews can stream that response directly to their
+        // download manager; turning it back into a blob is less portable. A
+        // regular browser keeps its existing text-blob behavior.
+        const nativeHost = typeof window !== 'undefined' && !!window.omnideckHost;
+        if (path && nativeHost) {
+            triggerDownload(path, filename || 'file');
+        } else if (text) {
+            bytesDownload(text, content_type || 'text/plain', filename || 'file');
         } else if (path) {
-            link.href = path;
+            triggerDownload(path, filename || 'file');
         } else if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
             for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-            const blob = new Blob([bytes], { type: content_type || 'application/octet-stream' });
-            link.href = URL.createObjectURL(blob);
+            bytesDownload(bytes, content_type, filename || 'file');
         }
-        link.download = filename || 'file';
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 100);
     }, [text, content, content_type, path, filename]);
 
     return {

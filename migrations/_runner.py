@@ -20,6 +20,7 @@ from migrations._010_backfill_artifacts_index import migrate as _010_backfill_ar
 from migrations._011_seed_welcome_conversation import migrate as _011_seed_welcome_conversation
 from migrations._012_computron_path_rename import migrate as _012_computron_path_rename
 from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
+from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("011_seed_welcome_conversation", _011_seed_welcome_conversation),
     ("012_computron_path_rename", _012_computron_path_rename),
     ("013_goals_to_routines", _013_goals_to_routines),
+    ("014_software_updates_setting", _014_software_updates_setting),
 ]
 
 

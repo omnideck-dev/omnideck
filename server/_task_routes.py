@@ -7,7 +7,8 @@ import logging
 from aiohttp import web
 
 from conversations import delete_conversation
-from tasks import get_store
+from tasks import TaskStore, get_store
+from tasks._models import Run
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,11 @@ def _enrich_task(task_data: dict, names: dict[str, str]) -> dict:
     return task_data
 
 
-def _serialize_run(store, run, profile_name_map: dict[str, str] | None = None) -> dict:
+def _serialize_run(
+    store: TaskStore,
+    run: Run,
+    profile_name_map: dict[str, str] | None = None,
+) -> dict[str, object]:
     """Serialize a run with its task_results for JSON responses."""
     results = store.get_task_results(run.id)
     return {**run.model_dump(), "task_results": [tr.model_dump() for tr in results]}

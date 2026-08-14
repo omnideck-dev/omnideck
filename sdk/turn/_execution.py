@@ -1,10 +1,15 @@
 """Tool loop utilities for executing chat-based LLM interactions with tool calls."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from config import ParallelConfig
 
 from agents.types import Agent
 from sdk.context import ConversationHistory
@@ -23,11 +28,7 @@ from sdk.tools import _execute_tool_call
 
 from ._turn import StopRequestedError, check_stop
 
-if TYPE_CHECKING:
-    from config import ParallelConfig
-
-
-def _get_parallel_config() -> "ParallelConfig":
+def _get_parallel_config() -> ParallelConfig:
     """Lazy-load parallel config to avoid circular imports at module level."""
     from config import load_config
 

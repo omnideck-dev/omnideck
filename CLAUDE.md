@@ -21,11 +21,12 @@
 - `just test-file <path>` — Run tests for a specific file
 - `just test-ui` — Run Vitest UI tests
 
-### Quality (only run when asked)
-- `just lint` — Lint with ruff (`uv run ruff check .`)
-- `just typecheck` — Type check with mypy (`uv run mypy .`)
+### Quality
+- `just lint` — High-signal Python and React correctness lint
+- `just typecheck` — Type check production Python and the typed React event boundary
+- `just tool-docs` — Verify agent tool schema documentation
 - `just format` — Auto-format with ruff (`uv run ruff check --fix . && uv run ruff format .`)
-- `just check` — Run all quality checks (lint + typecheck + format-check)
+- `just check` — Run the fast, non-mutating agent quality gate before handoff
 
 ## Python Conventions
 
@@ -61,7 +62,7 @@
 - Write tests for new features/bugs; descriptive names
 - Place tests in `tests/` mirroring source structure
 - Only run tests when instructed or before committing.
-- Only run quality checks when asked
+- Run `just check` before handing off code changes
 - NEVER PATCH AROUND TEST FAILURES
   - Do not introduce logic changes that bypass failing tests.
   - Do not add "if" guards, mocks, or fallback logic just to quiet tests.

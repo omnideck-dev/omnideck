@@ -63,7 +63,8 @@ def test_disable_profile_hides_from_chat_dropdown(page: Page):
         agents.close()
         chat_selector = page.get_by_label("Agent profile")
         expect(chat_selector).to_be_visible()
-        option = chat_selector.locator("option", has_text="Disable Me")
+        chat_selector.click()
+        option = page.get_by_role("option", name="Disable Me", exact=True)
         expect(option).to_have_count(0)
     finally:
         _delete_profile_via_api(page, profile_id)

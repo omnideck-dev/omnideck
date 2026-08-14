@@ -48,7 +48,8 @@ def test_create_profile_persists_all_settings(page: Page):
     builder.field("context_window").fill("16000")
     builder.field("num_predict").fill("4096")
     builder.field("max_iterations").fill("25")
-    page.get_by_test_id("compaction-threshold-select").select_option("0.85")
+    page.get_by_test_id("compaction-threshold-select").click()
+    page.locator('[role="option"][data-value="0.85"]').click()
     page.locator("label", has_text="Thinking").click()
 
     # --- Save ---

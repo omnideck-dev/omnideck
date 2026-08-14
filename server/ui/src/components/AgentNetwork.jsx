@@ -101,7 +101,7 @@ export default function AgentNetwork({ onSelectAgent, runningCount = 0 }) {
     useEffect(() => {
         if (!containerRef.current || !svgRef.current) return;
         _drawConnectors(containerRef.current, svgRef.current, agents);
-    }, [topoKey, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [topoKey, tick]);
 
     // Observe resize to redraw connectors
     useEffect(() => {
@@ -112,7 +112,7 @@ export default function AgentNetwork({ onSelectAgent, runningCount = 0 }) {
     }, []);
 
     // Build per-root trees for layout (memoized on topology)
-    const trees = useMemo(() => _buildTrees(agents), [topoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const trees = useMemo(() => _buildTrees(agents), [topoKey]);
     // Update elapsed time every second for running agents
     useEffect(() => {
         if (runningCount === 0) return;

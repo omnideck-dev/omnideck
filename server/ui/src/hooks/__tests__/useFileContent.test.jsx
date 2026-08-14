@@ -32,6 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    delete window.omnideckHost;
     vi.useRealTimers();
     vi.restoreAllMocks();
     resetFileWatch();
@@ -45,6 +46,23 @@ const textItem = {
 };
 
 describe('useFileContent disk-change watcher', () => {
+    it('downloads a disk-backed artifact through its native-streamable path', async () => {
+        window.omnideckHost = Object.freeze({});
+        const anchor = document.createElement('a');
+        anchor.click = vi.fn();
+        vi.spyOn(document, 'createElement').mockReturnValue(anchor);
+        await act(async () => {
+            render(<Harness item={textItem} />);
+            await vi.advanceTimersByTimeAsync(0);
+        });
+
+        act(() => latest.handleDownload());
+
+        expect(anchor.href).toContain(textItem.path);
+        expect(anchor.download).toBe(textItem.filename);
+        expect(anchor.click).toHaveBeenCalledTimes(1);
+    });
+
     it('flags stale when the file changes on disk', async () => {
         await act(async () => {
             render(<Harness item={textItem} />);
