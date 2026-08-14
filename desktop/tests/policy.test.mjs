@@ -10,7 +10,17 @@ const permission = await read('../src-tauri/permissions/read-only-cli.toml');
 const hostedPermission = await read('../src-tauri/permissions/hosted-desktop.toml');
 const adapter = await read('../web/host-adapter.js');
 const html = await read('../web/index.html');
-const rust = await read('../src-tauri/src/lib.rs');
+const rustModules = Object.fromEntries(await Promise.all([
+  'lib',
+  'commands',
+  'downloads',
+  'navigation',
+  'runtime',
+  'updates',
+  'windows',
+  'zoom',
+].map(async (module) => [module, await read(`../src-tauri/src/${module}.rs`)])));
+const rust = Object.values(rustModules).join('\n');
 const rustMain = await read('../src-tauri/src/main.rs');
 const rustBuild = await read('../src-tauri/build.rs');
 const platformRust = await read('../src-tauri/src/platform.rs');
@@ -102,11 +112,28 @@ test('hosted capability exposes only typed desktop affordances to loopback', () 
 });
 
 test('desktop zoom uses the native Tauri webview capability without a custom controller', () => {
-  assert.equal((rust.match(/\.zoom_hotkeys_enabled\(true\)/g) || []).length, 2);
+  assert.equal((rustModules.zoom.match(/\.zoom_hotkeys_enabled\(true\)/g) || []).length, 1);
+  assert.equal((rustModules.windows.match(/zoom::with_native_hotkeys\(/g) || []).length, 2);
   assert.doesNotMatch(rust, /desktop_zoom|zoom_control_script|MIN_ZOOM/);
   assert.doesNotMatch(rust, /__omnideckDesktopZoom|__omnideckZoomControlsInstalled/);
   assert.doesNotMatch(rust, /document\.documentElement\.style\.zoom/);
   assert.doesNotMatch(rust, /\.set_menu\(|\.hide_menu\(|\.on_menu_event\(|MenuItem|Submenu/);
+});
+
+test('desktop host responsibilities stay in focused Rust modules', () => {
+  assert.match(rustModules.lib, /mod commands;/);
+  assert.match(rustModules.lib, /mod downloads;/);
+  assert.match(rustModules.lib, /mod navigation;/);
+  assert.match(rustModules.lib, /mod runtime;/);
+  assert.match(rustModules.lib, /mod windows;/);
+  assert.match(rustModules.lib, /mod zoom;/);
+  assert.match(rustModules.commands, /tauri::generate_handler!/);
+  assert.match(rustModules.downloads, /omnideck:download/);
+  assert.match(rustModules.navigation, /enum HostedNavigation/);
+  assert.match(rustModules.runtime, /async fn begin_setup/);
+  assert.match(rustModules.windows, /fn create_desktop_windows/);
+  assert.match(rustModules.zoom, /fn with_native_hotkeys/);
+  assert.doesNotMatch(rustModules.lib, /#\[tauri::command\]/);
 });
 
 test('permissions expose only their narrow typed command sets', () => {
@@ -149,7 +176,7 @@ test('hosted container window starts inert and resolves an exact dynamic origin'
   assert.match(rust, /HostedNavigation::OpenExternal/);
   assert.match(rust, /matches!\(url\.scheme\(\), "http" \| "https"\)/);
   assert.match(rust, /platform::open_url\(url\.as_str\(\)\)/);
-  assert.match(rust, /fn authorize_hosted\(window: &WebviewWindow, host: &HostState\)/);
+  assert.match(rust, /fn authorize_hosted\(\s*window: &WebviewWindow,\s*host: &HostState,?\s*\)/);
   assert.doesNotMatch(rust, /const HOSTED_APP_PORT/);
   assert.match(rust, /url\.host_str\(\) == Some\("127\.0\.0\.1"\)/);
   assert.match(rust, /url\.port\(\) == expected_port/);
