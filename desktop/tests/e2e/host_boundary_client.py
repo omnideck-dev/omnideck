@@ -44,6 +44,43 @@ def wait_until(description: str, timeout: float, probe: Callable[[], Any]) -> An
     raise AssertionError(f"Timed out waiting for {description}; last={last!r}")
 
 
+def assert_zoom_layout(snapshot: Any, target: float) -> dict[str, Any]:
+    """Reject viewport overflow, iframe scaling, and detached tab menus."""
+    if not isinstance(snapshot, dict):
+        raise AssertionError(f"Missing zoom layout snapshot at {target}: {snapshot!r}")
+    if snapshot.get("cssZoom"):
+        raise AssertionError(f"CSS zoom remained active at {target}: {snapshot!r}")
+
+    viewport = snapshot.get("viewport", {})
+    overflow = viewport.get("overflow", {})
+    if any(value > 2 for value in overflow.values() if isinstance(value, (int, float))):
+        raise AssertionError(f"Zoom {target} overflowed the desktop viewport: {snapshot!r}")
+
+    menu = snapshot.get("menu")
+    if not isinstance(menu, dict):
+        raise AssertionError(f"Zoom {target} had no measurable tab actions menu: {snapshot!r}")
+    errors = menu.get("anchorError", {})
+    if any(value > 3 for value in errors.values() if isinstance(value, (int, float))):
+        raise AssertionError(f"Zoom {target} detached the tab actions menu: {snapshot!r}")
+    if menu.get("insideViewport") is not True:
+        raise AssertionError(f"Zoom {target} moved the tab actions menu offscreen: {snapshot!r}")
+
+    frames = snapshot.get("frames", [])
+    if not frames:
+        raise AssertionError(f"Zoom {target} had no iframe viewport measurement: {snapshot!r}")
+    mismatched = [
+        frame for frame in frames
+        if frame.get("insideViewport") is not True
+        or (
+            frame.get("viewportWidthError") is not None
+            and frame["viewportWidthError"] > 4
+        )
+    ]
+    if mismatched:
+        raise AssertionError(f"Zoom {target} desynchronized iframe layouts: {mismatched!r}")
+    return snapshot
+
+
 class HostBoundaryJourney:
     def __init__(self, driver: WebDriver, evidence: Path, timeout: float) -> None:
         self.driver = driver
@@ -290,131 +327,218 @@ fetch(%s, options).then(async (response) => {
             encoding="utf-8",
         )
 
-    def zoom(self, native_input_tool: str = "") -> None:
+    def zoom(
+        self,
+        native_input_signal_dir: Path | None = None,
+    ) -> None:
         initial = self.select_hosted_window()
         self.driver.execute("""
 document.body.tabIndex = -1;
 document.body.focus();
 return true;
 """)
+        baseline_width = self.driver.execute("return window.innerWidth;")
+        if not isinstance(baseline_width, (int, float)) or baseline_width <= 0:
+            raise AssertionError(f"Invalid native zoom baseline width: {baseline_width!r}")
 
-        installed = self.driver.execute(
-            "return window.__omnideckZoomControlsInstalled === true;"
-        )
-        if installed is not True:
-            raise AssertionError("The native zoom input controller was not installed")
+        def measured_zoom() -> float | None:
+            width = self.driver.execute("return window.innerWidth;")
+            if not isinstance(width, (int, float)) or width <= 0:
+                return None
+            return round(float(baseline_width) / float(width), 2)
 
-        def wait_for_level(target: float) -> float:
-            try:
-                return wait_until(
-                    f"native zoom level {target}",
-                    self.timeout,
-                    lambda: self.driver.execute(
-                        f"return window.__omnideckDesktopZoom === {target} "
-                        f"&& document.documentElement.style.zoom === '{target}' ? {target} : null;"
-                    ),
-                )
-            except AssertionError as error:
-                diagnostic = self.driver.execute("""
+        def wait_for_zoom(description: str, predicate: Callable[[float], bool]) -> float:
+            value = wait_until(
+                description,
+                self.timeout,
+                lambda: (
+                    current
+                    if (current := measured_zoom()) is not None
+                    and predicate(current)
+                    else None
+                ),
+            )
+            return float(value)
+
+        def layout_snapshot(target: float) -> dict[str, Any]:
+            def probe() -> dict[str, Any] | None:
+                return self.driver.execute("""
+const trigger = document.querySelector('[data-testid^="view-tab-actions-"]');
+if (!trigger) return null;
+let menu = document.querySelector('[data-testid^="view-tab-menu-"]');
+if (!menu) {
+  const triggerRect = trigger.getBoundingClientRect();
+  window.__omnideckZoomMenuOpeningAnchor = {
+    left: triggerRect.left,
+    bottom: triggerRect.bottom,
+  };
+  trigger.click();
+  return null;
+}
+const triggerRect = trigger.getBoundingClientRect();
+const menuRect = menu.getBoundingClientRect();
+const openingAnchor = window.__omnideckZoomMenuOpeningAnchor;
+if (!openingAnchor) return null;
+const margin = 8;
+const expectedLeft = Math.max(
+  margin,
+  Math.min(openingAnchor.left, window.innerWidth - menuRect.width - margin),
+);
+const expectedTop = Math.max(
+  margin,
+  Math.min(openingAnchor.bottom, window.innerHeight - menuRect.height - margin),
+);
+const root = document.documentElement;
+const body = document.body;
+let frameProbe = document.querySelector('[data-zoom-layout-probe]');
+if (!frameProbe) {
+  frameProbe = document.createElement('iframe');
+  frameProbe.dataset.zoomLayoutProbe = 'true';
+  frameProbe.srcdoc = '<!doctype html><meta charset="utf-8"><style>html,body{margin:0}</style>';
+  Object.assign(frameProbe.style, {
+    position: 'fixed', left: '8px', top: '8px', width: '320px', height: '180px',
+    border: '0', visibility: 'hidden', pointerEvents: 'none',
+  });
+  body.append(frameProbe);
+}
+const frames = [...document.querySelectorAll('iframe')]
+  .filter((frame) => {
+    const rect = frame.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  })
+  .map((frame) => {
+    const rect = frame.getBoundingClientRect();
+    let contentViewportWidth = null;
+    try { contentViewportWidth = frame.contentWindow?.innerWidth ?? null; } catch (_) {}
+    return {
+      left: rect.left,
+      right: rect.right,
+      width: rect.width,
+      contentViewportWidth,
+      viewportWidthError: contentViewportWidth === null
+        ? null
+        : Math.abs(contentViewportWidth - rect.width),
+      insideViewport: rect.left >= -2 && rect.right <= window.innerWidth + 2,
+    };
+  });
 return {
-  installed: window.__omnideckZoomControlsInstalled,
-  lastInput: window.__omnideckLastZoomInput || null,
-  requested: window.__omnideckRequestedZoom || null,
-  resolved: window.__omnideckDesktopZoom || null,
-  pageZoom: document.documentElement.style.zoom || null,
+  cssZoom: root.style.zoom || '',
+  viewport: {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    overflow: {
+      documentX: Math.max(0, root.scrollWidth - root.clientWidth),
+      documentY: Math.max(0, root.scrollHeight - root.clientHeight),
+      bodyX: Math.max(0, body.scrollWidth - root.clientWidth),
+      bodyY: Math.max(0, body.scrollHeight - root.clientHeight),
+    },
+  },
+  menu: {
+    openingTriggerLeft: openingAnchor.left,
+    openingTriggerBottom: openingAnchor.bottom,
+    triggerLeft: triggerRect.left,
+    triggerBottom: triggerRect.bottom,
+    left: menuRect.left,
+    top: menuRect.top,
+    right: menuRect.right,
+    bottom: menuRect.bottom,
+    expectedLeft,
+    expectedTop,
+    anchorError: {
+      x: Math.abs(menuRect.left - expectedLeft),
+      y: Math.abs(menuRect.top - expectedTop),
+    },
+    insideViewport: menuRect.left >= margin - 1
+      && menuRect.top >= margin - 1
+      && menuRect.right <= window.innerWidth - margin + 1
+      && menuRect.bottom <= window.innerHeight - margin + 1,
+  },
+  frames,
 };
 """)
-                raise AssertionError(f"{error}; zoom diagnostic={diagnostic!r}") from error
+
+            snapshot = wait_until(
+                f"stable tab menu layout at native zoom {target}",
+                self.timeout,
+                probe,
+            )
+            self.driver.execute("""
+document.dispatchEvent(new KeyboardEvent('keydown', {
+  key: 'Escape', bubbles: true, cancelable: true,
+}));
+return true;
+""")
+            wait_until(
+                "tab actions menu to close after zoom layout capture",
+                self.timeout,
+                lambda: self.driver.execute(
+                    "return !document.querySelector('[data-testid^=\"view-tab-menu-\"]');"
+                ),
+            )
+            self.driver.execute(
+                "delete window.__omnideckZoomMenuOpeningAnchor; return true;"
+            )
+            return assert_zoom_layout(snapshot, target)
+
+        external_input_count = 0
+
+        def external_shortcut(action: str) -> None:
+            nonlocal external_input_count
+            if native_input_signal_dir is None:
+                raise AssertionError("External native input is unavailable")
+            external_input_count += 1
+            stem = f"zoom-input-{external_input_count:03d}-{action}"
+            request = native_input_signal_dir / f"{stem}.request"
+            acknowledgement = native_input_signal_dir / f"{stem}.ack"
+            acknowledgement.unlink(missing_ok=True)
+            request.write_text(action + "\n", encoding="utf-8")
+            wait_until(
+                f"VM hardware input acknowledgement for {action}",
+                self.timeout,
+                acknowledgement.is_file,
+            )
 
         def keyboard_shortcut(key: str) -> None:
-            prevented = self.driver.execute("""
-const event = new KeyboardEvent('keydown', {
-  key: %s, ctrlKey: true, bubbles: true, cancelable: true,
-});
-return !window.dispatchEvent(event);
-""" % json.dumps(key))
-            if prevented is not True:
-                raise AssertionError("The native keyboard zoom input was not intercepted")
-
-        def wheel_zoom(delta_y: int) -> None:
-            prevented = self.driver.execute("""
-const event = new WheelEvent('wheel', {
-  deltaY: %s, ctrlKey: true, bubbles: true, cancelable: true,
-});
-return !window.dispatchEvent(event);
-""" % delta_y)
-            if prevented is not True:
-                raise AssertionError("The native mouse-wheel zoom input was not intercepted")
+            if native_input_signal_dir is not None:
+                action = "reset" if key == "0" else "in" if key == "=" else "out"
+                external_shortcut(action)
+            else:
+                self.driver.send_keys("body", f"\ue009{key}\ue000")
 
         keyboard_shortcut("=")
-        keyboard_zoom = wait_for_level(1.2)
+        keyboard_zoom = wait_for_zoom(
+            "one native zoom-in step",
+            lambda current: current >= 1.05,
+        )
+        layouts = {"keyboardIn": layout_snapshot(keyboard_zoom)}
+        keyboard_shortcut("0")
+        wait_for_zoom("native zoom reset", lambda current: abs(current - 1) <= 0.03)
         keyboard_shortcut("-")
-        wait_for_level(1)
-
-        wheel_zoom(-240)
-        wheel_result = wait_for_level(1.2)
-        wheel_zoom(240)
-        wait_for_level(1)
-
-        trusted_wheel_zoom = None
-        if native_input_tool:
-            windows = subprocess.run(
-                [native_input_tool, "search", "--onlyvisible", "--name", "^omnideck$"],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.splitlines()
-            if not windows:
-                raise AssertionError("The native zoom test could not find the Omnideck window")
-            native_window = windows[-1]
-
-            def native_input(*arguments: str) -> None:
-                subprocess.run(
-                    [
-                        native_input_tool,
-                        "windowactivate",
-                        "--sync",
-                        native_window,
-                        "windowfocus",
-                        "--sync",
-                        native_window,
-                        *arguments,
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-
-            geometry = subprocess.run(
-                [native_input_tool, "getwindowgeometry", "--shell", native_window],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
-            dimensions = dict(
-                line.split("=", 1) for line in geometry.splitlines() if "=" in line
-            )
-            center_x = max(1, int(dimensions["WIDTH"]) // 2)
-            center_y = max(1, int(dimensions["HEIGHT"]) // 2)
-            native_input(
-                "mousemove", "--sync", "--window", native_window,
-                str(center_x), str(center_y),
-                "sleep", "0.2", "keydown", "ctrl", "sleep", "0.1",
-                "click", "4", "sleep", "0.1", "keyup", "ctrl",
-            )
-            trusted_wheel_zoom = wait_for_level(1.2)
-            native_input("key", "ctrl+0")
-            wait_for_level(1)
+        keyboard_zoom_out = wait_for_zoom(
+            "one native zoom-out step",
+            lambda current: current <= 0.95,
+        )
+        layouts["keyboardOut"] = layout_snapshot(keyboard_zoom_out)
+        keyboard_shortcut("0")
+        wait_for_zoom("final native zoom reset", lambda current: abs(current - 1) <= 0.03)
 
         result = {
             "status": "passed",
             "hostedUrl": initial.get("url"),
             "keyboardZoom": keyboard_zoom,
-            "wheelZoom": wheel_result,
-            "keyboardPageZoomApplied": True,
-            "wheelPageZoomApplied": True,
-            "trustedInputTool": native_input_tool or None,
-            "trustedWheelZoom": trusted_wheel_zoom,
+            "keyboardZoomOut": keyboard_zoom_out,
+            "testedZoomLevels": [keyboard_zoom, keyboard_zoom_out],
+            "nativeWebviewZoomApplied": True,
+            "cssZoomApplied": False,
+            "primaryInput": (
+                "vm-hardware-keyboard"
+                if native_input_signal_dir is not None
+                else "webdriver-keyboard"
+            ),
+            "layouts": layouts,
+            "nativeInputSignalDir": (
+                str(native_input_signal_dir) if native_input_signal_dir is not None else None
+            ),
         }
         self.evidence.joinpath("zoom.json").write_text(
             json.dumps(result, indent=2) + "\n",
@@ -553,7 +677,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
     parser.add_argument("--expected-update-version", default="0.1.5")
-    parser.add_argument("--native-input-tool", default="")
+    parser.add_argument("--native-input-signal-dir", type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--tauri-driver")
     parser.add_argument("--driver-url", default=DRIVER_URL)
@@ -608,7 +732,7 @@ def main() -> int:
             elif args.operation == "artifact-download":
                 journey.artifact_download(args.artifact_filename)
             elif args.operation == "zoom":
-                journey.zoom(args.native_input_tool)
+                journey.zoom(args.native_input_signal_dir)
             else:
                 journey.update_bridge(args.expected_update_version)
             status = "passed"

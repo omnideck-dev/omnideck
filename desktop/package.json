@@ -1,6 +1,6 @@
 {
   "name": "omnideck-tauri-host",
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "private": true,
   "description": "omnideck desktop host",
   "scripts": {

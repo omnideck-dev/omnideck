@@ -304,6 +304,27 @@ while kill -0 "${journey_pid}" >/dev/null 2>&1; do
   while IFS= read -r marker; do
     [[ -n "${marker}" && -z "${captured[${marker}]:-}" ]] || continue
     captured["${marker}"]=1
+    [[ "${marker}" != zoom-input-*.ack ]] || continue
+    if [[ "${marker}" =~ ^zoom-input-[0-9]+-(in|out|reset)\.request$ ]]; then
+      zoom_action="${BASH_REMATCH[1]}"
+      case "${zoom_action}" in
+        in) zoom_key=ctrl-equal ;;
+        out) zoom_key=ctrl-minus ;;
+        reset) zoom_key=ctrl-0 ;;
+      esac
+      printf 'action=%s key=%s request=%s\n' "${zoom_action}" "${zoom_key}" "${marker}" \
+        >> "${output_dir}/hardware-zoom-input.log"
+      "${lab_dir}/lab.sh" send-keys "${vm}" esc
+      sleep 0.35
+      safe_marker="$(printf '%s' "${marker%.request}" | tr -cd '[:alnum:]_.-')"
+      "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/${safe_marker}-focused.png" >/dev/null 2>&1 || true
+      "${lab_dir}/lab.sh" send-keys "${vm}" "${zoom_key}"
+      sleep 0.5
+      "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/${safe_marker}.png" >/dev/null 2>&1 || true
+      acknowledgement="${marker%.request}.ack"
+      "${lab_dir}/lab.sh" run "${vm}" "touch '${remote_root}/markers/${acknowledgement}'"
+      continue
+    fi
     safe_marker="$(printf '%s' "${marker}" | tr -cd '[:alnum:]_.-')"
     "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/${safe_marker}.png" >/dev/null 2>&1 || true
     if [[ "${marker}" == "permission-visible" && "${permission_handled}" == "0" ]]; then

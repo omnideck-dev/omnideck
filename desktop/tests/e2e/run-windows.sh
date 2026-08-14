@@ -152,7 +152,7 @@ remote_scp_root="C:/OmnideckDesktopE2E/${safe_run_id}"
 key_file="${LAB_VM_KEY}"
 known_hosts="${LAB_VM_KNOWN_HOSTS}"
 ssh_port="${LAB_VM_SSH_PORT}"
-driver_forward_port="$((52000 + ($$ % 900)))"
+driver_forward_port="$(python3 -c 'import socket; listener=socket.socket(); listener.bind(("127.0.0.1", 0)); print(listener.getsockname()[1]); listener.close()')"
 driver_task_name="OmnideckDesktopE2E-${safe_run_id}"
 trust_task_name="OmnideckDesktopTrust-${safe_run_id}"
 vm_started=0
@@ -396,14 +396,14 @@ start_driver() {
   driver_ssh_pid=$!
   printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid"
   for attempt in $(seq 1 480); do
-    if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
-      break
-    fi
     kill -0 "${driver_ssh_pid}" >/dev/null 2>&1 || {
       tail -100 "${output_dir}/driver-tunnel-${driver_start_count}.log" >&2
       printf 'Windows tauri-driver exited before becoming ready.\n' >&2
       return 1
     }
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
+      break
+    fi
     if (( attempt % 10 == 0 )); then
       task_state="$("${lab_dir}/lab.sh" run windows \
         "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-ScheduledTask -TaskName '${driver_task_name}').State\"" \
@@ -501,13 +501,16 @@ run_host_boundary() {
   local operation="$1"
   local upload_path="${2:-}"
   local scenario_dir="${evidence_dir}/host-boundaries/${operation}"
+  local native_input_dir="${scenario_dir}/native-input"
   local -a operation_args=()
   if [[ "${operation}" == "upload" ]]; then
     operation_args+=(--upload-path "${upload_path}")
   elif [[ "${operation}" == "artifact-download" ]]; then
     operation_args+=(--artifact-filename "${artifact_filename}")
+  elif [[ "${operation}" == "zoom" ]]; then
+    operation_args+=(--native-input-signal-dir "${native_input_dir}")
   fi
-  mkdir -p "${scenario_dir}"
+  mkdir -p "${scenario_dir}" "${native_input_dir}"
   python3 "${script_dir}/host_boundary_client.py" \
     --application "${application_windows}" \
     --external-driver \
@@ -518,7 +521,41 @@ run_host_boundary() {
     --evidence "${scenario_dir}" \
     "${operation_args[@]}" \
     --timeout 240 \
-    > "${scenario_dir}/session.log" 2>&1
+    > "${scenario_dir}/session.log" 2>&1 &
+  local boundary_pid=$!
+  if [[ "${operation}" == "zoom" ]]; then
+    declare -A handled_zoom_requests=()
+    while kill -0 "${boundary_pid}" >/dev/null 2>&1; do
+      while IFS= read -r request; do
+        [[ -n "${request}" ]] || continue
+        local marker action key acknowledgement
+        marker="$(basename "${request}")"
+        [[ -z "${handled_zoom_requests[${marker}]:-}" ]] || continue
+        [[ "${marker}" =~ ^zoom-input-[0-9]+-(in|out|reset)\.request$ ]] || continue
+        handled_zoom_requests["${marker}"]=1
+        action="${BASH_REMATCH[1]}"
+        case "${action}" in
+          in) key=ctrl-equal ;;
+          out) key=ctrl-minus ;;
+          reset) key=ctrl-0 ;;
+        esac
+        acknowledgement="${request%.request}.ack"
+        "${lab_dir}/lab.sh" screenshot windows \
+          "${screenshot_dir}/zoom-${marker%.request}-before.png" >/dev/null 2>&1 || true
+        "${lab_dir}/lab.sh" send-keys windows "${key}"
+        "${lab_dir}/lab.sh" screenshot windows \
+          "${screenshot_dir}/zoom-${marker%.request}-after.png" >/dev/null 2>&1 || true
+        touch "${acknowledgement}"
+      done < <(find "${native_input_dir}" -maxdepth 1 -type f -name '*.request' -print | sort)
+      sleep 0.1
+    done
+  fi
+  set +e
+  wait "${boundary_pid}"
+  local boundary_status=$?
+  set -e
+  cat "${scenario_dir}/session.log"
+  return "${boundary_status}"
 }
 
 verify_host_download() {

@@ -1,61 +1,61 @@
 {
   "schemaVersion": 1,
   "repository": "omnideck-dev/cli",
-  "tag": "v0.11.0-beta.2",
-  "releaseUrl": "https://github.com/omnideck-dev/cli/releases/tag/v0.11.0-beta.2",
-  "downloadBaseUrl": "https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.2",
-  "publishedAt": "2026-08-12T14:23:30Z",
-  "version": "v0.11.0-beta.2",
-  "commit": "a32d3ad95f44",
-  "builtAt": "2026-08-12T14:14:26Z",
+  "tag": "v0.11.0-beta.5",
+  "releaseUrl": "https://github.com/omnideck-dev/cli/releases/tag/v0.11.0-beta.5",
+  "downloadBaseUrl": "https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.5",
+  "publishedAt": "2026-08-14T00:35:14Z",
+  "version": "v0.11.0-beta.5",
+  "commit": "f7f70de2caf5",
+  "builtAt": "2026-08-14T00:29:52Z",
   "targets": [
     {
       "targetTriple": "x86_64-pc-windows-msvc",
       "archive": "omnideck-windows-amd64.zip",
-      "archiveSha256": "323123bf1c520cee22c92803c3505faa526e91940155fceab5a14398b0c61cde",
-      "binarySha256": "2722f81a4faf55e490c30733ca936e6feab325917f6e2fa59c924e6586c4ffc9",
+      "archiveSha256": "c95f1cdfb141c47e33d2675650d9ee8738ca1ab70e6eb15f668493f2b52af0d9",
+      "binarySha256": "24c2b362990b544a9b4ddd3e5586bd8a7bb04221bb1e2e89eac3f217225944bb",
       "sbom": "omnideck-windows-amd64.spdx.json",
-      "sbomSha256": "aa83c8489a94e1cfe5712f042b5dd0b47a064fac165de8086d7698fb5331d5db"
+      "sbomSha256": "a4d531c481e900fd9b8a5aec6cc4bab8cb963a5e199eb83610d36c38abec0841"
     },
     {
       "targetTriple": "aarch64-pc-windows-msvc",
       "archive": "omnideck-windows-arm64.zip",
-      "archiveSha256": "b22aea297f26e41f49cd89a5aabcd40b56313554a38fcb9c1d5bc7e7f76233f2",
-      "binarySha256": "3dbcb57df58d9f1cc9f17743d51315cb1b9aa0ab6eeac9192a319163127a3f57",
+      "archiveSha256": "a0221891ad5998472b330618738bfbe86f02953604ba018119e5a8e9f1cdd8c0",
+      "binarySha256": "bb7d1cdc54567f64994587929331e1511ad46bd5be46acad7c14862474d4465b",
       "sbom": "omnideck-windows-arm64.spdx.json",
-      "sbomSha256": "9fd73d9e4eab9769abc6cbaa34cbfc2213443ac62edef3e6380c0727db2a8406"
+      "sbomSha256": "b7421cf2f6651e108e08f2cd5184ffca3f7f821459857a61a8685042a57c5522"
     },
     {
       "targetTriple": "x86_64-apple-darwin",
       "archive": "omnideck-darwin-amd64.tar.gz",
-      "archiveSha256": "8cc737725a505ab1c78febf7daceeafd191d718080396b13937ca5023263c356",
-      "binarySha256": "67a7dfc5596e06c09e2dec8789149c2fd23237940ab2f9e92fbd3b8b9868e484",
+      "archiveSha256": "8e37eef43c155cf7203c598857899cd2a126e7d3fb377ebec921df7011f47706",
+      "binarySha256": "2c6323806c90a26931abc8b6b4f575cc3ebac9360d284cf8a4724d1a887fd24d",
       "sbom": "omnideck-darwin-amd64.spdx.json",
-      "sbomSha256": "ad51af0a554ab9c0831e80b26d6813c21fe3df39544c61bf8146b602cdbfd586"
+      "sbomSha256": "bda1f592e1f4d07cb0a4fbe5aeae9b7a67e53d6b9ae24e1b683d9d6f10661653"
     },
     {
       "targetTriple": "aarch64-apple-darwin",
       "archive": "omnideck-darwin-arm64.tar.gz",
-      "archiveSha256": "23195f00c909278f7ba2245cf6531e55f63c0fae3f0a01c5ed5943ded1aa1208",
-      "binarySha256": "1760dddf33fbb443e1f9a71f743fc405f6b97e2ca454d408352064c7ba945abb",
+      "archiveSha256": "89f9d481092848dfdb16ed858d30c50da0212dcf467117bf4b4369d9dd5e9d54",
+      "binarySha256": "5072b7bc4c5f89b368a397c2c2abbb41f334550ae8a8d218b025150eb561e1d7",
       "sbom": "omnideck-darwin-arm64.spdx.json",
-      "sbomSha256": "3be951f36598906b6f9363f8245cb91e14399472dc928572dcff56a435929b18"
+      "sbomSha256": "9d2a391e2b04bcf356d405fc084f7bd588b1cb49dcade44b6483810f2eb29002"
     },
     {
       "targetTriple": "x86_64-unknown-linux-gnu",
       "archive": "omnideck-linux-amd64.tar.gz",
-      "archiveSha256": "4c285222019e71a05f71de47d1a556c7573cc500aa3c0b2c2236502c42d8bd5d",
-      "binarySha256": "f6db193df5adff3557e137b07931a971d0378a37cd4756e0f65c8e6be7628852",
+      "archiveSha256": "d8d74466c775bb4e77400053af3b169bb5373729fb5380925be9fee56c519311",
+      "binarySha256": "972e2028094f8d0ea1521e8ae818019b7a7fd2a786a8f20293df5d5e140dbca7",
       "sbom": "omnideck-linux-amd64.spdx.json",
-      "sbomSha256": "1e7c734cd0c79f9361a96ecf9deff6a948b8ea3e2767f5e2da4ce34c449e52e6"
+      "sbomSha256": "1314348d0ec321e7b7fb04e1f86071407ff924d49e251cbd4a0195d1c07a4555"
     },
     {
       "targetTriple": "aarch64-unknown-linux-gnu",
       "archive": "omnideck-linux-arm64.tar.gz",
-      "archiveSha256": "eb0d532150cfa88c7c5c0844b52ab4cb15b4e6893996b6580a90e24c83b7a685",
-      "binarySha256": "8f54503025e9cc8fd5122603c4658b8d0cafca279f5864f51f0a608ae71d182a",
+      "archiveSha256": "d1d18b118a1ffa407b79b210418b1fa1d4b815efbb75254413f9016258a55b58",
+      "binarySha256": "613520357f309e4f3666dba2cd53a4c05bf0dc1cf9a1293de707240b8e910bd9",
       "sbom": "omnideck-linux-arm64.spdx.json",
-      "sbomSha256": "544b76bad156f22b0ba82084058fad5d023265331f2b0599f8432d102b4142f8"
+      "sbomSha256": "375f3aea7fb2039b24ec0ab9d37c4b4d07c407d652418f632563e8637d572813"
     }
   ]
 }

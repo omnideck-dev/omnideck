@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "recommendedBaseline": "desktop-e2e-v2",
   "linux": {
+    "debianRecommendedBaseline": "desktop-e2e-v4",
     "checkpointInstall": [
       "A GNOME graphical session for tester with GDM automatic login enabled in the disposable checkpoint",
       "OpenSSH server reachable through the lab's forwarded port",
@@ -40,7 +41,7 @@
     "Microsoft EdgeDriver downloaded for the exact installed WebView2 version",
     "The interactive Windows scheduled task used to launch tauri-driver",
     "The candidate package, private CLI configuration, app user data, logs, and evidence",
-    "xdotool installed per-run when an Ubuntu checkpoint does not already provide trusted mouse-wheel input",
+    "VM-controller hardware keyboard injection used per-run for native Linux zoom input",
     "Windows Attachment Manager zone metadata plus SmartScreen, UAC, restart, and RunOnce host control"
   ]
 }
