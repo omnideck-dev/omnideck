@@ -74,6 +74,26 @@ trap cleanup EXIT
 hdiutil attach -readonly -nobrowse -mountpoint "${mount_point}" "${dmgs[0]}" >/dev/null
 mounted=1
 
+applications_link="${mount_point}/Applications"
+if [[ ! -L "${applications_link}" ]]; then
+  echo "${dmgs[0]} does not contain the Applications drag-and-drop target" >&2
+  exit 1
+fi
+if [[ "$(readlink "${applications_link}")" != "/Applications" ]]; then
+  echo "${applications_link} does not point to /Applications" >&2
+  exit 1
+fi
+if [[ ! -f "${mount_point}/.DS_Store" ]]; then
+  echo "${dmgs[0]} does not contain Finder layout metadata" >&2
+  exit 1
+fi
+packaged_background="${mount_point}/.background/dmg-background.png"
+source_background="${desktop_root}/src-tauri/assets/dmg-background.png"
+if [[ ! -f "${packaged_background}" ]] || ! cmp -s "${source_background}" "${packaged_background}"; then
+  echo "${dmgs[0]} does not contain the configured DMG background" >&2
+  exit 1
+fi
+
 shopt -s nullglob
 mounted_apps=("${mount_point}/"*.app)
 shopt -u nullglob

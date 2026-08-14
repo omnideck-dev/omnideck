@@ -228,6 +228,9 @@ jobs:
 
       - name: Build native installers
         working-directory: desktop
+        env:
+          # Tauri otherwise skips the Finder background and icon layout in CI.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: node scripts/build-with-retry.mjs ${{ matrix.command }}
 
       - name: Verify the packaged macOS app signature

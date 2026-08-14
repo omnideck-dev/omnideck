@@ -1,6 +1,6 @@
 [package]
 name = "omnideck"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 description = "omnideck desktop host"
 edition = "2021"
 

@@ -13,6 +13,9 @@ const buildWithRetry = await read('../scripts/build-with-retry.mjs');
 const desktopWorkflow = await read('../../.github/workflows/desktop.yml');
 const hardwareWorkflow = await read('../../.github/workflows/desktop-hardware.yml');
 const publishedWorkflow = await read('../../.github/workflows/desktop-release-contract.yml');
+const tauriConfig = JSON.parse(await read('../src-tauri/tauri.conf.json'));
+const dmgBackgroundSource = await read('../src-tauri/assets/dmg-background.svg');
+const dmgBackground = await readFile(new URL('../src-tauri/assets/dmg-background.png', import.meta.url));
 
 test('published release helpers verify checksums and provenance before launch', () => {
   for (const script of [linux, macos]) {
@@ -73,4 +76,25 @@ test('macOS release packages contain a strict bundle-level signature', () => {
   assert.match(macosBundleVerifier, /Info\.plist=not bound/);
   assert.match(macosBundleVerifier, /Sealed Resources=none/);
   assert.match(macosBundleVerifier, /linker-signed/);
+});
+
+test('macOS DMG presents and verifies the conventional Applications drop target', () => {
+  assert.deepEqual(tauriConfig.bundle.macOS.dmg, {
+    background: 'assets/dmg-background.png',
+    windowSize: { width: 716, height: 458 },
+    appPosition: { x: 208, y: 204 },
+    applicationFolderPosition: { x: 508, y: 204 },
+  });
+  assert.match(macosBundleVerifier, /does not contain the Applications drag-and-drop target/);
+  assert.match(macosBundleVerifier, /readlink/);
+  assert.match(macosBundleVerifier, /\/Applications/);
+  assert.match(macosBundleVerifier, /does not contain Finder layout metadata/);
+  assert.match(macosBundleVerifier, /\.background\/dmg-background\.png/);
+  assert.match(macosBundleVerifier, /cmp -s/);
+  assert.equal(dmgBackground.readUInt32BE(16), 716);
+  assert.equal(dmgBackground.readUInt32BE(20), 429);
+  assert.match(dmgBackgroundSource, /Drag omnideck into Applications/);
+  assert.match(dmgBackgroundSource, /Eject “omnideck” in Finder/);
+  assert.match(dmgBackgroundSource, /Move the downloaded DMG to Trash/);
+  assert.match(desktopWorkflow, /TAURI_BUNDLER_DMG_IGNORE_CI: "true"/);
 });
