@@ -44,3 +44,19 @@ The `Native desktop package smoke` workflow is opt-in and uses dedicated
 self-hosted machines. A missing runner or an unexecuted target is blocked
 coverage, never a pass. Generated evidence belongs under
 `artifacts/desktop-hardware/` and is not committed.
+
+The external release lab can lease its configured Apple Silicon host and smoke
+an exact local DMG while keeping evidence under the lab artifact root:
+
+```sh
+export OMNIDECK_VM_LAB_DIR=/mnt/data/VMs/omnideck-release-lab
+pnpm run test:macos-lab -- --artifact /path/to/omnideck_aarch64.dmg
+```
+
+The dedicated Mac lane resets to its application-clean baseline, copies the app
+from the exact DMG into `~/Applications/Omnideck Lab.app`, launches that installed ARM64 binary,
+verifies the bundled CLI contract and warm Podman runtime, then removes the app,
+lab-namespaced state, and lab-namespaced resources when its lease exits. A
+normal long-term app, CLI, state, container, and volumes are preserved. It does
+not claim a clean macOS installation, browser-download Gatekeeper prompts, or
+subjective UI signoff.

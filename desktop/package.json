@@ -23,6 +23,8 @@
     "test:vm-lab:cleanup:apply": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --apply",
     "test:vm-lab:cleanup:all": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --all-generated --dry-run",
     "test:vm-lab:cleanup:all:apply": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --all-generated --yes --apply",
+    "test:macos-lab": "./tests/hardware/run-macos-lab.sh",
+    "test:macos-e2e": "./tests/e2e/run-macos-lab.sh",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
     "verify": "pnpm run fetch:sidecars && pnpm run test && pnpm run format:rust && pnpm run test:rust && pnpm run lint:rust",

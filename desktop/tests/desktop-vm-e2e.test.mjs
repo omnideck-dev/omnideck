@@ -8,6 +8,8 @@ import test from 'node:test';
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const run = await read('../tests/e2e/run.sh');
 const windows = await read('../tests/e2e/run-windows.sh');
+const macos = await read('../tests/e2e/run-macos-lab.sh');
+const macosGuest = await read('../tests/e2e/macos_accessibility_guest.sh');
 const linuxBuilder = await read('../scripts/run-linux-builder.sh');
 const windowsBuilder = await read('../scripts/run-windows-builder.sh');
 const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
@@ -205,6 +207,43 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(smokeMatrix, /lease "\$\{vm\}" desktop-smoke-matrix/);
   assert.match(smokeMatrixGuest, /OMNIDECK_DESKTOP_VM_SMOKE_REUSE_GUEST=1/);
   assert.match(smokeMatrixGuest, /Preparing %s once/);
+});
+
+test('native macOS E2E leases the physical ARM host and drives the production app through Accessibility', () => {
+  assert.match(macos, /artifact-path desktop macos-e2e/);
+  assert.match(macos, /lease "\$target" desktop-e2e/);
+  assert.match(macos, /--cleanup-baseline runtime-ready/);
+  assert.match(macos, /evidence-init/);
+  assert.match(macos, /evidence-finish/);
+  assert.match(macos, /artifactSha256=/);
+  assert.match(macosGuest, /Omnideck Lab\.app/);
+  assert.match(macosGuest, /Omnideck Lab Driver\.app/);
+  assert.match(macosGuest, /OMNIDECK_DESKTOP_TEST_NAMESPACE/);
+  assert.match(macosGuest, /release-test-macos/);
+  assert.match(macosGuest, /pkill -x omnideck/);
+  assert.match(macosGuest, /Set up omnideck/);
+  assert.match(macosGuest, /Open omnideck/);
+  assert.match(macosGuest, /Try again/);
+  assert.match(macosGuest, /Port \$old_port is already in use/);
+  assert.match(macosGuest, /Custom App native WebView action/);
+  assert.match(macosGuest, /native host download/);
+  assert.match(macosGuest, /click-in "\$application" "Export/);
+  assert.match(macosGuest, /native host upload/);
+  assert.match(macosGuest, /native artifact download and toast/);
+  assert.match(macosGuest, /native zoom shortcut/);
+  assert.match(macosGuest, /native update bridge visible contract/);
+  assert.match(macosGuest, /OMNIDECK_DESKTOP_UPDATE_FIXTURE/);
+  assert.match(macosGuest, /omnideck-lab-input\.dylib/);
+  assert.match(macosGuest, /mouse_click "\$fixture_filename"/);
+  assert.match(macosGuest, /mouse_click "\$artifact_filename"/);
+  assert.match(macosGuest, /key "\$application" equal cmd/);
+  assert.match(macosGuest, /tests="14" failures="0"/);
+  assert.match(macosGuest, /soft_failures/);
+  assert.match(macosGuest, /complete journey/);
+  assert.match(macosGuest, /container-inspect\.json/);
+  assert.match(macosGuest, /volume-inspect\.json/);
+  assert.doesNotMatch(macos, /tauri-driver|webdriver_client/);
+  assert.doesNotMatch(macosGuest, /tauri-driver|webdriver_client/);
 });
 
 test('cross-distro smoke report retains every cell and fails the aggregate', async (t) => {
