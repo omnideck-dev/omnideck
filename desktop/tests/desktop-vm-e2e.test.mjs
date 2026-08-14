@@ -226,6 +226,7 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /Try again/);
   assert.match(macosGuest, /Port \$old_port is already in use/);
   assert.match(macosGuest, /Custom App native WebView action/);
+  assert.match(macosGuest, /Custom App restart persistence/);
   assert.match(macosGuest, /native host download/);
   assert.match(macosGuest, /click-in "\$application" "Export/);
   assert.match(macosGuest, /native host upload/);
@@ -237,7 +238,9 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /mouse_click "\$fixture_filename"/);
   assert.match(macosGuest, /mouse_click "\$artifact_filename"/);
   assert.match(macosGuest, /key "\$application" equal cmd/);
-  assert.match(macosGuest, /tests="14" failures="0"/);
+  assert.match(macosGuest, /DMG removal preserves user and runtime data/);
+  assert.match(macosGuest, /DMG reinstall and packaged sidecar smoke/);
+  assert.match(macosGuest, /tests="17" failures="0"/);
   assert.match(macosGuest, /soft_failures/);
   assert.match(macosGuest, /complete journey/);
   assert.match(macosGuest, /container-inspect\.json/);

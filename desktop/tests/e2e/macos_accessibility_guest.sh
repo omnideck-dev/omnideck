@@ -85,7 +85,7 @@ NODE
   if [[ "$test_status" == passed ]]; then
     cat > "$result_dir/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-macos-e2e" tests="14" failures="0">
+<testsuite name="omnideck-desktop-macos-e2e" tests="17" failures="0">
   <testcase classname="desktop-macos-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-macos-e2e" name="first-run-accessibility"/>
   <testcase classname="desktop-macos-e2e" name="hosted-open"/>
@@ -95,11 +95,14 @@ NODE
   <testcase classname="desktop-macos-e2e" name="update"/>
   <testcase classname="desktop-macos-e2e" name="occupied-port-auto-recovery"/>
   <testcase classname="desktop-macos-e2e" name="custom-app-native-webview"/>
+  <testcase classname="desktop-macos-e2e" name="custom-app-restart-persistence"/>
   <testcase classname="desktop-macos-e2e" name="native-host-download"/>
   <testcase classname="desktop-macos-e2e" name="native-host-upload"/>
   <testcase classname="desktop-macos-e2e" name="native-artifact-download-and-toast"/>
   <testcase classname="desktop-macos-e2e" name="native-zoom"/>
   <testcase classname="desktop-macos-e2e" name="native-update-bridge-visible-contract"/>
+  <testcase classname="desktop-macos-e2e" name="dmg-remove-preserves-state"/>
+  <testcase classname="desktop-macos-e2e" name="dmg-reinstall-and-sidecar-smoke"/>
 </testsuite>
 XML
   else
@@ -154,16 +157,34 @@ env "PATH=${desktop_env[0]#PATH=}" "$work_dir/desktop/tests/hardware/run.sh" \
   --application "$application" --output "$result_dir/smoke" --require-ready
 
 launch_application() {
-  local label="$1" entry pid_line
+  local label="$1" expected_text="${2:-}" timeout="${3:-30}"
+  local entry pid_line attempt attempt_label
   local open_env=()
   stop_application
   for entry in "${desktop_env[@]}"; do open_env+=(--env "$entry"); done
-  /usr/bin/open -n -F -a "$installed_app" \
-    -o "$result_dir/${label}.stdout.log" --stderr "$result_dir/${label}.stderr.log" \
-    "${open_env[@]}"
-  pid_line="$("$driver" wait "$application" 30)"
-  application_pid="${pid_line#pid=}"
-  [[ "$application_pid" =~ ^[0-9]+$ ]]
+  for attempt in 1 2 3; do
+    attempt_label="$label"
+    [[ "$attempt" == 1 ]] || attempt_label="${label}-launch-retry-${attempt}"
+    /usr/bin/open -n -F -a "$installed_app" \
+      -o "$result_dir/${attempt_label}.stdout.log" \
+      --stderr "$result_dir/${attempt_label}.stderr.log" \
+      "${open_env[@]}"
+    if pid_line="$("$driver" wait "$application" 30)"; then
+      application_pid="${pid_line#pid=}"
+      if [[ "$application_pid" =~ ^[0-9]+$ ]] && \
+         "$driver" wait-windows "$application" 1 30; then
+        if [[ -z "$expected_text" ]] || \
+           "$driver" wait-text "$application" "$expected_text" "$timeout"; then
+          return 0
+        fi
+      fi
+    fi
+    printf 'Application launched without an accessible window; retrying (%s of 3).\n' "$attempt" >&2
+    stop_application
+    sleep 1
+  done
+  printf 'Application did not expose a window after 3 launch attempts.\n' >&2
+  return 1
 }
 
 dump_accessibility() {
@@ -221,8 +242,7 @@ wait_ready_and_open() {
 }
 
 current_step='attended first run'
-launch_application first-run
-"$driver" wait-text "$application" 'Welcome to omnideck' 60
+launch_application first-run 'Welcome to omnideck' 60
 dump_accessibility first-run-welcome
 assert_tree_text "$result_dir/accessibility/first-run-welcome.json" \
   'Welcome to omnideck' 'A one-time setup will prepare everything omnideck needs on this computer.' 'Set up omnideck'
@@ -233,16 +253,14 @@ wait_ready_and_open first-run
 state_path="$user_data/setup-state.json"
 if [[ "$mode" == full ]]; then
 current_step='returning user'
-launch_application returning
-"$driver" wait-text "$application" 'Welcome to Omnideck' 180
+launch_application returning 'Welcome to Omnideck' 180
 dump_accessibility returning-hosted
 capture returning-hosted
 
 current_step='doctor recovery'
 stop_application
 podman rm --force "$container_name" >/dev/null
-launch_application doctor
-"$driver" wait-text "$application" 'Try again' 180
+launch_application doctor 'Try again' 180
 dump_accessibility doctor-error
 capture doctor-error
 "$driver" click "$application" 'Try again' 30
@@ -258,8 +276,7 @@ state['status']='in-progress'; state['reason']='first-run'
 with open(path,'w',encoding='utf-8') as stream: json.dump(state,stream,indent=2); stream.write('\n')
 PY
 podman rm --force "$container_name" >/dev/null
-launch_application resume
-"$driver" wait-text "$application" 'Continuing from where the last attempt stopped.' 120
+launch_application resume 'Continuing from where the last attempt stopped.' 120
 dump_accessibility resume-progress
 wait_ready_and_open resume
 
@@ -272,8 +289,7 @@ state=json.load(open(path, encoding='utf-8'))
 state['status']='complete'; state['appVersion']='0.0.0-e2e-older'
 with open(path,'w',encoding='utf-8') as stream: json.dump(state,stream,indent=2); stream.write('\n')
 PY
-launch_application update
-"$driver" wait-text "$application" 'Bringing omnideck up to date.' 120
+launch_application update 'Bringing omnideck up to date.' 120
 dump_accessibility update-progress
 wait_ready_and_open update
 
@@ -295,8 +311,7 @@ expected=f'container_name: {container_name}\n'
 assert expected in source and f'web_ui_port: "{old_port}"\n' in source
 conflict_path.write_text(source.replace(expected,f'container_name: {container_name}-occupied-port\n',1),encoding='utf-8')
 PY
-launch_application port-conflict
-"$driver" wait-text "$application" "Port $old_port is already in use" 300
+launch_application port-conflict "Port $old_port is already in use" 300
 dump_accessibility port-conflict-progress
 wait_ready_and_open port-conflict
 new_port="$(tr -d '[:space:]' < "$user_data/runtime/app-port")"
@@ -358,8 +373,7 @@ with open(path,'w',encoding='utf-8') as stream: json.dump(state,stream,indent=2)
 PY
 
 current_step='Custom App native WebView action'
-launch_application custom-app
-"$driver" wait-text "$application" 'omnideck is ready' 1800
+launch_application custom-app 'omnideck is ready' 1800
 dump_accessibility custom-app-ready
 capture custom-app-ready
 "$driver" click "$application" 'Open omnideck' 30
@@ -377,6 +391,17 @@ capture custom-app-catalog
 "$driver" wait-text "$application" 'Action result: tauri-webview' 60
 dump_accessibility custom-app-action
 capture custom-app-action
+
+current_step='Custom App restart persistence'
+launch_application custom-app-restart 'Welcome to Omnideck' 180
+"$driver" click "$application" 'Apps' 30
+"$driver" wait-text "$application" 'Desktop Custom App Smoke' 60
+"$driver" click "$application" 'Desktop Custom App Smoke' 30
+"$driver" wait-text "$application" 'Invoke packaged action' 60
+"$driver" click "$application" 'Invoke packaged action' 30
+"$driver" wait-text "$application" 'Action result: tauri-webview' 60
+dump_accessibility custom-app-restart-action
+capture custom-app-restart-action
 fi
 
 current_step='native host-boundary fixture'
@@ -505,12 +530,29 @@ podman volume inspect "$home_volume" "$state_volume" > "$result_dir/volume-inspe
 curl --fail --silent --show-error --max-time 15 "http://127.0.0.1:$new_port" > "$result_dir/hosted.html"
 grep -Fq 'sha256:' "$state_path"
 
-test_status=passed
+current_step='DMG removal preserves user and runtime data'
+stop_application
+find "$installed_app" -print | sort > "$result_dir/installed-files.txt"
+/bin/rm -rf -- "$installed_app"
+[[ ! -e "$application" ]]
+[[ -f "$state_path" ]]
+podman container inspect "$container_name" >/dev/null
+podman volume inspect "$home_volume" "$state_volume" >/dev/null
+
+current_step='DMG reinstall and packaged sidecar smoke'
+/usr/bin/ditto "$source_app" "$installed_app"
+[[ -x "$application" ]]
+[[ "$(shasum -a 256 "$source_app/Contents/MacOS/omnideck" | awk '{print $1}')" == "$(shasum -a 256 "$application" | awk '{print $1}')" ]]
+mkdir -p "$result_dir/smoke-reinstall"
+env "PATH=${desktop_env[0]#PATH=}" "$work_dir/desktop/tests/hardware/run.sh" \
+  --application "$application" --output "$result_dir/smoke-reinstall" --require-ready
+
 if ((${#soft_failures[@]})); then
   current_step='visible host-boundary assertions'
   printf 'ERROR: %s visible assertion(s) failed after the complete journey.\n' "${#soft_failures[@]}" >&2
   exit 1
 fi
 
+test_status=passed
 current_step=complete
-printf 'PASS: macOS package smoke, Accessibility setup/recovery/Custom App, and native download/upload/artifact/zoom/update journeys completed.\n'
+printf 'PASS: macOS package smoke, setup/recovery, Custom App restart, native boundaries, and DMG lifecycle completed.\n'
