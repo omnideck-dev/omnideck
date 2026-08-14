@@ -314,8 +314,14 @@ while kill -0 "${journey_pid}" >/dev/null 2>&1; do
       esac
       printf 'action=%s key=%s request=%s\n' "${zoom_action}" "${zoom_key}" "${marker}" \
         >> "${output_dir}/hardware-zoom-input.log"
-      "${lab_dir}/lab.sh" send-keys "${vm}" esc
-      sleep 0.35
+      # A clean GNOME session can leave both a system notification and Overview
+      # above the app. Dismiss both with trusted console input before delivering
+      # the native zoom shortcut; one Escape is insufficient when both are open.
+      for focus_escape in 1 2; do
+        "${lab_dir}/lab.sh" send-keys "${vm}" esc
+        sleep 0.2
+      done
+      sleep 0.5
       safe_marker="$(printf '%s' "${marker%.request}" | tr -cd '[:alnum:]_.-')"
       "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/${safe_marker}-focused.png" >/dev/null 2>&1 || true
       "${lab_dir}/lab.sh" send-keys "${vm}" "${zoom_key}"
