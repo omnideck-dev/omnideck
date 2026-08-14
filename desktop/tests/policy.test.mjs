@@ -36,7 +36,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-beta.6');
+  assert.equal(config.version, '0.1.0-beta.7');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -52,9 +52,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.6"$/m);
-  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.6"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.6"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.7"$/m);
+  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.7"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.7"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "omnideck",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "identifier": "dev.omnideck.desktop",
   "build": {
     "beforeBundleCommand": "node scripts/prepare-icon-assets.mjs",
@@ -32,7 +32,22 @@
     "useLocalToolsDir": true,
     "macOS": {
       "hardenedRuntime": true,
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": {
+          "width": 716,
+          "height": 458
+        },
+        "appPosition": {
+          "x": 208,
+          "y": 204
+        },
+        "applicationFolderPosition": {
+          "x": 508,
+          "y": 204
+        }
+      }
     },
     "windows": {
       "webviewInstallMode": {
