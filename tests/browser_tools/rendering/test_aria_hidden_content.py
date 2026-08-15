@@ -13,7 +13,7 @@ is returned, and the inert background stays dropped.
 
 from __future__ import annotations
 
-from tools.browser import browse_page
+from tools.browser import browse_page, click
 
 from .._helpers import find_ref
 
@@ -40,5 +40,11 @@ async def test_portal_dialog_in_zero_height_root(open_tab, servers):
     view = await browse_page(tab=tab)
 
     assert find_ref(view, role="searchbox", name="Search docs") is not None
-    assert find_ref(view, role="button", name="Close") is not None
+    close_ref = find_ref(view, role="button", name="Close")
+    assert close_ref is not None
     assert find_ref(view, role="button", name="Open menu") is None
+    assert "[Modal dialog open" in view
+
+    after_close = await click(close_ref, tab=tab)
+    assert "[Modal dialog open" not in after_close
+    assert find_ref(after_close, role="button", name="Open menu") is not None

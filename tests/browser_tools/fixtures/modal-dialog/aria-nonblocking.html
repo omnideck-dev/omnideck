@@ -51,20 +51,27 @@
 
   <main>
     <h1>News</h1>
-    <button type="button">Background action</button>
+    <button id="background-action" type="button">Background action</button>
+    <p id="background-status"></p>
     <p>The document continues below the viewport.</p>
     <div class="page-content"></div>
   </main>
 
   <div id="consent" role="dialog" aria-modal="true" aria-label="Privacy choices">
     <h2>Privacy choices</h2>
-    <button type="button">Accept and continue</button>
+    <button id="accept-consent" type="button">Accept and continue</button>
   </div>
 
   <script>
     const layout = new URLSearchParams(location.search).get('layout');
     if (layout === 'banner') document.body.classList.add('banner');
     if (layout === 'app-shell') document.body.classList.add('banner', 'app-shell');
+    document.getElementById('background-action').addEventListener('click', () => {
+      document.getElementById('background-status').textContent = 'Background activated';
+    });
+    document.getElementById('accept-consent').addEventListener('click', () => {
+      document.getElementById('consent').remove();
+    });
   </script>
 </body>
 </html>

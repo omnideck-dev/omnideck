@@ -160,19 +160,36 @@ async def test_scroll_targets_active_modal_content(open_tab, servers):
     assert find_ref(after_down, role="button", name="Background action") is None
 
 
-@pytest.mark.parametrize("layout", ["banner", "takeover"])
-async def test_aria_dialog_without_background_block_is_not_modal(
-    open_tab,
-    servers,
-    layout,
-):
-    """ARIA alone does not turn a consent surface into a modal."""
-    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout={layout}")
+async def test_full_viewport_takeover_blocks_background_scroll(open_tab, servers):
+    """Pointer blocking, rather than a scroll lock, owns the active surface."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout=takeover")
+    initial = await browse_page(tab=tab)
+
+    blocked = await scroll_page("down", amount=600, tab=tab)
+    assert "blocked by an open modal dialog" in blocked
+    assert _scroll_top(blocked) == _scroll_top(initial)
+
+    accept_ref = find_ref(blocked, role="button", name="Accept and continue")
+    assert accept_ref is not None
+    after_accept = await click(accept_ref, tab=tab)
+    after_down = await scroll_page("down", amount=600, tab=tab)
+
+    assert "[Modal dialog open" not in after_accept
+    assert _scroll_top(after_down) > _scroll_top(after_accept)
+
+
+async def test_aria_banner_without_background_block_is_not_modal(open_tab, servers):
+    """A banner leaves the visible background actionable and scrollable."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout=banner")
     initial = await browse_page(tab=tab)
 
     assert "[Modal dialog open" not in initial
     assert find_ref(initial, role="button", name="Accept and continue") is not None
-    assert find_ref(initial, role="button", name="Background action") is not None
+    background_ref = find_ref(initial, role="button", name="Background action")
+    assert background_ref is not None
+
+    after_click = await click(background_ref, tab=tab)
+    assert "Background activated" in after_click
 
     after_down = await scroll_page("down", amount=600, tab=tab)
 

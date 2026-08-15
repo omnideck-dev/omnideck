@@ -1,16 +1,15 @@
-"""Shared browser-side detection for modal interaction surfaces."""
+"""Shared browser-side detection for active interaction surfaces."""
 
 from __future__ import annotations
 
 # Keep this as plain JavaScript function declarations so it can be embedded in
 # both the renderer's one-round-trip DOM walk and scrolling's state checks.
-# A modal is either semantic (native top-layer dialog or an ARIA dialog whose
-# background is actually suppressed) or a conservative custom-overlay match:
-# the body is scroll-locked and a visible fixed element covers most of the
-# viewport while looking like a dialog.
 #
-# ``aria-modal`` is only an accessibility declaration. It becomes evidence of
-# an active modal here only when the page also suppresses the background.
+# A modal is defined by unavailable background interaction, not by whether the
+# document happens to scroll. Native top-layer state and explicit background
+# suppression are authoritative. Custom surfaces are detected by hit-testing a
+# large viewport layer that actually sits in front of otherwise actionable page
+# content. ARIA is useful supporting evidence, but is not trusted on its own.
 MODAL_HELPERS_JS = r"""
   function omnideckElementsIn(root) {
     const elements = Array.from(root.querySelectorAll('*'));
@@ -43,9 +42,9 @@ MODAL_HELPERS_JS = r"""
     return active;
   }
 
-  function omnideckElementIsVisible(el) {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
+  function omnideckElementHasRenderedBox(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
     if (!(rect.bottom > 0
       && rect.top < window.innerHeight
       && rect.right > 0
@@ -54,46 +53,107 @@ MODAL_HELPERS_JS = r"""
       && rect.height > 0))
       return false;
 
-    for (let current = el; current; current = omnideckComposedParent(current)) {
+    for (let current = element; current; current = omnideckComposedParent(current)) {
       const style = window.getComputedStyle(current);
       if (style.display === 'none'
           || style.visibility === 'hidden'
-          || style.visibility === 'collapse'
-          || parseFloat(style.opacity || '1') <= 0)
+          || style.visibility === 'collapse')
         return false;
     }
     return true;
   }
 
-  function omnideckSemanticModal() {
-    let candidates = [];
-    try {
-      candidates = omnideckQueryAll(
-        'dialog:modal,'
-        + '[role="dialog"][aria-modal="true"],'
-        + '[role="alertdialog"][aria-modal="true"]'
-      );
-    } catch (_error) {
-      candidates = omnideckQueryAll(
-        '[role="dialog"][aria-modal="true"],'
-        + '[role="alertdialog"][aria-modal="true"]'
-      );
+  function omnideckElementIsVisible(element) {
+    if (!omnideckElementHasRenderedBox(element)) return false;
+    for (let current = element; current; current = omnideckComposedParent(current)) {
+      if (parseFloat(window.getComputedStyle(current).opacity || '1') <= 0) return false;
     }
-    candidates = candidates.filter((element) => {
-      if (!omnideckElementIsVisible(element)) return false;
-      if (element.tagName === 'DIALOG') return true;
-      return omnideckAriaDialogSuppressesBackground(element);
+    return true;
+  }
+
+  function omnideckViewportCoverage(element) {
+    const rect = element.getBoundingClientRect();
+    const width = Math.max(
+      0,
+      Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0)
+    );
+    const height = Math.max(
+      0,
+      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0)
+    );
+    const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+    return (width * height) / viewportArea;
+  }
+
+  function omnideckElementsFromPoint(x, y) {
+    const elements = [];
+    const visitedRoots = new Set();
+    let root = document;
+    while (root
+        && typeof root.elementsFromPoint === 'function'
+        && !visitedRoots.has(root)) {
+      visitedRoots.add(root);
+      const hits = root.elementsFromPoint(x, y);
+      for (const hit of hits) {
+        if (!elements.includes(hit)) elements.push(hit);
+      }
+      const shadowHost = hits.find((hit) => hit.shadowRoot);
+      root = shadowHost?.shadowRoot || null;
+    }
+    return elements;
+  }
+
+  function omnideckTopElementFromPoint(x, y) {
+    let root = document;
+    let top = null;
+    const visitedRoots = new Set();
+    while (root
+        && typeof root.elementFromPoint === 'function'
+        && !visitedRoots.has(root)) {
+      visitedRoots.add(root);
+      const hit = root.elementFromPoint(x, y);
+      if (!hit) break;
+      top = hit;
+      root = hit.shadowRoot || null;
+    }
+    return top;
+  }
+
+  function omnideckPointerSampleCount(element) {
+    const samples = [
+      [0.1, 0.1], [0.5, 0.1], [0.9, 0.1],
+      [0.1, 0.5], [0.5, 0.5], [0.9, 0.5],
+      [0.1, 0.9], [0.5, 0.9], [0.9, 0.9]
+    ];
+    return samples.filter(([xRatio, yRatio]) => {
+      const hit = omnideckTopElementFromPoint(
+        window.innerWidth * xRatio,
+        window.innerHeight * yRatio
+      );
+      return hit && omnideckComposedContains(element, hit);
+    }).length;
+  }
+
+  function omnideckIsViewportPointerBlocker(element) {
+    // Opacity does not affect hit-testing: a transparent click catcher still
+    // prevents physical input from reaching the page underneath it.
+    if (!omnideckElementHasRenderedBox(element)) return false;
+    const style = window.getComputedStyle(element);
+    if (style.pointerEvents === 'none') return false;
+    if (style.position !== 'fixed' && style.position !== 'absolute') return false;
+    if (omnideckViewportCoverage(element) < 0.85) return false;
+    return omnideckPointerSampleCount(element) >= 6;
+  }
+
+  function omnideckPointerBlockerFor(element) {
+    const blockers = [];
+    for (let current = element; current; current = omnideckComposedParent(current)) {
+      if (omnideckIsViewportPointerBlocker(current)) blockers.push(current);
+    }
+    blockers.sort((left, right) => {
+      return omnideckViewportCoverage(right) - omnideckViewportCoverage(left);
     });
-    const focusedElement = omnideckDeepActiveElement();
-    const focused = candidates.find((element) => {
-      return focusedElement && omnideckComposedContains(element, focusedElement);
-    });
-    const element = focused || (candidates.length > 0 ? candidates[candidates.length - 1] : null);
-    if (!element) return null;
-    return {
-      element: element,
-      kind: element.tagName === 'DIALOG' ? 'native' : 'aria'
-    };
+    return blockers[0] || null;
   }
 
   function omnideckBackgroundBranches(dialogElement) {
@@ -112,68 +172,84 @@ MODAL_HELPERS_JS = r"""
     return branches;
   }
 
-  function omnideckBranchIsSuppressed(element) {
-    const branchElements = [element, ...omnideckElementsIn(element)];
-    const hasActionableContent = branchElements.some((descendant) => {
+  function omnideckHasActionableContent(element) {
+    return [element, ...omnideckElementsIn(element)].some((descendant) => {
       return descendant.matches(
         'a[href],button,input,select,textarea,[role="button"],[role="link"]'
       ) && omnideckElementIsVisible(descendant);
     });
+  }
+
+  function omnideckBranchIsSuppressed(element) {
     const rect = element.getBoundingClientRect();
     const isSubstantial = omnideckElementIsVisible(element)
       && (rect.width * rect.height >= window.innerWidth * window.innerHeight * 0.25
         || element.scrollHeight > window.innerHeight);
-    const isMeaningfulBackground = hasActionableContent || isSubstantial;
+    const isMeaningfulBackground = omnideckHasActionableContent(element) || isSubstantial;
 
     if (element.hasAttribute('inert')) return isMeaningfulBackground;
     if (element.getAttribute('aria-hidden') === 'true') return isMeaningfulBackground;
 
     return omnideckElementsIn(element).filter((descendant) => {
-      return descendant.hasAttribute('inert');
-    }).some((inertElement) => {
-      const rect = inertElement.getBoundingClientRect();
-      return omnideckElementIsVisible(inertElement)
-        && (rect.width * rect.height >= window.innerWidth * window.innerHeight * 0.25
-          || inertElement.scrollHeight > window.innerHeight
-          || [inertElement, ...omnideckElementsIn(inertElement)].some((descendant) => {
-            return descendant.matches(
-              'a[href],button,input,select,textarea,[role="button"],[role="link"]'
-            ) && omnideckElementIsVisible(descendant);
-          }));
+      return descendant.hasAttribute('inert')
+        || descendant.getAttribute('aria-hidden') === 'true';
+    }).some((suppressedElement) => {
+      const suppressedRect = suppressedElement.getBoundingClientRect();
+      return omnideckElementIsVisible(suppressedElement)
+        && (suppressedRect.width * suppressedRect.height
+            >= window.innerWidth * window.innerHeight * 0.25
+          || suppressedElement.scrollHeight > window.innerHeight
+          || omnideckHasActionableContent(suppressedElement));
     });
   }
 
-  function omnideckBackgroundCanScroll(dialogElement) {
-    return omnideckBackgroundBranches(dialogElement).some((branch) => {
-      return [branch, ...omnideckElementsIn(branch)].some((element) => {
-        if (!omnideckElementIsVisible(element)) return false;
-        const style = window.getComputedStyle(element);
-        return (style.overflowY === 'auto' || style.overflowY === 'scroll')
-          && element.scrollHeight > element.clientHeight + 1;
-      });
+  function omnideckDialogSuppressesBackground(dialogElement) {
+    return omnideckBackgroundBranches(dialogElement).some(omnideckBranchIsSuppressed);
+  }
+
+  function omnideckNativeModal(element) {
+    if (element.tagName !== 'DIALOG') return false;
+    try {
+      return element.matches(':modal');
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function omnideckSemanticModal() {
+    const candidates = omnideckQueryAll(
+      'dialog,[role="dialog"],[role="alertdialog"]'
+    ).filter((element) => omnideckElementIsVisible(element));
+    const active = candidates.flatMap((element) => {
+      if (omnideckNativeModal(element)) {
+        return [{ element: element, elements: [element], kind: 'native' }];
+      }
+
+      const backgroundSuppressed = omnideckDialogSuppressesBackground(element);
+      const pointerBlocker = omnideckPointerBlockerFor(element);
+      const ariaModal = element.getAttribute('aria-modal') === 'true';
+      if (!backgroundSuppressed && !(pointerBlocker && ariaModal)) return [];
+
+      return [{
+        element: element,
+        elements: pointerBlocker ? [pointerBlocker] : [element],
+        kind: backgroundSuppressed ? 'semantic' : 'pointer'
+      }];
     });
+
+    const focusedElement = omnideckDeepActiveElement();
+    const focused = active.find((modal) => {
+      return focusedElement && omnideckComposedContains(modal.element, focusedElement);
+    });
+    return focused || (active.length > 0 ? active[active.length - 1] : null);
   }
 
-  function omnideckAriaDialogSuppressesBackground(dialogElement) {
-    const backgroundBranches = omnideckBackgroundBranches(dialogElement);
-    if (backgroundBranches.some(omnideckBranchIsSuppressed)) return true;
-
-    const bodyStyle = document.body ? window.getComputedStyle(document.body) : null;
-    const rootStyle = window.getComputedStyle(document.documentElement);
-    const locksOverflow = (style) => style
-      && (style.overflowY === 'hidden' || style.overflowY === 'clip');
-    const documentLocked = locksOverflow(bodyStyle)
-        || locksOverflow(rootStyle)
-        || bodyStyle?.position === 'fixed';
-    return documentLocked && !omnideckBackgroundCanScroll(dialogElement);
-  }
-
-  function omnideckControlLooksLikeClose(el) {
+  function omnideckControlLooksLikeClose(element) {
     const metadata = [
-      el.id || '',
-      typeof el.className === 'string' ? el.className : '',
-      el.getAttribute('name') || '',
-      el.getAttribute('data-testid') || ''
+      element.id || '',
+      typeof element.className === 'string' ? element.className : '',
+      element.getAttribute('name') || '',
+      element.getAttribute('data-testid') || ''
     ].join(' ').toLowerCase();
     return /(^|[\s_-])(close|dismiss)(?=$|[\s_-])/.test(metadata);
   }
@@ -189,43 +265,40 @@ MODAL_HELPERS_JS = r"""
     });
   }
 
-  function omnideckCustomModal() {
-    if (!document.body) return null;
-    const bodyStyle = window.getComputedStyle(document.body);
-    if (bodyStyle.overflowY !== 'hidden' && bodyStyle.overflowY !== 'clip')
-      return null;
+  function omnideckElementIsBehind(blocker, element) {
+    const rect = element.getBoundingClientRect();
+    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
+    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    const hits = omnideckElementsFromPoint(x, y);
+    const blockerIndex = hits.findIndex((hit) => {
+      return omnideckComposedContains(blocker, hit);
+    });
+    const elementIndex = hits.findIndex((hit) => {
+      return hit === element || omnideckComposedContains(element, hit);
+    });
+    return blockerIndex >= 0 && (elementIndex < 0 || blockerIndex < elementIndex);
+  }
 
-    const candidates = omnideckElementsIn(document.body).filter((el) => {
-      if (!omnideckElementIsVisible(el)) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      if (style.position !== 'fixed' || style.pointerEvents === 'none') return false;
-      if (rect.width < window.innerWidth * 0.5
-          || rect.height < window.innerHeight * 0.5)
-        return false;
-
-      const metadata = [
-        el.id || '',
-        typeof el.className === 'string' ? el.className : ''
-      ].join(' ').toLowerCase();
-      const looksLikeModal = /modal|dialog|overlay|backdrop|lightbox|popup|paywall|auth/.test(
-        metadata
+  function omnideckBlockerCoversBackground(blocker) {
+    return omnideckElementsIn(document.body).some((element) => {
+      if (omnideckComposedContains(blocker, element)) return false;
+      if (!omnideckElementIsVisible(element)) return false;
+      const actionable = element.matches(
+        'a[href],button,input,select,textarea,[role="button"],[role="link"]'
       );
-      const hasCloseControl = Array.from(
-        el.querySelectorAll('button,[role="button"],a[href]')
-      ).some(omnideckControlLooksLikeClose);
-      return looksLikeModal || hasCloseControl;
+      const rect = element.getBoundingClientRect();
+      const substantial = rect.width * rect.height
+          >= window.innerWidth * window.innerHeight * 0.25
+        || element.scrollHeight > window.innerHeight;
+      return (actionable || substantial) && omnideckElementIsBehind(blocker, element);
     });
-    if (candidates.length === 0) return null;
+  }
 
-    candidates.sort((left, right) => {
-      const leftZ = parseInt(window.getComputedStyle(left).zIndex, 10) || 0;
-      const rightZ = parseInt(window.getComputedStyle(right).zIndex, 10) || 0;
-      return leftZ - rightZ;
-    });
-    const blocker = candidates[candidates.length - 1];
-    const blockerZ = parseInt(window.getComputedStyle(blocker).zIndex, 10) || 0;
+  function omnideckSurfaceRootsForBlocker(blocker) {
     const roots = [blocker];
+    const blockerStyle = window.getComputedStyle(blocker);
+    const blockerZ = parseInt(blockerStyle.zIndex, 10) || 0;
+    const blockerRect = blocker.getBoundingClientRect();
 
     for (const element of omnideckElementsIn(document.body)) {
       if (element === blocker
@@ -237,28 +310,45 @@ MODAL_HELPERS_JS = r"""
       if (style.position !== 'fixed' && style.position !== 'absolute') continue;
       const zIndex = parseInt(style.zIndex, 10) || 0;
       if (zIndex < blockerZ) continue;
+      const rect = element.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      if (centerX < blockerRect.left || centerX > blockerRect.right
+          || centerY < blockerRect.top || centerY > blockerRect.bottom)
+        continue;
 
-      const metadata = [
-        element.id || '',
-        typeof element.className === 'string' ? element.className : ''
-      ].join(' ').toLowerCase();
       const role = element.getAttribute('role');
       const looksLikeSurface = role === 'dialog'
         || role === 'alertdialog'
-        || /modal|dialog|lightbox|popup|paywall/.test(metadata)
-        || omnideckElementsIn(element)
-          .filter((descendant) => descendant.matches('button,[role="button"],a[href]'))
-          .some(omnideckControlLooksLikeClose)
+        || omnideckHasActionableContent(element)
         || omnideckElementsIn(element).some((descendant) => descendant.tagName === 'IFRAME');
       if (!looksLikeSurface) continue;
 
       if (!roots.some((root) => omnideckComposedContains(root, element))) roots.push(element);
     }
+    return roots;
+  }
 
+  function omnideckCustomModal() {
+    if (!document.body) return null;
+    const blockers = omnideckElementsIn(document.body).filter((element) => {
+      return omnideckIsViewportPointerBlocker(element)
+        && omnideckBlockerCoversBackground(element);
+    });
+    if (blockers.length === 0) return null;
+
+    blockers.sort((left, right) => {
+      const leftZ = parseInt(window.getComputedStyle(left).zIndex, 10) || 0;
+      const rightZ = parseInt(window.getComputedStyle(right).zIndex, 10) || 0;
+      if (leftZ !== rightZ) return leftZ - rightZ;
+      return omnideckViewportCoverage(left) - omnideckViewportCoverage(right);
+    });
+    const blocker = blockers[blockers.length - 1];
+    const roots = omnideckSurfaceRootsForBlocker(blocker);
     return {
       element: roots[roots.length - 1],
       elements: roots,
-      kind: 'custom'
+      kind: 'pointer'
     };
   }
 
@@ -266,13 +356,13 @@ MODAL_HELPERS_JS = r"""
     return omnideckSemanticModal() || omnideckCustomModal();
   }
 
-  function omnideckModalControlName(el) {
-    if (!omnideckControlLooksLikeClose(el)) return '';
+  function omnideckModalControlName(element) {
+    if (!omnideckControlLooksLikeClose(element)) return '';
     const metadata = [
-      el.id || '',
-      typeof el.className === 'string' ? el.className : '',
-      el.getAttribute('name') || '',
-      el.getAttribute('data-testid') || ''
+      element.id || '',
+      typeof element.className === 'string' ? element.className : '',
+      element.getAttribute('name') || '',
+      element.getAttribute('data-testid') || ''
     ].join(' ').toLowerCase();
     return /(^|[\s_-])dismiss(?=$|[\s_-])/.test(metadata) ? 'Dismiss' : 'Close';
   }
@@ -281,11 +371,11 @@ MODAL_HELPERS_JS = r"""
     const roots = omnideckModalElements(modal);
     if (roots.length === 0) return null;
     const candidates = roots.flatMap((root) => [root, ...omnideckElementsIn(root)])
-      .filter((el) => {
-        if (!omnideckElementIsVisible(el)) return false;
-        const style = window.getComputedStyle(el);
+      .filter((element) => {
+        if (!omnideckElementIsVisible(element)) return false;
+        const style = window.getComputedStyle(element);
         return (style.overflowY === 'auto' || style.overflowY === 'scroll')
-          && el.scrollHeight > el.clientHeight + 1;
+          && element.scrollHeight > element.clientHeight + 1;
       });
     if (candidates.length === 0) return null;
     candidates.sort((left, right) => {

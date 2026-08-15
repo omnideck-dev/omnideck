@@ -75,6 +75,109 @@ async def test_aria_modal_dialog_hides_unavailable_background(open_tab, servers,
     assert "[Modal dialog open — background controls are unavailable]" in view
 
 
+async def test_full_viewport_aria_takeover_is_active_surface(open_tab, servers):
+    """A covered background is unavailable even when the document can scroll."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout=takeover")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    accept_ref = find_ref(view, role="button", name="Accept and continue")
+    assert accept_ref is not None
+
+    after_accept = await click(accept_ref, tab=tab)
+    assert "[Modal dialog open" not in after_accept
+    assert find_ref(after_accept, role="button", name="Background action") is not None
+
+
+async def test_aria_hidden_background_defines_active_surface(open_tab, servers):
+    """An aria-hidden, pointer-disabled app leaves its sibling dialog active."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-hidden-background.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    continue_ref = find_ref(view, role="button", name="Continue")
+    assert continue_ref is not None
+
+    after_continue = await click(continue_ref, tab=tab)
+    assert "[Modal dialog open" not in after_continue
+    assert find_ref(after_continue, role="button", name="Background action") is not None
+
+
+async def test_focus_trapped_aria_surface_hides_background(open_tab, servers):
+    """A focus trap and pointer-blocking layer define one active surface."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/focus-trap.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    assert find_ref(view, role="textbox", name="Project name") is not None
+    done_ref = find_ref(view, role="button", name="Done")
+    assert done_ref is not None
+
+    after_done = await click(done_ref, tab=tab)
+    assert "[Modal dialog open" not in after_done
+    assert find_ref(after_done, role="button", name="Background action") is not None
+
+
+async def test_pointer_blocker_without_modal_semantics_hides_background(open_tab, servers):
+    """Pointer interception matters even when the page supplies no modal metadata."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/pointer-blocker.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    continue_ref = find_ref(view, role="button", name="Continue to page")
+    assert continue_ref is not None
+
+    after_continue = await click(continue_ref, tab=tab)
+    assert "[Modal dialog open" not in after_continue
+    assert find_ref(after_continue, role="button", name="Background action") is not None
+
+
+async def test_transparent_pointer_backdrop_hides_background(open_tab, servers):
+    """Pointer interception remains real when the backdrop has no paint."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/transparent-backdrop.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    return_ref = find_ref(view, role="button", name="Return to report")
+    assert return_ref is not None
+
+    after_return = await click(return_ref, tab=tab)
+    assert "[Modal dialog open" not in after_return
+    assert find_ref(after_return, role="button", name="Background action") is not None
+
+
+async def test_fixed_fullscreen_application_is_not_modal(open_tab, servers):
+    """A fixed app root owns the page; it does not cover another interaction surface."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/fixed-app-shell.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" not in view
+    compose_ref = find_ref(view, role="button", name="Compose message")
+    assert compose_ref is not None
+
+    after_compose = await click(compose_ref, tab=tab)
+    assert "Composer opened" in after_compose
+
+
+async def test_nonblocking_aria_drawer_keeps_exposed_background(open_tab, servers):
+    """A large drawer is not modal while the uncovered page remains actionable."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/nonblocking-drawer.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" not in view
+    assert find_ref(view, role="button", name="Apply filters") is not None
+    background_ref = find_ref(view, role="button", name="Background action")
+    assert background_ref is not None
+
+    after_background = await click(background_ref, tab=tab)
+    assert "Background activated" in after_background
+
+
 async def test_unnamed_modal_close_button_is_actionable(open_tab, servers):
     """A modal close icon can use its implementation metadata as a fallback."""
     tab = await open_tab(f"{servers.primary}/modal-dialog/unnamed-close.html")

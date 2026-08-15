@@ -13,8 +13,14 @@
       <div role="dialog" aria-modal="true"
            style="position:fixed;top:20px;left:20px;width:600px;height:400px;background:#fff">
         <input type="search" aria-label="Search docs" placeholder="Search docs">
-        <button>Close</button>
+        <button id="close-search">Close</button>
       </div>
     </div>
   </div>
+  <script>
+    document.getElementById('close-search').addEventListener('click', () => {
+      document.getElementById('__primerPortalRoot__').remove();
+      document.getElementById('app').removeAttribute('inert');
+    });
+  </script>
 </body></html>
