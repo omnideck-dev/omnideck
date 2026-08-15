@@ -179,6 +179,25 @@ async def test_aria_dialog_without_background_block_is_not_modal(
     assert _scroll_top(after_down) > _scroll_top(initial)
 
 
+async def test_body_lock_with_background_scroller_is_not_modal(open_tab, servers):
+    """A body lock does not suppress an independently scrollable app shell."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout=app-shell")
+    initial = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" not in initial
+    assert find_ref(initial, role="button", name="Accept and continue") is not None
+    assert find_ref(initial, role="button", name="Background action") is not None
+
+    after_down = await scroll_page("down", amount=600, tab=tab)
+    background_scroll = await execute_javascript(
+        "document.querySelector('main').scrollTop",
+        tab=tab,
+    )
+
+    assert "blocked by an open modal dialog" not in after_down
+    assert _javascript_number(background_scroll) > 0
+
+
 async def test_blocked_modal_scroll_explains_next_action_without_consuming_budget(open_tab, servers):
     """A short modal reports why the background cannot scroll."""
     tab = await open_tab(f"{servers.primary}/modal-dialog/native.html")

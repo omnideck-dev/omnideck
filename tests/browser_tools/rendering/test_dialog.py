@@ -32,6 +32,37 @@ async def test_native_modal_dialog_hides_inert_background(open_tab, servers):
     assert "[Modal dialog open" in view
 
 
+async def test_native_modal_inside_shadow_dom_hides_background(open_tab, servers):
+    """Top-layer dialogs remain modal when hosted in an open shadow root."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/shadow-native.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    assert find_ref(view, role="button", name="Continue") is not None
+    close_ref = find_ref(view, role="button", name="Close")
+    assert close_ref is not None
+
+    after_close = await click(close_ref, tab=tab)
+    assert "[Modal dialog open" not in after_close
+    assert find_ref(after_close, role="button", name="Background action") is not None
+
+
+async def test_stacked_native_modals_show_top_layer_order(open_tab, servers):
+    """The focused top-layer dialog wins even when DOM order says otherwise."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/stacked-native.html")
+    view = await browse_page(tab=tab)
+
+    assert find_ref(view, role="button", name="Close underlying dialog") is None
+    close_top = find_ref(view, role="button", name="Close top dialog")
+    assert close_top is not None
+
+    after_close = await click(close_top, tab=tab)
+    assert "[Modal dialog open" in after_close
+    assert find_ref(after_close, role="button", name="Close underlying dialog") is not None
+    assert find_ref(after_close, role="button", name="Background action") is None
+
+
 @pytest.mark.parametrize("role", ["dialog", "alertdialog"])
 async def test_aria_modal_dialog_hides_unavailable_background(open_tab, servers, role):
     """ARIA dialog plus an inert background forms a modal interaction surface."""
@@ -66,6 +97,22 @@ async def test_cross_origin_custom_modal_surfaces_blocking_state_and_close(open_
     close_ref = find_ref(view, role="button", name="Close")
     assert close_ref is not None
     assert "[Modal dialog open" in view
+
+    after_close = await click(close_ref, tab=tab)
+    assert "[Modal dialog open" not in after_close
+    assert find_ref(after_close, role="button", name="Background action") is not None
+
+
+async def test_custom_modal_with_sibling_panel_surfaces_panel_controls(open_tab, servers):
+    """A backdrop and its separate dialog panel form one modal surface."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/sibling-panel.html")
+    view = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" in view
+    assert find_ref(view, role="button", name="Background action") is None
+    assert find_ref(view, role="button", name="Confirm") is not None
+    close_ref = find_ref(view, role="button", name="Close")
+    assert close_ref is not None
 
     after_close = await click(close_ref, tab=tab)
     assert "[Modal dialog open" not in after_close

@@ -28,7 +28,7 @@ __MODAL_HELPERS__
 
   const activeModal = omnideckActiveModal();
   const modalScrollTarget = activeModal
-    ? omnideckScrollableModalElement(activeModal.element)
+    ? omnideckScrollableModalElement(activeModal)
     : null;
   let scrollTarget = x === null || y === null
     ? null
@@ -70,7 +70,7 @@ __MODAL_HELPERS__
 
   const activeModal = omnideckActiveModal();
   const target = activeModal
-    ? omnideckScrollableModalElement(activeModal.element)
+    ? omnideckScrollableModalElement(activeModal)
     : null;
   if (!target) return false;
 
@@ -108,7 +108,7 @@ __MODAL_HELPERS__
 
   const activeModal = omnideckActiveModal();
   const modalScrollTarget = activeModal
-    ? omnideckScrollableModalElement(activeModal.element)
+    ? omnideckScrollableModalElement(activeModal)
     : null;
   let scrollTarget = initial.x === null || initial.y === null
     ? null

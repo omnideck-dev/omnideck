@@ -259,6 +259,7 @@ __MODAL_HELPERS__
   const scrolled = window.scrollY > 50;
 
   function shouldSkip(el) {
+    if (el.hasAttribute('inert')) return 'skip-tree';
     if (el.getAttribute('aria-hidden') === 'true') {
       if (el.querySelector('[role="dialog"],[role="alertdialog"],dialog'))
         return 'skip-self';
@@ -437,7 +438,7 @@ __MODAL_HELPERS__
       }
 
       let name = getName(el);
-      if (!name && activeModal && activeModal.element.contains(el))
+      if (!name && activeModal && omnideckModalContains(activeModal, el))
         name = omnideckModalControlName(el);
       if (!name && role !== 'combobox' && el.tagName !== 'SELECT') return;
 
@@ -570,13 +571,13 @@ __MODAL_HELPERS__
       depth: 0,
       text: '[Modal dialog open — background controls are unavailable]'
     });
-    walk(activeModal.element, true);
+    for (const root of omnideckModalElements(activeModal)) walk(root, true);
   } else {
     walk(document.body, true);
   }
 
   const modalViewport = activeModal
-    ? (omnideckScrollableModalElement(activeModal.element) || activeModal.element)
+    ? (omnideckScrollableModalElement(activeModal) || activeModal.element)
     : null;
   const viewportHeight = modalViewport
     ? (modalViewport.clientHeight || Math.floor(modalViewport.getBoundingClientRect().height))

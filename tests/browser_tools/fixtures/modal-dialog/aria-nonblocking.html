@@ -9,8 +9,11 @@
     }
 
     main {
-      min-height: 3200px;
       padding: 24px;
+    }
+
+    .page-content {
+      height: 3200px;
     }
 
     #consent {
@@ -27,13 +30,30 @@
       inset: auto 0 0;
       height: 300px;
     }
+
+    body.app-shell {
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    body.app-shell main {
+      box-sizing: border-box;
+      height: 100vh;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
+  <!-- An unrelated inert template is not evidence that the live page is blocked. -->
+  <div inert hidden>
+    <button type="button">Hidden template action</button>
+  </div>
+
   <main>
     <h1>News</h1>
     <button type="button">Background action</button>
     <p>The document continues below the viewport.</p>
+    <div class="page-content"></div>
   </main>
 
   <div id="consent" role="dialog" aria-modal="true" aria-label="Privacy choices">
@@ -42,9 +62,9 @@
   </div>
 
   <script>
-    if (new URLSearchParams(location.search).get('layout') === 'banner') {
-      document.body.classList.add('banner');
-    }
+    const layout = new URLSearchParams(location.search).get('layout');
+    if (layout === 'banner') document.body.classList.add('banner');
+    if (layout === 'app-shell') document.body.classList.add('banner', 'app-shell');
   </script>
 </body>
 </html>
