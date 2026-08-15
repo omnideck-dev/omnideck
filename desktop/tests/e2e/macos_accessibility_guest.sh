@@ -27,6 +27,7 @@ application="$installed_app/Contents/MacOS/omnideck"
 driver_app="$HOME/Applications/Omnideck Lab Driver.app"
 driver="$driver_app/Contents/MacOS/omnideck-lab-driver"
 input_extension="$HOME/.omnideck-lab/input/omnideck-lab-input.dylib"
+downloads_permission_helper="$HOME/.local/libexec/omnideck-lab/allow-downloads.sh"
 container_name="omnideck-desktop-${namespace}"
 home_volume="omnideck-desktop-home-${namespace}"
 state_volume="omnideck-desktop-state-${namespace}"
@@ -35,6 +36,7 @@ started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 current_step=initialize
 test_status=failed
 application_pid=''
+downloads_permission_pid=''
 soft_failures=()
 mode="${OMNIDECK_MACOS_E2E_MODE:-full}"
 [[ "$mode" == full || "$mode" == boundaries ]] || { printf 'Unsupported macOS E2E mode: %s\n' "$mode" >&2; exit 2; }
@@ -52,6 +54,13 @@ stop_application() {
   pkill -f "^$application$" >/dev/null 2>&1 || true
 }
 
+finish_downloads_permission() {
+  if [[ -n "$downloads_permission_pid" ]]; then
+    wait "$downloads_permission_pid"
+    downloads_permission_pid=''
+  fi
+}
+
 write_evidence() {
   local exit_code=$?
   set +e
@@ -59,6 +68,7 @@ write_evidence() {
     "$driver" dump "$application" "$result_dir/accessibility/failure-$current_step.json" >/dev/null 2>&1 || true
     "$driver" screenshot "$application" "$result_dir/screenshots/failure-$current_step.png" >/dev/null 2>&1 || true
   fi
+  finish_downloads_permission
   podman logs "$container_name" > "$result_dir/container.log" 2>&1 || true
   stop_application
   hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true
@@ -118,6 +128,7 @@ trap 'printf "ERROR step=%s line=%s command=%q\\n" "$current_step" "$LINENO" "$B
 [[ "$(uname -s)/$(uname -m)" == Darwin/arm64 ]] || exit 2
 [[ -x "$driver" ]] || { printf 'The macOS lab Accessibility driver is not installed.\n' >&2; exit 3; }
 [[ -f "$input_extension" ]] || { printf 'The macOS lab trusted-input extension is not installed.\n' >&2; exit 3; }
+[[ -x "$downloads_permission_helper" ]] || { printf 'The macOS lab Downloads permission helper is not installed.\n' >&2; exit 3; }
 
 current_step='Accessibility permission preflight'
 preflight="$("$driver" preflight 2>&1 || true)"
@@ -428,6 +439,9 @@ mkdir -p "$native_download_dir" "$result_dir/host-boundaries"
 [[ ! -e "$download_path" ]]
 "$driver" click "$application" "Export $fixture_name" 30
 "$driver" wait-text "$application" "Export “$fixture_name”" 30
+"$downloads_permission_helper" 'Omnideck Lab' 5 \
+  > "$result_dir/host-boundaries/downloads-permission.txt" 2>&1 &
+downloads_permission_pid=$!
 "$driver" click-in "$application" "Export “$fixture_name”" 'Export' 30
 if ! "$driver" wait-text "$application" 'Download complete' 10; then
   soft_failures+=('native host download completion toast')
@@ -438,6 +452,8 @@ if [[ ! -s "$result_dir/soft-failures.txt" ]]; then
   assert_tree_text "$result_dir/accessibility/host-download-toast.json" "$fixture_id" 'was saved to Downloads.'
 fi
 capture host-download-toast
+finish_downloads_permission
+cat "$result_dir/host-boundaries/downloads-permission.txt"
 python3 - "$download_path" "$fixture_name" "$result_dir/host-boundaries/download.json" <<'PY'
 import json, sys, time
 from pathlib import Path
