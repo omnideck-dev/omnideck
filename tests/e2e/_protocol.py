@@ -33,7 +33,12 @@ def call_tool(tool_name: str, **args: object) -> str:
     ``call_tool("close_tab", tab=2)`` or ``call_tool("goto", url="...", tab=1)``.
     Skill-gated tools (e.g. browser tools) are loaded automatically before use.
     """
-    return f"<<TOOL {tool_name}>>{json.dumps(args)}<<END>>"
+    # A tool argument can itself contain directives, as routine task
+    # instructions do. Escape '<' inside the JSON body so the outer directive
+    # parser cannot mistake a nested <<END>> for this call's terminator. JSON
+    # decoding restores the original text before the real tool is invoked.
+    body = json.dumps(args).replace("<", "\\u003c")
+    return f"<<TOOL {tool_name}>>{body}<<END>>"
 
 
 def bash(cmd: str) -> str:

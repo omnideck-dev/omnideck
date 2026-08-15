@@ -25,7 +25,6 @@ class MacOSLabContractTest(unittest.TestCase):
             "native host download",
             "native host upload",
             "native artifact download and toast",
-            "native zoom shortcut",
             "native update bridge visible contract",
             "DMG removal preserves user and runtime data",
             "DMG reinstall and packaged sidecar smoke",
@@ -52,6 +51,25 @@ class MacOSLabContractTest(unittest.TestCase):
         self.assertIn('wait-windows "$application" 1 30', self.guest)
         self.assertIn('wait-text "$application" "$expected_text" "$timeout"', self.guest)
         self.assertIn("launch_application first-run 'Welcome to omnideck' 60", self.guest)
+
+    def test_native_download_brokers_only_the_expected_macos_consent(self):
+        self.assertIn(
+            'downloads_permission_helper="$HOME/.local/libexec/omnideck-lab/allow-downloads.sh"',
+            self.guest,
+        )
+        download = self.guest.split("current_step='native host download'", 1)[1]
+        download = download.split("current_step='native host upload'", 1)[0]
+        helper = download.index('"$downloads_permission_helper" \'Omnideck Lab\' 5')
+        confirm = download.index(
+            'click-in "$application" "Export “$fixture_name”" \'Export\' 30'
+        )
+        toast = download.index("wait-text \"$application\" 'Download complete' 10")
+        capture = download.index("capture host-download-toast")
+        finish = download.index("finish_downloads_permission")
+        self.assertLess(helper, confirm)
+        self.assertLess(confirm, toast)
+        self.assertLess(toast, capture)
+        self.assertLess(capture, finish)
 
 
 if __name__ == "__main__":

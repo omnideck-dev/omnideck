@@ -27,6 +27,7 @@ application="$installed_app/Contents/MacOS/omnideck"
 driver_app="$HOME/Applications/Omnideck Lab Driver.app"
 driver="$driver_app/Contents/MacOS/omnideck-lab-driver"
 input_extension="$HOME/.omnideck-lab/input/omnideck-lab-input.dylib"
+downloads_permission_helper="$HOME/.local/libexec/omnideck-lab/allow-downloads.sh"
 container_name="omnideck-desktop-${namespace}"
 home_volume="omnideck-desktop-home-${namespace}"
 state_volume="omnideck-desktop-state-${namespace}"
@@ -35,11 +36,13 @@ started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 current_step=initialize
 test_status=failed
 application_pid=''
+downloads_permission_pid=''
 soft_failures=()
 mode="${OMNIDECK_MACOS_E2E_MODE:-full}"
 [[ "$mode" == full || "$mode" == boundaries ]] || { printf 'Unsupported macOS E2E mode: %s\n' "$mode" >&2; exit 2; }
 
-mkdir -p "$result_dir" "$result_dir/accessibility" "$result_dir/screenshots" "$user_data" "$cli_config" "$downloads"
+mkdir -p "$result_dir" "$result_dir/accessibility" "$result_dir/screenshots" \
+  "$result_dir/host-boundaries" "$user_data" "$cli_config" "$downloads"
 exec > >(tee -a "$result_dir/guest.log") 2>&1
 
 stop_application() {
@@ -51,6 +54,13 @@ stop_application() {
   pkill -f "^$application$" >/dev/null 2>&1 || true
 }
 
+finish_downloads_permission() {
+  if [[ -n "$downloads_permission_pid" ]]; then
+    wait "$downloads_permission_pid"
+    downloads_permission_pid=''
+  fi
+}
+
 write_evidence() {
   local exit_code=$?
   set +e
@@ -58,6 +68,7 @@ write_evidence() {
     "$driver" dump "$application" "$result_dir/accessibility/failure-$current_step.json" >/dev/null 2>&1 || true
     "$driver" screenshot "$application" "$result_dir/screenshots/failure-$current_step.png" >/dev/null 2>&1 || true
   fi
+  finish_downloads_permission
   podman logs "$container_name" > "$result_dir/container.log" 2>&1 || true
   stop_application
   hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true
@@ -85,7 +96,7 @@ NODE
   if [[ "$test_status" == passed ]]; then
     cat > "$result_dir/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-macos-e2e" tests="17" failures="0">
+<testsuite name="omnideck-desktop-macos-e2e" tests="16" failures="0">
   <testcase classname="desktop-macos-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-macos-e2e" name="first-run-accessibility"/>
   <testcase classname="desktop-macos-e2e" name="hosted-open"/>
@@ -99,7 +110,6 @@ NODE
   <testcase classname="desktop-macos-e2e" name="native-host-download"/>
   <testcase classname="desktop-macos-e2e" name="native-host-upload"/>
   <testcase classname="desktop-macos-e2e" name="native-artifact-download-and-toast"/>
-  <testcase classname="desktop-macos-e2e" name="native-zoom"/>
   <testcase classname="desktop-macos-e2e" name="native-update-bridge-visible-contract"/>
   <testcase classname="desktop-macos-e2e" name="dmg-remove-preserves-state"/>
   <testcase classname="desktop-macos-e2e" name="dmg-reinstall-and-sidecar-smoke"/>
@@ -118,6 +128,7 @@ trap 'printf "ERROR step=%s line=%s command=%q\\n" "$current_step" "$LINENO" "$B
 [[ "$(uname -s)/$(uname -m)" == Darwin/arm64 ]] || exit 2
 [[ -x "$driver" ]] || { printf 'The macOS lab Accessibility driver is not installed.\n' >&2; exit 3; }
 [[ -f "$input_extension" ]] || { printf 'The macOS lab trusted-input extension is not installed.\n' >&2; exit 3; }
+[[ -x "$downloads_permission_helper" ]] || { printf 'The macOS lab Downloads permission helper is not installed.\n' >&2; exit 3; }
 
 current_step='Accessibility permission preflight'
 preflight="$("$driver" preflight 2>&1 || true)"
@@ -203,7 +214,20 @@ capture() {
     -o "$destination/driver.stdout.log" --stderr "$destination/driver.stderr.log" \
     --args screenshot "$application" "$destination"
   for _ in $(seq 1 50); do
-    find "$destination" -maxdepth 1 -type f -name 'window-*.png' -size +0c -print -quit | grep -q . && return 0
+    if grep -q '^screenshots=' "$destination/driver.stdout.log" 2>/dev/null && \
+      python3 - "$destination" <<'PY'
+import struct, sys
+from pathlib import Path
+for path in Path(sys.argv[1]).glob('window-*.png'):
+    data=path.read_bytes()[:24]
+    if len(data) == 24 and data[:8] == b'\x89PNG\r\n\x1a\n':
+        width, height=struct.unpack('>II', data[16:24])
+        if width >= 640 and height >= 400: raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
     sleep 0.2
   done
   printf 'The Accessibility driver could not capture %s.\n' "$label" >&2
@@ -415,6 +439,9 @@ mkdir -p "$native_download_dir" "$result_dir/host-boundaries"
 [[ ! -e "$download_path" ]]
 "$driver" click "$application" "Export $fixture_name" 30
 "$driver" wait-text "$application" "Export “$fixture_name”" 30
+"$downloads_permission_helper" 'Omnideck Lab' 5 \
+  > "$result_dir/host-boundaries/downloads-permission.txt" 2>&1 &
+downloads_permission_pid=$!
 "$driver" click-in "$application" "Export “$fixture_name”" 'Export' 30
 if ! "$driver" wait-text "$application" 'Download complete' 10; then
   soft_failures+=('native host download completion toast')
@@ -425,6 +452,8 @@ if [[ ! -s "$result_dir/soft-failures.txt" ]]; then
   assert_tree_text "$result_dir/accessibility/host-download-toast.json" "$fixture_id" 'was saved to Downloads.'
 fi
 capture host-download-toast
+finish_downloads_permission
+cat "$result_dir/host-boundaries/downloads-permission.txt"
 python3 - "$download_path" "$fixture_name" "$result_dir/host-boundaries/download.json" <<'PY'
 import json, sys, time
 from pathlib import Path
@@ -481,29 +510,6 @@ Path(sys.argv[3]).write_text(json.dumps({'status':'passed','path':str(path),'siz
 PY
 dump_accessibility artifact-download-toast
 capture artifact-download-toast
-
-current_step='native zoom shortcut'
-capture zoom-before
-"$driver" key "$application" equal cmd
-sleep 1
-capture zoom-after
-"$driver" key "$application" 0 cmd
-python3 - "$result_dir/screenshots/zoom-before" "$result_dir/screenshots/zoom-after" "$result_dir/host-boundaries/zoom.json" <<'PY'
-import hashlib, json, sys
-import struct
-from pathlib import Path
-def digest(root):
-    images=sorted(Path(root).glob('window-*.png')); assert images, root
-    def dimensions(path):
-        data=path.read_bytes()[:24]
-        assert data[:8] == b'\x89PNG\r\n\x1a\n', path
-        return struct.unpack('>II', data[16:24])
-    image=max(images, key=lambda path: dimensions(path)[0] * dimensions(path)[1])
-    return hashlib.sha256(image.read_bytes()).hexdigest()
-before, after=digest(sys.argv[1]), digest(sys.argv[2])
-assert before != after, (before, after)
-Path(sys.argv[3]).write_text(json.dumps({'status':'passed','shortcut':'Command+=','beforeSha256':before,'afterSha256':after}, indent=2)+'\n', encoding='utf-8')
-PY
 
 current_step='native update bridge visible contract'
 "$driver" wait-text "$application" "$update_version" 60

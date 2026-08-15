@@ -32,6 +32,6 @@ ENV PATH="/usr/local/cargo/bin:/usr/local/bin:${PATH}" \
     CARGO_TERM_COLOR=always \
     npm_config_update_notifier=false \
     npm_config_fund=false \
-    RUSTFLAGS="-C target-feature=+crt-static"
+    RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,--exclude-all-symbols"
 
 WORKDIR /workspace/desktop

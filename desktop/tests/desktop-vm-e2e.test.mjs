@@ -12,6 +12,7 @@ const macos = await read('../tests/e2e/run-macos-lab.sh');
 const macosGuest = await read('../tests/e2e/macos_accessibility_guest.sh');
 const linuxBuilder = await read('../scripts/run-linux-builder.sh');
 const windowsBuilder = await read('../scripts/run-windows-builder.sh');
+const windowsBuilderDockerfile = await read('../containers/windows-builder/Dockerfile');
 const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
@@ -125,19 +126,28 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /Export navigated the hosted application/);
   assert.match(hostBoundaryDriver, /Download complete/);
   assert.match(hostBoundaryDriver, /artifact_download/);
-  assert.match(hostBoundaryDriver, /new KeyboardEvent\('keydown'/);
-  assert.match(hostBoundaryDriver, /new WheelEvent\('wheel'/);
-  assert.match(hostBoundaryDriver, /keyboardPageZoomApplied/);
-  assert.match(hostBoundaryDriver, /wheelPageZoomApplied/);
-  assert.match(hostBoundaryDriver, /window\.__omnideckDesktopZoom/);
-  assert.match(hostBoundaryDriver, /document\.documentElement\.style\.zoom/);
-  assert.match(hostBoundaryDriver, /trustedWheelZoom/);
-  assert.match(hostBoundaryDriver, /windowactivate/);
-  assert.match(hostBoundaryDriver, /windowfocus/);
-  assert.match(hostBoundaryDriver, /getwindowgeometry/);
-  assert.match(hostBoundaryDriver, /center_x/);
-  assert.match(linuxGuest, /--native-input-tool/);
-  assert.match(linuxGuest, /"\$\{operation\}" == "zoom" && "\$\{ID\}" == "ubuntu"/);
+  assert.match(hostBoundaryDriver, /"vm-hardware-keyboard"/);
+  assert.match(hostBoundaryDriver, /nativeWebviewZoomApplied/);
+  assert.match(hostBoundaryDriver, /cssZoomApplied/);
+  assert.match(hostBoundaryDriver, /assert_zoom_layout/);
+  assert.match(hostBoundaryDriver, /keyboardZoomOut/);
+  assert.match(hostBoundaryDriver, /anchorError/);
+  assert.match(hostBoundaryDriver, /__omnideckZoomMenuOpeningAnchor/);
+  assert.match(hostBoundaryDriver, /viewportWidthError/);
+  assert.match(hostBoundaryDriver, /cssZoom: root\.style\.zoom/);
+  assert.match(hostBoundaryDriver, /zoom-input-\{external_input_count:03d\}-\{action\}/);
+  assert.match(hostBoundaryDriver, /native-input-signal-dir/);
+  assert.match(linuxGuest, /--native-input-signal-dir/);
+  assert.match(run, /zoom-input-\[0-9\]\+-\(in\|out\|reset\)/);
+  assert.match(run, /clean GNOME session can leave both a system notification and Overview/);
+  assert.match(run, /for focus_escape in 1 2/);
+  assert.match(run, /send-keys "\$\{vm\}" "\$\{zoom_key\}"/);
+  assert.match(run, /ctrl-equal/);
+  assert.match(run, /ctrl-minus/);
+  assert.match(run, /ctrl-0/);
+  assert.match(windows, /--native-input-signal-dir/);
+  assert.match(windows, /zoom-input-\[0-9\]\+-\(in\|out\|reset\)/);
+  assert.match(windows, /send-keys windows "\$\{key\}"/);
   assert.match(hostBoundaryDriver, /checkForUpdate/);
   assert.match(hostBoundaryDriver, /error\?\.message/);
   assert.doesNotMatch(hostBoundaryDriver, /mockIPC|mock_invoke|dev server/i);
@@ -158,6 +168,10 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
 test('documented pnpm argument separators are accepted by both VM lanes', () => {
   assert.match(run, /--\) shift ;;/);
   assert.match(windows, /--\) shift ;;/);
+});
+
+test('the GNU Windows lab builder disables unintended DLL auto-exports', () => {
+  assert.match(windowsBuilderDockerfile, /link-arg=-Wl,--exclude-all-symbols/);
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
@@ -231,16 +245,18 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /click-in "\$application" "Export/);
   assert.match(macosGuest, /native host upload/);
   assert.match(macosGuest, /native artifact download and toast/);
-  assert.match(macosGuest, /native zoom shortcut/);
   assert.match(macosGuest, /native update bridge visible contract/);
   assert.match(macosGuest, /OMNIDECK_DESKTOP_UPDATE_FIXTURE/);
   assert.match(macosGuest, /omnideck-lab-input\.dylib/);
   assert.match(macosGuest, /mouse_click "\$fixture_filename"/);
   assert.match(macosGuest, /mouse_click "\$artifact_filename"/);
-  assert.match(macosGuest, /key "\$application" equal cmd/);
   assert.match(macosGuest, /DMG removal preserves user and runtime data/);
   assert.match(macosGuest, /DMG reinstall and packaged sidecar smoke/);
-  assert.match(macosGuest, /tests="17" failures="0"/);
+  assert.match(macosGuest, /width >= 640 and height >= 400/);
+  assert.match(macosGuest, /grep -q '\^screenshots='/);
+  assert.doesNotMatch(macosGuest, /native zoom shortcut/);
+  assert.doesNotMatch(macos, /--only zoom/);
+  assert.match(macosGuest, /tests="16" failures="0"/);
   assert.match(macosGuest, /soft_failures/);
   assert.match(macosGuest, /complete journey/);
   assert.match(macosGuest, /container-inspect\.json/);
@@ -301,6 +317,7 @@ test('manual-only behavior is explicit and never inferred as passed', () => {
 test('golden prerequisites are versioned while exact drivers remain per-run', () => {
   assert.equal(golden.schemaVersion, 1);
   assert.equal(golden.recommendedBaseline, 'desktop-e2e-v2');
+  assert.equal(golden.linux.debianRecommendedBaseline, 'desktop-e2e-v4');
   assert.ok(golden.linux.checkpointInstall.some((item) => item.includes('WebKitWebDriver')));
   assert.ok(golden.windows.checkpointInstall.some((item) => item.includes('WebView2')));
   assert.ok(golden.managedPerRun.some((item) => item.includes('tauri-driver 2.0.6')));
@@ -318,10 +335,12 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
 });
 
 test('current Linux guests install only the input dependencies their lane uses', () => {
-  assert.match(linuxGuest, /apt-get install -y -qq webkit2gtk-driver xdotool/);
-  assert.match(linuxGuest, /dnf install -y webkitgtk6\.0/);
-  assert.doesNotMatch(linuxGuest, /dnf install -y webkitgtk6\.0 xdotool/);
-  assert.match(JSON.stringify(golden), /xdotool installed per-run.*Ubuntu/);
+  assert.match(linuxGuest, /apt-get install -y -qq webkit2gtk-driver/);
+  assert.doesNotMatch(linuxGuest, /xdotool/);
+  assert.match(linuxGuest, /dnf_with_lock_retry input-dependencies install -y webkitgtk6\.0/);
+  assert.match(linuxGuest, /Failed to obtain rpm transaction lock/);
+  assert.match(linuxGuest, /attempt < 31/);
+  assert.match(JSON.stringify(golden), /VM-controller hardware keyboard injection/);
 });
 
 test('host-boundary journeys retry only transient WebDriver disconnects', () => {
@@ -331,6 +350,16 @@ test('host-boundary journeys retry only transient WebDriver disconnects', () => 
     /WebDriverError:\.\*\(Remote end closed\|Connection reset\|Connection refused\)/,
   );
   assert.match(linuxGuest, /transient-failure-attempt-/);
+});
+
+test('Windows WebView forwarding uses a free host port and observes tunnel death before readiness', () => {
+  assert.match(windows, /listener\.bind\(\(\"127\.0\.0\.1\", 0\)\)/);
+  const tunnelLoop = windows.match(/for attempt in \$\(seq 1 480\); do([\s\S]*?)done/);
+  assert.ok(tunnelLoop);
+  assert.ok(
+    tunnelLoop[1].indexOf('kill -0 "${driver_ssh_pid}"') <
+      tunnelLoop[1].indexOf('curl --silent --fail'),
+  );
 });
 
 test('the updater bridge fixture is newer than the bundled runtime image', async () => {

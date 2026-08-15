@@ -4,5 +4,5 @@
   "description": "The local bundled setup UI may drive the typed omnideck lifecycle.",
   "windows": ["main"],
   "local": true,
-  "permissions": ["read-only-cli"]
+  "permissions": ["read-only-cli", "core:webview:allow-set-webview-zoom"]
 }

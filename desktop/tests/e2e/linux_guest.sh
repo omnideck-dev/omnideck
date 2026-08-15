@@ -105,6 +105,25 @@ current_step="artifact checksum"
 printf '%s  %s\n' "${expected_sha256}" "${artifact}" | sha256sum --check --strict
 inventory before
 
+dnf_with_lock_retry() {
+  local label="${1:?DNF evidence label is required}"
+  shift
+  local attempt=1 log="${result_dir}/dnf-${label}.log"
+  while ! sudo dnf "$@" 2>&1 | tee "${log}"; do
+    if ! tail -n 20 "${log}" | grep -Fq 'Failed to obtain rpm transaction lock'; then
+      return 1
+    fi
+    ((attempt < 31)) || return 1
+    printf 'RPM transaction lock is busy; retrying %s (%s of 30).\n' "${label}" "${attempt}"
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+}
+
+install_rpm() {
+  dnf_with_lock_retry candidate-install install -y "${artifact}"
+}
+
 current_step="lab preflight isolation"
 cleanup_resources
 if command -v podman >/dev/null 2>&1 && podman container exists omnideck-desktop; then
@@ -126,7 +145,7 @@ case "${package_kind}" in
     ;;
   rpm)
     package_name="$(rpm -qp --queryformat '%{NAME}' "${artifact}")"
-    sudo dnf install -y "${artifact}"
+    install_rpm
     application="$(command -v omnideck)"
     ;;
   *)
@@ -201,19 +220,15 @@ EOF
 chmod 700 "${auth_bin}/pkexec"
 
 current_step="desktop input dependencies"
-if ! command -v WebKitWebDriver >/dev/null 2>&1 ||
-  [[ "${ID}" == "ubuntu" && ! -x "$(command -v xdotool 2>/dev/null || true)" ]]; then
+if ! command -v WebKitWebDriver >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver xdotool
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y webkitgtk6.0
+    dnf_with_lock_retry input-dependencies install -y webkitgtk6.0
   fi
 fi
 command -v WebKitWebDriver
-if [[ "${ID}" == "ubuntu" ]]; then
-  command -v xdotool
-fi
 
 current_step="desktop session"
 desktop_pid=""
@@ -472,8 +487,8 @@ run_host_boundary() {
     operation_args+=(--upload-path "${download_path}")
   elif [[ "${operation}" == "artifact-download" ]]; then
     operation_args+=(--artifact-filename "${artifact_filename}")
-  elif [[ "${operation}" == "zoom" && "${ID}" == "ubuntu" ]]; then
-    operation_args+=(--native-input-tool "$(command -v xdotool)")
+  elif [[ "${operation}" == "zoom" ]]; then
+    operation_args+=(--native-input-signal-dir "${markers}")
   elif [[ "${operation}" == "update-bridge" ]]; then
     operation_args+=(--expected-update-version "${update_version}")
   fi
@@ -609,11 +624,11 @@ case "${package_kind}" in
     ;;
   rpm)
     rpm -ql "${package_name}" > "${result_dir}/installed-files.txt"
-    sudo dnf remove -y "${package_name}"
+    dnf_with_lock_retry candidate-remove remove -y "${package_name}"
     [[ ! -e "${application}" ]]
     [[ -f "${state_path}" ]]
     podman container inspect "${container_name}" >/dev/null
-    sudo dnf install -y "${artifact}"
+    install_rpm
     [[ -x "${application}" ]]
     ;;
   appimage)

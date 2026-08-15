@@ -4,7 +4,7 @@ import pytest
 
 from sdk.providers._fake import FakeProvider
 from sdk.providers._models import ChatResponse
-from tests.e2e._protocol import bash, open_url, say, send_file, write_file
+from tests.e2e._protocol import bash, call_tool, open_url, say, send_file, write_file
 
 
 async def _run(provider, messages, tools=None):
@@ -36,6 +36,7 @@ def _named(name):
 # Tools available "as if" the coder/browser skills were already loaded.
 _CODER = [_named("run_bash_cmd"), _named("write_file"), _named("send_file")]
 _BROWSER = [_named("new_tab")]
+_PLANNING = [_named("commit_routine")]
 
 
 def _tool_result(messages, tool_name, content="ok"):
@@ -96,6 +97,36 @@ class TestBash:
         msgs = _tool_result(_user(bash('echo "hi"')), "load_skill")
         final, _ = await _run(FakeProvider(), msgs, tools=_CODER)
         assert final.message.tool_calls[0].function.name == "run_bash_cmd"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRoutinePlanning:
+    async def test_loads_routine_planner_before_commit(self):
+        prompt = call_tool(
+            "commit_routine",
+            draft={"description": "Daily report", "tasks": []},
+        )
+
+        final, _ = await _run(FakeProvider(), _user(prompt))
+
+        call = final.message.tool_calls[0]
+        assert call.function.name == "load_skill"
+        assert call.function.arguments == {"name": "routine_planner"}
+
+    async def test_nested_task_directives_survive_commit_arguments(self):
+        instruction = write_file("report.txt", "proof") + say("complete")
+        draft = {
+            "description": "Daily report",
+            "tasks": [{"instruction": instruction}],
+        }
+        prompt = call_tool("commit_routine", draft=draft)
+
+        final, _ = await _run(FakeProvider(), _user(prompt), tools=_PLANNING)
+
+        call = final.message.tool_calls[0]
+        assert call.function.name == "commit_routine"
+        assert call.function.arguments["draft"]["tasks"][0]["instruction"] == instruction
 
 
 @pytest.mark.unit

@@ -76,10 +76,15 @@ system exposes:
 - artifact download from the real Artifacts preview, with guest filesystem
   contents and the native completion toast verified;
 - Ctrl/Cmd keyboard and standardized mouse-wheel events through the packaged
-  desktop-only webview zoom control on the WebDriver lanes, plus trusted
-  OS-level input on Linux and a trusted Cmd shortcut on macOS, proving the
-  rendered page zoom changes; and
-  and
+  desktop-only native webview zoom control. Linux uses the VM controller's
+  hardware keyboard injection instead of WebKitWebDriver or a guest input
+  workaround; Windows uses the same VM-controller hardware-key path. Both check one native
+  zoom step in and one native zoom step out, record the platform's observed levels, and reject document overflow, iframe viewport
+  desynchronization, offscreen menus, or a tab actions menu detached from its
+  opening anchor.
+  The physical macOS host cannot receive a Command-key event that WebKit treats
+  as trusted through its Accessibility driver, so native keyboard zoom and its
+  visual result remain an explicit manual check; and
 - deterministic test-only update discovery, defer, skip, event delivery, and
   the exact frozen hosted bridge surface (without replacing the runtime image);
 - namespaced Linux container/volume isolation and cleanup;
@@ -166,6 +171,12 @@ proving that NetworkManager owns the guest link and networkd reports it as
 unmanaged. It also bakes `WebKitWebDriver` into the checkpoint. A verified lab
 with that named checkpoint uses it through `dev-fast`. `--baseline` explicitly
 overrides profile resolution but still must pass provenance preflight.
+
+The Debian `dev-fast` lane uses `desktop-e2e-v4`, derived from the preceding
+desktop checkpoint after completing GNOME Tour and installing the guest-level
+login action that leaves GNOME Overview. That state belongs in the golden
+image; the application and E2E scripts must not dismiss or special-case the
+desktop tour.
 
 ## Qualify the latest published release with one command
 

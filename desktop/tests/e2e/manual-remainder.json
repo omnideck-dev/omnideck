@@ -17,7 +17,7 @@
     },
     {
       "path": "desktop/tests/manual/visual-platform.md",
-      "covers": "subjective visual quality, theme, DPI, multi-monitor, menus, and accessibility review"
+      "covers": "subjective visual quality, theme, DPI, multi-monitor, menus, and accessibility review; macOS native zoom layout remains manual because its automation host cannot deliver a shortcut that changes rendered zoom"
     },
     {
       "path": "desktop/tests/manual/recovery-lifecycle.md",
