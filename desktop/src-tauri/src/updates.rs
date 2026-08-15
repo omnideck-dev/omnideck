@@ -1,12 +1,21 @@
-use crate::{platform, state, BridgeError, BridgeResult};
+use crate::{
+    navigation::{authorize_hosted, is_hosted_app_url},
+    platform,
+    runtime::{BridgeError, BridgeResult, HostState},
+    state, windows,
+};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{fs, sync::atomic::Ordering, time::Duration};
+use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri_plugin_notification::NotificationExt;
 
 const UPDATE_STATE_SCHEMA: u32 = 1;
 const REPOSITORY: &str = "omnideck-dev/omnideck";
 const REGISTRY: &str = "https://ghcr.io";
 const MANIFEST_TYPES: &str = "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json";
+const FIRST_CHECK: Duration = Duration::from_secs(10);
+const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -315,6 +324,246 @@ pub(crate) fn payload(target: &UpdateTarget, deferred: Option<&str>) -> UpdatePa
         version: target.version.clone(),
         deferred: deferred == Some(target.version.as_str()),
     }
+}
+
+fn publish(app: &AppHandle, host: &HostState) {
+    let target = host
+        .available_update
+        .read()
+        .ok()
+        .and_then(|value| value.clone());
+    let deferred = host
+        .deferred_version
+        .read()
+        .ok()
+        .and_then(|value| value.clone());
+    let payload = target
+        .as_ref()
+        .map(|target| payload(target, deferred.as_deref()));
+    let Ok(encoded) = serde_json::to_string(&payload) else {
+        return;
+    };
+    if let Some(window) = app.get_webview_window("hosted-app") {
+        let _ = window.eval(format!(
+            "window.dispatchEvent(new CustomEvent('omnideck:update',{{detail:{encoded}}}));"
+        ));
+    }
+}
+
+#[derive(Deserialize)]
+struct SoftwareUpdatePreferences {
+    software_updates_automatic: Option<bool>,
+    software_updates_notify: Option<bool>,
+}
+
+async fn remember_preferences(host: &HostState) -> BridgeResult<()> {
+    let port = host
+        .hosted_port
+        .read()
+        .ok()
+        .and_then(|value| *value)
+        .or_else(state::persisted_port)
+        .ok_or_else(|| BridgeError::new("PORT_MISSING", "The saved omnideck port is missing."))?;
+    let preferences = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/api/settings"))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| BridgeError::new("UPDATE_PREFERENCES_FAILED", error.to_string()))?
+        .json::<SoftwareUpdatePreferences>()
+        .await
+        .map_err(|error| BridgeError::new("UPDATE_PREFERENCES_FAILED", error.to_string()))?;
+    set_preferences(
+        preferences.software_updates_automatic.unwrap_or(true),
+        preferences.software_updates_notify.unwrap_or(true),
+    )
+}
+
+fn window_is_in_sight(app: &AppHandle) -> bool {
+    app.get_webview_window("hosted-app").is_some_and(|window| {
+        let visible = window.is_visible().unwrap_or(false);
+        let minimized = window.is_minimized().unwrap_or(true);
+        let expected_port = app
+            .state::<HostState>()
+            .hosted_port
+            .read()
+            .ok()
+            .and_then(|value| *value);
+        visible
+            && !minimized
+            && window
+                .url()
+                .is_ok_and(|url| is_hosted_app_url(&url, expected_port))
+    })
+}
+
+async fn perform_check(app: &AppHandle, host: &HostState) -> BridgeResult<Option<UpdateTarget>> {
+    let installed = state::read_setup_record()
+        .map(|record| record.image_version)
+        .unwrap_or_else(|| {
+            state::image_manifest()
+                .map(|manifest| manifest.image_version)
+                .unwrap_or_default()
+        });
+    if installed.is_empty() {
+        return Ok(None);
+    }
+    let previous = read_state();
+    let found = check(&installed).await?;
+    if let Ok(mut available) = host.available_update.write() {
+        *available = found.clone();
+    }
+    let persisted = read_state();
+    if let Ok(mut deferred) = host.deferred_version.write() {
+        *deferred = persisted.deferred_version;
+    }
+    publish(app, host);
+    if let Some(found) = &found {
+        let newly_found = previous.version.as_deref() != Some(found.version.as_str());
+        if newly_found && previous.notify && !window_is_in_sight(app) {
+            if let Err(error) = app
+                .notification()
+                .builder()
+                .title("An omnideck update is ready")
+                .body(format!(
+                    "Version {} can be installed from omnideck.",
+                    found.version
+                ))
+                .show()
+            {
+                platform::append_diagnostic(&format!("[update notification] {error}"));
+            }
+        }
+    }
+    Ok(found)
+}
+
+pub(crate) fn schedule_update_checks(app: &AppHandle, host: &HostState) {
+    if host.update_checks_started.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    let host = host.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(FIRST_CHECK).await;
+        loop {
+            if let Err(error) = remember_preferences(&host).await {
+                platform::append_diagnostic(&format!("[update preferences] {}", error.technical()));
+            }
+            if let Err(error) = perform_check(&app, &host).await {
+                platform::append_diagnostic(&format!("[update check] {}", error.technical()));
+            }
+            tokio::time::sleep(CHECK_INTERVAL).await;
+        }
+    });
+}
+
+#[tauri::command]
+pub(crate) fn current_update(
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<Option<UpdatePayload>> {
+    authorize_hosted(&window, &host)?;
+    let target = host
+        .available_update
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone();
+    let deferred = host
+        .deferred_version
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone();
+    Ok(target
+        .as_ref()
+        .map(|target| payload(target, deferred.as_deref())))
+}
+
+#[tauri::command]
+pub(crate) async fn check_for_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<Option<UpdatePayload>> {
+    authorize_hosted(&window, &host)?;
+    remember_preferences(&host).await?;
+    perform_check(&app, &host).await?;
+    current_update(window, host)
+}
+
+fn available_update(host: &HostState) -> BridgeResult<UpdateTarget> {
+    host.available_update
+        .read()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))?
+        .clone()
+        .ok_or_else(|| BridgeError::new("UPDATE_MISSING", "There is no update to act on."))
+}
+
+#[tauri::command]
+pub(crate) fn defer_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    defer(&target)?;
+    *host
+        .deferred_version
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        Some(target.version);
+    publish(&app, &host);
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn skip_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    skip(&target)?;
+    *host
+        .available_update
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        None;
+    *host
+        .deferred_version
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        None;
+    publish(&app, &host);
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn install_update(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, HostState>,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let target = available_update(&host)?;
+    *host
+        .update_target
+        .write()
+        .map_err(|_| BridgeError::new("STATE_LOCK_FAILED", "The update lock was poisoned."))? =
+        Some(target);
+    *host.setup_reason.write().map_err(|_| {
+        BridgeError::new("STATE_LOCK_FAILED", "The setup reason lock was poisoned.")
+    })? = "update".into();
+    host.app_ready.store(false, Ordering::Release);
+    let setup = app
+        .get_webview_window("main")
+        .ok_or_else(|| BridgeError::new("WINDOW_MISSING", "The setup window is unavailable."))?;
+    setup
+        .reload()
+        .map_err(|error| BridgeError::new("WINDOW_UPDATE_FAILED", error.to_string()))?;
+    windows::show_setup(&app)
 }
 
 #[cfg(test)]

@@ -139,6 +139,8 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(hostBoundaryDriver, /native-input-signal-dir/);
   assert.match(linuxGuest, /--native-input-signal-dir/);
   assert.match(run, /zoom-input-\[0-9\]\+-\(in\|out\|reset\)/);
+  assert.match(run, /clean GNOME session can leave both a system notification and Overview/);
+  assert.match(run, /for focus_escape in 1 2/);
   assert.match(run, /send-keys "\$\{vm\}" "\$\{zoom_key\}"/);
   assert.match(run, /ctrl-equal/);
   assert.match(run, /ctrl-minus/);
