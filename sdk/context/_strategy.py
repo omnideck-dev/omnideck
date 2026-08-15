@@ -553,7 +553,9 @@ class LLMCompactionStrategy:
         objective: str = "",
     ) -> tuple[str, str]:
         """Call the summarization LLM and return (summary_text, model_name)."""
-        provider_name, model, options = self._resolve_model()
+        resolved = self._resolve_model()
+        assert resolved is not None
+        provider_name, model, options = resolved
         provider = get_provider(provider_name)
 
         user_content = ""
@@ -588,7 +590,9 @@ class LLMCompactionStrategy:
         user message, indicating the user may have changed topics.  Uses
         the same model as the summarizer.
         """
-        provider_name, model, options = self._resolve_model()
+        resolved = self._resolve_model()
+        assert resolved is not None
+        provider_name, model, options = resolved
         provider = get_provider(provider_name)
 
         # Build the user content with numbered messages.
@@ -732,7 +736,9 @@ def _summarize_tool_args(tool_name: str, fn: object) -> str:
     if not keys:
         return ""
 
-    raw_args = getattr(fn, "arguments", None) or fn.get("arguments", {})  # type: ignore[union-attr]
+    raw_args = getattr(fn, "arguments", None)
+    if not raw_args and isinstance(fn, dict):
+        raw_args = fn.get("arguments", {})
     if isinstance(raw_args, str):
         try:
             import json as _json

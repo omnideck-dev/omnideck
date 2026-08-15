@@ -162,8 +162,8 @@ describe('SetupWizard provider-step field visibility', () => {
             fireEvent.click(screen.getByText('Cloud API'));
         });
 
-        const select = container.querySelector('#cloud-provider');
-        const values = Array.from(select.querySelectorAll('option')).map((o) => o.value);
+        fireEvent.click(container.querySelector('#cloud-provider'));
+        const values = screen.getAllByRole('option').map((option) => option.dataset.value);
         expect(values).toEqual(['anthropic', 'openai', 'openrouter']);
     });
 });

@@ -101,12 +101,35 @@
     line-height: 1.5;
 }
 
-.chevron {
+.pinButton {
     position: absolute;
-    top: 50%;
-    right: 16px;
+    z-index: 1;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
     color: var(--text-tertiary);
-    transform: translateY(-50%);
+    cursor: pointer;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity .12s var(--ease), border-color .12s var(--ease), color .12s var(--ease);
+}
+.cardContainer:hover .pinButton,
+.pinButton:focus-visible,
+.pinButton.pinned { opacity: 1; }
+.pinButton:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.pinButton.pinned {
+    border-color: var(--accent);
+    background: var(--accent-muted);
+    color: var(--accent);
 }
 
 .empty,

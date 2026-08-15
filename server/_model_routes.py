@@ -48,6 +48,7 @@ async def handle_list_models(request: web.Request) -> web.Response:
     provider, err = _resolve_provider(request)
     if err is not None:
         return err
+    assert provider is not None
     provider_name = request.query["provider"]
     try:
         models = await provider.list_models()
@@ -66,6 +67,7 @@ async def handle_refresh_models(request: web.Request) -> web.Response:
     provider, err = _resolve_provider(request)
     if err is not None:
         return err
+    assert provider is not None
     provider.invalidate_model_cache()
     return web.json_response({"ok": True})
 

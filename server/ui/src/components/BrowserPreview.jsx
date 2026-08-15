@@ -20,13 +20,6 @@ function _hostOf(url) {
  */
 export default function BrowserPreview({ tabs, selectedId, onSelectTab, control, inputActive = true }) {
     const activeTab = tabs.find(t => t.id === selectedId) || tabs[0];
-    if (!activeTab) return null;
-
-    const activeSnapshot = activeTab.snapshot;
-    const fallbackSrc = activeSnapshot.screenshot
-        ? `data:image/png;base64,${activeSnapshot.screenshot}`
-        : null;
-    const showRail = tabs.length > 1;
     const c = control || {};
     // Own the viewport ref so the address bar can refocus it after navigating.
     const viewportRef = useRef(null);
@@ -68,6 +61,14 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
             observer.disconnect();
         };
     }, [resize, selectedId]);
+
+    if (!activeTab) return null;
+
+    const activeSnapshot = activeTab.snapshot;
+    const fallbackSrc = activeSnapshot.screenshot
+        ? `data:image/png;base64,${activeSnapshot.screenshot}`
+        : null;
+    const showRail = tabs.length > 1;
 
     // Prefer the live nav state (updates during takeover / agent nav); fall back
     // to the screenshot snapshot.

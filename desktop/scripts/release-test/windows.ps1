@@ -3,29 +3,32 @@ param(
     [string]$Release = "latest",
     [ValidateSet("Keep", "FirstRun", "Resume", "Update", "Doctor", "Returning")]
     [string]$Scenario = "Keep",
-    [Alias("Profile")]
-    [string]$TestProfile = "default",
-    [switch]$Yes
+    [ValidateSet("Auto", "x64", "arm64")]
+    [string]$Architecture = "Auto",
+    [switch]$Yes,
+    [switch]$ResetOnly,
+    [switch]$Smoke,
+    [switch]$RequireReady
 )
 
 $ErrorActionPreference = "Stop"
 $Repository = "omnideck-dev/omnideck"
 $SyntheticImageRef = "ghcr.io/omnideck-dev/omnideck@sha256:" + ("0" * 64)
+$MachineName = "omnideck-runtime"
+$ContainerName = "omnideck-desktop"
+$HomeVolumeName = "omnideck-desktop-home"
+$StateVolumeName = "omnideck-desktop-state"
+$ConfirmationText = "RESET OMNIDECK"
+if ($RequireReady) { $Smoke = $true }
 
-if ($TestProfile -notmatch "^[a-z0-9][a-z0-9-]{0,17}$") {
-    throw "Profile names may contain up to 18 lowercase letters, numbers, and hyphens."
-}
-$TestNamespace = "release-test-$TestProfile"
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    throw "GitHub CLI (gh) is required."
-}
-$GitHubConfigDirectory = $env:GH_CONFIG_DIR
-if (-not $GitHubConfigDirectory) {
-    $GitHubConfigDirectory = Join-Path $env:APPDATA "GitHub CLI"
-}
-& gh auth status *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "GitHub CLI is not authenticated. Run: gh auth login"
+if (-not $ResetOnly) {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required."
+    }
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "GitHub CLI is not authenticated. Run: gh auth login"
+    }
 }
 
 function Select-ReleaseTag {
@@ -55,13 +58,6 @@ function Select-ReleaseTag {
     return $Selected
 }
 
-function Assert-IsolatedRelease {
-    param([string]$Selected)
-    if ($Selected -match "^v0\.1\.0-alpha\.(\d+)$" -and [int]$Matches[1] -lt 4) {
-        throw "Release $Selected predates isolated release-test resources. Choose v0.1.0-alpha.4 or newer."
-    }
-}
-
 function Get-PodmanPath {
     $Command = Get-Command podman -ErrorAction SilentlyContinue
     if ($Command) {
@@ -76,27 +72,33 @@ function Get-PodmanPath {
 }
 
 function Invoke-PodmanCleanup {
-    param([string[]]$Arguments)
+    param(
+        [string[]]$Arguments,
+        [switch]$Engine
+    )
     $Podman = Get-PodmanPath
     if (-not $Podman) {
         return
+    }
+    if ($Engine) {
+        $Arguments = @("--connection", $MachineName) + $Arguments
     }
     & $Podman @Arguments *> $null
 }
 
 function Remove-TestContainer {
-    Invoke-PodmanCleanup @("rm", "--force", "omnideck-desktop-$TestNamespace")
+    Invoke-PodmanCleanup @("rm", "--force", $ContainerName) -Engine
 }
 
 function Remove-TestResources {
     Remove-TestContainer
     Invoke-PodmanCleanup @(
         "volume", "rm", "--force",
-        "omnideck-desktop-home-$TestNamespace",
-        "omnideck-desktop-state-$TestNamespace"
-    )
-    Invoke-PodmanCleanup @("machine", "stop", "omnideck-runtime-$TestNamespace")
-    Invoke-PodmanCleanup @("machine", "rm", "--force", "omnideck-runtime-$TestNamespace")
+        $HomeVolumeName,
+        $StateVolumeName
+    ) -Engine
+    Invoke-PodmanCleanup @("machine", "stop", $MachineName)
+    Invoke-PodmanCleanup @("machine", "rm", "--force", $MachineName)
 }
 
 function Confirm-TestReset {
@@ -105,8 +107,8 @@ function Confirm-TestReset {
         return
     }
     Write-Host $Description
-    $Answer = Read-Host "Type $TestNamespace to continue"
-    if ($Answer -ne $TestNamespace) {
+    $Answer = Read-Host "Type '$ConfirmationText' to continue"
+    if ($Answer -ne $ConfirmationText) {
         Write-Host "Cancelled."
         exit 0
     }
@@ -153,52 +155,40 @@ function Require-CompletedSetup {
     }
 }
 
-$StateRoot = Join-Path $env:LOCALAPPDATA "omnideck-release-testing"
 $CacheRoot = Join-Path $env:LOCALAPPDATA "omnideck-release-testing-cache"
-$ProfilesRoot = Join-Path $StateRoot "profiles"
-$ProfileRoot = Join-Path $ProfilesRoot $TestProfile
-$ExpectedPrefix = [System.IO.Path]::GetFullPath($ProfilesRoot) +
-    [System.IO.Path]::DirectorySeparatorChar
-if (-not [System.IO.Path]::GetFullPath($ProfileRoot).StartsWith(
-    $ExpectedPrefix,
+$ProfileRoot = [System.IO.Path]::GetFullPath((Join-Path $env:APPDATA "omnideck"))
+$ExpectedProfileRoot = [System.IO.Path]::GetFullPath("$env:APPDATA\omnideck")
+if (-not $ProfileRoot.Equals(
+    $ExpectedProfileRoot,
     [System.StringComparison]::OrdinalIgnoreCase
 )) {
-    throw "Refusing to modify a profile outside $ProfilesRoot"
+    throw "Refusing to modify unexpected application state path: $ProfileRoot"
 }
 
-$env:OMNIDECK_DESKTOP_USER_DATA = $ProfileRoot
-$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = $TestNamespace
-$env:GH_CONFIG_DIR = $GitHubConfigDirectory
-$env:XDG_CACHE_HOME = Join-Path $ProfileRoot "runtime\cache"
-$env:XDG_CONFIG_HOME = Join-Path $ProfileRoot "runtime\config"
-$env:XDG_DATA_HOME = Join-Path $ProfileRoot "runtime\data"
-$env:REGISTRY_AUTH_FILE = Join-Path $ProfileRoot "runtime\auth\auth.json"
-
-$SelectedRelease = Select-ReleaseTag $Release
-Assert-IsolatedRelease $SelectedRelease
+$SelectedRelease = if ($ResetOnly) { $null } else { Select-ReleaseTag $Release }
 
 switch ($Scenario) {
     "FirstRun" {
-        Confirm-TestReset "This removes only the isolated $TestNamespace container, machine, volumes, and profile at: $ProfileRoot"
+        Confirm-TestReset "This removes the normal omnideck container, machine, volumes, and application state. Nothing is isolated or preserved."
         Remove-TestResources
         if (Test-Path -LiteralPath $ProfileRoot) {
             Remove-Item -LiteralPath $ProfileRoot -Recurse -Force
         }
     }
     "Resume" {
-        Confirm-TestReset "This removes the isolated test container, preserves cached work and volumes, and marks setup interrupted."
+        Confirm-TestReset "This removes the normal omnideck container and marks setup interrupted."
         Remove-TestContainer
         Write-TestSetupState $ProfileRoot "in-progress" "first-run"
     }
     "Update" {
         Require-CompletedSetup $ProfileRoot
-        Confirm-TestReset "This removes the isolated test container, preserves its volumes, and marks the pinned environment as older."
+        Confirm-TestReset "This removes the normal omnideck container and marks its pinned environment as older."
         Remove-TestContainer
         Write-TestSetupState $ProfileRoot "complete" "first-run"
     }
     "Doctor" {
         Require-CompletedSetup $ProfileRoot
-        Confirm-TestReset "This removes only the isolated test container so the next launch opens diagnostics."
+        Confirm-TestReset "This removes the normal omnideck container so the next launch opens diagnostics."
         Remove-TestContainer
     }
     "Returning" {
@@ -206,28 +196,48 @@ switch ($Scenario) {
     }
 }
 
+if ($ResetOnly) {
+    Write-Host "Reset complete. No release was downloaded or installed."
+    exit 0
+}
+
 $ReleaseCache = Join-Path $CacheRoot "releases\$SelectedRelease\windows"
 New-Item -ItemType Directory -Path $ReleaseCache -Force | Out-Null
+$HostArchitecture = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
+    "Arm64" { "arm64" }
+    "X64" { "x64" }
+    default { throw "Published Windows builds do not support this host architecture." }
+}
+if ($Architecture -eq "Auto") {
+    $Architecture = $HostArchitecture
+}
+elseif ($Architecture -ne $HostArchitecture) {
+    throw "Requested $Architecture package does not match this native $HostArchitecture host."
+}
 & gh release download $SelectedRelease `
     --repo $Repository `
-    --pattern "OmniDeck-*-win-x64.exe" `
-    --pattern "OmniDeck-*-win-x64.exe.sha256" `
+    --pattern "omnideck_*_${Architecture}-setup.exe" `
+    --pattern "omnideck_*_${Architecture}-setup.exe.sha256" `
     --dir $ReleaseCache `
     --skip-existing
 if ($LASTEXITCODE -ne 0) {
     throw "The selected Windows release could not be downloaded."
 }
 
-$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "OmniDeck-*-win-x64.exe" |
+$Artifact = Get-ChildItem -LiteralPath $ReleaseCache -Filter "omnideck_*_${Architecture}-setup.exe" |
     Select-Object -First 1
 if (-not $Artifact) {
-    throw "The selected release does not contain a Windows x64 installer."
+    throw "The selected release does not contain a Windows $Architecture installer."
 }
 $ChecksumPath = "$($Artifact.FullName).sha256"
 $ExpectedHash = ((Get-Content -LiteralPath $ChecksumPath -Raw).Trim() -split "\s+")[0]
 $ActualHash = (Get-FileHash -LiteralPath $Artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ExpectedHash.ToLowerInvariant() -ne $ActualHash) {
     throw "The downloaded installer did not match its published SHA-256 checksum."
+}
+& gh attestation verify $Artifact.FullName --repo $Repository
+if ($LASTEXITCODE -ne 0) {
+    throw "The downloaded installer did not have valid GitHub provenance."
 }
 
 Write-Host "Installing $SelectedRelease..."
@@ -236,9 +246,19 @@ if ($Installer.ExitCode -ne 0) {
     throw "The Windows installer exited with code $($Installer.ExitCode)."
 }
 
+# The one-click installer launches the application itself. Stop that instance so
+# the selected scenario always begins at the controlled launch below.
+$AutoLaunched = Get-Process -Name "omnideck" -ErrorAction SilentlyContinue
+if ($AutoLaunched) {
+    Write-Host "Stopping the instance started by the installer before the controlled launch."
+    $AutoLaunched | Stop-Process -Force
+    # The single-instance lock is released as the process exits.
+    Start-Sleep -Seconds 2
+}
+
 $ExpectedApplications = @(
-    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\OmniDeck.exe"),
-    (Join-Path $env:LOCALAPPDATA "Programs\OmniDeck\OmniDeck.exe")
+    (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
+    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
 )
 $Application = $ExpectedApplications |
     Where-Object { Test-Path -LiteralPath $_ } |
@@ -246,7 +266,7 @@ $Application = $ExpectedApplications |
 if (-not $Application) {
     $Application = Get-ChildItem `
         -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs") `
-        -Filter "OmniDeck.exe" `
+        -Filter "omnideck.exe" `
         -File `
         -Recurse `
         -ErrorAction SilentlyContinue |
@@ -256,5 +276,13 @@ if (-not $Application) {
     throw "The installed omnideck application could not be found."
 }
 
-Write-Host "Launching $SelectedRelease with scenario '$Scenario' and profile '$TestProfile'."
+Write-Host "Launching $SelectedRelease with scenario '$Scenario' using normal user state."
+if ($Smoke) {
+    $SmokeArguments = @{
+        Application = $Application
+    }
+    if ($RequireReady) { $SmokeArguments.RequireReady = $true }
+    & (Join-Path $PSScriptRoot "..\..\tests\hardware\run.ps1") @SmokeArguments
+    exit 0
+}
 Start-Process -FilePath $Application -Wait

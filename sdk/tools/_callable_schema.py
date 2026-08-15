@@ -36,6 +36,16 @@ _ARG_LINE_RE = re.compile(
     r"(.+)",                 # description text
 )
 
+_ARG_SECTION_END_HEADERS = frozenset({
+    "returns:",
+    "raises:",
+    "yields:",
+    "note:",
+    "notes:",
+    "example:",
+    "examples:",
+})
+
 
 def _parse_arg_descriptions(docstring: str | None) -> dict[str, str]:
     """Extract per-parameter descriptions from a Google-style docstring.
@@ -64,7 +74,7 @@ def _parse_arg_descriptions(docstring: str | None) -> dict[str, str]:
             continue
 
         # Detect end of Args section (another section header or blank after content)
-        if in_args and stripped and stripped.endswith(":") and not stripped.startswith(" "):
+        if in_args and stripped.lower() in _ARG_SECTION_END_HEADERS:
             # Save any in-progress param
             if current_param is not None:
                 descriptions[current_param] = " ".join(current_desc_parts).strip()
@@ -111,11 +121,11 @@ def _python_type_to_json_schema(annotation: Any) -> dict[str, Any]:
     # genuinely multi-typed params (e.g. list[str] | str) become an anyOf so
     # the model sees every accepted shape.
     if origin is Union or origin is types.UnionType:
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        if len(args) == 1:
-            return _python_type_to_json_schema(args[0])
-        if args:
-            return {"anyOf": [_python_type_to_json_schema(a) for a in args]}
+        union_args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(union_args) == 1:
+            return _python_type_to_json_schema(union_args[0])
+        if union_args:
+            return {"anyOf": [_python_type_to_json_schema(a) for a in union_args]}
 
     json_type = _TYPE_MAP.get(annotation, "string")
     return {"type": json_type}

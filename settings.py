@@ -57,8 +57,19 @@ _DEFAULTS: dict[str, Any] = {
     "title_provider": "",
     "title_model": "",
     "custom_apps_enabled": False,
+    "custom_tools_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
+    # Install updates without being asked. Only the desktop application acts on
+    # these two — it reads them while Omnideck is running, applies an update the
+    # next time Omnideck is opened, and never during a session. Running Omnideck
+    # from the command line ignores both: there is no installer to act on them,
+    # and updating is done by the command line tool instead.
+    "software_updates_automatic": True,
+    # Say something when a newer version appears. Turning this off does not stop
+    # updates; it moves them somewhere quieter, where the settings page is the
+    # only place they are mentioned.
+    "software_updates_notify": True,
 }
 
 _APP_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
@@ -99,7 +110,10 @@ class SettingsUpdate(BaseModel):
     title_provider: str | None = None
     title_model: str | None = None
     custom_apps_enabled: bool | None = None
+    custom_tools_enabled: bool | None = None
     home_app_slug: str | None = None
+    software_updates_automatic: bool | None = None
+    software_updates_notify: bool | None = None
 
     @field_validator("home_app_slug")
     @classmethod
@@ -182,4 +196,15 @@ def custom_apps_enabled() -> bool:
     return load_settings().get("custom_apps_enabled", False) is True
 
 
-__all__ = ["custom_apps_enabled", "load_settings", "save_settings", "SettingsUpdate"]
+def custom_tools_enabled() -> bool:
+    """Return whether the user has enabled the experimental Custom Tools feature."""
+    return load_settings().get("custom_tools_enabled", False) is True
+
+
+__all__ = [
+    "SettingsUpdate",
+    "custom_apps_enabled",
+    "custom_tools_enabled",
+    "load_settings",
+    "save_settings",
+]

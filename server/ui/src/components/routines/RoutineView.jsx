@@ -37,7 +37,7 @@ export default function RoutineView({ routine, onBack, onDeleteRoutine, onDelete
         load();
         const id = setInterval(load, 5000);
         return () => { active = false; clearInterval(id); };
-    }, [routine.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [routine.id]);
 
     // Clear stale selectedRunId when the selected run disappears from polled data
     const runIds = detail?.runs?.map(r => r.id);

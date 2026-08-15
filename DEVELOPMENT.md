@@ -56,7 +56,8 @@ just logs           # Tail app + inference logs
 | Music generation | `ENABLE_MUSIC_GEN=1` | GPU |
 | Desktop agent | `ENABLE_DESKTOP=1` | — |
 | Visual grounding | `ENABLE_GROUNDING=1` | GPU |
-| Custom tools | `ENABLE_CUSTOM_TOOLS=1` | — |
+
+Custom Tools and Apps are user-controlled from **Settings → System → Experimental**.
 
 ## Testing
 
@@ -80,11 +81,18 @@ just test-ui        # Vitest UI tests
 ## Code Quality
 
 ```sh
-just lint       # ruff check
-just typecheck  # mypy
+just lint       # Ruff + ESLint correctness checks
+just typecheck  # mypy + typed React event boundary
+just tool-docs  # agent tool schema/docstring contract
 just format     # ruff fix + format
-just check      # all three (non-mutating)
+just check      # fast non-mutating agent gate
 ```
+
+The gate is deliberately narrow: Ruff blocks syntax/name errors and high-confidence
+bug patterns; ESLint blocks JavaScript runtime errors and Rules-of-Hooks violations.
+Mypy covers production Python except optional hardware/runtime code, migrations, and
+legacy broker internals; the JavaScript UI's strongly typed event boundary is checked
+by TypeScript.
 
 ## Frontend (server/ui/)
 
@@ -147,7 +155,8 @@ Run `just` (no args) to see all available recipes. Key ones:
 | `just integration` | Run integration tests (needs a running container) |
 | `just test-file <path>` | Run tests for a specific file |
 | `just e2e` | Run e2e tests in a throwaway container on :9090 |
-| `just lint` | Lint with ruff |
-| `just typecheck` | Type check with mypy |
+| `just lint` | High-signal Python and React correctness lint |
+| `just typecheck` | Type check production Python and the typed React event boundary |
+| `just tool-docs` | Verify agent tool schema documentation |
 | `just format` | Auto-format with ruff |
-| `just check` | All non-mutating checks (lint + typecheck + format-check) |
+| `just check` | Fast non-mutating agent quality gate |

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useAppData } from '../../contexts/AppData.jsx';
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
@@ -38,41 +39,21 @@ function _statusView(status) {
 }
 
 export default function ProvidersTab() {
-    const [providers, setProviders] = useState([]);
+    const { providersHook } = useAppData();
+    const {
+        providers,
+        loading,
+        error: providerLoadError,
+        refresh: fetchProviders,
+    } = providersHook;
     // Effective status per provider — overlays the list response with
     // whatever the latest Test Connection saw (so a probe failure flips
     // the row without re-fetching /api/providers).
     const [statusOverrides, setStatusOverrides] = useState({});
     const [modelCounts, setModelCounts] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(null);
+    const [operationError, setOperationError] = useState(null);
     const [selectedName, setSelectedName] = useState(null);
     const [modalOpen, setModalOpen] = useState(false);
-
-    const fetchProviders = useCallback(async () => {
-        setLoading(true);
-        setLoadError(null);
-        try {
-            const resp = await fetch('/api/providers');
-            if (!resp.ok) {
-                const body = await resp.json().catch(() => ({}));
-                setLoadError(body?.error || `HTTP ${resp.status}`);
-                setProviders([]);
-                return;
-            }
-            const data = await resp.json();
-            setProviders(data.providers || []);
-        } catch (err) {
-            setLoadError(err?.message || 'Failed to load providers');
-            setProviders([]);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchProviders();
-    }, [fetchProviders]);
 
     // Auto-select on load: first row if no valid selection.
     useEffect(() => {
@@ -106,6 +87,8 @@ export default function ProvidersTab() {
 
     const handleAdded = useCallback((created) => {
         setModalOpen(false);
+        setOperationError(null);
+        invalidateModelCache(created?.name);
         fetchProviders();
         if (created?.name) setSelectedName(created.name);
     }, [fetchProviders]);
@@ -120,11 +103,18 @@ export default function ProvidersTab() {
                 throw new Error(body.error || `HTTP ${resp.status}`);
             }
             invalidateModelCache(name);
+            setOperationError(null);
             await fetchProviders();
         } catch (err) {
             // Surface as a load error since the row is gone or stuck.
-            setLoadError(err?.message || 'Failed to remove provider');
+            setOperationError(err?.message || 'Failed to remove provider');
         }
+    }, [fetchProviders]);
+
+    const loadError = operationError || providerLoadError;
+    const retryProviders = useCallback(() => {
+        setOperationError(null);
+        fetchProviders();
     }, [fetchProviders]);
 
     const selected = useMemo(
@@ -139,7 +129,7 @@ export default function ProvidersTab() {
             ) : loadError ? (
                 <div className={styles.loadError}>
                     <Callout tone="danger" title="Couldn't load providers" description={loadError} />
-                    <Button onClick={fetchProviders}>
+                    <Button onClick={retryProviders}>
                         <i className="bi bi-arrow-clockwise" /> Retry
                     </Button>
                 </div>
@@ -168,6 +158,7 @@ export default function ProvidersTab() {
                                     setModelCounts(prev => ({ ...prev, [selected.name]: probeResult.models.length }));
                                 }
                                 invalidateModelCache(selected.name);
+                                setOperationError(null);
                                 fetchProviders();
                             }}
                             onTested={(ok, count) => {

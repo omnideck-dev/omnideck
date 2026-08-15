@@ -5,6 +5,7 @@ import ToggleSwitch from './ToggleSwitch.jsx';
 import Button from './primitives/Button.jsx';
 import Callout from './primitives/Callout.jsx';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
+import Popover from './primitives/Popover.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
@@ -89,21 +90,7 @@ export default function ProfileBuilder({
         [catById],
     );
 
-    // Dismiss the add-skill popover on outside click or Escape.
-    const pickerRef = useRef(null);
-    useEffect(() => {
-        if (!showPicker) return undefined;
-        const onPointerDown = (e) => {
-            if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false);
-        };
-        const onKeyDown = (e) => { if (e.key === 'Escape') setShowPicker(false); };
-        document.addEventListener('mousedown', onPointerDown);
-        document.addEventListener('keydown', onKeyDown);
-        return () => {
-            document.removeEventListener('mousedown', onPointerDown);
-            document.removeEventListener('keydown', onKeyDown);
-        };
-    }, [showPicker]);
+    const skillPickerTriggerRef = useRef(null);
 
     const update = useCallback((field, value) => {
         setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -298,7 +285,7 @@ export default function ProfileBuilder({
                     <section className={styles.section}>
                         <div className={styles.sectionLabel}>Skills</div>
                         <div className={styles.skillHelp}>Skills this profile loads. Each grants its tool categories to the agent.</div>
-                        <div className={styles.pickWrap} ref={pickerRef}>
+                        <div className={styles.pickWrap}>
                             <div className={styles.attached}>
                                 {(draft.skills || []).map((id) => {
                                     const rec = skillById.get(id);
@@ -318,16 +305,30 @@ export default function ProfileBuilder({
                                     );
                                 })}
                                 <button
+                                    ref={skillPickerTriggerRef}
                                     type="button"
                                     className={styles.addSkillBtn}
                                     onClick={() => setShowPicker((v) => !v)}
+                                    aria-expanded={showPicker}
+                                    aria-haspopup="dialog"
                                     data-testid="profile-add-skill"
                                 >
                                     <i className="bi bi-plus-lg" /> Add skill
                                 </button>
                             </div>
                             {showPicker && (
-                                <div className={styles.skPopover} data-testid="profile-skill-picker">
+                                <Popover
+                                    anchorRef={skillPickerTriggerRef}
+                                    onClose={() => setShowPicker(false)}
+                                    align="start"
+                                    width={380}
+                                    maxHeight={340}
+                                    flipThreshold={160}
+                                    className={styles.skPopover}
+                                    role="dialog"
+                                    ariaLabel="Add skills"
+                                    testId="profile-skill-picker"
+                                >
                                     <div className={styles.skPopHead}>
                                         <SearchInput
                                             value={skillSearch}
@@ -373,7 +374,7 @@ export default function ProfileBuilder({
                                             );
                                         })}
                                     </div>
-                                </div>
+                                </Popover>
                             )}
                         </div>
                     </section>

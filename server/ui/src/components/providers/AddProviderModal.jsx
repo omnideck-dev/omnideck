@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
+import Modal from '../primitives/Modal.jsx';
 import styles from './AddProviderModal.module.css';
 
 // The picker catalog. Order is intentional: local first, then a generic
@@ -34,33 +35,30 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
         setStep('configure');
     }, []);
 
-    // Esc closes whichever step is showing.
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [onClose]);
-
     return (
-        <div className={styles.scrim} onClick={onClose} data-testid="add-provider-modal">
-            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-                {step === 'catalog' && (
-                    <CatalogStep
-                        existingNames={existingNames}
-                        onClose={onClose}
-                        onPick={handlePickAndContinue}
-                    />
-                )}
-                {step === 'configure' && picked && (
-                    <ConfigureStep
-                        entry={picked}
-                        onBack={() => setStep('catalog')}
-                        onClose={onClose}
-                        onAdded={onAdded}
-                    />
-                )}
-            </div>
-        </div>
+        <Modal
+            onClose={onClose}
+            width={560}
+            labelledBy="add-provider-title"
+            className={styles.modal}
+            testId="add-provider-modal"
+        >
+            {step === 'catalog' && (
+                <CatalogStep
+                    existingNames={existingNames}
+                    onClose={onClose}
+                    onPick={handlePickAndContinue}
+                />
+            )}
+            {step === 'configure' && picked && (
+                <ConfigureStep
+                    entry={picked}
+                    onBack={() => setStep('catalog')}
+                    onClose={onClose}
+                    onAdded={onAdded}
+                />
+            )}
+        </Modal>
     );
 }
 
@@ -73,7 +71,7 @@ function CatalogStep({ existingNames, onClose, onPick }) {
     return (
         <>
             <div className={styles.header}>
-                <div className={styles.title}>Add a provider</div>
+                <div id="add-provider-title" className={styles.title}>Add a provider</div>
                 <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />
                 </button>
@@ -214,7 +212,9 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                     <button type="button" className={styles.iconBtn} onClick={onBack} aria-label="Back">
                         <i className="bi bi-arrow-left" />
                     </button>
-                    <div className={styles.title}>Configure {entry.label}</div>
+                    <div id="add-provider-title" className={styles.title}>
+                        Configure {entry.label}
+                    </div>
                 </div>
                 <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />

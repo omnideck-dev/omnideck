@@ -1,0 +1,73 @@
+/* The surrounding settings group supplies the shared card surface. */
+.status {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+    background: transparent;
+    border: none;
+}
+
+/* An update waiting is the one state worth drawing the eye to. */
+.status[data-available='true'] {
+    background: var(--accent-muted);
+}
+
+.info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.title {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.desc {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.primary,
+.secondary {
+    flex-shrink: 0;
+    padding: var(--sp-1) var(--sp-3);
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    white-space: nowrap;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.primary {
+    color: var(--canvas);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+}
+
+.primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.secondary {
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border);
+}
+
+.secondary:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--elevated);
+}
+
+.primary:disabled,
+.secondary:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

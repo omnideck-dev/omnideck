@@ -1,10 +1,15 @@
 """Tool loop utilities for executing chat-based LLM interactions with tool calls."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from config import ParallelConfig
 
 from agents.types import Agent
 from sdk.context import ConversationHistory
@@ -25,7 +30,7 @@ from sdk.tools import _execute_tool_call
 from ._turn import StopRequestedError, check_stop
 
 
-def _get_parallel_config():
+def _get_parallel_config() -> ParallelConfig:
     """Lazy-load parallel config to avoid circular imports at module level."""
     from config import load_config
 
@@ -353,8 +358,11 @@ async def run_turn(
                     )
                 sem = asyncio.Semaphore(parallel_cfg.max_concurrent if parallel else 1)
 
-                async def _run(tc_item):
-                    async with sem:
+                async def _run(
+                    tc_item: Any,
+                    semaphore: asyncio.Semaphore = sem,
+                ) -> None:
+                    async with semaphore:
                         return await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
 
                 await asyncio.gather(*[_run(tc) for tc in tool_calls])

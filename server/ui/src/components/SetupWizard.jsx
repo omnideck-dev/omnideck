@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ModelPicker from './ModelPicker.jsx';
+import Select from './primitives/Select.jsx';
 import styles from './SetupWizard.module.css';
 
 const STEPS = ['Welcome', 'Provider', 'Main Model', 'Vision Model', 'Ready'];
@@ -435,19 +436,21 @@ export default function SetupWizard({ onComplete }) {
                         {selectedProvider === PROVIDER_CLOUD && (
                             <div className={styles.providerFields}>
                                 <div className={styles.field}>
-                                    <label htmlFor="cloud-provider" className={styles.fieldLabel}>
+                                    <label id="cloud-provider-label" htmlFor="cloud-provider" className={styles.fieldLabel}>
                                         Provider
                                     </label>
-                                    <select
+                                    <Select
                                         id="cloud-provider"
                                         className={styles.cloudSelect}
                                         value={cloudProvider}
-                                        onChange={(e) => setCloudProvider(e.target.value)}
-                                    >
-                                        <option value="anthropic">Anthropic</option>
-                                        <option value="openai">OpenAI</option>
-                                        <option value="openrouter">OpenRouter</option>
-                                    </select>
+                                        onChange={setCloudProvider}
+                                        ariaLabelledBy="cloud-provider-label"
+                                        options={[
+                                            { value: 'anthropic', label: 'Anthropic' },
+                                            { value: 'openai', label: 'OpenAI' },
+                                            { value: 'openrouter', label: 'OpenRouter' },
+                                        ]}
+                                    />
                                 </div>
                                 <div className={styles.field}>
                                     <label htmlFor="cloud-key" className={styles.fieldLabel}>

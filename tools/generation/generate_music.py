@@ -312,7 +312,7 @@ def _publish_preview(
         type="generation_preview",
         gen_id=gen_id,
         media_type=media_type,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         step=step,
         total_steps=total_steps,
         preview=preview,

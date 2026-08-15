@@ -33,6 +33,18 @@ async function _openOllamaConfigure() {
 }
 
 describe('AddProviderModal Ollama host prefill', () => {
+    it('portals outside a clipping provider view', () => {
+        globalThis.fetch = _mockFetch();
+        const { container } = render(
+            <div style={{ overflow: 'hidden' }}>
+                <AddProviderModal onClose={vi.fn()} onAdded={vi.fn()} />
+            </div>,
+        );
+
+        expect(container).not.toContainElement(screen.getByTestId('add-provider-modal'));
+        expect(document.body).toContainElement(screen.getByTestId('add-provider-modal'));
+    });
+
     it('prefills the base URL from the detected host', async () => {
         globalThis.fetch = _mockFetch({ ollamaHost: 'http://host-gateway:11434' });
         render(<AddProviderModal onClose={vi.fn()} onAdded={vi.fn()} />);

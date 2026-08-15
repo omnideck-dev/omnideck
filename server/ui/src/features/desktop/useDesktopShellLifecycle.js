@@ -112,7 +112,6 @@ export default function useDesktopShellLifecycle({
             cancelled = true;
         };
         // This is a one-time bootstrap from the immutable restored snapshot.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [desktopRestore]);
 
     useEffect(() => {

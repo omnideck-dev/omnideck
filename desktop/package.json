@@ -1,96 +1,46 @@
 {
-  "name": "omnideck",
-  "desktopName": "OmniDeck.desktop",
-  "version": "0.1.0-alpha.4",
+  "name": "omnideck-tauri-host",
+  "version": "0.1.0-beta.8",
   "private": true,
-  "description": "OmniDeck",
-  "homepage": "https://github.com/omnideck-dev/omnideck",
-  "main": "src/main.cjs",
-  "author": {
-    "name": "OmniDeck",
-    "email": "omnideck-dev@users.noreply.github.com"
-  },
-  "license": "Apache-2.0",
-  "engines": {
-    "node": ">=22.12.0"
-  },
+  "description": "omnideck desktop host",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test test/*.test.cjs",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:linux": "electron-builder --linux",
-    "dist:linux:container": "bash scripts/build-linux-container.sh",
-    "dist:mac": "electron-builder --mac",
-    "dist:windows": "electron-builder --win"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "test": "pnpm run test:source && pnpm run verify:sidecars",
+    "test:source": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs && python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py tests/e2e/test_macos_lab_contract.py",
+    "test:policy": "node --test tests/*.test.mjs",
+    "test:release-contract": "node --test tests/releasecontract/*.test.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
+    "test:vm-e2e": "./tests/e2e/run.sh",
+    "test:vm-candidate": "./tests/e2e/candidate-matrix.sh",
+    "test:vm-e2e:purge": "./tests/e2e/purge.sh",
+    "test:vm-smoke": "./tests/e2e/run-package-smoke.sh",
+    "test:vm-smoke-matrix": "./tests/e2e/smoke-matrix.sh",
+    "test:vm-smoke:purge": "./tests/e2e/purge-package-smoke.sh",
+    "test:release-e2e": "./tests/e2e/qualify-release.sh",
+    "test:release-e2e:purge": "./tests/e2e/purge-release.sh",
+    "test:vm-lab:cleanup": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --dry-run",
+    "test:vm-lab:cleanup:apply": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --apply",
+    "test:vm-lab:cleanup:all": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --all-generated --dry-run",
+    "test:vm-lab:cleanup:all:apply": "${OMNIDECK_VM_LAB_DIR:?Set OMNIDECK_VM_LAB_DIR}/lab.sh cleanup --all-generated --yes --apply",
+    "test:macos-lab": "./tests/hardware/run-macos-lab.sh",
+    "test:macos-e2e": "./tests/e2e/run-macos-lab.sh",
+    "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
+    "verify": "pnpm run fetch:sidecars && pnpm run test && pnpm run format:rust && pnpm run test:rust && pnpm run lint:rust",
+    "fetch:sidecars": "node scripts/fetch-sidecars.mjs",
+    "verify:sidecars": "node scripts/verify-sidecars.mjs",
+    "prepare:icons": "node scripts/prepare-icon-assets.mjs",
+    "prepare:runtime-image": "node scripts/prepare-runtime-image.mjs",
+    "checksums": "node scripts/checksums.mjs",
+    "build:windows": "node scripts/fetch-sidecars.mjs x86_64-pc-windows-msvc && tauri build --bundles nsis --target x86_64-pc-windows-msvc",
+    "build:windows:arm64": "node scripts/fetch-sidecars.mjs aarch64-pc-windows-msvc && tauri build --bundles nsis --target aarch64-pc-windows-msvc",
+    "build:macos": "node scripts/fetch-sidecars.mjs aarch64-apple-darwin && tauri build --bundles dmg --target aarch64-apple-darwin",
+    "build:macos:x64": "node scripts/fetch-sidecars.mjs x86_64-apple-darwin && tauri build --bundles dmg --target x86_64-apple-darwin",
+    "build:linux": "node scripts/fetch-sidecars.mjs x86_64-unknown-linux-gnu && tauri build --bundles appimage deb rpm --target x86_64-unknown-linux-gnu",
+    "build:linux:arm64": "node scripts/fetch-sidecars.mjs aarch64-unknown-linux-gnu && tauri build --bundles appimage deb rpm --target aarch64-unknown-linux-gnu"
   },
   "devDependencies": {
-    "@electron/notarize": "3.1.1",
-    "electron": "43.2.0",
-    "electron-builder": "26.15.3"
-  },
-  "overrides": {
-    "brace-expansion": "5.0.8",
-    "minimatch": "10.2.5"
-  },
-  "build": {
-    "appId": "dev.omnideck.app",
-    "productName": "OmniDeck",
-    "asar": true,
-    "compression": "maximum",
-    "artifactName": "OmniDeck-${version}-${os}-${arch}.${ext}",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "src/**/*",
-      "LICENSE",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/runtime",
-        "to": "runtime",
-        "filter": [
-          "image-manifest.json"
-        ]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.svg",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "target": [
-        "dmg"
-      ]
-    },
-    "afterSign": "scripts/notarize.cjs",
-    "win": {
-      "icon": "build/icon.svg",
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "allowElevation": true,
-      "deleteAppDataOnUninstall": false
-    },
-    "linux": {
-      "category": "Utility",
-      "icon": "build/icon.svg",
-      "syncDesktopName": true,
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "maintainer": "OmniDeck <omnideck-dev@users.noreply.github.com>",
-      "vendor": "OmniDeck",
-      "executableName": "omnideck"
-    }
+    "@tauri-apps/cli": "2.11.4"
   }
 }

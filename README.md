@@ -32,10 +32,10 @@
 
 ## Quick Start
 
-Download the experimental OmniDeck application for Windows, macOS, or Linux
+Download the experimental omnideck application for Windows, macOS, or Linux
 from the [releases page](https://github.com/omnideck-dev/omnideck/releases).
-Install it, open **OmniDeck**, and follow the guided setup. The application
-prepares its private runtime automatically; no container or command-line
+Install it, open **omnideck**, and follow the guided setup. The application
+prepares the shared Omnideck runtime automatically; no container or command-line
 knowledge is required.
 
 Prefer the CLI workflow?
@@ -44,8 +44,8 @@ Prefer the CLI workflow?
 # Install the CLI
 brew install omnideck-dev/tap/omnideck
 
-# Install and start Omnideck
-omnideck install
+# First use detects and prepares everything automatically
+omnideck
 
 # Open the UI in your browser
 # → http://localhost:2337
@@ -94,10 +94,10 @@ omnideck install
 
 ## Prerequisites
 
-- **OmniDeck application:** Windows 11 x64, Apple Silicon macOS, or a supported
-  x64 desktop Linux distribution. The application prepares its private Podman
-  runtime during guided setup.
-- **CLI installs:** [Podman](https://podman.io/) 4.0+ (recommended) or [Docker](https://docs.docker.com/get-docker/) 20.10+. Other container engines such as Colima are not supported at this time. We recommend Podman for its open-source nature and smaller resource footprint.
+- **omnideck application:** Windows 11, macOS, or a supported desktop Linux
+  distribution on x64 or ARM64. Guided setup prepares Podman for that operating
+  system and architecture.
+- **CLI installs:** [Podman](https://podman.io/) is the one supported container runtime. On first use, the CLI can install or prepare it through the same backend as the desktop app.
 - **LLM provider:** An API key for OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint — or [Ollama](https://ollama.com/) for local models.
 - **RAM:** 4 GB minimum (8 GB recommended for local models).
 
@@ -105,22 +105,22 @@ omnideck install
 
 ## Installation
 
-### OmniDeck application (experimental)
+### omnideck application (experimental)
 
 Download the installer for your operating system from the
-[OmniDeck releases](https://github.com/omnideck-dev/omnideck/releases):
+[omnideck releases](https://github.com/omnideck-dev/omnideck/releases):
 
 | Platform | Installer |
 |----------|-----------|
-| Windows 11 x64 | `.exe` |
-| Apple Silicon macOS | `.dmg` |
-| Ubuntu, Debian, or Linux Mint x64 | `.deb` |
-| Fedora, RHEL, Rocky Linux, AlmaLinux, or openSUSE x64 | `.rpm` |
-| Other desktop Linux x64 | `.AppImage` |
+| Windows 11 x64 or ARM64 | `.exe` |
+| Apple Silicon or Intel macOS | `.dmg` |
+| Ubuntu, Debian, or Linux Mint x64 or ARM64 | `.deb` |
+| Fedora, RHEL, Rocky Linux, AlmaLinux, or openSUSE x64 or ARM64 | `.rpm` |
+| Other supported desktop Linux x64 or ARM64 | `.AppImage` |
 
-Open the installed application and select **Set up OmniDeck**. First setup can
+Open the installed application and select **Set up omnideck**. First setup can
 take several minutes and might display a normal operating-system permission
-prompt. It downloads the application image pinned to that OmniDeck release, so
+prompt. It downloads the application image pinned to that omnideck release, so
 an internet connection is required. The setup screen includes Agent Dash while
 the runtime is prepared.
 
@@ -128,7 +128,7 @@ the runtime is prepared.
 
 ### Step 1: Install the CLI
 
-The `omnideck` CLI wraps your container engine with a guided installer and simple management commands.
+The `omnideck` CLI prepares Podman with the same guided backend as Desktop and provides simple management commands.
 
 **Option A: Homebrew (macOS and Linux — recommended)**
 
@@ -153,6 +153,7 @@ Grab the binary for your OS from the [releases page](https://github.com/omnideck
 | Linux (x86-64) | `omnideck-linux-amd64.tar.gz` |
 | Linux (ARM64) | `omnideck-linux-arm64.tar.gz` |
 | Windows (x86-64) | `omnideck-windows-amd64.zip` |
+| Windows (ARM64) | `omnideck-windows-arm64.zip` |
 
 Extract the archive and move the binary to a directory on your PATH. On Linux or macOS:
 
@@ -171,12 +172,12 @@ omnideck --version
 ### Step 2: Install Omnideck
 
 ```bash
-omnideck install
+omnideck
 ```
 
 The install wizard:
 
-- Detects your container engine (Docker or Podman)
+- Detects, installs, or repairs Podman for the current operating system
 - Checks whether Ollama is reachable on the host
 - Suggests container memory limits sized for your system
 - Pulls the container image and starts the container
@@ -251,7 +252,7 @@ Start with `omnideck doctor` — it runs parallel health checks (engine, contain
 
 **UI doesn't load** — Give it 10–15 seconds to start, then check `omnideck logs`.
 
-**"Ollama connection refused"** — Only matters if you're using local models. Make sure Ollama is running on the host; `omnideck doctor` reports reachability. On macOS / Docker Desktop, Ollama must be bound to `0.0.0.0` (set `OLLAMA_HOST=0.0.0.0` and restart it — it defaults to `127.0.0.1`).
+**"Ollama connection refused"** — Only matters if you're using local models. Make sure Ollama is running on the host; `omnideck doctor` checks reachability both from the computer and from the Omnideck container and reports the next step.
 
 ---
 

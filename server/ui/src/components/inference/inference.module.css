@@ -121,30 +121,7 @@
 }
 
 .selectInput {
-    width: 100%;
-    height: 32px;
-    font-size: 13px;
-    padding: 0 var(--sp-2);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    cursor: pointer;
-}
-
-.selectInput option {
-    background: var(--surface);
-    color: var(--text-primary);
-}
-
-.selectInput:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-glow);
-}
-
-.selectInput:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    --select-width: 100%;
 }
 
 .fieldHint {

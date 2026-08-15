@@ -10,6 +10,7 @@ import IconButton from '../primitives/IconButton.jsx';
 import Modal from '../primitives/Modal.jsx';
 import RowDeleteButton from '../primitives/RowDeleteButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
+import Select from '../primitives/Select.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
 import ExportProfileModal from './ExportProfileModal.jsx';
 import styles from './AgentsView.module.css';
@@ -45,10 +46,10 @@ function draftAgent(providers) {
  * detail is the existing ProfileBuilder editor.
  */
 export default function AgentsView() {
-    const { profilesHook, skillsHook } = useAppData();
+    const { profilesHook, providersHook, skillsHook } = useAppData();
+    const { providers } = providersHook;
     const { skills, addSkills } = skillsHook;
     const { addToast } = useToast();
-    const [providers, setProviders] = useState([]);
     const [categories, setCategories] = useState([]);
     const [draft, setDraft] = useState(null);
     const [openId, setOpenId] = useState(null);
@@ -63,12 +64,6 @@ export default function AgentsView() {
     // back nav shows an inline warning instead of discarding silently.
     const [builderDirty, setBuilderDirty] = useState(false);
     const [showUnsaved, setShowUnsaved] = useState(false);
-
-    useEffect(() => {
-        fetch('/api/providers').then((r) => r.json()).then((data) => {
-            setProviders(data.providers || []);
-        }).catch(() => { });
-    }, []);
 
     // Tool-category metadata for the skill picker (tool counts, connection dots).
     useEffect(() => {
@@ -367,19 +362,16 @@ export default function AgentsView() {
                         ariaLabel="Search agents"
                         testId="agents-search"
                     />
-                    <label className={styles.sortCtl}>
+                    <div className={styles.sortCtl}>
                         <span>Sort</span>
-                        <select
+                        <Select
                             className={styles.select}
                             value={sort.key}
-                            onChange={(e) => setSort({ key: e.target.value, dir: SORTS[e.target.value].defaultDir })}
-                            aria-label="Sort agents by"
-                            data-testid="agents-sort"
-                        >
-                            {Object.entries(SORTS).map(([key, { label }]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                        </select>
+                            onChange={(key) => setSort({ key, dir: SORTS[key].defaultDir })}
+                            ariaLabel="Sort agents by"
+                            testId="agents-sort"
+                            options={Object.entries(SORTS).map(([key, { label }]) => ({ value: key, label }))}
+                        />
                         <IconButton
                             onClick={() => setSort((s) => ({ ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' }))}
                             title={sort.dir === 'asc' ? 'Ascending' : 'Descending'}
@@ -388,7 +380,7 @@ export default function AgentsView() {
                         >
                             <i className={`bi ${sort.dir === 'asc' ? 'bi-sort-down-alt' : 'bi-sort-down'}`} />
                         </IconButton>
-                    </label>
+                    </div>
                     <input
                         ref={importInputRef}
                         type="file"

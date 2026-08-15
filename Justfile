@@ -348,7 +348,6 @@ e2e *args:
         -e PORT=$port \
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
-        -e ENABLE_CUSTOM_TOOLS=true \
         -e MOCK_LLM=1 \
         $env_args \
         -v "$state/home:/home/omnideck:rw" \
@@ -368,6 +367,10 @@ e2e *args:
         docker logs "$name" 2>&1 | tail -30
         exit 1
     fi
+    curl -fsS -X PUT "http://localhost:$port/api/settings" \
+        -H "Content-Type: application/json" \
+        -H "X-Requested-With: XMLHttpRequest" \
+        -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
     OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
@@ -377,25 +380,31 @@ e2e *args:
 # Quality (run on demand)
 # =============================================================================
 
-# Lint with ruff
+# Lint Python and React for high-confidence correctness defects
 lint:
-    uv run ruff check .
+    uv run --extra dev ruff check .
+    npm --prefix {{UI_DIR}} run lint
 
-# Type check with mypy
+# Type check Python and the typed React event boundary
 typecheck:
-    uv run mypy .
+    uv run --extra dev mypy .
+    npm --prefix {{UI_DIR}} run typecheck
+
+# Verify every registered agent tool has schema-ready Google documentation
+tool-docs:
+    uv run --extra test pytest -p no:warnings tests/unit/sdk/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
 
 # Format (fix imports + format)
 format:
-    uv run ruff check --fix .
-    uv run ruff format .
+    uv run --extra dev ruff check --fix .
+    uv run --extra dev ruff format .
 
 # Verify formatting without changing files
 format-check:
-    uv run ruff format --check .
+    uv run --extra dev ruff format --check .
 
-# All non-mutating checks
-check: lint typecheck format-check
+# Fast, non-mutating agent quality gate
+check: lint typecheck tool-docs
 
 # CI-style: check + unit tests
 ci: check unit

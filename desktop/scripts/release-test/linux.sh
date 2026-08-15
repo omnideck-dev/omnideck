@@ -8,9 +8,11 @@ release="latest"
 scenario="keep"
 profile="default"
 skip_confirmation="false"
+smoke="false"
+require_ready="false"
 
 usage() {
-  echo "Usage: $0 [--release latest|choose|TAG] [--scenario keep|first-run|resume|update|doctor|returning] [--profile NAME] [--yes]"
+  echo "Usage: $0 [--release latest|choose|TAG] [--scenario keep|first-run|resume|update|doctor|returning] [--profile NAME] [--smoke] [--require-ready] [--yes]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -18,6 +20,8 @@ while [[ $# -gt 0 ]]; do
     --release) release="${2:?Missing release value}"; shift 2 ;;
     --scenario) scenario="${2:?Missing scenario value}"; shift 2 ;;
     --profile) profile="${2:?Missing profile name}"; shift 2 ;;
+    --smoke) smoke="true"; shift ;;
+    --require-ready) smoke="true"; require_ready="true"; shift ;;
     --yes) skip_confirmation="true"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -27,6 +31,13 @@ done
 validate_profile_name "$profile"
 TEST_NAMESPACE="release-test-${profile}"
 require_command sha256sum
+
+host_arch="$(uname -m)"
+case "$host_arch" in
+  x86_64) artifact_arch="amd64" ;;
+  aarch64|arm64) artifact_arch="aarch64" ;;
+  *) echo "Published Linux builds do not support this host architecture: $host_arch" >&2; exit 1 ;;
+esac
 
 state_root="${XDG_STATE_HOME:-$HOME/.local/state}/omnideck-release-testing"
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/omnideck-release-testing"
@@ -40,17 +51,26 @@ prepare_test_scenario "$scenario" "$profile_root" "$profiles_root" "$skip_confir
 
 gh release download "$selected_release" \
   --repo "$RELEASE_REPOSITORY" \
-  --pattern 'OmniDeck-*-linux-x86_64.AppImage' \
-  --pattern 'OmniDeck-*-linux-x86_64.AppImage.sha256' \
+  --pattern "omnideck_*_${artifact_arch}.AppImage" \
+  --pattern "omnideck_*_${artifact_arch}.AppImage.sha256" \
   --dir "$release_cache" \
   --skip-existing
 
-artifact="$(compgen -G "$release_cache/OmniDeck-*-linux-x86_64.AppImage" | head -n 1)"
+artifact="$(compgen -G "$release_cache/omnideck_*_${artifact_arch}.AppImage" | head -n 1 || true)"
+if [[ -z "$artifact" || ! -f "$artifact" ]]; then
+  echo "Release $selected_release has no Linux $host_arch AppImage, or the download failed." >&2
+  exit 1
+fi
 checksum="${artifact}.sha256"
+if [[ ! -f "$checksum" ]]; then
+  echo "Release $selected_release published no checksum for $(basename "$artifact")." >&2
+  exit 1
+fi
 (
   cd "$release_cache"
   sha256sum --check "$(basename "$checksum")"
 )
+gh attestation verify "$artifact" --repo "$RELEASE_REPOSITORY"
 chmod +x "$artifact"
 
 extracted_app="$release_cache/extracted/squashfs-root/AppRun"
@@ -67,4 +87,11 @@ if [[ ! -x "$extracted_app" ]]; then
 fi
 
 echo "Launching $selected_release with scenario '$scenario' and profile '$profile'."
+if [[ "$smoke" == "true" ]]; then
+  smoke_arguments=(--application "$extracted_app")
+  if [[ "$require_ready" == "true" ]]; then
+    smoke_arguments+=(--require-ready)
+  fi
+  exec bash "$script_dir/../../tests/hardware/run.sh" "${smoke_arguments[@]}"
+fi
 exec "$extracted_app"

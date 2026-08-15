@@ -5,6 +5,7 @@ import Button from '../primitives/Button.jsx';
 import IconButton from '../primitives/IconButton.jsx';
 import RowDeleteButton from '../primitives/RowDeleteButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
+import Select from '../primitives/Select.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
 import StarterPrompts from '../StarterPrompts.jsx';
 import useRoutines from '../../hooks/useRoutines.js';
@@ -232,19 +233,16 @@ export default function RoutinesView({ onComposeInChat }) {
                         ariaLabel="Search routines"
                         testId="routines-search"
                     />
-                    <label className={styles.sortCtl}>
+                    <div className={styles.sortCtl}>
                         <span>Sort</span>
-                        <select
+                        <Select
                             className={styles.select}
                             value={sort.key}
-                            onChange={(e) => setSort({ key: e.target.value, dir: SORTS[e.target.value].defaultDir })}
-                            aria-label="Sort routines by"
-                            data-testid="routines-sort"
-                        >
-                            {Object.entries(SORTS).map(([key, { label }]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                        </select>
+                            onChange={(key) => setSort({ key, dir: SORTS[key].defaultDir })}
+                            ariaLabel="Sort routines by"
+                            testId="routines-sort"
+                            options={Object.entries(SORTS).map(([key, { label }]) => ({ value: key, label }))}
+                        />
                         <IconButton
                             onClick={() => setSort((s) => ({ ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' }))}
                             title={sort.dir === 'asc' ? 'Ascending' : 'Descending'}
@@ -253,7 +251,7 @@ export default function RoutinesView({ onComposeInChat }) {
                         >
                             <i className={`bi ${sort.dir === 'asc' ? 'bi-sort-down-alt' : 'bi-sort-down'}`} />
                         </IconButton>
-                    </label>
+                    </div>
                 </div>
 
                 <div className={styles.scroll} data-testid="routines-list">

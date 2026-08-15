@@ -1,6 +1,5 @@
-/* Toasts — top-center (more noticeable than the old top-right). Same per-type
- * colors as before, but opaque: the muted tint is composited over an opaque
- * surface so nothing behind the toast bleeds through. */
+/* Transient action feedback stays top-center. The persistent software-update
+ * notice deliberately owns the quieter bottom-right corner. */
 .toastViewport {
   position: fixed;
   top: var(--sp-4);
@@ -12,7 +11,7 @@
   gap: var(--sp-2);
   z-index: var(--z-toast);
   width: max-content;
-  max-width: min(360px, calc(100vw - var(--sp-8)));
+  max-width: min(430px, calc(100vw - var(--sp-8)));
   pointer-events: none;
   /* Allow clicks through the gutter; individual toasts opt back in. */
 }
@@ -22,9 +21,11 @@
   align-items: flex-start;
   gap: 12px;
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border-radius: var(--radius-lg);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  background: var(--elevated);
   box-shadow: var(--shadow-md);
   pointer-events: auto;
   animation: toastIn 220ms var(--ease-out, ease-out);
@@ -67,29 +68,23 @@
   color: var(--text-secondary);
 }
 
-/* Type variants — same colors as before, made opaque by compositing the muted
- * tint over --elevated so the fill reads solid, not see-through. */
 .toast.success {
-  background: linear-gradient(var(--success-muted), var(--success-muted)), var(--elevated);
-  border-color: var(--success-muted);
+  border-left-color: var(--success);
 }
 .toast.success .icon { color: var(--success); }
 
 .toast.error {
-  background: linear-gradient(var(--danger-muted), var(--danger-muted)), var(--elevated);
-  border-color: var(--danger-muted);
+  border-left-color: var(--danger);
 }
 .toast.error .icon { color: var(--danger); }
 
 .toast.info {
-  background: linear-gradient(var(--accent-muted), var(--accent-muted)), var(--elevated);
-  border-color: var(--accent-muted);
+  border-left-color: var(--accent);
 }
 .toast.info .icon { color: var(--accent); }
 
 .toast.warn {
-  background: linear-gradient(var(--warning-muted), var(--warning-muted)), var(--elevated);
-  border-color: var(--warning-muted);
+  border-left-color: var(--warning);
 }
 .toast.warn .icon { color: var(--warning); }
 

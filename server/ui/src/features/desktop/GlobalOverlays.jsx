@@ -1,4 +1,5 @@
 import DesktopPreview from '../../components/DesktopPreview.jsx';
+import SoftwareUpdateNotice from '../../components/SoftwareUpdateNotice.jsx';
 
 export default function GlobalOverlays({
     userDesktopOpen,
@@ -9,6 +10,7 @@ export default function GlobalOverlays({
             {userDesktopOpen && (
                 <DesktopPreview visible onClose={closeUserDesktop} overlay />
             )}
+            <SoftwareUpdateNotice />
         </>
     );
 }

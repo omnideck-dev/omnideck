@@ -495,20 +495,9 @@
 
 /* Cloud provider sub-select */
 .cloudSelect {
-    font-family: var(--font-brand);
-    font-size: 0.8rem;
-    padding: 0.45rem 0.65rem;
-    background: var(--canvas);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    color: var(--text-primary);
-    width: 100%;
-    outline: none;
-    cursor: pointer;
-}
-
-.cloudSelect:focus {
-    border-color: var(--accent);
+    --select-width: 100%;
+    --select-font-family: var(--font-brand);
+    --select-font-size: 0.8rem;
 }
 
 /* ── Provider error (step 1) ─────────────────────────────────── */

@@ -3,7 +3,7 @@ export function customAppViewId(slug) {
     return `custom-app:${slug}`;
 }
 
-export function createCustomAppView(app, reloadSignal = 0) {
+export function createCustomAppView(app, reloadSignal = 0, pinnedToSidebar = false) {
     if (!app) return null;
     const id = customAppViewId(app.slug);
     return {
@@ -20,13 +20,25 @@ export function createCustomAppView(app, reloadSignal = 0) {
         icon: app.icon,
         app,
         reloadSignal,
-        actions: [{
-            id: 'reload',
-            label: 'Reload',
-            ariaLabel: `Reload ${app.title}`,
-            icon: 'bi-arrow-clockwise',
-            testid: `reload-view-${id}`,
-        }],
+        pinnedToSidebar,
+        actions: [
+            {
+                id: 'toggle-sidebar-pin',
+                label: pinnedToSidebar ? 'Unpin from sidebar' : 'Pin to sidebar',
+                ariaLabel: pinnedToSidebar
+                    ? `Unpin ${app.title} from sidebar`
+                    : `Pin ${app.title} to sidebar`,
+                icon: pinnedToSidebar ? 'bi-pin-angle-fill' : 'bi-pin-angle',
+                testid: `pin-view-${id}`,
+            },
+            {
+                id: 'reload',
+                label: 'Reload',
+                ariaLabel: `Reload ${app.title}`,
+                icon: 'bi-arrow-clockwise',
+                testid: `reload-view-${id}`,
+            },
+        ],
         closable: true,
     };
 }

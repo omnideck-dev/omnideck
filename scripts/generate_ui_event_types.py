@@ -7,7 +7,7 @@ import argparse
 import sys
 import types
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -71,10 +71,11 @@ def _nested_models(payload_models: list[type[BaseModel]]) -> list[type[BaseModel
                 visit(arg)
             return
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            if annotation in payload_models or annotation.__name__ in found:
+            model = cast(type[BaseModel], annotation)
+            if model in payload_models or model.__name__ in found:
                 return
-            found[annotation.__name__] = annotation
-            for field in annotation.model_fields.values():
+            found[model.__name__] = model
+            for field in model.model_fields.values():
                 visit(field.annotation)
 
     for model in payload_models:

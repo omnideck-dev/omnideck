@@ -123,6 +123,10 @@
     min-height: 0;
 }
 
+.popoverInline.popoverAbove {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
 /* Matching half of the join on the trigger when inline+open. The
    trigger's own glow is dropped so the combined trigger+popover reads as
    a single control framed by the shared accent border. */
@@ -131,6 +135,10 @@
     border-bottom-right-radius: 0;
     border-color: var(--accent);
     box-shadow: none;
+}
+
+.triggerInline.triggerOpen.triggerOpenAbove {
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 
 /* ── Tabs ───────────────────────────────────────────────────── */
@@ -180,12 +188,16 @@
 
 /* ── Search ─────────────────────────────────────────────────── */
 .search {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
     padding: 8px 10px;
     border-bottom: 1px solid var(--border);
 }
 
 .searchInput {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     height: 32px;
     padding: 0 10px;
     font-size: 13px;
@@ -207,6 +219,40 @@
 
 .searchInput::placeholder {
     color: var(--text-tertiary);
+}
+
+.refreshButton {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+[data-theme="dark"] .refreshButton { background: var(--surface); }
+
+.refreshButton:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.refreshButton:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
+.refreshIconLoading {
+    animation: modelRefreshSpin 700ms linear infinite;
+}
+
+@keyframes modelRefreshSpin {
+    to { transform: rotate(360deg); }
 }
 
 /* ── List ──────────────────────────────────────────────────── */
