@@ -4,9 +4,13 @@ from __future__ import annotations
 
 # Keep this as plain JavaScript function declarations so it can be embedded in
 # both the renderer's one-round-trip DOM walk and scrolling's state checks.
-# A modal is either semantic (native top-layer dialog or aria-modal dialog) or
-# a conservative custom-overlay match: the body is scroll-locked and a visible
-# fixed element covers most of the viewport while looking like a dialog.
+# A modal is either semantic (native top-layer dialog or an ARIA dialog whose
+# background is actually suppressed) or a conservative custom-overlay match:
+# the body is scroll-locked and a visible fixed element covers most of the
+# viewport while looking like a dialog.
+#
+# ``aria-modal`` is only an accessibility declaration. It becomes evidence of
+# an active modal here only when the page also suppresses the background.
 MODAL_HELPERS_JS = r"""
   function omnideckElementIsVisible(el) {
     if (!el) return false;
@@ -37,13 +41,49 @@ MODAL_HELPERS_JS = r"""
         + '[role="alertdialog"][aria-modal="true"]'
       ));
     }
-    candidates = candidates.filter(omnideckElementIsVisible);
+    candidates = candidates.filter((element) => {
+      if (!omnideckElementIsVisible(element)) return false;
+      if (element.tagName === 'DIALOG') return true;
+      return omnideckAriaDialogSuppressesBackground(element);
+    });
     const element = candidates.length > 0 ? candidates[candidates.length - 1] : null;
     if (!element) return null;
     return {
       element: element,
       kind: element.tagName === 'DIALOG' ? 'native' : 'aria'
     };
+  }
+
+  function omnideckAriaDialogSuppressesBackground(dialogElement) {
+    const bodyStyle = document.body ? window.getComputedStyle(document.body) : null;
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    const locksOverflow = (style) => style
+      && (style.overflowY === 'hidden' || style.overflowY === 'clip');
+    if (locksOverflow(bodyStyle)
+        || locksOverflow(rootStyle)
+        || bodyStyle?.position === 'fixed')
+      return true;
+
+    let dialogBranch = dialogElement;
+    while (dialogBranch.parentElement && dialogBranch.parentElement !== document.body) {
+      dialogBranch = dialogBranch.parentElement;
+    }
+
+    return Array.from(document.body?.children || []).some((element) => {
+      if (element === dialogBranch) return false;
+      if (element.hasAttribute('inert')) return true;
+      if (element.getAttribute('aria-hidden') !== 'true') return false;
+
+      // aria-hidden is common on decorative icons. Treat it as background
+      // suppression only on a substantial top-level application subtree.
+      const rect = element.getBoundingClientRect();
+      const substantial = rect.width * rect.height >= window.innerWidth * window.innerHeight * 0.25
+        || element.scrollHeight > window.innerHeight
+        || (element.innerText || '').trim().length > 500;
+      return substantial && Boolean(element.querySelector(
+        'a[href],button,input,select,textarea,[role="button"],[role="link"]'
+      ));
+    });
   }
 
   function omnideckControlLooksLikeClose(el) {

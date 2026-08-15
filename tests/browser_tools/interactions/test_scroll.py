@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from tools.browser import browse_page, click, execute_javascript, scroll_page
 
 from .._helpers import find_ref
@@ -156,6 +158,25 @@ async def test_scroll_targets_active_modal_content(open_tab, servers):
 
     assert find_ref(after_down, role="button", name="Final modal action") is not None
     assert find_ref(after_down, role="button", name="Background action") is None
+
+
+@pytest.mark.parametrize("layout", ["banner", "takeover"])
+async def test_aria_dialog_without_background_block_is_not_modal(
+    open_tab,
+    servers,
+    layout,
+):
+    """ARIA alone does not turn a consent surface into a modal."""
+    tab = await open_tab(f"{servers.primary}/modal-dialog/aria-nonblocking.html?layout={layout}")
+    initial = await browse_page(tab=tab)
+
+    assert "[Modal dialog open" not in initial
+    assert find_ref(initial, role="button", name="Accept and continue") is not None
+    assert find_ref(initial, role="button", name="Background action") is not None
+
+    after_down = await scroll_page("down", amount=600, tab=tab)
+
+    assert _scroll_top(after_down) > _scroll_top(initial)
 
 
 async def test_blocked_modal_scroll_explains_next_action_without_consuming_budget(open_tab, servers):

@@ -34,14 +34,14 @@ async def test_native_modal_dialog_hides_inert_background(open_tab, servers):
 
 @pytest.mark.parametrize("role", ["dialog", "alertdialog"])
 async def test_aria_modal_dialog_hides_unavailable_background(open_tab, servers, role):
-    """ARIA modal dialog roles exclude unavailable background controls."""
+    """ARIA dialog plus an inert background forms a modal interaction surface."""
     query = urlencode({"role": role})
     tab = await open_tab(f"{servers.primary}/modal-dialog/aria-modal.html?{query}")
     view = await browse_page(tab=tab)
 
     assert find_ref(view, role="button", name="Background action") is None
     assert find_ref(view, role="button", name="Acknowledge") is not None
-    assert "[Modal dialog open" in view
+    assert "[Modal dialog open — background controls are unavailable]" in view
 
 
 async def test_unnamed_modal_close_button_is_actionable(open_tab, servers):
