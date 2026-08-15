@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
+import { useToast } from './ToastProvider.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -35,6 +36,7 @@ function pointRect(event) {
  * Searching drops the structure and shows a flat, recency-sorted list.
  */
 export default function ConversationsPanel({ onLoadConversation, onNewConversation, activeConversationId }) {
+    const { addToast } = useToast();
     const {
         items, setItems, loading, deleting, handleDelete,
         archiveConversation, unarchiveConversation,
@@ -128,15 +130,19 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     }, [setItems, patchConversation]);
 
     const deleteConversation = useCallback(async (id) => {
-        await handleDelete(
+        const result = await handleDelete(
             id,
             `/api/conversations/sessions/${id}`,
             (s) => s.conversation_id !== id,
         );
         closeMenu();
+        if (!result.ok) {
+            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
+            return;
+        }
         // Deleting the open conversation leaves nothing selected — start fresh.
         if (id === activeConversationId) onNewConversation?.();
-    }, [handleDelete, closeMenu, activeConversationId, onNewConversation]);
+    }, [handleDelete, closeMenu, addToast, activeConversationId, onNewConversation]);
 
     const moveToFolder = useCallback((convo, folderId) => {
         setConversationFolder(convo.conversation_id, folderId);
@@ -146,17 +152,21 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const archiveConvo = useCallback(async (convo) => {
         closeMenu();
         const id = convo.conversation_id;
-        const removed = await archiveConversation(id);
+        const result = await archiveConversation(convo);
+        if (!result.ok) {
+            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
+            return;
+        }
         // Mirror it into the archived list if that section is already loaded,
         // so the count and rows stay current without a refetch.
-        if (removed && archivedLoaded) {
+        if (archivedLoaded) {
             setArchived((prev) => (
-                prev.some((c) => c.conversation_id === id) ? prev : [removed, ...prev]
+                prev.some((c) => c.conversation_id === id) ? prev : [result.summary, ...prev]
             ));
         }
         // Archiving the open conversation leaves nothing selected — start fresh.
         if (id === activeConversationId) onNewConversation?.();
-    }, [closeMenu, archiveConversation, archivedLoaded, activeConversationId, onNewConversation]);
+    }, [closeMenu, archiveConversation, addToast, archivedLoaded, activeConversationId, onNewConversation]);
 
     // Load the archived list up front so its count shows on the collapsed
     // header — you can see how many are archived without expanding.
@@ -178,13 +188,17 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     }, [unarchiveConversation]);
 
     const deleteArchived = useCallback(async (id) => {
-        await handleDelete(
+        const result = await handleDelete(
             id,
             `/api/conversations/sessions/${id}`,
             () => true, // the active list doesn't hold archived rows; nothing to filter
         );
+        if (!result.ok) {
+            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
+            return;
+        }
         setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
-    }, [handleDelete]);
+    }, [handleDelete, addToast]);
 
     const submitNewFolder = useCallback((raw) => {
         setCreatingFolder(false);

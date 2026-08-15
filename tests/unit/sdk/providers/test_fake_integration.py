@@ -5,7 +5,6 @@ emits a tool call, the loop executes the (stub) tool, then the fake returns
 the final reply — using the same code path the app uses.
 """
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,8 +13,8 @@ from agents.types import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._fake import FakeProvider
 from sdk.skills.agent_state import AgentState, _active_agent_state
-from tests.e2e._protocol import bash, say
 from sdk.turn._execution import run_turn
+from tests.e2e._protocol import bash, say
 
 _MOD = "sdk.turn._execution"
 
@@ -65,7 +64,6 @@ async def test_directive_drives_tool_then_reply():
         with (
             patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
             patch(f"{_MOD}._get_parallel_config", return_value=cfg),
-            patch(f"{_MOD}.get_current_agent_name", return_value="fake-agent"),
         ):
             result = await run_turn(history, _agent(), hooks=[])
     finally:
@@ -93,7 +91,6 @@ async def test_plain_prompt_without_directives_echoes():
         with (
             patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
             patch(f"{_MOD}._get_parallel_config", return_value=MagicMock(enabled=False, max_concurrent=1)),
-            patch(f"{_MOD}.get_current_agent_name", return_value="fake-agent"),
         ):
             result = await run_turn(history, _agent(), hooks=[])
     finally:

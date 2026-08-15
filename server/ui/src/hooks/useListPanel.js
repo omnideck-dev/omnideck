@@ -97,9 +97,22 @@ export default function useListPanel(endpoint, {
             const resp = await fetch(deleteEndpoint, { method: 'DELETE' });
             if (resp.ok || resp.status === 404) {
                 setItems((prev) => prev.filter(matchFn));
+                return { ok: true, status: resp.status };
             }
+            let message = `Delete failed with status ${resp.status}.`;
+            try {
+                const body = await resp.json();
+                if (body?.error) message = body.error;
+            } catch (_) {
+                // Keep the status-based fallback for non-JSON error responses.
+            }
+            return { ok: false, status: resp.status, message };
         } catch (_) {
-            // ignore
+            return {
+                ok: false,
+                status: 0,
+                message: 'Could not reach the server. The item was not deleted.',
+            };
         } finally {
             setDeleting(null);
         }

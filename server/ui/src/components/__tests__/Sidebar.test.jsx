@@ -7,6 +7,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
+import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
@@ -45,14 +46,16 @@ vi.mock('../../features/customApps/CustomApps.jsx', () => ({
     useCustomApps: () => navigationHarness.customApps,
 }));
 
-// The expanded sidebar renders ConversationsPanel (conversations context) and
-// reads the theme context for its toggle — so every render supplies both.
+// The expanded sidebar renders ConversationsPanel (conversation + toast
+// contexts) and reads the theme context for its toggle.
 const Wrapper = ({ children }) => (
-    <AppEffectsProvider>
-        <ThemeProvider>
-            <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
-        </ThemeProvider>
-    </AppEffectsProvider>
+    <ToastProvider>
+        <AppEffectsProvider>
+            <ThemeProvider>
+                <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+            </ThemeProvider>
+        </AppEffectsProvider>
+    </ToastProvider>
 );
 const render = (ui, options) => _render(ui, { wrapper: Wrapper, ...options });
 

@@ -131,6 +131,27 @@ describe('getConversationRestorePlan', () => {
         });
     });
 
+    it('leaves an unfinished agent running when an active run will reattach', () => {
+        const events = [event('agent_started', {
+            parent_agent_id: null,
+            instruction: null,
+            correlation_id: null,
+        })];
+
+        expect(getConversationRestorePlan({
+            events,
+            activeRun: {
+                run_id: 'run-1',
+                status: 'running',
+                last_seq: 2,
+                resume_after_seq: 1,
+            },
+        }).agentActions).not.toContainEqual(expect.objectContaining({
+            type: 'AGENT_COMPLETED',
+            status: 'stopped',
+        }));
+    });
+
     it('restores execution data without restoring presentation state', () => {
         const restore = getConversationRestorePlan({
             events: [event('agent_started', {

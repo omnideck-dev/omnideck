@@ -167,15 +167,20 @@
     color: var(--text-tertiary);
 }
 
-/* Nudge bar — lightweight variant of the chat input */
-.nudgeBar {
+/* Nudge area — lightweight variant of the chat input */
+.nudgeArea {
     flex-shrink: 0;
     padding: var(--sp-2) var(--sp-3);
     border-top: 1px solid var(--border);
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: var(--sp-2);
     background: var(--canvas);
+}
+.nudgeBar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
 }
 .nudgeLabel {
     font-size: 0.75rem;
