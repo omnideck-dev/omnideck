@@ -28,6 +28,7 @@ from sdk.events import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
     from sdk.context import ConversationHistory
 
 
@@ -54,6 +55,7 @@ _stop_event: ContextVar[asyncio.Event | None] = ContextVar("turn_stop_event", de
 # Conversation ID for the current coroutine context, set inside turn_scope()
 # and inherited by sub-agents automatically via ContextVar semantics.
 _conversation_id: ContextVar[str | None] = ContextVar("turn_conversation_id", default=None)
+
 
 def get_conversation_id() -> str | None:
     """Return the conversation ID for the current coroutine context, or None."""
@@ -98,6 +100,7 @@ def any_turn_active() -> bool:
 async def turn_scope(
     conversation: ConversationHistory | None = None,
     conversation_id: str | None = None,
+    stop_event: asyncio.Event | None = None,
 ) -> AsyncIterator[None]:
     """Set up and tear down per-turn state.
 
@@ -117,15 +120,18 @@ async def turn_scope(
             no binding or ``turn_end`` happens (callers that drive the loop
             directly without an event sink, e.g. unit tests).
         conversation_id: Conversation identifier for per-conversation isolation.
+        stop_event: Optional caller-owned stop signal. When omitted, the scope
+            creates one as before. Supplying it lets an application record a
+            stop before execution enters this scope without losing the signal.
 
     Yields:
         None
     """
     sid = conversation_id or _DEFAULT_CONVERSATION_ID
-    stop_event = asyncio.Event()
+    active_stop_event = stop_event if stop_event is not None else asyncio.Event()
     _active_conversations.add(sid)
-    _active_stop_events[sid] = stop_event
-    stop_token = _stop_event.set(stop_event)
+    _active_stop_events[sid] = active_stop_event
+    stop_token = _stop_event.set(active_stop_event)
     conversation_token = _conversation_id.set(sid)
     conv_token = set_current_conversation(conversation) if conversation is not None else None
     try:

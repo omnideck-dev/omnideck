@@ -102,10 +102,21 @@ describe('AgentActivityView', () => {
 
     describe('nudge bar', () => {
         it('is disabled after stop is requested', () => {
-            const { dispatch } = renderView({ nudgeDisabled: true });
+            const { dispatch } = renderView({ stopRequested: true });
             startAgent(dispatch, 'a1');
 
             expect(screen.getByPlaceholderText('Stopping...')).toBeDisabled();
+        });
+
+        it('shows an offline notice while preserving the nudge target', () => {
+            const { dispatch } = renderView({ isOffline: true });
+            startAgent(dispatch, 'a1');
+
+            expect(screen.getByTestId('connection-status')).toHaveTextContent(
+                'OfflineNudges are unavailable.',
+            );
+            expect(screen.getByPlaceholderText('Send a nudge to Omnideck...'))
+                .toBeDisabled();
         });
     });
 

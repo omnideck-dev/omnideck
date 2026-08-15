@@ -143,26 +143,33 @@ export function ConversationCatalogProvider({ children }) {
         });
     }, [setItems]);
 
-    // Archive a conversation: drop it from the active list optimistically and
-    // move it into the archive on the server. Archiving is the reversible
-    // alternative to delete — the conversation can be restored from the
-    // archived view. Returns the removed summary so callers can surface it in
-    // the archived list without a refetch.
-    const archiveConversation = useCallback(async (conversationId) => {
-        let removed = null;
-        setItems((prev) => {
-            removed = prev.find((c) => c.conversation_id === conversationId) || null;
-            return prev.filter((c) => c.conversation_id !== conversationId);
-        });
+    // Archive only after the server confirms the move. In particular, an
+    // active run returns 409 and must remain visible and selected in the UI.
+    const archiveConversation = useCallback(async (summary) => {
+        const conversationId = summary.conversation_id;
         try {
-            await fetch(`/api/conversations/sessions/${conversationId}/archive`, {
+            const resp = await fetch(`/api/conversations/sessions/${conversationId}/archive`, {
                 method: 'POST',
             });
+            if (!resp.ok) {
+                let message = `Archive failed with status ${resp.status}.`;
+                try {
+                    const body = await resp.json();
+                    if (body?.error) message = body.error;
+                } catch (_) {
+                    // Keep the status-based fallback for non-JSON error responses.
+                }
+                return { ok: false, status: resp.status, message };
+            }
+            setItems((prev) => prev.filter((c) => c.conversation_id !== conversationId));
+            return { ok: true, status: resp.status, summary };
         } catch (_) {
-            // The optimistic removal already reflects the change; a failed
-            // write surfaces on the next reload rather than blocking the UI.
+            return {
+                ok: false,
+                status: 0,
+                message: 'Could not reach the server. The conversation was not archived.',
+            };
         }
-        return removed;
     }, [setItems]);
 
     // Restore an archived conversation back into the active list. Takes the

@@ -310,7 +310,7 @@ Inference options (`num_ctx`, `num_predict`, `temperature`, etc.) come from
 
 | Location | File |
 |---|---|
-| Main agent turns | `server/message_handler.py:257` |
+| Main agent runs | `agent_runtime/_runner.py` |
 | Background tasks | `tasks/_executor.py:62` |
 | Sub-agents | `sdk/tools/_spawn_agent.py:196` |
 

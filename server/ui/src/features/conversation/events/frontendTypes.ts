@@ -111,6 +111,12 @@ export type WorkspaceAction =
 
 export type ConversationRestoreData = {
     events?: Array<ConversationEvent>;
+    activeRun?: {
+        run_id: string;
+        status: string;
+        last_seq: number;
+        resume_after_seq: number;
+    } | null;
     browserTabs?: Array<{
         agent_id: string | null;
         url: string;

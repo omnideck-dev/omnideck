@@ -43,6 +43,7 @@ from conversations import (
     unarchive_conversation,
     update_folder,
 )
+from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 from server._conversation_cache import resume_conversation
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,12 @@ async def list_conversations_handler(_request: Request) -> Response:
 async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    if manager.active_for_conversation(conversation_id) is not None:
+        return web.json_response(
+            {"error": "This conversation is still running. Stop it before deleting."},
+            status=409,
+        )
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
@@ -86,6 +93,12 @@ async def list_archived_handler(_request: Request) -> Response:
 async def archive_conversation_handler(request: Request) -> Response:
     """Archive a conversation, moving it out of the active list."""
     conversation_id = request.match_info["conversation_id"]
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    if manager.active_for_conversation(conversation_id) is not None:
+        return web.json_response(
+            {"error": "This conversation is still running. Stop it before archiving."},
+            status=409,
+        )
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
@@ -193,9 +206,30 @@ async def generate_title_handler(request: Request) -> Response:
 async def resume_conversation_handler(request: Request) -> Response:
     """Resume a past conversation by loading its full-fidelity history."""
     conversation_id = request.match_info["conversation_id"]
-    data = await resume_conversation(conversation_id)
-    if data is None:
+    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    active = manager.active_for_conversation(conversation_id)
+    if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
+    data = await resume_conversation(conversation_id)
+
+    active_run = None
+    if active is not None:
+        resume_after_seq = 0
+        for event in reversed(data["events"]):
+            event_id = event.get("id")
+            if not isinstance(event_id, str):
+                continue
+            sequence = manager.sequence_for_event(active.run_id, event_id)
+            if sequence is not None:
+                resume_after_seq = sequence
+                break
+        active_run = {
+            "run_id": active.run_id,
+            "status": "running",
+            "last_seq": active.last_seq,
+            "resume_after_seq": resume_after_seq,
+        }
+
     return web.json_response({
         "conversation_id": conversation_id,
         "messages": data["messages"],
@@ -204,6 +238,7 @@ async def resume_conversation_handler(request: Request) -> Response:
         "terminal": data["terminal"],
         "preview_state": data["preview_state"],
         "profile_id": data["profile_id"],
+        "active_run": active_run,
     })
 
 
@@ -307,8 +342,16 @@ def register_conversation_routes(app: web.Application) -> None:
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/resume", resume_conversation_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/title", generate_title_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/archive", archive_conversation_handler)
-    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/unarchive", unarchive_conversation_handler)
-    app.router.add_route("PUT", "/api/conversations/sessions/{conversation_id}/preview-state", save_preview_state_handler)
+    app.router.add_route(
+        "POST",
+        "/api/conversations/sessions/{conversation_id}/unarchive",
+        unarchive_conversation_handler,
+    )
+    app.router.add_route(
+        "PUT",
+        "/api/conversations/sessions/{conversation_id}/preview-state",
+        save_preview_state_handler,
+    )
     app.router.add_route("PATCH", "/api/conversations/sessions/{conversation_id}", update_conversation_handler)
     app.router.add_route("DELETE", "/api/conversations/sessions/{conversation_id}", delete_conversation_handler)
 

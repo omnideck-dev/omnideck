@@ -15,7 +15,7 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ turns, stalled = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
+export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
     // The title bar reflects the root agent; read it straight from the agent
     // tree rather than receiving it as a prop.
     const agentState = useAgentState();
@@ -62,6 +62,7 @@ export default function ChatPanel({ turns, stalled = false, onSend, onStop, isSt
                 onSend={onSend}
                 onStop={onStop}
                 isStreaming={isStreaming}
+                isOffline={isOffline}
                 stopRequested={stopRequested}
                 attachment={attachment}
                 draft={draft}

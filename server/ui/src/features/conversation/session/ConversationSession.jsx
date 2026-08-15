@@ -38,6 +38,7 @@ export function ConversationSessionProvider({ children }) {
         if (!message && !attachments?.length) {
             return session.sendMessage(message, attachments, profileId);
         }
+        if (session.isOffline) return null;
         if (isFreshConversationRef.current) {
             isFreshConversationRef.current = false;
             addStartedConversation({
@@ -46,7 +47,12 @@ export function ConversationSessionProvider({ children }) {
             });
         }
         return session.sendMessage(message, attachments, profileId);
-    }, [addStartedConversation, session.activeConversationId, session.sendMessage]);
+    }, [
+        addStartedConversation,
+        session.activeConversationId,
+        session.isOffline,
+        session.sendMessage,
+    ]);
 
     const sendNudge = useCallback(async (message, agentId) => {
         const result = await session.sendNudge(message, agentId);
@@ -83,12 +89,16 @@ export function ConversationSessionProvider({ children }) {
         for (const action of restore.agentActions) agentDispatch(action);
         for (const action of restore.workspaceActions) workspaceDispatch(action);
         isFreshConversationRef.current = false;
+        // Restore the saved snapshot before following the active run. The follow
+        // stream may immediately replay newer events, which a later RESET would erase.
+        if (loaded.activeRun) void session.reattachActiveRun(loaded);
         return true;
     }, [
         agentDispatch,
         appEffectDispatch,
         session.activeConversationId,
         session.loadConversation,
+        session.reattachActiveRun,
         workspaceDispatch,
     ]);
 
@@ -147,6 +157,7 @@ export function ConversationSessionProvider({ children }) {
         turns: session.turns,
         draft: session.draft,
         isStreaming: session.isStreaming,
+        isOffline: session.isOffline,
         stopRequested: session.stopRequested,
         stalled: session.stalled,
         conversationProfileId,
@@ -154,6 +165,7 @@ export function ConversationSessionProvider({ children }) {
         conversationProfileId,
         session.activeConversationId,
         session.draft,
+        session.isOffline,
         session.isStreaming,
         session.stalled,
         session.stopRequested,

@@ -20,15 +20,13 @@ from sdk.events import (
     IterationPayload,
     IterationToolCall,
     ToolResultPayload,
-    get_current_agent_name,
     publish_event,
 )
-from sdk.providers import ChatDelta, ChatResponse, ProviderError, get_provider
+from sdk.providers import ChatDelta, ChatResponse, ProviderError, ToolCall, get_provider
 from sdk.skills.agent_state import _active_agent_state
 from sdk.tools import _execute_tool_call
 
 from ._turn import StopRequestedError, check_stop
-
 
 def _get_parallel_config() -> ParallelConfig:
     """Lazy-load parallel config to avoid circular imports at module level."""
@@ -54,20 +52,26 @@ def _publish_iteration(
 ) -> None:
     """Publish an iteration event. Logs but never raises on failure."""
     try:
-        publish_event(AgentEvent(payload=IterationPayload(
-            type="iteration",
-            iteration_index=iteration_index,
-            thinking=thinking,
-            content=content,
-            tool_calls=tool_calls or [],
-            stopped=stopped,
-        )))
+        publish_event(
+            AgentEvent(
+                payload=IterationPayload(
+                    type="iteration",
+                    iteration_index=iteration_index,
+                    thinking=thinking,
+                    content=content,
+                    tool_calls=tool_calls or [],
+                    stopped=stopped,
+                )
+            )
+        )
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to publish iteration event")
 
 
 def _persist_partial(
-    content_parts: list[str], thinking_parts: list[str], iteration: int,
+    content_parts: list[str],
+    thinking_parts: list[str],
+    iteration: int,
 ) -> str | None:
     """Persist streamed-but-unpublished output as a truncated iteration event.
 
@@ -80,7 +84,10 @@ def _persist_partial(
     if partial_content is None and partial_thinking is None:
         return None
     _publish_iteration(
-        iteration - 1, content=partial_content, thinking=partial_thinking, stopped=True,
+        iteration - 1,
+        content=partial_content,
+        thinking=partial_thinking,
+        stopped=True,
     )
     return partial_content
 
@@ -188,12 +195,16 @@ async def _run_tool_with_hooks(
             tool_result = fn(tool_name, tool_arguments, tool_result)
 
     try:
-        publish_event(AgentEvent(payload=ToolResultPayload(
-            type="tool_result",
-            tool_call_id=tool_call.id,
-            tool_name=tool_name,
-            content=str(tool_result) if tool_result is not None else "",
-        )))
+        publish_event(
+            AgentEvent(
+                payload=ToolResultPayload(
+                    type="tool_result",
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_name,
+                    content=str(tool_result) if tool_result is not None else "",
+                )
+            )
+        )
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to publish tool_result event")
 
@@ -250,6 +261,11 @@ async def run_turn(
             streamed_content_parts: list[str] = []
             streamed_thinking_parts: list[str] = []
             try:
+                # Observe a stop that was requested before this iteration
+                # began, including one set before turn_scope was entered.
+                # No provider request or before-model setup should start.
+                check_stop()
+
                 # ── before_model hooks ───────────────────────────────────
                 for hook in hooks:
                     fn = getattr(hook, "before_model", None)
@@ -274,12 +290,16 @@ async def run_turn(
                         if chunk.thinking:
                             streamed_thinking_parts.append(chunk.thinking)
                         try:
-                            publish_event(AgentEvent(payload=ContentPayload(
-                                type="content",
-                                content=chunk.content,
-                                thinking=chunk.thinking,
-                                delta=True,
-                            )))
+                            publish_event(
+                                AgentEvent(
+                                    payload=ContentPayload(
+                                        type="content",
+                                        content=chunk.content,
+                                        thinking=chunk.thinking,
+                                        delta=True,
+                                    )
+                                )
+                            )
                         except Exception:  # pragma: no cover - defensive
                             logger.exception("Failed to publish delta event")
                         # Check for a stop after each token so a stop is
@@ -310,15 +330,18 @@ async def run_turn(
                 for tc in tool_calls or []:
                     if not tc.id:
                         tc.id = f"call_{uuid.uuid4().hex[:8]}"
-                # Serialize tool calls to plain dicts for history storage so
-                # providers can reconstruct their own types on the next turn.
-                serialized_tool_calls = [tc.model_dump() for tc in tool_calls] if tool_calls else None
                 # Emit full content only if no deltas were streamed (fallback path)
                 if not streamed_deltas:
                     try:
-                        publish_event(AgentEvent(payload=ContentPayload(
-                            type="content", content=content, thinking=thinking,
-                        )))
+                        publish_event(
+                            AgentEvent(
+                                payload=ContentPayload(
+                                    type="content",
+                                    content=content,
+                                    thinking=thinking,
+                                )
+                            )
+                        )
                     except Exception:  # pragma: no cover - defensive
                         logger.exception("Failed to publish model AgentEvent event")
                 _publish_iteration(
@@ -359,18 +382,20 @@ async def run_turn(
                 sem = asyncio.Semaphore(parallel_cfg.max_concurrent if parallel else 1)
 
                 async def _run(
-                    tc_item: Any,
-                    semaphore: asyncio.Semaphore = sem,
+                    tc_item: ToolCall,
+                    semaphore: asyncio.Semaphore,
                 ) -> None:
                     async with semaphore:
-                        return await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
+                        await _run_tool_with_hooks(tc_item, agent_state.tools, hooks)
 
-                await asyncio.gather(*[_run(tc) for tc in tool_calls])
+                await asyncio.gather(*[_run(tc, sem) for tc in tool_calls])
 
             except StopRequestedError:
                 logger.info("Agent '%s' tool loop stopped by user request", agent.name)
                 partial = _persist_partial(
-                    streamed_content_parts, streamed_thinking_parts, iteration,
+                    streamed_content_parts,
+                    streamed_thinking_parts,
+                    iteration,
                 )
                 if partial is not None:
                     # StopRequestedError re-raises below, so no caller
@@ -384,13 +409,23 @@ async def run_turn(
                 # Keep whatever streamed before the failure — the user
                 # already saw it, and the error event follows it.
                 _persist_partial(
-                    streamed_content_parts, streamed_thinking_parts, iteration,
+                    streamed_content_parts,
+                    streamed_thinking_parts,
+                    iteration,
                 )
-                error_msg = str(exc) if isinstance(exc, ProviderError) else "An error occurred while processing your message."
+                error_msg = (
+                    str(exc) if isinstance(exc, ProviderError) else "An error occurred while processing your message."
+                )
                 retryable = isinstance(exc, ProviderError) and exc.retryable
-                publish_event(AgentEvent(payload=ErrorPayload(
-                    type="error", message=error_msg, retryable=retryable,
-                )))
+                publish_event(
+                    AgentEvent(
+                        payload=ErrorPayload(
+                            type="error",
+                            message=error_msg,
+                            retryable=retryable,
+                        )
+                    )
+                )
                 raise ToolLoopError(error_msg) from exc
     finally:
         for hook in hooks:
