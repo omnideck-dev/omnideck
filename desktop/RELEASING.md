@@ -19,9 +19,23 @@ and published assets are immutable.
 3. Set `container-version.txt` to the intended container release and confirm it
    exists. The workflow resolves the mutable tag to one immutable digest for all
    package builds.
-4. Add `docs/releases/v<version>.md` with user-visible changes, upgrade notes,
-   known limitations, unsigned-build guidance where applicable, and explicit
-   build-only or blocked platform coverage.
+4. Generate `docs/releases/v<version>.md` from the outstanding release-note
+   fragments, then curate it before review:
+
+   ```sh
+   VERSION=v0.1.0-beta.9
+   node scripts/release-notes.mjs generate \
+     --version "${VERSION}" \
+     --output "docs/releases/${VERSION}.md"
+   ```
+
+   Keep the final copy focused on user-visible product and desktop changes,
+   upgrade guidance, known limitations, and preview trust warnings. Build,
+   qualification, and VM-lab detail belongs in workflow evidence and testing
+   documentation, not in the user-facing release body. Remove the fragments
+   incorporated into the reviewed file. The release pull request uses
+   `release-note:none` with a reason explaining that it only aggregates
+   previously reviewed fragments.
 5. From the repository root, run the pinned Docker-backed verifier. This is the
    canonical local gate and does not require Node, pnpm, Rust, or Cargo on the
    host:
