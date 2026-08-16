@@ -394,6 +394,11 @@ typecheck:
 tool-docs:
     uv run --extra test pytest -p no:warnings tests/unit/sdk/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
 
+# Verify the shared release-note contract and any outstanding fragments
+release-note-policy:
+    node --test tests/release-notes.test.mjs
+    node scripts/release-notes.mjs validate-fragments
+
 # Format (fix imports + format)
 format:
     uv run --extra dev ruff check --fix .
@@ -404,7 +409,7 @@ format-check:
     uv run --extra dev ruff format --check .
 
 # Fast, non-mutating agent quality gate
-check: lint typecheck tool-docs
+check: lint typecheck tool-docs release-note-policy
 
 # CI-style: check + unit tests
 ci: check unit
