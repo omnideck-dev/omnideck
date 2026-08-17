@@ -248,7 +248,7 @@ if ($Installer.ExitCode -ne 0) {
 
 # The one-click installer launches the application itself. Stop that instance so
 # the selected scenario always begins at the controlled launch below.
-$AutoLaunched = Get-Process -Name "omnideck" -ErrorAction SilentlyContinue
+$AutoLaunched = Get-Process -Name "omnideck-desktop" -ErrorAction SilentlyContinue
 if ($AutoLaunched) {
     Write-Host "Stopping the instance started by the installer before the controlled launch."
     $AutoLaunched | Stop-Process -Force
@@ -257,8 +257,8 @@ if ($AutoLaunched) {
 }
 
 $ExpectedApplications = @(
-    (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
-    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
+    (Join-Path $env:LOCALAPPDATA "omnideck\omnideck-desktop.exe"),
+    (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck-desktop.exe")
 )
 $Application = $ExpectedApplications |
     Where-Object { Test-Path -LiteralPath $_ } |
@@ -266,7 +266,7 @@ $Application = $ExpectedApplications |
 if (-not $Application) {
     $Application = Get-ChildItem `
         -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs") `
-        -Filter "omnideck.exe" `
+        -Filter "omnideck-desktop.exe" `
         -File `
         -Recurse `
         -ErrorAction SilentlyContinue |

@@ -21,7 +21,7 @@ trap cleanup_mount EXIT
   exit 2
 }
 [[ -f "$dmg" ]] || { printf 'DMG not found: %s\n' "$dmg" >&2; exit 1; }
-if pgrep -x omnideck >/dev/null 2>&1; then
+if pgrep -f '/(omnideck-desktop|omnideck)$' >/dev/null 2>&1; then
   printf 'Close the existing omnideck application before acquiring the macOS test lane.\n' >&2
   exit 1
 fi
@@ -29,7 +29,7 @@ fi
 hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point" -quiet
 app="$(find "$mount_point" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [[ -n "$app" ]] || { printf 'The DMG contains no application bundle.\n' >&2; exit 1; }
-application="$app/Contents/MacOS/omnideck"
+application="$app/Contents/MacOS/omnideck-desktop"
 [[ -x "$application" ]] || { printf 'The app contains no executable omnideck host.\n' >&2; exit 1; }
 file "$application" | grep -Eq 'Mach-O 64-bit.*arm64'
 
@@ -39,7 +39,7 @@ installed_app="$HOME/Applications/Omnideck Lab.app"
   exit 1
 }
 /usr/bin/ditto "$app" "$installed_app"
-installed_application="$installed_app/Contents/MacOS/omnideck"
+installed_application="$installed_app/Contents/MacOS/omnideck-desktop"
 [[ "$(defaults read "$installed_app/Contents/Info" CFBundleIdentifier 2>/dev/null || true)" == dev.omnideck.desktop ]] || {
   printf 'The installed application has an unexpected bundle identifier.\n' >&2
   exit 1

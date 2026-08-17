@@ -12,6 +12,7 @@ cli_root="${OMNIDECK_CLI_WORKTREE:-}"
 profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
 baseline=""
 artifact="${OMNIDECK_DESKTOP_PREPARED_ARTIFACT:-}"
+upgrade_from_artifact="${OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT:-}"
 assume_yes=0
 keep_vm=0
 
@@ -28,6 +29,7 @@ Options:
   --baseline clean|NAME         Guest checkpoint (default: podman-ready)
   --profile NAME                Deterministic lab profile (default: dev-fast)
   --artifact PATH                Test this exact prebuilt NSIS installer
+  --upgrade-from-artifact PATH   Install this prior NSIS release before the candidate
   --cli PATH                     CLI worktree embedded in a local candidate
   --yes                          Accept the destructive Windows reset
   --keep-vm                      Keep the stopped guest and retained disk/TPM
@@ -41,6 +43,7 @@ while (($#)); do
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
+    --upgrade-from-artifact) upgrade_from_artifact="${2:?--upgrade-from-artifact requires a path}"; shift 2 ;;
     --cli) cli_root="${2:?--cli requires a path}"; shift 2 ;;
     --yes) assume_yes=1; shift ;;
     --keep-vm) keep_vm=1; shift ;;
@@ -76,11 +79,21 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     artifact="$(find "${desktop_build_output}/x86_64-pc-windows-gnu/release/bundle/nsis" \
       -maxdepth 1 -type f -name '*-setup.exe' -print | sort | head -n 1)"
   fi
+  prepared_upgrade_from_artifact=""
+  prepared_upgrade_from_key=""
+  prepared_upgrade_from_original_name=""
+  if [[ -n "${upgrade_from_artifact}" ]]; then
+    cache_candidate_artifact "${upgrade_from_artifact}" nsis
+    prepared_upgrade_from_artifact="${prepared_artifact}"
+    prepared_upgrade_from_key="${prepared_artifact_key}"
+    prepared_upgrade_from_original_name="${prepared_artifact_original_name}"
+  fi
   cache_candidate_artifact "${artifact}" nsis
   remove_desktop_build_output
   artifact="${prepared_artifact}"
   "${lab_dir}/lab.sh" evidence-set "${prepare_output_dir}" "phase=prepared" \
-    "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}"
+    "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}" \
+    "upgradeFromArtifactCacheKey=${prepared_upgrade_from_key:-none}"
   lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline clean)
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
   lease_args+=(-- env OMNIDECK_DESKTOP_PREPARED_ARTIFACT="${artifact}" \
@@ -88,6 +101,9 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     OMNIDECK_DESKTOP_TAURI_DRIVER_KEY="${tauri_driver_key}" \
     OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY="${prepared_artifact_key}" \
     OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME="${prepared_artifact_original_name}" \
+    OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT="${prepared_upgrade_from_artifact}" \
+    OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY="${prepared_upgrade_from_key}" \
+    OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_ORIGINAL_NAME="${prepared_upgrade_from_original_name}" \
     OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR="${prepare_output_dir}" \
     "$0" --baseline "${baseline}" "${original_args[@]}")
   lease_status=0
@@ -177,6 +193,8 @@ else
     "tauriDriverKey=${OMNIDECK_DESKTOP_TAURI_DRIVER_KEY}"
 fi
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" "artifactCacheKey=${OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY:-external}"
+"${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+  "upgradeFromArtifactCacheKey=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY:-none}"
 
 cleanup() {
   local exit_code=$?
@@ -195,7 +213,7 @@ cleanup() {
         >/dev/null 2>&1 || true
     fi
     "${lab_dir}/lab.sh" run windows \
-      "taskkill.exe /F /IM tauri-driver.exe & taskkill.exe /F /IM msedgedriver.exe & taskkill.exe /F /IM omnideck.exe" \
+      "taskkill.exe /F /IM tauri-driver.exe & taskkill.exe /F /IM msedgedriver.exe & taskkill.exe /F /IM omnideck-desktop.exe & taskkill.exe /F /IM omnideck.exe" \
       >/dev/null 2>&1 || true
     "${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${driver_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
@@ -235,6 +253,16 @@ artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
 printf '%s  %s\n' "${artifact_sha256}" "$(basename "${artifact}")" > "${build_dir}/artifact.sha256"
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
   "artifact=${OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME:-$(basename "${artifact}")}" "artifactSha256=${artifact_sha256}"
+upgrade_from_sha256="none"
+if [[ -n "${upgrade_from_artifact}" ]]; then
+  upgrade_from_artifact="$(realpath -e "${upgrade_from_artifact}")"
+  upgrade_from_sha256="$(sha256sum "${upgrade_from_artifact}" | awk '{print $1}')"
+  printf '%s  %s\n' "${upgrade_from_sha256}" "$(basename "${upgrade_from_artifact}")" \
+    > "${build_dir}/upgrade-from-artifact.sha256"
+  "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+    "upgradeFromArtifact=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_ORIGINAL_NAME:-$(basename "${upgrade_from_artifact}")}" \
+    "upgradeFromArtifactSha256=${upgrade_from_sha256}"
+fi
 
 printf 'Starting and verifying Windows.\n'
 "${lab_dir}/lab.sh" start windows
@@ -264,6 +292,9 @@ printf 'Staging and installing the exact NSIS artifact.\n'
 "${lab_dir}/lab.sh" run windows "cmd.exe /d /c if not exist ${remote_root} mkdir ${remote_root}"
 remote_staged=1
 "${lab_dir}/lab.sh" copy-to windows "${artifact}" "${remote_scp_root}/candidate-setup.exe"
+if [[ -n "${upgrade_from_artifact}" ]]; then
+  "${lab_dir}/lab.sh" copy-to windows "${upgrade_from_artifact}" "${remote_scp_root}/upgrade-from-setup.exe"
+fi
 "${lab_dir}/lab.sh" copy-to windows "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
 "${lab_dir}/lab.sh" copy-to windows "${script_dir}/custom_app_fixture.py" "${remote_scp_root}/custom_app_fixture.py"
@@ -273,7 +304,7 @@ remote_staged=1
 phase_command() {
   local phase="$1"
   "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase ${phase} -WorkDir ${remote_root} -ArtifactSha256 ${artifact_sha256} -ExpectedCliVersion ${cli_version} -ExpectedCliCommit ${cli_commit}"
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_guest.ps1 -Phase ${phase} -WorkDir ${remote_root} -ArtifactSha256 ${artifact_sha256} -UpgradeFromArtifactSha256 ${upgrade_from_sha256} -ExpectedCliVersion ${cli_version} -ExpectedCliCommit ${cli_commit}"
 }
 
 trust_launch_visible() {
@@ -635,7 +666,7 @@ complete_clean_security_setup() {
   printf 'Waiting for RunOnce to reopen the installed app after sign-in.\n'
   for _ in $(seq 1 360); do
     if "${lab_dir}/lab.sh" run windows \
-      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process omnideck -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process omnideck-desktop -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
       >/dev/null 2>&1; then
       break
     fi
@@ -675,7 +706,7 @@ complete_clean_security_setup() {
   printf '{"status":"passed","uacCancellation":true,"uacApproval":true,"restartNow":true,"runOnceReopen":true,"bootBefore":"%s","bootAfter":"%s"}\n' \
     "${boot_before}" "${boot_after}" > "${output_dir}/windows-security-summary.json"
 
-  "${lab_dir}/lab.sh" run windows "taskkill.exe /F /IM omnideck.exe" >/dev/null 2>&1 || true
+  "${lab_dir}/lab.sh" run windows "taskkill.exe /F /IM omnideck-desktop.exe" >/dev/null 2>&1 || true
 }
 
 set +e

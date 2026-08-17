@@ -91,6 +91,15 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
+When an upgrade-from artifact is supplied, the native package lanes first
+install the previous release into the clean guest, seed a marker in Desktop's
+normal user-data root, and install the candidate directly over it. The journey
+requires the marker to survive, requires `omnideck-desktop` to be the candidate
+host, and—when upgrading from the legacy layout—requires the old `omnideck`
+desktop executable to be gone. AppImage and DMG lanes exercise their native
+replace model rather than pretending those formats have package-manager
+receipts.
+
 The Windows `clean` lane also automates the boundaries that WebDriver cannot
 cross by itself:
 
@@ -155,6 +164,11 @@ inside the logged-in desktop session and proves registry DNS before exposing
 the driver. A golden image can therefore be refreshed without silently
 changing what drives the candidate.
 
+Published Desktop packages also stay out of golden images. Upgrade
+qualification restores the stable OS/runtime checkpoint, downloads and verifies
+the retained previous release, and installs it during the test. This keeps the
+upgrade source reproducible without maintaining one checkpoint per release.
+
 To revise a golden, start from `clean` or the preceding named checkpoint,
 install only the checkpoint items in the contract, initialize Podman, run each
 listed verification command, shut the guest down cleanly, and create a new
@@ -187,11 +201,15 @@ export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
 pnpm run test:release-e2e -- --release latest --yes
 ```
 
-`latest` includes published prereleases. The command downloads the exact
-public release assets, verifies all ten packages and their checksums, validates
-package format and architecture, verifies GitHub attestations, reads the
-bundled CLI identity from the release tag, and runs these local x64 lanes
-sequentially:
+`latest` includes published prereleases. By default the command also resolves,
+downloads, and verifies the immediately preceding published release, then
+passes its matching artifact to every local lane for an in-place upgrade before
+the candidate journey. Use `--upgrade-from TAG` for an explicit supported
+source or `--upgrade-from none` only when deliberately qualifying clean installs
+without upgrade coverage. Both release matrices have their checksums, formats,
+architectures, and GitHub attestations verified before any guest runs. The
+qualifier reads the candidate's bundled CLI identity and runs these local x64
+lanes sequentially:
 
 | Lane | Guest | Public package | Native journey |
 |---|---|---|---|
@@ -245,6 +263,12 @@ The canonical all-lane candidate command is:
 pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes
 ```
 
+The candidate matrix defaults to upgrading from the latest published Desktop
+release. It verifies that complete release matrix and its attestations before
+building the local candidate. Select a specific source with `--upgrade-from
+v0.1.0-beta.8`, or use `--upgrade-from none` only for an intentionally
+clean-install-only development run.
+
 Candidate packages and pinned `tauri-driver` binaries are prepared in an
 immutable, content-addressed lab cache before each lease. Compilation and
 driver installation therefore never consume guest time. Rust/Tauri target
@@ -255,8 +279,10 @@ candidate, and interrupted trees expire under the cache policy.
 Run an exact already-built package without rebuilding it:
 
 ```sh
-pnpm run test:vm-e2e -- --vm appimage --artifact /absolute/path/candidate.AppImage
-pnpm run test:vm-e2e -- --vm windows --artifact /absolute/path/candidate-setup.exe
+pnpm run test:vm-e2e -- --vm appimage --artifact /absolute/path/candidate.AppImage \
+  --upgrade-from-artifact /absolute/path/previous.AppImage
+pnpm run test:vm-e2e -- --vm windows --artifact /absolute/path/candidate-setup.exe \
+  --upgrade-from-artifact /absolute/path/previous-setup.exe
 ```
 
 The selected guest must be stopped. The harness acquires the CLI and Desktop

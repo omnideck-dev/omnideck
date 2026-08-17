@@ -7,6 +7,7 @@ export LC_ALL=C
 work_dir="${1:?work directory is required}"
 dmg="${2:?DMG path is required}"
 result_dir="${3:?result directory is required}"
+upgrade_dmg="${4:-none}"
 namespace="release-test-macos"
 managed_root="$HOME/.omnideck-lab"
 user_data="$managed_root/state/desktop-e2e"
@@ -23,7 +24,7 @@ artifact_download_path="$native_download_dir/$artifact_filename"
 update_fixture="$work_dir/update-fixture.json"
 update_version=99.0.0
 installed_app="$HOME/Applications/Omnideck Lab.app"
-application="$installed_app/Contents/MacOS/omnideck"
+application="$installed_app/Contents/MacOS/omnideck-desktop"
 driver_app="$HOME/Applications/Omnideck Lab Driver.app"
 driver="$driver_app/Contents/MacOS/omnideck-lab-driver"
 input_extension="$HOME/.omnideck-lab/input/omnideck-lab-input.dylib"
@@ -32,6 +33,7 @@ container_name="omnideck-desktop-${namespace}"
 home_volume="omnideck-desktop-home-${namespace}"
 state_volume="omnideck-desktop-state-${namespace}"
 mount_point="$(mktemp -d /private/tmp/omnideck-dmg.XXXXXX)"
+upgrade_mount_point=""
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 current_step=initialize
 test_status=failed
@@ -72,6 +74,10 @@ write_evidence() {
   podman logs "$container_name" > "$result_dir/container.log" 2>&1 || true
   stop_application
   hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true
+  if [[ -n "$upgrade_mount_point" ]]; then
+    hdiutil detach "$upgrade_mount_point" -quiet >/dev/null 2>&1 || true
+    rmdir "$upgrade_mount_point" >/dev/null 2>&1 || true
+  fi
   rmdir "$mount_point" >/dev/null 2>&1 || true
   [[ -f "$user_data/setup-state.json" ]] && cp -- "$user_data/setup-state.json" "$result_dir/setup-state.json"
   [[ -f "$user_data/logs/desktop.log" ]] && cp -- "$user_data/logs/desktop.log" "$result_dir/desktop.log"
@@ -135,23 +141,66 @@ preflight="$("$driver" preflight 2>&1 || true)"
 [[ "$preflight" == *'accessibility=true'* ]] || { printf '%s\n' "$preflight" >&2; exit 3; }
 
 current_step='exclusive desktop process'
-/usr/bin/pgrep -x omnideck > "$result_dir/preexisting-omnideck-pids.txt" 2>/dev/null || true
-/usr/bin/pkill -x omnideck 2>/dev/null || true
+/usr/bin/pgrep -f '/omnideck-desktop$' > "$result_dir/preexisting-omnideck-desktop-pids.txt" 2>/dev/null || true
+/usr/bin/pgrep -f '/omnideck$' > "$result_dir/preexisting-omnideck-pids.txt" 2>/dev/null || true
+/usr/bin/pkill -f '/omnideck-desktop$' 2>/dev/null || true
+/usr/bin/pkill -f '/omnideck$' 2>/dev/null || true
 for _ in 1 2 3 4 5; do
-  /usr/bin/pgrep -x omnideck >/dev/null 2>&1 || break
+  if ! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1 &&
+     ! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1; then
+    break
+  fi
   sleep 1
 done
-! /usr/bin/pgrep -x omnideck >/dev/null 2>&1
+! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1
+! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1
+
+if [[ "$upgrade_dmg" != none ]]; then
+  current_step='previous DMG installation'
+  upgrade_mount_point="$(mktemp -d /private/tmp/omnideck-upgrade-dmg.XXXXXX)"
+  hdiutil attach "$upgrade_dmg" -nobrowse -readonly -mountpoint "$upgrade_mount_point" -quiet
+  upgrade_source_app="$(find "$upgrade_mount_point" -maxdepth 1 -type d -name '*.app' -print -quit)"
+  [[ -n "$upgrade_source_app" ]]
+  if [[ -x "$upgrade_source_app/Contents/MacOS/omnideck-desktop" ]]; then
+    previous_binary=omnideck-desktop
+  else
+    [[ -x "$upgrade_source_app/Contents/MacOS/omnideck" ]]
+    previous_binary=omnideck
+  fi
+  [[ ! -e "$installed_app" ]]
+  /usr/bin/ditto "$upgrade_source_app" "$installed_app"
+  printf '{"schemaVersion":1,"createdBy":"previous-release-upgrade-test"}\n' \
+    > "$user_data/upgrade-marker.json"
+  /bin/rm -rf -- "$installed_app"
+fi
 
 current_step='exact DMG installation'
 hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point" -quiet
 source_app="$(find "$mount_point" -maxdepth 1 -type d -name '*.app' -print -quit)"
-[[ -n "$source_app" && -x "$source_app/Contents/MacOS/omnideck" ]]
-file "$source_app/Contents/MacOS/omnideck" | grep -Eq 'Mach-O 64-bit.*arm64'
+[[ -n "$source_app" && -x "$source_app/Contents/MacOS/omnideck-desktop" ]]
+file "$source_app/Contents/MacOS/omnideck-desktop" | grep -Eq 'Mach-O 64-bit.*arm64'
 [[ ! -e "$installed_app" ]]
 /usr/bin/ditto "$source_app" "$installed_app"
 [[ "$(defaults read "$installed_app/Contents/Info" CFBundleIdentifier 2>/dev/null || true)" == dev.omnideck.desktop ]]
-[[ "$(shasum -a 256 "$source_app/Contents/MacOS/omnideck" | awk '{print $1}')" == "$(shasum -a 256 "$application" | awk '{print $1}')" ]]
+[[ "$(shasum -a 256 "$source_app/Contents/MacOS/omnideck-desktop" | awk '{print $1}')" == "$(shasum -a 256 "$application" | awk '{print $1}')" ]]
+[[ ! -e "$installed_app/Contents/MacOS/omnideck" ]]
+if [[ "$upgrade_dmg" != none ]]; then
+  [[ -f "$user_data/upgrade-marker.json" ]]
+  python3 - "$result_dir/upgrade.json" "$previous_binary" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "schemaVersion": 1,
+    "status": "passed",
+    "previousBinary": sys.argv[2],
+    "candidateBinary": "omnideck-desktop",
+    "legacyBinaryRemoved": sys.argv[2] == "omnideck",
+    "stateMarkerPreserved": True,
+}, indent=2) + "\n", encoding="utf-8")
+PY
+fi
 
 desktop_env=(
   "PATH=$HOME/.local/bin:/opt/podman/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -548,7 +597,7 @@ podman volume inspect "$home_volume" "$state_volume" >/dev/null
 current_step='DMG reinstall and packaged sidecar smoke'
 /usr/bin/ditto "$source_app" "$installed_app"
 [[ -x "$application" ]]
-[[ "$(shasum -a 256 "$source_app/Contents/MacOS/omnideck" | awk '{print $1}')" == "$(shasum -a 256 "$application" | awk '{print $1}')" ]]
+[[ "$(shasum -a 256 "$source_app/Contents/MacOS/omnideck-desktop" | awk '{print $1}')" == "$(shasum -a 256 "$application" | awk '{print $1}')" ]]
 mkdir -p "$result_dir/smoke-reinstall"
 env "PATH=${desktop_env[0]#PATH=}" "$work_dir/desktop/tests/hardware/run.sh" \
   --application "$application" --output "$result_dir/smoke-reinstall" --require-ready

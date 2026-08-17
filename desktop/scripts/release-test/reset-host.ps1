@@ -310,7 +310,7 @@ if (-not $PreserveWsl) {
     }
 }
 
-Get-Process -Name "omnideck", "gvproxy", "win-sshproxy" `
+Get-Process -Name "omnideck-desktop", "omnideck", "gvproxy", "win-sshproxy" `
     -ErrorAction SilentlyContinue | Stop-Process -Force
 
 $ExpectedOmnideckUninstaller = Join-Path $env:LOCALAPPDATA `

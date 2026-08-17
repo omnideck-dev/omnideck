@@ -13,6 +13,7 @@ vm="${OMNIDECK_DESKTOP_VM_E2E_VM:-appimage}"
 profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
 baseline="${OMNIDECK_DESKTOP_VM_E2E_BASELINE:-}"
 artifact="${OMNIDECK_DESKTOP_PREPARED_ARTIFACT:-}"
+upgrade_from_artifact="${OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT:-}"
 assume_yes=0
 keep_vm=0
 original_args=("$@")
@@ -29,6 +30,7 @@ Options:
   --baseline NAME              Guest checkpoint (default: recommended available Linux checkpoint)
   --profile NAME               Deterministic lab profile (default: dev-fast)
   --artifact PATH               Test this exact prebuilt package instead
+  --upgrade-from-artifact PATH  Install/replace this prior package before the candidate
   --cli PATH                    CLI worktree embedded in a local candidate
   --yes                         Accept the destructive guest reset
   --keep-vm                     Keep the stopped guest and retained overlays
@@ -43,6 +45,7 @@ while (($#)); do
     --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
+    --upgrade-from-artifact) upgrade_from_artifact="${2:?--upgrade-from-artifact requires a path}"; shift 2 ;;
     --cli) cli_root="${2:?--cli requires a path}"; shift 2 ;;
     --yes) assume_yes=1; shift ;;
     --keep-vm) keep_vm=1; shift ;;
@@ -56,6 +59,7 @@ if [[ "${vm}" == "windows" ]]; then
   [[ -n "${baseline}" ]] && arguments+=(--baseline "${baseline}")
   [[ -n "${cli_root}" ]] && arguments+=(--cli "${cli_root}")
   [[ -n "${artifact}" ]] && arguments+=(--artifact "${artifact}")
+  [[ -n "${upgrade_from_artifact}" ]] && arguments+=(--upgrade-from-artifact "${upgrade_from_artifact}")
   [[ "${assume_yes}" == "1" ]] && arguments+=(--yes)
   [[ "${keep_vm}" == "1" ]] && arguments+=(--keep-vm)
   exec "${script_dir}/run-windows.sh" "${arguments[@]}"
@@ -98,11 +102,21 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     bundle_dir="${desktop_build_output}/x86_64-unknown-linux-gnu/release/bundle/${bundle}"
     artifact="$(find "${bundle_dir}" -maxdepth 1 -type f -name "${artifact_glob}" -print | sort | head -n 1)"
   fi
+  prepared_upgrade_from_artifact=""
+  prepared_upgrade_from_key=""
+  prepared_upgrade_from_original_name=""
+  if [[ -n "${upgrade_from_artifact}" ]]; then
+    cache_candidate_artifact "${upgrade_from_artifact}" "${bundle}"
+    prepared_upgrade_from_artifact="${prepared_artifact}"
+    prepared_upgrade_from_key="${prepared_artifact_key}"
+    prepared_upgrade_from_original_name="${prepared_artifact_original_name}"
+  fi
   cache_candidate_artifact "${artifact}" "${bundle}"
   remove_desktop_build_output
   artifact="${prepared_artifact}"
   "${lab_dir}/lab.sh" evidence-set "${prepare_output_dir}" "phase=prepared" \
-    "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}"
+    "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}" \
+    "upgradeFromArtifactCacheKey=${prepared_upgrade_from_key:-none}"
   lease_args=(lease "${vm}" desktop "${lease_run_id}" --cleanup-baseline clean)
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
   lease_args+=(-- env OMNIDECK_DESKTOP_PREPARED_ARTIFACT="${artifact}" \
@@ -110,6 +124,9 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     OMNIDECK_DESKTOP_TAURI_DRIVER_KEY="${tauri_driver_key}" \
     OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY="${prepared_artifact_key}" \
     OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME="${prepared_artifact_original_name}" \
+    OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT="${prepared_upgrade_from_artifact}" \
+    OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY="${prepared_upgrade_from_key}" \
+    OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_ORIGINAL_NAME="${prepared_upgrade_from_original_name}" \
     OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR="${prepare_output_dir}" \
     "$0" --baseline "${baseline}" "${original_args[@]}")
   lease_status=0
@@ -181,6 +198,8 @@ else
     "tauriDriverKey=${OMNIDECK_DESKTOP_TAURI_DRIVER_KEY}"
 fi
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" "artifactCacheKey=${OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY:-external}"
+"${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+  "upgradeFromArtifactCacheKey=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY:-none}"
 
 cleanup() {
   local exit_code=$?
@@ -220,6 +239,16 @@ artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
 printf '%s  %s\n' "${artifact_sha256}" "$(basename "${artifact}")" > "${build_dir}/artifact.sha256"
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
   "artifact=${OMNIDECK_DESKTOP_ARTIFACT_ORIGINAL_NAME:-$(basename "${artifact}")}" "artifactSha256=${artifact_sha256}"
+upgrade_from_sha256="none"
+if [[ -n "${upgrade_from_artifact}" ]]; then
+  upgrade_from_artifact="$(realpath -e "${upgrade_from_artifact}")"
+  upgrade_from_sha256="$(sha256sum "${upgrade_from_artifact}" | awk '{print $1}')"
+  printf '%s  %s\n' "${upgrade_from_sha256}" "$(basename "${upgrade_from_artifact}")" \
+    > "${build_dir}/upgrade-from-artifact.sha256"
+  "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
+    "upgradeFromArtifact=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_ORIGINAL_NAME:-$(basename "${upgrade_from_artifact}")}" \
+    "upgradeFromArtifactSha256=${upgrade_from_sha256}"
+fi
 
 printf 'Starting and verifying the %s guest.\n' "${vm}"
 "${lab_dir}/lab.sh" start "${vm}"
@@ -268,6 +297,9 @@ printf 'Staging the exact artifact and dependency-free driver.\n'
 "${lab_dir}/lab.sh" run "${vm}" "mkdir -p '${remote_root}/markers'"
 remote_staged=1
 "${lab_dir}/lab.sh" copy-to "${vm}" "${artifact}" "${remote_root}/candidate.${bundle}"
+if [[ -n "${upgrade_from_artifact}" ]]; then
+  "${lab_dir}/lab.sh" copy-to "${vm}" "${upgrade_from_artifact}" "${remote_root}/upgrade-from.${bundle}"
+fi
 "${lab_dir}/lab.sh" copy-to "${vm}" "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver" "${remote_root}/tauri-driver"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/webdriver_client.py" "${remote_root}/webdriver_client.py"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/custom_app_fixture.py" "${remote_root}/custom_app_fixture.py"
@@ -286,7 +318,7 @@ ssh_options=(
   -o ConnectTimeout=8
   -p "${ssh_port}"
 )
-remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/custom_app_fixture.py' '${remote_root}/host_boundary_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}'"
+remote_command="chmod 755 '${remote_root}/tauri-driver' '${remote_root}/webdriver_client.py' '${remote_root}/custom_app_fixture.py' '${remote_root}/host_boundary_client.py' '${remote_root}/polkit_agent.py' '${remote_root}/linux_guest.sh' && '${remote_root}/linux_guest.sh' '${remote_root}' '${bundle}' '${namespace}' '${artifact_sha256}' '${cli_version}' '${cli_commit}' '${upgrade_from_sha256}'"
 
 printf 'Running packaged smoke and attended Desktop journeys.\n'
 printf 'mode=target-scoped-pkttyagent; trigger=polkit-password; response=disposable-guest-password\n' \
