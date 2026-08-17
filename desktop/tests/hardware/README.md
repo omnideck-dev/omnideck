@@ -11,13 +11,13 @@ exact read-only operations, and the application hash. Add `--require-ready` or
 
 ```sh
 bash ./desktop/tests/hardware/run.sh \
-  --application /path/to/omnideck \
+  --application /path/to/omnideck-desktop \
   --require-ready
 ```
 
 ```powershell
 ./desktop/tests/hardware/run.ps1 `
-  -Application C:\path\to\omnideck.exe `
+  -Application C:\path\to\omnideck-desktop.exe `
   -RequireReady
 ```
 

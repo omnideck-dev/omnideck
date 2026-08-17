@@ -72,7 +72,7 @@ case "${package_kind}" in
   deb)
     if command -v apt-get >/dev/null 2>&1; then
       sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${artifact}"
-      application="$(command -v omnideck)"
+      application="$(command -v omnideck-desktop)"
     else
       payload_root="${work_dir}/deb-root"
       mkdir -p "${payload_root}"
@@ -98,14 +98,14 @@ else:
     raise AssertionError("the DEB has no data archive")
 PY
       tar -x -f "${deb_payload}" -C "${payload_root}"
-      application="${payload_root}/usr/bin/omnideck"
+      application="${payload_root}/usr/bin/omnideck-desktop"
     fi
     application_command=("${application}")
     ;;
   rpm)
     if command -v dnf >/dev/null 2>&1; then
       sudo dnf install -y "${artifact}"
-      application="$(command -v omnideck)"
+      application="$(command -v omnideck-desktop)"
     else
       if ! command -v rpm2cpio >/dev/null 2>&1 || ! command -v cpio >/dev/null 2>&1; then
         sudo apt-get update -qq
@@ -122,9 +122,9 @@ PY
         fi
         printf 'rpm2cpioStatus=%s cpioStatus=%s\n' "${extraction_status[0]}" "${extraction_status[1]}" \
           > "${result_dir}/rpm-extraction.txt"
-        [[ -x ./usr/bin/omnideck && -x ./usr/bin/omnideck-cli ]]
+        [[ -x ./usr/bin/omnideck-desktop && -x ./usr/bin/omnideck-cli ]]
       )
-      application="${payload_root}/usr/bin/omnideck"
+      application="${payload_root}/usr/bin/omnideck-desktop"
     fi
     application_command=("${application}")
     ;;

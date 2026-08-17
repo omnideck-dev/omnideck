@@ -8,11 +8,13 @@ namespace="${3:?test namespace is required}"
 expected_sha256="${4:?artifact SHA-256 is required}"
 expected_cli_version="${5:?CLI version is required}"
 expected_cli_commit="${6:?CLI commit is required}"
+upgrade_from_sha256="${7:-none}"
 result_dir="${work_dir}/results"
 markers="${work_dir}/markers"
 user_data="${work_dir}/user-data"
 cli_config="${work_dir}/cli-config"
 artifact="${work_dir}/candidate.${package_kind}"
+upgrade_from_artifact="${work_dir}/upgrade-from.${package_kind}"
 application=""
 driver_application=""
 package_name=""
@@ -66,9 +68,9 @@ write_evidence() {
   if [[ -d "${cli_config}" ]]; then
     cp -a -- "${cli_config}" "${result_dir}/cli-config"
   fi
-  printf '{\n  "status": "%s",\n  "lastStep": "%s",\n  "packageKind": "%s",\n  "namespace": "%s",\n  "artifactSha256": "%s",\n  "expectedCliVersion": "%s",\n  "expectedCliCommit": "%s",\n  "startedAt": "%s",\n  "finishedAt": "%s"\n}\n' \
+  printf '{\n  "status": "%s",\n  "lastStep": "%s",\n  "packageKind": "%s",\n  "namespace": "%s",\n  "artifactSha256": "%s",\n  "upgradeFromArtifactSha256": "%s",\n  "expectedCliVersion": "%s",\n  "expectedCliCommit": "%s",\n  "startedAt": "%s",\n  "finishedAt": "%s"\n}\n' \
     "${test_status}" "${current_step}" "${package_kind}" "${namespace}" \
-    "${expected_sha256}" "${expected_cli_version}" "${expected_cli_commit}" \
+    "${expected_sha256}" "${upgrade_from_sha256}" "${expected_cli_version}" "${expected_cli_commit}" \
     "${started_at}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${result_dir}/summary.json"
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
@@ -103,6 +105,9 @@ trap 'printf "ERROR step=%s line=%s command=%q\\n" "${current_step}" "${LINENO}"
 
 current_step="artifact checksum"
 printf '%s  %s\n' "${expected_sha256}" "${artifact}" | sha256sum --check --strict
+if [[ "${upgrade_from_sha256}" != "none" ]]; then
+  printf '%s  %s\n' "${upgrade_from_sha256}" "${upgrade_from_artifact}" | sha256sum --check --strict
+fi
 inventory before
 
 dnf_with_lock_retry() {
@@ -121,7 +126,8 @@ dnf_with_lock_retry() {
 }
 
 install_rpm() {
-  dnf_with_lock_retry candidate-install install -y "${artifact}"
+  local requested="${1:-${artifact}}" label="${2:-candidate-install}"
+  dnf_with_lock_retry "${label}" install -y "${requested}"
 }
 
 current_step="lab preflight isolation"
@@ -132,21 +138,76 @@ if command -v podman >/dev/null 2>&1 && podman container exists omnideck-desktop
   podman rm --force omnideck-desktop >> "${result_dir}/preflight.txt"
 fi
 
+previous_binary_name=""
+previous_package_name=""
+installed_appimage="${work_dir}/installed.AppImage"
+upgrade_marker="${user_data}/upgrade-marker.json"
+if [[ "${upgrade_from_sha256}" != "none" ]]; then
+  current_step="previous release installation"
+  printf '{"schemaVersion":1,"createdBy":"previous-release-upgrade-test"}\n' > "${upgrade_marker}"
+  case "${package_kind}" in
+    appimage)
+      cp -- "${upgrade_from_artifact}" "${installed_appimage}"
+      chmod 755 "${installed_appimage}"
+      previous_extraction_dir="${work_dir}/upgrade-from-extracted"
+      mkdir -p "${previous_extraction_dir}"
+      (
+        cd "${previous_extraction_dir}"
+        "${installed_appimage}" --appimage-extract >/dev/null
+      )
+      if [[ -x "${previous_extraction_dir}/squashfs-root/usr/bin/omnideck-desktop" ]]; then
+        previous_binary_name="omnideck-desktop"
+      else
+        [[ -x "${previous_extraction_dir}/squashfs-root/usr/bin/omnideck" ]]
+        previous_binary_name="omnideck"
+      fi
+      ;;
+    deb)
+      previous_package_name="$(dpkg-deb --field "${upgrade_from_artifact}" Package)"
+      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${upgrade_from_artifact}"
+      if command -v omnideck-desktop >/dev/null 2>&1; then
+        previous_binary_name="omnideck-desktop"
+      else
+        command -v omnideck >/dev/null
+        previous_binary_name="omnideck"
+      fi
+      ;;
+    rpm)
+      previous_package_name="$(rpm -qp --queryformat '%{NAME}' "${upgrade_from_artifact}")"
+      install_rpm "${upgrade_from_artifact}" previous-install
+      if command -v omnideck-desktop >/dev/null 2>&1; then
+        previous_binary_name="omnideck-desktop"
+      else
+        command -v omnideck >/dev/null
+        previous_binary_name="omnideck"
+      fi
+      ;;
+  esac
+fi
+
 current_step="native package preparation"
 case "${package_kind}" in
   appimage)
-    chmod 755 "${artifact}"
-    application="${artifact}"
+    if [[ "${upgrade_from_sha256}" != "none" ]]; then
+      candidate_appimage="${installed_appimage}.candidate"
+      cp -- "${artifact}" "${candidate_appimage}"
+      chmod 755 "${candidate_appimage}"
+      mv -- "${candidate_appimage}" "${installed_appimage}"
+      application="${installed_appimage}"
+    else
+      chmod 755 "${artifact}"
+      application="${artifact}"
+    fi
     ;;
   deb)
     package_name="$(dpkg-deb --field "${artifact}" Package)"
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${artifact}"
-    application="$(command -v omnideck)"
+    application="$(command -v omnideck-desktop)"
     ;;
   rpm)
     package_name="$(rpm -qp --queryformat '%{NAME}' "${artifact}")"
     install_rpm
-    application="$(command -v omnideck)"
+    application="$(command -v omnideck-desktop)"
     ;;
   *)
     printf 'Unknown package kind: %s\n' "${package_kind}" >&2
@@ -154,6 +215,45 @@ case "${package_kind}" in
     ;;
 esac
 [[ -x "${application}" ]]
+if [[ "${package_kind}" == "appimage" ]]; then
+  printf '%s  %s\n' "${expected_sha256}" "${application}" | sha256sum --check --strict
+fi
+[[ -f "${upgrade_marker}" || "${upgrade_from_sha256}" == "none" ]]
+if [[ "${upgrade_from_sha256}" != "none" ]]; then
+  if [[ -n "${previous_package_name}" ]]; then
+    [[ "${previous_package_name}" == "${package_name}" ]]
+  fi
+  if [[ "${previous_binary_name}" == "omnideck" ]]; then
+    [[ ! -e /usr/bin/omnideck ]]
+  fi
+  if [[ "${package_kind}" == "appimage" ]]; then
+    candidate_extraction_dir="${work_dir}/candidate-extracted"
+    mkdir -p "${candidate_extraction_dir}"
+    (
+      cd "${candidate_extraction_dir}"
+      "${artifact}" --appimage-extract >/dev/null
+    )
+    [[ -x "${candidate_extraction_dir}/squashfs-root/usr/bin/omnideck-desktop" ]]
+    [[ ! -e "${candidate_extraction_dir}/squashfs-root/usr/bin/omnideck" ]]
+  fi
+  python3 - "${result_dir}/upgrade.json" "${previous_binary_name}" "${upgrade_from_sha256}" "${expected_sha256}" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path, previous_binary, previous_sha256, candidate_sha256 = sys.argv[1:]
+Path(path).write_text(json.dumps({
+    "schemaVersion": 1,
+    "status": "passed",
+    "previousBinary": previous_binary,
+    "candidateBinary": "omnideck-desktop",
+    "legacyBinaryRemoved": previous_binary == "omnideck",
+    "stateMarkerPreserved": True,
+    "previousArtifactSha256": previous_sha256,
+    "candidateArtifactSha256": candidate_sha256,
+}, indent=2) + "\n", encoding="utf-8")
+PY
+fi
 driver_application="${application}"
 printf '%s\n' "${application}" > "${result_dir}/application-path.txt"
 sha256sum "${application}" > "${result_dir}/application.sha256"
@@ -168,12 +268,12 @@ if [[ "${package_kind}" == "appimage" && "${VARIANT_ID:-}" == "silverblue" ]]; t
     cd "${extraction_dir}"
     "${artifact}" --appimage-extract >/dev/null
   )
-  cp -- "${extraction_dir}/squashfs-root/usr/bin/omnideck" "${native_dir}/omnideck"
+  cp -- "${extraction_dir}/squashfs-root/usr/bin/omnideck-desktop" "${native_dir}/omnideck-desktop"
   cp -- "${extraction_dir}/squashfs-root/usr/bin/omnideck-cli" "${native_dir}/omnideck-cli"
-  chmod 755 "${native_dir}/omnideck" "${native_dir}/omnideck-cli"
-  cmp --silent "${extraction_dir}/squashfs-root/usr/bin/omnideck" "${native_dir}/omnideck"
+  chmod 755 "${native_dir}/omnideck-desktop" "${native_dir}/omnideck-cli"
+  cmp --silent "${extraction_dir}/squashfs-root/usr/bin/omnideck-desktop" "${native_dir}/omnideck-desktop"
   cmp --silent "${extraction_dir}/squashfs-root/usr/bin/omnideck-cli" "${native_dir}/omnideck-cli"
-  driver_application="${native_dir}/omnideck"
+  driver_application="${native_dir}/omnideck-desktop"
   {
     printf 'packagedSmoke=%s\n' "${artifact}"
     printf 'attendedBinary=%s\n' "${driver_application}"
