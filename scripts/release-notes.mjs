@@ -20,6 +20,8 @@ export const RELEASE_NOTE_TYPES = [
   'security',
 ];
 
+export const RELEASE_NOTE_TARGETS = ['app', 'desktop'];
+
 const CONVENTIONAL_TITLE =
   /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9][a-z0-9._/-]*\))?!?: \S.*$/;
 
@@ -51,7 +53,7 @@ export function parseFragment(text, source = '<fragment>') {
   }
 
   const unknown = Object.keys(metadata).filter(
-    (key) => !['type', 'area'].includes(key),
+    (key) => !['target', 'type', 'area'].includes(key),
   );
   if (unknown.length) {
     throw new Error(`${source}: unsupported field(s): ${unknown.join(', ')}`);
@@ -59,6 +61,11 @@ export function parseFragment(text, source = '<fragment>') {
   if (!RELEASE_NOTE_TYPES.includes(metadata.type)) {
     throw new Error(
       `${source}: type must be one of ${RELEASE_NOTE_TYPES.join(', ')}`,
+    );
+  }
+  if (!RELEASE_NOTE_TARGETS.includes(metadata.target)) {
+    throw new Error(
+      `${source}: target must be one of ${RELEASE_NOTE_TARGETS.join(', ')}`,
     );
   }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(metadata.area || '')) {
@@ -74,11 +81,19 @@ export function parseFragment(text, source = '<fragment>') {
   }
 
   return {
+    target: metadata.target,
     type: metadata.type,
     area: metadata.area,
     body,
     source,
   };
+}
+
+export function fragmentsForTarget(fragments, target) {
+  if (!RELEASE_NOTE_TARGETS.includes(target)) {
+    throw new Error(`--target must be one of ${RELEASE_NOTE_TARGETS.join(', ')}`);
+  }
+  return fragments.filter((fragment) => fragment.target === target);
 }
 
 export function parseChangedFiles(text) {
@@ -199,12 +214,17 @@ function fragmentFiles(directory = defaultNotesDirectory) {
     .sort();
 }
 
-export function renderReleaseNotes(fragments, version = '') {
+export function renderReleaseNotes(fragments, version = '', target = '') {
   if (!fragments.length) {
     throw new Error('No release-note fragments are available');
   }
 
-  const title = version ? `# Release notes for ${version}` : '# Release notes';
+  const title =
+    target === 'app' && version
+      ? `# omnideck app ${version}`
+      : version
+        ? `# Release notes for ${version}`
+        : '# Release notes';
   const lines = [title, ''];
 
   for (const type of RELEASE_NOTE_TYPES) {
@@ -282,7 +302,12 @@ function main() {
   }
 
   if (command === 'generate') {
-    const output = renderReleaseNotes(loadFragments(), optionValue(args, '--version'));
+    const target = optionValue(args, '--target');
+    const output = renderReleaseNotes(
+      fragmentsForTarget(loadFragments(), target),
+      optionValue(args, '--version'),
+      target,
+    );
     const outputPath = optionValue(args, '--output');
     if (!outputPath) {
       process.stdout.write(output);
@@ -302,8 +327,22 @@ function main() {
     return;
   }
 
+  if (command === 'check-consumed') {
+    const target = optionValue(args, '--target');
+    const fragments = fragmentsForTarget(loadFragments(), target);
+    if (fragments.length) {
+      throw new Error(
+        `Outstanding ${target} release-note fragment(s):\n${fragments
+          .map((fragment) => fragment.source)
+          .join('\n')}`,
+      );
+    }
+    console.log(`All ${target} release-note fragments have been consumed.`);
+    return;
+  }
+
   throw new Error(
-    'Usage: node scripts/release-notes.mjs <validate-pr|validate-fragments|generate> [--version VERSION] [--output PATH]',
+    'Usage: node scripts/release-notes.mjs <validate-pr|validate-fragments|generate|check-consumed> [--target TARGET] [--version VERSION] [--output PATH]',
   );
 }
 

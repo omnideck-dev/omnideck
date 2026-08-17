@@ -25,12 +25,15 @@ and published assets are immutable.
    ```sh
    VERSION=v0.1.0-beta.9
    node scripts/release-notes.mjs generate \
+     --target desktop \
      --version "${VERSION}" \
      --output "docs/releases/${VERSION}.md"
    ```
 
    Keep the final copy focused on user-visible product and desktop changes,
-   upgrade guidance, known limitations, and preview trust warnings. Build,
+   upgrade guidance, known limitations, and preview trust warnings. Link to the
+   separately published app release when this desktop version changes its
+   pinned app version; do not duplicate the app release body. Build,
    qualification, and VM-lab detail belongs in workflow evidence and testing
    documentation, not in the user-facing release body. Remove the fragments
    incorporated into the reviewed file. The release pull request uses

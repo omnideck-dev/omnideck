@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  fragmentsForTarget,
   isConventionalTitle,
   parseChangedFiles,
   parseFragment,
@@ -10,6 +11,7 @@ import {
 } from '../scripts/release-notes.mjs';
 
 const validFragment = `---
+target: desktop
 type: added
 area: desktop
 ---
@@ -26,6 +28,7 @@ test('accepts the organization Conventional Commit title format', () => {
 
 test('parses a valid Keep a Changelog fragment', () => {
   assert.deepEqual(parseFragment(validFragment, 'zoom.md'), {
+    target: 'desktop',
     type: 'added',
     area: 'desktop',
     body: 'Zoom the whole application while keeping tabs, menus, and previews aligned.',
@@ -38,6 +41,7 @@ test('rejects invalid fragment metadata', () => {
     () =>
       parseFragment(
         `---
+target: desktop
 type: feature
 area: Desktop UI
 ---
@@ -47,6 +51,23 @@ Add zoom.
         'bad.md',
       ),
     /type must be one of/,
+  );
+});
+
+test('requires an app or desktop release target', () => {
+  assert.throws(
+    () =>
+      parseFragment(
+        `---
+type: fixed
+area: routines
+---
+
+Release browser resources after a scheduled task.
+`,
+        'missing-target.md',
+      ),
+    /target must be one of app, desktop/,
   );
 });
 
@@ -114,6 +135,7 @@ test('renders grouped human-facing release notes', () => {
       parseFragment(validFragment, 'zoom.md'),
       parseFragment(
         `---
+target: desktop
 type: fixed
 area: setup
 ---
@@ -130,4 +152,31 @@ Recover automatically when the saved port is already in use.
   assert.match(output, /^## Added$/m);
   assert.match(output, /^- \*\*Desktop:\*\* Zoom the whole application/m);
   assert.match(output, /^## Fixed$/m);
+});
+
+test('selects fragments for one independent release train', () => {
+  const app = parseFragment(
+    `---
+target: app
+type: fixed
+area: routines
+---
+
+Release browser resources after scheduled tasks.
+`,
+    'routines.md',
+  );
+  const desktop = parseFragment(validFragment, 'zoom.md');
+
+  assert.deepEqual(fragmentsForTarget([app, desktop], 'app'), [app]);
+  assert.deepEqual(fragmentsForTarget([app, desktop], 'desktop'), [desktop]);
+  assert.throws(
+    () => fragmentsForTarget([app, desktop], 'cli'),
+    /--target must be one of app, desktop/,
+  );
+
+  assert.match(
+    renderReleaseNotes([app], '1.2.3', 'app'),
+    /^# omnideck app 1\.2\.3/m,
+  );
 });
