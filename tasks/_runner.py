@@ -57,10 +57,14 @@ class TaskRunner:
             self._loop_task.cancel()
         if self._running:
             logger.info("Waiting for %d running tasks", len(self._running))
-            await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 self._running.values(),
                 timeout=self._config.shutdown_timeout,
             )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
     def pause(self) -> None:
         """Pause the runner — stop picking up new tasks."""

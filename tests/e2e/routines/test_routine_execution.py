@@ -13,7 +13,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
-from tests.e2e._protocol import call_tool, say, send_file, write_file
+from tests.e2e._protocol import call_tool, open_url, say, send_file, write_file
 from tests.e2e.pages import ChatView, RoutinesView
 
 
@@ -37,7 +37,8 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
                 "key": "write-proof",
                 "description": task_description,
                 "instruction": (
-                    write_file(output_path, output_text)
+                    open_url("about:blank")
+                    + write_file(output_path, output_text)
                     + send_file(output_path)
                     + say(task_reply)
                 ),
@@ -92,6 +93,35 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
         result = run["task_results"][0]
         assert result["result"] == task_reply
         assert result["file_outputs"] == [output_path]
+        assert result["conversation_id"]
+
+        # The terminal task state is written only after TaskExecutor returns,
+        # so its routine-owned browser context must already have been released.
+        browser_status = page.evaluate(
+            """
+            conversationId => new Promise((resolve, reject) => {
+                const url = new URL('/api/browser/control', window.location.href);
+                url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+                url.searchParams.set('conversation_id', conversationId);
+                const socket = new WebSocket(url);
+                const timeout = setTimeout(() => {
+                    socket.close();
+                    reject(new Error('browser control did not respond'));
+                }, 5000);
+                socket.onmessage = event => {
+                    clearTimeout(timeout);
+                    socket.close();
+                    resolve(JSON.parse(event.data));
+                };
+                socket.onerror = () => {
+                    clearTimeout(timeout);
+                    reject(new Error('browser control connection failed'));
+                };
+            })
+            """,
+            result["conversation_id"],
+        )
+        assert browser_status == {"type": "error", "reason": "no_active_browser"}
 
         file_response = page.request.get(output_path)
         assert file_response.ok
@@ -124,7 +154,4 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
     finally:
         if routine_id is not None:
             page.request.delete(f"/api/routines/{routine_id}", fail_on_status_code=False)
-        container_exec(
-            "import pathlib\n"
-            f"pathlib.Path({output_path!r}).unlink(missing_ok=True)\n"
-        )
+        container_exec(f"import pathlib\npathlib.Path({output_path!r}).unlink(missing_ok=True)\n")
