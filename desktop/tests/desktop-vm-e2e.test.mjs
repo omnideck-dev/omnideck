@@ -87,6 +87,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(run, /upgrade-from\.\$\{bundle\}/);
   assert.match(linuxGuest, /previous release installation/);
   assert.match(linuxGuest, /installed\.AppImage/);
+  assert.match(linuxGuest, /appimage\)\n\s+chmod 755 "\$\{artifact\}"/);
   assert.match(linuxGuest, /candidateBinary.*omnideck-desktop/);
   assert.match(linuxGuest, /stateMarkerPreserved/);
   assert.match(linuxGuest, /run_journey custom-app/);

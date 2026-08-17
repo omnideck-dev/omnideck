@@ -188,6 +188,7 @@ fi
 current_step="native package preparation"
 case "${package_kind}" in
   appimage)
+    chmod 755 "${artifact}"
     if [[ "${upgrade_from_sha256}" != "none" ]]; then
       candidate_appimage="${installed_appimage}.candidate"
       cp -- "${artifact}" "${candidate_appimage}"
@@ -195,7 +196,6 @@ case "${package_kind}" in
       mv -- "${candidate_appimage}" "${installed_appimage}"
       application="${installed_appimage}"
     else
-      chmod 755 "${artifact}"
       application="${artifact}"
     fi
     ;;
