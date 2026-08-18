@@ -22,7 +22,7 @@ describe('SoftwareUpdateStatus', () => {
 
         expect(screen.getByRole('link', { name: /What’s new/ })).toHaveAttribute(
             'href',
-            'https://github.com/omnideck-dev/omnideck/releases/tag/app-v0.2.1',
+            'https://github.com/omnideck-dev/omnideck/blob/main/docs/releases/app-v0.2.1.md',
         );
         expect(screen.getByRole('button', { name: 'Update now' })).toBeInTheDocument();
     });

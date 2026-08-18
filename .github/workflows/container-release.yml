@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 jobs:
@@ -103,27 +103,3 @@ jobs:
             exit 1
           }
           echo "Released ${release_image} at ${release_digest}"
-
-      - name: Verify an existing app release tag
-        env:
-          TAG: app-v${{ inputs.version }}
-        shell: bash
-        run: |
-          if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
-            exit 0
-          fi
-          git fetch --force --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
-          tag_commit=$(git rev-list -n 1 "${TAG}")
-          test "${tag_commit}" = "${GITHUB_SHA}" || {
-            echo "${TAG} already points at ${tag_commit}, not ${GITHUB_SHA}"
-            exit 1
-          }
-
-      - name: Publish app release notes
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: app-v${{ inputs.version }}
-          target_commitish: ${{ github.sha }}
-          name: omnideck app ${{ inputs.version }}
-          body_path: docs/releases/app-v${{ inputs.version }}.md
-          make_latest: false

@@ -127,13 +127,9 @@ reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it
 incorporates. The workflow refuses to promote the image if the file is missing
 or any `target: app` fragments remain.
 
-After promoting the tested multi-architecture image, the workflow publishes an
-assetless GitHub Release with tag `app-vX.Y.Z`, title `omnideck app X.Y.Z`, and
-the checked-in Markdown as its body. App releases never become GitHub's
-repository-wide **Latest** release, which remains reserved for downloadable
-desktop installers. The desktop update notice and Settings link the detected
-app version to this release.
-
-The app release tag and GitHub Release identify the exact commit whose tested
-image was promoted. They do not trigger the desktop `v*` tag workflow or attach
-desktop installers.
+The checked-in Markdown is the published app changelog. The desktop update
+notice and Settings link the detected version directly to
+`docs/releases/app-vX.Y.Z.md` on `main`. Container versions do not create GitHub
+Release entries, so the repository Releases page remains reserved for
+downloadable desktop installers. The immutable GHCR digest identifies the
+exact tested image that was promoted.
