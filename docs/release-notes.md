@@ -121,6 +121,9 @@ reviewed fragments.
 
 ## App publication
 
+Follow the [app release runbook](APP_RELEASING.md) for the complete operator
+checklist.
+
 App versions are the plain `X.Y.Z` tags on
 `ghcr.io/omnideck-dev/omnideck`. Before running **Release container**, merge a
 reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it

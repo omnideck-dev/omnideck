@@ -18,7 +18,8 @@ and published assets are immutable.
    binary, SBOM, version, commit, or architecture checks.
 3. Set `container-version.txt` to the intended container release and confirm it
    exists. The workflow resolves the mutable tag to one immutable digest for all
-   package builds.
+   package builds. If a new app version must be published first, follow the
+   [app release runbook](../docs/APP_RELEASING.md).
 4. Generate `docs/releases/v<version>.md` from the outstanding release-note
    fragments, then curate it before review:
 
