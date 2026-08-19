@@ -290,6 +290,10 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 "${lab_dir}/lab.sh" run "${vm}" "pgrep -u tester -x gnome-shell >/dev/null"
+# Keep host-level update UI from covering evidence. These overrides live only
+# in the leased overlay and disappear with the final clean reset.
+"${lab_dir}/lab.sh" run "${vm}" \
+  "mkdir -p /home/tester/.config/autostart; printf '[Desktop Entry]\\nHidden=true\\n' > /home/tester/.config/autostart/update-notifier.desktop; pkill -u tester -TERM -x update-notifier >/dev/null 2>&1 || true; pkill -u tester -TERM -x update-manager >/dev/null 2>&1 || true"
 sleep 5
 "${lab_dir}/lab.sh" screenshot "${vm}" "${screenshot_dir}/desktop.png"
 
