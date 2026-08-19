@@ -540,6 +540,8 @@ run_host_boundary() {
     operation_args+=(--artifact-filename "${artifact_filename}")
   elif [[ "${operation}" == "zoom" ]]; then
     operation_args+=(--native-input-signal-dir "${native_input_dir}")
+  elif [[ "${operation}" == "external-links" ]]; then
+    operation_args+=(--expected-browser-process msedge --skip-browser-process-check)
   fi
   mkdir -p "${scenario_dir}" "${native_input_dir}"
   python3 "${script_dir}/host_boundary_client.py" \
@@ -752,6 +754,30 @@ if [[ "${test_status}" == "0" ]]; then
     run_host_boundary zoom
     phase_command PromoteUpdateFixture
     run_host_boundary update-bridge
+    "${lab_dir}/lab.sh" run windows \
+      "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Get-Process msedge -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
+    run_host_boundary external-links
+    edge_pids=""
+    for _ in $(seq 1 120); do
+      edge_pids="$("${lab_dir}/lab.sh" run windows \
+        "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-Process msedge -ErrorAction SilentlyContinue | Sort-Object Id | Select-Object -ExpandProperty Id) -join ','\"" \
+        2>/dev/null | tr -d '\r' || true)"
+      [[ -z "${edge_pids}" ]] || break
+      sleep 0.25
+    done
+    [[ -n "${edge_pids}" ]]
+    python3 - "${evidence_dir}/host-boundaries/external-links/windows-browser.json" "${edge_pids}" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    "status": "passed",
+    "browserProcess": "msedge",
+    "browserPidsBefore": [],
+    "browserPidsAfter": [int(value) for value in sys.argv[2].split(",") if value],
+}, indent=2) + "\n", encoding="utf-8")
+PY
+    "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/external-browser-visible.png"
+    "${lab_dir}/lab.sh" run windows "taskkill.exe /F /IM msedge.exe" >/dev/null 2>&1 || true
     phase_command Final
   )
   test_status=$?

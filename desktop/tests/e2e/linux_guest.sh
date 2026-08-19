@@ -75,7 +75,7 @@ write_evidence() {
   if [[ "${test_status}" == "passed" ]]; then
     cat > "${result_dir}/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-vm-e2e" tests="14" failures="0">
+<testsuite name="omnideck-desktop-vm-e2e" tests="15" failures="0">
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
   <testcase classname="desktop-vm-e2e" name="hosted-open"/>
@@ -90,6 +90,7 @@ write_evidence() {
   <testcase classname="desktop-vm-e2e" name="native-artifact-download-and-toast"/>
   <testcase classname="desktop-vm-e2e" name="native-zoom"/>
   <testcase classname="desktop-vm-e2e" name="native-update-bridge"/>
+  <testcase classname="desktop-vm-e2e" name="external-browser-and-internal-navigation"/>
 </testsuite>
 XML
   else
@@ -703,6 +704,20 @@ Path(sys.argv[1]).write_text(json.dumps({
 }, indent=2) + "\n", encoding="utf-8")
 PY
 run_host_boundary update-bridge
+
+current_step="external browser and internal navigation"
+if command -v xdg-mime >/dev/null 2>&1 &&
+  [[ -f /var/lib/snapd/desktop/applications/firefox_firefox.desktop ]]; then
+  xdg-mime default firefox_firefox.desktop x-scheme-handler/http
+  xdg-mime default firefox_firefox.desktop x-scheme-handler/https
+else
+  printf 'The AppImage guest has no supported Firefox desktop association.\n' >&2
+  exit 1
+fi
+run_host_boundary external-links
+touch "${markers}/external-browser-visible"
+sleep 5
+pkill -u "$(id -u)" -TERM -x firefox >/dev/null 2>&1 || true
 
 current_step="resource contract"
 podman container inspect "${container_name}" > "${result_dir}/container-inspect.json"
