@@ -48,7 +48,9 @@ test('Linux package installation is retried and time-bounded', () => {
   );
   assert.doesNotMatch(desktopWorkflow, /sudo apt-get/);
   assert.match(aptInstaller, /readonly max_attempts=3/);
-  assert.match(aptInstaller, /readonly command_timeout=300/);
+  assert.match(aptInstaller, /readonly command_timeout=180/);
   assert.match(aptInstaller, /Acquire::Retries=3/);
+  assert.match(aptInstaller, /Acquire::http::Timeout=30/);
+  assert.match(aptInstaller, /Acquire::https::Timeout=30/);
   assert.match(aptInstaller, /DPkg::Lock::Timeout=120/);
 });

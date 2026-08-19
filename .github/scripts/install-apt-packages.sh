@@ -7,7 +7,7 @@ if (( $# == 0 )); then
 fi
 
 readonly max_attempts=3
-readonly command_timeout=300
+readonly command_timeout=180
 
 run_apt() {
     local attempt
@@ -16,6 +16,8 @@ run_apt() {
         if sudo timeout --signal=TERM --kill-after=30s "${command_timeout}s" \
             apt-get \
             -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
             -o DPkg::Lock::Timeout=120 \
             "$@"; then
             return 0
