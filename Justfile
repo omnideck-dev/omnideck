@@ -399,6 +399,10 @@ release-note-policy:
     node --test tests/release-notes.test.mjs
     node scripts/release-notes.mjs validate-fragments
 
+# Verify CI event routing, bounded package setup, and hosted browser reuse
+workflow-policy:
+    node --test tests/workflow-contracts.test.mjs
+
 # Format (fix imports + format)
 format:
     uv run --extra dev ruff check --fix .
@@ -409,7 +413,7 @@ format-check:
     uv run --extra dev ruff format --check .
 
 # Fast, non-mutating agent quality gate
-check: lint typecheck tool-docs release-note-policy
+check: lint typecheck tool-docs release-note-policy workflow-policy
 
 # CI-style: check + unit tests
 ci: check unit
