@@ -24,7 +24,7 @@ and published assets are immutable.
    fragments, then curate it before review:
 
    ```sh
-   VERSION=v0.1.0-beta.9
+   VERSION=v0.1.0-beta.11
    node scripts/release-notes.mjs generate \
      --target desktop \
      --version "${VERSION}" \

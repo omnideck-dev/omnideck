@@ -395,5 +395,5 @@ test('the updater bridge fixture is newer than the bundled runtime image', async
     `${fixtureVersion} must be newer than ${imageVersion}`,
   );
   assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
-  assert.match(windowsGuest, /version = "0\.1\.5"/);
+  assert.match(windowsGuest, /version = "0\.2\.3"/);
 });

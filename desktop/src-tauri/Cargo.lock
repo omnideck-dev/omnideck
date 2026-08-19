@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "omnideck-desktop"
-version = "0.1.0-beta.10"
+version = "0.1.0-beta.11"
 dependencies = [
  "reqwest 0.12.28",
  "serde",

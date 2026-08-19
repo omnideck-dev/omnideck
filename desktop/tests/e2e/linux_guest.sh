@@ -373,7 +373,7 @@ desktop_env=(
   "OMNIDECK_CONFIG_DIR=${cli_config}"
 )
 update_fixture="${result_dir}/update-fixture.json"
-update_version="0.1.5"
+update_version="0.2.3"
 desktop_env+=("OMNIDECK_DESKTOP_UPDATE_FIXTURE=${update_fixture}")
 if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   desktop_env+=("DISPLAY=${display:-:0}" "XAUTHORITY=${xauthority}" "GDK_BACKEND=x11")

@@ -779,7 +779,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture-name", required=True)
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
-    parser.add_argument("--expected-update-version", default="0.1.5")
+    parser.add_argument("--expected-update-version", default="0.2.3")
     parser.add_argument("--expected-browser-process", default="firefox")
     parser.add_argument("--skip-browser-process-check", action="store_true")
     parser.add_argument("--native-input-signal-dir", type=Path)
