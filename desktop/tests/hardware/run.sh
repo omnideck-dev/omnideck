@@ -29,8 +29,8 @@ done
 (( timeout_seconds >= 5 && timeout_seconds <= 300 )) || { echo "Timeout must be between 5 and 300 seconds." >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "Node.js is required to validate the packaged smoke proof." >&2; exit 1; }
 
-if pgrep -x omnideck >/dev/null 2>&1; then
-  echo "Close every existing omnideck process before running packaged smoke." >&2
+if pgrep -f '(^|/)omnideck-desktop([[:space:]]|$)' >/dev/null 2>&1; then
+  echo "Close every existing omnideck-desktop process before running packaged smoke." >&2
   exit 1
 fi
 if [[ "$(uname -s)" == "Linux" && -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then

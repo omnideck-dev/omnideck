@@ -25,8 +25,8 @@ $UserDataPath = Join-Path $OutputDirectory "user-data"
 New-Item -ItemType Directory -Path $UserDataPath -Force | Out-Null
 Remove-Item -LiteralPath $ProofPath -Force -ErrorAction SilentlyContinue
 
-if (Get-Process -Name "omnideck" -ErrorAction SilentlyContinue) {
-    throw "Close every existing omnideck process before running packaged smoke."
+if (Get-Process -Name "omnideck-desktop" -ErrorAction SilentlyContinue) {
+    throw "Close every existing omnideck-desktop process before running packaged smoke."
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "Node.js is required to validate the packaged smoke proof."
