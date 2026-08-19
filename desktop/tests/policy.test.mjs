@@ -48,7 +48,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
   assert.equal(config.mainBinaryName, 'omnideck-desktop');
-  assert.equal(config.version, '0.1.0-beta.10');
+  assert.equal(config.version, '0.1.0-beta.11');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -64,9 +64,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.10"$/m);
-  assert.match(cargoLock, /name = "omnideck-desktop"\r?\nversion = "0\.1\.0-beta\.10"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.10"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.11"$/m);
+  assert.match(cargoLock, /name = "omnideck-desktop"\r?\nversion = "0\.1\.0-beta\.11"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.11"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 
@@ -201,11 +201,11 @@ test('native desktop enhancements are bounded and observable', () => {
 });
 
 test('desktop ships the current immutable container release', async () => {
-  assert.equal((await read('../container-version.txt')).trim(), '0.1.4');
-  assert.equal(imageManifest.imageVersion, '0.1.4');
+  assert.equal((await read('../container-version.txt')).trim(), '0.2.2');
+  assert.equal(imageManifest.imageVersion, '0.2.2');
   assert.equal(
     imageManifest.imageRef,
-    'ghcr.io/omnideck-dev/omnideck@sha256:b04615f5373a8e57fe54820abde664f8943df66323467a30219e34b4a6b8a9bf',
+    'ghcr.io/omnideck-dev/omnideck@sha256:fe6cb1ee605d5d8ba3e1802d910c7ce64b2e6d6c3d6d98f0ce0acb56e92aaac9',
   );
 });
 

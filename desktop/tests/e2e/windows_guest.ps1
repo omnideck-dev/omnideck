@@ -646,7 +646,7 @@ switch ($Phase) {
     "PromoteUpdateFixture" {
         $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
         $Value = [ordered]@{
-            version = "0.1.5"
+            version = "0.2.3"
             imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
         } | ConvertTo-Json
         [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
