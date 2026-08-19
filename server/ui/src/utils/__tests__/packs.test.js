@@ -44,6 +44,7 @@ describe('download helpers', () => {
         expect(anchor.href).toContain('/api/pack/export/profiles/abc?');
         expect(anchor.href).toContain('include_skills=true');
         expect(anchor.href).toContain('include_model=false');
+        expect(anchor.download).toBe('');
         expect(anchor.click).toHaveBeenCalled();
     });
 
@@ -58,6 +59,7 @@ describe('download helpers', () => {
         const anchor = captureAnchor();
         downloadSkillPack('xyz');
         expect(anchor.href).toContain('/api/pack/export/skills/xyz');
+        expect(anchor.download).toBe('');
         expect(anchor.click).toHaveBeenCalled();
     });
 });

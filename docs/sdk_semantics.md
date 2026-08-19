@@ -11,12 +11,13 @@ A conversation owns:
 - **ConversationHistory** — ordered list of messages (system, user, agent, tool)
 - **ContextManager** — tracks token usage and runs compaction strategies
 
-Conversations are stored in a global dict in `server/message_handler.py` and
-can be persisted to disk and resumed. Multiple conversations can be active
-concurrently, each isolated by their ID.
+Conversations are cached by `server/_conversation_cache.py`, persisted to disk,
+and resumable. Application-level run setup lives in `agent_runtime`, while
+channels subscribe through `ActiveRunManager`. Multiple conversations can be
+active concurrently, each isolated by its ID.
 
 **Defined in:** `sdk/context/_history.py`, `sdk/context/_manager.py`,
-`server/message_handler.py`
+`server/_conversation_cache.py`, `agent_runtime/`
 
 ## Turn
 

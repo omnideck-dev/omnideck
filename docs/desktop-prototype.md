@@ -7,9 +7,9 @@ the interface in an application window.
 
 The prototype targets:
 
-- Apple Silicon macOS
-- x64 Windows 11
-- x64 Linux distributions through AppImage, DEB, and RPM packages
+- Apple Silicon and Intel macOS
+- x64 and ARM64 Windows 11
+- x64 and ARM64 Linux distributions through AppImage, DEB, and RPM packages
 
 The user is never asked to run a terminal command or understand the underlying
 runtime. A fresh setup can show an operating-system password or permission
@@ -40,6 +40,13 @@ Diagnostics are populated from the checks that ran during that launch or setup
 attempt. Checks blocked by an earlier failure remain `Not checked`; successful
 setup does not show the diagnostic checklist.
 
+### Setup experience contract
+
+The canonical cross-platform setup contract lives beside the tests in
+[`desktop/tests/setup-ux-principles.md`](../desktop/tests/setup-ux-principles.md).
+It defines progress, native approval, hidden installer, retry, diagnostics, and
+Ready-state behavior and links to the clickable platform reference.
+
 The guarded scripts in `desktop/scripts/release-test/` download a published
 release and launch isolated first-run, interrupted, update, returning, and
 doctor scenarios on macOS, Linux, or Windows.
@@ -56,12 +63,16 @@ Linux deliberately does not run a Podman machine. Containers are already
 native Linux processes there, so adding a nested VM would increase first-run
 time, memory use, and failure modes without improving application consistency.
 All three platforms still use the same versioned omnideck image and application
-lifecycle. A single pinned multi-architecture image digest selects amd64 for
-Windows and Linux x64, and arm64 for Apple Silicon macOS.
+lifecycle. A single pinned multi-architecture image digest selects the native
+amd64 or arm64 image on every operating system.
 
-The desktop state, engine configuration, volumes, and container are separate
-from a developer's normal Podman state. The setup screen does not expose
-Podman, containers, virtual machines, or terminal commands to the user.
+The bundled CLI is the only component that manages this topology. Desktop
+invokes its versioned structured interface for prerequisite setup, status,
+start, repair, image updates, volumes, and container replacement. On macOS and
+Windows those commands use `omnideck-runtime`; on Linux they use native Podman.
+The standalone CLI therefore sees and manages the same containers created for
+Desktop. The setup screen does not expose Podman, containers, virtual machines,
+or terminal commands to the user.
 
 ## Run from source
 
@@ -80,11 +91,10 @@ Start the development application:
 npm start
 ```
 
-The development build uses a separate private runtime and storage area under
-Electron's omnideck application-data directory. It does not reuse containers
-or volumes created by the standalone CLI. Source mode can pull the development
-image when no release manifest is present; packaged builds cannot use this
-fallback.
+The development build uses the same runtime policy as a packaged build and can
+see containers published by the CLI. Tests isolate their own configuration and
+container names. Source mode can pull the development image when no release
+manifest is present; packaged builds cannot use this fallback.
 
 ## Build local installers
 
@@ -97,20 +107,23 @@ node scripts/prepare-runtime-image.cjs \
   ghcr.io/omnideck-dev/omnideck@sha256:<digest>
 ```
 
-Then run the matching command on each operating system:
+Then run the matching native command on each operating system and architecture:
 
 ```bash
 npm run dist:linux:container
-npm run dist:mac -- --arm64
+npm run dist:mac -- --x64       # Intel
+npm run dist:mac -- --arm64     # Apple Silicon
 npm run dist:windows -- --x64
+npm run dist:windows -- --arm64
 ```
 
 Installers are written to `desktop/dist/`.
 
 The Linux command uses an ephemeral Node container and Docker-managed dependency
 volumes, so DEB and RPM build tools are not installed on the host. macOS and
-Windows installers are built natively on their matching operating systems or on
-the matching GitHub-hosted runners.
+Windows installers are built on their matching operating systems or GitHub-hosted
+runners. The release workflow explicitly builds x64 and ARM64 for Linux,
+Windows, and macOS and bundles the CLI compiled for each package target.
 
 Unsigned installers are suitable for testing on computers you control:
 
@@ -138,8 +151,10 @@ digest from GHCR; later launches reuse the local image.
 
 Container releases have their own version line. Run the **Release container**
 workflow from `main` with a plain `X.Y.Z` version. It promotes the tested
-`main-<commit>` multi-architecture image to that GHCR tag without creating a Git
-tag or publishing desktop installers. An existing version can never be moved to
+`main-<commit>` multi-architecture image to that GHCR tag and requires the
+matching checked-in `docs/releases/app-vX.Y.Z.md` notes. It does not create a
+GitHub Release or publish desktop installers; the in-app **What’s new** link
+opens the checked-in notes directly. An existing version can never be moved to
 a different digest. Update `desktop/container-version.txt` only when a desktop
 release should ship a different container release.
 
@@ -158,13 +173,14 @@ The workflow accepts these optional repository secrets:
 The macOS and Windows jobs remain unsigned when the matching credentials are
 not present, which keeps local and internal prototype builds possible.
 
-## Prototype boundaries
+## Desktop boundary
 
-The prototype intentionally orchestrates the small runtime surface directly.
-This makes the first cross-platform build independent of terminal-oriented CLI
-output. After the UX and platform packaging are proven, the lifecycle code
-should move behind the shared Go workflow layer so the CLI and desktop app
-cannot drift.
+Desktop owns the native window, browser embedding, setup and update
+presentation, immutable release selection, restart confirmation, and its
+browser update bridge. It does not invoke Podman or write CLI instance files.
+Every environment mutation goes through the bundled CLI's shared Go workflow,
+so a fresh install, repair, launch, and container update cannot drift between
+the terminal and native app.
 
 The runtime installer is pinned to Podman 6.0.2 and verified by SHA-256 before
 execution. The application image is tied to the independent version in
@@ -175,7 +191,7 @@ Production releases should update each pin deliberately, retain the checks,
 and include complete third-party notices.
 
 The local app is published only on a loopback port. It uses
-`127.0.0.1:2337` when available and automatically remembers another free port
+`127.0.0.1:2338` when available and automatically remembers another free port
 when that port is already occupied. The container continues running when the
 window closes so scheduled work can continue.
 

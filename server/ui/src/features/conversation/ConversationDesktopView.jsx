@@ -30,6 +30,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         turns,
         draft,
         isStreaming,
+        isOffline,
         stopRequested,
         stalled,
         conversationProfileId,
@@ -84,7 +85,8 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                     onOpenWorkspaceResource={
                         openAgentWorkspaceResource
                     }
-                    nudgeDisabled={stopRequested}
+                    isOffline={isOffline}
+                    stopRequested={stopRequested}
                 />
             </div>
         );
@@ -95,6 +97,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
             <ChatPanel
                 turns={turns}
                 stalled={stalled}
+                isOffline={isOffline}
                 onSend={handleSend}
                 onStop={stopGeneration}
                 isStreaming={isStreaming}

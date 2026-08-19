@@ -26,8 +26,9 @@ def test_new_profile_appears_in_chat_dropdown(page: Page):
     agents.close()
     chat_selector = page.get_by_label("Agent profile")
     expect(chat_selector).to_be_visible()
-    option = chat_selector.locator("option", has_text="Dropdown Test Agent")
-    expect(option).to_be_attached()
+    chat_selector.click()
+    option = page.get_by_role("option", name="Dropdown Test Agent", exact=True)
+    expect(option).to_be_visible()
 
     # Clean up
     profiles = page.request.get("/api/profiles").json()

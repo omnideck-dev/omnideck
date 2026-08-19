@@ -133,6 +133,10 @@ class TaskStore(Protocol):
         """Active routines with cron, no in-progress run, and cron due since last run."""
         ...
 
+    def stamp_last_run_spawned(self, routine_id: str) -> None:
+        """Record that the scheduler created a run for a recurring routine."""
+        ...
+
     def reset_stale_running(self) -> None:
         """Reset task_results stuck in 'running' back to 'pending'."""
         ...

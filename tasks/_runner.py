@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config import RoutinesConfig
     from tasks._executor import TaskExecutor
+    from tasks._models import Task, TaskResult
     from tasks._notifier import TelegramNotifier
     from tasks._store import TaskStore
 
@@ -56,10 +57,14 @@ class TaskRunner:
             self._loop_task.cancel()
         if self._running:
             logger.info("Waiting for %d running tasks", len(self._running))
-            await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 self._running.values(),
                 timeout=self._config.shutdown_timeout,
             )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
     def pause(self) -> None:
         """Pause the runner — stop picking up new tasks."""

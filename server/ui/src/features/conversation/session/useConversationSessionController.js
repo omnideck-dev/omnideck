@@ -1,10 +1,22 @@
-import { useState, useRef, useCallback, useMemo, useReducer } from 'react';
+import {
+    useState,
+    useRef,
+    useCallback,
+    useMemo,
+    useReducer,
+    useEffect,
+} from 'react';
 import { createLiveEventDelivery } from '../events/liveEventDelivery.js';
 import { normalizeLiveEvent } from '../events/normalizeEvent.js';
 import { projectTurns } from '../events/projectTurns.js';
 import { accumulateLiveIteration } from '../events/liveIteration.js';
 import { mapConversationEventToActions } from '../events/mapConversationEventToActions.js';
-import { streamChatTurn } from '../transport/chatClient.js';
+import { getConversationRestorePlan } from '../events/conversationRestore.js';
+import {
+    ChatStreamHttpError,
+    streamAgentRun,
+    streamChatTurn,
+} from '../transport/chatClient.js';
 import useStreamStall from '../../../hooks/useStreamStall.js';
 
 /**
@@ -14,6 +26,7 @@ import useStreamStall from '../../../hooks/useStreamStall.js';
  * @property {Array<object>} browserTabs
  * @property {Object<string, Array<object>>} terminal
  * @property {string|null} profileId
+ * @property {{run_id: string, status: string, last_seq: number, resume_after_seq: number}|null} activeRun
  */
 
 /**
@@ -28,6 +41,91 @@ function _uuid() {
     return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
         (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16),
     );
+}
+
+const MAX_RECONNECT_DELAY_MS = 2000;
+
+function abortError() {
+    return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+function browserIsOffline() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function waitUntilOnline(signal) {
+    if (!browserIsOffline()) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            window.removeEventListener('online', onOnline);
+            signal.removeEventListener('abort', onAbort);
+        };
+        const onOnline = () => {
+            cleanup();
+            resolve();
+        };
+        const onAbort = () => {
+            cleanup();
+            reject(abortError());
+        };
+        window.addEventListener('online', onOnline, { once: true });
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+function createRequestController(parentSignal) {
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort();
+    parentSignal.addEventListener('abort', abortFromParent, { once: true });
+    return {
+        controller,
+        dispose: () => parentSignal.removeEventListener('abort', abortFromParent),
+    };
+}
+
+function waitBeforeReconnect(attempt, signal) {
+    if (signal.aborted) return Promise.reject(abortError());
+    const delay = Math.min(250 * (2 ** attempt), MAX_RECONNECT_DELAY_MS);
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, delay);
+        const onAbort = () => {
+            clearTimeout(timeoutId);
+            reject(abortError());
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+async function fetchConversationSnapshot(conversationId, signal) {
+    const response = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {
+        method: 'POST',
+        signal,
+    });
+    if (!response.ok) {
+        let message = null;
+        try {
+            const body = await response.json();
+            message = body?.error;
+        } catch {
+            // Use the status fallback when the response body is not JSON.
+        }
+        throw new ChatStreamHttpError(response.status, message);
+    }
+    return response.json();
+}
+
+function normalizeConversationLoadData(conversationId, data) {
+    return {
+        conversationId,
+        events: Array.isArray(data.events) ? data.events : [],
+        browserTabs: data.browser_tabs || [],
+        terminal: data.terminal || {},
+        profileId: data.profile_id || null,
+        activeRun: data.active_run || null,
+    };
 }
 
 const INITIAL_CONVERSATION_STATE = {
@@ -107,6 +205,14 @@ export default function useConversationSessionController({
         INITIAL_CONVERSATION_STATE,
     );
     const { events, inflightIteration, pendingUserPrompt } = conversationState;
+    const eventsRef = useRef(events);
+    // Unlike eventsRef, this includes canonical records owned only by the
+    // agent/workspace views. It lets ambiguous-start recovery distinguish new
+    // persisted work from old events that are not part of the transcript.
+    const canonicalEventIdsRef = useRef(new Set());
+    useEffect(() => {
+        eventsRef.current = events;
+    }, [events]);
     // The composer draft for the open conversation. Lives here (not in the
     // chat component) so opening/seeding a conversation and its draft are one
     // concern — newConversation can seed it, switching conversations clears it.
@@ -127,6 +233,33 @@ export default function useConversationSessionController({
         _setStopRequested(val);
     }, []);
     const abortControllerRef = useRef(null);
+    const requestControllerRef = useRef(null);
+    const [isOffline, setIsOffline] = useState(browserIsOffline);
+    useEffect(() => {
+        const onOffline = () => {
+            setIsOffline(true);
+            // End only the current HTTP subscription. The outer controller and
+            // manager-owned agent run remain alive so runConnection can attach
+            // again when the browser comes online.
+            requestControllerRef.current?.abort();
+        };
+        const onOnline = () => {
+            setIsOffline(false);
+        };
+        window.addEventListener('offline', onOffline);
+        window.addEventListener('online', onOnline);
+        return () => {
+            window.removeEventListener('offline', onOffline);
+            window.removeEventListener('online', onOnline);
+        };
+    }, []);
+    useEffect(() => () => {
+        const controller = abortControllerRef.current;
+        abortControllerRef.current = null;
+        requestControllerRef.current?.abort();
+        requestControllerRef.current = null;
+        controller?.abort();
+    }, []);
     // The open conversation id is this hook's primary key — every request it
     // makes (send, nudge, stop, resume) is keyed by it. The ref
     // is the source of truth so commands can read it synchronously mid-flight,
@@ -140,8 +273,72 @@ export default function useConversationSessionController({
         _setActiveConversationId(id);
     }, []);
     const rootAgentIdRef = useRef(null);
+
+    const createEventDelivery = useCallback(() => createLiveEventDelivery({
+        dispatch: {
+            session: (action) => {
+                if (action.type === 'SET_ROOT_AGENT') {
+                    rootAgentIdRef.current = action.agentId;
+                } else if (action.type === 'RETAIN_EVENT') {
+                    const eventId = action.event?.id;
+                    if (!eventId || !eventsRef.current.some((event) => event.id === eventId)) {
+                        eventsRef.current = [...eventsRef.current, action.event];
+                    }
+                }
+                dispatchConversation(action);
+            },
+            agent: agentDispatch,
+            workspace: workspaceDispatch,
+            appEffect: appEffectDispatch,
+        },
+    }), [agentDispatch, appEffectDispatch, workspaceDispatch]);
+
+    const applySnapshotGap = useCallback((snapshot, knownEventIds, delivery) => {
+        let addedEventCount = 0;
+        for (const event of (snapshot.events || [])) {
+            if (event?.id && knownEventIds.has(event.id)) continue;
+            delivery.deliver(event);
+            if (event?.id) {
+                knownEventIds.add(event.id);
+                canonicalEventIdsRef.current.add(event.id);
+            }
+            addedEventCount += 1;
+        }
+
+        // Browser and terminal records live in bounded sidecars instead of the
+        // event log. Treat browser tabs as a full snapshot so tabs closed while
+        // disconnected do not linger, then re-apply the latest sidecar values.
+        const browserAgentIds = new Set(
+            (snapshot.events || [])
+                .filter((event) => event?.type === 'agent_started' && event.agent_id)
+                .map((event) => event.agent_id),
+        );
+        for (const tab of (snapshot.browserTabs || [])) {
+            if (tab?.agent_id) browserAgentIds.add(tab.agent_id);
+        }
+        for (const agentId of browserAgentIds) {
+            try {
+                workspaceDispatch?.({ type: 'CLEAR_BROWSER_TABS', agentId });
+            } catch {
+                // Continue restoring the other workspace records.
+            }
+        }
+        const sidecarRestore = getConversationRestorePlan({
+            events: [],
+            browserTabs: snapshot.browserTabs,
+            terminal: snapshot.terminal,
+        });
+        for (const action of sidecarRestore.workspaceActions) {
+            try {
+                workspaceDispatch?.(action);
+            } catch {
+                // A broken workspace view must not prevent transcript recovery.
+            }
+        }
+        return addedEventCount;
+    }, [workspaceDispatch]);
     const sendNudge = useCallback(async (message, agentId) => {
-        if (!message || stopRequestedRef.current) return null;
+        if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
             message,
             conversation_id: conversationIdRef.current,
@@ -171,8 +368,257 @@ export default function useConversationSessionController({
         }
     }, []);
 
+    const runConnection = useCallback(async ({
+        conversationId,
+        controller,
+        initialRequest = null,
+        activeRun = null,
+        persistedEvents = [],
+    }) => {
+        const delivery = createEventDelivery();
+        const knownEventIds = new Set(
+            [
+                ...canonicalEventIdsRef.current,
+                ...persistedEvents.map((event) => event?.id).filter(Boolean),
+            ],
+        );
+        let startRequest = initialRequest;
+        let runId = activeRun?.run_id || null;
+        let lastRunId = runId;
+        let lastSeq = Number(activeRun?.resume_after_seq) || 0;
+        let reconnectAttempt = 0;
+        let startFailure = null;
+        let sawRunEvidence = Boolean(activeRun);
+        let reachedTurnEnd = false;
+
+        setIsStreaming(true);
+        setStopRequested(false);
+
+        try {
+            while (!reachedTurnEnd) {
+                if (controller.signal.aborted) throw abortError();
+                if (browserIsOffline()) {
+                    setIsOffline(true);
+                    await waitUntilOnline(controller.signal);
+                    setIsOffline(false);
+                    reconnectAttempt = 0;
+                    continue;
+                }
+
+                if (!startRequest && !runId) {
+                    let snapshot;
+                    const requestAttempt = createRequestController(controller.signal);
+                    requestControllerRef.current = requestAttempt.controller;
+                    try {
+                        const rawSnapshot = await fetchConversationSnapshot(
+                            conversationId,
+                            requestAttempt.controller.signal,
+                        );
+                        snapshot = normalizeConversationLoadData(
+                            conversationId,
+                            rawSnapshot,
+                        );
+                    } catch (error) {
+                        if (controller.signal.aborted) throw abortError();
+                        if (error instanceof ChatStreamHttpError && error.status < 500) {
+                            if (startFailure && !sawRunEvidence) throw startFailure;
+                            throw error;
+                        }
+                        setIsOffline(browserIsOffline());
+                        if (browserIsOffline()) continue;
+                        await waitBeforeReconnect(reconnectAttempt, controller.signal);
+                        reconnectAttempt += 1;
+                        continue;
+                    } finally {
+                        if (requestControllerRef.current === requestAttempt.controller) {
+                            requestControllerRef.current = null;
+                        }
+                        requestAttempt.dispose();
+                    }
+
+                    const addedEvents = applySnapshotGap(
+                        snapshot,
+                        knownEventIds,
+                        delivery,
+                    );
+                    const discoveredRun = snapshot.activeRun;
+                    if (!discoveredRun) {
+                        if (startFailure && !sawRunEvidence && addedEvents === 0) {
+                            throw startFailure;
+                        }
+                        break;
+                    }
+
+                    sawRunEvidence = true;
+                    const discoveredCursor = Number(discoveredRun.resume_after_seq) || 0;
+                    if (lastRunId === discoveredRun.run_id) {
+                        lastSeq = Math.max(lastSeq, discoveredCursor);
+                    } else {
+                        lastSeq = discoveredCursor;
+                    }
+                    runId = discoveredRun.run_id;
+                    lastRunId = runId;
+                    reconnectAttempt = 0;
+                    continue;
+                }
+
+                const source = startRequest ? 'start' : 'run';
+                const request = startRequest;
+                startRequest = null;
+                const requestAttempt = createRequestController(controller.signal);
+                requestControllerRef.current = requestAttempt.controller;
+
+                try {
+                    const records = source === 'start'
+                        ? streamChatTurn({
+                            ...request,
+                            conversationId,
+                            signal: requestAttempt.controller.signal,
+                        })
+                        : streamAgentRun({
+                            runId,
+                            afterSeq: lastSeq,
+                            signal: requestAttempt.controller.signal,
+                        });
+                    for await (const data of records) {
+                        if (controller.signal.aborted) throw abortError();
+                        const recordRunId = typeof data?.run_id === 'string'
+                            ? data.run_id
+                            : null;
+                        const recordSeq = Number.isInteger(data?.seq) ? data.seq : null;
+
+                        if (recordRunId) {
+                            if (runId && recordRunId !== runId) {
+                                throw new Error('Conversation stream changed run identity.');
+                            }
+                            runId = recordRunId;
+                            lastRunId = recordRunId;
+                        }
+                        if (recordSeq !== null) {
+                            if (recordSeq <= lastSeq) continue;
+                            if (recordSeq !== lastSeq + 1) {
+                                throw new Error(
+                                    `Conversation stream skipped sequence ${lastSeq + 1}.`,
+                                );
+                            }
+                        }
+
+                        // A sequenced but malformed event has still been
+                        // consumed. Advance past it so reconnect does not
+                        // replay the same bad record forever.
+                        if (recordSeq !== null) lastSeq = recordSeq;
+                        const event = normalizeLiveEvent(data);
+                        if (!event) continue;
+                        if (!event.id || !knownEventIds.has(event.id)) {
+                            delivery.deliver(event);
+                            if (event.id) {
+                                knownEventIds.add(event.id);
+                                canonicalEventIdsRef.current.add(event.id);
+                            }
+                        }
+                        sawRunEvidence = true;
+                        reconnectAttempt = 0;
+                        if (event.type === 'turn_end') {
+                            reachedTurnEnd = true;
+                            break;
+                        }
+                    }
+
+                    if (!reachedTurnEnd) {
+                        if (source === 'start' && !sawRunEvidence) {
+                            startFailure = new Error(
+                                'The conversation stream closed before the run started.',
+                            );
+                        }
+                        // EOF without turn_end means only this connection ended.
+                        // Discover the current run again so completion/pruning and
+                        // a proxy-closing-a-live-response use the same path.
+                        runId = null;
+                    }
+                } catch (error) {
+                    if (controller.signal.aborted) throw abortError();
+                    setIsOffline(browserIsOffline());
+                    if (source === 'start') {
+                        if (
+                            error instanceof ChatStreamHttpError
+                            && error.status < 500
+                        ) {
+                            throw error;
+                        }
+                        if (!sawRunEvidence) {
+                            startFailure = error.name === 'AbortError'
+                                ? new Error(
+                                    'The connection was lost before the run could be confirmed.',
+                                )
+                                : error;
+                            runId = null;
+                        }
+                        if (!browserIsOffline() && sawRunEvidence) {
+                            await waitBeforeReconnect(
+                                reconnectAttempt,
+                                controller.signal,
+                            );
+                            reconnectAttempt += 1;
+                        }
+                        continue;
+                    }
+                    if (error instanceof ChatStreamHttpError && error.status === 404) {
+                        runId = null;
+                        continue;
+                    }
+                    if (error instanceof ChatStreamHttpError && error.status < 500) {
+                        throw error;
+                    }
+                    if (browserIsOffline()) continue;
+                    await waitBeforeReconnect(reconnectAttempt, controller.signal);
+                    reconnectAttempt += 1;
+                } finally {
+                    if (requestControllerRef.current === requestAttempt.controller) {
+                        requestControllerRef.current = null;
+                    }
+                    requestAttempt.dispose();
+                }
+            }
+            delivery.flush();
+        } catch (error) {
+            if (error.name !== 'AbortError' && abortControllerRef.current === controller) {
+                const streamError = {
+                    id: `stream_error_${Date.now()}`,
+                    type: 'error',
+                    timestamp: new Date().toISOString(),
+                    conversation_id: conversationId,
+                    agent_id: rootAgentIdRef.current,
+                    agent_name: null,
+                    depth: 0,
+                    message: error.message || 'The conversation stream failed.',
+                    retryable: true,
+                };
+                eventsRef.current = [...eventsRef.current, streamError];
+                dispatchConversation({ type: 'RETAIN_EVENT', event: streamError });
+            }
+        } finally {
+            delivery.cancel();
+            if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null;
+                setIsStreaming(false);
+                setStopRequested(false);
+                setIsOffline(browserIsOffline());
+                dispatchConversation({ type: 'FINALIZE_ITERATION' });
+            }
+        }
+    }, [
+        applySnapshotGap,
+        createEventDelivery,
+        setIsStreaming,
+        setStopRequested,
+    ]);
+
     const sendMessage = useCallback(async (message, attachments, profileId) => {
-        if (!message && !attachments?.length) return;
+        if (
+            (!message && !attachments?.length)
+            || isStreamingRef.current
+            || browserIsOffline()
+        ) return;
 
         // The pending attachment list keeps upload order
         // and carries filename + content_type for every entry (images too), so
@@ -188,9 +634,6 @@ export default function useConversationSessionController({
             };
         });
 
-        // Show the user's input immediately as a synthetic "pending" turn.
-        // The backend's real user_message event will clear this and
-        // append the persisted event to `events`.
         dispatchConversation({
             type: 'START_PENDING_USER_PROMPT',
             prompt: {
@@ -200,107 +643,66 @@ export default function useConversationSessionController({
             },
         });
 
-        // The finally block cancels delivery if the stream errors or aborts.
-        let liveEventDelivery = null;
-        try {
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
-            setIsStreaming(true);
-            setStopRequested(false);
-
-            liveEventDelivery = createLiveEventDelivery({
-                dispatch: {
-                    session: (action) => {
-                        if (action.type === 'SET_ROOT_AGENT') {
-                            rootAgentIdRef.current = action.agentId;
-                        }
-                        dispatchConversation(action);
-                    },
-                    agent: agentDispatch,
-                    workspace: workspaceDispatch,
-                    appEffect: appEffectDispatch,
-                },
-            });
-
-            for await (const data of streamChatTurn({
-                message,
-                attachments,
-                profileId,
-                conversationId: conversationIdRef.current,
-                signal: controller.signal,
-            })) {
-                try {
-                    const event = normalizeLiveEvent(data);
-                    if (!event) continue;
-                    liveEventDelivery.deliver(event);
-                } catch {
-                    // Malformed records must not stop later stream records.
-                }
-            }
-            // The transport can close without a turn_end record. Preserve any
-            // agent activity that was still waiting for the next frame.
-            liveEventDelivery.flush();
-        } catch (err) {
-            if (err.name === 'AbortError') return;
-            dispatchConversation({
-                type: 'RETAIN_EVENT',
-                event: {
-                    id: `stream_error_${Date.now()}`,
-                    type: 'error',
-                    timestamp: new Date().toISOString(),
-                    conversation_id: conversationIdRef.current,
-                    agent_id: rootAgentIdRef.current,
-                    agent_name: null,
-                    depth: 0,
-                    message: err.message || 'The conversation stream failed.',
-                    retryable: true,
-                },
-            });
-        } finally {
-            liveEventDelivery?.cancel();
-            abortControllerRef.current = null;
-            setIsStreaming(false);
-            setStopRequested(false);
-            // If the stream ended without a turn_end (abort, network
-            // drop), any half-streamed iteration is no longer
-            // meaningful. The pending user prompt stays visible:
-            // the user's input was sent and may even have been
-            // accepted, so removing the pending message would be misleading.
-            // The user_message action clears it on confirmation,
-            // and the next sendMessage replaces it.
-            dispatchConversation({ type: 'FINALIZE_ITERATION' });
-        }
-    }, [agentDispatch, appEffectDispatch, setStopRequested, workspaceDispatch]);
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        await runConnection({
+            conversationId: conversationIdRef.current,
+            controller,
+            initialRequest: { message, attachments, profileId },
+            persistedEvents: eventsRef.current,
+        });
+    }, [runConnection]);
 
     /** Ask the backend to stop generation, leaving the stream open until
      * turn_end so the backend can flush whatever it streamed so far. */
     const stopGeneration = useCallback(() => {
-        if (!isStreamingRef.current || stopRequestedRef.current) return;
+        if (
+            !isStreamingRef.current
+            || stopRequestedRef.current
+            || browserIsOffline()
+        ) return;
         setStopRequested(true);
         fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => { });
     }, [setStopRequested]);
 
     /** Resume a previous conversation by loading its history from the backend. */
     const loadConversation = useCallback(async (conversationId) => {
+        const previousConversationId = conversationIdRef.current;
+        const previousWasStreaming = isStreamingRef.current;
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
+        }
+        if (
+            previousWasStreaming
+            && previousConversationId !== conversationId
+            && !browserIsOffline()
+        ) {
+            fetch(
+                `/api/chat/stop?conversation_id=${encodeURIComponent(previousConversationId)}`,
+                { method: 'POST' },
+            ).catch(() => { });
         }
         setIsStreaming(false);
         setStopRequested(false);
         setDraft('');
 
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
         try {
-            const resp = await fetch(`/api/conversations/sessions/${conversationId}/resume`, {
-                method: 'POST',
-            });
-            if (!resp.ok) return null;
-            const data = await resp.json();
+            const rawData = await fetchConversationSnapshot(
+                conversationId,
+                controller.signal,
+            );
+            if (abortControllerRef.current !== controller) return null;
+            const data = normalizeConversationLoadData(conversationId, rawData);
+            canonicalEventIdsRef.current = new Set(
+                data.events.map((event) => event?.id).filter(Boolean),
+            );
             setConversationId(conversationId);
-            const events = Array.isArray(data.events) ? data.events : [];
             const retainedEvents = [];
             rootAgentIdRef.current = null;
-            for (const event of events) {
+            for (const event of data.events) {
                 const actions = mapConversationEventToActions(event);
                 for (const action of actions.session) {
                     if (action.type === 'RETAIN_EVENT') retainedEvents.push(action.event);
@@ -310,19 +712,34 @@ export default function useConversationSessionController({
 
             // Seed the open transcript before the provider restores the other
             // feature owners from the returned canonical data.
+            eventsRef.current = retainedEvents;
             dispatchConversation({ type: 'RESTORE_CONVERSATION', events: retainedEvents });
 
-            return {
-                conversationId,
-                events,
-                browserTabs: data.browser_tabs || [],
-                terminal: data.terminal || {},
-                profileId: data.profile_id || null,
-            };
+            return data;
         } catch (_) {
             return null;
+        } finally {
+            if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null;
+            }
         }
     }, [setConversationId]);
+
+    /** Attach after the provider has restored agent and workspace state. */
+    const reattachActiveRun = useCallback((loaded) => {
+        if (!loaded?.activeRun || loaded.conversationId !== conversationIdRef.current) {
+            return null;
+        }
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        return runConnection({
+            conversationId: loaded.conversationId,
+            controller,
+            activeRun: loaded.activeRun,
+            persistedEvents: loaded.events,
+        });
+    }, [runConnection]);
 
     /** Clear session state and switch to a fresh conversation ID.
      *
@@ -336,10 +753,15 @@ export default function useConversationSessionController({
             abortControllerRef.current = null;
         }
         const oldConversationId = conversationIdRef.current;
-        fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
+        if (!browserIsOffline()) {
+            fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
+        }
         setIsStreaming(false);
         setStopRequested(false);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
+        eventsRef.current = [];
+        canonicalEventIdsRef.current = new Set();
+        rootAgentIdRef.current = null;
         // Seed the composer in the same batch as the new id, so the fresh
         // conversation's input gets the text.
         setDraft(seedDraft);
@@ -395,6 +817,7 @@ export default function useConversationSessionController({
         turns,
         stalled,
         isStreaming,
+        isOffline,
         stopRequested,
         activeConversationId,
         draft,
@@ -403,6 +826,7 @@ export default function useConversationSessionController({
         sendNudge,
         stopGeneration,
         loadConversation,
+        reattachActiveRun,
         newConversation,
     };
 }

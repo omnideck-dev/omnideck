@@ -1,32 +1,46 @@
-# Returns this computer to a pre-install state so the desktop application can be
-# tested from scratch: podman is uninstalled and the isolated test machine is
-# destroyed. Containers, volumes and images belonging to anything else stay
-# exactly where they are.
+# Destructively returns a disposable Windows test computer to the state it was
+# in before WSL, Podman, the omnideck desktop app, or the omnideck CLI had been
+# used. Source trees, downloaded installers, and local build outputs are kept.
 [CmdletBinding()]
 param(
-    [Alias("Profile")]
-    [string]$TestProfile = "default",
-    [switch]$IncludeWsl,
     [switch]$Inventory,
     [switch]$DryRun,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$Restart,
+    [switch]$PreserveWsl
 )
 
 $ErrorActionPreference = "Stop"
-
-if ($TestProfile -notmatch "^[a-z0-9][a-z0-9-]{0,17}$") {
-    throw "Profile names may contain up to 18 lowercase letters, numbers, and hyphens."
+$ConfirmationText = if ($PreserveWsl) {
+    "ERASE OMNIDECK AND PODMAN"
+} else {
+    "ERASE OMNIDECK PODMAN AND WSL"
 }
-$TestNamespace = "release-test-$TestProfile"
-
-# Everything the reset may destroy is derived from the namespace. A name that is
-# not one of these belongs to somebody else and is never touched.
-$TestResources = @(
-    "omnideck-desktop-$TestNamespace",
-    "omnideck-desktop-home-$TestNamespace",
-    "omnideck-desktop-state-$TestNamespace",
-    "omnideck-runtime-$TestNamespace"
+$OptionalFeatures = @(
+    "VirtualMachinePlatform",
+    "Microsoft-Windows-Subsystem-Linux"
 )
+$StatePaths = @(
+    (Join-Path $env:APPDATA "omnideck"),
+    (Join-Path $env:APPDATA "omnideck-cli"),
+    (Join-Path $env:APPDATA "containers"),
+    (Join-Path $env:LOCALAPPDATA "omnideck-release-testing"),
+    (Join-Path $env:LOCALAPPDATA "omnideck-release-testing-cache"),
+    (Join-Path $env:LOCALAPPDATA "omnideck-cli"),
+    (Join-Path $env:LOCALAPPDATA "Programs\omnideck"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Podman"),
+    (Join-Path $env:LOCALAPPDATA "Podman"),
+    (Join-Path $env:LOCALAPPDATA "containers"),
+    (Join-Path $env:USERPROFILE ".config\omnideck-cli"),
+    (Join-Path $env:USERPROFILE ".config\containers"),
+    (Join-Path $env:USERPROFILE ".local\share\containers")
+)
+
+function Test-IsAdministrator {
+    $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $Principal = New-Object Security.Principal.WindowsPrincipal($Identity)
+    return $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
 
 function Get-PodmanPath {
     $Command = Get-Command podman -ErrorAction SilentlyContinue
@@ -38,71 +52,205 @@ function Get-PodmanPath {
         (Join-Path $env:ProgramFiles "Podman\podman.exe"),
         (Join-Path $env:ProgramFiles "RedHat\Podman\podman.exe")
     )
-    return $Candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    return $Candidates | Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
 }
 
-# Prints every container, volume and machine and marks which a reset removes.
-# This is the check that matters before running anything destructive: if a name
-# you care about is listed as preserved, it stays.
-function Show-ResourceInventory {
-    $Podman = Get-PodmanPath
-    if (-not $Podman) {
-        Write-Host "Podman is not installed, so there is nothing to inventory."
-        return
-    }
-
-    $Groups = @(
-        @{ Label = "containers"; Arguments = @("ps", "--all", "--format", "{{.Names}}") },
-        @{ Label = "volumes"; Arguments = @("volume", "ls", "--format", "{{.Name}}") },
-        @{ Label = "machines"; Arguments = @("machine", "list", "--format", "{{.Name}}") }
-    )
-    foreach ($Group in $Groups) {
-        Write-Host "$($Group.Label):"
-        $Names = & $Podman @($Group.Arguments) 2>$null
-        if (-not $Names) {
-            Write-Host "  (none)"
-            continue
-        }
-        foreach ($Name in $Names) {
-            # podman marks the active machine with a trailing asterisk.
-            $Trimmed = $Name.Trim().TrimEnd("*")
-            if (-not $Trimmed) { continue }
-            if ($TestResources -contains $Trimmed) {
-                Write-Host "  REMOVE    $Trimmed"
-            }
-            else {
-                Write-Host "  preserved $Trimmed"
-            }
-        }
-    }
-}
-
-function Get-PodmanUninstallCommand {
+function Get-UninstallEntries {
     $Roots = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
-    return Get-ItemProperty -Path $Roots -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like "*Podman*" } |
-        Select-Object -First 1
+    return Get-ItemProperty -Path $Roots -ErrorAction SilentlyContinue
+}
+
+function Get-WslDistributions {
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+    # Windows keeps a wsl.exe stub even after WSL is uninstalled. On Windows
+    # PowerShell 5, the stub's expected stderr message becomes a terminating
+    # error under the script-wide Stop preference unless it is relaxed here.
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $Output = & wsl.exe --list --quiet 2>$null
+        $ExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+    if ($ExitCode -ne 0) {
+        return @()
+    }
+    return @($Output | ForEach-Object {
+        $Name = ($_ -replace "`0", "").Trim()
+        if ($Name) { $Name }
+    })
+}
+
+function Get-WslDistributionPackageFamilies {
+    $Keys = Get-ItemProperty `
+        -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss\*" `
+        -ErrorAction SilentlyContinue
+    return @($Keys | ForEach-Object { $_.PackageFamilyName } |
+        Where-Object { $_ } | Sort-Object -Unique)
+}
+
+function Get-FeatureState {
+    param([string]$Name)
+    try {
+        $Feature = Get-CimInstance -ClassName Win32_OptionalFeature `
+            -Filter "Name='$Name'" -ErrorAction Stop
+        if (-not $Feature) {
+            return "absent"
+        }
+        switch ($Feature.InstallState) {
+            1 { return "enabled" }
+            2 { return "disabled" }
+            3 { return "absent" }
+            default { return "unknown" }
+        }
+    }
+    catch {
+        return "unknown"
+    }
+}
+
+function Show-Inventory {
+    $Entries = Get-UninstallEntries
+    $Omnideck = @($Entries | Where-Object { $_.DisplayName -match "^omnideck(?:\s|$)" })
+    $Podman = @($Entries | Where-Object { $_.DisplayName -like "*Podman*" })
+    $WslPackage = @(Get-AppxPackage -Name "MicrosoftCorporationII.WindowsSubsystemForLinux" `
+        -ErrorAction SilentlyContinue)
+    $Distributions = @(Get-WslDistributions)
+    $FeatureStates = @{}
+    foreach ($Feature in $OptionalFeatures) {
+        $FeatureStates[$Feature] = Get-FeatureState $Feature
+    }
+    $ExistingPaths = @($StatePaths | Where-Object { Test-Path -LiteralPath $_ })
+
+    Write-Host "Fresh-user reset inventory$(if ($PreserveWsl) { ' (WSL preserved)' })"
+    Write-Host "  omnideck application : $(if ($Omnideck) { 'REMOVE' } else { 'absent' })"
+    Write-Host "  Podman package       : $(if ($Podman -or (Get-PodmanPath)) { 'REMOVE' } else { 'absent' })"
+    Write-Host "  WSL package          : $(if ($PreserveWsl) { 'preserved' } elseif ($WslPackage) { 'REMOVE' } else { 'absent' })"
+    foreach ($Feature in $OptionalFeatures) {
+        Write-Host "  $Feature : $($FeatureStates[$Feature])$(if ($PreserveWsl) { ' (preserved)' })"
+    }
+    Write-Host "  WSL distributions:"
+    if ($Distributions) {
+        foreach ($Distribution in $Distributions) {
+            Write-Host "    $(if ($PreserveWsl) { 'preserved' } else { 'REMOVE' }) $Distribution"
+        }
+    }
+    else {
+        Write-Host "    (none)"
+    }
+    Write-Host "  installed state directories:"
+    if ($ExistingPaths) {
+        foreach ($StatePath in $ExistingPaths) {
+            Write-Host "    REMOVE $StatePath"
+        }
+    }
+    else {
+        Write-Host "    (none)"
+    }
+    Write-Host ""
+    $FeaturesAreOff = $PreserveWsl -or @($FeatureStates.Values | Where-Object {
+        $_ -notin @("disabled", "absent")
+    }).Count -eq 0
+    $IsClean = (-not $Omnideck) -and (-not $Podman) -and
+        (-not (Get-PodmanPath)) -and
+        ($PreserveWsl -or ((-not $WslPackage) -and (-not $Distributions))) -and
+        (-not $ExistingPaths) -and $FeaturesAreOff
+    Write-Host "Result: $(if ($IsClean) { 'CLEAN - ready for a fresh-user test' } else { 'NOT CLEAN - run the reset and restart Windows' })"
+    Write-Host "Repositories, installers, and local build outputs are not touched."
+}
+
+function Start-ElevatedReset {
+    $Arguments = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $PSCommandPath)
+    )
+    # The destructive confirmation was already completed before elevation.
+    $Arguments += "-Yes"
+    if ($Restart) { $Arguments += "-Restart" }
+    if ($PreserveWsl) { $Arguments += "-PreserveWsl" }
+    Write-Host "Windows will ask for approval so installed software can be removed."
+    $Process = Start-Process -FilePath "powershell.exe" -Verb RunAs `
+        -ArgumentList $Arguments -Wait -PassThru
+    exit $Process.ExitCode
+}
+
+function Invoke-BestEffort {
+    param(
+        [string]$Description,
+        [scriptblock]$Action
+    )
+    try {
+        & $Action
+    }
+    catch {
+        Write-Warning "$Description failed: $($_.Exception.Message)"
+    }
+}
+
+function Remove-InstalledProduct {
+    param(
+        [Parameter(Mandatory)]$Entry,
+        [Parameter(Mandatory)][string]$Label
+    )
+    if ($Entry.PSChildName -notmatch "^\{[0-9A-Fa-f-]+\}$") {
+        throw "$Label is not registered as an MSI. Remove it from Settings > Apps, then run this reset again."
+    }
+    Write-Host "Uninstalling $($Entry.DisplayName)..."
+    $Removal = Start-Process -FilePath "msiexec.exe" `
+        -ArgumentList @("/x", $Entry.PSChildName, "/passive", "/norestart") `
+        -Wait -PassThru
+    if ($Removal.ExitCode -notin @(0, 1605, 3010)) {
+        throw "$Label could not be uninstalled (Windows Installer code $($Removal.ExitCode)). Remove it from Settings > Apps, then run this reset again."
+    }
+}
+
+function Remove-VerifiedStateDirectory {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $FullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $AllowedRoots = @($env:APPDATA, $env:LOCALAPPDATA, $env:USERPROFILE) |
+        ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') }
+    $Allowed = $false
+    foreach ($Root in $AllowedRoots) {
+        if ($FullPath.StartsWith(
+            "$Root\",
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+            $Allowed = $true
+            break
+        }
+    }
+    if (-not $Allowed) {
+        throw "Refusing to recursively remove unexpected path: $FullPath"
+    }
+    Write-Host "Removing $FullPath"
+    Remove-Item -LiteralPath $FullPath -Recurse -Force
 }
 
 if ($Inventory) {
-    Show-ResourceInventory
+    Show-Inventory
     return
 }
 
-Write-Host "Resources on this host:"
-Show-ResourceInventory
-Write-Host ""
-Write-Host "A reset removes only the entries marked REMOVE above, then uninstalls"
-Write-Host "podman itself. Container storage is left in place, so anything marked"
-Write-Host "preserved comes back when podman is reinstalled."
-if ($IncludeWsl) {
-    Write-Host ""
-    Write-Host "WSL will also be uninstalled. Registered Linux distributions are kept:"
-    Write-Host "this removes the WSL feature, never a distribution's disk."
+Show-Inventory
+if ($PreserveWsl) {
+    Write-Host "This reset permanently deletes Podman machines/containers/images/volumes"
+    Write-Host "and all installed omnideck state. WSL itself and non-Podman distributions are preserved."
+} else {
+    Write-Host "This reset permanently deletes every WSL distribution, every Podman"
+    Write-Host "machine/container/image/volume, and all installed omnideck state."
 }
 Write-Host ""
 
@@ -112,51 +260,130 @@ if ($DryRun) {
 }
 
 if (-not $Yes) {
-    $Answer = Read-Host "Type $TestNamespace to continue"
-    if ($Answer -ne $TestNamespace) {
-        Write-Host "Cancelled."
+    $Answer = Read-Host "Type '$ConfirmationText' to continue"
+    if ($Answer -ne $ConfirmationText) {
+        Write-Host "Cancelled. Nothing was changed."
         return
     }
 }
 
-$Podman = Get-PodmanPath
-if (-not $Podman) {
-    Write-Host "Podman is already absent; nothing to uninstall."
+if (-not (Test-IsAdministrator)) {
+    Start-ElevatedReset
 }
-else {
-    # The test machine is its own WSL distribution, so removing it leaves every
-    # other distribution registered. It has to go before the binary that manages
-    # it does.
-    & $Podman machine stop "omnideck-runtime-$TestNamespace" *> $null
-    & $Podman machine rm --force "omnideck-runtime-$TestNamespace" *> $null
 
-    $Uninstall = Get-PodmanUninstallCommand
-    if (-not $Uninstall) {
-        throw "Podman is on PATH but has no uninstall entry. Remove it from Settings, then run this script again."
-    }
-    Write-Host "Uninstalling $($Uninstall.DisplayName)..."
-    if ($Uninstall.PSChildName -match "^\{[0-9A-Fa-f-]+\}$") {
-        $Removal = Start-Process -FilePath "msiexec.exe" `
-            -ArgumentList @("/x", $Uninstall.PSChildName, "/passive", "/norestart") `
-            -Wait -PassThru
-        if ($Removal.ExitCode -notin @(0, 1605, 3010)) {
-            throw "The podman uninstaller exited with code $($Removal.ExitCode)."
+$PodmanPath = Get-PodmanPath
+if ($PodmanPath) {
+    $Machines = @(& $PodmanPath machine list --format "{{.Name}}" 2>$null |
+        ForEach-Object { $_.Trim().TrimEnd('*') } |
+        Where-Object { $_ })
+    foreach ($Machine in $Machines) {
+        Write-Host "Stopping Podman machine $Machine..."
+        & $PodmanPath machine stop $Machine *> $null
+        if ($PreserveWsl) {
+            Write-Host "Deleting Podman machine $Machine..."
+            & $PodmanPath machine rm --force $Machine *> $null
         }
     }
-    else {
-        throw "Podman was installed by something other than an MSI. Remove it from Settings, then run this script again."
+}
+
+Invoke-BestEffort "Stopping WSL" { & wsl.exe --shutdown *> $null }
+
+if (-not $PreserveWsl) {
+    $WslDistributionPackageFamilies = @(Get-WslDistributionPackageFamilies)
+    foreach ($Distribution in @(Get-WslDistributions)) {
+        Write-Host "Deleting WSL distribution $Distribution..."
+        & wsl.exe --unregister $Distribution
+        if ($LASTEXITCODE -ne 0) {
+            throw "WSL could not delete '$Distribution'. Restart Windows and run the reset again."
+        }
+    }
+
+    if ($WslDistributionPackageFamilies) {
+        $DistributionPackages = @(Get-AppxPackage -ErrorAction SilentlyContinue |
+            Where-Object {
+                $WslDistributionPackageFamilies -contains $_.PackageFamilyName
+            })
+        foreach ($Package in $DistributionPackages) {
+            Write-Host "Uninstalling WSL distribution app $($Package.Name)..."
+            $Package | Remove-AppxPackage -ErrorAction Stop
+        }
     }
 }
 
-if ($IncludeWsl) {
-    # `wsl --uninstall` removes the WSL application and leaves registered
-    # distributions on disk. `--unregister` would delete a distribution outright
-    # and is never used here.
-    Write-Host "Uninstalling WSL (registered distributions are kept)..."
+Get-Process -Name "omnideck-desktop", "omnideck", "gvproxy", "win-sshproxy" `
+    -ErrorAction SilentlyContinue | Stop-Process -Force
+
+$ExpectedOmnideckUninstaller = Join-Path $env:LOCALAPPDATA `
+    "Programs\omnideck\Uninstall omnideck.exe"
+if (Test-Path -LiteralPath $ExpectedOmnideckUninstaller) {
+    Write-Host "Uninstalling omnideck..."
+    $Removal = Start-Process -FilePath $ExpectedOmnideckUninstaller `
+        -ArgumentList @("/currentuser", "/S") -Wait -PassThru
+    if ($Removal.ExitCode -notin @(0, 3010)) {
+        throw "omnideck could not be uninstalled (code $($Removal.ExitCode)). Remove it from Settings > Apps, then run this reset again."
+    }
+}
+
+$Entries = Get-UninstallEntries
+$PodmanEntries = @($Entries | Where-Object { $_.DisplayName -like "*Podman*" })
+foreach ($Entry in $PodmanEntries) {
+    Remove-InstalledProduct -Entry $Entry -Label "Podman"
+}
+
+foreach ($StatePath in $StatePaths) {
+    Remove-VerifiedStateDirectory -Path $StatePath
+}
+
+Remove-ItemProperty `
+    -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+    -Name "omnideckSetupResume" `
+    -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $env:APPDATA `
+    "Microsoft\Windows\Start Menu\Programs\omnideck.lnk") `
+    -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $env:USERPROFILE "Desktop\omnideck.lnk") `
+    -Force -ErrorAction SilentlyContinue
+
+if (-not $PreserveWsl -and (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+    Write-Host "Uninstalling the WSL package..."
     & wsl.exe --uninstall
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "WSL could not be uninstalled automatically. Remove it from Settings if a fully clean run is needed."
+        Write-Warning "The WSL package did not uninstall cleanly. The Windows features will still be disabled; run the reset again after restarting if Inventory still shows WSL installed."
     }
 }
 
-Write-Host "Done. The next launch will install its prerequisites from scratch."
+if (-not $PreserveWsl) {
+    $WslPackages = @(Get-AppxPackage `
+        -Name "MicrosoftCorporationII.WindowsSubsystemForLinux" `
+        -ErrorAction SilentlyContinue)
+    foreach ($Package in $WslPackages) {
+        Invoke-BestEffort "Removing the remaining WSL app package" {
+            $Package | Remove-AppxPackage -ErrorAction Stop
+        }
+    }
+
+    foreach ($Feature in $OptionalFeatures) {
+        Write-Host "Disabling Windows feature $Feature..."
+        $FeatureRemoval = Start-Process -FilePath "dism.exe" -ArgumentList @(
+            "/online",
+            "/disable-feature",
+            "/featurename:$Feature",
+            "/norestart"
+        ) -Wait -PassThru
+        if ($FeatureRemoval.ExitCode -notin @(0, 3010)) {
+            throw "Windows could not disable $Feature (DISM code $($FeatureRemoval.ExitCode)). Install pending Windows updates, restart, and run the reset again."
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "Reset complete.$(if (-not $PreserveWsl) { ' Windows must restart before this is a valid fresh-user test.' })"
+Write-Host "After sign-in, run this script with -Inventory to verify the clean state."
+
+if ($Restart) {
+    Write-Host "Restarting Windows now..."
+    Restart-Computer -Force
+}
+else {
+    Write-Host "Restart when ready, or rerun with -Yes -Restart to restart automatically."
+}

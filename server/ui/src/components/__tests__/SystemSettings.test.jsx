@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SystemSettings from '../SystemSettings.jsx';
@@ -11,7 +11,7 @@ vi.mock('../../contexts/AppData.jsx', () => ({
     useAppData: () => ({ providersHook, refreshFeatures }),
 }));
 
-describe('SystemSettings experimental feature toggles', () => {
+describe('SystemSettings', () => {
     beforeEach(() => {
         refreshFeatures.mockReset();
         globalThis.fetch = vi.fn((url, init = {}) => {
@@ -104,5 +104,36 @@ describe('SystemSettings experimental feature toggles', () => {
         ));
         await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
         expect(toggle).toBeChecked();
+    });
+
+    it('groups related settings while keeping model pickers distinct', async () => {
+        const host = {
+            currentUpdate: vi.fn().mockResolvedValue(null),
+            checkForUpdate: vi.fn().mockResolvedValue(null),
+            installUpdate: vi.fn().mockResolvedValue(undefined),
+        };
+
+        await act(async () => {
+            render(
+                <OmnideckHostProvider host={host}>
+                    <SystemSettings />
+                </OmnideckHostProvider>,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        const updates = await screen.findByTestId('updates-settings-group');
+        expect(within(updates).getByText('Omnideck is up to date')).toBeInTheDocument();
+        expect(within(updates).getByRole('switch', { name: 'Install updates automatically' })).toBeInTheDocument();
+
+        const experimental = screen.getByTestId('experimental-settings-group');
+        expect(within(experimental).getByRole('switch', { name: 'Apps' })).toBeInTheDocument();
+        expect(within(experimental).getByRole('switch', { name: 'Custom Tools' })).toBeInTheDocument();
+
+        const models = screen.getByTestId('model-defaults-group');
+        expect(within(models).getByText('Vision')).toBeInTheDocument();
+        expect(within(models).getByText('Compaction')).toBeInTheDocument();
+        expect(within(models).getByText('Title generation')).toBeInTheDocument();
+        expect(within(models).getAllByTestId('model-picker')).toHaveLength(3);
     });
 });

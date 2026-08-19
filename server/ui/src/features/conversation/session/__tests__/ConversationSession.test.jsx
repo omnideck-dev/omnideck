@@ -27,6 +27,7 @@ const harness = vi.hoisted(() => ({
         sendNudge: vi.fn(),
         stopGeneration: vi.fn(),
         loadConversation: vi.fn(),
+        reattachActiveRun: vi.fn(),
         newConversation: vi.fn(),
         setDraft: vi.fn(),
     },
@@ -114,6 +115,7 @@ describe('ConversationSessionProvider', () => {
         vi.clearAllMocks();
         harness.effects = [];
         harness.controller.loadConversation.mockResolvedValue(null);
+        harness.controller.reattachActiveRun.mockReset();
     });
 
     it('restores Workspace data without reopening historical Views', async () => {
@@ -182,6 +184,50 @@ describe('ConversationSessionProvider', () => {
                 .CLOSE_CONVERSATION_WORKSPACE_VIEWS_REQUESTED,
             payload: { conversationId: 'conversation-1' },
         });
+    });
+
+    it('restores agent state before reattaching to an active run', async () => {
+        const loaded = {
+            conversationId: 'conversation-2',
+            events: [event('agent_started', {
+                parent_agent_id: null,
+                instruction: null,
+                correlation_id: null,
+            })],
+            browserTabs: [],
+            terminal: {},
+            profileId: 'profile-2',
+            activeRun: {
+                run_id: 'run-1',
+                status: 'running',
+                last_seq: 1,
+                resume_after_seq: 1,
+            },
+        };
+        harness.controller.loadConversation.mockResolvedValue(loaded);
+        harness.controller.reattachActiveRun.mockImplementation(() => {
+            // A reattached stream may deliver its first event immediately. If
+            // reattachment moves above RESET and restore, this update is lost.
+            harness.dispatchers.agentDispatch({
+                type: 'UPDATE_ITERATION',
+                agentId: 'root-1',
+                iteration: 2,
+                maxIterations: 10,
+                contextUsage: null,
+            });
+        });
+        const { getAgents, getSession } = renderSession();
+
+        await act(async () => {
+            expect(await getSession().loadConversation('conversation-2')).toBe(true);
+        });
+
+        expect(getAgents().agents['root-1']).toMatchObject({
+            status: 'running',
+            iteration: 2,
+            maxIterations: 10,
+        });
+        expect(harness.controller.reattachActiveRun).toHaveBeenCalledWith(loaded);
     });
 
     it('connects newly started conversations to the catalog owner', () => {

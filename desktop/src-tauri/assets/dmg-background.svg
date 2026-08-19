@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="716" height="429" viewBox="0 0 716 429">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="716" y2="429" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F8FC"/>
+      <stop offset="1" stop-color="#EEF1F8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#17213B" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="716" height="429" fill="url(#background)"/>
+
+  <text x="358" y="56" text-anchor="middle" fill="#182037"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-size="24" font-weight="650">Install omnideck</text>
+  <text x="358" y="84" text-anchor="middle" fill="#5B6478"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-size="14">Drag omnideck into Applications</text>
+
+  <path d="M298 204 H411" stroke="#5067D9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M402 190 L423 204 L402 218 Z" fill="#5067D9"/>
+
+  <rect x="45" y="319" width="626" height="66" rx="14" fill="#FFFFFF" filter="url(#shadow)"/>
+  <text x="70" y="346" fill="#182037"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-size="13" font-weight="650">After the copy finishes</text>
+  <text x="70" y="368" fill="#5B6478"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-size="13">1. Eject “omnideck” in Finder</text>
+  <text x="370" y="368" fill="#5B6478"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-size="13">2. Move the downloaded DMG to Trash</text>
+</svg>

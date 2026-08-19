@@ -6,7 +6,7 @@ import inspect
 import json
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Protocol, Union, get_args, get_origin, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, Union, get_args, get_origin, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -79,7 +79,7 @@ def _validate_pydantic(model_type: type, value: Any) -> Any:
     return value
 
 
-def _is_pydantic(tp: object) -> bool:
+def _is_pydantic(tp: object) -> TypeGuard[type]:
     return isinstance(tp, type) and (
         hasattr(tp, "model_validate") or hasattr(tp, "parse_obj")
     )

@@ -9,14 +9,19 @@ These tests validate that:
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, publish_event
 from sdk.turn import (
+    StopRequestedError,
+    check_stop,
     drain_nudges,
     is_turn_active,
     queue_nudge,
     register_nudge_queue,
+    request_stop,
     turn_scope,
     unregister_nudge_queue,
 )
@@ -35,6 +40,22 @@ async def test_is_turn_active_inside_context() -> None:
     async with turn_scope(conversation_id="test-sid"):
         assert is_turn_active("test-sid") is True
     assert is_turn_active("test-sid") is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_turn_scope_registers_caller_owned_stop_event() -> None:
+    """SDK and application stop requests share one caller-owned signal."""
+    stop_event = asyncio.Event()
+
+    async with turn_scope(
+        conversation_id="external-stop",
+        stop_event=stop_event,
+    ):
+        request_stop("external-stop")
+        assert stop_event.is_set()
+        with pytest.raises(StopRequestedError):
+            check_stop()
 
 
 @pytest.mark.unit

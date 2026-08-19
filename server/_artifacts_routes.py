@@ -14,6 +14,7 @@ route, so there is no download handler here.
 """
 
 import logging
+from collections.abc import Callable
 
 from aiohttp import web
 from aiohttp.web import Request, Response
@@ -29,7 +30,7 @@ def _is_truthy(value: str | None) -> bool:
     return value is not None and value.lower() in ("1", "true", "yes")
 
 
-def _title_resolver():
+def _title_resolver() -> Callable[[str], str | None]:
     """Return a function mapping a conversation id to its display title.
 
     Caches per id so a list spanning many artifacts in one conversation reads

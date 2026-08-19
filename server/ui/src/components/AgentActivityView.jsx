@@ -6,6 +6,7 @@ import ContextMeter from './ContextMeter.jsx';
 import ActivityRail from './ActivityRail.jsx';
 import BrowserIcon from './icons/BrowserIcon.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
+import OfflineNotice from './OfflineNotice.jsx';
 import StatusDot from './StatusDot.jsx';
 import TerminalIcon from './icons/TerminalIcon.jsx';
 import styles from './AgentActivityView.module.css';
@@ -26,7 +27,8 @@ export default function AgentActivityView({
     onPreview,
     availableViews = [],
     onOpenView,
-    nudgeDisabled = false,
+    isOffline = false,
+    stopRequested = false,
 }) {
     const { agents } = useAgentState();
     const agent = agentId ? agents[agentId] : null;
@@ -54,6 +56,10 @@ export default function AgentActivityView({
     if (!agent) return null;
 
     const spawnedAgents = agent.childIds.map((id) => agents[id]).filter(Boolean);
+    const nudgeDisabled = isOffline || stopRequested;
+    const nudgePlaceholder = stopRequested
+        ? 'Stopping...'
+        : `Send a nudge to ${formatAgentName(agent.name)}...`;
 
     return (
         <div className={styles.container} data-testid="agent-activity-view">
@@ -147,23 +153,27 @@ export default function AgentActivityView({
                 </div>
             </div>
 
-            {/* Nudge bar */}
-            <div className={styles.nudgeBar}>
-                <span className={styles.nudgeLabel}>Nudge</span>
-                <input
-                    className={styles.nudgeInput}
-                    type="text"
-                    placeholder={nudgeDisabled ? 'Stopping...' : `Send a nudge to ${formatAgentName(agent.name)}...`}
-                    disabled={nudgeDisabled}
-                    onKeyDown={(e) => {
-                        if (nudgeDisabled) return;
-                        if (e.key === 'Enter' && e.target.value.trim()) {
-                            if (onNudge) onNudge(e.target.value.trim(), agentId);
-                            e.target.value = '';
-                        }
-                    }}
-                />
-                <span className={styles.nudgeHint}>queues for {formatAgentName(agent.name)}</span>
+            <div className={styles.nudgeArea}>
+                {isOffline && (
+                    <OfflineNotice description="Nudges are unavailable." />
+                )}
+                <div className={styles.nudgeBar}>
+                    <span className={styles.nudgeLabel}>Nudge</span>
+                    <input
+                        className={styles.nudgeInput}
+                        type="text"
+                        placeholder={nudgePlaceholder}
+                        disabled={nudgeDisabled}
+                        onKeyDown={(e) => {
+                            if (nudgeDisabled) return;
+                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                if (onNudge) onNudge(e.target.value.trim(), agentId);
+                                e.target.value = '';
+                            }
+                        }}
+                    />
+                    <span className={styles.nudgeHint}>queues for {formatAgentName(agent.name)}</span>
+                </div>
             </div>
         </div>
     );

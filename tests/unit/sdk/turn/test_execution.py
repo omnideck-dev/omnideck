@@ -9,10 +9,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+import sdk.turn._execution as _execution
 from agents.types import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._models import (
@@ -25,7 +26,6 @@ from sdk.providers._models import (
     ToolCallFunction,
 )
 from sdk.skills.agent_state import AgentState, _active_agent_state
-import sdk.turn._execution as _execution
 from sdk.turn._execution import ToolLoopError, run_turn
 from sdk.turn._turn import StopRequestedError
 
@@ -35,6 +35,7 @@ _MOD = "sdk.turn._execution"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_agent(**overrides: Any) -> Agent:
     defaults = {
@@ -147,6 +148,7 @@ class RecordingHook:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _patch_parallel_config():
     """Disable parallel tool execution by default."""
@@ -177,12 +179,6 @@ def _patch_publish_event():
         yield spy.mock
 
 
-@pytest.fixture(autouse=True)
-def _patch_agent_name():
-    with patch(f"{_MOD}.get_current_agent_name", return_value="test-agent"):
-        yield
-
-
 def _activate_agent_state(tools: list[Callable[..., Any]]):
     """Set up the AgentState context var with the given tools."""
     state = AgentState(base_tools=tools)
@@ -201,6 +197,7 @@ def _agent_state():
 # Tests: happy path
 # ---------------------------------------------------------------------------
 
+
 async def test_simple_text_response() -> None:
     """Provider returns text with no tool calls — single iteration."""
     provider = FakeProvider([_text_response("Hello!")])
@@ -217,10 +214,12 @@ async def test_simple_text_response() -> None:
 
 async def test_tool_call_then_final_response() -> None:
     """Provider requests a tool call, gets the result, then responds with text."""
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "ping"}),
-        _text_response("Got it: result:ping"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "ping"}),
+            _text_response("Got it: result:ping"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "call the tool"}])
 
     with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -279,13 +278,13 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
     # Two content delta events stream before the final response;
     # turn_end belongs to turn_scope, not run_turn.
     delta_calls = [
-        c for c in _patch_publish_event.call_args_list
+        c
+        for c in _patch_publish_event.call_args_list
         if hasattr(c.args[0].payload, "delta") and c.args[0].payload.delta is True
     ]
     assert len(delta_calls) == 2
     turn_end_calls = [
-        c for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "turn_end"
+        c for c in _patch_publish_event.call_args_list if getattr(c.args[0].payload, "type", None) == "turn_end"
     ]
     assert turn_end_calls == []
 
@@ -293,6 +292,7 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
 # ---------------------------------------------------------------------------
 # Tests: hook invocation
 # ---------------------------------------------------------------------------
+
 
 async def test_hooks_fire_in_order_text_only() -> None:
     """For a text-only response, hooks fire: start, before, after, end."""
@@ -313,10 +313,12 @@ async def test_hooks_fire_in_order_text_only() -> None:
 
 async def test_hooks_fire_in_order_with_tool_call() -> None:
     """Full cycle: start, before, after, before_tool, after_tool, before, after, end."""
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "v"}),
-        _text_response("final"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "v"}),
+            _text_response("final"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "go"}])
     hook = RecordingHook()
 
@@ -344,10 +346,12 @@ async def test_before_tool_intercept_skips_execution() -> None:
         def before_tool(self, name: str, args: dict) -> str | None:
             return "intercepted-result"
 
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "ignored"}),
-        _text_response("done"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "ignored"}),
+            _text_response("done"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -364,10 +368,12 @@ async def test_after_tool_transforms_result() -> None:
         def after_tool(self, name: str, args: dict, result: str) -> str:
             return result.upper()
 
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "hello"}),
-        _text_response("done"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "hello"}),
+            _text_response("done"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -381,7 +387,9 @@ async def test_after_model_can_rewrite_response() -> None:
     """An after_model hook can rewrite the ChatResponse."""
 
     class RewriteHook:
-        async def after_model(self, response: ChatResponse, history: Any, iteration: int, agent_name: str) -> ChatResponse:
+        async def after_model(
+            self, response: ChatResponse, history: Any, iteration: int, agent_name: str
+        ) -> ChatResponse:
             return ChatResponse(
                 message=ChatMessage(content="rewritten"),
                 usage=response.usage,
@@ -400,6 +408,7 @@ async def test_after_model_can_rewrite_response() -> None:
 # ---------------------------------------------------------------------------
 # Tests: on_turn_end always fires
 # ---------------------------------------------------------------------------
+
 
 async def test_on_turn_end_fires_on_success() -> None:
     provider = FakeProvider([_text_response("ok")])
@@ -454,6 +463,7 @@ async def test_on_turn_end_fires_on_error() -> None:
 # Tests: error handling
 # ---------------------------------------------------------------------------
 
+
 async def test_stop_requested_propagates() -> None:
     """StopRequestedError during tool execution surfaces to the caller."""
 
@@ -462,9 +472,11 @@ async def test_stop_requested_propagates() -> None:
 
     token = _activate_agent_state([_stopping_tool])
     try:
-        provider = FakeProvider([
-            _tool_call_response("_stopping_tool", {"x": "go"}),
-        ])
+        provider = FakeProvider(
+            [
+                _tool_call_response("_stopping_tool", {"x": "go"}),
+            ]
+        )
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
         with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -482,9 +494,11 @@ async def test_tool_error_wrapped_in_tool_loop_error() -> None:
 
     token = _activate_agent_state([_broken_tool])
     try:
-        provider = FakeProvider([
-            _tool_call_response("_broken_tool", {"x": "go"}),
-        ])
+        provider = FakeProvider(
+            [
+                _tool_call_response("_broken_tool", {"x": "go"}),
+            ]
+        )
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
         with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -524,6 +538,7 @@ async def test_no_agent_state_raises() -> None:
 # Tests: history mutation
 # ---------------------------------------------------------------------------
 
+
 async def test_assistant_message_includes_agent_name() -> None:
     provider = FakeProvider([_text_response("hi")])
     history = ConversationHistory([{"role": "user", "content": "hello"}])
@@ -536,10 +551,12 @@ async def test_assistant_message_includes_agent_name() -> None:
 
 async def test_tool_calls_serialized_as_dicts() -> None:
     """Tool calls in history are plain dicts, not Pydantic models."""
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "v"}),
-        _text_response("done"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "v"}),
+            _text_response("done"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -552,10 +569,12 @@ async def test_tool_calls_serialized_as_dicts() -> None:
 
 
 async def test_tool_result_has_call_id_and_name() -> None:
-    provider = FakeProvider([
-        _tool_call_response("_dummy_tool", {"x": "v"}, call_id="call_abc"),
-        _text_response("done"),
-    ])
+    provider = FakeProvider(
+        [
+            _tool_call_response("_dummy_tool", {"x": "v"}, call_id="call_abc"),
+            _text_response("done"),
+        ]
+    )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     with patch(f"{_MOD}.get_provider", return_value=provider):
@@ -580,6 +599,7 @@ async def test_thinking_preserved_in_history() -> None:
 # ---------------------------------------------------------------------------
 # Tests: parallel tool execution
 # ---------------------------------------------------------------------------
+
 
 async def test_parallel_tool_calls(_patch_parallel_config: MagicMock) -> None:
     """With parallel enabled, multiple tool calls run concurrently."""
@@ -677,12 +697,14 @@ async def test_parallel_stop_requested_propagates(_patch_parallel_config: MagicM
 # Tests: error surfacing
 # ---------------------------------------------------------------------------
 
+
 async def test_provider_error_publishes_error_event(_patch_publish_event: MagicMock) -> None:
     """A non-retryable provider error publishes an ErrorPayload before raising.
 
     Guards the regression where a mid-turn provider failure was swallowed and
     nothing reached the UI.
     """
+
     class _RaisingProvider:
         async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
             raise ProviderError("usage limit reached", retryable=False)
@@ -695,12 +717,40 @@ async def test_provider_error_publishes_error_event(_patch_publish_event: MagicM
             await run_turn(history, _make_agent())
 
     error_events = [
-        c.args[0] for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "error"
+        c.args[0] for c in _patch_publish_event.call_args_list if getattr(c.args[0].payload, "type", None) == "error"
     ]
     assert len(error_events) == 1
     assert error_events[0].payload.message == "usage limit reached"
     assert error_events[0].payload.retryable is False
+
+
+async def test_pre_set_external_stop_skips_provider_request() -> None:
+    """A stop recorded before turn_scope prevents the first provider call."""
+    from sdk.turn import turn_scope
+
+    class _NeverCalledProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
+            self.calls += 1
+            yield _text_response("unreachable")
+
+    provider = _NeverCalledProvider()
+    stop_event = asyncio.Event()
+    stop_event.set()
+    history = ConversationHistory([{"role": "user", "content": "hi"}])
+
+    with patch(f"{_MOD}.get_provider", return_value=provider):
+        async with turn_scope(
+            history,
+            conversation_id="c-early-stop",
+            stop_event=stop_event,
+        ):
+            with pytest.raises(StopRequestedError):
+                await run_turn(history, _make_agent())
+
+    assert provider.calls == 0
 
 
 async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: MagicMock) -> None:
@@ -723,9 +773,9 @@ async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: 
                 await run_turn(history, _make_agent())
 
     stopped = [
-        c.args[0] for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "iteration"
-        and getattr(c.args[0].payload, "stopped", False)
+        c.args[0]
+        for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration" and getattr(c.args[0].payload, "stopped", False)
     ]
     assert len(stopped) == 1
     assert stopped[0].payload.content == "partial"
@@ -755,9 +805,9 @@ async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publi
 
     # The event log keeps the partial for the UI...
     stopped = [
-        c.args[0] for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "iteration"
-        and getattr(c.args[0].payload, "stopped", False)
+        c.args[0]
+        for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration" and getattr(c.args[0].payload, "stopped", False)
     ]
     assert len(stopped) == 1
     assert stopped[0].payload.thinking == "planningmore planning"
@@ -791,9 +841,9 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
                 await run_turn(history, _make_agent(), hooks=[StopHook()])
 
     stopped = [
-        c.args[0] for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "iteration"
-        and getattr(c.args[0].payload, "stopped", False)
+        c.args[0]
+        for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration" and getattr(c.args[0].payload, "stopped", False)
     ]
     assert len(stopped) == 1
     assert stopped[0].payload.content == "complete answer"
@@ -803,6 +853,7 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
 async def test_provider_error_mid_stream_persists_partial(_patch_publish_event: MagicMock) -> None:
     """A provider failure mid-stream keeps what already streamed: a truncated
     iteration event followed by the error event."""
+
     class _StreamThenDie:
         async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
             yield ChatDelta(content="half an ")
@@ -817,14 +868,11 @@ async def test_provider_error_mid_stream_persists_partial(_patch_publish_event: 
         with pytest.raises(ToolLoopError):
             await run_turn(history, _make_agent())
 
-    payload_types = [
-        getattr(c.args[0].payload, "type", None)
-        for c in _patch_publish_event.call_args_list
-    ]
+    payload_types = [getattr(c.args[0].payload, "type", None) for c in _patch_publish_event.call_args_list]
     stopped = [
-        c.args[0] for c in _patch_publish_event.call_args_list
-        if getattr(c.args[0].payload, "type", None) == "iteration"
-        and getattr(c.args[0].payload, "stopped", False)
+        c.args[0]
+        for c in _patch_publish_event.call_args_list
+        if getattr(c.args[0].payload, "type", None) == "iteration" and getattr(c.args[0].payload, "stopped", False)
     ]
     assert len(stopped) == 1
     assert stopped[0].payload.content == "half an answer"
@@ -835,6 +883,7 @@ async def test_provider_error_mid_stream_persists_partial(_patch_publish_event: 
 async def test_tool_failure_does_not_republish_completed_iteration(_patch_publish_event: MagicMock) -> None:
     """A failure during tool execution must not re-persist the already-published
     iteration as a partial."""
+
     async def _boom_tool(x: str) -> str:  # pragma: no cover - replaced by raise
         raise RuntimeError("unreachable")
 
@@ -845,13 +894,16 @@ async def test_tool_failure_does_not_republish_completed_iteration(_patch_publis
     provider = FakeProvider([streamed_turn])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider), \
-         patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")):
+    with (
+        patch(f"{_MOD}.get_provider", return_value=provider),
+        patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")),
+    ):
         with pytest.raises(ToolLoopError):
             await run_turn(history, _make_agent())
 
     iterations = [
-        c.args[0] for c in _patch_publish_event.call_args_list
+        c.args[0]
+        for c in _patch_publish_event.call_args_list
         if getattr(c.args[0].payload, "type", None) == "iteration"
     ]
     assert len(iterations) == 1

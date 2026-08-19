@@ -244,12 +244,12 @@ def _convert_messages(
         # user messages
         images = msg.get("images")
         if images:
-            content_blocks: list[dict[str, Any]] = []
+            user_content_blocks: list[dict[str, Any]] = []
             text = msg.get("content")
             if text:
-                content_blocks.append({"type": "text", "text": text})
+                user_content_blocks.append({"type": "text", "text": text})
             for img in images:
-                content_blocks.append({
+                user_content_blocks.append({
                     "type": "image",
                     "source": {
                         "type": "base64",
@@ -257,7 +257,7 @@ def _convert_messages(
                         "data": img["data"],
                     },
                 })
-            converted.append({"role": "user", "content": content_blocks})
+            converted.append({"role": "user", "content": user_content_blocks})
         else:
             converted.append({"role": "user", "content": msg.get("content", "")})
 

@@ -245,7 +245,7 @@ async def test_history_derived_view_matches_appended_messages(monkeypatch):
          {"role": "user", "content": "do it"}],
         conversation_id="conv-parity",
     )
-    # The first user message normally fires from server/message_handler.py,
+    # The first user message normally fires from AgentRunner,
     # which the unit test bypasses — fire one directly so the derived view
     # has an anchor.
     from sdk.events import UserMessagePayload, publish_event

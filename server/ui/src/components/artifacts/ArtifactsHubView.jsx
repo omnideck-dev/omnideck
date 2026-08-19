@@ -6,6 +6,7 @@ import DeleteArtifactDialog from './DeleteArtifactDialog.jsx';
 import Button from '../primitives/Button.jsx';
 import IconButton from '../primitives/IconButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
+import Select from '../primitives/Select.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
 import { fileExt, timeAgo, typeIcon } from './_artifactUtils.js';
 import styles from './ArtifactsHubView.module.css';
@@ -160,19 +161,16 @@ export default function ArtifactsHubView({
                                 <i className="bi bi-trash3" /> Clear {missingCount} missing
                             </Button>
                         )}
-                        <label className={styles.sortCtl}>
+                        <div className={styles.sortCtl}>
                             <span>Sort</span>
-                            <select
+                            <Select
                                 className={styles.select}
                                 value={sort.key}
-                                onChange={(e) => setSort({ key: e.target.value, dir: SORTS[e.target.value].defaultDir })}
-                                aria-label="Sort by"
-                                data-testid="sort-key"
-                            >
-                                {Object.entries(SORTS).map(([key, { label }]) => (
-                                    <option key={key} value={key}>{label}</option>
-                                ))}
-                            </select>
+                                onChange={(key) => setSort({ key, dir: SORTS[key].defaultDir })}
+                                ariaLabel="Sort by"
+                                testId="sort-key"
+                                options={Object.entries(SORTS).map(([key, { label }]) => ({ value: key, label }))}
+                            />
                             <IconButton
                                 onClick={() => setSort((s) => ({ ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' }))}
                                 title={sort.dir === 'asc' ? 'Ascending' : 'Descending'}
@@ -181,7 +179,7 @@ export default function ArtifactsHubView({
                             >
                                 <i className={`bi ${sort.dir === 'asc' ? 'bi-sort-down-alt' : 'bi-sort-down'}`} />
                             </IconButton>
-                        </label>
+                        </div>
                         <div className={styles.seg} role="tablist" aria-label="Layout">
                             <button
                                 className={layout === 'grid' ? styles.segOn : ''}

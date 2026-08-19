@@ -1,0 +1,25 @@
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 34px;
+  padding: 0 var(--sp-3);
+  box-sizing: border-box;
+  background: var(--warning-muted);
+  border: 1px solid var(--warning-muted);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.notice i {
+  color: var(--warning);
+  font-size: 14px;
+}
+
+.notice strong {
+  color: var(--text-primary);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}

@@ -64,7 +64,7 @@ export default function useAutoScroll(deps, enabled = true) {
     useLayoutEffect(() => {
         if (!enabled || userScrolledRef.current) return;
         scrollToBottom();
-    }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+    }, deps);
 
     useEffect(() => {
         const content = contentRef.current;
