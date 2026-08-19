@@ -707,11 +707,43 @@ run_host_boundary update-bridge
 
 current_step="external browser and internal navigation"
 if command -v xdg-mime >/dev/null 2>&1 &&
-  [[ -f /var/lib/snapd/desktop/applications/firefox_firefox.desktop ]]; then
-  xdg-mime default firefox_firefox.desktop x-scheme-handler/http
-  xdg-mime default firefox_firefox.desktop x-scheme-handler/https
+  [[ -x /snap/bin/firefox ]] &&
+  [[ -n "${wayland_display}" ]] &&
+  [[ -S "/run/user/1000/${wayland_display}" ]]; then
+  browser_wrapper="${work_dir}/firefox-wayland"
+  applications_dir="${XDG_DATA_HOME:-${HOME}/.local/share}/applications"
+  browser_desktop="${applications_dir}/omnideck-e2e-firefox.desktop"
+  cat > "${browser_wrapper}" <<EOF
+#!/usr/bin/env bash
+unset DISPLAY XAUTHORITY
+export XDG_RUNTIME_DIR=/run/user/1000
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+export WAYLAND_DISPLAY=${wayland_display}
+export GDK_BACKEND=wayland
+export MOZ_ENABLE_WAYLAND=1
+exec /snap/bin/firefox "\$@"
+EOF
+  chmod 755 "${browser_wrapper}"
+  mkdir -p "${applications_dir}"
+  cat > "${browser_desktop}" <<EOF
+[Desktop Entry]
+Name=Firefox (OmniDeck E2E Wayland)
+Exec=${browser_wrapper} %u
+Type=Application
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/http;x-scheme-handler/https;
+EOF
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "${applications_dir}"
+  fi
+  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/http
+  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/https
+  [[ "$(xdg-mime query default x-scheme-handler/http)" == "$(basename "${browser_desktop}")" ]]
+  [[ "$(xdg-mime query default x-scheme-handler/https)" == "$(basename "${browser_desktop}")" ]]
+  desktop_env+=("BROWSER=${browser_wrapper}")
 else
-  printf 'The AppImage guest has no supported Firefox desktop association.\n' >&2
+  printf 'The AppImage guest has no supported Wayland Firefox session.\n' >&2
   exit 1
 fi
 run_host_boundary external-links
