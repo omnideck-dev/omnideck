@@ -43,6 +43,7 @@ Add a short, unique Markdown file such as
 
 ```markdown
 ---
+target: desktop
 type: added
 area: desktop
 ---
@@ -53,6 +54,8 @@ previews remain aligned at every zoom level.
 
 The required fields are:
 
+- `target`: `app` for the container-served product or `desktop` for the native
+  host, setup, and installers
 - `type`: `added`, `changed`, `deprecated`, `removed`, `fixed`, or
   `security`
 - `area`: a lowercase kebab-case product or repository area
@@ -94,8 +97,12 @@ node scripts/release-notes.mjs validate-fragments
 Generate a release draft from all outstanding fragments:
 
 ```sh
-node scripts/release-notes.mjs generate --version v1.2.3
 node scripts/release-notes.mjs generate \
+  --target app \
+  --version 1.2.3 \
+  --output docs/releases/app-v1.2.3.md
+node scripts/release-notes.mjs generate \
+  --target desktop \
   --version v1.2.3 \
   --output docs/releases/v1.2.3.md
 ```
@@ -105,7 +112,27 @@ a draft: before publication, add a short release theme when useful, remove
 duplication, confirm upgrade guidance and known limitations, and keep the
 language focused on the shipped product.
 
-The release change consumes its fragments after their text is incorporated into
-the checked-in release notes or changelog. That release pull request uses
+The release change consumes only its target's fragments after their text is
+incorporated into the checked-in release notes or changelog. App and desktop
+can therefore release independently without consuming each other's notes. That
+release pull request uses
 `release-note:none` with a reason explaining that it only aggregates already
 reviewed fragments.
+
+## App publication
+
+Follow the [app release runbook](APP_RELEASING.md) for the complete operator
+checklist.
+
+App versions are the plain `X.Y.Z` tags on
+`ghcr.io/omnideck-dev/omnideck`. Before running **Release container**, merge a
+reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it
+incorporates. The workflow refuses to promote the image if the file is missing
+or any `target: app` fragments remain.
+
+The checked-in Markdown is the published app changelog. The desktop update
+notice and Settings link the detected version directly to
+`docs/releases/app-vX.Y.Z.md` on `main`. Container versions do not create GitHub
+Release entries, so the repository Releases page remains reserved for
+downloadable desktop installers. The immutable GHCR digest identifies the
+exact tested image that was promoted.

@@ -10,7 +10,8 @@ automated and manual verification.
   `fix(setup): recover from an occupied port`.
 - Add a user-facing file under `release-notes.d/`, or apply
   `release-note:none` and explain `None: <reason>` under the pull request's
-  `## Release note` heading.
+  `## Release note` heading. Target the fragment at `app` or `desktop` based on
+  the artifact whose release delivers the change.
 - Update documentation and tests when behavior changes.
 - Run the repository's documented quality checks before requesting review.
 

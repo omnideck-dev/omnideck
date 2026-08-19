@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
+import { appReleaseNotesUrl } from '../utils/appReleaseNotes.js';
 import styles from './SoftwareUpdateNotice.module.css';
 import DownloadIcon from './icons/DownloadIcon';
 
@@ -93,6 +94,7 @@ export default function SoftwareUpdateNotice() {
 
     // An update already answered with Later is settled; Settings still has it.
     if (!update || update.deferred || !wanted || dismissed) return null;
+    const notesUrl = appReleaseNotesUrl(update.version);
 
     return (
         <aside className={styles.notice} data-testid="software-update-notice">
@@ -124,6 +126,16 @@ export default function SoftwareUpdateNotice() {
                     </button>
                 </div>
                 <div className={styles.choices}>
+                    {notesUrl ? (
+                        <a
+                            className={styles.link}
+                            href={notesUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            What&rsquo;s new
+                        </a>
+                    ) : null}
                     <button
                         type="button"
                         className={styles.link}

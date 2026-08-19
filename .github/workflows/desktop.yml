@@ -108,12 +108,7 @@ jobs:
             echo "Missing release notes for ${GITHUB_REF_NAME}"
             exit 1
           }
-          remaining=$(find release-notes.d -maxdepth 1 -type f -name '*.md' ! -iname 'README.md' -print)
-          test -z "${remaining}" || {
-            echo "Release-note fragments must be incorporated before tagging:"
-            echo "${remaining}"
-            exit 1
-          }
+          node scripts/release-notes.mjs check-consumed --target desktop
 
   runtime_image:
     needs: test

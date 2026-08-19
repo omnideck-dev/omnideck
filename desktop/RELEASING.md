@@ -18,19 +18,23 @@ and published assets are immutable.
    binary, SBOM, version, commit, or architecture checks.
 3. Set `container-version.txt` to the intended container release and confirm it
    exists. The workflow resolves the mutable tag to one immutable digest for all
-   package builds.
+   package builds. If a new app version must be published first, follow the
+   [app release runbook](../docs/APP_RELEASING.md).
 4. Generate `docs/releases/v<version>.md` from the outstanding release-note
    fragments, then curate it before review:
 
    ```sh
    VERSION=v0.1.0-beta.9
    node scripts/release-notes.mjs generate \
+     --target desktop \
      --version "${VERSION}" \
      --output "docs/releases/${VERSION}.md"
    ```
 
    Keep the final copy focused on user-visible product and desktop changes,
-   upgrade guidance, known limitations, and preview trust warnings. Build,
+   upgrade guidance, known limitations, and preview trust warnings. Link to the
+   separately published app release when this desktop version changes its
+   pinned app version; do not duplicate the app release body. Build,
    qualification, and VM-lab detail belongs in workflow evidence and testing
    documentation, not in the user-facing release body. Remove the fragments
    incorporated into the reviewed file. The release pull request uses
