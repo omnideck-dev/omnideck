@@ -102,7 +102,7 @@ NODE
   if [[ "$test_status" == passed ]]; then
     cat > "$result_dir/junit.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-macos-e2e" tests="16" failures="0">
+<testsuite name="omnideck-desktop-macos-e2e" tests="17" failures="0">
   <testcase classname="desktop-macos-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-macos-e2e" name="first-run-accessibility"/>
   <testcase classname="desktop-macos-e2e" name="hosted-open"/>
@@ -113,6 +113,7 @@ NODE
   <testcase classname="desktop-macos-e2e" name="occupied-port-auto-recovery"/>
   <testcase classname="desktop-macos-e2e" name="custom-app-native-webview"/>
   <testcase classname="desktop-macos-e2e" name="custom-app-restart-persistence"/>
+  <testcase classname="desktop-macos-e2e" name="external-browser-and-internal-navigation"/>
   <testcase classname="desktop-macos-e2e" name="native-host-download"/>
   <testcase classname="desktop-macos-e2e" name="native-host-upload"/>
   <testcase classname="desktop-macos-e2e" name="native-artifact-download-and-toast"/>
@@ -464,6 +465,49 @@ capture custom-app-catalog
 "$driver" wait-text "$application" 'Action result: tauri-webview' 60
 dump_accessibility custom-app-action
 capture custom-app-action
+
+current_step='external browser and internal navigation'
+"$driver" click "$application" 'Internal custom route' 30
+"$driver" wait-text "$application" 'Action result: tauri-webview' 30
+browser_before="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+"$driver" click "$application" 'External browser link' 30
+browser_after=''
+for _ in $(seq 1 120); do
+  browser_after="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+  [[ "$browser_after" == 'Safari' ]] && break
+  sleep 0.25
+done
+[[ "$browser_after" == 'Safari' ]]
+if ! /usr/sbin/screencapture -x "$result_dir/screenshots/external-browser-visible.png"; then
+  printf '%s\n' 'The browser activation assertion passed, but macOS did not permit a display screenshot.' \
+    > "$result_dir/host-boundaries/external-browser-screenshot.txt"
+fi
+/usr/bin/open -a 'Omnideck Lab'
+for _ in $(seq 1 40); do
+  frontmost="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+  [[ "$frontmost" == 'Omnideck Lab' || "$frontmost" == 'omnideck-desktop' ]] && break
+  sleep 0.25
+done
+"$driver" click "$application" 'External browser link in new window' 30
+browser_after_blank=''
+for _ in $(seq 1 120); do
+  browser_after_blank="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+  [[ "$browser_after_blank" == 'Safari' ]] && break
+  sleep 0.25
+done
+[[ "$browser_after_blank" == 'Safari' ]]
+python3 - "$result_dir/host-boundaries/external-links.json" "$browser_before" "$browser_after" "$browser_after_blank" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'status': 'passed',
+    'sameOriginNavigation': 'remained in Custom App iframe',
+    'browserBefore': sys.argv[2],
+    'browserAfterExternal': sys.argv[3],
+    'browserAfterExternalBlank': sys.argv[4],
+}, indent=2) + '\n', encoding='utf-8')
+PY
+/usr/bin/open -a 'Omnideck Lab'
 
 current_step='Custom App restart persistence'
 launch_application custom-app-restart 'Welcome to Omnideck' 180

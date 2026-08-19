@@ -693,7 +693,7 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="15" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="16" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
@@ -707,6 +707,7 @@ switch ($Phase) {
   <testcase classname="desktop-vm-e2e" name="native-artifact-download-and-toast"/>
   <testcase classname="desktop-vm-e2e" name="native-zoom"/>
   <testcase classname="desktop-vm-e2e" name="native-update-bridge"/>
+  <testcase classname="desktop-vm-e2e" name="external-browser-and-internal-navigation"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
   <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
 </testsuite>

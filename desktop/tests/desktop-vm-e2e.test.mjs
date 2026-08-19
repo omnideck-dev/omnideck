@@ -261,6 +261,8 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /Port \$old_port is already in use/);
   assert.match(macosGuest, /Custom App native WebView action/);
   assert.match(macosGuest, /Custom App restart persistence/);
+  assert.match(macosGuest, /external browser and internal navigation/);
+  assert.match(macosGuest, /External browser link in new window/);
   assert.match(macosGuest, /native host download/);
   assert.match(macosGuest, /click-in "\$application" "Export/);
   assert.match(macosGuest, /native host upload/);
@@ -276,7 +278,7 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /grep -q '\^screenshots='/);
   assert.doesNotMatch(macosGuest, /native zoom shortcut/);
   assert.doesNotMatch(macos, /--only zoom/);
-  assert.match(macosGuest, /tests="16" failures="0"/);
+  assert.match(macosGuest, /tests="17" failures="0"/);
   assert.match(macosGuest, /soft_failures/);
   assert.match(macosGuest, /complete journey/);
   assert.match(macosGuest, /container-inspect\.json/);

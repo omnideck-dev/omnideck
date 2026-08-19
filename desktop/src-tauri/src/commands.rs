@@ -5,6 +5,7 @@ macro_rules! handler {
             crate::runtime::begin_setup,
             crate::runtime::open_app,
             crate::runtime::run_action,
+            crate::navigation::open_external,
             crate::updates::current_update,
             crate::updates::check_for_update,
             crate::updates::install_update,

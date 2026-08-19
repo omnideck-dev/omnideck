@@ -1,5 +1,8 @@
-use crate::runtime::{BridgeError, BridgeResult, HostState};
-use tauri::WebviewWindow;
+use crate::{
+    platform,
+    runtime::{BridgeError, BridgeResult, HostState},
+};
+use tauri::{State, WebviewWindow};
 
 pub(crate) fn is_local_setup_url(url: &tauri::Url) -> bool {
     matches!(
@@ -36,6 +39,30 @@ pub(crate) fn hosted_navigation(url: &tauri::Url, expected_port: Option<u16>) ->
     } else {
         HostedNavigation::Deny
     }
+}
+
+fn external_url(url: &str, expected_port: Option<u16>) -> BridgeResult<tauri::Url> {
+    let url = tauri::Url::parse(url)
+        .map_err(|error| BridgeError::new("INVALID_EXTERNAL_URL", error.to_string()))?;
+    if hosted_navigation(&url, expected_port) != HostedNavigation::OpenExternal {
+        return Err(BridgeError::new(
+            "EXTERNAL_URL_DENIED",
+            "Only external HTTP and HTTPS links can be opened.",
+        ));
+    }
+    Ok(url)
+}
+
+#[tauri::command]
+pub(crate) fn open_external(
+    window: WebviewWindow,
+    host: State<'_, HostState>,
+    url: String,
+) -> BridgeResult<()> {
+    authorize_hosted(&window, &host)?;
+    let expected_port = host.hosted_port.read().ok().and_then(|port| *port);
+    let url = external_url(&url, expected_port)?;
+    platform::open_url(url.as_str())
 }
 
 pub(crate) fn authorize_local_setup(window: &WebviewWindow) -> BridgeResult<()> {
@@ -101,5 +128,18 @@ mod tests {
             hosted_navigation(&"mailto:help@example.com".parse().unwrap(), Some(51208)),
             HostedNavigation::Deny
         );
+    }
+
+    #[test]
+    fn external_link_command_accepts_only_web_urls_outside_the_hosted_app() {
+        assert_eq!(
+            external_url("https://example.com/help", Some(51208))
+                .unwrap()
+                .as_str(),
+            "https://example.com/help"
+        );
+        assert!(external_url("http://127.0.0.1:51208/settings", Some(51208)).is_err());
+        assert!(external_url("mailto:help@example.com", Some(51208)).is_err());
+        assert!(external_url("not a url", Some(51208)).is_err());
     }
 }
