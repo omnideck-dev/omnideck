@@ -5,8 +5,6 @@ import Callout from '../primitives/Callout.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
 import StatusDot from '../StatusDot.jsx';
 import AddIntegrationModal from './add-wizard/AddIntegrationModal.jsx';
-import { buildCliAuthBlob } from './add-wizard/providers.js';
-import { useCliVarsEditor } from './add-wizard/useCliVarsEditor.js';
 import styles from './IntegrationsTab.module.css';
 
 // Per-slug display metadata. Categories must match the Add wizard's
@@ -508,14 +506,6 @@ function DetailPane({ record, saving, saveError, removeError, onSave, onRemove }
                     )}
                 </section>
 
-                {record.slug === CLI_SLUG && (
-                    <ReplaceSecretSection
-                        record={record}
-                        saving={saving}
-                        onSave={onSave}
-                    />
-                )}
-
                 {saveError && (
                     <Callout tone="danger" description={saveError} />
                 )}
@@ -524,117 +514,6 @@ function DetailPane({ record, saving, saveError, removeError, onSave, onRemove }
                 )}
             </div>
         </div>
-    );
-}
-
-// Write-only rotation, same pattern the add wizard uses: the current secret
-// (including the command/var names) is never fetched back from the server,
-// so the form starts blank and a save fully replaces the bundle. The
-// existing folder scope carries forward automatically from
-// `record.path_prefix` (plaintext metadata) so rotating a secret can't
-// silently drop it.
-function ReplaceSecretSection({ record, saving, onSave }) {
-    const [open, setOpen] = useState(false);
-    const [command, setCommand] = useState('');
-    const [vars, setVars] = useState([{ name: '', value: '' }]);
-    const [result, setResult] = useState(null);
-    const [formError, setFormError] = useState(null);
-    const { updateVar, addVar, removeVar } = useCliVarsEditor(setVars);
-
-    const canSubmit = command.trim() && vars.some(v => v.name.trim());
-
-    const reset = () => {
-        setCommand('');
-        setVars([{ name: '', value: '' }]);
-    };
-
-    const handleSubmit = async () => {
-        setResult(null);
-        setFormError(null);
-        let authBlob;
-        try {
-            authBlob = buildCliAuthBlob({ command, vars, pathPrefix: record.path_prefix || null });
-        } catch (err) {
-            setFormError(err?.message || 'Invalid command.');
-            return;
-        }
-        const ok = await onSave({ auth_blob: authBlob });
-        if (ok) {
-            reset();
-            setOpen(false);
-            setResult('Secret replaced.');
-        }
-    };
-
-    if (!open) {
-        return (
-            <section className={styles.section}>
-                <Button onClick={() => setOpen(true)} data-testid={`integrations-replace-secret-${record.id}`}>
-                    <i className="bi bi-arrow-repeat" /> Replace secret
-                </Button>
-                {result && <div className={styles.secretHint}>{result}</div>}
-            </section>
-        );
-    }
-
-    return (
-        <section className={styles.section}>
-            <div className={styles.sectionLabel}>Replace secret</div>
-            <div className={styles.secretHint}>
-                Write-only — the current value can&apos;t be shown. Enter the new value
-                to rotate it; the existing folder scope is kept.
-            </div>
-            <div className={styles.secretRow}>
-                <input
-                    className={styles.nameInput}
-                    placeholder="Command"
-                    value={command}
-                    onChange={(e) => setCommand(e.target.value)}
-                    data-testid={`integrations-replace-command-${record.id}`}
-                />
-            </div>
-            {vars.map((v, idx) => (
-                <div key={idx} className={styles.secretRow}>
-                    <input
-                        className={styles.nameInput}
-                        placeholder="NAME"
-                        value={v.name}
-                        onChange={(e) => updateVar(idx, 'name', e.target.value.toUpperCase())}
-                        data-testid={`integrations-replace-var-name-${idx}-${record.id}`}
-                    />
-                    <input
-                        className={styles.nameInput}
-                        type="password"
-                        placeholder="value"
-                        value={v.value}
-                        onChange={(e) => updateVar(idx, 'value', e.target.value)}
-                        data-testid={`integrations-replace-var-value-${idx}-${record.id}`}
-                    />
-                    <Button onClick={() => removeVar(idx)} disabled={vars.length === 1}>
-                        <i className="bi bi-x-lg" />
-                    </Button>
-                </div>
-            ))}
-            <Button onClick={addVar}>
-                <i className="bi bi-plus-lg" /> Add variable
-            </Button>
-            {formError && (
-                <Callout tone="danger" description={formError} />
-            )}
-            <div className={styles.actionsRight}>
-                <Button onClick={() => { setOpen(false); setFormError(null); reset(); }} disabled={saving}>
-                    Cancel
-                </Button>
-                <Button
-                    variant="filled"
-                    onClick={handleSubmit}
-                    disabled={!canSubmit || saving}
-                    data-testid={`integrations-replace-save-${record.id}`}
-                >
-                    Save new secret
-                </Button>
-            </div>
-        </section>
     );
 }
 

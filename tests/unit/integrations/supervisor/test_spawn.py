@@ -54,7 +54,10 @@ def test_apply_dynamic_spawn_rejects_name_with_bad_characters() -> None:
         _apply_dynamic_spawn({}, {"command": ["bin"], "vars": {"NOT-VALID": "x"}})
 
 
-@pytest.mark.parametrize("reserved", ["PATH", "HOME", "INTEGRATION_ID", "BROKER_SOCKET", "PERMISSIONS", "CLI_BIN", "CLI_BIN_ARGS"])
+@pytest.mark.parametrize(
+    "reserved",
+    ["PATH", "HOME", "INTEGRATION_ID", "BROKER_SOCKET", "PERMISSIONS", "CLI_BIN", "CLI_BIN_ARGS", "SECRET_ENV_KEYS"],
+)
 def test_apply_dynamic_spawn_rejects_reserved_names(reserved: str) -> None:
     with pytest.raises(BrokerSpawnError, match="reserved"):
         _apply_dynamic_spawn({}, {"command": ["bin"], "vars": {reserved: "x"}})

@@ -1,6 +1,6 @@
 import Button from '../../primitives/Button.jsx';
 import styles from './add-wizard.module.css';
-import { PROVIDERS } from './providers.js';
+import { normalizePathPrefix, PROVIDERS } from './providers.js';
 
 export function ProviderPicker({ onPick, onCancel }) {
     const categories = PROVIDERS.reduce((acc, p) => {
@@ -91,7 +91,7 @@ export function SuccessScreen({ provider, form, token, cli, result, onAddAnother
     const isToken = provider.authFlow === 'token';
     const isCli = provider.authFlow === 'cli_env';
     const cliScope = cli?.global === false && cli?.pathPrefix
-        ? `$HOME/${cli.pathPrefix.replace(/^\/+|\/+$/g, '')}`
+        ? `$HOME/${normalizePathPrefix(cli.pathPrefix)}`
         : 'All sessions';
     return (
         <>

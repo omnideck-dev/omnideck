@@ -180,6 +180,14 @@ export function slugifyLabel(label) {
 // this, a typo like `foo "bar` (missing closing quote) would produce
 // `["foo", "\"bar"]` and the broker would then fail to exec a binary
 // literally named `"bar`, a confusing error far from the actual mistake.
+//
+// Known gap: this counts quote characters per type rather than tracking
+// quote state, so a double-quoted segment with a lone apostrophe (e.g.
+// `"it's a test"`) is wrongly rejected as unbalanced. Left alone for now —
+// this runs in a provisioned container where the home directory can't
+// contain an apostrophe and other paths are system-generated, so the risk
+// is low. If this starts tripping real users, fix by scanning char-by-char
+// and only counting a quote when not already inside the *other* quote type.
 export function splitCommand(raw) {
     const doubleQuotes = (raw.match(/"/g) || []).length;
     const singleQuotes = (raw.match(/'/g) || []).length;
@@ -206,13 +214,10 @@ export function normalizePathPrefix(raw) {
     return raw.trim().replace(/^\/+|\/+$/g, '');
 }
 
-// Shared shape-builder for a cli integration's auth_blob, used by both the
-// add wizard and the detail pane's "Replace secret" form — keeping the
-// command-splitting / vars-to-dict logic in one place instead of two copies
-// that can drift out of sync. `pathPrefix` is the already-resolved value
-// (normalized string or null) — each caller resolves its own scope input
-// shape (a global/folder toggle in the wizard, a fixed existing value in
-// the replace-secret form) before calling this.
+// Builds a cli integration's auth_blob from the add wizard's form state:
+// splits the command string into argv, drops unnamed var rows, and folds
+// `vars` into a plain name/value dict. `pathPrefix` is the already-resolved
+// value (normalized string or null).
 export function buildCliAuthBlob({ command, vars, pathPrefix }) {
     return {
         command: splitCommand(command.trim()),

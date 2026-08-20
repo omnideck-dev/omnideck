@@ -3,8 +3,10 @@
 Same rationale as ``test_http_integration_crud.py``: the exec_broker binds
 its socket and prints READY without probing any upstream, so — unlike the
 credential providers that validate against a real service at add time —
-the whole lifecycle (create, read, replace secret, delete) runs end-to-end
-against a fake command and secret, no real external service needed.
+the whole lifecycle (create, read, delete) runs end-to-end against a fake
+command and secret, no real external service needed. There's no
+secret-rotation step: swapping a CLI integration's credential is remove +
+re-add, same as every other integration.
 """
 
 from __future__ import annotations
@@ -40,14 +42,6 @@ def test_cli_integration_crud(page: Page) -> None:
     # ── READ ─────────────────────────────────────────────────────────
     tab.open_detail(_ID)
     expect(tab.label_input(_ID)).to_have_value(_LABEL)
-
-    # ── ROTATE SECRET ────────────────────────────────────────────────
-    tab.replace_secret_button(_ID).click()
-    tab.replace_command_input(_ID).fill("/bin/echo")
-    tab.replace_var_name_input(_ID).fill("FIXTURE_TOKEN")
-    tab.replace_var_value_input(_ID).fill("fake-value-456")
-    tab.replace_save_button(_ID).click()
-    expect(tab.replace_secret_button(_ID)).to_be_visible()
 
     # ── DELETE ───────────────────────────────────────────────────────
     tab.remove_button(_ID).click()

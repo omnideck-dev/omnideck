@@ -17,12 +17,12 @@ Verbs
     Look up a broker's UDS path by integration ID. Called by the
     broker_client before every tool invocation.
 
-**update** (id, permissions?, label?, auth_blob?)
-    Change permissions, label, and/or the secret bundle on a live
-    integration. At least one field required. Label changes are meta-only;
-    permission or secret changes respawn the broker so the new env takes
-    effect. ``auth_blob`` is a full replacement (same shape ``add`` takes),
-    not a partial patch — this is the "rotate secret" path.
+**update** (id, permissions?, label?)
+    Change permissions and/or label on a live integration. At least one
+    field required. Label changes are meta-only; permission changes respawn
+    the broker so the new env takes effect. No secret-rotation field —
+    swapping a credential is remove + re-add, same as every other
+    integration.
 
 **remove** (id)
     SIGTERM the broker and delete its vault files.
@@ -122,18 +122,13 @@ class AppSockHandler:
             if not isinstance(args["label"], str) or not args["label"]:
                 raise RpcError("BAD_REQUEST", "'label' must be a non-empty string")
             label = args["label"]
-        auth_blob: dict | None = None
-        if "auth_blob" in args:
-            if not isinstance(args["auth_blob"], dict):
-                raise RpcError("BAD_REQUEST", "'auth_blob' must be a dict")
-            auth_blob = args["auth_blob"]
-        if permissions is None and label is None and auth_blob is None:
+        if permissions is None and label is None:
             raise RpcError(
                 "BAD_REQUEST",
-                "update requires 'permissions', 'label', and/or 'auth_blob'",
+                "update requires 'permissions' and/or 'label'",
             )
         record = await self._manager.update(
-            integration_id, permissions=permissions, label=label, auth_blob=auth_blob,
+            integration_id, permissions=permissions, label=label,
         )
         return _record_to_dict(record)
 

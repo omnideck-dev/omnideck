@@ -187,11 +187,10 @@ async def handle_update_integration(request: web.Request) -> web.Response:
     """``PATCH /api/integrations/{id}`` — update mutable fields on an integration.
 
     Body fields (each optional, at least one required): ``permissions``
-    (dict of ``{capability: access_str}``), ``label`` (non-empty string),
-    and ``auth_blob`` (dict, same shape ``POST`` takes) — a full replacement
-    of the secret bundle, for rotating a token without deleting and
-    re-adding the integration under a new id. Changing ``permissions`` or
-    ``auth_blob`` triggers a broker respawn so the new env takes effect
+    (dict of ``{capability: access_str}``) and ``label`` (non-empty string).
+    There's no secret-rotation field here — swapping a credential is
+    remove + re-add, same as every other integration. Changing
+    ``permissions`` triggers a broker respawn so the new env takes effect
     (brief downtime ~SIGTERM grace + READY handshake). Updating ``label``
     alone is meta-only — no respawn.
 
@@ -227,11 +226,7 @@ async def handle_update_integration(request: web.Request) -> web.Response:
         if not isinstance(body["label"], str) or not body["label"]:
             return error_response("BAD_REQUEST", "Label can't be empty.")
         rpc_args["label"] = body["label"]
-    if "auth_blob" in body:
-        if not isinstance(body["auth_blob"], dict):
-            return error_response("BAD_REQUEST", "auth_blob must be an object.")
-        rpc_args["auth_blob"] = body["auth_blob"]
-    if not ({"permissions", "label", "auth_blob"} & rpc_args.keys()):
+    if not ({"permissions", "label"} & rpc_args.keys()):
         return error_response("BAD_REQUEST", "Nothing to update.")
 
     try:

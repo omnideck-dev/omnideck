@@ -37,6 +37,19 @@ os.umask(PROCESS_UMASK)
 disable_core_dumps()
 
 
+def _parse_json_str_list(env_var: str, raw: str) -> list[str] | None:
+    """Parse ``raw`` as a JSON list of strings, or log and return ``None`` on failure."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("malformed %s: %r", env_var, raw)
+        return None
+    if not isinstance(value, list) or not all(isinstance(a, str) for a in value):
+        logger.error("%s must be a JSON list of strings: %r", env_var, raw)
+        return None
+    return value
+
+
 async def _run() -> int:
     integration_id = env_required("INTEGRATION_ID")
     socket_path = Path(env_required("BROKER_SOCKET"))
@@ -45,21 +58,12 @@ async def _run() -> int:
     permissions = permissions_from_env(env_required("PERMISSIONS"))
     path_prefix = os.environ.get("PATH_PREFIX", "")
 
-    cli_bin_args_raw = os.environ.get("CLI_BIN_ARGS", "[]")
-    try:
-        cli_bin_args = json.loads(cli_bin_args_raw)
-    except json.JSONDecodeError:
-        logger.error("malformed CLI_BIN_ARGS: %r", cli_bin_args_raw)
-        return GENERIC_ERROR
-    if not isinstance(cli_bin_args, list) or not all(isinstance(a, str) for a in cli_bin_args):
-        logger.error("CLI_BIN_ARGS must be a JSON list of strings: %r", cli_bin_args_raw)
+    cli_bin_args = _parse_json_str_list("CLI_BIN_ARGS", os.environ.get("CLI_BIN_ARGS", "[]"))
+    if cli_bin_args is None:
         return GENERIC_ERROR
 
-    secret_env_keys_raw = os.environ.get("SECRET_ENV_KEYS", "[]")
-    try:
-        secret_env_keys = json.loads(secret_env_keys_raw)
-    except json.JSONDecodeError:
-        logger.error("malformed SECRET_ENV_KEYS: %r", secret_env_keys_raw)
+    secret_env_keys = _parse_json_str_list("SECRET_ENV_KEYS", os.environ.get("SECRET_ENV_KEYS", "[]"))
+    if secret_env_keys is None:
         return GENERIC_ERROR
     secret_values = [os.environ[k] for k in secret_env_keys if k in os.environ]
 

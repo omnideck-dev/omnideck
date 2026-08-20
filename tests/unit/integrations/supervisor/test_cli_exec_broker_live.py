@@ -218,34 +218,3 @@ async def test_add_allows_cross_scope_var_name_shadow(tmp_path: Path) -> None:
         assert "error" not in scoped_add, scoped_add
     finally:
         await sup.stop()
-
-
-@pytest.mark.asyncio
-async def test_update_rotates_secret_and_keeps_scope(tmp_path: Path) -> None:
-    script = _write_fixture_script(tmp_path)
-    (tmp_path / "workspace" / "repo").mkdir(parents=True, exist_ok=True)
-    sup = await _start_supervisor(tmp_path)
-    try:
-        add_resp = await _rpc_call(sup.app_sock_path, "add", {
-            "slug": "cli", "user_suffix": "rotate", "label": "Rotate",
-            "auth_blob": _blob(script, secret="old-secret", path_prefix="repo"),
-            "permissions": {"cli": "r"},
-        })
-        assert "error" not in add_resp, add_resp
-        integration_id = add_resp["result"]["id"]
-
-        update_resp = await _rpc_call(sup.app_sock_path, "update", {
-            "id": integration_id,
-            "auth_blob": _blob(script, secret="new-secret", path_prefix="repo"),
-        })
-        assert "error" not in update_resp, update_resp
-        assert update_resp["result"]["path_prefix"] == "repo"
-
-        broker_socket = Path(update_resp["result"]["socket"])
-        echo_resp = await _rpc_call(
-            broker_socket, "run_command", {"argv": ["--echo", "FIXTURE_SECRET"], "cwd": "repo"},
-        )
-        assert "new-secret" not in json.dumps(echo_resp)
-        assert "[REDACTED]" in echo_resp["result"]["stdout"]
-    finally:
-        await sup.stop()

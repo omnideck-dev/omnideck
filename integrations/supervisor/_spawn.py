@@ -28,10 +28,13 @@ _READY_TIMEOUT_SECONDS = 30.0
 # vars the supervisor sets itself, plus the CLI_BIN* pair the dynamic-spawn
 # path also owns. A bundle field colliding with one of these would silently
 # override supervisor-controlled wiring rather than just adding a new var.
+# SECRET_ENV_KEYS is here even though it's written after this reserved set is
+# checked (see `redact_secret_env` below) — reserving it up front is what
+# stops a bundle var of that exact name from later being clobbered by it.
 _DYNAMIC_ENV_RESERVED = frozenset({
     "PATH", "HOME", "USER", "SHELL", "LANG", "TERM",
     "INTEGRATION_ID", "BROKER_SOCKET", "PERMISSIONS", "PATH_PREFIX",
-    "CLI_BIN", "CLI_BIN_ARGS",
+    "CLI_BIN", "CLI_BIN_ARGS", "SECRET_ENV_KEYS",
 })
 _DYNAMIC_ENV_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 

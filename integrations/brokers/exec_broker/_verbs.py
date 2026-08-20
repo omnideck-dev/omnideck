@@ -27,7 +27,9 @@ import logging
 import os
 import signal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
+from pydantic import BaseModel, ValidationError, field_validator
 
 from integrations._paths import normalize_path_prefix
 from integrations._rpc import RpcError
@@ -51,6 +53,40 @@ _REDACTED = "[REDACTED]"
 _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     "run_command": (Capability.CLI, Access.READ),
 }
+
+
+class RunCommandArgs(BaseModel):
+    """Validated shape of a ``run_command`` RPC call's args.
+
+    Args cross the RPC trust boundary from the agent, so the whole shape is
+    validated once here instead of via ad hoc per-field checks scattered
+    through the handler.
+    """
+
+    argv: list[str]
+    cwd: str | None = None
+    timeout: float | None = None
+    stdin: str | None = None
+
+    @field_validator("timeout", mode="before")
+    @classmethod
+    def _validate_timeout(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        # bool is an int subclass; reject it explicitly so a stray `true`
+        # doesn't silently become a 1-second timeout.
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0:
+            raise ValueError("timeout must be a positive number")
+        return v
+
+
+class RunCommandResult(TypedDict):
+    """Broker-owned, fixed-shape response for ``run_command`` — never validated, just built."""
+
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    truncated: bool
 
 
 class VerbDispatcher:
@@ -102,13 +138,21 @@ class VerbDispatcher:
         handler = self._handlers[verb]
         return await handler(args)
 
-    async def _handle_run_command(self, args: dict[str, Any]) -> dict[str, Any]:
-        argv = _require_argv(args)
-        cwd = self._resolve_cwd(args.get("cwd"))
-        timeout = _coerce_timeout(args.get("timeout"), self._default_timeout_seconds)
-        stdin_text = _coerce_stdin(args.get("stdin"))
+    async def _handle_run_command(self, args: dict[str, Any]) -> RunCommandResult:
+        try:
+            req = RunCommandArgs.model_validate(args)
+        except ValidationError as exc:
+            raise RpcError("BAD_REQUEST", str(exc.errors()[0]["msg"])) from exc
 
-        full_argv = [self._cli_bin, *self._cli_bin_args, *argv]
+        cwd = self._resolve_cwd(req.cwd)
+        timeout = (
+            self._default_timeout_seconds
+            if req.timeout is None
+            else min(req.timeout, _MAX_TIMEOUT_SECONDS)
+        )
+        stdin_text = req.stdin
+
+        full_argv = [self._cli_bin, *self._cli_bin_args, *req.argv]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *full_argv,
@@ -159,15 +203,13 @@ class VerbDispatcher:
             "truncated": stdout_truncated or stderr_truncated,
         }
 
-    def _resolve_cwd(self, raw_cwd: Any) -> Path:
+    def _resolve_cwd(self, raw_cwd: str | None) -> Path:
         """Resolve the caller-supplied cwd against the workspace root and enforce scope.
 
         Rejects anything that resolves outside the workspace root (path
         traversal via ``..`` included) and, if this integration is folder
         scoped, anything outside ``PATH_PREFIX``.
         """
-        if raw_cwd is not None and not isinstance(raw_cwd, str):
-            raise RpcError("BAD_REQUEST", "'cwd' must be a string")
         relative = (raw_cwd or "").strip("/")
         resolved = (self._workspace_root / relative).resolve()
         if resolved != self._workspace_root and self._workspace_root not in resolved.parents:
@@ -181,30 +223,6 @@ class VerbDispatcher:
                     f"this integration is restricted to {self._path_prefix!r}",
                 )
         return resolved
-
-
-def _require_argv(args: dict[str, Any]) -> list[str]:
-    argv = args.get("argv")
-    if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
-        raise RpcError("BAD_REQUEST", "'argv' must be a list of strings")
-    return argv
-
-
-def _coerce_timeout(value: Any, default: float) -> float:
-    if value is None:
-        return default
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        raise RpcError("BAD_REQUEST", "'timeout' must be a positive number")
-    return min(float(value), _MAX_TIMEOUT_SECONDS)
-
-
-def _coerce_stdin(value: Any) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise RpcError("BAD_REQUEST", "'stdin' must be a string")
-    return value
-
 
 async def _pump_stdin(proc: asyncio.subprocess.Process, data: bytes | None) -> None:
     """Write ``data`` to the child's stdin (if any was given) and close it.

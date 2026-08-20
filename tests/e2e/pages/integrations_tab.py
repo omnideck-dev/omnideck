@@ -183,19 +183,3 @@ class IntegrationsTab:
 
     def remove_button(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-remove-{integration_id}")
-
-    # ── CLI-exec detail pane (Replace secret) ────────────────────────
-    def replace_secret_button(self, integration_id: str) -> Locator:
-        return self.page.get_by_test_id(f"integrations-replace-secret-{integration_id}")
-
-    def replace_command_input(self, integration_id: str) -> Locator:
-        return self.page.get_by_test_id(f"integrations-replace-command-{integration_id}")
-
-    def replace_var_name_input(self, integration_id: str, idx: int = 0) -> Locator:
-        return self.page.get_by_test_id(f"integrations-replace-var-name-{idx}-{integration_id}")
-
-    def replace_var_value_input(self, integration_id: str, idx: int = 0) -> Locator:
-        return self.page.get_by_test_id(f"integrations-replace-var-value-{idx}-{integration_id}")
-
-    def replace_save_button(self, integration_id: str) -> Locator:
-        return self.page.get_by_test_id(f"integrations-replace-save-{integration_id}")

@@ -82,6 +82,11 @@ class IntegrationMeta(BaseModel):
             metadata — the UI needs it to show/validate scope without going
             through the broker. The broker also gets a copy via the
             encrypted bundle at spawn time; this is the display-only mirror.
+            TODO: this value is written independently of its copy inside
+            the encrypted auth_blob, on every path that sets either one —
+            nothing enforces they stay in sync. Worth deciding whether this
+            plaintext copy should instead be derived from the vault at read
+            time, before a future write path updates one without the other.
         added_at: When the integration was first added.
         updated_at: Last time the metadata or the encrypted blob was rewritten.
     """

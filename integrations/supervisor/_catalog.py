@@ -78,7 +78,12 @@ class CatalogEntry:
     ``env_injection`` — the bundle's ``command`` (list[str]) picks the
     binary/args and its ``vars`` (dict[str, str]) become injected env vars.
     Used for user-defined CLI integrations where the catalog can't know the
-    binary or var names ahead of time. See ``_spawn.py`` for validation."""
+    binary or var names ahead of time. See ``_spawn.py`` for validation.
+
+    NOTE: this flag and its two siblings above exist solely for the single
+    generic CLI entry today. If a second provider ever needs similar
+    dynamic-spawn behavior, consider generalizing these three booleans into
+    one polymorphic spawn-strategy hook instead of adding a fourth flag."""
 
     def resolve_capabilities(self, auth_blob: dict | None = None) -> dict[Capability, Access]:
         """Derive the max access level per capability for one integration.

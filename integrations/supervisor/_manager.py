@@ -30,6 +30,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,7 +40,7 @@ from pydantic import ValidationError
 
 from integrations._paths import normalize_path_prefix
 from integrations._rpc import RpcError
-from integrations.permissions import Access, Capability, Permissions, permissions_from_dict, permissions_to_dict
+from integrations.permissions import Access, Capability, Permissions, permissions_from_dict
 from integrations.supervisor._catalog import CatalogEntry
 from integrations.supervisor._crypto import DecryptError
 from integrations.supervisor._registry import IntegrationRecord, Registry
@@ -155,7 +157,7 @@ class BrokerManager:
         reservation = self._reserve_cli_secret_names(
             entry, auth_blob, path_prefix, exclude_id=None,
         )
-        try:
+        with self._held_cli_secret_names(reservation):
             now = datetime.now(UTC)
             meta = IntegrationMeta(
                 id=integration_id,
@@ -203,11 +205,6 @@ class BrokerManager:
             )
             self._registry.add(record)
             self._cache_cli_secret_names(entry, integration_id, auth_blob)
-        finally:
-            # Once the record is in the registry (or the attempt is
-            # abandoned), the reservation has served its purpose — the
-            # registry-based check now sees it directly.
-            self._release_cli_secret_names(reservation)
         self._start_watcher(integration_id)
         logger.info("added integration %s (slug=%s)", integration_id, slug)
         return record
@@ -258,7 +255,7 @@ class BrokerManager:
         except RpcError as exc:
             raise ReconcileError(f"secret collision for {integration_id}: {exc.message}") from exc
 
-        try:
+        with self._held_cli_secret_names(reservation):
             try:
                 handle = await spawn_broker(
                     entry=entry,
@@ -280,8 +277,6 @@ class BrokerManager:
             )
             self._registry.add(record)
             self._cache_cli_secret_names(entry, integration_id, secret_bundle)
-        finally:
-            self._release_cli_secret_names(reservation)
         self._start_watcher(integration_id)
         logger.info("reconciled %s (slug=%s)", integration_id, meta.slug)
         return record
@@ -316,20 +311,23 @@ class BrokerManager:
         *,
         permissions: Permissions | None = None,
         label: str | None = None,
-        auth_blob: dict | None = None,
     ) -> IntegrationRecord:
         """Update mutable fields on an existing integration.
 
-        Mutables today are ``permissions``, ``label``, and ``auth_blob``. All
-        are optional — pass only the fields that should change. ``label`` is
-        a string the broker never sees, so a label-only update rewrites the
-        meta on disk and that's it. ``permissions`` and ``auth_blob`` are
-        read from the broker's env at spawn time, so changing either means
-        rewrite + SIGTERM + respawn with the new env (brief gap during which
-        the broker socket is gone). ``auth_blob`` is a full replacement (same
-        shape ``add`` takes), not a partial patch — this is how a caller
-        rotates a secret (e.g. a new token) without deleting and re-adding
-        the integration under a new id.
+        Mutables today are ``permissions`` and ``label``. Both are optional
+        — pass only the fields that should change. ``label`` is a string the
+        broker never sees, so a label-only update rewrites the meta on disk
+        and that's it. ``permissions`` is read from the broker's env at spawn
+        time, so changing it means rewrite + SIGTERM + respawn with the new
+        env (brief gap during which the broker socket is gone).
+
+        There is deliberately no secret-rotation path here: swapping a
+        credential (or, for a folder-scoped CLI integration, its scope) is
+        remove + re-add, same as every other integration. That keeps scope
+        changes an explicit, purposeful choice made at add-time instead of
+        something a partial-update payload could shift by omission, and
+        keeps this method's failure modes simple — there's no prior secret
+        to lose if a rewrite-then-respawn here goes wrong.
 
         Raises :class:`RpcError` (NOT_FOUND) if the id isn't registered.
         Returns the updated record on success. If the respawn fails, the
@@ -340,174 +338,96 @@ class BrokerManager:
         if record is None:
             raise RpcError("NOT_FOUND", f"unknown integration: {integration_id}")
 
-        if permissions is None and label is None and auth_blob is None:
+        if permissions is None and label is None:
             raise RpcError("BAD_REQUEST", "update requires at least one field")
 
         if label is not None and not label:
             raise RpcError("BAD_REQUEST", "'label' must be a non-empty string")
 
-        if auth_blob is not None and not isinstance(auth_blob, dict):
-            raise RpcError("BAD_REQUEST", "'auth_blob' must be a dict")
-
-        secret_changed = auth_blob is not None
-
-        # Catalog lookup only happens when it's actually needed: recomputing
-        # max_access for a rotated secret (here), or respawning (below). A
-        # label-only rename or an idempotent no-op keeps working even for an
-        # integration whose slug has since been dropped from the catalog (a
-        # deprecated provider) — same as before secret rotation existed.
-        entry: CatalogEntry | None = None
-        if secret_changed:
-            entry = self._catalog.get(record.meta.slug)
-            if entry is None:
-                raise RpcError(
-                    "BAD_REQUEST",
-                    f"catalog has no entry for slug {record.meta.slug!r}",
-                )
-            assert auth_blob is not None  # secret_changed implies this
-            _validate_cli_secret_bundle(entry, auth_blob)
-
-        # A secret rotation can change what the credential is allowed to do
-        # (e.g. OAuth scopes) — recompute the ceiling before clamping. If the
-        # caller only rotated the secret (didn't touch `permissions`) and the
-        # new ceiling is lower, this narrows the stored permissions as a
-        # side effect — logged below so it's never a silent downgrade.
-        max_access = entry.resolve_capabilities(auth_blob) if entry is not None else record.max_access
-        implicit_reclamp = permissions is None and secret_changed
         if permissions is not None:
-            permissions = _clamp_permissions(permissions, max_access)
-        elif secret_changed:
-            permissions = _clamp_permissions(record.meta.permissions, max_access)
+            permissions = _clamp_permissions(permissions, record.max_access)
 
         perms_changed = (
             permissions is not None and record.meta.permissions != permissions
         )
         label_changed = label is not None and record.meta.label != label
 
-        if implicit_reclamp and perms_changed:
-            logger.warning(
-                "secret rotation for %s narrowed permissions %s -> %s "
-                "(the new credential doesn't support everything the old one did)",
-                integration_id, permissions_to_dict(record.meta.permissions),
-                permissions_to_dict(permissions) if permissions is not None else {},
-            )
-
-        # No-op shortcut: nothing actually different, skip the work. Safe to
-        # return here even when secret_changed is True in principle — but it
-        # never is, since secret_changed forces perms_changed or itself
-        # keeps this condition False.
-        if not perms_changed and not label_changed and not secret_changed:
+        # No-op shortcut: nothing actually different, skip the work.
+        if not perms_changed and not label_changed:
             return record
 
-        path_prefix = record.meta.path_prefix
-        reservation: frozenset[tuple[str | None, str]] = frozenset()
-        if auth_blob is not None:
-            assert entry is not None  # secret_changed => entry resolved above
-            path_prefix = _normalize_path_prefix(auth_blob.get("path_prefix"))
-            reservation = self._reserve_cli_secret_names(
-                entry, auth_blob, path_prefix, exclude_id=integration_id,
+        meta_updates: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        if perms_changed:
+            meta_updates["permissions"] = permissions
+        if label_changed:
+            meta_updates["label"] = label
+        new_meta = record.meta.model_copy(update=meta_updates)
+        # Commit the meta change before we touch the running process. If we
+        # crash between this write and a respawn, the next reconcile picks
+        # up the new value.
+        write_meta(self._vault_dir, new_meta)
+
+        # Label-only: no env change, no respawn. Update in place and return.
+        if not perms_changed:
+            record.meta = new_meta
+            logger.info("updated integration %s (label=%r)", integration_id, label)
+            return record
+
+        # Permissions changed — broker needs a new env, which means respawn.
+        entry = self._catalog.get(record.meta.slug)
+        if entry is None:
+            raise RpcError(
+                "BAD_REQUEST",
+                f"catalog has no entry for slug {record.meta.slug!r}",
             )
 
         try:
-            meta_updates: dict[str, Any] = {"updated_at": datetime.now(UTC)}
-            if perms_changed:
-                meta_updates["permissions"] = permissions
-            if label_changed:
-                meta_updates["label"] = label
-            if secret_changed:
-                meta_updates["path_prefix"] = path_prefix
-            new_meta = record.meta.model_copy(update=meta_updates)
-            # Commit the meta change before we touch the running process. If we
-            # crash between this write and a respawn, the next reconcile picks
-            # up the new value.
-            write_meta(self._vault_dir, new_meta)
-            if auth_blob is not None:
-                assert entry is not None  # secret_changed => entry resolved above
-                try:
-                    write_secrets(self._vault_dir, integration_id, self._master_key, auth_blob)
-                except OSError as exc:
-                    # Meta committed but the secret didn't — revert meta so
-                    # the persisted state doesn't claim a rotation that
-                    # never actually completed.
-                    write_meta(self._vault_dir, record.meta)
-                    raise RpcError("INTERNAL", f"failed to write new secret: {exc}") from exc
-                # Vault now holds the new bundle regardless of whether the
-                # respawn below succeeds — keep the collision-check cache in
-                # sync with what's actually on disk.
-                self._cache_cli_secret_names(entry, integration_id, auth_blob)
-
-            # Label-only: no env change, no respawn. Update in place and return.
-            if not perms_changed and not secret_changed:
-                record.meta = new_meta
-                logger.info("updated integration %s (label=%r)", integration_id, label)
-                return record
-
-            # Permissions and/or the secret changed — broker needs a new env,
-            # which means respawn. Check the catalog before decrypting: a
-            # missing entry is a client-actionable BAD_REQUEST, so it should
-            # win over a decrypt failure the caller can't do anything about
-            # anyway once the integration can't be spawned regardless.
-            if entry is None:
-                entry = self._catalog.get(record.meta.slug)
-                if entry is None:
-                    raise RpcError(
-                        "BAD_REQUEST",
-                        f"catalog has no entry for slug {record.meta.slug!r}",
-                    )
-
-            if auth_blob is not None:
-                secret_bundle = auth_blob
-            else:
-                try:
-                    secret_bundle = read_secrets(
-                        self._vault_dir, integration_id, self._master_key,
-                    )
-                except DecryptError as exc:
-                    raise RpcError("INTERNAL", f"decrypt failed: {exc}") from exc
-
-            # Stop the watcher and terminate before respawn — same dance as
-            # remove(), but we keep the registry entry so the new handle slots
-            # back in under the same id.
-            record.expected_termination = True
-            watcher = self._watchers.pop(integration_id, None)
-            if watcher is not None and not watcher.done():
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
-            await self._terminate_broker(record.broker)
-
-            try:
-                new_handle = await spawn_broker(
-                    entry=entry,
-                    integration_id=integration_id,
-                    secret_bundle=secret_bundle,
-                    permissions=new_meta.permissions,
-                    sockets_dir=self._sockets_dir,
-                    host_paths=self._host_paths,
-                )
-            except BrokerSpawnError as exc:
-                # New meta is on disk, but we have no live broker. Mark broken
-                # so list/resolve surface the failure; user remediation is
-                # remove + re-add.
-                record.state = "broken"
-                if exc.exit_code == _AUTH_FAIL_EXIT_CODE:
-                    record.state = "auth_failed"
-                    raise RpcError("AUTH", "upstream rejected credentials") from exc
-                raise RpcError("UPSTREAM", f"broker respawn failed: {exc}") from exc
-
-            # Reset terminal-state flags now that the new broker is live.
-            record.broker = new_handle
-            record.meta = new_meta
-            record.max_access = max_access
-            record.state = "running"
-            record.expected_termination = False
-            self._start_watcher(integration_id)
-            logger.info(
-                "updated integration %s (permissions=%s, label=%r, secret_rotated=%s)",
-                integration_id, new_meta.permissions, new_meta.label, secret_changed,
+            secret_bundle = read_secrets(
+                self._vault_dir, integration_id, self._master_key,
             )
-            return record
-        finally:
-            self._release_cli_secret_names(reservation)
+        except DecryptError as exc:
+            raise RpcError("INTERNAL", f"decrypt failed: {exc}") from exc
+
+        # Stop the watcher and terminate before respawn — same dance as
+        # remove(), but we keep the registry entry so the new handle slots
+        # back in under the same id.
+        record.expected_termination = True
+        watcher = self._watchers.pop(integration_id, None)
+        if watcher is not None and not watcher.done():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+        await self._terminate_broker(record.broker)
+
+        try:
+            new_handle = await spawn_broker(
+                entry=entry,
+                integration_id=integration_id,
+                secret_bundle=secret_bundle,
+                permissions=new_meta.permissions,
+                sockets_dir=self._sockets_dir,
+                host_paths=self._host_paths,
+            )
+        except BrokerSpawnError as exc:
+            # New meta is on disk, but we have no live broker. Mark broken
+            # so list/resolve surface the failure; user remediation is
+            # remove + re-add.
+            record.state = "broken"
+            if exc.exit_code == _AUTH_FAIL_EXIT_CODE:
+                record.state = "auth_failed"
+                raise RpcError("AUTH", "upstream rejected credentials") from exc
+            raise RpcError("UPSTREAM", f"broker respawn failed: {exc}") from exc
+
+        # Reset terminal-state flags now that the new broker is live.
+        record.broker = new_handle
+        record.meta = new_meta
+        record.state = "running"
+        record.expected_termination = False
+        self._start_watcher(integration_id)
+        logger.info(
+            "updated integration %s (permissions=%s, label=%r)",
+            integration_id, new_meta.permissions, new_meta.label,
+        )
+        return record
 
     async def stop_all(self) -> None:
         """Supervisor shutdown: stop all watchers, then SIGTERM all brokers."""
@@ -573,6 +493,25 @@ class BrokerManager:
         """Release a reservation from ``_reserve_cli_secret_names``. No-op for an empty set."""
         for key in reservation:
             self._pending_cli_names.pop(key, None)
+
+    @contextmanager
+    def _held_cli_secret_names(
+        self, reservation: frozenset[tuple[str | None, str]],
+    ) -> Iterator[None]:
+        """Guarantee ``_release_cli_secret_names`` runs when the protected block exits.
+
+        Callers still acquire the reservation themselves via
+        ``_reserve_cli_secret_names`` (its ``RpcError`` on collision is
+        call-site-specific to handle), then wrap the risky work — persist,
+        spawn, register — in ``with self._held_cli_secret_names(reservation):``
+        instead of a hand-rolled ``try/finally``. One release path shared by
+        every call site means a future one can't add itself without the
+        release, the way a copy-pasted ``try/finally`` could silently drop it.
+        """
+        try:
+            yield
+        finally:
+            self._release_cli_secret_names(reservation)
 
     def _cache_cli_secret_names(self, entry: CatalogEntry, integration_id: str, auth_blob: dict) -> None:
         """Record ``integration_id``'s injected env-var names for the collision check.
