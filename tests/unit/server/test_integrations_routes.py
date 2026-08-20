@@ -12,7 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server._integrations_routes import _derive_suffix_from_email, handle_add_integration
+from server._integrations_routes import (
+    _derive_suffix_from_email,
+    handle_add_integration,
+    handle_update_integration,
+)
 
 
 # ── email-based suffix derivation ────────────────────────────────────────────
@@ -221,3 +225,89 @@ async def test_non_llm_add_derives_suffix_from_email() -> None:
 
     assert resp.status == 201
     assert captured_args["user_suffix"] == "alice"
+
+
+# ── handle_add_integration — cli (label-derived suffix) ────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cli_slug_derives_suffix_from_label() -> None:
+    body = {
+        "slug": "cli",
+        "label": "Work Repo",
+        "auth_blob": {"command": ["bin"], "vars": {"TOKEN": "abc"}, "path_prefix": "repo"},
+        "permissions": {"cli": "r"},
+    }
+    captured_args = {}
+
+    async def fake_supervisor_call(verb, args):
+        captured_args.update(args)
+        return _supervisor_ok("cli_work-repo", "cli")
+
+    with (
+        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
+        patch("server._integrations_routes.mark_added"),
+    ):
+        resp = await handle_add_integration(_make_add_request(body))
+
+    assert resp.status == 201
+    assert captured_args["user_suffix"] == "work-repo"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cli_slug_requires_label() -> None:
+    body = {"slug": "cli", "label": "", "auth_blob": {"command": ["bin"]}}
+
+    resp = await handle_add_integration(_make_add_request(body))
+
+    assert resp.status == 400
+
+
+# ── handle_update_integration — auth_blob rotation passthrough ─────────────
+
+
+def _make_update_request(integration_id: str, body: dict) -> MagicMock:
+    req = MagicMock()
+    req.json = AsyncMock(return_value=body)
+    req.match_info = {"id": integration_id}
+    return req
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_passes_auth_blob_through_to_supervisor() -> None:
+    body = {"auth_blob": {"token": "new-token", "path_prefix": "repo"}}
+    captured_args = {}
+
+    async def fake_supervisor_call(verb, args):
+        captured_args.update(args)
+        return _supervisor_ok("cli_work", "cli")
+
+    with (
+        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
+        patch("server._integrations_routes.mark_added"),
+    ):
+        resp = await handle_update_integration(_make_update_request("cli_work", body))
+
+    assert resp.status == 200
+    assert captured_args["auth_blob"] == {"token": "new-token", "path_prefix": "repo"}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_rejects_non_dict_auth_blob() -> None:
+    body = {"auth_blob": "not-a-dict"}
+
+    resp = await handle_update_integration(_make_update_request("cli_work", body))
+
+    assert resp.status == 400
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_requires_at_least_one_field() -> None:
+    resp = await handle_update_integration(_make_update_request("cli_work", {}))
+
+    assert resp.status == 400

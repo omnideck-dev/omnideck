@@ -32,7 +32,7 @@ _STATIC_IDS = {
     "desktop",
     "custom_tools",
 }
-_INTEGRATION_IDS = {"email", "calendar", "drive", "contacts", "http"}
+_INTEGRATION_IDS = {"email", "calendar", "drive", "contacts", "http", "cli"}
 
 
 def _features(**overrides) -> FeaturesConfig:
@@ -174,6 +174,21 @@ async def test_integration_category_resolves_when_connected(monkeypatch):
     names = _names(email.tools)
     assert "search_email" in names
     assert "send_email" not in names  # read tier only
+
+
+@pytest.mark.unit
+async def test_cli_category_resolves_when_connected(monkeypatch):
+    """Regression: Capability.CLI must be a registered category, not just a builder.
+
+    ``run_cli`` was previously buildable via ``_BUILDERS`` but unreachable
+    by any skill because ``Capability.CLI`` had no entry in
+    ``_INTEGRATION_TOOL_CATEGORIES`` — no skill's ``tool_categories`` list
+    could ever grant it.
+    """
+    _connect(monkeypatch, Capability.CLI, Access.READ)
+    cli = (await tool_categories())["cli"]
+    assert "run_cli" in _names(cli.tools)
+    assert cli.connected is True
 
 
 @pytest.mark.unit

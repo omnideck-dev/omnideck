@@ -700,5 +700,70 @@
     --select-font-size: 12px;
 }
 
+/* ── CLI-exec: K/V rows + $HOME/-prefixed path input ────────── */
+.kvEditRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.kvRemoveBtn {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all 150ms var(--ease);
+}
+
+.kvRemoveBtn:hover:not(:disabled) {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.kvRemoveBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.prefixedInput {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    overflow: hidden;
+}
+
+[data-theme="dark"] .prefixedInput {
+    background: var(--surface);
+}
+
+.prefixedInput:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-glow);
+}
+
+.prefixLabel {
+    flex-shrink: 0;
+    padding: 0 0 0 10px;
+    font-family: var(--font-code);
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.prefixedInput .input {
+    border: none;
+    box-shadow: none;
+}
+
 /* Buttons: footer Cancel / Back / Next / Save / etc. now render via the
  * Button primitive — see ../primitives/Button.jsx. */

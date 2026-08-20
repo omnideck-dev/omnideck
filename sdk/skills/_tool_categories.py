@@ -218,6 +218,9 @@ _INTEGRATION_TOOL_CATEGORIES: dict[str, _IntegrationToolCategory] = {
     "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files.", Capability.DRIVE),
     "contacts": _IntegrationToolCategory("Contacts", "Look up contacts.", Capability.CONTACTS),
     "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs.", Capability.HTTP),
+    "cli": _IntegrationToolCategory(
+        "CLI Tools", "Run configured CLI tools and scripts with credentials injected automatically.", Capability.CLI,
+    ),
 }
 
 

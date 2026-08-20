@@ -18,6 +18,7 @@ class Capability(StrEnum):
     CONTACTS = "contacts"
     LLM_PROXY = "llm_proxy"
     HTTP = "http"
+    CLI = "cli"
 
 
 class Access(IntEnum):

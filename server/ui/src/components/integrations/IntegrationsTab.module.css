@@ -444,6 +444,24 @@
     color: #fff;
 }
 
+/* ── Replace-secret (CLI integrations) ──────────────────────── */
+.secretRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.secretRow .nameInput {
+    flex: 1;
+}
+
+.secretHint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-bottom: var(--sp-2);
+}
+
 /* ── Loading + load-error wrapper ─────────────────────────── */
 .loading {
     color: var(--text-tertiary);

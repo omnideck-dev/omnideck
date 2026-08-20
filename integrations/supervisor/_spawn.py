@@ -9,8 +9,10 @@ auth-fail (``77``) from a generic failure (``1``) and respond accordingly.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +23,17 @@ from integrations.supervisor.types import HostPath
 logger = logging.getLogger(__name__)
 
 _READY_TIMEOUT_SECONDS = 30.0
+
+# Env var names a dynamic-spawn secret bundle may not define — spawn-critical
+# vars the supervisor sets itself, plus the CLI_BIN* pair the dynamic-spawn
+# path also owns. A bundle field colliding with one of these would silently
+# override supervisor-controlled wiring rather than just adding a new var.
+_DYNAMIC_ENV_RESERVED = frozenset({
+    "PATH", "HOME", "USER", "SHELL", "LANG", "TERM",
+    "INTEGRATION_ID", "BROKER_SOCKET", "PERMISSIONS", "PATH_PREFIX",
+    "CLI_BIN", "CLI_BIN_ARGS",
+})
+_DYNAMIC_ENV_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
 class BrokerSpawnError(Exception):
@@ -70,11 +83,32 @@ async def spawn_broker(
     # conflict. When we harden the container, swap to a curated allow-list.
     env: dict[str, str] = dict(os.environ)
     env.update(entry.static_env)
+    secret_env_names: list[str] = []
     for blob_key, env_name in entry.env_injection.items():
         if blob_key not in secret_bundle:
             msg = f"env_injection references missing auth field: {blob_key!r}"
             raise BrokerSpawnError(msg)
         env[env_name] = secret_bundle[blob_key]
+        secret_env_names.append(env_name)
+    if entry.injects_path_prefix:
+        env["PATH_PREFIX"] = str(secret_bundle.get("path_prefix") or "")
+    if entry.dynamic_spawn:
+        # Reserve every name this spawn will also set outside the bundle —
+        # the static list plus whatever this specific entry's static_env /
+        # env_injection / host_paths bindings contribute (e.g. HOME_DIR for
+        # CLI-exec entries). A name reserved only in the static list would
+        # miss entry-specific env vars set later in this function, letting a
+        # bundle var quietly get overwritten by real (non-secret) wiring
+        # while its name stays in SECRET_ENV_KEYS.
+        reserved = (
+            _DYNAMIC_ENV_RESERVED
+            | set(entry.static_env)
+            | set(entry.env_injection.values())
+            | {binding.env_var for binding in entry.host_paths}
+        )
+        secret_env_names.extend(_apply_dynamic_spawn(env, secret_bundle, reserved=reserved))
+    if entry.redact_secret_env:
+        env["SECRET_ENV_KEYS"] = json.dumps(secret_env_names)
     for binding in entry.host_paths:
         spec = host_paths.get(binding.role)
         if spec is None:
@@ -115,6 +149,52 @@ async def spawn_broker(
         socket_path=socket_path,
         proc=proc,
     )
+
+
+def _apply_dynamic_spawn(
+    env: dict[str, str],
+    secret_bundle: dict,
+    *,
+    reserved: frozenset[str] = _DYNAMIC_ENV_RESERVED,
+) -> list[str]:
+    """Fill in ``CLI_BIN``/``CLI_BIN_ARGS`` and named vars from the bundle itself.
+
+    Used by catalog entries where the target binary and secret var names are
+    user-defined at add-time rather than fixed in the catalog (e.g. a custom
+    CLI/script integration). Every var name is validated against ``reserved``
+    and a strict ``[A-Z_][A-Z0-9_]*`` pattern so a bundle can't clobber
+    spawn-critical env vars or smuggle in something the shell would treat
+    specially. ``reserved`` defaults to the spawn-generic names but callers
+    should pass the entry-specific superset (its own static_env/env_injection/
+    host_paths names too) so a bundle var can't collide with wiring this
+    particular catalog entry adds after this function returns. Returns the
+    injected var names, so the caller can fold them into ``SECRET_ENV_KEYS``.
+    """
+    command = secret_bundle.get("command")
+    if not isinstance(command, list) or not command or not all(isinstance(c, str) for c in command):
+        msg = "dynamic_spawn requires a non-empty 'command' list of strings in the secret bundle"
+        raise BrokerSpawnError(msg)
+    env["CLI_BIN"] = command[0]
+    env["CLI_BIN_ARGS"] = json.dumps(command[1:])
+
+    variables = secret_bundle.get("vars") or {}
+    if not isinstance(variables, dict):
+        msg = "dynamic_spawn 'vars' must be a dict"
+        raise BrokerSpawnError(msg)
+    injected_names: list[str] = []
+    for name, value in variables.items():
+        if not isinstance(name, str) or not _DYNAMIC_ENV_NAME_PATTERN.match(name):
+            msg = f"invalid env var name in secret bundle: {name!r}"
+            raise BrokerSpawnError(msg)
+        if name in reserved:
+            msg = f"env var name is reserved: {name!r}"
+            raise BrokerSpawnError(msg)
+        if not isinstance(value, str):
+            msg = f"env var {name!r} value must be a string"
+            raise BrokerSpawnError(msg)
+        env[name] = value
+        injected_names.append(name)
+    return injected_names
 
 
 async def _wait_for_ready(proc: asyncio.subprocess.Process) -> None:

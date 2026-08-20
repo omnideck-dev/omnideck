@@ -15,9 +15,14 @@ EMAIL_BROKER_HOST_PATHS: tuple[HostPathBinding, ...] = (
     HostPathBinding(role="downloads", env_var="ATTACHMENTS_DIR", mode="write"),
 )
 
+CLI_EXEC_HOST_PATHS: tuple[HostPathBinding, ...] = (
+    HostPathBinding(role="workspace", env_var="HOME_DIR", mode="read"),
+)
+
 
 def make_host_paths(tmp_path: Path) -> dict[str, HostPath]:
-    """Single-entry registry exposing ``tmp_path / 'attachments'`` as the downloads role."""
+    """Registry exposing ``tmp_path`` subdirs as the downloads and workspace roles."""
+    (tmp_path / "workspace").mkdir(parents=True, exist_ok=True)
     return {
         "downloads": HostPath(
             path=tmp_path / "attachments",
@@ -25,5 +30,12 @@ def make_host_paths(tmp_path: Path) -> dict[str, HostPath]:
             owner="test",
             group="test",
             mode=0o3770,
+        ),
+        "workspace": HostPath(
+            path=tmp_path / "workspace",
+            description="test workspace root",
+            owner="test",
+            group="test",
+            mode=0o755,
         ),
     }

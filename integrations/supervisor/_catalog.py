@@ -59,6 +59,27 @@ class CatalogEntry:
     field. For each capability, the highest access level among all matching
     granted scopes wins."""
 
+    injects_path_prefix: bool = False
+    """When set, the spawn path always sets ``PATH_PREFIX`` from the secret
+    bundle's optional ``path_prefix`` field (empty string when absent) —
+    used by CLI-exec brokers to enforce folder-scoped secrets from inside
+    the broker, not just at the tool-visibility layer."""
+
+    redact_secret_env: bool = False
+    """When set, the spawn path records which env-var names carry secret
+    values (from ``env_injection`` and, for dynamic-spawn entries, the
+    bundle's ``vars``) into ``SECRET_ENV_KEYS`` (a JSON list) — used by
+    CLI-exec brokers to know which values to scrub from a child process's
+    stdout/stderr before returning it over RPC."""
+
+    dynamic_spawn: bool = False
+    """When set, the command binary and injected env vars come from the
+    secret bundle itself instead of this entry's ``static_env`` /
+    ``env_injection`` — the bundle's ``command`` (list[str]) picks the
+    binary/args and its ``vars`` (dict[str, str]) become injected env vars.
+    Used for user-defined CLI integrations where the catalog can't know the
+    binary or var names ahead of time. See ``_spawn.py`` for validation."""
+
     def resolve_capabilities(self, auth_blob: dict | None = None) -> dict[Capability, Access]:
         """Derive the max access level per capability for one integration.
 
@@ -196,6 +217,25 @@ _HTTP = CatalogEntry(
 )
 
 
+_CLI_EXEC_HOST_PATHS = (
+    # CLI-exec brokers cd into a caller-supplied path under here to run the
+    # target binary and to enforce PATH_PREFIX — same workspace root
+    # run_bash_cmd already uses, so folder scoping means the same thing in
+    # both places.
+    HostPathBinding(role="workspace", env_var="HOME_DIR", mode="read"),
+)
+
+_CLI = CatalogEntry(
+    slug="cli",
+    command=["python", "-m", "integrations.brokers.exec_broker"],
+    capabilities={Capability.CLI: Access.READ},
+    injects_path_prefix=True,
+    redact_secret_env=True,
+    dynamic_spawn=True,
+    host_paths=_CLI_EXEC_HOST_PATHS,
+)
+
+
 _GOOGLE_WORKSPACE = CatalogEntry(
     slug="google_workspace",
     command=["python", "-m", "integrations.brokers.google_workspace_broker"],
@@ -233,6 +273,7 @@ DEFAULT_CATALOG: dict[str, CatalogEntry] = {
     "llm_openai_compat": _LLM_OPENAI_COMPAT,
     "google_workspace": _GOOGLE_WORKSPACE,
     "http": _HTTP,
+    "cli": _CLI,
 }
 
 

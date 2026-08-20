@@ -86,6 +86,41 @@ class AddIntegrationModal:
             self.label_input.fill(label)
         return self
 
+    # ── CLI-exec flow fields ──────────────────────────────────────────
+    @property
+    def cli_command_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-cli-command")
+
+    def cli_var_name_input(self, idx: int = 0) -> Locator:
+        return self.page.get_by_test_id(f"wizard-cli-var-name-{idx}")
+
+    def cli_var_value_input(self, idx: int = 0) -> Locator:
+        return self.page.get_by_test_id(f"wizard-cli-var-value-{idx}")
+
+    @property
+    def cli_add_var(self) -> Locator:
+        return self.page.get_by_test_id("wizard-cli-add-var")
+
+    @property
+    def cli_path_prefix_input(self) -> Locator:
+        return self.page.get_by_test_id("wizard-cli-path-prefix")
+
+    def fill_cli(
+        self,
+        *,
+        command: str,
+        var_name: str,
+        var_value: str,
+        label: str = "",
+    ) -> "AddIntegrationModal":
+        """Fill the CLI-exec credentials step (assumes it's visible)."""
+        self.cli_command_input.fill(command)
+        self.cli_var_name_input().fill(var_name)
+        self.cli_var_value_input().fill(var_value)
+        if label:
+            self.label_input.fill(label)
+        return self
+
     def cancel(self) -> None:
         """Close via the footer Cancel link."""
         self.page.get_by_role("button", name="Cancel").first.click()
@@ -148,3 +183,19 @@ class IntegrationsTab:
 
     def remove_button(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-remove-{integration_id}")
+
+    # ── CLI-exec detail pane (Replace secret) ────────────────────────
+    def replace_secret_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-replace-secret-{integration_id}")
+
+    def replace_command_input(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-replace-command-{integration_id}")
+
+    def replace_var_name_input(self, integration_id: str, idx: int = 0) -> Locator:
+        return self.page.get_by_test_id(f"integrations-replace-var-name-{idx}-{integration_id}")
+
+    def replace_var_value_input(self, integration_id: str, idx: int = 0) -> Locator:
+        return self.page.get_by_test_id(f"integrations-replace-var-value-{idx}-{integration_id}")
+
+    def replace_save_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-replace-save-{integration_id}")

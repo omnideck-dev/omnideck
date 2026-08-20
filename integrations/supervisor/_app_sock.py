@@ -17,10 +17,12 @@ Verbs
     Look up a broker's UDS path by integration ID. Called by the
     broker_client before every tool invocation.
 
-**update** (id, permissions?, label?)
-    Change permissions and/or label on a live integration. At least one
-    field required. Label changes are meta-only; permission changes
-    respawn the broker so the new env takes effect.
+**update** (id, permissions?, label?, auth_blob?)
+    Change permissions, label, and/or the secret bundle on a live
+    integration. At least one field required. Label changes are meta-only;
+    permission or secret changes respawn the broker so the new env takes
+    effect. ``auth_blob`` is a full replacement (same shape ``add`` takes),
+    not a partial patch — this is the "rotate secret" path.
 
 **remove** (id)
     SIGTERM the broker and delete its vault files.
@@ -120,13 +122,18 @@ class AppSockHandler:
             if not isinstance(args["label"], str) or not args["label"]:
                 raise RpcError("BAD_REQUEST", "'label' must be a non-empty string")
             label = args["label"]
-        if permissions is None and label is None:
+        auth_blob: dict | None = None
+        if "auth_blob" in args:
+            if not isinstance(args["auth_blob"], dict):
+                raise RpcError("BAD_REQUEST", "'auth_blob' must be a dict")
+            auth_blob = args["auth_blob"]
+        if permissions is None and label is None and auth_blob is None:
             raise RpcError(
                 "BAD_REQUEST",
-                "update requires 'permissions' and/or 'label'",
+                "update requires 'permissions', 'label', and/or 'auth_blob'",
             )
         record = await self._manager.update(
-            integration_id, permissions=permissions, label=label,
+            integration_id, permissions=permissions, label=label, auth_blob=auth_blob,
         )
         return _record_to_dict(record)
 
@@ -145,6 +152,7 @@ def _record_to_dict(record: IntegrationRecord) -> dict[str, Any]:
         "permissions": permissions_to_dict(record.meta.permissions),
         "max_access": {cap.value: access_to_str(a) for cap, a in record.max_access.items()},
         "capabilities": sorted(cap.value for cap in record.max_access),
+        "path_prefix": record.meta.path_prefix,
         "state": record.state,
         "socket": str(record.broker.socket_path),
     }

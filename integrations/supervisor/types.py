@@ -75,6 +75,13 @@ class IntegrationMeta(BaseModel):
         permissions: Per-capability access level. The broker enforces these at
             verb dispatch — an agent bypassing the app server's tool registry
             and connecting directly to a broker's UDS still gets refused.
+        path_prefix: Folder scope for CLI-exec integrations (the ``cli``
+            slug) — a path, relative to the workspace root, that the
+            integration's secret is confined to. ``None`` means global.
+            Not a secret (just a folder name), so it's fine in plaintext
+            metadata — the UI needs it to show/validate scope without going
+            through the broker. The broker also gets a copy via the
+            encrypted bundle at spawn time; this is the display-only mirror.
         added_at: When the integration was first added.
         updated_at: Last time the metadata or the encrypted blob was rewritten.
     """
@@ -84,6 +91,7 @@ class IntegrationMeta(BaseModel):
     slug: str
     label: str
     permissions: Permissions = {}
+    path_prefix: str | None = None
     added_at: datetime
     updated_at: datetime
 
@@ -97,3 +105,20 @@ class IntegrationMeta(BaseModel):
     @field_serializer("permissions")
     def _serialize_permissions(self, perms: Permissions) -> dict[str, str]:
         return permissions_to_dict(perms)
+
+
+class CliSecretBundle(BaseModel):
+    """Validated shape of a ``cli`` integration's ``auth_blob``.
+
+    ``command`` picks the binary/script to exec (plus any fixed leading
+    args); ``vars`` are the named secrets injected into its environment;
+    ``path_prefix`` is the optional folder scope. Validating this once at
+    the boundary — rather than only deep inside ``_apply_dynamic_spawn`` at
+    spawn time — means a malformed field (a non-list ``command``, a
+    non-dict ``vars``) is rejected uniformly before it ever reaches the
+    vault or a subprocess env.
+    """
+
+    command: list[str] | None = None
+    vars: dict[str, str] = {}
+    path_prefix: str | None = None

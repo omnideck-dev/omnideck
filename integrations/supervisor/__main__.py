@@ -10,6 +10,7 @@ Env overrides (all optional)::
     SUPERVISOR_APP_SOCK         default /run/cvault/app.sock         (tmpfs)
     SUPERVISOR_SOCKETS_DIR      default /run/cvault                  (tmpfs)
     SUPERVISOR_DOWNLOADS_DIR    default /home/omnideck/downloads     (downloads)
+    SUPERVISOR_HOME_DIR         default /home/omnideck               (workspace)
 
 The downloads dir is the shared "downloads" host-path role — agent-initiated
 retrievals (browser saves, email attachments) land here. It's threaded into
@@ -51,6 +52,7 @@ _DEFAULT_VAULT_DIR = "/var/lib/omnideck/vault"
 _DEFAULT_APP_SOCK = "/run/cvault/app.sock"
 _DEFAULT_SOCKETS_DIR = "/run/cvault"
 _DEFAULT_DOWNLOADS_DIR = "/home/omnideck/downloads"
+_DEFAULT_HOME_DIR = "/home/omnideck"
 
 
 def _build_host_paths() -> dict[str, HostPath]:
@@ -58,6 +60,7 @@ def _build_host_paths() -> dict[str, HostPath]:
     downloads_dir = Path(
         os.environ.get("SUPERVISOR_DOWNLOADS_DIR", _DEFAULT_DOWNLOADS_DIR),
     )
+    home_dir = Path(os.environ.get("SUPERVISOR_HOME_DIR", _DEFAULT_HOME_DIR))
     return {
         "downloads": HostPath(
             path=downloads_dir,
@@ -65,6 +68,17 @@ def _build_host_paths() -> dict[str, HostPath]:
             owner="omnideck",
             group="broker",
             mode=0o3770,
+        ),
+        "workspace": HostPath(
+            path=home_dir,
+            description=(
+                "agent virtual-computer workspace root — CLI-exec brokers cd "
+                "here to resolve a caller-supplied cwd (and enforce folder-"
+                "scoped secrets); same root run_bash_cmd already uses"
+            ),
+            owner="omnideck",
+            group="omnideck",
+            mode=0o755,
         ),
     }
 

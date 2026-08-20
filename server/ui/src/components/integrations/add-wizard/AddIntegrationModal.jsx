@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import Modal from '../../primitives/Modal.jsx';
 import styles from './add-wizard.module.css';
-import { slugifyEmail } from './providers.js';
+import { buildCliAuthBlob, normalizePathPrefix, slugifyEmail } from './providers.js';
 import { ProviderPicker, SuccessScreen } from './SharedSteps.jsx';
 import { ExplainerStep, CredentialsStep, VerifyingStep } from './AppPasswordSteps.jsx';
 import { OauthCapabilitiesStep, OauthGcpSetupStep, OauthRedirectStep } from './OAuthSteps.jsx';
@@ -11,12 +11,24 @@ import {
     CredentialsStep as TokenCredentialsStep,
     ConnectingStep as TokenConnectingStep,
 } from './TokenSteps.jsx';
+import {
+    ExplainerStep as CliExplainerStep,
+    CredentialsStep as CliCredentialsStep,
+    ConnectingStep as CliConnectingStep,
+} from './CliSteps.jsx';
 
 const TOKEN_DEFAULTS = {
     baseUrl: '',
     headerName: 'Authorization',
     headerTemplate: 'Bearer {token}',
     token: '',
+};
+
+const CLI_DEFAULTS = {
+    command: '',
+    vars: [{ name: '', value: '' }],
+    global: true,
+    pathPrefix: '',
 };
 
 export default function AddIntegrationModal({ onClose, onAdded }) {
@@ -37,6 +49,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
         status: null,
     });
     const [token, setToken] = useState(TOKEN_DEFAULTS);
+    const [cli, setCli] = useState(CLI_DEFAULTS);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
@@ -109,6 +122,55 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                         token: token.token,
                     },
                     permissions: { http: form.permissions.http || 'r' },
+                }),
+            });
+            const body = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                setError({
+                    code: body?.error?.code || 'ERROR',
+                    message: body?.error?.message || `HTTP ${resp.status}`,
+                });
+                setSubmitting(false);
+                setStep(2);
+                return;
+            }
+            setResult(body);
+            setSubmitting(false);
+        } catch (err) {
+            setError({
+                code: 'NETWORK',
+                message: err?.message || 'Request failed',
+            });
+            setSubmitting(false);
+            setStep(2);
+        }
+    };
+
+    const handleCliSubmit = async () => {
+        setError(null);
+        const pathPrefix = cli.global ? null : (normalizePathPrefix(cli.pathPrefix) || null);
+        let authBlob;
+        try {
+            authBlob = buildCliAuthBlob({ command: cli.command, vars: cli.vars, pathPrefix });
+        } catch (err) {
+            // Validation error (e.g. an unbalanced quote) — surface it on
+            // the credentials step without ever transitioning to the
+            // connecting screen.
+            setError({ code: 'BAD_REQUEST', message: err?.message || 'Invalid command.' });
+            return;
+        }
+        const label = form.label.trim() || 'CLI command';
+        setSubmitting(true);
+        setStep(3);
+        try {
+            const resp = await fetch('/api/integrations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    slug: provider.slug,
+                    label,
+                    auth_blob: authBlob,
+                    permissions: { cli: 'r' },
                 }),
             });
             const body = await resp.json().catch(() => ({}));
@@ -268,6 +330,9 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                             if (p.authFlow === 'token') {
                                 setToken(TOKEN_DEFAULTS);
                             }
+                            if (p.authFlow === 'cli_env') {
+                                setCli(CLI_DEFAULTS);
+                            }
                             if (p.authFlow === 'oauth_device') {
                                 const caps = {};
                                 const access = {};
@@ -289,6 +354,7 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                         provider={provider}
                         form={form}
                         token={token}
+                        cli={cli}
                         result={result}
                         onAddAnother={() => {
                             setProvider(null);
@@ -303,10 +369,32 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                                 pending: null, status: null,
                             });
                             setToken(TOKEN_DEFAULTS);
+                            setCli(CLI_DEFAULTS);
                             setError(null);
                         }}
                         onDone={() => { onAdded?.(); }}
                     />
+                ) : provider.authFlow === 'cli_env' ? (
+                    step === 1 ? (
+                        <CliExplainerStep
+                            onBack={() => setProvider(null)}
+                            onNext={() => setStep(2)}
+                        />
+                    ) : step === 2 ? (
+                        <CliCredentialsStep
+                            provider={provider}
+                            cli={cli}
+                            setCli={setCli}
+                            form={form}
+                            setForm={setForm}
+                            error={error}
+                            onBack={() => setStep(1)}
+                            onCancel={onClose}
+                            onSubmit={handleCliSubmit}
+                        />
+                    ) : (
+                        <CliConnectingStep />
+                    )
                 ) : provider.authFlow === 'token' ? (
                     step === 1 ? (
                         <TokenExplainerStep

@@ -134,9 +134,9 @@ async def handle_add_integration(request: web.Request) -> web.Response:
         # etc.) but the supervisor's add verb requires the field as a dict.
         if "permissions" not in body:
             body["permissions"] = {}
-    elif slug == "http":
-        # http integrations have no email — derive the suffix from the label
-        # so the ID stays out of the user's mental model, same as the
+    elif slug in ("http", "cli"):
+        # These integrations have no email — derive the suffix from the
+        # label so the ID stays out of the user's mental model, same as the
         # email-local-part derivation does for the credential providers.
         label = body.get("label")
         derived = _sanitize_suffix(label) if isinstance(label, str) else None
@@ -187,10 +187,13 @@ async def handle_update_integration(request: web.Request) -> web.Response:
     """``PATCH /api/integrations/{id}`` — update mutable fields on an integration.
 
     Body fields (each optional, at least one required): ``permissions``
-    (dict of ``{capability: access_str}``) and ``label`` (non-empty string).
-    Changing ``permissions`` triggers a broker respawn so the new
-    ``PERMISSIONS`` env takes effect (brief downtime ~SIGTERM grace + READY
-    handshake). Updating ``label`` is meta-only — no respawn.
+    (dict of ``{capability: access_str}``), ``label`` (non-empty string),
+    and ``auth_blob`` (dict, same shape ``POST`` takes) — a full replacement
+    of the secret bundle, for rotating a token without deleting and
+    re-adding the integration under a new id. Changing ``permissions`` or
+    ``auth_blob`` triggers a broker respawn so the new env takes effect
+    (brief downtime ~SIGTERM grace + READY handshake). Updating ``label``
+    alone is meta-only — no respawn.
 
     On success: ``200 OK`` with the updated record. On unknown id: ``404``.
     """
@@ -224,7 +227,11 @@ async def handle_update_integration(request: web.Request) -> web.Response:
         if not isinstance(body["label"], str) or not body["label"]:
             return error_response("BAD_REQUEST", "Label can't be empty.")
         rpc_args["label"] = body["label"]
-    if "permissions" not in rpc_args and "label" not in rpc_args:
+    if "auth_blob" in body:
+        if not isinstance(body["auth_blob"], dict):
+            return error_response("BAD_REQUEST", "auth_blob must be an object.")
+        rpc_args["auth_blob"] = body["auth_blob"]
+    if not ({"permissions", "label", "auth_blob"} & rpc_args.keys()):
         return error_response("BAD_REQUEST", "Nothing to update.")
 
     try:

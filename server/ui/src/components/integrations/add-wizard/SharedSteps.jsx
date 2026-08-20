@@ -64,21 +64,35 @@ export function Stepper({ step }) {
 }
 
 const ACCESS_DISPLAY = { off: 'Off', r: 'Read only', rw: 'Read + Write' };
-const CAP_DISPLAY = { email: 'Email', calendar: 'Calendar', drive: 'Drive', contacts: 'Contacts' };
+// CLI has no read/write distinction — the broker exec's the target binary
+// with whatever arguments the agent supplies, so "r" (the only reachable
+// level; rw is never granted by the CLI catalog entry) means "the agent can
+// run it," not "read-only." Reusing the generic Read/Read+Write wording
+// here would tell a user connecting a destructive script or a token with
+// full write access that it's "Read only," which it isn't.
+const CLI_ACCESS_DISPLAY = { off: 'Off', r: 'Enabled', rw: 'Enabled' };
+const CAP_DISPLAY = {
+    email: 'Email', calendar: 'Calendar', drive: 'Drive', contacts: 'Contacts', cli: 'CLI',
+};
 
 function formatPermissions(perms) {
     if (!perms || Object.keys(perms).length === 0) return null;
     return Object.entries(perms)
         .filter(([, v]) => v && v !== 'off')
-        .map(([cap, access]) =>
-            `${CAP_DISPLAY[cap] || cap}: ${ACCESS_DISPLAY[access] || access}`,
-        )
+        .map(([cap, access]) => {
+            const display = cap === 'cli' ? CLI_ACCESS_DISPLAY : ACCESS_DISPLAY;
+            return `${CAP_DISPLAY[cap] || cap}: ${display[access] || access}`;
+        })
         .join(', ');
 }
 
-export function SuccessScreen({ provider, form, token, result, onAddAnother, onDone }) {
+export function SuccessScreen({ provider, form, token, cli, result, onAddAnother, onDone }) {
     const permsSummary = formatPermissions(result.permissions);
     const isToken = provider.authFlow === 'token';
+    const isCli = provider.authFlow === 'cli_env';
+    const cliScope = cli?.global === false && cli?.pathPrefix
+        ? `$HOME/${cli.pathPrefix.replace(/^\/+|\/+$/g, '')}`
+        : 'All sessions';
     return (
         <>
             <Stepper step={4} />
@@ -94,17 +108,26 @@ export function SuccessScreen({ provider, form, token, result, onAddAnother, onD
                                 <td>ID</td>
                                 <td>{result.id}</td>
                             </tr>
-                            <tr>
-                                <td>{isToken ? 'Base URL' : 'Account'}</td>
-                                <td>{isToken ? token?.baseUrl : form.email}</td>
-                            </tr>
+                            {isCli ? (
+                                <tr>
+                                    <td>Scope</td>
+                                    <td>{cliScope}</td>
+                                </tr>
+                            ) : (
+                                <tr>
+                                    <td>{isToken ? 'Base URL' : 'Account'}</td>
+                                    <td>{isToken ? token?.baseUrl : form.email}</td>
+                                </tr>
+                            )}
                             <tr>
                                 <td>Label</td>
                                 <td>
                                     {form.label
-                                        || (isToken
-                                            ? `HTTP · ${token?.baseUrl ?? ''}`
-                                            : `${provider.title} · ${form.email}`)}
+                                        || (isCli
+                                            ? provider.title
+                                            : isToken
+                                                ? `HTTP · ${token?.baseUrl ?? ''}`
+                                                : `${provider.title} · ${form.email}`)}
                                 </td>
                             </tr>
                             <tr>

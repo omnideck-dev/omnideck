@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from integrations.permissions import Access, Capability
 from tools.integrations._state import registered_integrations
+from tools.integrations.cli.run_cli import build_run_cli_tool
 from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
 from tools.integrations.create_event import build_create_event_tool
@@ -102,6 +103,7 @@ _BUILDERS: dict[Capability, dict[Access, list[ToolBuilder]]] = {
     },
     Capability.CONTACTS: {Access.READ: [build_list_contacts_tool, build_search_contacts_tool]},
     Capability.HTTP: {Access.READ: [build_call_api_tool]},
+    Capability.CLI: {Access.READ: [build_run_cli_tool]},
 }
 
 
