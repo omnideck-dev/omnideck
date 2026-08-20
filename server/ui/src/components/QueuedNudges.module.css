@@ -1,0 +1,123 @@
+.queue {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.header {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.header:hover {
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+}
+
+.header:focus-visible,
+.deleteButton:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.chevron {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.list {
+  max-height: 210px;
+  margin: 0;
+  padding: 0 var(--sp-2) var(--sp-2);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.row {
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 20px 42px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+
+.index {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.next {
+  width: max-content;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.message {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteButton {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.deleteButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.deleteButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

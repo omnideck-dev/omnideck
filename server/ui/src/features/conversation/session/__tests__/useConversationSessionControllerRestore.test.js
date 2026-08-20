@@ -50,7 +50,20 @@ describe('conversation session restore', () => {
                     json: () => Promise.resolve({ events }),
                 });
             }
-            if (url === '/api/nudge') return Promise.resolve({ ok: true });
+            if (url === '/api/nudge') return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({
+                    ok: true,
+                    nudge: {
+                        id: 'nudge-1',
+                        agent_id: 'root-1',
+                        message: 'continue',
+                    },
+                }),
+            });
+            if (url.startsWith('/api/nudges/nudge-1?')) {
+                return Promise.resolve({ ok: true, status: 200 });
+            }
             return Promise.resolve({ ok: true, body: null });
         });
         const { result } = renderHook(() => useConversationSessionController());
@@ -76,11 +89,26 @@ describe('conversation session restore', () => {
         await act(async () => {
             nudgeResult = await result.current.sendNudge('continue');
         });
-        expect(nudgeResult).toEqual({ ok: true, message: 'continue' });
+        expect(nudgeResult).toEqual({
+            ok: true,
+            message: 'continue',
+            nudge: {
+                id: 'nudge-1',
+                agent_id: 'root-1',
+                message: 'continue',
+            },
+        });
+        expect(result.current.pendingNudges).toEqual([nudgeResult.nudge]);
         const nudgeRequest = fetchSpy.mock.calls.find(([url]) => url === '/api/nudge');
         expect(JSON.parse(nudgeRequest[1].body)).toMatchObject({
             conversation_id: 'conversation-1',
             agent_id: 'root-1',
         });
+
+        await act(async () => {
+            expect(await result.current.deleteQueuedNudge(nudgeResult.nudge))
+                .toEqual({ ok: true, alreadyGone: false });
+        });
+        expect(result.current.pendingNudges).toEqual([]);
     });
 });

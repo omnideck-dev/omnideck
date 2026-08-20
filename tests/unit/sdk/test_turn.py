@@ -17,8 +17,10 @@ from sdk.events import AgentEvent, ContentPayload, TurnEndPayload, publish_event
 from sdk.turn import (
     StopRequestedError,
     check_stop,
+    delete_nudge,
     drain_nudges,
     is_turn_active,
+    list_nudges,
     queue_nudge,
     register_nudge_queue,
     request_stop,
@@ -70,6 +72,42 @@ def test_queue_and_drain_nudges() -> None:
         assert drain_nudges("agent-1") == []
     finally:
         unregister_nudge_queue("agent-1")
+
+
+@pytest.mark.unit
+def test_nudges_can_be_listed_and_deleted_by_id() -> None:
+    """Pending nudges keep FIFO order and can be removed individually."""
+    register_nudge_queue("agent-addressable")
+    try:
+        first = queue_nudge("agent-addressable", "first")
+        second = queue_nudge("agent-addressable", "second")
+
+        assert first is not None
+        assert second is not None
+        assert [nudge.message for nudge in list_nudges("agent-addressable")] == [
+            "first",
+            "second",
+        ]
+        assert delete_nudge("agent-addressable", first.id) == first
+        assert [nudge.message for nudge in list_nudges("agent-addressable")] == [
+            "second",
+        ]
+        assert drain_nudges("agent-addressable") == ["second"]
+    finally:
+        unregister_nudge_queue("agent-addressable")
+
+
+@pytest.mark.unit
+def test_delete_nudge_returns_none_after_drain() -> None:
+    """Deletion cleanly loses a race with queue consumption."""
+    register_nudge_queue("agent-race")
+    try:
+        nudge = queue_nudge("agent-race", "consume me")
+        assert nudge is not None
+        assert drain_nudges("agent-race") == ["consume me"]
+        assert delete_nudge("agent-race", nudge.id) is None
+    finally:
+        unregister_nudge_queue("agent-race")
 
 
 @pytest.mark.unit

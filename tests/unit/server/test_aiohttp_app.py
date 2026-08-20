@@ -16,10 +16,14 @@ from agent_runtime import ActiveRunConflictError, UnknownActiveRunError
 from server._agent_run_routes import (
     chat_handler,
     chat_run_events_handler,
+    delete_nudge_handler,
+    list_nudges_handler,
+    nudge_handler,
     stop_handler,
 )
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 from server._ui_routes import index_handler
+from sdk.turn import register_nudge_queue, turn_scope, unregister_nudge_queue
 
 
 def _make_request(*, raw_body: str | None = None, query: dict | None = None) -> MagicMock:
@@ -139,6 +143,64 @@ async def test_stop_targets_active_run_manager() -> None:
 
     assert resp.status == 200
     manager.request_stop.assert_called_once_with("conversation-1")
+
+
+# -- nudge handlers ---------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_nudge_can_be_listed_and_deleted_while_pending() -> None:
+    """The HTTP contract exposes an ID for queue visibility and deletion."""
+    agent_id = "root-test"
+    register_nudge_queue(agent_id)
+    try:
+        async with turn_scope(conversation_id="conversation-1"):
+            create_req = _make_request(raw_body=json.dumps({
+                "message": "keep the API compatible",
+                "conversation_id": "conversation-1",
+                "agent_id": agent_id,
+            }))
+            create_resp = await nudge_handler(create_req)
+
+            assert create_resp.status == 200
+            created = json.loads(create_resp.body)["nudge"]
+            assert created["message"] == "keep the API compatible"
+            assert created["agent_id"] == agent_id
+
+            list_req = _make_request(query={
+                "conversation_id": "conversation-1",
+                "agent_id": agent_id,
+            })
+            list_resp = await list_nudges_handler(list_req)
+            assert json.loads(list_resp.body)["nudges"] == [created]
+
+            delete_req = _make_request(query={
+                "conversation_id": "conversation-1",
+                "agent_id": agent_id,
+            })
+            delete_req.match_info = {"nudge_id": created["id"]}
+            delete_resp = await delete_nudge_handler(delete_req)
+            assert delete_resp.status == 200
+
+            list_resp = await list_nudges_handler(list_req)
+            assert json.loads(list_resp.body)["nudges"] == []
+    finally:
+        unregister_nudge_queue(agent_id)
+
+
+@pytest.mark.unit
+async def test_delete_nudge_returns_404_when_already_consumed() -> None:
+    """The delete endpoint makes a drain race explicit and idempotent for UI."""
+    req = _make_request(query={
+        "conversation_id": "conversation-1",
+        "agent_id": "root-missing",
+    })
+    req.match_info = {"nudge_id": "gone"}
+
+    resp = await delete_nudge_handler(req)
+
+    assert resp.status == 404
+    assert json.loads(resp.body)["error"] == "Nudge is no longer pending."
 
 
 # -- run events handler ----------------------------------------------------

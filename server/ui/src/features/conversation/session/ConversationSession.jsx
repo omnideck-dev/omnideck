@@ -67,6 +67,17 @@ export function ConversationSessionProvider({ children }) {
         return result;
     }, [addToast, session.sendNudge]);
 
+    const deleteQueuedNudge = useCallback(async (nudge) => {
+        const result = await session.deleteQueuedNudge(nudge);
+        if (!result) return result;
+        if (result.ok) {
+            addToast('Nudge removed', { type: 'info', duration: 3000 });
+        } else {
+            addToast(result.error || 'Could not remove nudge', { type: 'error' });
+        }
+        return result;
+    }, [addToast, session.deleteQueuedNudge]);
+
     const loadConversation = useCallback(async (conversationId) => {
         const previousConversationId = session.activeConversationId;
         const loaded = await session.loadConversation(conversationId);
@@ -156,6 +167,7 @@ export function ConversationSessionProvider({ children }) {
         activeConversationId: session.activeConversationId,
         turns: session.turns,
         draft: session.draft,
+        pendingNudges: session.pendingNudges,
         isStreaming: session.isStreaming,
         isOffline: session.isOffline,
         stopRequested: session.stopRequested,
@@ -167,6 +179,7 @@ export function ConversationSessionProvider({ children }) {
         session.draft,
         session.isOffline,
         session.isStreaming,
+        session.pendingNudges,
         session.stalled,
         session.stopRequested,
         session.turns,
@@ -175,6 +188,8 @@ export function ConversationSessionProvider({ children }) {
     const commands = useMemo(() => ({
         sendMessage,
         sendNudge,
+        deleteQueuedNudge,
+        refreshQueuedNudges: session.refreshQueuedNudges,
         stopGeneration: session.stopGeneration,
         loadConversation,
         newConversation,
@@ -183,10 +198,12 @@ export function ConversationSessionProvider({ children }) {
         setConversationProfileId,
     }), [
         composeFromSource,
+        deleteQueuedNudge,
         loadConversation,
         newConversation,
         sendMessage,
         sendNudge,
+        session.refreshQueuedNudges,
         session.setDraft,
         session.stopGeneration,
     ]);

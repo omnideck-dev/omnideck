@@ -217,6 +217,7 @@ export default function useConversationSessionController({
     // chat component) so opening/seeding a conversation and its draft are one
     // concern — newConversation can seed it, switching conversations clears it.
     const [draft, setDraft] = useState('');
+    const [pendingNudges, setPendingNudges] = useState([]);
     const [isStreaming, _setIsStreaming] = useState(false);
     // Ref mirror of isStreaming so sendMessage can read it synchronously
     const isStreamingRef = useRef(false);
@@ -337,6 +338,27 @@ export default function useConversationSessionController({
         }
         return addedEventCount;
     }, [workspaceDispatch]);
+    const refreshQueuedNudges = useCallback(async (agentId) => {
+        if (!agentId || browserIsOffline()) return null;
+        const query = new URLSearchParams({
+            conversation_id: conversationIdRef.current,
+            agent_id: agentId,
+        });
+        try {
+            const res = await fetch(`/api/nudges?${query}`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const nudges = Array.isArray(data?.nudges) ? data.nudges : [];
+            setPendingNudges((current) => [
+                ...current.filter((nudge) => nudge.agent_id !== agentId),
+                ...nudges,
+            ]);
+            return nudges;
+        } catch {
+            return null;
+        }
+    }, []);
+
     const sendNudge = useCallback(async (message, agentId) => {
         if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
@@ -351,7 +373,51 @@ export default function useConversationSessionController({
                 body: JSON.stringify(nudgeBody),
             });
             if (res.ok) {
-                return { ok: true, message };
+                const data = typeof res.json === 'function'
+                    ? await res.json().catch(() => ({}))
+                    : {};
+                const nudge = data?.nudge;
+                if (nudge?.id) {
+                    setPendingNudges((current) => (
+                        current.some((item) => item.id === nudge.id)
+                            ? current
+                            : [...current, nudge]
+                    ));
+                    await refreshQueuedNudges(nudge.agent_id);
+                }
+                return { ok: true, message, ...(nudge ? { nudge } : {}) };
+            }
+            const data = await res.json().catch(() => ({}));
+            return {
+                ok: false,
+                status: res.status,
+                error: data.error,
+            };
+        } catch {
+            return {
+                ok: false,
+                status: 0,
+                error: 'Could not reach the server',
+            };
+        }
+    }, [refreshQueuedNudges]);
+
+    const deleteQueuedNudge = useCallback(async (nudge) => {
+        if (!nudge?.id || !nudge?.agent_id || browserIsOffline()) return null;
+        const query = new URLSearchParams({
+            conversation_id: conversationIdRef.current,
+            agent_id: nudge.agent_id,
+        });
+        try {
+            const res = await fetch(
+                `/api/nudges/${encodeURIComponent(nudge.id)}?${query}`,
+                { method: 'DELETE' },
+            );
+            if (res.ok || res.status === 404) {
+                setPendingNudges((current) => (
+                    current.filter((item) => item.id !== nudge.id)
+                ));
+                return { ok: true, alreadyGone: res.status === 404 };
             }
             const data = await res.json().catch(() => ({}));
             return {
@@ -509,6 +575,13 @@ export default function useConversationSessionController({
                         if (recordSeq !== null) lastSeq = recordSeq;
                         const event = normalizeLiveEvent(data);
                         if (!event) continue;
+                        if (event.type === 'user_message' && event.is_nudge) {
+                            setPendingNudges((current) => current.filter(
+                                (nudge) => nudge.agent_id !== event.agent_id,
+                            ));
+                        } else if (event.type === 'turn_end') {
+                            setPendingNudges([]);
+                        }
                         if (!event.id || !knownEventIds.has(event.id)) {
                             delivery.deliver(event);
                             if (event.id) {
@@ -602,6 +675,7 @@ export default function useConversationSessionController({
                 abortControllerRef.current = null;
                 setIsStreaming(false);
                 setStopRequested(false);
+                setPendingNudges([]);
                 setIsOffline(browserIsOffline());
                 dispatchConversation({ type: 'FINALIZE_ITERATION' });
             }
@@ -685,6 +759,7 @@ export default function useConversationSessionController({
         }
         setIsStreaming(false);
         setStopRequested(false);
+        setPendingNudges([]);
         setDraft('');
 
         const controller = new AbortController();
@@ -758,6 +833,7 @@ export default function useConversationSessionController({
         }
         setIsStreaming(false);
         setStopRequested(false);
+        setPendingNudges([]);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
         eventsRef.current = [];
         canonicalEventIdsRef.current = new Set();
@@ -821,9 +897,12 @@ export default function useConversationSessionController({
         stopRequested,
         activeConversationId,
         draft,
+        pendingNudges,
         setDraft,
         sendMessage,
         sendNudge,
+        deleteQueuedNudge,
+        refreshQueuedNudges,
         stopGeneration,
         loadConversation,
         reattachActiveRun,

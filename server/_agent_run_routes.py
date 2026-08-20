@@ -8,7 +8,9 @@ Endpoints:
     POST /api/chat                              — start and follow an agent run
     GET  /api/chat/runs/{run_id}/events         — replay and follow an active run
     POST /api/chat/stop                         — request cooperative run stop
-    POST /api/nudge                             — nudge the active root-agent turn
+    POST /api/nudge                             — queue a nudge for an active agent
+    GET  /api/nudges                            — list an agent's pending nudges
+    DELETE /api/nudges/{nudge_id}               — delete one pending nudge
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from agent_runtime import (
     RunAttachment,
     UnknownActiveRunError,
 )
-from sdk.turn import is_turn_active, queue_nudge
+from sdk.turn import delete_nudge, is_turn_active, list_nudges, queue_nudge
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -219,7 +221,53 @@ async def nudge_handler(request: Request) -> Response:
             {"error": "No active turn for this conversation."},
             status=409,
         )
-    queue_nudge(payload.agent_id, text)
+    nudge = queue_nudge(payload.agent_id, text)
+    if nudge is None:
+        return web.json_response(
+            {"error": "The target agent is no longer running."},
+            status=409,
+        )
+    return web.json_response({
+        "ok": True,
+        "nudge": {
+            "id": nudge.id,
+            "message": nudge.message,
+            "agent_id": payload.agent_id,
+        },
+    })
+
+
+async def list_nudges_handler(request: Request) -> Response:
+    """List pending nudges for one agent in delivery order."""
+    conversation_id = request.query.get("conversation_id")
+    agent_id = request.query.get("agent_id")
+    if not conversation_id or not agent_id:
+        return web.json_response(
+            {"error": "conversation_id and agent_id are required."},
+            status=400,
+        )
+    nudges = [
+        {"id": nudge.id, "message": nudge.message, "agent_id": agent_id}
+        for nudge in list_nudges(agent_id)
+    ]
+    return web.json_response({"nudges": nudges})
+
+
+async def delete_nudge_handler(request: Request) -> Response:
+    """Delete a nudge if it is still pending for the requested agent."""
+    conversation_id = request.query.get("conversation_id")
+    agent_id = request.query.get("agent_id")
+    if not conversation_id or not agent_id:
+        return web.json_response(
+            {"error": "conversation_id and agent_id are required."},
+            status=400,
+        )
+    nudge = delete_nudge(agent_id, request.match_info["nudge_id"])
+    if nudge is None:
+        return web.json_response(
+            {"error": "Nudge is no longer pending."},
+            status=404,
+        )
     return web.json_response({"ok": True})
 
 
@@ -233,6 +281,12 @@ def register_agent_run_routes(app: web.Application) -> None:
     )
     app.router.add_route("POST", "/api/chat/stop", stop_handler)
     app.router.add_route("POST", "/api/nudge", nudge_handler)
+    app.router.add_route("GET", "/api/nudges", list_nudges_handler)
+    app.router.add_route(
+        "DELETE",
+        "/api/nudges/{nudge_id}",
+        delete_nudge_handler,
+    )
 
 
 __all__ = ["register_agent_run_routes"]

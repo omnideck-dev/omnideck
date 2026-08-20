@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
@@ -15,7 +15,7 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
+export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange, pendingNudges = [], onDeleteNudge, onRefreshNudges }) {
     // The title bar reflects the root agent; read it straight from the agent
     // tree rather than receiving it as a prop.
     const agentState = useAgentState();
@@ -25,6 +25,12 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
     // agent name until the live conversation title is wired up.
     const turnCount = Array.isArray(turns) ? turns.length : 0;
     const title = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat';
+
+    useEffect(() => {
+        if (isStreaming && rootAgent?.id) {
+            void onRefreshNudges?.(rootAgent.id);
+        }
+    }, [isStreaming, onRefreshNudges, rootAgent?.id]);
 
     return (
         <div className={styles.panel}>
@@ -70,6 +76,10 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
                 selectedProfileId={selectedProfileId}
                 onProfileChange={onProfileChange}
                 profileRefreshSignal={profileRefreshSignal}
+                pendingNudges={pendingNudges.filter(
+                    (nudge) => nudge.agent_id === rootAgent?.id,
+                )}
+                onDeleteNudge={onDeleteNudge}
             />
         </div>
     );

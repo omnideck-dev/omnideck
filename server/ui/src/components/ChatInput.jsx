@@ -6,6 +6,7 @@ import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import QueuedNudges from './QueuedNudges.jsx';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
 const LINE_HEIGHT_PX = 20;
@@ -19,7 +20,7 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, pendingNudges = [], onDeleteNudge }) {
     const [message, setMessage] = useState('');
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
@@ -32,7 +33,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const placeholder = stopRequested
         ? 'Stopping…'
         : isStreaming
-        ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
+        ? 'Send a nudge…'
         : `Message ${profileName || 'Omnideck'}…`;
 
     const resizeInline = useCallback(() => {
@@ -184,97 +185,107 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                 />
             )}
             <form className={styles.inputArea} onSubmit={handleSubmit}>
-                {attachments.length > 0 && (
-                    <div className={styles.tray}>
-                        {attachments.map((att, i) => (
-                            <AttachmentChip
-                                key={i}
-                                src={att.preview || undefined}
-                                filename={att.filename}
-                                content_type={att.content_type}
-                                sizeBytes={att.base64 ? _base64Bytes(att.base64) : undefined}
-                                onRemove={() => removeAttachment(i)}
-                            />
-                        ))}
-                    </div>
+                {isStreaming && (
+                    <QueuedNudges
+                        nudges={pendingNudges}
+                        onDelete={onDeleteNudge}
+                        disabled={isOffline || stopRequested}
+                    />
                 )}
-                <div className={styles.textareaWrapper}>
-                    <textarea
-                        ref={textareaRef}
-                        {...textareaProps}
-                        className={[
-                            styles.customInput,
-                            showCornerBtn && styles.grown,
-                            expanded && styles.expandedInput,
-                        ].filter(Boolean).join(' ')}
-                    />
-                    {showCornerBtn && (
-                        <button
-                            type="button"
-                            className={styles.expandButton}
-                            data-testid="composer-expand-btn"
-                            onClick={() => setExpanded((v) => !v)}
-                            title={expanded ? 'Collapse' : 'Expand'}
-                            aria-label={expanded ? 'Collapse input' : 'Expand input'}
-                        >
-                            <i className={expanded ? 'bi bi-arrows-angle-contract' : 'bi bi-arrows-angle-expand'} />
-                        </button>
+                <div className={styles.composerBody}>
+                    {attachments.length > 0 && (
+                        <div className={styles.tray}>
+                            {attachments.map((att, i) => (
+                                <AttachmentChip
+                                    key={i}
+                                    src={att.preview || undefined}
+                                    filename={att.filename}
+                                    content_type={att.content_type}
+                                    sizeBytes={att.base64 ? _base64Bytes(att.base64) : undefined}
+                                    onRemove={() => removeAttachment(i)}
+                                />
+                            ))}
+                        </div>
                     )}
-                </div>
-                <div className={styles.inputAreaButtons}>
-                    <ProfileSelector
-                        selectedId={selectedProfileId}
-                        onChange={onProfileChange}
-                        disabled={isStreaming}
-                        refreshSignal={profileRefreshSignal}
-                        onSelectedProfile={setSelectedProfile}
-                    />
-                    <div className={styles.actionButtons}>
-                        <button
-                            type="button"
-                            id="fileButton"
-                            className={styles.iconButton}
-                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                            title="Attach file"
-                            aria-label="Attach file"
-                        >
-                            <PaperclipIcon />
-                        </button>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            id="fileInput"
-                            multiple
-                            style={{ display: 'none' }}
-                            onClick={(e) => { e.target.value = ''; }}
-                            onChange={handleFile}
+                    <div className={styles.textareaWrapper}>
+                        <textarea
+                            ref={textareaRef}
+                            {...textareaProps}
+                            className={[
+                                styles.customInput,
+                                showCornerBtn && styles.grown,
+                                expanded && styles.expandedInput,
+                            ].filter(Boolean).join(' ')}
                         />
-                        {isStreaming ? (
+                        {showCornerBtn && (
                             <button
                                 type="button"
-                                className={`${styles.sendButton} ${styles.stopButton}`}
-                                data-testid="chat-stop-btn"
-                                title={stopRequested ? 'Stopping…' : 'Stop generation'}
-                                aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
-                                onClick={onStop}
-                                disabled={stopRequested || isOffline}
+                                className={styles.expandButton}
+                                data-testid="composer-expand-btn"
+                                onClick={() => setExpanded((v) => !v)}
+                                title={expanded ? 'Collapse' : 'Expand'}
+                                aria-label={expanded ? 'Collapse input' : 'Expand input'}
                             >
-                                <StopIcon />
-                            </button>
-                        ) : (
-                            <button
-                                type="submit"
-                                className={styles.sendButton}
-                                title="Send message"
-                                aria-label="Send message"
-                                disabled={
-                                    isOffline
-                                    || (!message.trim() && !attachments.length)
-                                }
-                            >
-                                <SendIcon />
+                                <i className={expanded ? 'bi bi-arrows-angle-contract' : 'bi bi-arrows-angle-expand'} />
                             </button>
                         )}
+                    </div>
+                    <div className={styles.inputAreaButtons}>
+                        {!isStreaming && (
+                            <ProfileSelector
+                                selectedId={selectedProfileId}
+                                onChange={onProfileChange}
+                                refreshSignal={profileRefreshSignal}
+                                onSelectedProfile={setSelectedProfile}
+                            />
+                        )}
+                        <div className={styles.actionButtons}>
+                            <button
+                                type="button"
+                                id="fileButton"
+                                className={styles.iconButton}
+                                onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                                title="Attach file"
+                                aria-label="Attach file"
+                            >
+                                <PaperclipIcon />
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                id="fileInput"
+                                multiple
+                                style={{ display: 'none' }}
+                                onClick={(e) => { e.target.value = ''; }}
+                                onChange={handleFile}
+                            />
+                            {isStreaming ? (
+                                <button
+                                    type="button"
+                                    className={`${styles.sendButton} ${styles.stopButton}`}
+                                    data-testid="chat-stop-btn"
+                                    title={stopRequested ? 'Stopping…' : 'Stop generation'}
+                                    aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
+                                    onClick={onStop}
+                                    disabled={stopRequested || isOffline}
+                                >
+                                    <StopIcon />
+                                </button>
+                            ) : (
+                                <button
+                                    type="submit"
+                                    className={styles.sendButton}
+                                    title="Send message"
+                                    aria-label="Send message"
+                                    disabled={
+                                        isOffline
+                                        || (!message.trim() && !attachments.length)
+                                    }
+                                >
+                                    <SendIcon />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </form>

@@ -20,11 +20,13 @@ const harness = vi.hoisted(() => ({
         activeConversationId: 'conversation-1',
         turns: [],
         draft: '',
+        pendingNudges: [],
         isStreaming: false,
         stopRequested: false,
         stalled: false,
         sendMessage: vi.fn(),
         sendNudge: vi.fn(),
+        deleteQueuedNudge: vi.fn(),
         stopGeneration: vi.fn(),
         loadConversation: vi.fn(),
         reattachActiveRun: vi.fn(),
@@ -260,6 +262,24 @@ describe('ConversationSessionProvider', () => {
         expect(harness.addToast).toHaveBeenCalledWith(
             'Agent is no longer running',
             { type: 'warn', duration: 5000 },
+        );
+    });
+
+    it('shows feedback after deleting a queued nudge', async () => {
+        harness.controller.deleteQueuedNudge.mockResolvedValue({ ok: true });
+        const { getSession } = renderSession();
+
+        await act(async () => {
+            await getSession().deleteQueuedNudge({
+                id: 'nudge-1',
+                agent_id: 'root-1',
+                message: 'remove me',
+            });
+        });
+
+        expect(harness.addToast).toHaveBeenCalledWith(
+            'Nudge removed',
+            { type: 'info', duration: 3000 },
         );
     });
 

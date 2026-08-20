@@ -106,17 +106,37 @@ describe('ChatInput', () => {
         }
     });
 
-    it('names the profile in the streaming nudge placeholder', async () => {
+    it('keeps the nudge target implicit while streaming', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
             json: () => Promise.resolve([{ id: 'p1', name: 'Code Expert' }]),
         });
         try {
             render(<ChatInput onSend={vi.fn()} onStop={vi.fn()} isStreaming={true}
                 selectedProfileId="p1" onProfileChange={vi.fn()} />);
-            expect(await screen.findByPlaceholderText('Send a nudge to Code Expert…')).toBeInTheDocument();
+            expect(screen.getByPlaceholderText('Send a nudge…')).toBeInTheDocument();
+            expect(screen.queryByText('Code Expert')).not.toBeInTheDocument();
         } finally {
             fetchSpy.mockRestore();
         }
+    });
+
+    it('integrates pending nudges into the streaming composer', () => {
+        render(
+            <ChatInput
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                isStreaming={true}
+                pendingNudges={[
+                    { id: 'n1', agent_id: 'root-1', message: 'Keep the API compatible.' },
+                ]}
+                onDeleteNudge={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByTestId('queued-nudges')).toBeInTheDocument();
+        expect(screen.getByText('Keep the API compatible.')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Send a nudge…'))
+            .toBeInTheDocument();
     });
 
     it('disables the send button when there is nothing to send', () => {

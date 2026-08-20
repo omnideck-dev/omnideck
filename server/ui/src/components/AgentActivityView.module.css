@@ -177,10 +177,18 @@
     gap: var(--sp-2);
     background: var(--canvas);
 }
+.nudgeCard {
+    overflow: hidden;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
 .nudgeBar {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
+    padding: var(--sp-2);
 }
 .nudgeLabel {
     font-size: 0.75rem;
@@ -206,8 +214,4 @@
 .nudgeInput:focus {
     border-color: var(--accent);
     box-shadow: var(--shadow-glow);
-}
-.nudgeHint {
-    font-size: 0.6875rem;
-    color: var(--text-tertiary);
 }

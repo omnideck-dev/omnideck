@@ -27,6 +27,9 @@ export default function AgentNetworkView({
     onOpenOverview,
     onSelectAgent,
     onNudge,
+    pendingNudges = [],
+    onDeleteNudge,
+    onRefreshNudges,
     onPreview,
     onOpenWorkspaceResource,
     isOffline = false,
@@ -117,6 +120,11 @@ export default function AgentNetworkView({
                         activityEntries={selectedActivity}
                         onSelectAgent={onSelectAgent}
                         onNudge={onNudge}
+                        pendingNudges={pendingNudges.filter(
+                            (nudge) => nudge.agent_id === selectedAgent.id,
+                        )}
+                        onDeleteNudge={onDeleteNudge}
+                        onRefreshNudges={onRefreshNudges}
                         onPreview={onPreview}
                         availableViews={availableViews}
                         onOpenView={(resourceId) => (

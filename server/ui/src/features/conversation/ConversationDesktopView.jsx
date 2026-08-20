@@ -29,6 +29,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         activeConversationId,
         turns,
         draft,
+        pendingNudges,
         isStreaming,
         isOffline,
         stopRequested,
@@ -38,6 +39,8 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const {
         sendMessage,
         sendNudge,
+        deleteQueuedNudge,
+        refreshQueuedNudges,
         stopGeneration,
         setDraft,
         setConversationProfileId,
@@ -81,6 +84,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                     onOpenOverview={() => navigation.openNetwork()}
                     onSelectAgent={(agentId) => navigation.openAgent(agentId)}
                     onNudge={sendNudge}
+                    pendingNudges={pendingNudges}
+                    onDeleteNudge={deleteQueuedNudge}
+                    onRefreshNudges={refreshQueuedNudges}
                     onPreview={artifacts.openFileOutput}
                     onOpenWorkspaceResource={
                         openAgentWorkspaceResource
@@ -113,6 +119,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 selectedProfileId={selectedProfileId}
                 onProfileChange={setConversationProfileId}
                 profileRefreshSignal={profilesHook.revision}
+                pendingNudges={pendingNudges}
+                onDeleteNudge={deleteQueuedNudge}
+                onRefreshNudges={refreshQueuedNudges}
                 onPreview={artifacts.openFileOutput}
                 conversationId={activeConversationId}
                 draft={draft}
