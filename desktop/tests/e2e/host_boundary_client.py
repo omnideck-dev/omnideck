@@ -580,7 +580,8 @@ const finish = (value) => done(JSON.stringify(value));
         if isinstance(result, str):
             result = json.loads(result)
         expected_keys = [
-            "checkForUpdate", "currentUpdate", "deferUpdate", "installUpdate", "onUpdate", "skipUpdate",
+            "checkForUpdate", "currentUpdate", "deferUpdate", "installUpdate", "onUpdate",
+            "openExternal", "skipUpdate",
         ]
         if not isinstance(result, dict) or result.get("ok") is not True:
             raise AssertionError(f"Native update bridge failed: {result!r}")
@@ -597,6 +598,105 @@ const finish = (value) => done(JSON.stringify(value));
             raise AssertionError(f"Native update events were not delivered: {result!r}")
         self.evidence.joinpath("update-bridge.json").write_text(
             json.dumps({"status": "passed", "hostedUrl": initial.get("url"), **result}, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def external_links(
+        self, expected_browser_process: str, skip_browser_process_check: bool
+    ) -> None:
+        initial = self.select_hosted_window()
+        inserted = self.driver.execute("""
+const sameOrigin = document.createElement('a');
+sameOrigin.dataset.testid = 'desktop-same-origin-link';
+sameOrigin.href = `${location.pathname}${location.search}#desktop-link-route`;
+sameOrigin.textContent = 'Same-origin route';
+const external = document.createElement('a');
+external.dataset.testid = 'desktop-external-link';
+external.href = 'https://example.com/omnideck-external-link-test';
+external.textContent = 'External link';
+const externalBlank = document.createElement('a');
+externalBlank.dataset.testid = 'desktop-external-blank-link';
+externalBlank.href = 'https://example.com/omnideck-external-blank-link-test';
+externalBlank.target = '_blank';
+externalBlank.textContent = 'External link in new window';
+const probe = document.createElement('div');
+probe.dataset.testid = 'desktop-link-probe';
+Object.assign(probe.style, {
+  position: 'fixed', inset: '8px 8px auto auto', zIndex: '2147483647',
+  display: 'grid', gap: '8px', padding: '12px', background: 'white', color: 'black',
+});
+probe.append(sameOrigin, external, externalBlank);
+document.body.append(probe);
+return true;
+""")
+        if inserted is not True:
+            raise AssertionError("Could not install the packaged link probes")
+
+        self.driver.click('[data-testid="desktop-same-origin-link"]')
+        same_origin = wait_until(
+            "same-origin navigation to remain in the hosted webview",
+            self.timeout,
+            lambda: self.driver.execute(
+                "return location.hash === '#desktop-link-route' ? location.href : '';"
+            ),
+        )
+
+        def browser_pids() -> list[int]:
+            completed = subprocess.run(
+                ["pgrep", "-u", str(os.getuid()), "-x", expected_browser_process],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return sorted(
+                int(value) for value in completed.stdout.split() if value.isdigit()
+            )
+
+        before_pids = [] if skip_browser_process_check else browser_pids()
+        self.driver.click('[data-testid="desktop-external-link"]')
+        if skip_browser_process_check:
+            time.sleep(2)
+            opened_pids = []
+        else:
+            opened_pids = wait_until(
+                f"the system browser process {expected_browser_process}",
+                self.timeout,
+                lambda: browser_pids() or None,
+            )
+        after_external = self.driver.execute("return location.href;")
+        if after_external != same_origin:
+            raise AssertionError(
+                "External navigation replaced the hosted application: "
+                f"{same_origin!r} -> {after_external!r}"
+            )
+
+        self.driver.click('[data-testid="desktop-external-blank-link"]')
+        time.sleep(2)
+        after_blank = self.driver.execute("return location.href;")
+        if after_blank != same_origin:
+            raise AssertionError(
+                "Target-blank navigation replaced the hosted application: "
+                f"{same_origin!r} -> {after_blank!r}"
+            )
+
+        self.evidence.joinpath("external-links.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "hostedUrl": initial.get("url"),
+                    "sameOriginUrl": same_origin,
+                    "externalUrl": "https://example.com/omnideck-external-link-test",
+                    "externalBlankUrl": "https://example.com/omnideck-external-blank-link-test",
+                    "hostedUrlAfterExternal": after_external,
+                    "hostedUrlAfterExternalBlank": after_blank,
+                    "browserProcess": expected_browser_process,
+                    "browserProcessVerified": not skip_browser_process_check,
+                    "browserPidsBefore": before_pids,
+                    "browserPidsAfter": opened_pids,
+                },
+                indent=2,
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -669,14 +769,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--application", required=True)
     parser.add_argument(
         "--operation",
-        choices=("download", "upload", "artifact-download", "zoom", "update-bridge"),
+        choices=(
+            "download", "upload", "artifact-download", "zoom", "update-bridge",
+            "external-links",
+        ),
         required=True,
     )
     parser.add_argument("--fixture-id", required=True)
     parser.add_argument("--fixture-name", required=True)
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
-    parser.add_argument("--expected-update-version", default="0.1.5")
+    parser.add_argument("--expected-update-version", default="0.2.3")
+    parser.add_argument("--expected-browser-process", default="firefox")
+    parser.add_argument("--skip-browser-process-check", action="store_true")
     parser.add_argument("--native-input-signal-dir", type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--tauri-driver")
@@ -733,8 +838,12 @@ def main() -> int:
                 journey.artifact_download(args.artifact_filename)
             elif args.operation == "zoom":
                 journey.zoom(args.native_input_signal_dir)
-            else:
+            elif args.operation == "update-bridge":
                 journey.update_bridge(args.expected_update_version)
+            else:
+                journey.external_links(
+                    args.expected_browser_process, args.skip_browser_process_check
+                )
             status = "passed"
         return 0
     except Exception as error:

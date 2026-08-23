@@ -7,10 +7,66 @@ RuntimeError rather than failing confusingly downstream at routine-run time.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from tasks._executor import TaskExecutor
-from tasks._models import Task
+from tasks._models import Routine, Run, Task, TaskResult
+
+
+@asynccontextmanager
+async def _null_scope(*_args, **_kwargs):
+    yield
+
+
+def _prepared_execution(monkeypatch: pytest.MonkeyPatch):
+    store = MagicMock()
+    run = Run(id="run-1", routine_id="routine-1")
+    routine = Routine(id="routine-1", description="Test routine")
+    task = Task(
+        id="task-1",
+        routine_id=routine.id,
+        description="Test task",
+        instruction="Do the test",
+        agent_profile="profile-1",
+    )
+    task_result = TaskResult(id="result-1", run_id=run.id, task_id=task.id)
+    store.get_run.return_value = run
+    store.get_routine.return_value = routine
+
+    history = MagicMock()
+    history.drain_observers = AsyncMock()
+    events_log = MagicMock()
+    agent_state = SimpleNamespace(tools=[])
+    agent = SimpleNamespace(
+        instruction="System prompt",
+        context_window=1000,
+        compaction_threshold=0.8,
+        max_iterations=10,
+        name="TASK_AGENT",
+    )
+    run_turn_mock = AsyncMock(return_value="completed")
+    cleanup_mock = AsyncMock()
+
+    monkeypatch.setattr(TaskExecutor, "_profile_for", lambda _self, _task: object())
+    monkeypatch.setattr("tasks._executor.build_agent_state", AsyncMock(return_value=agent_state))
+    monkeypatch.setattr("tasks._executor.build_agent", lambda *_args, **_kwargs: agent)
+    monkeypatch.setattr("tasks._executor.ConversationHistory", lambda **_kwargs: history)
+    monkeypatch.setattr("tasks._executor.EventsLogWriter", lambda _conversation_id: events_log)
+    monkeypatch.setattr("tasks._executor.ContextManager", lambda **_kwargs: object())
+    monkeypatch.setattr("tasks._executor.LLMCompactionStrategy", lambda **_kwargs: object())
+    monkeypatch.setattr("tasks._executor.default_hooks", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("tasks._executor.turn_scope", _null_scope)
+    monkeypatch.setattr("tasks._executor.agent_span", _null_scope)
+    monkeypatch.setattr("tasks._executor.publish_event", MagicMock())
+    monkeypatch.setattr("tasks._executor.run_turn", run_turn_mock)
+    monkeypatch.setattr("tasks._executor.run_conversation_exit_hooks", cleanup_mock)
+
+    return TaskExecutor(store), task_result, task, run_turn_mock, cleanup_mock, history
 
 
 @pytest.mark.unit
@@ -28,3 +84,89 @@ def test_profile_for_raises_when_profile_unknown(monkeypatch: pytest.MonkeyPatch
     executor = TaskExecutor(store=None)  # type: ignore[arg-type]
     with pytest.raises(RuntimeError, match="does_not_exist"):
         executor._profile_for(task)
+
+
+@pytest.mark.unit
+async def test_run_releases_conversation_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    executor, task_result, task, _run_turn, cleanup, history = _prepared_execution(monkeypatch)
+
+    result, file_paths = await executor.run(task_result, task)
+
+    assert result == "completed"
+    assert file_paths == []
+    history.drain_observers.assert_awaited_once()
+    cleanup.assert_awaited_once_with("routines/routine-1/run-1/result-1")
+
+
+@pytest.mark.unit
+async def test_run_releases_conversation_after_execution_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, task_result, task, run_turn_mock, cleanup, _history = _prepared_execution(monkeypatch)
+    run_turn_mock.side_effect = RuntimeError("execution failed")
+
+    with pytest.raises(RuntimeError, match="execution failed"):
+        await executor.run(task_result, task)
+
+    cleanup.assert_awaited_once_with("routines/routine-1/run-1/result-1")
+
+
+@pytest.mark.unit
+async def test_run_releases_conversation_after_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, task_result, task, run_turn_mock, cleanup, _history = _prepared_execution(monkeypatch)
+    started = asyncio.Event()
+
+    async def _blocked_run(*_args, **_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    run_turn_mock.side_effect = _blocked_run
+    execution = asyncio.create_task(executor.run(task_result, task))
+    await started.wait()
+    execution.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await execution
+
+    cleanup.assert_awaited_once_with("routines/routine-1/run-1/result-1")
+
+
+@pytest.mark.unit
+async def test_run_releases_conversation_when_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = MagicMock()
+    run = Run(id="run-1", routine_id="routine-1")
+    routine = Routine(id="routine-1", description="Test routine")
+    task = Task(
+        id="task-1",
+        routine_id=routine.id,
+        description="Test task",
+        instruction="Do the test",
+        agent_profile=None,
+    )
+    task_result = TaskResult(id="result-1", run_id=run.id, task_id=task.id)
+    store.get_run.return_value = run
+    store.get_routine.return_value = routine
+    cleanup = AsyncMock()
+    monkeypatch.setattr("tasks._executor.run_conversation_exit_hooks", cleanup)
+
+    with pytest.raises(RuntimeError, match="no agent_profile"):
+        await TaskExecutor(store).run(task_result, task)
+
+    cleanup.assert_awaited_once_with("routines/routine-1/run-1/result-1")
+
+
+@pytest.mark.unit
+async def test_run_releases_conversation_when_observer_drain_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor, task_result, task, _run_turn, cleanup, history = _prepared_execution(monkeypatch)
+    history.drain_observers.side_effect = RuntimeError("drain failed")
+
+    with pytest.raises(RuntimeError, match="drain failed"):
+        await executor.run(task_result, task)
+
+    cleanup.assert_awaited_once_with("routines/routine-1/run-1/result-1")

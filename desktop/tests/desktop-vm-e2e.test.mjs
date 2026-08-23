@@ -23,6 +23,7 @@ const customAppFixture = await read('../tests/e2e/custom_app_fixture.py');
 const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
+const candidateMatrix = await read('../tests/e2e/candidate-matrix.sh');
 const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
@@ -82,6 +83,13 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
   assert.match(run, /custom_app_fixture\.py/);
+  assert.match(run, /--upgrade-from-artifact/);
+  assert.match(run, /upgrade-from\.\$\{bundle\}/);
+  assert.match(linuxGuest, /previous release installation/);
+  assert.match(linuxGuest, /installed\.AppImage/);
+  assert.match(linuxGuest, /appimage\)\n\s+chmod 755 "\$\{artifact\}"/);
+  assert.match(linuxGuest, /candidateBinary.*omnideck-desktop/);
+  assert.match(linuxGuest, /stateMarkerPreserved/);
   assert.match(linuxGuest, /run_journey custom-app/);
   assert.match(windows, /phase_command CustomAppFixture/);
   assert.match(windows, /run_journey custom-app/);
@@ -94,6 +102,9 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /\$StateVolume = "omnideck-desktop-state-\$TestNamespace"/);
   assert.match(windowsGuest, /\$MachineName = "omnideck-runtime"/);
   assert.match(windowsGuest, /"PatchRunOnce"/);
+  assert.match(windows, /upgrade-from-setup\.exe/);
+  assert.match(windowsGuest, /Previous NSIS install failed/);
+  assert.match(windowsGuest, /legacy omnideck\.exe remained/);
   assert.match(windowsGuest, /windows_resume\.ps1/);
   assert.match(
     windowsGuest,
@@ -118,6 +129,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(linuxGuest, /native zoom bridge/);
   assert.match(linuxGuest, /native update bridge/);
   assert.match(linuxGuest, /OMNIDECK_DESKTOP_UPDATE_FIXTURE/);
+  assert.match(linuxGuest, /omnideck-e2e-firefox\.desktop/);
+  assert.match(linuxGuest, /MOZ_ENABLE_WAYLAND=1/);
+  assert.match(linuxGuest, /xdg-mime query default x-scheme-handler\/https/);
+  assert.match(run, /update-notifier\.desktop/);
+  assert.match(run, /pkill -u tester -TERM -x update-manager/);
   assert.match(windowsGuest, /HostBoundaryDownload/);
   assert.match(windowsGuest, /HostBoundaryArtifactDownload/);
   assert.match(windowsGuest, /SeedUpdateFixture/);
@@ -189,6 +205,12 @@ test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
   assert.match(qualifier, /artifact-path desktop release/);
   assert.match(qualifier, /releasecontract\/verify-release\.mjs/);
   assert.match(qualifier, /gh attestation verify/);
+  assert.match(qualifier, /--upgrade-from previous\|none\|TAG/);
+  assert.match(qualifier, /resolve_previous_release/);
+  assert.match(qualifier, /upgrade-release-contract\.json/);
+  assert.match(candidateMatrix, /upgrade_from=.*latest/);
+  assert.match(candidateMatrix, /upgrade-release-contract\.json/);
+  assert.match(candidateMatrix, /--upgrade-from-artifact/);
   assert.match(qualifier, /appimage,deb,rpm,atomic,windows/);
   assert.match(qualifier, /--cross-distro-smoke/);
   assert.match(qualifier, /smoke-matrix\.sh/);
@@ -234,13 +256,18 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /Omnideck Lab Driver\.app/);
   assert.match(macosGuest, /OMNIDECK_DESKTOP_TEST_NAMESPACE/);
   assert.match(macosGuest, /release-test-macos/);
-  assert.match(macosGuest, /pkill -x omnideck/);
+  assert.match(macosGuest, /pkill -f '\/omnideck-desktop\$'/);
+  assert.match(macos, /--upgrade-from-artifact/);
+  assert.match(macosGuest, /previous DMG installation/);
+  assert.match(macosGuest, /stateMarkerPreserved/);
   assert.match(macosGuest, /Set up omnideck/);
   assert.match(macosGuest, /Open omnideck/);
   assert.match(macosGuest, /Try again/);
   assert.match(macosGuest, /Port \$old_port is already in use/);
   assert.match(macosGuest, /Custom App native WebView action/);
   assert.match(macosGuest, /Custom App restart persistence/);
+  assert.match(macosGuest, /external browser and internal navigation/);
+  assert.match(macosGuest, /External browser link in new window/);
   assert.match(macosGuest, /native host download/);
   assert.match(macosGuest, /click-in "\$application" "Export/);
   assert.match(macosGuest, /native host upload/);
@@ -256,7 +283,7 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /grep -q '\^screenshots='/);
   assert.doesNotMatch(macosGuest, /native zoom shortcut/);
   assert.doesNotMatch(macos, /--only zoom/);
-  assert.match(macosGuest, /tests="16" failures="0"/);
+  assert.match(macosGuest, /tests="17" failures="0"/);
   assert.match(macosGuest, /soft_failures/);
   assert.match(macosGuest, /complete journey/);
   assert.match(macosGuest, /container-inspect\.json/);
@@ -373,5 +400,5 @@ test('the updater bridge fixture is newer than the bundled runtime image', async
     `${fixtureVersion} must be newer than ${imageVersion}`,
   );
   assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
-  assert.match(windowsGuest, /version = "0\.1\.5"/);
+  assert.match(windowsGuest, /version = "0\.2\.3"/);
 });

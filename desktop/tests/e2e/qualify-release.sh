@@ -7,6 +7,7 @@ desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
 source "${script_dir}/_lab.sh"
 release="latest"
+upgrade_from="previous"
 lanes_csv="appimage,deb,rpm,atomic,windows"
 assume_yes=0
 keep_downloads=0
@@ -24,6 +25,8 @@ explicit unless the dedicated-hardware workflow is requested.
 
 Options:
   --release latest|TAG       Published release (default: latest, prereleases included)
+  --upgrade-from previous|none|TAG
+                             Prior published release installed before the candidate (default: previous)
   --lanes LIST               Comma-separated local lanes (default: appimage,deb,rpm,atomic,windows)
   --remote-native            Also dispatch and wait for missing ARM64/macOS hardware lanes
   --cross-distro-smoke       Run non-native AppImage/DEB/RPM launch-smoke cells in Linux VMs
@@ -36,6 +39,7 @@ EOF
 while (($#)); do
   case "$1" in
     --release) release="${2:?--release requires a value}"; shift 2 ;;
+    --upgrade-from) upgrade_from="${2:?--upgrade-from requires a value}"; shift 2 ;;
     --lanes) lanes_csv="${2:?--lanes requires a value}"; shift 2 ;;
     --remote-native) remote_native=1; shift ;;
     --cross-distro-smoke) cross_distro_smoke=1; shift ;;
@@ -58,6 +62,31 @@ selected_release="$(select_release "${release}")"
 bare_version="${selected_release#v}"
 [[ "${selected_release}" =~ ^v[0-9A-Za-z._-]+$ ]] || { printf 'Unsafe release tag: %s\n' "${selected_release}" >&2; exit 2; }
 
+resolve_previous_release() {
+  local tag seen=0
+  while IFS= read -r tag; do
+    if [[ "${seen}" == "1" ]]; then
+      printf '%s\n' "${tag}"
+      return 0
+    fi
+    [[ "${tag}" != "${selected_release}" ]] || seen=1
+  done < <(gh release list --repo "${RELEASE_REPOSITORY}" --limit 100 --json tagName,isDraft \
+    --jq '.[] | select(.isDraft == false) | .tagName')
+  printf 'No published release precedes %s in the latest 100 releases.\n' "${selected_release}" >&2
+  return 1
+}
+
+upgrade_release=""
+case "${upgrade_from}" in
+  none) ;;
+  previous) upgrade_release="$(resolve_previous_release)" ;;
+  *) upgrade_release="$(select_release "${upgrade_from}")" ;;
+esac
+if [[ -n "${upgrade_release}" ]]; then
+  [[ "${upgrade_release}" =~ ^v[0-9A-Za-z._-]+$ ]] || { printf 'Unsafe upgrade-from release tag: %s\n' "${upgrade_release}" >&2; exit 2; }
+  [[ "${upgrade_release}" != "${selected_release}" ]] || { printf 'Upgrade-from release must differ from the candidate.\n' >&2; exit 2; }
+fi
+
 IFS=',' read -r -a requested_lanes <<<"${lanes_csv}"
 declare -A selected=()
 for lane in "${requested_lanes[@]}"; do
@@ -69,7 +98,8 @@ done
 
 if [[ "${assume_yes}" != "1" ]]; then
   [[ -t 0 ]] || { printf 'Re-run interactively or pass --yes.\n' >&2; exit 2; }
-  printf 'This qualifies %s and resets only stopped disposable guests: %s\n' "${selected_release}" "${lanes_csv}"
+  printf 'This qualifies %s (upgrade from %s) and resets only stopped disposable guests: %s\n' \
+    "${selected_release}" "${upgrade_release:-none}" "${lanes_csv}"
   printf 'Type %s to continue: ' "${selected_release}"
   read -r confirmation
   [[ "${confirmation}" == "${selected_release}" ]] || { printf 'Canceled.\n'; exit 1; }
@@ -80,14 +110,16 @@ safe_run_id="$(printf '%s' "${run_id}" | tr -cd '[:alnum:]_.-')"
 source_commit="$(git -C "${desktop_root}" rev-parse --short=12 HEAD)"
 run_root="$("${lab_dir}/lab.sh" artifact-path desktop release "${safe_run_id}")"
 download_dir="${run_root}/downloads"
+upgrade_download_dir="${run_root}/upgrade-downloads"
 lane_root="${run_root}/lanes"
 remote_root="${run_root}/remote"
 status_file="${run_root}/lane-status.tsv"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-mkdir -p "${download_dir}" "${lane_root}" "${remote_root}"
+mkdir -p "${download_dir}" "${upgrade_download_dir}" "${lane_root}" "${remote_root}"
 : > "${status_file}"
 "${lab_dir}/lab.sh" evidence-init "${run_root}" desktop release "${safe_run_id}" \
-  "${source_commit}" multi qualification "release=${selected_release}" "lanes=${lanes_csv}"
+  "${source_commit}" multi qualification "release=${selected_release}" \
+  "upgradeFrom=${upgrade_release:-none}" "lanes=${lanes_csv}"
 
 record() {
   local name="$1" status="$2" requirement="$3" evidence="$4" detail="$5"
@@ -104,8 +136,13 @@ finish_report() {
     find "${download_dir}" -depth -mindepth 1 -delete
     rmdir "${download_dir}" 2>/dev/null || true
   fi
+  if [[ "${keep_downloads}" != "1" && -d "${upgrade_download_dir}" ]]; then
+    find "${upgrade_download_dir}" -depth -mindepth 1 -delete
+    rmdir "${upgrade_download_dir}" 2>/dev/null || true
+  fi
   python3 "${script_dir}/qualification_report.py" \
     --release "${selected_release}" \
+    --upgrade-from "${upgrade_release:-none}" \
     --run-id "${safe_run_id}" \
     --started-at "${started_at}" \
     --status-file "${status_file}" \
@@ -189,6 +226,45 @@ if [[ "${contract_status}" != "0" ]]; then
 fi
 record artifact-matrix passed required reports/release-contract.json "all ten packages, checksums, formats, architectures, and attestations verified"
 
+if [[ -n "${upgrade_release}" ]]; then
+  bare_upgrade_version="${upgrade_release#v}"
+  upgrade_contract_status=0
+  printf 'Downloading the previous package matrix for %s.\n' "${upgrade_release}"
+  gh release download "${upgrade_release}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --pattern 'omnideck*' \
+    --dir "${upgrade_download_dir}" \
+    > "${run_root}/upgrade-download.log" 2>&1 || upgrade_contract_status=$?
+  if [[ "${upgrade_contract_status}" == "0" ]]; then
+    node "${desktop_root}/tests/releasecontract/verify-release.mjs" \
+      --directory "${upgrade_download_dir}" \
+      --version "${upgrade_release}" \
+      --report "${run_root}/reports/upgrade-release-contract.json" \
+      > "${run_root}/upgrade-release-contract.log" 2>&1 || upgrade_contract_status=$?
+  fi
+  if [[ "${upgrade_contract_status}" == "0" ]]; then
+    while IFS= read -r -d '' package; do
+      gh attestation verify "${package}" --repo "${RELEASE_REPOSITORY}" \
+        >> "${run_root}/upgrade-attestations.log" 2>&1 || { upgrade_contract_status=$?; break; }
+    done < <(find "${upgrade_download_dir}" -maxdepth 1 -type f ! -name '*.sha256' -print0 | sort -z)
+  fi
+  if [[ "${upgrade_contract_status}" != "0" ]]; then
+    record upgrade-artifact-matrix failed required reports/upgrade-release-contract.json \
+      "previous release download, checksum, format, architecture, or provenance verification failed"
+    for lane in appimage deb rpm atomic windows; do
+      [[ -n "${selected[${lane}]:-}" ]] || continue
+      record "${lane}-x64-vm" blocked required "lanes/${lane}" "upgrade-from artifact contract failed"
+    done
+    finish_report
+  fi
+  record upgrade-artifact-matrix passed required reports/upgrade-release-contract.json \
+    "the complete previous release package matrix and attestations were verified"
+else
+  bare_upgrade_version=""
+  record upgrade-artifact-matrix not-run optional reports/upgrade-release-contract.json \
+    "upgrade qualification disabled with --upgrade-from none"
+fi
+
 gh api \
   -H 'Accept: application/vnd.github.raw+json' \
   "/repos/${RELEASE_REPOSITORY}/contents/desktop/src-tauri/binaries/vendor-manifest.json?ref=${selected_release}" \
@@ -205,12 +281,24 @@ artifact_for_lane() {
   esac
 }
 
+upgrade_artifact_for_lane() {
+  case "$1" in
+    appimage|atomic) printf '%s/omnideck_%s_amd64.AppImage\n' "${upgrade_download_dir}" "${bare_upgrade_version}" ;;
+    deb) printf '%s/omnideck_%s_amd64.deb\n' "${upgrade_download_dir}" "${bare_upgrade_version}" ;;
+    rpm) printf '%s/omnideck-%s-1.x86_64.rpm\n' "${upgrade_download_dir}" "${bare_upgrade_version}" ;;
+    windows) printf '%s/omnideck_%s_x64-setup.exe\n' "${upgrade_download_dir}" "${bare_upgrade_version}" ;;
+  esac
+}
+
 for lane in appimage deb rpm atomic windows; do
   [[ -n "${selected[${lane}]:-}" ]] || continue
   lane_dir="${lane_root}/${lane}"
   mkdir -p "${lane_dir}"
   artifact="$(artifact_for_lane "${lane}")"
   lane_arguments=(--vm "${lane}" --artifact "${artifact}" --profile release-clean --yes)
+  if [[ -n "${upgrade_release}" ]]; then
+    lane_arguments+=(--upgrade-from-artifact "$(upgrade_artifact_for_lane "${lane}")")
+  fi
   if [[ "${lane}" == "windows" ]]; then
     lane_arguments+=(--baseline clean)
   fi

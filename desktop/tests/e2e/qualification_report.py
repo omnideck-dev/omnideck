@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--release", required=True)
+    parser.add_argument("--upgrade-from", default="none")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--started-at", required=True)
     parser.add_argument("--status-file", required=True, type=Path)
@@ -43,6 +44,7 @@ def main() -> int:
         "schemaVersion": 1,
         "runId": args.run_id,
         "release": args.release,
+        "upgradeFrom": args.upgrade_from,
         "status": "passed" if passed else "failed",
         "startedAt": args.started_at,
         "finishedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

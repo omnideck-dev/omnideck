@@ -10,7 +10,7 @@ on:
       - ".github/actionlint.yaml"
       - "desktop/**"
       - "desktop/container-version.txt"
-      - "docs/releases/**"
+      - "docs/releases/v*.md"
   push:
     branches:
       - main
@@ -23,7 +23,7 @@ on:
       - ".github/actionlint.yaml"
       - "desktop/**"
       - "desktop/container-version.txt"
-      - "docs/releases/**"
+      - "docs/releases/v*.md"
 
 concurrency:
   group: omnideck-application-${{ github.ref }}
@@ -55,8 +55,7 @@ jobs:
 
       - name: Install Tauri system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          bash .github/scripts/install-apt-packages.sh \
             libappindicator3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -104,10 +103,11 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not match desktop version v${version}"
             exit 1
           }
-          test -f "docs/releases/${GITHUB_REF_NAME}.md" || {
+          test -s "docs/releases/${GITHUB_REF_NAME}.md" || {
             echo "Missing release notes for ${GITHUB_REF_NAME}"
             exit 1
           }
+          node scripts/release-notes.mjs check-consumed --target desktop
 
   runtime_image:
     needs: test
@@ -197,8 +197,7 @@ jobs:
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          bash .github/scripts/install-apt-packages.sh \
             binutils \
             fakeroot \
             libappindicator3-dev \

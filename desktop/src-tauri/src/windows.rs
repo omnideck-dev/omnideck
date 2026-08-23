@@ -21,6 +21,7 @@ const HOSTED_BRIDGE_SCRIPT: &str = r#"
   };
 
   window.omnideckHost = Object.freeze({
+    openExternal: (url) => invoke('open_external', { url }),
     currentUpdate: () => invoke('current_update'),
     checkForUpdate: () => invoke('check_for_update'),
     installUpdate: () => invoke('install_update'),
@@ -48,6 +49,8 @@ const HOSTED_BRIDGE_SCRIPT: &str = r#"
   }, { capture: true });
 })();
 "#;
+
+const EXTERNAL_LINK_SCRIPT: &str = include_str!("../../web/external-links.js");
 
 pub(crate) fn focus_active(app: &AppHandle) {
     let active = app
@@ -137,6 +140,7 @@ pub(crate) fn create_desktop_windows(
         .enable_clipboard_access(),
     )
     .initialization_script(HOSTED_BRIDGE_SCRIPT)
+    .initialization_script_for_all_frames(EXTERNAL_LINK_SCRIPT)
     .on_download(downloads::handle)
     .on_navigation(move |url| {
         match hosted_navigation(url, navigation_port.read().ok().and_then(|port| *port)) {

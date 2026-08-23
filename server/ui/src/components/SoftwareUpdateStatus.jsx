@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
+import { appReleaseNotesUrl } from '../utils/appReleaseNotes.js';
 import styles from './SoftwareUpdateStatus.module.css';
 
 /**
@@ -15,6 +16,7 @@ export default function SoftwareUpdateStatus() {
     const [installing, setInstalling] = useState(false);
     const [checked, setChecked] = useState(false);
     const host = useOmnideckHost();
+    const notesUrl = update ? appReleaseNotesUrl(update.version) : null;
 
     useEffect(() => {
         let current = true;
@@ -67,14 +69,26 @@ export default function SoftwareUpdateStatus() {
                 </span>
             </div>
             {update ? (
-                <button
-                    type="button"
-                    className={styles.primary}
-                    onClick={install}
-                    disabled={installing}
-                >
-                    Update now
-                </button>
+                <div className={styles.actions}>
+                    {notesUrl ? (
+                        <a
+                            className={styles.notes}
+                            href={notesUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            What&rsquo;s new
+                        </a>
+                    ) : null}
+                    <button
+                        type="button"
+                        className={styles.primary}
+                        onClick={install}
+                        disabled={installing}
+                    >
+                        Update now
+                    </button>
+                </div>
             ) : (
                 <button
                     type="button"

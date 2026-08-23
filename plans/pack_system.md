@@ -2,6 +2,8 @@
 
 **Status:** Direction-setting document for team discussion. Not an execution plan — no code changes are proposed to land from this document as-is.
 
+**See also:** `plans/skills_standard_adoption.md` — a companion doc asking whether the Skill item kind specifically should adopt the open Agent Skills (`SKILL.md`) format rather than a bespoke shape. Its open questions are threaded into the relevant sections below (§3, §5, §9, §12) rather than duplicated wholesale.
+
 ## 1. Motivation
 
 Omnideck already lets a user hand-export a single agent profile or skill to another install. The ambition is bigger: a **single, standardized way to package and move any functional primitive** — agent profiles, skills, custom tools, custom apps, and routines — as one item or as a curated collection, so that:
@@ -27,6 +29,8 @@ This is a large, cross-cutting initiative. This document exists to align on shap
 
 Profile, Skill, Tool, App, **Routine** (new addition per this discussion — a `Routine` + its `Task`s, so "check for updates" or any other scheduled workflow becomes packable and shareable the same way a skill is).
 
+**Skill is a special case among these five.** The other four (Profile, Tool, App, Routine) have no external format to reconcile with — this RFC's manifest/on-disk design is the only design that will ever exist for them. Skill does: the open Agent Skills format (`SKILL.md` — folder, YAML frontmatter, optional bundled `scripts/`/`references/`/`assets/`) is already adopted across a long list of other agent products, with its own live registry (`skills.sh`). `plans/skills_standard_adoption.md` makes the case in full; the short version is that Skill packaging should default to *wrapping or adopting* that format rather than inventing a sixth one, and every place below where Skill's shape is assumed to mirror the other four item kinds is flagged accordingly.
+
 ## 4. Manifest metadata (discovery & UX)
 
 These fields exist purely to make a pack presentable and searchable — in the near-term UI (§8) and the eventual community library (§9) alike. They live on the **pack** manifest (the discoverable/shareable unit), not on individual items inside it:
@@ -37,7 +41,7 @@ These fields exist purely to make a pack presentable and searchable — in the n
 | `author` / `vendor` | Yes | string | Defaults to the local user for anything built on-device (see §2, §11). |
 | `short_description` | Yes | plain text | Card/list-view summary. |
 | `long_description` | No | markdown | Full detail view. |
-| `category` | No | string | For browse/filter grouping once there's enough volume to need it. |
+| `category` | No | string | For browse/filter grouping once there's enough volume to need it. Same vocabulary as the skill-category/group concept proposed in `plans/skills_standard_adoption.md` §5 — worth deciding whether these are literally the same field rather than two parallel grouping systems. |
 | `images` | No | array | First entry is the card thumbnail; remaining entries populate a detail-view carousel. |
 
 ## 5. On-disk layout
@@ -67,6 +71,7 @@ Proposed layout, resolving the "grouped by pack vs. grouped by type" tension by 
 - `manifest.json` lives at the pack folder's root. Discovery is by **crawling the tree** for `~/.packs/*/*/manifest.json` rather than maintaining a central symlinked index — simpler, and it means a pack folder can just *be* a git working tree with nothing extra bolted on.
 - `custom/` holds anything the user (or the agent, on the user's behalf) created directly — flat, no vendor/name nesting, because it isn't "a pack" someone published.
 - Open question for the team: which "home" this root actually lives under, since today's storage already straddles two roots (app-server `home_dir` vs. container-mounted `virtual_computer.home_dir`) — tools/apps/routines likely need the container-mounted one for execution access, which argues for `~/.packs/` living there rather than being newly split again.
+- **`skill/` is drawn above as a flat file-per-item folder like the other four types, and that's only correct if the Skill format decision in `plans/skills_standard_adoption.md` goes unadopted.** If Skill packaging moves to `SKILL.md`, each skill needs its own subfolder (`skill/<skill-id>/SKILL.md` plus optional `scripts/`/`references/`/`assets/`) rather than one flat JSON file — closer in shape to how `app/` already has to work than to today's `profile/`/`tool/` layout. Worth resolving before Phase B locks in a layout, since retrofitting nested folders after migration is strictly more work than designing for it up front.
 
 **Migration.** Landing this layout means moving every existing on-disk profile, skill, tool, and app into it — today's users, however few, already have real data in the old locations. The install base is small right now (no community yet), so the blast radius is limited, but a broken or lossy migration on someone's existing install is still a real, user-visible failure, not a cosmetic one. This needs a concrete, reviewed migration path from the dev team before Phase B ships (see §12) — not an afterthought bolted onto the storage change. Worth checking whether the existing `migrations/` runner (already used for schema changes like `migrations/_013_goals_to_routines.py`) is the right vehicle.
 
@@ -108,6 +113,8 @@ Every import or update, not just community-sourced ones, should pass a **determi
 
 An **optional, explicitly opt-in "enhanced pack scanning" setting** can add an LLM review pass *in addition to*, never instead of, the deterministic baseline. Flag for the team: an LLM scanner is itself a target — a pack could carry content aimed at the reviewing model (prompt injection embedded in a script comment or manifest field), so this needs to be designed as an additional signal, not a gate that fully replaces static checks.
 
+If Skill packaging adopts `SKILL.md` (`plans/skills_standard_adoption.md` §6), its `allowed-tools` (pre-approved tool allowlist) and `compatibility` (declared environment requirements) frontmatter fields are a ready-made starting schema for what this scanner checks on a Skill item specifically, rather than designing that schema from nothing — worth using as the template even if the other four item kinds need their own scan rules.
+
 ## 10. UI: Packs as their own surface
 
 A new **Packs** area in Settings lists installed packs (browsable by vendor), their lock state, source, and install path — distinct from the existing per-type tabs (Agents, Skills, Custom Tools, Apps), which keep working exactly as they do today for direct single-item management. Items that belong to an installed pack should cross-link from their per-type tab into the pack's entry in the new Packs UI, so the two surfaces don't feel disconnected. This is also where the "Create Pack" builder (§7) lives.
@@ -122,11 +129,11 @@ A new **Packs** area in Settings lists installed packs (browsable by vendor), th
 
 Phases are ordered by dependency, sized to be independently schedulable:
 
-- **Phase A — Generalize the transport.** Polymorphic item model (profile/skill/tool/app, routine added when B lands), zip container only when an item carries real files, per-item provenance (`publisher`/`editable`) with server-side write gating, manifest metadata fields (§4). This is the previously-scoped, most concretely-detailed phase and can start independently of everything below.
+- **Phase A — Generalize the transport.** Polymorphic item model (profile/skill/tool/app, routine added when B lands), zip container only when an item carries real files, per-item provenance (`publisher`/`editable`) with server-side write gating, manifest metadata fields (§4). This is the previously-scoped, most concretely-detailed phase and can start independently of everything below. Note: "zip only when an item carries real files" currently means Skill never needs one — today's flat `SkillRecord` has none. That assumption flips if `SKILL.md` adoption lands (`plans/skills_standard_adoption.md` §6), since a skill folder can carry `scripts/`/`references/`/`assets/` — worth deciding the Skill format question before or alongside Phase A rather than after, so this phase's polymorphic item model doesn't need revisiting once Skill grows a files case the other three don't have yet.
 - **Phase B — On-disk standardization + migration.** Migrate storage to `~/.packs/<vendor>/<name>/<type>/` and `~/.packs/custom/<type>/`; tree-crawl manifest discovery; add Routine as a fifth packable kind; **a concrete, reviewed migration path for existing installs (§5)** — this is a required deliverable of the phase, not a follow-up.
 - **Phase C — Pack builder & dependency discovery.** The "Create Pack" flow (manual and agent-assisted), embedding cloneable items from other packs, best-effort dependency resolution plus the import-time missing-dependency check (§7). Depends on A; benefits from B for enumeration but doesn't strictly require it.
 - **Phase D — Read-only enforcement.** Filesystem-level locking, the privileged installer/updater component, "uncloneable" manifest flag + UI honoring, clone-to-customize. Depends on B (needs the standardized layout to lock meaningfully).
-- **Phase E — Git-backed packs.** Pack folder as a git working tree; import-from-clone, export-as-push, update-check via git fetch/diff. Depends on B. This also reopens the previously-deferred "versioning / check for updates" work, now with git as the concrete transport instead of a bespoke registry.
+- **Phase E — Git-backed packs.** Pack folder as a git working tree; import-from-clone, export-as-push, update-check via git fetch/diff. Depends on B. This also reopens the previously-deferred "versioning / check for updates" work, now with git as the concrete transport instead of a bespoke registry. For Skill specifically, this phase may already be solved by adopting `SKILL.md`: `skills.sh` is a live git-backed registry (`npx skillsadd <owner/repo>`) for that exact format today — if Skill adopts the standard, Phase E's work for that one item kind may be "point at what exists" rather than "build it," which is worth factoring into sequencing rather than building a parallel mechanism.
 - **Phase F — Security scanning gate.** Deterministic scan on every import/update; opt-in LLM-enhanced pass. Should land no later than E, ideally incrementally starting alongside A/B since it's good hygiene regardless of source.
 - **Phase G — Dedicated Packs Settings UI.** Cross-linked from the existing per-type tabs; hosts the Phase C builder.
 - **Phase H (long-term, not scheduled) — Community library.**
@@ -139,3 +146,4 @@ Phases are ordered by dependency, sized to be independently schedulable:
 - **Scanning cost tiering.** Personal/local pack imports need scanning that's fast and free; community-library-grade scanning (pre-publish) can afford to be heavier and server-side. Where's the line, and does Phase F need to design for both tiers from the start?
 - **Dependency-reference tightening.** How much of §7's implicit reference gap (free-text tool references in skill prompts/task instructions) is worth making structural now, versus accepting best-effort resolution plus the import-time missing-dependency check as good enough for a first pass?
 - **Migration ownership.** Who scopes and owns the concrete migration path in Phase B, and does the existing `migrations/` runner fit, or does this need its own mechanism given it also touches container-mounted paths?
+- **Skill format adoption timing.** Does the `SKILL.md` decision (`plans/skills_standard_adoption.md`) need to be resolved *before* Phase A/B lock in the polymorphic item model and on-disk layout, given §5 and Phase A above both note that Skill's shape under adoption diverges from the other four item kinds? Deciding late risks a second migration on top of Phase B's already-planned one.

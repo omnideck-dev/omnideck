@@ -9,6 +9,7 @@ const hostedCapability = JSON.parse(await read('../src-tauri/capabilities/hosted
 const permission = await read('../src-tauri/permissions/read-only-cli.toml');
 const hostedPermission = await read('../src-tauri/permissions/hosted-desktop.toml');
 const adapter = await read('../web/host-adapter.js');
+const externalLinks = await read('../web/external-links.js');
 const html = await read('../web/index.html');
 const rustModules = Object.fromEntries(await Promise.all([
   'lib',
@@ -46,7 +47,8 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
-  assert.equal(config.version, '0.1.0-beta.8');
+  assert.equal(config.mainBinaryName, 'omnideck-desktop');
+  assert.equal(config.version, '0.1.0-beta.11');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -62,9 +64,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.8"$/m);
-  assert.match(cargoLock, /name = "omnideck"\r?\nversion = "0\.1\.0-beta\.8"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.8"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.11"$/m);
+  assert.match(cargoLock, /name = "omnideck-desktop"\r?\nversion = "0\.1\.0-beta\.11"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.11"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 
@@ -103,6 +105,7 @@ test('hosted capability exposes only typed desktop affordances to loopback', () 
   assert.deepEqual(hostedCapability.remote.urls, ['http://127.0.0.1:*']);
   assert.deepEqual(hostedCapability.permissions, ['hosted-desktop', 'core:webview:allow-set-webview-zoom']);
   assert.match(hostedPermission, /current_update/);
+  assert.match(hostedPermission, /open_external/);
   assert.match(hostedPermission, /check_for_update/);
   assert.match(hostedPermission, /install_update/);
   assert.match(hostedPermission, /defer_update/);
@@ -130,6 +133,7 @@ test('desktop host responsibilities stay in focused Rust modules', () => {
   assert.match(rustModules.commands, /tauri::generate_handler!/);
   assert.match(rustModules.downloads, /omnideck:download/);
   assert.match(rustModules.navigation, /enum HostedNavigation/);
+  assert.match(rustModules.navigation, /fn open_external/);
   assert.match(rustModules.runtime, /async fn begin_setup/);
   assert.match(rustModules.windows, /fn create_desktop_windows/);
   assert.match(rustModules.zoom, /fn with_native_hotkeys/);
@@ -169,6 +173,11 @@ test('hosted container window starts inert and resolves an exact dynamic origin'
   assert.match(rust, /\.visible\(false\)/);
   assert.match(rust, /\.enable_clipboard_access\(\)/);
   assert.match(rust, /\.initialization_script\(HOSTED_BRIDGE_SCRIPT\)/);
+  assert.match(rust, /\.initialization_script_for_all_frames\(EXTERNAL_LINK_SCRIPT\)/);
+  assert.match(rust, /openExternal: \(url\) => invoke\('open_external', \{ url \}\)/);
+  assert.match(externalLinks, /event\.target\?\.closest\?\.\('a\[href\]'\)/);
+  assert.match(externalLinks, /url\.origin === window\.location\.origin/);
+  assert.match(externalLinks, /window\.top\.postMessage/);
   assert.match(rust, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(rust, /key === 'f5'/);
   assert.match(rust, /key === 'r'/);
@@ -192,11 +201,11 @@ test('native desktop enhancements are bounded and observable', () => {
 });
 
 test('desktop ships the current immutable container release', async () => {
-  assert.equal((await read('../container-version.txt')).trim(), '0.1.4');
-  assert.equal(imageManifest.imageVersion, '0.1.4');
+  assert.equal((await read('../container-version.txt')).trim(), '0.2.2');
+  assert.equal(imageManifest.imageVersion, '0.2.2');
   assert.equal(
     imageManifest.imageRef,
-    'ghcr.io/omnideck-dev/omnideck@sha256:b04615f5373a8e57fe54820abde664f8943df66323467a30219e34b4a6b8a9bf',
+    'ghcr.io/omnideck-dev/omnideck@sha256:fe6cb1ee605d5d8ba3e1802d910c7ce64b2e6d6c3d6d98f0ce0acb56e92aaac9',
   );
 });
 

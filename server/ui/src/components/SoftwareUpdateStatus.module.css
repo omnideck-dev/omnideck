@@ -32,6 +32,24 @@
     color: var(--text-secondary);
 }
 
+.actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: var(--sp-3);
+}
+
+.notes {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.notes:hover {
+    color: var(--text-primary);
+}
+
 .primary,
 .secondary {
     flex-shrink: 0;

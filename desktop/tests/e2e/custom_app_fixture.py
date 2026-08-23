@@ -32,6 +32,9 @@ def echo(value: str):
     <h1>Desktop Custom App Smoke</h1>
     <button id="smoke-invoke" type="button">Invoke packaged action</button>
     <output id="smoke-result">Ready</output>
+    <a id="smoke-route" href="#details">Internal custom route</a>
+    <a id="smoke-external" href="https://example.com/omnideck-macos-link-test">External browser link</a>
+    <a id="smoke-external-blank" href="https://example.com/omnideck-macos-blank-link-test" target="_blank">External browser link in new window</a>
     <script src="/api/custom-apps/sdk.js"></script>
     <script src="app.js"></script>
   </body>

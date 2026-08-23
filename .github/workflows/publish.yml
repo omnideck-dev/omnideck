@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
         run: just unit
 
   browser-tools:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -47,10 +48,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra test
 
-      # This suite drives the browser tools and DOM walker against local HTML
-      # fixtures, so Chromium and its system libraries must be present.
-      - name: Install Playwright browser
-        run: uv run playwright install --with-deps chromium
+      # Browser.start selects the Chrome channel on x86_64. The pinned hosted
+      # runner already includes Google Chrome and Xvfb, so avoid reinstalling
+      # a second browser and its operating-system dependencies on every run.
+      - name: Verify hosted browser runtime
+        run: |
+          google-chrome --version
+          command -v xvfb-run
 
       - name: Run browser-tools tests
         run: just test-browser-tools
@@ -112,7 +116,7 @@ jobs:
   e2e-tests:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -126,10 +130,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra test
 
-      # Tests run a browser on the host against the containerized app, so the
-      # runner needs Chromium and its system libraries.
-      - name: Install Playwright browser
-        run: uv run playwright install --with-deps chromium
+      # pytest-playwright uses the hosted Chrome installation explicitly. This
+      # matches Browser.start on x86_64 and avoids a redundant browser install.
+      - name: Verify hosted Chrome
+        run: google-chrome --version
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -157,7 +161,7 @@ jobs:
         env:
           E2E_IMAGE: ${{ steps.image.outputs.ref }}
           E2E_SKIP_BUILD: "1"
-        run: just e2e
+        run: just e2e tests/e2e/ --browser-channel chrome
 
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
@@ -262,5 +266,8 @@ jobs:
           while IFS= read -r tag; do
             [ -n "$tag" ] && tag_args+=(-t "$tag")
           done <<< "$TAGS"
-          docker buildx imagetools create "${tag_args[@]}" \
-            $(printf 'ghcr.io/${{ github.repository }}@%s ' $(cat /tmp/digests/*.txt))
+          source_refs=()
+          while IFS= read -r digest; do
+            [ -n "$digest" ] && source_refs+=("ghcr.io/${{ github.repository }}@${digest}")
+          done < <(cat /tmp/digests/*.txt)
+          docker buildx imagetools create "${tag_args[@]}" "${source_refs[@]}"

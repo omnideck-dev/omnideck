@@ -151,8 +151,10 @@ digest from GHCR; later launches reuse the local image.
 
 Container releases have their own version line. Run the **Release container**
 workflow from `main` with a plain `X.Y.Z` version. It promotes the tested
-`main-<commit>` multi-architecture image to that GHCR tag without creating a Git
-tag or publishing desktop installers. An existing version can never be moved to
+`main-<commit>` multi-architecture image to that GHCR tag and requires the
+matching checked-in `docs/releases/app-vX.Y.Z.md` notes. It does not create a
+GitHub Release or publish desktop installers; the in-app **What’s new** link
+opens the checked-in notes directly. An existing version can never be moved to
 a different digest. Update `desktop/container-version.txt` only when a desktop
 release should ship a different container release.
 

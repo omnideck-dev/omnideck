@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
     [string]$ArtifactSha256,
+    [string]$UpgradeFromArtifactSha256 = "none",
     [string]$ExpectedCliVersion,
     [string]$ExpectedCliCommit,
     [string]$FixtureName,
@@ -20,6 +21,7 @@ $Results = Join-Path $WorkDir "results"
 $UserData = Join-Path $WorkDir "user-data"
 $CliConfig = Join-Path $WorkDir "cli-config"
 $Installer = Join-Path $WorkDir "candidate-setup.exe"
+$UpgradeFromInstaller = Join-Path $WorkDir "upgrade-from-setup.exe"
 $ApplicationFile = Join-Path $WorkDir "application-path.txt"
 $StatePath = Join-Path $UserData "setup-state.json"
 $TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
@@ -216,16 +218,38 @@ function Install-EdgeDriver {
 
 function Get-InstalledApplication {
     $Candidates = @(
-        (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
-        (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
+        (Join-Path $env:LOCALAPPDATA "omnideck\omnideck-desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck-desktop.exe")
     )
     $Application = $Candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $Application) {
-        $Application = Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Filter "omnideck.exe" -File -Recurse -ErrorAction SilentlyContinue |
+        $Application = Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Filter "omnideck-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notlike "$WorkDir*" } |
             Select-Object -First 1 -ExpandProperty FullName
     }
-    if (-not $Application) { throw "Installed omnideck.exe was not found." }
+    if (-not $Application) { throw "Installed omnideck-desktop.exe was not found." }
+    return [System.IO.Path]::GetFullPath($Application)
+}
+
+function Get-AnyInstalledApplication {
+    $Candidates = @(
+        (Join-Path $env:LOCALAPPDATA "omnideck\omnideck-desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck-desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "omnideck\omnideck.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\omnideck\omnideck.exe")
+    )
+    $Application = $Candidates |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+    if (-not $Application) {
+        $Application = Get-ChildItem -LiteralPath $env:LOCALAPPDATA -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                ($_.Name -eq "omnideck-desktop.exe" -or $_.Name -eq "omnideck.exe") -and
+                $_.FullName -notlike "$WorkDir*"
+            } |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+    if (-not $Application) { throw "An installed OmniDeck desktop executable was not found." }
     return [System.IO.Path]::GetFullPath($Application)
 }
 
@@ -238,7 +262,7 @@ function Install-Candidate {
 }
 
 function Stop-Omnideck {
-    Get-Process -Name "omnideck" -ErrorAction SilentlyContinue |
+    Get-Process -Name "omnideck-desktop","omnideck" -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
@@ -284,7 +308,44 @@ switch ($Phase) {
     "Prepare" {
         $Actual = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($Actual -ne $ArtifactSha256.ToLowerInvariant()) { throw "Installer SHA-256 mismatch." }
+        $PreviousApplication = $null
+        $UpgradeMarker = Join-Path $UserData "upgrade-marker.json"
+        if ($UpgradeFromArtifactSha256 -ne "none") {
+            $PreviousActual = (Get-FileHash -LiteralPath $UpgradeFromInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($PreviousActual -ne $UpgradeFromArtifactSha256.ToLowerInvariant()) {
+                throw "Previous installer SHA-256 mismatch."
+            }
+            $PreviousInstall = Start-Process -FilePath $UpgradeFromInstaller -ArgumentList "/S" -PassThru -Wait
+            if ($PreviousInstall.ExitCode -ne 0) {
+                throw "Previous NSIS install failed with exit $($PreviousInstall.ExitCode)."
+            }
+            $PreviousApplication = Get-AnyInstalledApplication
+            [IO.File]::WriteAllText(
+                $UpgradeMarker,
+                "{`"schemaVersion`":1,`"createdBy`":`"previous-release-upgrade-test`"}`n",
+                [Text.UTF8Encoding]::new($false)
+            )
+        }
         $Application = Install-Candidate
+        if ($PreviousApplication) {
+            if ((Split-Path -Leaf $PreviousApplication) -eq "omnideck.exe" -and
+                (Test-Path -LiteralPath $PreviousApplication)) {
+                throw "The legacy omnideck.exe remained after the candidate upgrade."
+            }
+            if (-not (Test-Path -LiteralPath $UpgradeMarker -PathType Leaf)) {
+                throw "The candidate upgrade did not preserve the user-data marker."
+            }
+            [ordered]@{
+                schemaVersion = 1
+                status = "passed"
+                previousBinary = (Split-Path -Leaf $PreviousApplication)
+                candidateBinary = (Split-Path -Leaf $Application)
+                legacyBinaryRemoved = ((Split-Path -Leaf $PreviousApplication) -eq "omnideck.exe")
+                stateMarkerPreserved = $true
+                previousArtifactSha256 = $UpgradeFromArtifactSha256.ToLowerInvariant()
+                candidateArtifactSha256 = $ArtifactSha256.ToLowerInvariant()
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "upgrade.json") -Encoding utf8
+        }
         Get-FileHash -LiteralPath $Application -Algorithm SHA256 |
             Format-List | Out-File -LiteralPath (Join-Path $Results "application.sha256.txt") -Encoding utf8
         Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
@@ -361,7 +422,7 @@ switch ($Phase) {
             -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
             -Name "omnideckSetupResume" `
             -ErrorAction SilentlyContinue
-        $Processes = @(Get-Process -Name "omnideck" -ErrorAction SilentlyContinue |
+        $Processes = @(Get-Process -Name "omnideck-desktop" -ErrorAction SilentlyContinue |
             Where-Object { $_.SessionId -gt 0 })
         $State = if (Test-Path -LiteralPath $StatePath) {
             Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
@@ -585,7 +646,7 @@ switch ($Phase) {
     "PromoteUpdateFixture" {
         $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
         $Value = [ordered]@{
-            version = "0.1.5"
+            version = "0.2.3"
             imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
         } | ConvertTo-Json
         [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
@@ -624,6 +685,7 @@ switch ($Phase) {
             status = "passed"
             packageKind = "nsis"
             artifactSha256 = $ArtifactSha256.ToLowerInvariant()
+            upgradeFromArtifactSha256 = $UpgradeFromArtifactSha256.ToLowerInvariant()
             expectedCliVersion = $ExpectedCliVersion
             expectedCliCommit = $ExpectedCliCommit
             finishedAt = [DateTime]::UtcNow.ToString("o")
@@ -631,7 +693,7 @@ switch ($Phase) {
         $Summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Results "summary.json") -Encoding utf8
         @'
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="omnideck-desktop-windows-vm-e2e" tests="15" failures="0">
+<testsuite name="omnideck-desktop-windows-vm-e2e" tests="16" failures="0">
   <testcase classname="desktop-vm-e2e" name="nsis-install"/>
   <testcase classname="desktop-vm-e2e" name="package-and-sidecar-smoke"/>
   <testcase classname="desktop-vm-e2e" name="first-run-exact-copy"/>
@@ -645,6 +707,7 @@ switch ($Phase) {
   <testcase classname="desktop-vm-e2e" name="native-artifact-download-and-toast"/>
   <testcase classname="desktop-vm-e2e" name="native-zoom"/>
   <testcase classname="desktop-vm-e2e" name="native-update-bridge"/>
+  <testcase classname="desktop-vm-e2e" name="external-browser-and-internal-navigation"/>
   <testcase classname="desktop-vm-e2e" name="nsis-uninstall"/>
   <testcase classname="desktop-vm-e2e" name="nsis-reinstall"/>
 </testsuite>
