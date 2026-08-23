@@ -9,7 +9,8 @@ desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
 source "${script_dir}/_lab.sh"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
-profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
+suite="${OMNIDECK_DESKTOP_VM_E2E_SUITE:-product}"
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-}"
 baseline=""
 artifact="${OMNIDECK_DESKTOP_PREPARED_ARTIFACT:-}"
 upgrade_from_artifact="${OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT:-}"
@@ -26,8 +27,9 @@ reinstall. The clean baseline additionally drives UAC cancellation/approval,
 restart-now, a real reboot, and RunOnce reopening.
 
 Options:
+  --suite product|onboarding     Test tier (default: product)
   --baseline clean|NAME         Guest checkpoint (default: podman-ready)
-  --profile NAME                Deterministic lab profile (default: dev-fast)
+  --profile NAME                Override the suite's deterministic lab profile
   --artifact PATH                Test this exact prebuilt NSIS installer
   --upgrade-from-artifact PATH   Install this prior NSIS release before the candidate
   --cli PATH                     CLI worktree embedded in a local candidate
@@ -40,6 +42,7 @@ EOF
 while (($#)); do
   case "$1" in
     --) shift ;;
+    --suite) suite="${2:?--suite requires a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
@@ -51,6 +54,8 @@ while (($#)); do
     *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+case "$suite" in product) default_profile=product-ready ;; onboarding) default_profile=onboarding-clean ;; *) printf 'Unsupported suite: %s\n' "$suite" >&2; exit 2 ;; esac
+[[ -n "$profile" ]] || profile="$default_profile"
 require_lab
 for dependency in curl docker node python3 sha256sum ssh unzip; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
@@ -64,7 +69,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
   prepare_output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop e2e "${lease_run_id}-windows")}"
   mkdir -p "${prepare_output_dir}"
   "${lab_dir}/lab.sh" evidence-init "${prepare_output_dir}" desktop e2e "${lease_run_id}" \
-    "${source_commit}" windows "${baseline}" "phase=preparing" "profile=${profile}" \
+    "${source_commit}" windows "${baseline}" "phase=preparing" "profile=${profile}" "testTier=${suite}" \
     "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}"
   trap '"${lab_dir}/lab.sh" evidence-finish "${prepare_output_dir}" failed || true' EXIT
   prepare_tauri_driver windows
@@ -74,6 +79,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     create_desktop_build_output windows
     OMNIDECK_CLI_BUILDER_IMAGE="${cli_builder_image}" \
     OMNIDECK_DESKTOP_WINDOWS_BUILDER_IMAGE="${desktop_builder_image}" \
+    OMNIDECK_DESKTOP_BUILDER_CACHE_DIR="${desktop_builder_cache}" \
     OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR="${desktop_build_output}" \
       "${desktop_root}/scripts/build-with-local-cli-windows.sh" "${cli_root}"
     artifact="$(find "${desktop_build_output}/x86_64-pc-windows-gnu/release/bundle/nsis" \
@@ -94,7 +100,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
   "${lab_dir}/lab.sh" evidence-set "${prepare_output_dir}" "phase=prepared" \
     "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}" \
     "upgradeFromArtifactCacheKey=${prepared_upgrade_from_key:-none}"
-  lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline clean)
+  lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline "$baseline")
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
   lease_args+=(-- env OMNIDECK_DESKTOP_PREPARED_ARTIFACT="${artifact}" \
     OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE="${tauri_driver_cache}" \
@@ -120,7 +126,7 @@ fi
   exit 2
 }
 security_mode=0
-[[ "${baseline}" != "clean" ]] || security_mode=1
+[[ "$suite" != onboarding ]] || security_mode=1
 eval "$("${lab_dir}/lab.sh" describe windows --shell)"
 
 if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
@@ -189,7 +195,7 @@ if [[ -f "${output_dir}/run.json" ]]; then
 else
   "${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
     "${source_commit}" windows "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}" \
-    "profile=${profile}" "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}" \
+    "profile=${profile}" "testTier=${suite}" "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}" \
     "tauriDriverKey=${OMNIDECK_DESKTOP_TAURI_DRIVER_KEY}"
 fi
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" "artifactCacheKey=${OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY:-external}"
@@ -230,7 +236,7 @@ cleanup() {
     vm_started=0
   fi
   if [[ "${initial_reset}" == "1" && "${keep_vm}" != "1" ]]; then
-    "${lab_dir}/lab.sh" reset windows clean || exit_code=1
+    "${lab_dir}/lab.sh" reset windows "$baseline" || exit_code=1
   elif [[ "${keep_vm}" == "1" ]]; then
     printf 'Windows guest kept stopped for debugging.\n'
   fi
@@ -269,7 +275,7 @@ printf 'Starting and verifying Windows.\n'
 vm_started=1
 "${lab_dir}/lab.sh" wait windows
 "${lab_dir}/lab.sh" verify windows | tee "${output_dir}/guest-verify.txt"
-if [[ "${baseline}" == "podman-ready" ]]; then
+if [[ "$suite" == product ]]; then
   grep -Eq 'podman=(ready|present|installed|[A-Za-z]:)|podman_version=' "${output_dir}/guest-verify.txt" || {
     printf 'The podman-ready checkpoint did not report Podman.\n' >&2
     exit 1
@@ -289,17 +295,19 @@ fi
   "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { exit 1 }"
 
 printf 'Staging and installing the exact NSIS artifact.\n'
-"${lab_dir}/lab.sh" run windows "cmd.exe /d /c if not exist ${remote_root} mkdir ${remote_root}"
-remote_staged=1
-"${lab_dir}/lab.sh" copy-to windows "${artifact}" "${remote_scp_root}/candidate-setup.exe"
-if [[ -n "${upgrade_from_artifact}" ]]; then
-  "${lab_dir}/lab.sh" copy-to windows "${upgrade_from_artifact}" "${remote_scp_root}/upgrade-from-setup.exe"
+payload_dir="${build_dir}/payload"
+mkdir -p "$payload_dir"
+install -m 0644 "$artifact" "$payload_dir/candidate-setup.exe"
+if [[ -n "$upgrade_from_artifact" ]]; then
+  install -m 0644 "$upgrade_from_artifact" "$payload_dir/upgrade-from-setup.exe"
 fi
-"${lab_dir}/lab.sh" copy-to windows "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/custom_app_fixture.py" "${remote_scp_root}/custom_app_fixture.py"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_start_driver.ps1" "${remote_scp_root}/windows_start_driver.ps1"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_trust.ps1" "${remote_scp_root}/windows_trust.ps1"
+install -m 0644 "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "$payload_dir/tauri-driver.exe"
+install -m 0644 "${script_dir}/windows_guest.ps1" "$payload_dir/windows_guest.ps1"
+install -m 0644 "${script_dir}/custom_app_fixture.py" "$payload_dir/custom_app_fixture.py"
+install -m 0644 "${script_dir}/windows_start_driver.ps1" "$payload_dir/windows_start_driver.ps1"
+install -m 0644 "${script_dir}/windows_trust.ps1" "$payload_dir/windows_trust.ps1"
+"${lab_dir}/lab.sh" stage windows "$payload_dir" "$remote_root" | tee "${output_dir}/payload-stage.txt"
+remote_staged=1
 
 phase_command() {
   local phase="$1"
@@ -573,9 +581,18 @@ run_host_boundary() {
           reset) key=ctrl-0 ;;
         esac
         acknowledgement="${request%.request}.ack"
+        # Windows notifications can remain above the hosted app after native
+        # download assertions. Dismiss stacked overlays and let focus settle
+        # before delivering the hardware shortcut, matching the Linux lanes.
+        for focus_escape in 1 2; do
+          "${lab_dir}/lab.sh" send-keys windows esc
+          sleep 0.2
+        done
+        sleep 0.5
         "${lab_dir}/lab.sh" screenshot windows \
           "${screenshot_dir}/zoom-${marker%.request}-before.png" >/dev/null 2>&1 || true
         "${lab_dir}/lab.sh" send-keys windows "${key}"
+        sleep 0.5
         "${lab_dir}/lab.sh" screenshot windows \
           "${screenshot_dir}/zoom-${marker%.request}-after.png" >/dev/null 2>&1 || true
         touch "${acknowledgement}"

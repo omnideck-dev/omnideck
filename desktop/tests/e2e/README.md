@@ -114,25 +114,32 @@ cross by itself:
   completion.
 
 The harness resolves every baseline from an explicit lab profile and fails
-preflight when that exact checkpoint or its provenance is missing. `dev-fast`
-selects the versioned Desktop checkpoint on Ubuntu and Fedora, clean Debian and
-Silverblue, and Windows `podman-ready`; `release-clean` selects clean everywhere.
-Silverblue uses its `clean` atomic deployment and
+preflight when that checkpoint, provenance, or certification is missing. It
+defaults to `--suite product`, which selects `product-ready`; `--suite
+onboarding` selects `onboarding-clean`, and the candidate matrix accepts
+`--suite all` for release qualification.
+Silverblue uses its `onboarding-clean-v1` or `product-ready-v2` deployment and
 the x64 AppImage. Its unattended smoke launches the AppImage itself; its
 attended WebDriver journeys extract and hash-check the byte-identical shipped
 `omnideck` and `omnideck-cli` binaries, then run them outside the AppDir so they
 bind to Silverblue's native WebKitGTK. This avoids combining the AppImage's
 Ubuntu WebKit libraries with Fedora's WebDriver while still proving both the
-package loader and the distro-native Tauri behavior. Windows defaults to
-`podman-ready` for a faster development
-loop, while `--baseline clean` owns the full UAC/restart/RunOnce path. The
-published-release orchestrator always selects `clean` for Windows. Linux also
-accepts `--baseline clean` and drives its graphical permission prompt.
+package loader and the distro-native Tauri behavior. Windows product tests use
+`podman-ready`; onboarding tests use `clean` and own the full
+UAC/restart/RunOnce path. Linux onboarding uses its clean profile and drives
+the graphical permission prompt.
 
 The production-pinned runtime image is used by default. There is no tiny
 fixture image in the full Desktop journey. This makes the hosted proof a check
 of the same application image the package declares, at the cost of a larger
 first pull inside the disposable overlay.
+
+The matrix builds each requested package once, then reuses a persistent
+builder-image-keyed Cargo target, Cargo home, pnpm store, and XDG cache owned by
+the VM lab. Source is still copied into an isolated build container, and the
+lab GC owns cache retention. Ctrl-C or termination stops the active lane,
+waits for its lease cleanup, records it as canceled, and does not start the
+next lane.
 
 The full lane pays the expensive costs once: one guest reset, one candidate
 build/install, and one production image pull. Lifecycle journeys intentionally
@@ -153,7 +160,8 @@ initialized Podman WSL machine with working registry DNS on Windows. The lane
 verifies these capabilities and records the contract with every run.
 
 Keep version-coupled tooling out of the golden image. The harness builds and
-stages locked `tauri-driver` 2.0.6 for every run, downloads the EdgeDriver that
+stages one compressed, SHA-256-verified payload containing locked
+`tauri-driver` 2.0.6 and the exact candidate, and downloads the EdgeDriver that
 matches the active EdgeWebView client's registry `pv`, rejects a driver with a
 different major version, and creates/removes the Windows interactive driver
 task. This avoids selecting an inactive update directory left beside the
@@ -263,6 +271,11 @@ The canonical all-lane candidate command is:
 pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes
 ```
 
+That command defaults to fast product-feature coverage on `product-ready`.
+Use `--suite onboarding` after changing prerequisite detection, elevation,
+installers, restart/resume, or first-run setup. Use `--suite all` for both tiers
+in release qualification.
+
 The candidate matrix defaults to upgrading from the latest published Desktop
 release. It verifies that complete release matrix and its attestations before
 building the local candidate. Select a specific source with `--upgrade-from
@@ -272,9 +285,9 @@ clean-install-only development run.
 Candidate packages and pinned `tauri-driver` binaries are prepared in an
 immutable, content-addressed lab cache before each lease. Compilation and
 driver installation therefore never consume guest time. Rust/Tauri target
-trees are also routed through the lab cache instead of the checkout; successful
-preparation removes the large transient tree after preserving the exact
-candidate, and interrupted trees expire under the cache policy.
+trees, Cargo home, pnpm store, and XDG caches are routed through a
+builder-image-keyed lab cache instead of the checkout. Exact candidates remain
+content addressed, and unused builder caches expire under the lab GC policy.
 
 Run an exact already-built package without rebuilding it:
 
