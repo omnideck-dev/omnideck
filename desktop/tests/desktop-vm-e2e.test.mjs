@@ -129,6 +129,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(linuxGuest, /native zoom bridge/);
   assert.match(linuxGuest, /native update bridge/);
   assert.match(linuxGuest, /OMNIDECK_DESKTOP_UPDATE_FIXTURE/);
+  assert.match(linuxGuest, /omnideck-e2e-firefox\.desktop/);
+  assert.match(linuxGuest, /MOZ_ENABLE_WAYLAND=1/);
+  assert.match(linuxGuest, /xdg-mime query default x-scheme-handler\/https/);
+  assert.match(run, /update-notifier\.desktop/);
+  assert.match(run, /pkill -u tester -TERM -x update-manager/);
   assert.match(windowsGuest, /HostBoundaryDownload/);
   assert.match(windowsGuest, /HostBoundaryArtifactDownload/);
   assert.match(windowsGuest, /SeedUpdateFixture/);
