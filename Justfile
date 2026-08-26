@@ -77,49 +77,13 @@ remove package:
 # Container image
 # =============================================================================
 
+# Show or save the container engine used by development recipes.
+engine choice="":
+    @bash scripts/container-engine.sh --select "{{choice}}"
+
 # Build the container image. Only needed when container/Dockerfile changes.
 build:
-    @echo "🏗️  Building {{_image}}..."
-    docker build -f container/Dockerfile -t {{_image}} .
-
-# Publish multi-arch image to GitHub Container Registry.
-# Requires: docker buildx (comes with Docker Desktop; on Linux, install QEMU first:
-#   docker run --privileged --rm tonistiigi/binfmt --install all)
-publish registry="ghcr.io/omnideck-dev/omnideck":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    sha=$(git rev-parse --short HEAD)
-    branch=$(git branch --show-current | tr '/' '-')
-    tag="${branch}-${sha}"
-    echo "🏗️  Building multi-arch (linux/amd64, linux/arm64)..."
-
-    # Ensure buildx builder exists (idempotent)
-    docker buildx inspect multiarch >/dev/null 2>&1 || \
-        docker buildx create --use --name multiarch --driver docker-container
-
-    [ -n "${GITHUB_PACKAGES_TOKEN:-}" ] && echo "$GITHUB_PACKAGES_TOKEN" | docker login ghcr.io -u lefoulkrod --password-stdin
-
-    if [ "$branch" = "main" ]; then
-        branch_tag="main"
-    else
-        branch_tag="${branch}-latest"
-    fi
-
-    docker buildx build \
-        --builder multiarch \
-        --platform linux/amd64,linux/arm64 \
-        -f container/Dockerfile \
-        -t "{{registry}}:${tag}" \
-        -t "{{registry}}:${branch_tag}" \
-        --push .
-
-    if [ "$branch" = "main" ]; then
-        # Retag the already-pushed manifest — no rebuild needed.
-        docker buildx imagetools create \
-            -t "{{registry}}:latest" \
-            "{{registry}}:${tag}"
-    fi
-    echo "✅ Published multi-arch: {{registry}}:${tag}"
+    @just _build-image {{_image}}
 
 
 # =============================================================================
@@ -130,24 +94,38 @@ publish registry="ghcr.io/omnideck-dev/omnideck":
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
+    engine=$(just _engine)
     just _require-image
     state="$HOME/.omnideck"
     mkdir -p "$state/home" "$state/state"
-    if ! docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q .; then
-        docker rm -f {{_ctr}} 2>/dev/null || true
-        env_args=""; [ -f .env ] && env_args="--env-file .env"
-        docker run -d --restart=unless-stopped --name {{_ctr}} \
-            --log-driver=local \
-            --log-opt max-size=50m \
-            --log-opt max-file=3 \
-            --gpus all --shm-size=256m --network=host \
+    if ! "$engine" ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q .; then
+        "$engine" rm -f {{_ctr}} 2>/dev/null || true
+        env_args=(); [ -f .env ] && env_args=(--env-file .env)
+        runtime_args=()
+        if [[ "$engine" == docker ]]; then
+            runtime_args+=(--log-driver=local --log-opt max-size=50m --log-opt max-file=3)
+        fi
+        case "${OMNIDECK_GPU:-0}" in
+            0|false|none) ;;
+            1|true|all)
+                if [[ "$engine" == docker ]]; then
+                    runtime_args+=(--gpus all)
+                else
+                    runtime_args+=(--device nvidia.com/gpu=all)
+                fi
+                ;;
+            *) echo "❌ OMNIDECK_GPU must be 0, 1, none, or all" >&2; exit 2 ;;
+        esac
+        "$engine" run -d --restart=unless-stopped --name {{_ctr}} \
+            "${runtime_args[@]}" \
+            --shm-size=256m --network=host \
             -e PYTHONDONTWRITEBYTECODE=1 \
             -e DEV_MODE=true \
-            $env_args \
-            -v "$state/home:/home/omnideck:rw" \
-            -v "$state/state:/var/lib/omnideck:rw" \
+            "${env_args[@]}" \
+            -v "$state/home:/home/omnideck:rw,z" \
+            -v "$state/state:/var/lib/omnideck:rw,z" \
             {{_image}}
-        echo "🚀 Container started"
+        echo "🚀 Container started with $engine"
     else
         echo "ℹ️  Container already running"
     fi
@@ -180,19 +158,20 @@ rebuild-ui:
 
 # Stop the dev container (keeps state in ~/.omnideck/)
 stop:
-    docker stop {{_ctr}} 2>/dev/null || echo "ℹ️  Not running"
+    @bash scripts/container-engine.sh stop {{_ctr}} 2>/dev/null || echo "ℹ️  Not running"
 
 # Open a bash shell in the running dev container
 shell:
-    docker exec -it {{_ctr}} bash
+    @bash scripts/container-engine.sh exec -it {{_ctr}} bash
 
 # Follow app + inference logs side by side
 logs:
     #!/usr/bin/env bash
     set -euo pipefail
+    engine=$(just _engine)
     just _require-running
-    docker logs -f {{_ctr}} 2>&1 | sed 's/^/[app] /' &
-    docker exec {{_ctr}} tail -f /tmp/inference_server.log 2>/dev/null | sed 's/^/[inference] /' &
+    "$engine" logs -f {{_ctr}} 2>&1 | sed 's/^/[app] /' &
+    "$engine" exec {{_ctr}} tail -f /tmp/inference_server.log 2>/dev/null | sed 's/^/[inference] /' &
     wait
 
 
@@ -247,40 +226,53 @@ test-ui *args:
 manual-test:
     #!/usr/bin/env bash
     set -euo pipefail
+    engine=$(just _engine)
     # Per-branch image so concurrent worktrees don't clobber each other.
-    # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
+    # Container layer caching makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
     image="omnideck:e2e-${branch_tag}"
-    echo "🏗️  Building ${image}"
-    docker build -f container/Dockerfile -t "$image" .
+    just _build-image "$image"
     name="omnideck_manual_test"
     port=9091
     state=$(mktemp -d)
     mkdir -p "$state/home" "$state/state"
     cleanup() {
-        docker exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
+        "$engine" exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
             /home/omnideck /var/lib/omnideck 2>/dev/null || true
-        docker stop "$name" 2>/dev/null || true
+        "$engine" stop "$name" 2>/dev/null || true
         rm -rf "$state" 2>/dev/null || true
     }
     trap cleanup EXIT
 
-    docker rm -f "$name" 2>/dev/null || true
-    env_args=""; [ -f .env ] && env_args="--env-file .env"
+    "$engine" rm -f "$name" 2>/dev/null || true
+    env_args=(); [ -f .env ] && env_args=(--env-file .env)
+    gpu_args=()
+    case "${OMNIDECK_GPU:-0}" in
+        0|false|none) ;;
+        1|true|all)
+            if [[ "$engine" == docker ]]; then
+                gpu_args=(--gpus all)
+            else
+                gpu_args=(--device nvidia.com/gpu=all)
+            fi
+            ;;
+        *) echo "❌ OMNIDECK_GPU must be 0, 1, none, or all" >&2; exit 2 ;;
+    esac
 
-    docker run -d --rm --name "$name" \
-        --gpus all --shm-size=256m --network=host \
+    "$engine" run -d --rm --name "$name" \
+        "${gpu_args[@]}" \
+        --shm-size=256m --network=host \
         -e PORT=$port \
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
-        $env_args \
-        -v "$state/home:/home/omnideck:rw" \
-        -v "$state/state:/var/lib/omnideck:rw" \
+        "${env_args[@]}" \
+        -v "$state/home:/home/omnideck:rw,z" \
+        -v "$state/state:/var/lib/omnideck:rw,z" \
         "$image"
 
     just _sync-src "$name"
     just _ui-build "$name"
-    docker restart "$name" >/dev/null
+    "$engine" restart "$name" >/dev/null
 
     ready=false
     for i in $(seq 1 30); do
@@ -291,20 +283,21 @@ manual-test:
     done
     if [ "$ready" = false ]; then
         echo "❌ App didn't start on :$port"
-        docker logs "$name" 2>&1 | tail -30
+        "$engine" logs "$name" 2>&1 | tail -30
         exit 1
     fi
 
     echo "✅ Ready on http://localhost:$port  (Ctrl-C to tear down)"
-    docker logs -f "$name"
+    "$engine" logs -f "$name"
 
 
 # Run Playwright e2e in a throwaway container with fresh state + latest source
 e2e *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    engine=$(just _engine)
     # Per-branch image so concurrent worktrees don't clobber each other.
-    # Docker layer cache makes subsequent rebuilds fast (~5-15s steady state).
+    # Container layer caching makes subsequent rebuilds fast (~5-15s steady state).
     branch_tag=$(git rev-parse --abbrev-ref HEAD | tr '/.' '-')
     # The build context is the working tree (uncommitted edits included), so the
     # built image already carries the code under test — we run it as-is, no
@@ -314,8 +307,7 @@ e2e *args:
     if [ "${E2E_SKIP_BUILD:-0}" = "1" ]; then
         echo "⏭️  Reusing image ${image} (E2E_SKIP_BUILD=1)"
     else
-        echo "🏗️  Building ${image}"
-        docker build -f container/Dockerfile -t "$image" .
+        just _build-image "$image"
     fi
     name="omnideck_e2e"
     port=9090
@@ -324,15 +316,15 @@ e2e *args:
     cleanup() {
         # Chown state files to host uid so we can rm -rf them.
         # Container writes them as omnideck (uid 1000) or root.
-        docker exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
+        "$engine" exec -u 0 "$name" chown -R "$(id -u):$(id -g)" \
             /home/omnideck /var/lib/omnideck 2>/dev/null || true
-        docker stop "$name" 2>/dev/null || true
+        "$engine" stop "$name" 2>/dev/null || true
         rm -rf "$state" 2>/dev/null || true
     }
     trap cleanup EXIT
 
-    docker rm -f "$name" 2>/dev/null || true
-    env_args=""; [ -f .env ] && env_args="--env-file .env"
+    "$engine" rm -f "$name" 2>/dev/null || true
+    env_args=(); [ -f .env ] && env_args=(--env-file .env)
 
     # DISPLAY=:$port — derive from port so multiple containers (dev, manual-test,
     # e2e) sharing the host network namespace can't collide on X abstract sockets.
@@ -343,15 +335,15 @@ e2e *args:
     # without a real LLM backend (no Ollama, no GPU). Tests drive agent behaviour
     # via the directive protocol the fake understands.
     # --network=host is kept for the browser-tool test (Chrome under the container).
-    docker run -d --rm --name "$name" \
+    "$engine" run -d --rm --name "$name" \
         --shm-size=256m --network=host \
         -e PORT=$port \
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
-        $env_args \
-        -v "$state/home:/home/omnideck:rw" \
-        -v "$state/state:/var/lib/omnideck:rw" \
+        "${env_args[@]}" \
+        -v "$state/home:/home/omnideck:rw,z" \
+        -v "$state/state:/var/lib/omnideck:rw,z" \
         "$image"
 
     # Wait for the app to come up on the e2e port
@@ -364,7 +356,7 @@ e2e *args:
     done
     if [ "$ready" = false ]; then
         echo "❌ App didn't start on :$port"
-        docker logs "$name" 2>&1 | tail -30
+        "$engine" logs "$name" 2>&1 | tail -30
         exit 1
     fi
     curl -fsS -X PUT "http://localhost:$port/api/settings" \
@@ -401,7 +393,7 @@ release-note-policy:
 
 # Verify CI event routing, bounded package setup, and hosted browser reuse
 workflow-policy:
-    node --test tests/workflow-contracts.test.mjs
+    node --test tests/workflow-contracts.test.mjs tests/container-engine.test.mjs
 
 # Format (fix imports + format)
 format:
@@ -444,13 +436,30 @@ clean:
 # Internal helpers (hidden from --list)
 # =============================================================================
 
+# Resolve the native container engine selected for this repository.
+_engine:
+    @bash scripts/container-engine.sh --show
+
+# Build into the selected engine's local image store. Docker's Buildx selection
+# is intentionally ignored: local development recipes need a locally loadable image.
+_build-image image:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    engine=$(just _engine)
+    echo "🏗️  Building {{image}} with $engine..."
+    if [[ "$engine" == docker ]]; then
+        env -u BUILDX_BUILDER docker build -f container/Dockerfile -t "{{image}}" .
+    else
+        podman build -f container/Dockerfile -t "{{image}}" .
+    fi
+
 # Fail if the image isn't built
 _require-image:
-    @docker image inspect {{_image}} >/dev/null 2>&1 || { echo "❌ {{_image}} not found. Run: just build"; exit 1; }
+    @bash scripts/container-engine.sh image inspect {{_image}} >/dev/null 2>&1 || { echo "❌ {{_image}} not found. Run: just build"; exit 1; }
 
 # Fail if the dev container isn't running
 _require-running:
-    @docker ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
+    @bash scripts/container-engine.sh ps -q -f name=^{{_ctr}}$ 2>/dev/null | grep -q . || { echo "❌ Container not running. Run: just dev"; exit 1; }
 
 # Tar-pipe working tree into container at /opt/omnideck.
 # Excludes heavy/generated dirs so the stream stays small. Normalize archived
@@ -458,7 +467,10 @@ _require-running:
 # `broker` user from importing the integrations package. Capital X preserves
 # executable scripts without making ordinary source files executable.
 _sync-src ctr:
-    @tar \
+    #!/usr/bin/env bash
+    set -euo pipefail
+    engine=$(just _engine)
+    tar \
         --mode='u+rwX,go+rX' \
         --exclude='.git' \
         --exclude='.venv' \
@@ -474,13 +486,13 @@ _sync-src ctr:
         --exclude='.coverage*' \
         --exclude='playwright-report' \
         --exclude='test-results' \
-        -cf - . | docker exec -i {{ctr}} tar -xf - -C /opt/omnideck
-    @echo "📦 Source synced into {{ctr}}"
+        -cf - . | "$engine" exec -i {{ctr}} tar -xf - -C /opt/omnideck
+    echo "📦 Source synced into {{ctr}}"
 
 # Refresh the editable install after source sync so newly added top-level
 # packages and pyproject changes are immediately importable in isolated Python.
 _install-python ctr:
-    @docker exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
+    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
     @echo "🐍 Python package refreshed in {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container
@@ -489,6 +501,7 @@ _install-python ctr:
 _ui-build ctr:
     #!/usr/bin/env bash
     set -euo pipefail
+    engine=$(just _engine)
     command -v npm >/dev/null || { echo "❌ Node.js/npm required on host to build the UI"; exit 1; }
     cd {{UI_DIR}}
     lock_hash=$(sha256sum package-lock.json 2>/dev/null | cut -d" " -f1 || echo none)
@@ -500,14 +513,14 @@ _ui-build ctr:
     fi
     npm run build
     echo "📦 Copying dist/ into {{ctr}}..."
-    tar -cf - dist | docker exec -i {{ctr}} tar -xf - -C /opt/omnideck/{{UI_DIR}}
+    tar -cf - dist | "$engine" exec -i {{ctr}} tar -xf - -C /opt/omnideck/{{UI_DIR}}
 
 # Bounce supervisor + app inside the dev container. The DEV_MODE entrypoint
 # runs each in a respawn loop, so killing the inner Python lets the loop
 # pick it back up with the freshly synced source.
 _bounce-services ctr:
-    @docker exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
-    @docker exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
+    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
+    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
 
 # Poll until the app responds on the given port (up to ~60s)
 _wait-ready port:
