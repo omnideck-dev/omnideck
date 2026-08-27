@@ -72,7 +72,11 @@ The `omnideck application` workflow rejects malformed tags, version mismatches,
 missing release notes, and tags not contained in `main`. It repeats source
 verification, pins the runtime image digest, builds all six target
 architectures and ten package formats, creates package checksums, and runs the
-static release contract.
+static release contract. macOS tag jobs must first pass the protected
+`desktop-signing` environment. They import the release-only Developer ID
+identity into an ephemeral keychain, sign both DMGs, submit them to Apple's
+notary service, staple the tickets, and reject any package that does not pass
+Developer ID, hardened-runtime, timestamp, ticket, and Gatekeeper checks.
 
 Publication pauses at the protected `release` environment. Before approval,
 review the source, sidecar, runtime-image, build, release-contract, checksum,
@@ -126,12 +130,61 @@ merely to a version family or time spent in a channel.
 
 ## Signing status
 
-Preview macOS packages use Tauri's complete bundle-level ad-hoc signature. The
-macOS build mounts the generated DMG and requires its contained application to
-pass strict recursive `codesign` verification; an executable-only linker
-signature is a release failure. Ad-hoc signatures do not establish publisher
-identity, so Gatekeeper may still require the tester to approve the application
-in Privacy & Security. SmartScreen and Gatekeeper warnings must be documented
-and recorded separately from corruption, an invalid bundle signature, or a
-launch failure. Developer ID signing, notarization, and publisher identity must
-be resolved before a stable release can satisfy the stable gate.
+Pull-request, `main`, and ordinary manual macOS packages use Tauri's complete
+bundle-level ad-hoc signature. They are internal evidence only and cannot be
+published. The macOS build mounts each generated DMG and requires its contained
+application to pass strict recursive `codesign` verification; an
+executable-only linker signature is a release failure.
+
+Tag builds and manual runs with `signed_macos=true` use the protected
+`desktop-signing` environment. The workflow derives the signing identity from
+the imported certificate, requires Apple team `2FL6BUG8Q4`, and has Tauri
+notarize and staple the package. The verifier then requires a Developer ID
+Application authority, hardened runtime, secure timestamp, valid stapled
+ticket, and successful Gatekeeper assessments for both the application and
+DMG. The same Developer ID Application certificate signs the Intel and Apple
+Silicon packages. A Developer ID Installer certificate is not used because the
+release format is DMG rather than PKG.
+
+### One-time GitHub environment setup
+
+Create a Developer ID Application certificate for Apple team `2FL6BUG8Q4` on a
+trusted Mac. Export the certificate and its private key from Keychain Access as
+a password-protected PKCS#12 (`.p12`) file. Create a team App Store Connect API
+key with permission to submit notarization requests and retain its issuer ID,
+key ID, and one-time-download `.p8` private key.
+
+Configure the `desktop-signing` GitHub environment so only `main` and `v*` tags
+may deploy, and require a reviewer before its secrets are released. Store these
+environment secrets:
+
+| Secret | Value |
+| --- | --- |
+| `DESKTOP_MAC_CERTIFICATE_P12_BASE64` | One-line base64 of the `.p12` archive |
+| `DESKTOP_MAC_CERTIFICATE_PASSWORD` | Password assigned when exporting the `.p12` |
+| `DESKTOP_APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `DESKTOP_APPLE_API_ISSUER_ID` | App Store Connect API issuer UUID |
+| `DESKTOP_APPLE_API_PRIVATE_KEY_BASE64` | One-line base64 of the `.p8` private key |
+
+Generate the base64 values without writing them into the repository:
+
+```sh
+openssl base64 -A -in DeveloperIDApplication.p12
+openssl base64 -A -in AuthKey_KEYID.p8
+```
+
+Do not store the unencoded files, their base64 representations, or the
+certificate password in source control, release artifacts, workflow variables,
+or pull-request text. The workflow decodes them only beneath `RUNNER_TEMP`,
+uses an ephemeral keychain, and deletes the material before artifact upload.
+
+Before creating a release tag, run a non-publishing proof from `main`:
+
+```sh
+gh workflow run desktop.yml --ref main -f signed_macos=true
+```
+
+Approve both macOS jobs in `desktop-signing`, then require the workflow and
+artifact contract to pass. This proof exercises the same signing,
+notarization, stapling, and trust checks as a tag without publishing a GitHub
+Release.
