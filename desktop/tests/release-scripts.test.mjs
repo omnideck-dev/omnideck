@@ -9,6 +9,9 @@ const windows = await read('../scripts/release-test/windows.ps1');
 const resetWindows = await read('../scripts/release-test/reset-host.ps1');
 const common = await read('../scripts/release-test/_common.sh');
 const macosBundleVerifier = await read('../scripts/verify-macos-bundle.sh');
+const macosSigningConfigurator = await read('../scripts/configure-macos-signing.sh');
+const macosSigningCleanup = await read('../scripts/cleanup-macos-signing.sh');
+const macosDmgNotarizer = await read('../scripts/notarize-macos-dmg.sh');
 const buildWithRetry = await read('../scripts/build-with-retry.mjs');
 const desktopWorkflow = await read('../../.github/workflows/desktop.yml');
 const hardwareWorkflow = await read('../../.github/workflows/desktop-hardware.yml');
@@ -65,9 +68,8 @@ test('native package builds retry transient Tauri helper downloads', () => {
   assert.match(buildWithRetry, /rmSync\(bundleDirectory, \{ recursive: true, force: true \}\)/);
 });
 
-test('macOS release packages contain a strict bundle-level signature', () => {
+test('macOS preview packages contain a strict bundle-level signature', () => {
   assert.match(desktopWorkflow, /Verify the packaged macOS app signature/);
-  assert.match(desktopWorkflow, /if: runner\.os == 'macOS'/);
   assert.match(desktopWorkflow, /verify-macos-bundle\.sh \$\{\{ matrix\.target \}\}/);
   assert.match(macosBundleVerifier, /codesign --verify --deep --strict --verbose=4/);
   assert.match(macosBundleVerifier, /hdiutil attach -readonly -nobrowse/);
@@ -76,6 +78,41 @@ test('macOS release packages contain a strict bundle-level signature', () => {
   assert.match(macosBundleVerifier, /Info\.plist=not bound/);
   assert.match(macosBundleVerifier, /Sealed Resources=none/);
   assert.match(macosBundleVerifier, /linker-signed/);
+});
+
+test('macOS tag builds require protected Developer ID signing and notarization', () => {
+  assert.match(desktopWorkflow, /signed_macos:/);
+  assert.match(desktopWorkflow, /build_macos_preview:[\s\S]*?!startsWith/);
+  assert.match(desktopWorkflow, /build_macos_release:[\s\S]*?startsWith/);
+  assert.match(desktopWorkflow, /environment: desktop-signing/);
+  assert.match(desktopWorkflow, /DESKTOP_MAC_CERTIFICATE_P12_BASE64: \$\{\{ secrets\./);
+  assert.match(desktopWorkflow, /DESKTOP_APPLE_API_PRIVATE_KEY_BASE64: \$\{\{ secrets\./);
+  assert.match(desktopWorkflow, /configure-macos-signing\.sh/);
+  assert.match(desktopWorkflow, /notarize-macos-dmg\.sh/);
+  assert.match(desktopWorkflow, /--require-developer-id 2FL6BUG8Q4/);
+  assert.match(desktopWorkflow, /cleanup-macos-signing\.sh/);
+
+  assert.match(macosSigningConfigurator, /Developer ID Application/);
+  assert.match(macosSigningConfigurator, /security create-keychain/);
+  assert.match(macosSigningConfigurator, /security set-key-partition-list/);
+  assert.match(macosSigningConfigurator, /APPLE_SIGNING_IDENTITY=/);
+  assert.match(macosSigningConfigurator, /APPLE_API_KEY_PATH=/);
+  assert.match(macosSigningConfigurator, /certificate subject does not contain team/);
+  assert.match(macosSigningCleanup, /security delete-keychain/);
+  assert.match(macosSigningCleanup, /Refusing to clean an unexpected signing directory/);
+
+  assert.match(macosDmgNotarizer, /notarytool submit/);
+  assert.match(macosDmgNotarizer, /--output-format json/);
+  assert.match(macosDmgNotarizer, /submission_status/);
+  assert.match(macosDmgNotarizer, /stapler staple/);
+
+  assert.match(macosBundleVerifier, /Authority=Developer ID Application:/);
+  assert.match(macosBundleVerifier, /TeamIdentifier=/);
+  assert.match(macosBundleVerifier, /Timestamp=/);
+  assert.match(macosBundleVerifier, /xcrun stapler validate/);
+  assert.match(macosBundleVerifier, /codesign --verify --strict --verbose=4/);
+  assert.match(macosBundleVerifier, /spctl --assess --type execute/);
+  assert.match(macosBundleVerifier, /context:primary-signature/);
 });
 
 test('macOS DMG presents and verifies the conventional Applications drop target', () => {
