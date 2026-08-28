@@ -1,4 +1,12 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import {
+    act,
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import ArtifactsHubView from '../ArtifactsHubView.jsx';
@@ -17,6 +25,32 @@ const ARTIFACTS = [
 ];
 
 let artifacts;
+let previewObserver;
+
+class PreviewIntersectionObserver {
+    constructor(callback, options) {
+        this.callback = callback;
+        this.options = options;
+        this.nodes = new Set();
+        previewObserver = this;
+    }
+
+    observe(node) {
+        this.nodes.add(node);
+    }
+
+    unobserve(node) {
+        this.nodes.delete(node);
+    }
+
+    disconnect() {
+        this.nodes.clear();
+    }
+
+    intersect(node, isIntersecting) {
+        this.callback([{ target: node, isIntersecting }]);
+    }
+}
 
 beforeEach(() => {
     artifacts = [...ARTIFACTS];
@@ -34,7 +68,11 @@ beforeEach(() => {
     });
 });
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+});
 
 function cardFor(filename) {
     return screen.getByText(filename).closest('[data-testid="artifact-card"]');
@@ -95,4 +133,88 @@ test('missing artifact deletes immediately without a dialog', async () => {
     fireEvent.click(within(cardFor('a.md')).getByTestId('artifact-delete'));
     expect(screen.queryByTestId('delete-artifact-dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('a.md')).not.toBeInTheDocument());
+});
+
+test('mounts previews near the viewport and releases them when the tab is hidden', async () => {
+    vi.stubGlobal('IntersectionObserver', PreviewIntersectionObserver);
+    const { rerender } = render(<ArtifactsHubView visible />);
+    await screen.findByText('b.html');
+
+    const htmlSurface = screen.getByTestId('artifact-preview-a2');
+    expect(previewObserver.options).toEqual({ rootMargin: '320px 0px' });
+    expect(previewObserver.nodes.has(htmlSurface)).toBe(true);
+    expect(htmlSurface.querySelector('iframe')).not.toBeInTheDocument();
+
+    act(() => previewObserver.intersect(htmlSurface, true));
+    const frame = await waitFor(() => {
+        const element = htmlSurface.querySelector('iframe');
+        expect(element).toBeInTheDocument();
+        return element;
+    });
+    const skeleton = screen.getByTestId('artifact-preview-skeleton-a2');
+    expect(skeleton).toHaveAttribute('data-hidden', 'false');
+
+    fireEvent.load(frame);
+    expect(skeleton).toHaveAttribute('data-hidden', 'true');
+
+    fireEvent.change(screen.getByTestId('artifacts-search'), {
+        target: { value: 'b.html' },
+    });
+    rerender(<ArtifactsHubView visible={false} />);
+    expect(htmlSurface.querySelector('iframe')).not.toBeInTheDocument();
+    expect(screen.getByTestId('artifacts-search')).toHaveValue('b.html');
+
+    rerender(<ArtifactsHubView visible />);
+    expect(screen.getByTestId('artifacts-search')).toHaveValue('b.html');
+    act(() => previewObserver.intersect(htmlSurface, true));
+    await waitFor(() => expect(htmlSurface.querySelector('iframe')).toBeInTheDocument());
+
+    act(() => previewObserver.intersect(htmlSurface, false));
+    expect(htmlSurface.querySelector('iframe')).not.toBeInTheDocument();
+});
+
+test('uses type-specific loading surfaces and immediate fallback icons', async () => {
+    artifacts = [
+        ARTIFACTS[0],
+        {
+            ...ARTIFACTS[0],
+            id: 'image-1',
+            path: '/home/computron/image.png',
+            filename: 'image.png',
+            content_type: 'image/png',
+        },
+        {
+            ...ARTIFACTS[0],
+            id: 'pdf-1',
+            path: '/home/computron/brief.pdf',
+            filename: 'brief.pdf',
+            content_type: 'application/pdf',
+        },
+    ];
+    vi.stubGlobal('IntersectionObserver', PreviewIntersectionObserver);
+    render(<ArtifactsHubView />);
+    await screen.findByText('image.png');
+
+    const imageSurface = screen.getByTestId('artifact-preview-image-1');
+    act(() => previewObserver.intersect(imageSurface, true));
+    const image = imageSurface.querySelector('img');
+    const imageSkeleton = screen.getByTestId('artifact-preview-skeleton-image-1');
+    expect(image).toBeInTheDocument();
+    expect(imageSkeleton).toHaveAttribute('data-hidden', 'false');
+    fireEvent.load(image);
+    expect(imageSkeleton).toHaveAttribute('data-hidden', 'true');
+
+    const textSurface = screen.getByTestId('artifact-preview-a1');
+    act(() => previewObserver.intersect(textSurface, true));
+    expect(screen.getByTestId('artifact-preview-skeleton-a1'))
+        .toBeInTheDocument();
+    await waitFor(() => expect(textSurface.querySelector('pre')).toHaveTextContent('# hi'));
+    expect(screen.getByTestId('artifact-preview-skeleton-a1'))
+        .toHaveAttribute('data-hidden', 'true');
+
+    const pdfSurface = screen.getByTestId('artifact-preview-pdf-1');
+    act(() => previewObserver.intersect(pdfSurface, true));
+    expect(pdfSurface.querySelector('.bi-filetype-pdf')).toBeInTheDocument();
+    expect(within(pdfSurface).queryByTestId(/artifact-preview-skeleton/))
+        .not.toBeInTheDocument();
 });

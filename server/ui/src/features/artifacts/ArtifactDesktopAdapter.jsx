@@ -238,13 +238,14 @@ export function ArtifactFileDesktopView({ view }) {
 }
 
 /** Render the Artifact library and adapt its actions to Desktop commands. */
-export default function ArtifactsHubDesktopView({ view, tabGroupId }) {
+export default function ArtifactsHubDesktopView({ view, visible, tabGroupId }) {
     const {
         openArtifact,
         openArtifacts,
     } = useArtifactDesktopActions();
     return (
         <ArtifactsHubView
+            visible={visible}
             conversationId={
                 navigationTargetForView(view)?.conversationId || null
             }
