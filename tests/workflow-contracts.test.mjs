@@ -27,6 +27,36 @@ test('app notes do not start the native desktop package matrix', () => {
   assert.doesNotMatch(desktopWorkflow, /docs\/releases\/\*\*/);
 });
 
+test('Desktop package builds are gated by deterministic change classification', () => {
+  assert.equal(
+    [...desktopWorkflow.matchAll(/- "\.github\/scripts\/desktop-build-matrix\.mjs"/g)]
+      .length,
+    2,
+  );
+  assert.match(desktopWorkflow, /test:\n    needs: changes/);
+  assert.match(
+    desktopWorkflow,
+    /runtime_image:\n    needs: \[changes, test\]\n    if: needs\.changes\.outputs\.build_required == 'true'/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /build:\n    needs: \[changes, runtime_image\]\n    if: needs\.changes\.outputs\.build_required == 'true'/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /artifact_contract:\n    needs: \[changes, build\]\n    if: needs\.changes\.outputs\.full_matrix == 'true'/,
+  );
+  assert.equal(
+    [...desktopWorkflow.matchAll(/if: needs\.changes\.outputs\.native_tests_required == 'true'/g)]
+      .length,
+    5,
+  );
+});
+
 test('browser jobs reuse hosted Chrome instead of downloading Playwright browsers', () => {
   assert.doesNotMatch(publishWorkflow, /playwright install/);
   assert.equal(
