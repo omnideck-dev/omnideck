@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 
 import useArtifacts from '../../hooks/useArtifacts.js';
 import Badge from '../Badge.jsx';
@@ -17,44 +22,230 @@ const SORTS = {
     type: { label: 'Type', defaultDir: 'asc', value: (a) => fileExt(a.filename).toLowerCase() },
 };
 
-// Lightweight per-card thumbnail. Images/HTML load lazily via the browser;
-// text/markdown fetches its content once (no polling). Anything else (pdf,
-// unknown) falls back to the type icon. This is the "heavy, droppable" grid
-// path — if it ever costs too much, the grid toggle can be removed wholesale.
-function ArtifactThumb({ item }) {
+const PREVIEW_ROOT_MARGIN = '320px 0px';
+const previewSubscriptions = new Map();
+let sharedPreviewObserver = null;
+
+function getPreviewObserver() {
+    if (sharedPreviewObserver || !globalThis.IntersectionObserver) {
+        return sharedPreviewObserver;
+    }
+    sharedPreviewObserver = new globalThis.IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            previewSubscriptions.get(entry.target)?.(entry.isIntersecting);
+        });
+    }, { rootMargin: PREVIEW_ROOT_MARGIN });
+    return sharedPreviewObserver;
+}
+
+function observePreview(node, onChange) {
+    const observer = getPreviewObserver();
+    if (!observer) {
+        // IntersectionObserver is unavailable in older/test environments.
+        // Preserve the existing functional behavior in that fallback.
+        onChange(true);
+        return () => {};
+    }
+    previewSubscriptions.set(node, onChange);
+    observer.observe(node);
+    return () => {
+        observer.unobserve(node);
+        previewSubscriptions.delete(node);
+        if (previewSubscriptions.size === 0) {
+            observer.disconnect();
+            sharedPreviewObserver = null;
+        }
+    };
+}
+
+function usePreviewViewport(visible) {
+    const nodeRef = useRef(null);
+    const [nearViewport, setNearViewport] = useState(false);
+    useEffect(() => {
+        if (!visible) {
+            setNearViewport(false);
+            return undefined;
+        }
+        if (!nodeRef.current) return undefined;
+        return observePreview(nodeRef.current, setNearViewport);
+    }, [visible]);
+    return [nodeRef, visible && nearViewport];
+}
+
+function PreviewSkeleton({ kind, hidden, artifactId }) {
+    const classes = [
+        styles.previewSkeleton,
+        hidden ? styles.previewSkeletonHidden : '',
+    ].filter(Boolean).join(' ');
+    if (kind === 'image') {
+        return (
+            <div
+                className={`${classes} ${styles.imageSkeleton}`}
+                data-testid={`artifact-preview-skeleton-${artifactId}`}
+                data-hidden={hidden ? 'true' : 'false'}
+                aria-hidden="true"
+            />
+        );
+    }
+    if (kind === 'text') {
+        return (
+            <div
+                className={`${classes} ${styles.textSkeleton}`}
+                data-testid={`artifact-preview-skeleton-${artifactId}`}
+                data-hidden={hidden ? 'true' : 'false'}
+                aria-hidden="true"
+            >
+                <i /><i /><i /><i /><i />
+            </div>
+        );
+    }
+    return (
+        <div
+            className={`${classes} ${styles.htmlSkeleton}`}
+            data-testid={`artifact-preview-skeleton-${artifactId}`}
+            data-hidden={hidden ? 'true' : 'false'}
+            aria-hidden="true"
+        >
+            <div className={styles.htmlSkeletonTop}><i /><i /><i /></div>
+            <div className={styles.htmlSkeletonBody}>
+                <div className={styles.htmlSkeletonSide} />
+                <div className={styles.htmlSkeletonMain}>
+                    <i /><i /><i /><div />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PreviewUnavailable() {
+    return (
+        <div className={styles.previewUnavailable}>
+            <i className="bi bi-exclamation-circle" />
+            <span>Preview unavailable</span>
+        </div>
+    );
+}
+
+function ImagePreview({ item }) {
+    const [status, setStatus] = useState('loading');
+    if (status === 'error') return <PreviewUnavailable />;
+    return (
+        <>
+            <PreviewSkeleton
+                kind="image"
+                hidden={status === 'loaded'}
+                artifactId={item.id}
+            />
+            <img
+                className={`${styles.thumbImg} ${styles.previewAsset} ${
+                    status === 'loaded' ? styles.previewAssetLoaded : ''
+                }`}
+                src={item.path}
+                alt=""
+                loading="lazy"
+                onLoad={() => setStatus('loaded')}
+                onError={() => setStatus('error')}
+            />
+        </>
+    );
+}
+
+function HtmlPreview({ item }) {
+    const [status, setStatus] = useState('loading');
+    if (status === 'error') return <PreviewUnavailable />;
+    return (
+        <>
+            <PreviewSkeleton
+                kind="html"
+                hidden={status === 'loaded'}
+                artifactId={item.id}
+            />
+            <iframe
+                className={`${styles.thumbFrame} ${styles.previewAsset} ${
+                    status === 'loaded' ? styles.previewAssetLoaded : ''
+                }`}
+                src={item.path}
+                title=""
+                sandbox=""
+                loading="lazy"
+                tabIndex={-1}
+                onLoad={() => setStatus('loaded')}
+                onError={() => setStatus('error')}
+            />
+        </>
+    );
+}
+
+function TextPreview({ item }) {
+    const [status, setStatus] = useState('loading');
+    const [text, setText] = useState('');
+    useEffect(() => {
+        const controller = new AbortController();
+        fetch(item.path, { signal: controller.signal })
+            .then((response) => {
+                if (!response.ok) throw new Error('Preview request failed');
+                return response.text();
+            })
+            .then((content) => {
+                setText(content.slice(0, 1500));
+                setStatus('loaded');
+            })
+            .catch((error) => {
+                if (error.name !== 'AbortError') setStatus('error');
+            });
+        return () => controller.abort();
+    }, [item.path]);
+
+    if (status === 'error') return <PreviewUnavailable />;
+    return (
+        <>
+            <PreviewSkeleton
+                kind="text"
+                hidden={status === 'loaded'}
+                artifactId={item.id}
+            />
+            <pre className={`${styles.thumbText} ${styles.previewAsset} ${
+                status === 'loaded' ? styles.previewAssetLoaded : ''
+            }`}>{text}</pre>
+        </>
+    );
+}
+
+function MountedArtifactPreview({ item, kind }) {
+    if (kind === 'image') return <ImagePreview item={item} />;
+    if (kind === 'html') return <HtmlPreview item={item} />;
+    if (kind === 'text') return <TextPreview item={item} />;
+    return <i className={`bi ${typeIcon(item.content_type, item.filename)} ${styles.cardIcon}`} />;
+}
+
+// Cards and their metadata stay mounted. Only this preview surface responds to
+// tab and viewport visibility, so inactive/offscreen iframes and fetches are
+// released without discarding search, sort, or catalog state.
+function ArtifactThumb({ item, visible }) {
     const { content_type: ct, path, filename } = item;
     const isImage = (ct || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(filename);
     const isHtml = ct === 'text/html' || /\.html?$/i.test(filename);
     const isPdf = ct === 'application/pdf' || /\.pdf$/i.test(filename);
     const isText = !isImage && !isHtml && !isPdf
         && ((ct || '').startsWith('text/') || /\.(md|markdown|csv|json|txt|ya?ml|log)$/i.test(filename));
+    const kind = isImage ? 'image' : isHtml ? 'html' : isText ? 'text' : 'icon';
+    const viewportManaged = kind !== 'icon';
+    const [viewportRef, nearViewport] = usePreviewViewport(
+        visible && viewportManaged,
+    );
+    const shouldMount = viewportManaged ? nearViewport : visible;
 
-    const [text, setText] = useState('');
-    useEffect(() => {
-        if (!isText) return undefined;
-        let cancelled = false;
-        fetch(path)
-            .then((r) => (r.ok ? r.text() : ''))
-            .then((t) => { if (!cancelled) setText(t.slice(0, 1500)); })
-            .catch(() => {});
-        return () => { cancelled = true; };
-    }, [isText, path]);
-
-    if (isImage) return <img className={styles.thumbImg} src={path} alt="" loading="lazy" />;
-    if (isHtml) {
-        return (
-            <iframe
-                className={styles.thumbFrame}
-                src={path}
-                title=""
-                sandbox=""
-                loading="lazy"
-                tabIndex={-1}
-            />
-        );
-    }
-    if (isText) return <pre className={styles.thumbText}>{text}</pre>;
-    return <i className={`bi ${typeIcon(ct, filename)} ${styles.cardIcon}`} />;
+    return (
+        <div
+            ref={viewportRef}
+            className={styles.thumbViewport}
+            data-testid={`artifact-preview-${item.id}`}
+        >
+            {shouldMount && (
+                <MountedArtifactPreview key={path} item={item} kind={kind} />
+            )}
+        </div>
+    );
 }
 
 /**
@@ -68,6 +259,7 @@ export default function ArtifactsHubView({
     conversationId = null,
     onOpenArtifact,
     onClearConversationFilter,
+    visible: viewVisible = true,
 }) {
     const { items, loading, removeArtifact, pruneMissing } = useArtifacts({
         conversationId,
@@ -226,7 +418,7 @@ export default function ArtifactsHubView({
                                         <i className="bi bi-trash" />
                                     </IconButton>
                                     <div className={styles.cardTop}>
-                                        <ArtifactThumb item={a} />
+                                        <ArtifactThumb item={a} visible={viewVisible} />
                                     </div>
                                     <div className={styles.cardMeta}>
                                         <div className={styles.cardName} title={a.filename}>{a.filename}</div>

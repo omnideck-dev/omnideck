@@ -72,6 +72,80 @@ def test_search_filters_to_matching_artifact(page: Page, produced):
     expect(hub.card(produced["html"])).to_have_count(0)
 
 
+def test_grid_mounts_only_previews_near_the_viewport(page: Page):
+    """Scrolling mounts nearby HTML previews and releases distant ones."""
+    page.set_viewport_size({"width": 800, "height": 600})
+    nonce = time.time_ns()
+    prefix = f"viewport_{nonce}"
+    names = [f"{prefix}_{index:02d}.html" for index in range(18)]
+    files = [
+        (
+            f"{VC_HOME}/{name}",
+            f"<html><body><h1>{name}</h1></body></html>",
+        )
+        for name in names
+    ]
+    try:
+        produce(page, *files)
+        hub = ArtifactsHub(page).goto().search(prefix)
+        cards = page.get_by_test_id("artifact-card")
+        expect(cards).to_have_count(len(names), timeout=8_000)
+
+        first_card = cards.first
+        last_card = cards.last
+        first_preview = first_card.locator(
+            "[data-testid^='artifact-preview-']"
+        )
+        last_preview = last_card.locator(
+            "[data-testid^='artifact-preview-']"
+        )
+
+        expect(first_preview.locator("iframe")).to_have_count(1)
+        expect(last_preview.locator("iframe")).to_have_count(0)
+
+        last_card.scroll_into_view_if_needed()
+        expect(last_preview.locator("iframe")).to_have_count(1)
+
+        first_card.scroll_into_view_if_needed()
+        expect(last_preview.locator("iframe")).to_have_count(0)
+    finally:
+        purge(page, *names)
+        for name in names:
+            delete_file(name)
+
+
+def test_inactive_artifacts_tab_releases_previews_but_retains_state(
+    page: Page,
+    produced,
+):
+    """Changing tabs drops the iframe without resetting the Artifact hub."""
+    hub = ArtifactsHub(page).goto().search(produced["html"])
+    desktop = DesktopLayout(page)
+    card = hub.card(produced["html"])
+    preview = card.locator("[data-testid^='artifact-preview-']")
+    search = page.get_by_test_id("artifacts-search")
+
+    expect(card).to_be_visible()
+    expect(preview.locator("iframe")).to_have_count(1)
+    expect(search).to_have_value(produced["html"])
+
+    desktop.tab("destination:conversation").click()
+    expect(desktop.view("destination:artifacts")).to_have_attribute(
+        "data-visible", "false"
+    )
+    expect(preview.locator("iframe")).to_have_count(0)
+    expect(card).to_have_count(1)
+    expect(search).to_have_value(produced["html"])
+
+    desktop.tab("destination:artifacts").click()
+    expect(desktop.view("destination:artifacts")).to_have_attribute(
+        "data-visible", "true"
+    )
+    expect(card).to_be_visible()
+    expect(search).to_have_value(produced["html"])
+    expect(preview.locator("iframe")).to_have_count(1)
+
+
 def test_fullscreen_chrome_does_not_cover_hub_controls(page: Page):
     """Shared fullscreen chrome reserves its own row above full-width controls."""
     hub = ArtifactsHub(page).goto()

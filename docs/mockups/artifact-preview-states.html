@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artifact preview states — SIGNAL mockup</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --canvas: #f8f9fb;
+      --surface: #eef0f5;
+      --elevated: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-tertiary: #94a3b8;
+      --border: #e2e8f0;
+      --border-subtle: #f1f5f9;
+      --border-strong: #cbd5e1;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-muted: rgba(37, 99, 235, .08);
+      --accent-glow: rgba(37, 99, 235, .15);
+      --success: #16a34a;
+      --success-muted: rgba(22, 163, 74, .08);
+      --warning: #d97706;
+      --warning-muted: rgba(217, 119, 6, .08);
+      --danger: #dc2626;
+      --danger-muted: rgba(220, 38, 38, .08);
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, .05);
+      --shadow-md: 0 2px 8px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
+      --shadow-lg: 0 4px 16px rgba(15, 23, 42, .1), 0 2px 4px rgba(15, 23, 42, .05);
+      --shadow-glow: 0 0 0 3px var(--accent-glow);
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-full: 999px;
+      --sp-1: 4px;
+      --sp-2: 8px;
+      --sp-3: 12px;
+      --sp-4: 16px;
+      --sp-5: 20px;
+      --sp-6: 24px;
+      --sp-8: 32px;
+      --font-brand: 'Share Tech Mono', 'Roboto Mono', monospace;
+      --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --font-code: 'JetBrains Mono', monospace;
+      --ease: cubic-bezier(.4, 0, .2, 1);
+    }
+
+    [data-theme="dark"] {
+      --canvas: #0c0e14;
+      --surface: #151821;
+      --elevated: #1e2130;
+      --text-primary: #e8ecf4;
+      --text-secondary: #8892a8;
+      --text-tertiary: #4a5168;
+      --border: #252a3a;
+      --border-subtle: #1a1e2a;
+      --border-strong: #363d52;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-muted: rgba(59, 130, 246, .12);
+      --accent-glow: rgba(59, 130, 246, .2);
+      --success: #4ade80;
+      --success-muted: rgba(74, 222, 128, .12);
+      --warning: #fbbf24;
+      --warning-muted: rgba(251, 191, 36, .12);
+      --danger: #f87171;
+      --danger-muted: rgba(248, 113, 113, .12);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+      --shadow-md: 0 2px 8px rgba(0, 0, 0, .4), 0 1px 2px rgba(0, 0, 0, .2);
+      --shadow-lg: 0 4px 16px rgba(0, 0, 0, .5), 0 2px 4px rgba(0, 0, 0, .3);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text-primary);
+      font: 14px/1.5 var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 0;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .review-bar {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: 0 var(--sp-4);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .review-title {
+      margin-right: auto;
+      font: 13px var(--font-brand);
+      letter-spacing: .06em;
+    }
+    .review-title span { color: var(--accent); }
+    .button {
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--elevated);
+      color: var(--text-secondary);
+      box-shadow: var(--shadow-sm);
+      transition: border-color 150ms var(--ease), color 150ms var(--ease), background 150ms var(--ease);
+    }
+    .button:hover { border-color: var(--border-strong); color: var(--text-primary); }
+    .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .button.primary:hover { background: var(--accent-hover); }
+    .button.quiet { background: transparent; box-shadow: none; }
+
+    .app {
+      min-height: calc(100vh - 44px);
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      grid-template-rows: 37px minmax(0, 1fr);
+    }
+    .rail {
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding-top: 8px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .rail-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 8px;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-md);
+      color: var(--accent);
+      font: 16px var(--font-brand);
+    }
+    .rail-button {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text-tertiary);
+      font-size: 16px;
+    }
+    .rail-button:hover { color: var(--text-primary); background: var(--border-subtle); }
+    .rail-button.active { color: var(--accent); background: var(--accent-muted); }
+    .rail-button.active::before {
+      content: '';
+      position: absolute;
+      left: -4px;
+      width: 2px;
+      height: 20px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+    .rail-spacer { flex: 1; }
+
+    .tabs {
+      grid-column: 2;
+      display: flex;
+      align-items: end;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tab {
+      position: relative;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 130px;
+      padding: 0 13px;
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12.5px;
+    }
+    .tab.active { background: var(--canvas); color: var(--text-primary); font-weight: 600; }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      background: var(--accent);
+    }
+    .tab-x { margin-left: auto; color: var(--text-tertiary); }
+
+    .view {
+      grid-column: 2;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--canvas);
+    }
+    .toolbar {
+      min-height: 57px;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
+      border-bottom: 1px solid var(--border);
+    }
+    .view-title {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      margin: 0;
+      white-space: nowrap;
+      font-size: 15px;
+    }
+    .view-title-icon { color: var(--accent); }
+    .count { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
+    .search {
+      flex: 1;
+      min-width: 140px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--elevated);
+      color: var(--text-tertiary);
+    }
+    .search input {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text-primary);
+    }
+    .sort { color: var(--text-tertiary); font-size: 12px; white-space: nowrap; }
+    .select {
+      height: 32px;
+      padding: 0 28px 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--elevated);
+      color: var(--text-secondary);
+    }
+    .segmented {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+    .segmented button {
+      width: 30px;
+      height: 26px;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-secondary);
+    }
+    .segmented button.active { background: var(--elevated); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+    .sort-direction {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text-secondary);
+    }
+    .sort-direction:hover { background: var(--surface); color: var(--text-primary); }
+
+    .scroll {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: var(--sp-4);
+      padding: var(--sp-4);
+    }
+    .card {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--elevated);
+      cursor: pointer;
+      transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease), transform 100ms var(--ease);
+    }
+    .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+    .preview {
+      position: relative;
+      height: 128px;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+      background: var(--canvas);
+    }
+    .preview-content,
+    .preview-state {
+      position: absolute;
+      inset: 0;
+    }
+    .preview-state {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: var(--sp-2);
+      padding: var(--sp-4);
+      color: var(--text-tertiary);
+      text-align: center;
+      transition: opacity 160ms var(--ease);
+    }
+    .state-label { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+    .error-state-icon { color: var(--danger); font-size: 24px; }
+
+    .skeleton-page { padding: 14px; }
+    .skeleton-top { display: flex; gap: 7px; margin-bottom: 13px; }
+    .skeleton-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
+    .skeleton-row { display: flex; gap: 8px; }
+    .skeleton-side { width: 26%; height: 87px; border-radius: var(--radius-sm); background: var(--surface); }
+    .skeleton-main { flex: 1; display: grid; gap: 7px; }
+    .skeleton-line {
+      height: 10px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(90deg, var(--surface) 20%, var(--border) 50%, var(--surface) 80%);
+      background-size: 240% 100%;
+      animation: shimmer 1.35s linear infinite;
+    }
+    .skeleton-line:nth-child(2) { width: 83%; }
+    .skeleton-line:nth-child(3) { width: 62%; }
+    .skeleton-block { height: 42px; border-radius: var(--radius-sm); background: var(--surface); }
+    @keyframes shimmer { to { background-position: -240% 0; } }
+
+    .mini-site {
+      padding: 13px;
+      background: linear-gradient(145deg, #090d1a, #101c34);
+      color: #e8ecf4;
+      transform: scale(1.001);
+    }
+    .mini-site-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+    .mini-logo { font: 9px var(--font-code); color: #60a5fa; letter-spacing: .08em; }
+    .mini-nav { margin-left: auto; display: flex; gap: 8px; color: #71809b; font-size: 6px; }
+    .mini-title { font: 600 16px/1.15 var(--font-body); letter-spacing: -.02em; max-width: 170px; }
+    .mini-sub { margin-top: 6px; color: #8d9ab2; font-size: 7px; }
+    .mini-chart { height: 55px; display: flex; align-items: end; gap: 5px; margin-top: 10px; }
+    .mini-chart i { flex: 1; border-radius: 2px 2px 0 0; background: linear-gradient(#60a5fa, #2563eb); opacity: .9; }
+
+    .mini-report { padding: 14px; background: #fff; color: #172033; }
+    .mini-report-head { display: flex; align-items: center; gap: 7px; padding-bottom: 8px; border-bottom: 1px solid #dbe3ef; }
+    .mini-report-mark { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; background: #2563eb; color: #fff; font: 9px var(--font-code); }
+    .mini-report-title { font-size: 8px; font-weight: 700; }
+    .mini-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+    .mini-kpi { padding: 7px; border: 1px solid #e3e9f2; border-radius: 4px; }
+    .mini-kpi strong { display: block; color: #2563eb; font-size: 12px; }
+    .mini-kpi span { color: #71809b; font-size: 5px; }
+    .mini-lines { display: grid; gap: 5px; margin-top: 10px; }
+    .mini-lines i { height: 4px; border-radius: 2px; background: #e8edf5; }
+    .mini-lines i:nth-child(2) { width: 78%; }
+
+    .image-preview {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: linear-gradient(145deg, #132238 0%, #315b78 52%, #d8a66b 100%);
+    }
+    .image-preview::before,
+    .image-preview::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+    }
+    .image-preview::before {
+      width: 76px;
+      height: 76px;
+      top: 18px;
+      right: 24px;
+      background: rgba(255, 220, 157, .86);
+      box-shadow: 0 0 40px rgba(255, 204, 118, .38);
+    }
+    .image-preview::after {
+      width: 130%;
+      height: 95px;
+      left: -15%;
+      bottom: -56px;
+      border-radius: 50% 50% 0 0;
+      background: #182f35;
+      transform: rotate(-4deg);
+    }
+    .image-caption {
+      position: absolute;
+      left: 14px;
+      bottom: 12px;
+      z-index: 1;
+      color: rgba(255, 255, 255, .9);
+      font: 9px var(--font-code);
+      letter-spacing: .08em;
+    }
+
+    .skeleton-image {
+      background: linear-gradient(105deg, var(--surface) 30%, var(--border) 50%, var(--surface) 70%);
+      background-size: 240% 100%;
+      animation: shimmer 1.35s linear infinite;
+    }
+    .skeleton-text { display: grid; align-content: start; gap: 9px; padding: var(--sp-4); }
+    .skeleton-text i {
+      height: 7px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(90deg, var(--surface) 20%, var(--border) 50%, var(--surface) 80%);
+      background-size: 240% 100%;
+      animation: shimmer 1.35s linear infinite;
+    }
+    .skeleton-text i:nth-child(2) { width: 88%; }
+    .skeleton-text i:nth-child(3) { width: 68%; }
+    .skeleton-text i:nth-child(4) { width: 94%; margin-top: 8px; }
+    .skeleton-text i:nth-child(5) { width: 78%; }
+
+    .text-preview {
+      margin: 0;
+      padding: var(--sp-3);
+      color: var(--text-secondary);
+      font: 9px/1.45 var(--font-code);
+      white-space: pre-wrap;
+      overflow: hidden;
+    }
+    .card-icon { display: grid; place-items: center; color: var(--accent); font-size: 32px; }
+
+    .card-meta { padding: var(--sp-3); }
+    .card-name { overflow: hidden; color: var(--text-primary); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .card-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: 7px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 19px;
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font: 10px var(--font-code);
+      text-transform: uppercase;
+    }
+    .when { color: var(--text-tertiary); font-size: 11.5px; white-space: nowrap; }
+    .card-conv { display: flex; align-items: center; gap: 5px; margin-top: 8px; overflow: hidden; color: var(--text-tertiary); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+    .chat-simulation {
+      display: none;
+      grid-column: 2;
+      background: var(--canvas);
+    }
+    .chat-simulation-inner {
+      width: min(720px, calc(100% - 48px));
+      min-height: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: var(--sp-4);
+      padding: var(--sp-8) 0 var(--sp-6);
+    }
+    .message {
+      max-width: 78%;
+      padding: var(--sp-3) var(--sp-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--elevated);
+      color: var(--text-secondary);
+      box-shadow: var(--shadow-sm);
+    }
+    .message.user { align-self: flex-end; background: var(--accent-muted); border-color: var(--accent-muted); color: var(--text-primary); }
+    .composer {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: 48px;
+      padding: var(--sp-2) var(--sp-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--elevated);
+      box-shadow: var(--shadow-md);
+    }
+    .composer span { flex: 1; color: var(--text-tertiary); }
+    .composer button { width: 30px; height: 30px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); }
+    .composer .send { background: var(--accent); color: #fff; }
+
+    .app.inactive .view { display: none; }
+    .app.inactive .chat-simulation { display: grid; }
+    .app.inactive .tab[data-tab="artifacts"] { background: transparent; color: var(--text-secondary); font-weight: 400; }
+    .app.inactive .tab[data-tab="artifacts"]::after { display: none; }
+    .app.inactive .tab[data-tab="chat"] { background: var(--canvas); color: var(--text-primary); font-weight: 600; }
+    .app.inactive .tab[data-tab="chat"]::after { content: ''; position: absolute; inset: auto 0 -1px; height: 2px; background: var(--accent); }
+
+    .replay .loaded-preview { opacity: 0; }
+    .replay .loading-skeleton { opacity: 1; }
+    .replay.ready .loaded-preview { opacity: 1; transition: opacity 220ms var(--ease); }
+    .replay.ready .loading-skeleton { opacity: 0; pointer-events: none; transition: opacity 220ms var(--ease); }
+
+    @media (max-width: 900px) {
+      .sort { display: none; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .review-bar { height: auto; min-height: 44px; flex-wrap: wrap; padding-block: 8px; }
+      .app { min-height: calc(100vh - 62px); }
+      .toolbar { flex-wrap: wrap; }
+      .search { order: 3; flex-basis: 100%; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="review-bar">
+    <div class="review-title"><span>SIGNAL</span> / artifact preview states</div>
+    <button class="button quiet" id="themeButton" type="button" aria-label="Toggle color theme"><i class="bi bi-moon"></i> Theme</button>
+    <button class="button" id="tabButton" type="button"><i class="bi bi-chat"></i> Open Chat</button>
+    <button class="button primary" id="replayButton" type="button"><i class="bi bi-arrow-clockwise"></i> Replay loading</button>
+  </header>
+
+  <main class="app" id="app">
+    <nav class="rail" aria-label="Primary">
+      <div class="rail-mark">O</div>
+      <button class="rail-button" title="Agents"><i class="bi bi-diagram-3"></i></button>
+      <button class="rail-button" title="Routines"><i class="bi bi-bullseye"></i></button>
+      <button class="rail-button active" title="Artifacts"><i class="bi bi-files"></i></button>
+      <button class="rail-button" title="Apps"><i class="bi bi-grid"></i></button>
+      <div class="rail-spacer"></div>
+      <button class="rail-button" title="Settings"><i class="bi bi-gear"></i></button>
+    </nav>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" data-tab="chat" role="tab"><i class="bi bi-chat"></i> Chat</button>
+      <button class="tab active" data-tab="artifacts" role="tab"><i class="bi bi-files"></i> Artifacts <i class="bi bi-x-lg tab-x"></i></button>
+      <button class="tab" role="tab"><i class="bi bi-grid"></i> OKF Wiki <i class="bi bi-x-lg tab-x"></i></button>
+    </div>
+
+    <section class="view" aria-label="Artifacts">
+      <div class="toolbar">
+        <h1 class="view-title"><i class="bi bi-collection view-title-icon"></i> Artifacts <span class="count">· 168</span></h1>
+        <label class="search"><i class="bi bi-search"></i><input type="search" placeholder="Search artifacts…" aria-label="Search artifacts"></label>
+        <span class="sort">Sort</span>
+        <select class="select" aria-label="Sort artifacts"><option>Created</option><option>Name</option><option>Type</option></select>
+        <button class="sort-direction" title="Descending" aria-label="Toggle sort direction"><i class="bi bi-sort-down"></i></button>
+        <div class="segmented" aria-label="Layout"><button class="active" title="Grid"><i class="bi bi-grid-3x3-gap"></i></button><button title="Table"><i class="bi bi-list-ul"></i></button></div>
+      </div>
+
+      <div class="scroll">
+        <div class="grid">
+          <article class="card replay ready">
+            <div class="preview">
+              <div class="preview-content loaded-preview mini-site">
+                <div class="mini-site-bar"><span class="mini-logo">OMNIDECK SIGNAL</span><span class="mini-nav">Overview&nbsp;&nbsp; Usage&nbsp;&nbsp; Agents</span></div>
+                <div class="mini-title">Agent activity at a glance</div>
+                <div class="mini-sub">12 active agents · 98.4% completion rate</div>
+                <div class="mini-chart"><i style="height:35%"></i><i style="height:58%"></i><i style="height:45%"></i><i style="height:76%"></i><i style="height:62%"></i><i style="height:90%"></i><i style="height:72%"></i><i style="height:96%"></i></div>
+              </div>
+              <div class="preview-content loading-skeleton skeleton-page">
+                <div class="skeleton-top"><i class="skeleton-dot"></i><i class="skeleton-dot"></i><i class="skeleton-dot"></i></div>
+                <div class="skeleton-row">
+                  <div class="skeleton-side"></div>
+                  <div class="skeleton-main"><i class="skeleton-line"></i><i class="skeleton-line"></i><i class="skeleton-line"></i><i class="skeleton-block"></i></div>
+                </div>
+              </div>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">agent-activity-dashboard.html</div>
+              <div class="card-row"><span class="badge">HTML</span><span class="when">just now</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> Dashboard builder request</div>
+            </div>
+          </article>
+
+          <article class="card replay ready">
+            <div class="preview">
+              <div class="preview-content loaded-preview image-preview"><span class="image-caption">AUTUMN FIELD / 07:42</span></div>
+              <div class="preview-content loading-skeleton skeleton-image"></div>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">autumn-field.png</div>
+              <div class="card-row"><span class="badge">PNG</span><span class="when">2 min ago</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> Campaign image concepts</div>
+            </div>
+          </article>
+
+          <article class="card replay ready">
+            <div class="preview">
+              <pre class="preview-content loaded-preview text-preview"># Integration architecture
+
+The broker runs outside the agent runtime and owns provider credentials.
+
+## Boundaries
+- host supervisor
+- permission manifest
+- scoped RPC channel</pre>
+              <div class="preview-content loading-skeleton skeleton-text"><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">integration-architecture.md</div>
+              <div class="card-row"><span class="badge">MD</span><span class="when">18 min ago</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> Integration architecture review</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="preview">
+              <i class="preview-content bi bi-filetype-pdf card-icon"></i>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">launch-plan.pdf</div>
+              <div class="card-row"><span class="badge">PDF</span><span class="when">3 hours ago</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> Launch planning</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="preview">
+              <div class="preview-state error-state">
+                <i class="bi bi-exclamation-circle error-state-icon"></i>
+                <span class="state-label">Preview unavailable</span>
+              </div>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">archived-prototype.html</div>
+              <div class="card-row"><span class="badge">HTML</span><span class="when">yesterday</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> UI prototype exploration</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="preview">
+              <div class="preview-content mini-report">
+                <div class="mini-report-head"><span class="mini-report-mark">S</span><span class="mini-report-title">SIGNAL / RELEASE HEALTH</span></div>
+                <div class="mini-kpis"><div class="mini-kpi"><strong>98%</strong><span>PASS RATE</span></div><div class="mini-kpi"><strong>43</strong><span>CHECKS</span></div><div class="mini-kpi"><strong>1.8s</strong><span>P95 START</span></div></div>
+                <div class="mini-lines"><i></i><i></i><i></i></div>
+              </div>
+            </div>
+            <div class="card-meta">
+              <div class="card-name">release-readiness-report.html</div>
+              <div class="card-row"><span class="badge">HTML</span><span class="when">2 days ago</span></div>
+              <div class="card-conv"><i class="bi bi-chat-left-text"></i> Desktop release qualification</div>
+            </div>
+          </article>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="chat-simulation" aria-label="Inactive Artifacts simulation">
+      <div class="chat-simulation-inner">
+        <div class="message user">Can you summarize the release-readiness report?</div>
+        <div class="message">The report shows a 98% pass rate across 43 checks, with one follow-up needed before release.</div>
+        <div class="composer"><button aria-label="Attach"><i class="bi bi-paperclip"></i></button><span>Message OmniDeck…</span><button class="send" aria-label="Send"><i class="bi bi-send"></i></button></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const app = document.getElementById('app');
+    const themeButton = document.getElementById('themeButton');
+    const tabButton = document.getElementById('tabButton');
+    const replayButton = document.getElementById('replayButton');
+    const replayCards = document.querySelectorAll('.replay');
+    let replayTimers = [];
+
+    themeButton.addEventListener('click', () => {
+      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    });
+
+    tabButton.addEventListener('click', () => {
+      const inactive = app.classList.toggle('inactive');
+      tabButton.innerHTML = inactive
+        ? '<i class="bi bi-files"></i> Open Artifacts'
+        : '<i class="bi bi-chat"></i> Open Chat';
+      replayButton.disabled = inactive;
+    });
+
+    replayButton.addEventListener('click', () => {
+      replayTimers.forEach(clearTimeout);
+      replayTimers = [];
+      replayCards.forEach((card) => card.classList.remove('ready'));
+
+      replayTimers.push(setTimeout(() => {
+        replayCards.forEach((card) => card.classList.add('ready'));
+      }, 1200));
+    });
+  </script>
+</body>
+</html>
