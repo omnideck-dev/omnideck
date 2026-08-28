@@ -14,6 +14,17 @@ a cross-build is not native execution, and an unexecuted manual procedure is
 `blocked` coverage rather than a pass. Electron user-state migration is an
 explicit non-goal; the frozen Electron fixtures test setup parity only.
 
+## Pull-request build scope
+
+Desktop pull requests always run source and contract tests. VM-lab harness,
+release-qualification, and documentation-only changes skip native Rust tests
+and installer builds. Platform-specific packaging assets build only that
+platform. Cross-platform product, dependency, runtime, workflow, main-branch,
+manual, and release-tag changes retain the complete six-target package matrix.
+
+The deterministic classifier is `.github/scripts/desktop-build-matrix.mjs`;
+its path-policy tests run with the normal Desktop source suite.
+
 ## Test layers
 
 | Layer | Implementation | Where it runs | Required evidence |

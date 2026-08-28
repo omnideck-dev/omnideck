@@ -8,6 +8,8 @@ on:
       - ".github/workflows/desktop-hardware.yml"
       - ".github/workflows/desktop-release-contract.yml"
       - ".github/actionlint.yaml"
+      - ".github/scripts/desktop-build-matrix.mjs"
+      - ".github/scripts/install-apt-packages.sh"
       - "desktop/**"
       - "desktop/container-version.txt"
       - "docs/releases/v*.md"
@@ -21,6 +23,8 @@ on:
       - ".github/workflows/desktop-hardware.yml"
       - ".github/workflows/desktop-release-contract.yml"
       - ".github/actionlint.yaml"
+      - ".github/scripts/desktop-build-matrix.mjs"
+      - ".github/scripts/install-apt-packages.sh"
       - "desktop/**"
       - "desktop/container-version.txt"
       - "docs/releases/v*.md"
@@ -33,7 +37,50 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build_required: ${{ steps.classify.outputs.build_required }}
+      full_matrix: ${{ steps.classify.outputs.full_matrix }}
+      native_tests_required: ${{ steps.classify.outputs.native_tests_required }}
+      matrix: ${{ steps.classify.outputs.matrix }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Classify Desktop CI scope
+        id: classify
+        env:
+          DESKTOP_CI_EVENT_NAME: ${{ github.event_name }}
+          DESKTOP_CI_REF: ${{ github.ref }}
+          DESKTOP_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DESKTOP_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/desktop-build-matrix.mjs >> "${GITHUB_OUTPUT}"
+
+      - name: Summarize Desktop CI scope
+        env:
+          BUILD_REQUIRED: ${{ steps.classify.outputs.build_required }}
+          NATIVE_TESTS_REQUIRED: ${{ steps.classify.outputs.native_tests_required }}
+          REASON: ${{ steps.classify.outputs.reason }}
+        run: |
+          {
+            echo '### Desktop CI scope'
+            echo
+            echo "- Reason: ${REASON}"
+            echo "- Native Rust tests: ${NATIVE_TESTS_REQUIRED}"
+            echo "- Native package builds: ${BUILD_REQUIRED}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   test:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -50,10 +97,12 @@ jobs:
         run: corepack enable
 
       - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.native_tests_required == 'true'
         with:
           components: clippy
 
       - name: Install Tauri system dependencies
+        if: needs.changes.outputs.native_tests_required == 'true'
         run: |
           bash .github/scripts/install-apt-packages.sh \
             libappindicator3-dev \
@@ -73,14 +122,17 @@ jobs:
           pnpm test
 
       - name: Test the Rust host
+        if: needs.changes.outputs.native_tests_required == 'true'
         working-directory: desktop/src-tauri
         run: cargo test --locked
 
       - name: Check Rust formatting
+        if: needs.changes.outputs.native_tests_required == 'true'
         working-directory: desktop/src-tauri
         run: cargo fmt --check
 
       - name: Lint the Rust host
+        if: needs.changes.outputs.native_tests_required == 'true'
         working-directory: desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
@@ -110,7 +162,8 @@ jobs:
           node scripts/release-notes.mjs check-consumed --target desktop
 
   runtime_image:
-    needs: test
+    needs: [changes, test]
+    if: needs.changes.outputs.build_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -149,36 +202,12 @@ jobs:
           if-no-files-found: error
 
   build:
-    needs: runtime_image
+    needs: [changes, runtime_image]
+    if: needs.changes.outputs.build_required == 'true'
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: linux-x64
-            runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            command: build:linux
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            command: build:linux:arm64
-          - name: windows-x64
-            runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            command: build:windows
-          - name: windows-arm64
-            runner: windows-2025
-            target: aarch64-pc-windows-msvc
-            command: build:windows:arm64
-          - name: macos-x64
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
-            command: build:macos:x64
-          - name: macos-arm64
-            runner: macos-15
-            target: aarch64-apple-darwin
-            command: build:macos
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -257,7 +286,8 @@ jobs:
           if-no-files-found: error
 
   artifact_contract:
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.full_matrix == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

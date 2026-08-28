@@ -19,11 +19,15 @@ const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
+assert.match(driver, /min\(self\.timeout, 120\)/);
+assert.match(driver, /hosted-observations\.json/);
 const customAppFixture = await read('../tests/e2e/custom_app_fixture.py');
 const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
 const candidateMatrix = await read('../tests/e2e/candidate-matrix.sh');
+assert.match(candidateMatrix, /interrupt_matrix 130 INT/);
+assert.match(candidateMatrix, /wait "\$active_lane_pid"/);
 const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
@@ -357,8 +361,8 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.match(windows, /golden-prerequisites\.json/);
   assert.match(windows, /lab\.sh" profile/);
   assert.match(windows, /lab\.sh" preflight/);
-  assert.match(run, /--cleanup-baseline clean/);
-  assert.match(windows, /--cleanup-baseline clean/);
+  assert.match(run, /--cleanup-baseline "?\$baseline"?/);
+  assert.match(windows, /--cleanup-baseline "?\$baseline"?/);
 });
 
 test('current Linux guests install only the input dependencies their lane uses', () => {
