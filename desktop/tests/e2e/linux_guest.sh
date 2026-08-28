@@ -9,6 +9,8 @@ expected_sha256="${4:?artifact SHA-256 is required}"
 expected_cli_version="${5:?CLI version is required}"
 expected_cli_commit="${6:?CLI commit is required}"
 upgrade_from_sha256="${7:-none}"
+test_tier="${8:-product}"
+case "$test_tier" in product|onboarding) ;; *) printf 'Unknown test tier: %s\n' "$test_tier" >&2; exit 2 ;; esac
 result_dir="${work_dir}/results"
 markers="${work_dir}/markers"
 user_data="${work_dir}/user-data"
@@ -377,6 +379,12 @@ update_version="0.2.3"
 desktop_env+=("OMNIDECK_DESKTOP_UPDATE_FIXTURE=${update_fixture}")
 if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   desktop_env+=("DISPLAY=${display:-:0}" "XAUTHORITY=${xauthority}" "GDK_BACKEND=x11")
+  # Keep the native Wayland transport available to child desktop applications.
+  # The AppImage itself needs X11, but Ubuntu's confined Firefox uses the
+  # session's Wayland socket when an external URL is opened.
+  if [[ -n "${wayland_display}" && -S "/run/user/1000/${wayland_display}" ]]; then
+    desktop_env+=("WAYLAND_DISPLAY=${wayland_display}")
+  fi
   printf 'backend=x11 display=%s xauthority=%s\n' "${display:-:0}" "${xauthority}" \
     > "${result_dir}/desktop-backend.txt"
 else
@@ -592,6 +600,8 @@ run_host_boundary() {
     operation_args+=(--native-input-signal-dir "${markers}")
   elif [[ "${operation}" == "update-bridge" ]]; then
     operation_args+=(--expected-update-version "${update_version}")
+  elif [[ "${operation}" == "external-links" && -n "${browser_processes:-}" ]]; then
+    operation_args+=(--expected-browser-process "${browser_processes}")
   fi
   mkdir -p "${operation_dir}"
   for attempt in 1 2 3; do
@@ -706,8 +716,13 @@ PY
 run_host_boundary update-bridge
 
 current_step="external browser and internal navigation"
-if command -v xdg-mime >/dev/null 2>&1 &&
-  [[ -x /snap/bin/firefox ]] &&
+if ! command -v xdg-mime >/dev/null 2>&1; then
+  printf 'The Linux guest has no xdg-mime desktop-handler resolver.\n' >&2
+  exit 1
+fi
+browser_desktop_id="firefox_firefox.desktop"
+browser_desktop_path=""
+if [[ -x /snap/bin/firefox ]] &&
   [[ -n "${wayland_display}" ]] &&
   [[ -S "/run/user/1000/${wayland_display}" ]]; then
   browser_wrapper="${work_dir}/firefox-wayland"
@@ -737,19 +752,55 @@ EOF
   if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${applications_dir}"
   fi
-  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/http
-  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/https
-  [[ "$(xdg-mime query default x-scheme-handler/http)" == "$(basename "${browser_desktop}")" ]]
-  [[ "$(xdg-mime query default x-scheme-handler/https)" == "$(basename "${browser_desktop}")" ]]
+  browser_desktop_id="$(basename "${browser_desktop}")"
+  browser_desktop_path="${browser_desktop}"
   desktop_env+=("BROWSER=${browser_wrapper}")
 else
-  printf 'The AppImage guest has no supported Wayland Firefox session.\n' >&2
-  exit 1
+  for candidate in \
+    /var/lib/snapd/desktop/applications/firefox_firefox.desktop \
+    /usr/share/applications/firefox_firefox.desktop; do
+    if [[ -f "${candidate}" ]]; then
+      browser_desktop_path="${candidate}"
+      break
+    fi
+  done
+  if [[ -z "${browser_desktop_path}" ]]; then
+    browser_desktop_id="$(xdg-mime query default x-scheme-handler/http 2>/dev/null || true)"
+  fi
+  if [[ -z "${browser_desktop_path}" && -n "${browser_desktop_id}" ]]; then
+    while IFS= read -r candidate; do
+      if [[ "$(basename "${candidate}")" == "${browser_desktop_id}" ]]; then
+        browser_desktop_path="${candidate}"
+        break
+      fi
+    done < <(find /var/lib/snapd/desktop/applications /usr/share/applications -maxdepth 1 \
+      -type f -name '*.desktop' -print 2>/dev/null | sort -u)
+  fi
+  if [[ -z "${browser_desktop_path}" ]]; then
+    browser_desktop_path="$(find /var/lib/snapd/desktop/applications /usr/share/applications \
+      -maxdepth 1 -type f -iname '*firefox*.desktop' -print -quit 2>/dev/null || true)"
+    browser_desktop_id="$(basename "${browser_desktop_path}")"
+  fi
 fi
+[[ -n "${browser_desktop_path}" && -f "${browser_desktop_path}" ]] || {
+  printf 'The Linux guest has no discoverable Firefox desktop association.\n' >&2
+  exit 1
+}
+xdg-mime default "${browser_desktop_id}" x-scheme-handler/http
+xdg-mime default "${browser_desktop_id}" x-scheme-handler/https
+[[ "$(xdg-mime query default x-scheme-handler/http)" == "${browser_desktop_id}" ]]
+[[ "$(xdg-mime query default x-scheme-handler/https)" == "${browser_desktop_id}" ]]
+browser_processes="firefox"
+if command -v firefox-esr >/dev/null 2>&1; then
+  browser_processes+=",firefox-esr"
+fi
+printf 'Using browser desktop entry %s (%s), accepted processes=%s\n' \
+  "${browser_desktop_id}" "${browser_desktop_path}" "${browser_processes}"
 run_host_boundary external-links
 touch "${markers}/external-browser-visible"
 sleep 5
 pkill -u "$(id -u)" -TERM -x firefox >/dev/null 2>&1 || true
+pkill -u "$(id -u)" -TERM -x firefox-esr >/dev/null 2>&1 || true
 
 current_step="resource contract"
 podman container inspect "${container_name}" > "${result_dir}/container-inspect.json"
