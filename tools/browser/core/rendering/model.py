@@ -19,6 +19,10 @@ class RenderedDocument:
         viewport: Current viewport and scroll state.
         truncated: Whether the character budget truncated the content.
         modal_open: Whether a modal currently makes background controls unavailable.
+        settle_timings: Timings collected while waiting for the document to settle.
+        dom_walk_ms: Time spent walking the DOM in the browser, in milliseconds.
+        render_ms: Time spent converting DOM nodes into annotated text, in milliseconds.
+        node_count: Number of structured nodes emitted by the DOM walk.
     """
 
     title: str
