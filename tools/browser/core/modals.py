@@ -11,6 +11,7 @@ from __future__ import annotations
 # large viewport layer that actually sits in front of otherwise actionable page
 # content. ARIA is useful supporting evidence, but is not trusted on its own.
 MODAL_HELPERS_JS = r"""
+  // Return descendants across ordinary DOM and open shadow-root boundaries.
   function omnideckElementsIn(root) {
     const elements = Array.from(root.querySelectorAll('*'));
     for (const element of [...elements]) {
@@ -19,16 +20,19 @@ MODAL_HELPERS_JS = r"""
     return elements;
   }
 
+  // Query the selected document as one composed tree, including open shadows.
   function omnideckQueryAll(selector) {
     return omnideckElementsIn(document).filter((element) => element.matches(selector));
   }
 
+  // Move upward through either a DOM parent or the host of a shadow root.
   function omnideckComposedParent(element) {
     if (element.parentElement) return element.parentElement;
     const root = element.getRootNode();
     return root instanceof ShadowRoot ? root.host : null;
   }
 
+  // Test containment in the composed tree rather than only the light DOM.
   function omnideckComposedContains(root, element) {
     for (let current = element; current; current = omnideckComposedParent(current)) {
       if (current === root) return true;
@@ -36,12 +40,14 @@ MODAL_HELPERS_JS = r"""
     return false;
   }
 
+  // Follow focus through nested open shadow roots to the actual focused control.
   function omnideckDeepActiveElement() {
     let active = document.activeElement;
     while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
     return active;
   }
 
+  // Check layout visibility without opacity, since transparent layers can block input.
   function omnideckElementHasRenderedBox(element) {
     if (!element) return false;
     const rect = element.getBoundingClientRect();
@@ -63,6 +69,7 @@ MODAL_HELPERS_JS = r"""
     return true;
   }
 
+  // Check whether an element is visibly painted for agent-facing content tests.
   function omnideckElementIsVisible(element) {
     if (!omnideckElementHasRenderedBox(element)) return false;
     for (let current = element; current; current = omnideckComposedParent(current)) {
@@ -71,6 +78,7 @@ MODAL_HELPERS_JS = r"""
     return true;
   }
 
+  // Measure how much of the viewport an element's clipped rectangle covers.
   function omnideckViewportCoverage(element) {
     const rect = element.getBoundingClientRect();
     const width = Math.max(
@@ -85,6 +93,7 @@ MODAL_HELPERS_JS = r"""
     return (width * height) / viewportArea;
   }
 
+  // Collect hit-test results through open shadow roots at one viewport point.
   function omnideckElementsFromPoint(x, y) {
     const elements = [];
     const visitedRoots = new Set();
@@ -103,6 +112,7 @@ MODAL_HELPERS_JS = r"""
     return elements;
   }
 
+  // Find the deepest topmost hit target, descending through open shadow roots.
   function omnideckTopElementFromPoint(x, y) {
     let root = document;
     let top = null;
@@ -119,6 +129,7 @@ MODAL_HELPERS_JS = r"""
     return top;
   }
 
+  // Count how many points in a 3x3 viewport grid are owned by this layer.
   function omnideckPointerSampleCount(element) {
     const samples = [
       [0.1, 0.1], [0.5, 0.1], [0.9, 0.1],
@@ -134,6 +145,7 @@ MODAL_HELPERS_JS = r"""
     }).length;
   }
 
+  // Recognize a large positioned layer that physically intercepts page input.
   function omnideckIsViewportPointerBlocker(element) {
     // Opacity does not affect hit-testing: a transparent click catcher still
     // prevents physical input from reaching the page underneath it.
@@ -145,6 +157,7 @@ MODAL_HELPERS_JS = r"""
     return omnideckPointerSampleCount(element) >= 6;
   }
 
+  // Find the broadest pointer-blocking ancestor that contains a candidate dialog.
   function omnideckPointerBlockerFor(element) {
     const blockers = [];
     for (let current = element; current; current = omnideckComposedParent(current)) {
@@ -156,6 +169,7 @@ MODAL_HELPERS_JS = r"""
     return blockers[0] || null;
   }
 
+  // Gather page branches outside a dialog, crossing shadow-root boundaries.
   function omnideckBackgroundBranches(dialogElement) {
     const branches = [];
     let dialogBranch = dialogElement;
@@ -172,6 +186,7 @@ MODAL_HELPERS_JS = r"""
     return branches;
   }
 
+  // Determine whether a branch contains meaningful controls or visible page content.
   function omnideckHasActionableContent(element) {
     return [element, ...omnideckElementsIn(element)].some((descendant) => {
       return descendant.matches(
@@ -180,6 +195,7 @@ MODAL_HELPERS_JS = r"""
     });
   }
 
+  // Treat inert/aria-hidden as modal evidence only on meaningful background content.
   function omnideckBranchIsSuppressed(element) {
     const rect = element.getBoundingClientRect();
     const isSubstantial = omnideckElementIsVisible(element)
@@ -203,10 +219,12 @@ MODAL_HELPERS_JS = r"""
     });
   }
 
+  // Check whether any meaningful branch outside a dialog is explicitly unavailable.
   function omnideckDialogSuppressesBackground(dialogElement) {
     return omnideckBackgroundBranches(dialogElement).some(omnideckBranchIsSuppressed);
   }
 
+  // Ask the browser whether a native dialog currently occupies the modal top layer.
   function omnideckNativeModal(element) {
     if (element.tagName !== 'DIALOG') return false;
     try {
@@ -216,6 +234,7 @@ MODAL_HELPERS_JS = r"""
     }
   }
 
+  // Find a semantic dialog backed by native state, suppression, or pointer blocking.
   function omnideckSemanticModal() {
     const candidates = omnideckQueryAll(
       'dialog,[role="dialog"],[role="alertdialog"]'
@@ -244,6 +263,7 @@ MODAL_HELPERS_JS = r"""
     return focused || (active.length > 0 ? active[active.length - 1] : null);
   }
 
+  // Recognize unnamed close controls from common implementation metadata.
   function omnideckControlLooksLikeClose(element) {
     const metadata = [
       element.id || '',
@@ -254,17 +274,20 @@ MODAL_HELPERS_JS = r"""
     return /(^|[\s_-])(close|dismiss)(?=$|[\s_-])/.test(metadata);
   }
 
+  // Normalize a detected surface into the roots the renderer should walk.
   function omnideckModalElements(modal) {
     if (!modal) return [];
     return Array.isArray(modal.elements) ? modal.elements : [modal.element];
   }
 
+  // Check whether an element belongs to any root of the active surface.
   function omnideckModalContains(modal, element) {
     return omnideckModalElements(modal).some((root) => {
       return omnideckComposedContains(root, element);
     });
   }
 
+  // Confirm that a blocker precedes a background element in the hit-test stack.
   function omnideckElementIsBehind(blocker, element) {
     const rect = element.getBoundingClientRect();
     const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
@@ -279,6 +302,7 @@ MODAL_HELPERS_JS = r"""
     return blockerIndex >= 0 && (elementIndex < 0 || blockerIndex < elementIndex);
   }
 
+  // Require a candidate blocker to cover real background controls or page content.
   function omnideckBlockerCoversBackground(blocker) {
     return omnideckElementsIn(document.body).some((element) => {
       if (omnideckComposedContains(blocker, element)) return false;
@@ -294,6 +318,7 @@ MODAL_HELPERS_JS = r"""
     });
   }
 
+  // Combine a backdrop with separate sibling panels that sit visually above it.
   function omnideckSurfaceRootsForBlocker(blocker) {
     const roots = [blocker];
     const blockerStyle = window.getComputedStyle(blocker);
@@ -329,6 +354,7 @@ MODAL_HELPERS_JS = r"""
     return roots;
   }
 
+  // Select the topmost credible full-viewport blocker as a custom modal surface.
   function omnideckCustomModal() {
     if (!document.body) return null;
     const blockers = omnideckElementsIn(document.body).filter((element) => {
@@ -352,10 +378,12 @@ MODAL_HELPERS_JS = r"""
     };
   }
 
+  // Prefer authoritative semantic detection, then fall back to visual blocking.
   function omnideckActiveModal() {
     return omnideckSemanticModal() || omnideckCustomModal();
   }
 
+  // Supply an agent-readable name for otherwise unnamed close/dismiss controls.
   function omnideckModalControlName(element) {
     if (!omnideckControlLooksLikeClose(element)) return '';
     const metadata = [
@@ -367,6 +395,7 @@ MODAL_HELPERS_JS = r"""
     return /(^|[\s_-])dismiss(?=$|[\s_-])/.test(metadata) ? 'Dismiss' : 'Close';
   }
 
+  // Choose the largest visible scroll container owned by the active surface.
   function omnideckScrollableModalElement(modal) {
     const roots = omnideckModalElements(modal);
     if (roots.length === 0) return null;
