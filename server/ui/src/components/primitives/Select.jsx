@@ -73,6 +73,7 @@ export default function Select({
     );
 
     const [open, setOpen] = useState(false);
+    const [menuFont, setMenuFont] = useState('');
     const [activeIndex, setActiveIndex] = useState(() => (
         selectedIndex >= 0 ? selectedIndex : firstEnabledIndex(options)
     ));
@@ -89,6 +90,9 @@ export default function Select({
 
     const openMenu = useCallback(() => {
         if (disabled || firstEnabledIndex(options) < 0) return;
+        if (triggerRef.current) {
+            setMenuFont(window.getComputedStyle(triggerRef.current).font);
+        }
         setActiveIndex(selectedIndex >= 0 && !options[selectedIndex]?.disabled
             ? selectedIndex
             : firstEnabledIndex(options));
@@ -245,6 +249,7 @@ export default function Select({
                     <div
                         id={listboxId}
                         className={styles.listbox}
+                        style={menuFont ? { font: menuFont } : undefined}
                         role="listbox"
                         aria-label={ariaLabel ? `${ariaLabel} options` : undefined}
                         aria-labelledby={!ariaLabel ? ariaLabelledBy : undefined}

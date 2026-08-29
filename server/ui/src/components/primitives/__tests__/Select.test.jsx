@@ -49,6 +49,22 @@ describe('Select', () => {
         expect(trigger).toHaveFocus();
     });
 
+    it('carries the trigger typography into its portaled menu', () => {
+        render(<Select ariaLabel="Profile" options={options} value="omni" />);
+        const trigger = screen.getByRole('combobox', { name: 'Profile' });
+        const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+            font: '12px "Roboto Mono"',
+        });
+
+        try {
+            fireEvent.click(trigger);
+            expect(document.querySelector('[role="listbox"]').style.font)
+                .toBe('12px "Roboto Mono"');
+        } finally {
+            getComputedStyle.mockRestore();
+        }
+    });
+
     it('supports arrows, Home, End, Enter, Escape, and skips disabled options', async () => {
         const onChange = vi.fn();
         render(<Select ariaLabel="Profile" options={options} value="omni" onChange={onChange} />);

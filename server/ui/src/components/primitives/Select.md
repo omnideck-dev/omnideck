@@ -3,7 +3,9 @@
 `Select` is the canonical ordinary dropdown for the SIGNAL interface. Both its
 trigger and its listbox are rendered by the application so sizing, caret,
 surface, option rows, selection, focus, disabled state, and light/dark themes
-remain consistent in Tauri's WKWebView, WebView2, and WebKitGTK hosts.
+remain consistent in Tauri's WKWebView, WebView2, and WebKitGTK hosts. Because
+the listbox is portaled, the primitive explicitly carries the trigger's
+computed typography into the menu.
 
 The primitive keeps focus on its select-only combobox trigger and exposes the
 active option with `aria-activedescendant`. It supports pointer selection,
