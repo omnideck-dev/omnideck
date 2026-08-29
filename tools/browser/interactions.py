@@ -409,8 +409,8 @@ async def scroll_page(
         content = (
             "[scroll_page] The requested scroll did not move the current page "
             "or scroll container. It may already be at that edge, or the page "
-            "may control scrolling itself. If more content is expected, try a "
-            "page-sized direction or browse_page(full_page=True).\n\n"
+            "may control scrolling itself. Use browse_page(full_page=True) if "
+            "you need to inspect the complete document without forcing it to scroll.\n\n"
             f"{content}"
         )
     else:
