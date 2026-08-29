@@ -1,5 +1,4 @@
 .select {
     min-width: 150px;
-    --select-font-family: var(--font-brand);
     --select-font-size: 0.75rem;
 }

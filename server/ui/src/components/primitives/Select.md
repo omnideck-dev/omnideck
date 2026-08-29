@@ -15,6 +15,10 @@ instances size to their longest option, then shrink when their container cannot
 fit that width; truncated labels retain their full value as hover text. Supply
 an `ariaLabel` or `ariaLabelledBy` on every instance.
 
+Every ordinary select uses the body font family and is 32px tall. Consumers may
+specialize font size for a denser surface, but must not introduce a different
+font family or compact or oversized select heights.
+
 Consumers can set `--select-width` for a fixed width or
 `--select-max-width` to cap intrinsic sizing while retaining responsive
 shrinkage.
