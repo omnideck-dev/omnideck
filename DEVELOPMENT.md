@@ -16,7 +16,7 @@ Container (everything runs as omnideck)
 
 Host
   Ollama — LLM inference (accessed at localhost:11434 via --network=host)
-  Docker — container runtime
+  Docker or Podman — container runtime
 ```
 
 ### Key Paths
@@ -38,6 +38,17 @@ just stop           # Stop container (state persists in ~/.omnideck/)
 just shell          # Bash inside the container
 just logs           # Tail app + inference logs
 ```
+
+The Justfile automatically uses the available native container engine. When
+both Docker and Podman are installed, Docker remains the default for backward
+compatibility. Save a different repository-wide preference once with
+`just engine podman` or `just engine docker`; the choice is stored in the
+clone's local Git config and shared by all of its worktrees. `just engine auto`
+clears it. `CONTAINER_ENGINE` is available as a temporary per-command override.
+
+GPU access is disabled by default so the development recipes work on machines
+without an NVIDIA runtime. Set `OMNIDECK_GPU=1` to enable all configured GPUs;
+the Justfile supplies the native Docker or Podman argument.
 
 `just dev` **copies** your repo into the container via a tar-pipe — no bind mount. Source changes on the host don't appear until you run `just restart-app` or `just rebuild-ui`. This keeps the container unable to write back into your repo.
 
@@ -76,7 +87,9 @@ just test-file <p>  # Specific file
 just test-ui        # Vitest UI tests
 ```
 
-`just e2e` is self-contained: spawns a throwaway container on :9090, syncs source, builds UI, runs Playwright, tears down. No image rebuild needed.
+`just e2e` is self-contained: it builds a per-branch image, spawns a throwaway
+container on :9090, runs Playwright, and tears down. CI sets `E2E_SKIP_BUILD=1`
+to run an image it already built and pulled by digest.
 
 ## Code Quality
 
@@ -111,31 +124,15 @@ See `CLAUDE.md` for the full coding conventions. Key points:
 - Eager imports by default; lazy only for heavy optional deps (playwright, torch)
 - Circular imports are a design bug — fix the graph, don't patch around it
 
-## Container Build & Publish
-
-### Multi-Arch Setup (one-time)
-
-The image builds for both `linux/amd64` and `linux/arm64`. On **Linux**, install QEMU first so the kernel can emulate ARM:
+## Container Build
 
 ```sh
-docker run --privileged --rm tonistiigi/binfmt --install all
+just build     # Build omnideck:latest in the selected local engine
 ```
 
-Docker Desktop (macOS/Windows) bundles QEMU — no setup needed.
-
-### Build & Publish
-
-```sh
-just build     # Build omnideck:latest locally (single-arch, for dev)
-just publish   # Build + push multi-arch to ghcr.io/omnideck-dev/omnideck
-```
-
-`just publish` tags:
-- On `main`: `main`, `main-<sha>`, `latest`
-- On feature branch: `<branch>-<sha>`, `<branch>-latest`
-- CI also adds semver tags on version tags (`v1.2.3` → `v1.2.3`, `v1.2`, `v1`)
-
-> **CI vs `just publish`:** The GitHub Actions workflow auto-publishes on every push to `main` and version tags. `just publish` is now a manual escape hatch — useful for pushing test images from feature branches without waiting for a merge.
+Local recipes deliberately use the selected engine's ordinary build command so
+the image is immediately available to `just dev` and `just e2e`. Automated
+multi-architecture image publication remains owned by GitHub Actions.
 
 ## Justfile Reference
 
@@ -143,6 +140,7 @@ Run `just` (no args) to see all available recipes. Key ones:
 
 | Command | Purpose |
 |---------|---------|
+| `just engine [docker\|podman\|auto]` | Show or save the repository's container-engine preference |
 | `just build` | Build the container image (only when container/Dockerfile changes) |
 | `just dev` | Start dev container, sync source, build UI, launch app on :8080 |
 | `just restart-app` | Sync latest Python source and bounce the app |
@@ -150,7 +148,6 @@ Run `just` (no args) to see all available recipes. Key ones:
 | `just stop` | Stop the dev container (state at `~/.omnideck/` persists) |
 | `just shell` | Bash shell inside the dev container |
 | `just logs` | Tail app + inference logs |
-| `just publish` | Build + push multi-arch image (amd64 + arm64) to GHCR |
 | `just unit` | Run unit tests |
 | `just integration` | Run integration tests (needs a running container) |
 | `just test-file <path>` | Run tests for a specific file |

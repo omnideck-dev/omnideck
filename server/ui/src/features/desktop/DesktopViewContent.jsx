@@ -63,6 +63,7 @@ export default function DesktopViewContent({
         return (
             <ArtifactsHubDesktopView
                 view={view}
+                visible={visible}
                 tabGroupId={tabGroupId}
             />
         );
