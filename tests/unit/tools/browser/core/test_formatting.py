@@ -145,6 +145,23 @@ class TestFormatRenderedDocument:
         ))
         assert "[Viewport: unavailable]" in out
 
+    def test_modal_notice_is_formatted_before_page_content(self) -> None:
+        """Modal state becomes guidance without masquerading as a DOM text node."""
+        out = format_rendered_document(RenderedDocument(
+            title="Checkout",
+            url="https://example.com/checkout",
+            status_code=200,
+            viewport={"scroll_top": 0, "viewport_height": 400, "document_height": 800},
+            content="[1] [button] Continue",
+            truncated=False,
+            modal_open=True,
+        ))
+
+        assert out.endswith(
+            "[Modal dialog open — background controls are unavailable]\n"
+            "[1] [button] Continue"
+        )
+
     def test_tab_id_in_header(self) -> None:
         """tab=N segment appears in the header when an ID is supplied."""
         out = format_rendered_document(RenderedDocument(

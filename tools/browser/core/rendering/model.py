@@ -18,6 +18,7 @@ class RenderedDocument:
         content: Annotated text containing content and interaction refs.
         viewport: Current viewport and scroll state.
         truncated: Whether the character budget truncated the content.
+        modal_open: Whether a modal currently makes background controls unavailable.
     """
 
     title: str
@@ -26,6 +27,7 @@ class RenderedDocument:
     content: str
     viewport: dict[str, int] | None
     truncated: bool
+    modal_open: bool = False
     settle_timings: SettleTimings | None = None
     dom_walk_ms: float = 0.0
     render_ms: float = 0.0

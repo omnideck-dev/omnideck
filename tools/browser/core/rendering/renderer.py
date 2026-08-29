@@ -566,11 +566,6 @@ __MODAL_HELPERS__
   }
 
   if (activeModal) {
-    emit({
-      type: 'text',
-      depth: 0,
-      text: '[Modal dialog open — background controls are unavailable]'
-    });
     for (const root of omnideckModalElements(activeModal)) walk(root, true);
   } else {
     walk(document.body, true);
@@ -593,6 +588,7 @@ __MODAL_HELPERS__
       );
 
   return {
+    modal_open: Boolean(activeModal),
     nodes: nodes,
     viewport: {
       width: Math.floor(vw),
@@ -650,6 +646,7 @@ async def render_document(
     content = ""
     truncated = False
     viewport_data: dict[str, int] | None = None
+    modal_open = False
 
     # A blocked document renders as its banner, and a non-HTML file renders as a
     # canned message. Neither has useful DOM content, so both skip the walk.
@@ -677,6 +674,7 @@ async def render_document(
 
             raw_nodes = raw_result.get("nodes", [])
             raw_viewport = raw_result.get("viewport", {})
+            modal_open = raw_result.get("modal_open") is True
 
             viewport_data = {
                 "scroll_top": raw_viewport.get("scroll_top", 0),
@@ -721,6 +719,7 @@ async def render_document(
         content=content,
         viewport=viewport_data,
         truncated=truncated,
+        modal_open=modal_open,
         settle_timings=settle_timings,
         dom_walk_ms=dom_walk_ms,
         render_ms=render_ms,
