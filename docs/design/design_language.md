@@ -10,8 +10,8 @@ people; this file is the index an agent greps **before** building UI.
    Most "new" UI is an existing primitive + tokens.
 2. **Never hardcode colors, spacing, radii, fonts, or z-index** — use the tokens below.
    They auto-swap for dark mode via `[data-theme="dark"]`.
-3. **No generic primitive exists for some patterns** (Select, Modal, Table, Input,
-   Cards). For those, replicate the documented CSS class **into your component's
+3. **No generic primitive exists for some patterns** (Input and Cards). For
+   those, replicate the documented CSS class **into your component's
    `.module.css`** (copy the spec from the showcase / an existing component) — that's
    the house pattern, not a deviation.
 4. **If you must deviate, say so in a comment** explaining why (the concept, not a
@@ -30,6 +30,7 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 | Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"`; icon as child |
 | Two-click destructive | `ConfirmButton` | `primitives/ConfirmButton.jsx` | delete/disconnect where a modal is overkill; arms on first click, fires on second |
 | Search field | `SearchInput` | `primitives/SearchInput.jsx` | `value`, `onChange(string)`, `placeholder`, `ariaLabel`, `testId`, `clearable`, `className`. Canonical `.input` + leading glyph + focus glow |
+| Ordinary dropdown | `Select` | `primitives/Select.jsx` | Canonical body-font, 32px select-only combobox. Consumers may specialize font size and width, but not family or height. Supports keyboard navigation, typeahead, portaled viewport-aware menus, and full-label hover text. |
 | View tabs + scoped search | `LibraryHeader` | `primitives/LibraryHeader.jsx` | §27: in-content view switch (`views=[{id,label,count}]`, `activeView`, `onViewChange`, `searchValue`, `onSearchChange`, `actions`) |
 | Inline feedback message | `Callout` | `primitives/Callout.jsx` | §11 feedback (info/success/warning/danger banners) |
 | Modal scaffold | `Modal` | `primitives/Modal.jsx` | scrim + centered panel with Esc/backdrop dismiss + dialog semantics; pass `onClose`, `children`, optional `width`/`labelledBy`/`testId`. Caller supplies the contents. **New** — older modals still roll their own (not yet retrofitted) |
@@ -51,7 +52,6 @@ uses it). These have **no shared primitive yet** — replicating is the establis
 pattern; consider extracting a primitive when 3 or more copies exist.
 | Pattern | Showcase section | How |
 |---|---|---|
-| **Select / dropdown** | `Select` | native `<select className={styles.select}>` + a module `.select` (32px, `appearance:none` + chevron SVG, `[data-theme="dark"] .select{background:var(--surface)}`, focus ring). Used by SystemSettings, ProfileSelector, ArtifactsHubView. **No `Select` primitive exists.** |
 | Text input | `Inputs` | `.input` spec (or use `SearchInput` if it's a search) |
 | Modal / dialog | `Modal / Dialog` | prefer the new `Modal` primitive for new modals. The older ones still roll their own scrim+panel (`var(--scrim)` + `var(--z-modal)` panel, `--elevated`/`--border`/`--shadow-lg`/`--radius-lg`) — see AddProviderModal; not yet retrofitted |
 | Data table | `Tables` | use the **`SortableTable` primitive** (sticky `--canvas` header, click-to-sort columns, `--border-subtle` row separators). Caller sorts the rows + owns the sort state |

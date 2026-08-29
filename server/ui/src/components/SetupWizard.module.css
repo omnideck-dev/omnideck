@@ -496,7 +496,6 @@
 /* Cloud provider sub-select */
 .cloudSelect {
     --select-width: 100%;
-    --select-font-family: var(--font-brand);
     --select-font-size: 0.8rem;
 }
 
