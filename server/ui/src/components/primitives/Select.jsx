@@ -67,6 +67,10 @@ export default function Select({
     const selectedValue = controlled ? value : internalValue;
     const selectedIndex = options.findIndex((option) => option.value === selectedValue);
     const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : null;
+    const sizingText = useMemo(
+        () => [placeholder, ...options.map((option) => String(option.label))].join('\n'),
+        [options, placeholder],
+    );
 
     const [open, setOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(() => (
@@ -193,6 +197,7 @@ export default function Select({
     return (
         <div className={`${styles.root} ${className}`}>
             {name && <input type="hidden" name={name} value={selectedValue ?? ''} />}
+            <span className={styles.sizer} aria-hidden="true">{sizingText}</span>
             <button
                 ref={triggerRef}
                 id={triggerId}
@@ -211,6 +216,7 @@ export default function Select({
                 disabled={disabled}
                 onClick={() => (open ? close() : openMenu())}
                 onKeyDown={handleKeyDown}
+                title={selectedOption ? String(selectedOption.label) : undefined}
                 data-testid={testId}
                 data-value={selectedValue ?? ''}
             >
@@ -260,6 +266,7 @@ export default function Select({
                                     }}
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => choose(index)}
+                                    title={String(option.label)}
                                     data-value={option.value}
                                 >
                                     <span className={styles.optionLabel}>{option.label}</span>

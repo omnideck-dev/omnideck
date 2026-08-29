@@ -1,9 +1,23 @@
 .root {
     display: inline-block;
     min-width: 0;
+    max-width: var(--select-max-width, 100%);
     width: var(--select-width, auto);
     font-family: var(--select-font-family, var(--font-body));
     font-size: var(--select-font-size, 13px);
+}
+
+/* Preserve native-select intrinsic sizing: an automatic-width control should
+   account for its longest option, not only whichever short value is selected.
+   The reserve covers the option padding, checkmark, gap, and scrollbar. */
+.sizer {
+    display: block;
+    box-sizing: border-box;
+    height: 0;
+    overflow: hidden;
+    padding: 0 42px 0 12px;
+    visibility: hidden;
+    white-space: pre;
 }
 
 .trigger {

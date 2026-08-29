@@ -25,9 +25,13 @@ describe('Select', () => {
         const trigger = screen.getByRole('combobox', { name: 'Agent profile' });
         expect(trigger).toHaveAttribute('data-value', 'omni');
         expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(trigger).toHaveAttribute('title', 'Omnideck');
+        expect(trigger.previousElementSibling).toHaveAttribute('aria-hidden', 'true');
+        expect(trigger.previousElementSibling).toHaveTextContent('Unavailable');
 
         fireEvent.click(trigger);
         expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('option', { name: 'Omnideck' })).toHaveAttribute('title', 'Omnideck');
         expect(screen.getByRole('option', { name: 'Omnideck' })).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByTestId('profile-select-menu').parentElement).toBe(document.body);
     });

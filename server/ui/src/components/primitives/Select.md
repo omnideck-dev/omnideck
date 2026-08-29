@@ -8,8 +8,14 @@ remain consistent in Tauri's WKWebView, WebView2, and WebKitGTK hosts.
 The primitive keeps focus on its select-only combobox trigger and exposes the
 active option with `aria-activedescendant`. It supports pointer selection,
 Arrow Up/Down, Home/End, Enter/Space, Escape, typeahead, focus return,
-click-outside dismissal, viewport collision, and reduced motion. Supply an
-`ariaLabel` or `ariaLabelledBy` on every instance.
+click-outside dismissal, viewport collision, and reduced motion. Automatic-width
+instances size to their longest option, then shrink when their container cannot
+fit that width; truncated labels retain their full value as hover text. Supply
+an `ariaLabel` or `ariaLabelledBy` on every instance.
+
+Consumers can set `--select-width` for a fixed width or
+`--select-max-width` to cap intrinsic sizing while retaining responsive
+shrinkage.
 
 Use `ModelPicker` only for the richer searchable provider/model workflow.
 Native `<select>` elements are prohibited by the accompanying source-policy
