@@ -23,6 +23,7 @@ from tools.browser._tool_support import (
 )
 from tools.browser.core.exceptions import BrowserToolError
 from tools.browser.core.formatting import format_rendered_document
+from tools.browser.core.input.scroll import ScrollOutcome
 from tools.browser.events import emit_screenshot_after, set_result_tab
 
 # ---------------------------------------------------------------------------
@@ -371,12 +372,15 @@ async def scroll_page(
             tool="scroll_page",
         )
 
-    scroll_count += 1
-    _scroll_count_var.set(scroll_count)
+    scroll_outcome: ScrollOutcome | None = None
+
+    async def _perform_scroll() -> None:
+        nonlocal scroll_outcome
+        scroll_outcome = await document.scroll(direction, amount)
 
     try:
         interaction_result = await browser.coordinate_action(
-            lambda: document.scroll(direction, amount),
+            _perform_scroll,
             source_tab=resolved_tab,
             wait_for_navigation=False,
         )
@@ -393,8 +397,28 @@ async def scroll_page(
     _log_browser_panel(interaction_result, rendered=rendered, tool_name="scroll_page")
 
     content = rendered.content
+    blocked_by_modal = scroll_outcome is not None and scroll_outcome.blocked_by_modal
+    scroll_moved = scroll_outcome is not None and scroll_outcome.moved
+    if blocked_by_modal:
+        content = (
+            "[scroll_page] Page scrolling is blocked by an open modal dialog. "
+            "Dismiss it before scrolling.\n\n"
+            f"{content}"
+        )
+    elif not scroll_moved:
+        content = (
+            "[scroll_page] The requested scroll did not move the current page "
+            "or scroll container. It may already be at that edge, or the page "
+            "may control scrolling itself. Use browse_page(full_page=True) if "
+            "you need to inspect the complete document without forcing it to scroll.\n\n"
+            f"{content}"
+        )
+    else:
+        scroll_count += 1
+        _scroll_count_var.set(scroll_count)
+
     # Inject warning after threshold
-    if scroll_count >= warn_threshold:
+    if scroll_moved and scroll_count >= warn_threshold:
         remaining = hard_limit - scroll_count
         content += (
             f"\n\n--- SCROLL WARNING ({scroll_count}/{hard_limit}) ---\n"

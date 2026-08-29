@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixed application shell</title>
+  <style>
+    #application {
+      background: white;
+      inset: 0;
+      overflow-y: auto;
+      position: fixed;
+    }
+
+    #content {
+      min-height: 2400px;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+  <main id="application">
+    <div id="content">
+      <h1>Mail</h1>
+      <button id="compose" type="button">Compose message</button>
+      <p id="status"></p>
+    </div>
+  </main>
+  <script>
+    document.getElementById('compose').addEventListener('click', () => {
+      document.getElementById('status').textContent = 'Composer opened';
+    });
+  </script>
+</body>
+</html>

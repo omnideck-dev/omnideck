@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Stacked native modals</title>
+</head>
+<body>
+  <button type="button">Background action</button>
+
+  <!-- DOM order deliberately differs from top-layer order. -->
+  <dialog id="top-dialog">
+    <h2>Top dialog</h2>
+    <button id="close-top" type="button">Close top dialog</button>
+  </dialog>
+
+  <dialog id="under-dialog">
+    <h2>Underlying dialog</h2>
+    <button id="close-under" type="button">Close underlying dialog</button>
+  </dialog>
+
+  <script>
+    const topDialog = document.getElementById('top-dialog');
+    const underDialog = document.getElementById('under-dialog');
+    document.getElementById('close-top').addEventListener('click', () => topDialog.close());
+    document.getElementById('close-under').addEventListener('click', () => underDialog.close());
+    underDialog.showModal();
+    topDialog.showModal();
+  </script>
+</body>
+</html>

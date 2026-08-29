@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scrollable container</title>
+  <style>
+    body {
+      min-height: 2600px;
+    }
+
+    #items {
+      height: 240px;
+      overflow-y: auto;
+      width: 320px;
+    }
+
+    #items button {
+      display: block;
+      height: 50px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>Scrollable container</h1>
+  <div id="items"></div>
+  <script>
+    const items = document.getElementById('items');
+    for (let index = 1; index <= 30; index += 1) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = `List item ${index}`;
+      items.appendChild(button);
+    }
+  </script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import Locator, Page
 
 from tools.browser.core.exceptions import BrowserToolError
+from tools.browser.core.input.scroll import ScrollOutcome, human_scroll
 
 if TYPE_CHECKING:
     from config import BrowserWaitConfig
@@ -305,11 +306,9 @@ class Document:
 
         await human_press_keys(self._page, keys)
 
-    async def scroll(self, direction: str, amount: int | None = None) -> None:
+    async def scroll(self, direction: str, amount: int | None = None) -> ScrollOutcome:
         """Scroll this document using its DOM and owning physical pointer."""
-        from tools.browser.core.input.scroll import human_scroll
-
-        await human_scroll(self._frame, self._page, direction=direction, amount=amount)
+        return await human_scroll(self._frame, self._page, direction=direction, amount=amount)
 
     async def click_at(self, bounds: tuple[float, float, float, float]) -> None:
         """Click inside document-relative bounds."""

@@ -8,6 +8,9 @@ from typing import Any
 from tools.browser.core.rendering import RenderedDocument
 
 
+_MODAL_NOTICE = "[Modal dialog open — background controls are unavailable]"
+
+
 def format_page_header(
     *,
     title: str,
@@ -64,7 +67,11 @@ def format_rendered_document(
         doc_h = rendered.viewport.get("document_height", 0)
         vp_line = f"[Viewport: {scroll_top}-{scroll_top + vh} of {doc_h}px{trunc}]"
 
-    return f"{header}\n{vp_line}\n\n{rendered.content}"
+    content = rendered.content
+    if rendered.modal_open:
+        content = f"{_MODAL_NOTICE}\n{content}" if content else _MODAL_NOTICE
+
+    return f"{header}\n{vp_line}\n\n{content}"
 
 
 def format_javascript_result(

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scrollable modal dialog</title>
+  <style>
+    dialog {
+      height: 320px;
+      overflow-y: auto;
+      width: 480px;
+    }
+
+    #modal-content {
+      min-height: 1200px;
+    }
+
+    #final-action {
+      margin-top: 1000px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Dashboard</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <dialog id="terms-dialog">
+    <div id="modal-content">
+      <h2>Updated terms</h2>
+      <p>Review the terms before continuing.</p>
+      <button type="button" autofocus>Modal start</button>
+      <button id="final-action" type="button">Final modal action</button>
+    </div>
+  </dialog>
+
+  <script>
+    const dialog = document.getElementById('terms-dialog');
+    dialog.showModal();
+    dialog.scrollTop = 0;
+    document.querySelector('[autofocus]').focus({preventScroll: true});
+  </script>
+</body>
+</html>
