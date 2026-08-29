@@ -398,10 +398,19 @@ async def scroll_page(
 
     content = rendered.content
     blocked_by_modal = scroll_outcome is not None and scroll_outcome.blocked_by_modal
+    scroll_moved = scroll_outcome is not None and scroll_outcome.moved
     if blocked_by_modal:
         content = (
             "[scroll_page] Page scrolling is blocked by an open modal dialog. "
             "Dismiss it before scrolling.\n\n"
+            f"{content}"
+        )
+    elif not scroll_moved:
+        content = (
+            "[scroll_page] The requested scroll did not move the current page "
+            "or scroll container. It may already be at that edge, or the page "
+            "may control scrolling itself. If more content is expected, try a "
+            "page-sized direction or browse_page(full_page=True).\n\n"
             f"{content}"
         )
     else:
@@ -409,7 +418,7 @@ async def scroll_page(
         _scroll_count_var.set(scroll_count)
 
     # Inject warning after threshold
-    if not blocked_by_modal and scroll_count >= warn_threshold:
+    if scroll_moved and scroll_count >= warn_threshold:
         remaining = hard_limit - scroll_count
         content += (
             f"\n\n--- SCROLL WARNING ({scroll_count}/{hard_limit}) ---\n"

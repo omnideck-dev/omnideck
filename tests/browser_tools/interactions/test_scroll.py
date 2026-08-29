@@ -130,16 +130,6 @@ async def test_wheel_scroll_targets_cross_origin_selected_iframe(open_tab, serve
     assert _scroll_top(after_up) < _scroll_top(after_down)
 
 
-async def test_wheel_scroll_falls_back_when_body_hides_overflow(open_tab, servers):
-    """A wheel no-op falls back to scrolling the selected document."""
-    tab = await open_tab(f"{servers.primary}/scroll-lock/overflow-hidden.html")
-    initial = await browse_page(tab=tab)
-
-    after_down = await scroll_page("down", amount=600, tab=tab)
-
-    assert _scroll_top(after_down) > _scroll_top(initial)
-
-
 async def test_viewport_height_includes_fixed_body_content(open_tab, servers):
     """Viewport metadata includes content hidden by a fixed-body scroll lock."""
     tab = await open_tab(f"{servers.primary}/scroll-lock/fixed-body.html")

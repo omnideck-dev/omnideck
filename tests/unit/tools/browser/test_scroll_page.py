@@ -28,8 +28,10 @@ def _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker):
         document: Document,
         direction: str = "down",
         amount: int | None = None,
-    ) -> None:
+    ) -> ScrollOutcome:
+        del direction, amount
         assert isinstance(document, Document)
+        return ScrollOutcome(moved=True)
 
     monkeypatch.setattr(Document, "scroll", fake_scroll)
     return page
@@ -54,9 +56,11 @@ async def test_scroll_page_delegates(
         document: Document,
         direction: str = "down",
         amount: int | None = None,
-    ) -> None:
+    ) -> ScrollOutcome:
         assert isinstance(document, Document)
         assert direction in {"down", "up", "page_down", "page_up", "top", "bottom"}
+        del amount
+        return ScrollOutcome(moved=True)
 
     monkeypatch.setattr(Document, "scroll", fake_scroll)
 
@@ -149,8 +153,10 @@ async def test_scroll_budget_resets_on_url_change(
         document: Document,
         direction: str = "down",
         amount: int | None = None,
-    ) -> None:
-        pass
+    ) -> ScrollOutcome:
+        del direction, amount
+        assert isinstance(document, Document)
+        return ScrollOutcome(moved=True)
 
     monkeypatch.setattr(Document, "scroll", fake_scroll)
 
@@ -194,4 +200,34 @@ async def test_modal_blocked_scroll_does_not_consume_budget(
         result = await scroll_page("down", tab="1")
 
     assert "blocked by an open modal dialog" in result
+    assert "SCROLL WARNING" not in result
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unchanged_scroll_explains_noop_without_consuming_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    browser_tool_harness,
+    settle_tracker,
+) -> None:
+    """Repeated physical no-ops report the state without exhausting the budget."""
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
+
+    async def unchanged_scroll(
+        document: Document,
+        direction: str = "down",
+        amount: int | None = None,
+    ) -> ScrollOutcome:
+        del direction, amount
+        assert isinstance(document, Document)
+        return ScrollOutcome(moved=False)
+
+    monkeypatch.setattr(Document, "scroll", unchanged_scroll)
+
+    result = ""
+    for _ in range(_SCROLL_HARD_LIMIT + 1):
+        result = await scroll_page("down", tab="1")
+
+    assert "requested scroll did not move" in result
+    assert "browse_page(full_page=True)" in result
     assert "SCROLL WARNING" not in result

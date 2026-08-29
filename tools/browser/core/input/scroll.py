@@ -43,7 +43,6 @@ __MODAL_HELPERS__
   }
   if (modalScrollTarget) scrollTarget = modalScrollTarget;
 
-  const bodyStyle = document.body ? getComputedStyle(document.body) : null;
   const targetRect = modalScrollTarget?.getBoundingClientRect() || null;
   return {
     windowY: window.scrollY,
@@ -53,13 +52,7 @@ __MODAL_HELPERS__
     modalTargetPoint: targetRect ? {
       x: targetRect.left + targetRect.width / 2,
       y: targetRect.top + Math.min(targetRect.height / 2, window.innerHeight / 2)
-    } : null,
-    canFallback: Boolean(
-      !activeModal
-      && document.body
-      && document.body.scrollHeight > window.innerHeight + 1
-      && (bodyStyle.overflowY === 'hidden' || bodyStyle.overflowY === 'clip')
-    )
+    } : null
   };
 }
 """.replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
@@ -88,23 +81,8 @@ __MODAL_HELPERS__
 """.replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
 
 _FINALIZE_SCROLL_JS = """
-({ initial, direction, delta }) => {
+({ initial }) => {
 __MODAL_HELPERS__
-
-  const applyWindowScroll = () => {
-    if (direction === 'top') {
-      window.scrollTo(0, 0);
-    } else if (direction === 'bottom') {
-      window.scrollTo(0, Math.max(
-        document.scrollingElement?.scrollHeight || 0,
-        document.body?.scrollHeight || 0
-      ));
-    } else if (direction === 'page_down' || direction === 'page_up') {
-      window.scrollBy(0, window.innerHeight * (direction === 'page_down' ? 1 : -1));
-    } else {
-      window.scrollBy(0, delta);
-    }
-  };
 
   const activeModal = omnideckActiveModal();
   const modalScrollTarget = activeModal
@@ -137,13 +115,8 @@ __MODAL_HELPERS__
     };
   }
 
-  // Trusted input remains the primary path. A direct window scroll is a safe
-  // fallback only when no modal owns the interaction surface.
-  if (initial.canFallback) {
-    applyWindowScroll();
-  }
   return {
-    moved: window.scrollY !== initial.windowY,
+    moved: false,
     blockedByModal: false
   };
 }
@@ -250,7 +223,6 @@ async def human_scroll(
             initial_state = {
                 "windowY": 0,
                 "targetScrollTop": None,
-                "canFallback": False,
                 "modalOpen": False,
                 "modalScrollable": False,
             }
@@ -314,8 +286,6 @@ async def human_scroll(
             _FINALIZE_SCROLL_JS,
             {
                 "initial": initial_state,
-                "direction": normalized,
-                "delta": delta,
             },
         )
         await _sleep_ms(random.randint(100, 300))
