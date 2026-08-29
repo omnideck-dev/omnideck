@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Native modal dialog</title>
+</head>
+<body>
+  <main>
+    <h1>Account</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <dialog id="subscription-dialog">
+    <h2>Subscription offer</h2>
+    <p>Choose whether to continue.</p>
+    <button type="button" aria-label="Close">×</button>
+    <button type="button">Continue</button>
+  </dialog>
+
+  <script>
+    document.getElementById('subscription-dialog').showModal();
+  </script>
+</body>
+</html>

@@ -25,6 +25,7 @@ from playwright.async_api import Response
 
 from tools.browser.core.document import Document
 from tools.browser.core.downloads import is_file_content_type
+from tools.browser.core.modals import MODAL_HELPERS_JS
 from tools.browser.core.rendering.model import RenderedDocument
 from tools.browser.core.rendering.pipeline import render_nodes
 from tools.browser.core.settling import SettleTimings
@@ -91,6 +92,10 @@ _DOM_WALK_JS = """
   const { fullPage } = params;
   const vh = window.innerHeight;
   const vw = window.innerWidth;
+
+__MODAL_HELPERS__
+
+  const activeModal = omnideckActiveModal();
 
   // ---- Role mapping ----
   function getRole(el) {
@@ -254,6 +259,7 @@ _DOM_WALK_JS = """
   const scrolled = window.scrollY > 50;
 
   function shouldSkip(el) {
+    if (el.hasAttribute('inert')) return 'skip-tree';
     if (el.getAttribute('aria-hidden') === 'true') {
       if (el.querySelector('[role="dialog"],[role="alertdialog"],dialog'))
         return 'skip-self';
@@ -432,6 +438,8 @@ _DOM_WALK_JS = """
       }
 
       let name = getName(el);
+      if (!name && activeModal && omnideckModalContains(activeModal, el))
+        name = omnideckModalControlName(el);
       if (!name && role !== 'combobox' && el.tagName !== 'SELECT') return;
 
       refCounter++;
@@ -557,23 +565,40 @@ _DOM_WALK_JS = """
     }
   }
 
-  walk(document.body, true);
+  if (activeModal) {
+    for (const root of omnideckModalElements(activeModal)) walk(root, true);
+  } else {
+    walk(document.body, true);
+  }
+
+  const modalViewport = activeModal
+    ? (omnideckScrollableModalElement(activeModal) || activeModal.element)
+    : null;
+  const viewportHeight = modalViewport
+    ? (modalViewport.clientHeight || Math.floor(modalViewport.getBoundingClientRect().height))
+    : Math.floor(vh);
+  const viewportScrollTop = modalViewport
+    ? Math.floor(modalViewport.scrollTop)
+    : Math.floor(window.scrollY);
+  const documentHeight = modalViewport
+    ? Math.max(modalViewport.scrollHeight, viewportHeight)
+    : Math.max(
+        document.scrollingElement?.scrollHeight || 0,
+        document.body?.scrollHeight || 0
+      );
 
   return {
+    modal_open: Boolean(activeModal),
     nodes: nodes,
     viewport: {
       width: Math.floor(vw),
-      height: Math.floor(vh),
-      scroll_top: Math.floor(window.scrollY),
-      document_height: Math.floor(
-        document.scrollingElement
-          ? document.scrollingElement.scrollHeight
-          : document.body.scrollHeight
-      )
+      height: Math.floor(viewportHeight),
+      scroll_top: viewportScrollTop,
+      document_height: Math.floor(documentHeight)
     }
   };
 }
-"""
+""".replace("__MODAL_HELPERS__", MODAL_HELPERS_JS)
 
 
 async def render_document(
@@ -621,6 +646,7 @@ async def render_document(
     content = ""
     truncated = False
     viewport_data: dict[str, int] | None = None
+    modal_open = False
 
     # A blocked document renders as its banner, and a non-HTML file renders as a
     # canned message. Neither has useful DOM content, so both skip the walk.
@@ -648,6 +674,7 @@ async def render_document(
 
             raw_nodes = raw_result.get("nodes", [])
             raw_viewport = raw_result.get("viewport", {})
+            modal_open = raw_result.get("modal_open") is True
 
             viewport_data = {
                 "scroll_top": raw_viewport.get("scroll_top", 0),
@@ -692,6 +719,7 @@ async def render_document(
         content=content,
         viewport=viewport_data,
         truncated=truncated,
+        modal_open=modal_open,
         settle_timings=settle_timings,
         dom_walk_ms=dom_walk_ms,
         render_ms=render_ms,

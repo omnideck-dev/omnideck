@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ARIA modal dialog</title>
+  <style>
+    #modal {
+      background: white;
+      inset: 20% 30%;
+      position: fixed;
+      z-index: 2;
+    }
+
+    #backdrop {
+      background: rgb(0 0 0 / 50%);
+      inset: 0;
+      position: fixed;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app-root">
+    <main inert>
+      <h1>Settings</h1>
+      <button type="button">Background action</button>
+    </main>
+
+    <div id="backdrop"></div>
+    <div id="modal" aria-label="Session notice" aria-modal="true">
+      <h2>Session expired</h2>
+      <button type="button">Acknowledge</button>
+    </div>
+  </div>
+
+  <script>
+    const requestedRole = new URLSearchParams(location.search).get('role');
+    document.getElementById('modal').setAttribute(
+      'role',
+      requestedRole === 'alertdialog' ? 'alertdialog' : 'dialog',
+    );
+  </script>
+</body>
+</html>
