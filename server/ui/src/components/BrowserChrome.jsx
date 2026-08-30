@@ -10,7 +10,14 @@ import styles from './BrowserChrome.module.css';
  * and take-control. Full-screen presentation belongs to Desktop Layout rather
  * than to this feature component.
  */
-export default function BrowserChrome({ url, title, control, focusViewport, onSaveState }) {
+export default function BrowserChrome({
+    url,
+    title,
+    control,
+    focusViewport,
+    onSaveState,
+    browserActions,
+}) {
     const c = control || {};
     // Local edit buffer for the address field: null = show the live url; a string
     // = the user is editing. Avoids live nav updates clobbering what they type.
@@ -68,6 +75,12 @@ export default function BrowserChrome({ url, title, control, focusViewport, onSa
                     >
                         {c.error}
                     </span>
+                )}
+                {browserActions && (
+                    <>
+                        <span className={styles.actionDivider} aria-hidden="true" />
+                        <div className={styles.browserActions}>{browserActions}</div>
+                    </>
                 )}
                 {c.engaged && c.newTab && (
                     <IconButton

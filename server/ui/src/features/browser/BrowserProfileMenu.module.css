@@ -1,0 +1,211 @@
+.root {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.trigger {
+    height: 28px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
+    transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+
+.trigger {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 180px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 var(--sp-2);
+}
+
+.trigger:hover,
+.triggerOpen {
+    background: var(--accent-muted);
+    color: var(--text-primary);
+}
+
+.trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.triggerIcon {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--accent);
+    font-size: var(--font-size-ui);
+}
+
+.triggerName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trigger > :global(.bi-chevron-down) {
+    flex: 0 0 auto;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-label);
+    transition: transform 120ms var(--ease);
+}
+
+.triggerOpen > :global(.bi-chevron-down) {
+    transform: rotate(180deg);
+}
+
+.saveButton {
+    font-size: var(--font-size-ui);
+}
+
+.popover {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--elevated);
+    box-shadow: var(--shadow-lg);
+}
+
+.menuSection {
+    padding: var(--sp-2) 10px 5px;
+    background: var(--surface);
+    color: var(--text-tertiary);
+    font: 700 var(--font-size-label)/1 var(--font-brand);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.profileList {
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.profileOption {
+    display: flex;
+    width: 100%;
+    min-height: 48px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--elevated);
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+}
+
+.profileOption:hover,
+.profileOption:focus-visible {
+    outline: none;
+    background: var(--surface);
+}
+
+.profileOption:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.profileOption.selected {
+    background: var(--accent-muted);
+}
+
+.profileIcon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--canvas);
+    color: var(--accent);
+    font-size: var(--font-size-ui);
+}
+
+.profileCopy {
+    min-width: 0;
+    flex: 1;
+}
+
+.profileName,
+.profileDescription {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profileName {
+    font-size: var(--font-size-body);
+}
+
+.profileDescription {
+    margin-top: 2px;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-caption);
+}
+
+.profileOption > :global(.bi-check-lg) {
+    flex: 0 0 auto;
+    color: var(--accent);
+    font-size: var(--font-size-small);
+}
+
+.menuAction {
+    display: flex;
+    width: 100%;
+    height: 38px;
+    align-items: center;
+    gap: 10px;
+    padding: 0 var(--sp-3);
+    border: 0;
+    background: var(--elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-small);
+    text-align: left;
+}
+
+.menuAction + .menuAction {
+    border-top: 1px solid var(--border-subtle);
+}
+
+.menuAction:hover,
+.menuAction:focus-visible {
+    outline: none;
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.menuAction:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.menuAction > :global(.bi) {
+    width: 16px;
+    flex: 0 0 auto;
+    text-align: center;
+}
+
+@media (max-width: 640px) {
+    .triggerName {
+        display: none;
+    }
+
+    .trigger {
+        padding: 0 6px;
+    }
+}

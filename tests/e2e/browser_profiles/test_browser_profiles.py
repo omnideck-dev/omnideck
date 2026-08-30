@@ -28,7 +28,7 @@ def _load_profile(page: Page, name: str) -> BrowserControl:
     if profile_select.inner_text().strip() == name:
         return BrowserControl(page).wait_loaded(timeout=30_000)
     profile_select.click()
-    page.get_by_role("option", name=name, exact=True).click()
+    page.get_by_role("menuitemradio", name=name, exact=True).click()
     replace = page.get_by_test_id("replace-browser-modal")
     replace.wait_for(state="visible")
     replace.get_by_role("button", name="Use Empty" if name == "Empty" else "Load profile").click()
@@ -207,7 +207,8 @@ def test_create_profile_and_rename_it_in_settings(page: Page, api_client: ApiCli
     )
     try:
         assert created["icon"] == "bi-briefcase"
-        page.get_by_role("button", name="Manage browser profiles").click()
+        page.get_by_test_id("browser-profile-select").click()
+        page.get_by_role("menuitem", name="Manage browser profiles").click()
         page.get_by_test_id("browser-profiles-settings").wait_for(state="visible")
         row = page.get_by_test_id(f"browser-profile-{created['id']}")
         row.click()
@@ -298,7 +299,8 @@ def test_profile_settings_remove_one_site_or_clear_all_state(
         value="clear-state",
     )
     try:
-        page.get_by_role("button", name="Manage browser profiles").click()
+        page.get_by_test_id("browser-profile-select").click()
+        page.get_by_role("menuitem", name="Manage browser profiles").click()
         page.get_by_test_id("browser-profiles-settings").wait_for(state="visible")
 
         removable_row = page.get_by_test_id(f"browser-profile-{removable['id']}")

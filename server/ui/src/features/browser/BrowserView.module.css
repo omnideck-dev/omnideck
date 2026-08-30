@@ -6,42 +6,6 @@
     background: var(--canvas);
 }
 
-.toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    min-height: var(--sp-12);
-    padding: var(--sp-2) var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-}
-
-.source {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    align-items: center;
-    gap: var(--sp-2);
-}
-
-.source > span {
-    flex-shrink: 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-small);
-    white-space: nowrap;
-}
-
-.source > div {
-    --select-width: min(220px, 100%);
-}
-
-.actions {
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--sp-1);
-    margin-left: auto;
-}
-
 .error {
     padding: var(--sp-2) var(--sp-3) 0;
 }
@@ -74,15 +38,4 @@
     justify-content: flex-end;
     gap: var(--sp-2);
     margin-top: var(--sp-5);
-}
-
-@media (max-width: 480px) {
-    .source > span {
-        display: none;
-    }
-
-    .source > div {
-        --select-width: 100%;
-        flex: 1;
-    }
 }

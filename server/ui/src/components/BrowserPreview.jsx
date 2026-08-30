@@ -18,7 +18,15 @@ function _hostOf(url) {
  * Selection is controlled by the parent (`selectedId` / `onSelectTab`).
  * `control` carries the live screencast frame + nav state for the selected tab.
  */
-export default function BrowserPreview({ tabs, selectedId, onSelectTab, control, inputActive = true, onSaveState }) {
+export default function BrowserPreview({
+    tabs,
+    selectedId,
+    onSelectTab,
+    control,
+    inputActive = true,
+    onSaveState,
+    browserActions,
+}) {
     const activeTab = tabs.find(t => t.id === selectedId) || tabs[0];
     const c = control || {};
     // Own the viewport ref so the address bar can refocus it after navigating.
@@ -83,6 +91,7 @@ export default function BrowserPreview({ tabs, selectedId, onSelectTab, control,
                 control={control}
                 focusViewport={focusViewport}
                 onSaveState={onSaveState}
+                browserActions={browserActions}
             />
 
             <ScreencastViewport

@@ -68,14 +68,13 @@ Stop and report the issue immediately if any of these occur:
 
 1. Open OmniDeck and select **Browser** from the left navigation.
 2. Verify Browser is a single destination with no Browser submenu.
-3. Verify the Browser toolbar contains:
-   - **Loaded from** with the current profile.
+3. Verify the Browser address row contains:
+   - A Browser-state control showing the current profile or **Empty**.
    - A camera icon whose accessible label or tooltip is **Save Browser state**.
-   - A gear icon for Browser profile management.
 4. Open the profile selector.
 5. Verify **Default** and **Empty** are available. Existing saved profiles may
-   also appear.
-6. Select the profile already shown in **Loaded from** and verify the selector
+   also appear, along with **Manage browser profiles**.
+6. Select the profile already shown in the control and verify the selector
    closes without showing a load confirmation or changing the Browser.
 7. Verify the screen never uses the term "root Browser."
 
@@ -90,7 +89,7 @@ Result: `__________`
 
 ## 2. Create profile A from Empty
 
-1. Choose **Empty** from **Loaded from**.
+1. Choose **Empty** from the Browser-state control.
 2. In the confirmation dialog, verify it warns that current tabs and changes
    not saved to a profile will be discarded.
 3. Confirm **Use Empty**.
@@ -111,7 +110,7 @@ Result: `__________`
 10. Save the new profile.
 11. Verify the Browser remains on the same page, account A remains signed in,
     and open tabs are not disturbed by saving.
-12. Verify **Loaded from** now shows **QA Account A**.
+12. Verify the Browser-state control now shows **QA Account A**.
 
 Expected:
 
@@ -127,7 +126,7 @@ Result: `__________`
 3. Verify account A is not already signed in.
 4. Sign in as QA account B.
 5. Save the Browser as a new profile named **QA Account B** with a different icon.
-6. Load **QA Account A** through **Loaded from** and confirm the replacement.
+6. Load **QA Account A** through the Browser-state control and confirm the replacement.
 7. Visit the primary service account page and verify it shows account A.
 8. Load **QA Account B**, visit the same page, and verify it shows account B.
 9. Load **Empty** and verify neither account is signed in.

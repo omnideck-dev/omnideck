@@ -3,18 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import BrowserPreview from '../../components/BrowserPreview.jsx';
 import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
-import IconButton from '../../components/primitives/IconButton.jsx';
 import Modal from '../../components/primitives/Modal.jsx';
-import Select from '../../components/primitives/Select.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import useBrowserControl from '../workspace/useBrowserControl.js';
 import { getBrowserSession, loadBrowserSession } from './browserApi.js';
+import BrowserProfileMenu, { EMPTY_BROWSER_PROFILE } from './BrowserProfileMenu.jsx';
 import BrowserSaveModal from './BrowserSaveModal.jsx';
 import { useBrowserProfileLoadRequest } from './BrowserProfileLoadRequest.jsx';
 import { useBrowserProfilesCatalog } from './BrowserProfilesContext.jsx';
 import styles from './BrowserView.module.css';
-
-const EMPTY = '__empty__';
 
 export default function BrowserView() {
     const navigation = useDesktopNavigationCommands();
@@ -32,7 +29,7 @@ export default function BrowserView() {
     const [error, setError] = useState('');
     const [sessionKey, setSessionKey] = useState(0);
     const refreshingDeletedSource = useRef(false);
-    const selectedSource = session?.source_profile_id || EMPTY;
+    const selectedSource = session?.source_profile_id || EMPTY_BROWSER_PROFILE;
 
     useEffect(() => {
         getBrowserSession()
@@ -98,7 +95,7 @@ export default function BrowserView() {
 
     const profileOptions = useMemo(() => [
         ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
-        { value: EMPTY, label: 'Empty' },
+        { value: EMPTY_BROWSER_PROFILE, label: 'Empty' },
     ], [profiles]);
     const clearPendingLoad = () => {
         setPendingLoad(undefined);
@@ -106,7 +103,7 @@ export default function BrowserView() {
     };
 
     const replaceSession = async () => {
-        const profileId = pendingLoad === EMPTY ? null : pendingLoad;
+        const profileId = pendingLoad === EMPTY_BROWSER_PROFILE ? null : pendingLoad;
         setError('');
         try {
             const next = await loadBrowserSession(profileId);
@@ -122,30 +119,6 @@ export default function BrowserView() {
 
     return (
         <div className={styles.page} data-testid="browser-page">
-            <div className={styles.toolbar}>
-                <div className={styles.source}>
-                    <span>Loaded from</span>
-                    <Select
-                        options={profileOptions}
-                        value={selectedSource}
-                        onChange={(value) => {
-                            if (value === selectedSource) return;
-                            setPendingLoadName('');
-                            setPendingLoad(value);
-                        }}
-                        ariaLabel="Browser profile"
-                        testId="browser-profile-select"
-                    />
-                </div>
-                <div className={styles.actions}>
-                    <IconButton onClick={() => setShowSave(true)} title="Save Browser state" aria-label="Save Browser state" data-testid="browser-save-state">
-                        <i className="bi bi-camera" />
-                    </IconButton>
-                    <IconButton onClick={() => navigation.openSettings('browser')} title="Manage browser profiles" aria-label="Manage browser profiles">
-                        <i className="bi bi-gear" />
-                    </IconButton>
-                </div>
-            </div>
             {error && (
                 <div className={styles.error}>
                     <Callout tone="danger" title="Browser error" description={error} />
@@ -157,6 +130,19 @@ export default function BrowserView() {
                     selectedId={selectedTabId}
                     onSelectTab={setSelectedTabId}
                     control={control}
+                    browserActions={(
+                        <BrowserProfileMenu
+                            profiles={profiles}
+                            value={selectedSource}
+                            onChange={(value) => {
+                                if (value === selectedSource) return;
+                                setPendingLoadName('');
+                                setPendingLoad(value);
+                            }}
+                            onSave={() => setShowSave(true)}
+                            onManage={() => navigation.openSettings('browser')}
+                        />
+                    )}
                 />
             ) : (
                 <div className={styles.loading}>{session ? 'Opening Browser…' : 'Loading Browser…'}</div>
@@ -165,7 +151,7 @@ export default function BrowserView() {
             {pendingLoad !== undefined && (
                 <Modal onClose={clearPendingLoad} labelledBy="replace-browser-title" testId="replace-browser-modal">
                     <h2 id="replace-browser-title" className={styles.modalTitle}>
-                        {pendingLoad === EMPTY ? 'Use Empty?' : `Load ${pendingLoadName || profileOptions.find((option) => option.value === pendingLoad)?.label}?`}
+                        {pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty?' : `Load ${pendingLoadName || profileOptions.find((option) => option.value === pendingLoad)?.label}?`}
                     </h2>
                     <p className={styles.modalCopy}>
                         Your current tabs and any changes you haven’t saved to a profile will be discarded.
@@ -173,7 +159,7 @@ export default function BrowserView() {
                     <div className={styles.modalActions}>
                         <Button onClick={clearPendingLoad}>Cancel</Button>
                         <Button variant="filled" onClick={replaceSession}>
-                            {pendingLoad === EMPTY ? 'Use Empty' : 'Load profile'}
+                            {pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty' : 'Load profile'}
                         </Button>
                     </div>
                 </Modal>

@@ -29,7 +29,12 @@ vi.mock('../BrowserProfileLoadRequest.jsx', () => ({
 }));
 
 vi.mock('../../workspace/useBrowserControl.js', () => ({
-    default: () => ({ liveTabs: [] }),
+    default: () => ({
+        liveTabs: [{ id: 'browser-tab', url: 'about:blank', title: 'Untitled' }],
+        engaged: true,
+        navUrl: 'about:blank',
+        navTitle: 'Untitled',
+    }),
 }));
 
 vi.mock('../browserApi.js', () => ({
@@ -149,7 +154,7 @@ describe('BrowserView profile load requests', () => {
         const profileSelect = await screen.findByTestId('browser-profile-select');
         expect(profileSelect).toHaveAttribute('data-value', 'default');
         await user.click(profileSelect);
-        await user.click(screen.getByRole('option', { name: 'Default' }));
+        await user.click(screen.getByRole('menuitemradio', { name: 'Default' }));
 
         expect(screen.queryByTestId('replace-browser-modal')).not.toBeInTheDocument();
         expect(mocks.loadBrowserSession).not.toHaveBeenCalled();
