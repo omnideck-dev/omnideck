@@ -54,6 +54,14 @@
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
 
+  /* ── Type scale ── */
+  --font-size-label: 10px;
+  --font-size-caption: 11px;
+  --font-size-small: 12px;
+  --font-size-body: 13px;
+  --font-size-ui: 14px;
+  --font-size-heading: 18px;
+
   /* ── Z-index scale ── */
   --z-sticky: 10;
   --z-flyout: 100;
@@ -935,23 +943,6 @@ body {
   color: var(--text-secondary);
   margin-bottom: 5px;
 }
-
-.flyout-select {
-  width: 100%;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--canvas);
-  color: var(--text-primary);
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 150ms var(--ease);
-}
-.flyout-select:focus { border-color: var(--accent); }
-
-[data-theme="dark"] .flyout-select { background: var(--elevated); }
 
 .flyout-slider-row {
   display: flex;
@@ -2126,6 +2117,9 @@ body {
 
 /* ── Select ──────────────────────────────────────────── */
 .select {
+  display: inline-flex;
+  align-items: center;
+  min-width: 240px;
   height: 32px;
   padding: 0 28px 0 10px;
   border: 1px solid var(--border);
@@ -2135,12 +2129,16 @@ body {
   font-size: 13px;
   font-family: var(--font-body);
   cursor: pointer;
-  appearance: none;
+  text-align: left;
+  box-shadow: none;
+  outline: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none'/></svg>");
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
 [data-theme="dark"] .select { background-color: var(--surface); }
+.select:hover { border-color: var(--border-strong); background-color: var(--elevated); }
+.select:focus-visible { border-color: var(--accent); box-shadow: var(--shadow-glow); }
 
 /* ── File Output Card ────────────────────────────────── */
 .file-card {
@@ -2374,7 +2372,7 @@ body {
 }
 .dl-split-list {
   width: 35%;
-  min-width: 220px; max-width: 380px;
+  min-width: 280px; max-width: 420px;
   background: var(--canvas);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
@@ -3426,7 +3424,7 @@ body {
       <div class="component-row">
         <input class="input" placeholder="Search...">
         <input class="input" value="llama3:70b">
-        <select class="select"><option>llama3:70b</option><option>llama3:8b</option><option>mistral:7b</option></select>
+        <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model">llama3:70b</button>
       </div>
       <div class="component-row" style="max-width: 400px">
         <textarea class="textarea" placeholder="Enter your message..." rows="3"></textarea>
@@ -3651,7 +3649,7 @@ body {
             <div class="desc">The model used when no agent specifies one.</div>
           </div>
           <div class="control">
-            <select class="select" style="width:140px;height:30px;font-size:12px"><option>llama3:70b</option></select>
+            <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:140px;min-width:140px;height:30px;font-size:12px">llama3:70b</button>
           </div>
         </div>
         <div class="settings-row">
@@ -4241,11 +4239,7 @@ body {
         <div class="flyout-body">
           <div class="flyout-field">
             <label class="flyout-label">Model</label>
-            <select class="flyout-select">
-              <option>llama3:70b</option>
-              <option>llama3:8b</option>
-              <option>mistral:7b</option>
-            </select>
+            <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:100%;min-width:0;height:30px;font-size:12px">llama3:70b</button>
           </div>
 
           <div class="flyout-field">
@@ -4378,11 +4372,7 @@ body {
           <div class="fs-row-desc">The model used when no agent specifies one.</div>
         </div>
         <div class="fs-row-control">
-          <select class="input" style="width:160px;height:30px;font-size:12px">
-            <option>llama3:70b</option>
-            <option>llama3:8b</option>
-            <option>mistral:7b</option>
-          </select>
+          <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:160px;min-width:160px;height:30px;font-size:12px">llama3:70b</button>
         </div>
       </div>
       <div class="fs-row">
@@ -4821,11 +4811,7 @@ body {
       <textarea class="m-chat-textarea" placeholder="Send a message..." rows="2" style="background:transparent;border:none;resize:none">Scrape the API reference from docs.example.com</textarea>
       <div class="m-chat-actions">
         <button class="btn-icon" title="Attach file"><i class="bi bi-paperclip"></i></button>
-        <select class="select" style="height:32px;font-size:12px;padding-left:8px">
-          <option>ollama-agent</option>
-          <option>browser-agent</option>
-          <option>coder-agent</option>
-        </select>
+        <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Agent" style="min-width:140px;height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">ollama-agent</button>
         <span class="spacer"></span>
         <button class="btn-icon" title="Stop" style="color:var(--danger)"><i class="bi bi-stop-circle"></i></button>
         <button class="btn-icon" title="Send" style="color:var(--accent)"><i class="bi bi-send"></i></button>

@@ -134,6 +134,7 @@ build-backend = "setuptools.build_meta"
 include = [
     "agent_runtime*",
     "agents*",
+    "browser_profiles*",
     "config*",
     "migrations*",
     "models*",

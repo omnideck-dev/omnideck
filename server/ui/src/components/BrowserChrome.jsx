@@ -10,7 +10,7 @@ import styles from './BrowserChrome.module.css';
  * and take-control. Full-screen presentation belongs to Desktop Layout rather
  * than to this feature component.
  */
-export default function BrowserChrome({ url, title, control, focusViewport }) {
+export default function BrowserChrome({ url, title, control, focusViewport, onSaveState }) {
     const c = control || {};
     // Local edit buffer for the address field: null = show the live url; a string
     // = the user is editing. Avoids live nav updates clobbering what they type.
@@ -78,6 +78,17 @@ export default function BrowserChrome({ url, title, control, focusViewport }) {
                         data-testid="browser-new-tab"
                     >
                         <i className="bi bi-plus-lg" style={{ fontSize: 14 }} />
+                    </IconButton>
+                )}
+                {c.engaged && onSaveState && (
+                    <IconButton
+                        size="sm"
+                        onClick={onSaveState}
+                        title="Save Browser state"
+                        aria-label="Save Browser state"
+                        data-testid="browser-takeover-save-state"
+                    >
+                        <i className="bi bi-camera" style={{ fontSize: 14 }} />
                     </IconButton>
                 )}
                 {control && c.toggleEngage && (

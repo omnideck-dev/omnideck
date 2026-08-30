@@ -8,7 +8,7 @@ RuntimeError rather than failing confusingly downstream at routine-run time.
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -54,6 +54,14 @@ def _prepared_execution(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(TaskExecutor, "_profile_for", lambda _self, _task: object())
     monkeypatch.setattr("tasks._executor.build_agent_state", AsyncMock(return_value=agent_state))
+    monkeypatch.setattr(
+        "tasks._executor.resolve_browser_profile_assignment",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        "tasks._executor.browser_profile_assignment_scope",
+        lambda _assignment: nullcontext(),
+    )
     monkeypatch.setattr("tasks._executor.build_agent", lambda *_args, **_kwargs: agent)
     monkeypatch.setattr("tasks._executor.ConversationHistory", lambda **_kwargs: history)
     monkeypatch.setattr("tasks._executor.EventsLogWriter", lambda _conversation_id: events_log)

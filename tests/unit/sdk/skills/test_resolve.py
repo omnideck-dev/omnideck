@@ -24,8 +24,7 @@ from sdk.skills.agent_state import AgentState
 
 
 def _tool(name):
-    def f():
-        ...
+    def f(): ...
 
     f.__name__ = name
     return f
@@ -36,6 +35,7 @@ def _categories() -> dict[str, ToolCategory]:
         "coding": ToolCategory("coding", "Coding", "", [_tool("read_file"), _tool("run_bash_cmd")]),
         "memory": ToolCategory("memory", "Memory", "", [_tool("remember")]),
         "email": ToolCategory("email", "Email", "", [_tool("search_email")]),
+        "browser": ToolCategory("browser", "Browser", "", [_tool("open_url")]),
     }
 
 
@@ -132,6 +132,55 @@ async def test_build_adds_profile_skill_tools():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
     state = await build_agent_state(_profile(skills=["coder"]))
     assert "read_file" in _names(state.tools)
+
+
+@pytest.mark.unit
+async def test_browser_access_adds_internal_capability_without_loading_profile_state():
+    save_skill_record(
+        SkillRecord(
+            id="browser",
+            name="Browser",
+            prompt="Browse websites.",
+            tool_categories=["browser"],
+        )
+    )
+    state = await build_agent_state(
+        _profile(
+            browser_access=True,
+            browser_profile_id="default",
+        )
+    )
+
+    assert "open_url" in _names(state.tools)
+    assert "Browse websites." in state.build_skill_prompt()
+
+
+@pytest.mark.unit
+async def test_stale_browser_skill_cannot_bypass_agent_browser_access():
+    save_skill_record(
+        SkillRecord(
+            id="browser",
+            name="Browser",
+            prompt="Browse websites.",
+            tool_categories=["browser"],
+        )
+    )
+    state = await build_agent_state(_profile(skills=["browser"], browser_access=False))
+    assert "open_url" not in _names(state.tools)
+    assert "browser" not in state.skill_ids
+
+
+@pytest.mark.unit
+async def test_custom_skill_cannot_grant_browser_category():
+    save_skill_record(
+        SkillRecord(
+            id="custom",
+            name="Custom",
+            tool_categories=["browser"],
+        )
+    )
+    state = await build_agent_state(_profile(skills=["custom"], browser_access=False))
+    assert "open_url" not in _names(state.tools)
 
 
 @pytest.mark.unit

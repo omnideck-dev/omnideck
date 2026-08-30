@@ -16,6 +16,7 @@ const navigationHarness = vi.hoisted(() => ({
     navigationTarget: { kind: 'chat', conversationId: 'conversation-1' },
     commands: {
         openChat: vi.fn(),
+        openBrowser: vi.fn(),
         openAgents: vi.fn(),
         openRoutines: vi.fn(),
         openArtifacts: vi.fn(),
@@ -257,7 +258,7 @@ describe('Sidebar', () => {
         const nav = screen.getByRole('navigation');
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'agents', 'artifacts']);
+            .toEqual(['routines', 'agents', 'artifacts', 'browser']);
 
         const agents = screen.getByTestId('sidebar-nav-agents');
         expect(agents).toHaveAttribute(
@@ -267,11 +268,11 @@ describe('Sidebar', () => {
         fireEvent.keyDown(agents, { key: 'ArrowDown', altKey: true });
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'artifacts', 'agents']);
+            .toEqual(['routines', 'artifacts', 'agents', 'browser']);
         expect(JSON.parse(localStorage.getItem('omnideck_sidebar_navigation_order')))
-            .toEqual(['routines', 'artifacts', 'agents', 'apps']);
+            .toEqual(['routines', 'artifacts', 'agents', 'apps', 'browser']);
         expect(screen.getByRole('status')).toHaveTextContent(
-            'Agents moved to position 3 of 3',
+            'Agents moved to position 3 of 4',
         );
     });
 
@@ -288,7 +289,7 @@ describe('Sidebar', () => {
         const nav = screen.getByRole('navigation');
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'agents', 'artifacts']);
+            .toEqual(['browser', 'routines', 'agents', 'artifacts']);
     });
 
     it('reorders and unpins sidebar Apps with keyboard and context actions', async () => {

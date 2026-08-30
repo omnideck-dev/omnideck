@@ -5,12 +5,14 @@ parameters into a reusable configuration. Profiles are stored as JSON
 files in the state folder.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from config import load_config
 from settings import load_settings
@@ -33,6 +35,8 @@ class AgentProfile(BaseModel):
     provider: str = ""
     model: str = ""
     skills: list[str] = Field(default_factory=list)
+    browser_access: bool = False
+    browser_profile_id: str | None = None
     allow_spawn: bool = True
     allow_load_skills: bool = True
     temperature: float | None = None
@@ -47,6 +51,13 @@ class AgentProfile(BaseModel):
     context_window: int | None = None
     compaction_threshold: float | None = None
     max_iterations: int | None = None
+
+    @model_validator(mode="after")
+    def clear_disabled_browser_profile(self) -> AgentProfile:
+        """A disabled Browser capability cannot retain a hidden assignment."""
+        if not self.browser_access:
+            self.browser_profile_id = None
+        return self
 
 
 def _profiles_dir() -> Path:

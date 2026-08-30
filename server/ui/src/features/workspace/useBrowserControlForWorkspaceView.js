@@ -44,6 +44,7 @@ export default function useBrowserControlForWorkspaceView({
         enabled: browserTabsList.length > 0
             && visibleBrowserAgentId !== null,
         agentTabs: browserTabsList,
+        sessionKey: visibleBrowserAgentId,
     });
 
     return {

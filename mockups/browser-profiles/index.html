@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Browser profiles — OmniDeck UX mockup</title>
+<style>
+:root {
+    --canvas: #f8f9fb;
+    --surface: #eef0f5;
+    --elevated: #ffffff;
+    --inset: #f4f6f9;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-tertiary: #94a3b8;
+    --border: #e2e8f0;
+    --border-subtle: #edf1f6;
+    --border-strong: #cbd5e1;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-muted: rgba(37, 99, 235, 0.09);
+    --accent-glow: rgba(37, 99, 235, 0.22);
+    --success: #16a34a;
+    --success-muted: rgba(22, 163, 74, 0.10);
+    --warning: #d97706;
+    --warning-muted: rgba(217, 119, 6, 0.10);
+    --danger: #dc2626;
+    --scrim: rgba(15, 23, 42, 0.64);
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.15), 0 2px 8px rgba(15, 23, 42, 0.06);
+    --shadow-lg: 0 28px 72px rgba(2, 6, 23, 0.3), 0 6px 16px rgba(2, 6, 23, 0.12);
+    --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-brand: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --font-code: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-full: 999px;
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+    --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+[data-theme="dark"] {
+    --canvas: #0c0e14;
+    --surface: #151821;
+    --elevated: #1e2130;
+    --inset: #11141c;
+    --text-primary: #e8ecf4;
+    --text-secondary: #a4aec2;
+    --text-tertiary: #677087;
+    --border: #282d3d;
+    --border-subtle: #1b1f2a;
+    --border-strong: #3a4155;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-muted: rgba(59, 130, 246, 0.14);
+    --accent-glow: rgba(59, 130, 246, 0.24);
+    --success: #4ade80;
+    --success-muted: rgba(74, 222, 128, 0.12);
+    --warning: #fbbf24;
+    --warning-muted: rgba(251, 191, 36, 0.12);
+    --danger: #f87171;
+    --scrim: rgba(4, 6, 12, 0.72);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.42);
+    --shadow-lg: 0 28px 80px rgba(0, 0, 0, 0.58);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { min-width: 1120px; min-height: 100%; margin: 0; }
+
+body {
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+}
+
+button, input, select { font: inherit; }
+
+button { border: 0; color: inherit; background: transparent; cursor: pointer; }
+
+button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.icon { width: 16px; height: 16px; flex: 0 0 auto; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.icon.sm { width: 14px; height: 14px; }
+.icon.lg { width: 18px; height: 18px; }
+
+.prototype-header {
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 10px 16px;
+    background: var(--elevated);
+    border-bottom: 1px solid var(--border);
+}
+
+.prototype-title { width: 248px; flex: 0 0 auto; }
+.eyebrow { margin: 0 0 3px; color: var(--text-tertiary); font: 700 9px/1.1 var(--font-brand); letter-spacing: .13em; text-transform: uppercase; }
+.prototype-title h1 { margin: 0; font: 650 14px/1.25 var(--font-brand); letter-spacing: .01em; }
+
+.flow-switcher {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.flow-button {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.flow-button:hover { color: var(--text-primary); }
+.flow-button.active { color: var(--text-primary); background: var(--elevated); box-shadow: var(--shadow-sm); }
+.flow-index { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--border); color: var(--text-secondary); font: 700 9px/1 var(--font-code); }
+.flow-button.active .flow-index { color: white; background: var(--accent); }
+
+.prototype-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.icon-button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--text-tertiary); }
+.icon-button:hover { color: var(--text-primary); background: var(--surface); }
+.icon-button.bordered { border: 1px solid var(--border); background: var(--elevated); }
+.icon-button.active { color: var(--accent); background: var(--accent-muted); }
+
+.state-summary {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    background: var(--canvas);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.summary-kicker { font: 700 9px/1 var(--font-brand); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.summary-title { color: var(--text-primary); font-weight: 650; }
+.summary-tradeoff { margin-left: auto; color: var(--text-tertiary); font-size: 11px; }
+
+.app-shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: calc(100vh - 65px); min-height: 690px; background: var(--canvas); overflow: hidden; }
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+}
+
+.brand { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.wordmark { flex: 1; font: 700 13px/1 var(--font-brand); letter-spacing: .06em; }
+.collapse-button { width: 28px; height: 28px; display: grid; place-items: center; color: var(--text-tertiary); border-radius: var(--radius-md); }
+.collapse-button:hover { background: var(--elevated); color: var(--text-primary); }
+
+.side-scroll { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.nav-item {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 9px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    text-align: left;
+}
+.nav-item:hover { color: var(--text-primary); background: var(--elevated); }
+.nav-item.active { color: var(--accent); background: var(--accent-muted); }
+.nav-item .icon { color: var(--text-tertiary); }
+.nav-item.active .icon { color: var(--accent); }
+.conversation-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.conversation-head { height: 32px; display: flex; align-items: center; padding: 0 10px 0 11px; color: var(--text-tertiary); font: 650 9.5px/1 var(--font-code); letter-spacing: .08em; text-transform: uppercase; }
+.conversation-head .icon-button { margin-left: auto; width: 24px; height: 24px; }
+.new-chat-wrap { padding: 0 8px 4px; }
+.new-chat { width: 100%; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-md); color: var(--text-primary); font-size: 12.5px; font-weight: 500; text-align: left; }
+.new-chat:hover, .conversation:hover { background: var(--elevated); }
+.new-chat-icon { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--text-secondary); }
+.conversation-search { height: 30px; display: flex; align-items: center; gap: 7px; margin: 0 8px 4px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-tertiary); background: var(--canvas); font-size: 10.5px; }
+.conversation-list { min-height: 0; overflow: auto; padding: 4px 8px 8px; }
+.side-section { height: 26px; display: flex; align-items: center; padding: 0 10px; color: var(--text-tertiary); font: 650 9px/1 var(--font-brand); letter-spacing: .07em; text-transform: uppercase; }
+.conversation { width: 100%; height: 30px; padding: 0 10px; display: flex; align-items: center; border-radius: var(--radius-md); color: var(--text-secondary); font-size: 12.5px; text-align: left; }
+.sidebar-footer { min-height: 45px; display: flex; align-items: center; gap: 7px; padding: 8px; border-top: 1px solid var(--border); }
+.sidebar-footer-spacer { flex: 1; }
+
+.workspace { position: relative; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--canvas); }
+.desktop-tabs { height: 36px; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--border); }
+.desktop-tab { height: 36px; min-width: 130px; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 13px; }
+.desktop-tab:hover { color: var(--text-primary); background: var(--border-subtle); }
+.desktop-tab.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+.tab-close { margin-left: auto; color: var(--text-tertiary); }
+.desktop-tab-spacer { flex: 1; }
+
+.screen { flex: 1; min-height: 0; display: none; position: relative; overflow: hidden; }
+.screen.visible { display: flex; }
+
+.browser-view { flex-direction: column; background: var(--inset); }
+.browser-preview-content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; background: var(--canvas); }
+.browser-page-head { min-height: 32px; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.browser-page-title { min-width: 0; flex: 1; overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.browser-session-note { color: var(--text-tertiary); font-size: 10px; white-space: nowrap; }
+.browser-session-picker { position: relative; }
+.browser-session-trigger { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); background: var(--surface); font-size: 10.5px; font-weight: 650; }
+.browser-session-trigger:hover { border-color: var(--border-strong); background: var(--elevated); }
+.browser-session-trigger .icon { color: var(--accent); }
+.browser-session-menu { position: absolute; z-index: 20; top: 36px; right: 0; width: 300px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--elevated); box-shadow: var(--shadow-md); }
+.browser-session-menu.closed { display: none; }
+.browser-session-menu-label { padding: 9px 11px 6px; color: var(--text-tertiary); background: var(--surface); font: 700 8.5px/1 var(--font-brand); letter-spacing: .09em; text-transform: uppercase; }
+.browser-session-option { width: 100%; min-height: 48px; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+.browser-session-option:hover, .browser-session-option.selected { background: var(--accent-muted); }
+.browser-session-option .profile-list-avatar { width: 30px; height: 30px; border-radius: var(--radius-md); }
+.browser-session-option.selected::after { content: "✓"; margin-left: auto; color: var(--accent); font-size: 13px; font-weight: 750; }
+.browser-session-menu-note { padding: 9px 11px; color: var(--text-tertiary); background: var(--surface); font-size: 9.5px; line-height: 1.4; }
+.browser-url-bar { min-height: 43px; display: flex; align-items: center; gap: 8px; padding: 7px 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.browser-nav-button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--text-secondary); }
+.browser-nav-button:hover { color: var(--text-primary); background: var(--border-subtle); }
+.browser-url-lock { color: var(--text-secondary); }
+.browser-url-value { min-width: 0; flex: 1; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.browser-url-value.editing { height: 26px; display: flex; align-items: center; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text-primary); background: var(--canvas); }
+.browser-frame { min-height: 0; flex: 1; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: #000; }
+.browser-frame .web-page { height: 100%; }
+.fresh-browser-page { height: 100%; display: none; place-items: center; color: var(--text-secondary); background: var(--canvas); text-align: center; }
+.browser-frame.fresh .web-page { display: none; }
+.browser-frame.fresh .fresh-browser-page { display: grid; }
+.fresh-browser-page .profile-list-avatar { width: 44px; height: 44px; margin: 0 auto 12px; }
+.fresh-browser-page h2 { margin: 0; color: var(--text-primary); font-size: 15px; }
+.fresh-browser-page p { margin: 6px 0 0; color: var(--text-tertiary); font-size: 10.5px; }
+.browser-tabbar { height: 38px; display: flex; align-items: end; gap: 3px; padding: 5px 8px 0; border-bottom: 1px solid var(--border); background: var(--canvas); }
+.web-tab { width: 220px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--elevated); color: var(--text-secondary); font-size: 11.5px; }
+.site-favicon { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: white; background: #2563eb; font-size: 9px; font-weight: 800; }
+.web-tab .tab-close { margin-left: auto; }
+.web-new { width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-tertiary); }
+
+.browser-toolbar { min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--canvas); }
+.toolbar-icon { width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-tertiary); border-radius: var(--radius-md); }
+.toolbar-icon:hover { color: var(--text-primary); background: var(--surface); }
+.address-bar { min-width: 180px; flex: 1; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--text-secondary); font: 11.5px/1 var(--font-code); }
+.address-bar .icon { color: var(--success); }
+.caret { width: 0; height: 0; margin-left: 2px; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; opacity: .6; }
+
+.button { height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--text-primary); background: var(--elevated); font-size: 11.5px; font-weight: 620; white-space: nowrap; }
+.button:hover { border-color: var(--text-tertiary); background: var(--surface); }
+.button.primary { color: white; border-color: var(--accent); background: var(--accent); }
+.button.primary:hover { border-color: var(--accent-hover); background: var(--accent-hover); }
+.button.ghost { color: var(--text-secondary); border-color: transparent; background: transparent; }
+.button.ghost:hover { color: var(--text-primary); background: var(--surface); }
+.button.danger { color: var(--danger); }
+.button.compact { height: 28px; padding: 0 9px; font-size: 10.5px; }
+
+.web-page { min-height: 0; flex: 1; display: grid; grid-template-columns: 190px minmax(0, 1fr); overflow: hidden; background: #f7f9fc; color: #1f2937; }
+[data-theme="dark"] .web-page { background: #11151e; color: #e5e7eb; }
+.mail-sidebar { padding: 16px 12px; border-right: 1px solid rgba(148, 163, 184, .18); background: rgba(255,255,255,.55); }
+[data-theme="dark"] .mail-sidebar { background: #151a24; }
+.mail-brand { display: flex; align-items: center; gap: 9px; margin: 2px 5px 19px; font-size: 14px; font-weight: 700; }
+.mail-mark { width: 26px; height: 21px; position: relative; border: 2px solid #3b82f6; border-radius: 4px; }
+.mail-mark::after { content: ""; position: absolute; left: 3px; top: 1px; width: 14px; height: 9px; border-left: 2px solid #ef4444; border-bottom: 2px solid #ef4444; transform: rotate(-45deg); }
+.compose { width: 128px; height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 13px; border-radius: 10px; color: #1f2937; background: #dceafe; font-size: 11.5px; font-weight: 650; box-shadow: 0 3px 12px rgba(37,99,235,.12); }
+.mail-nav { margin-top: 14px; }
+.mail-nav-item { width: 100%; height: 31px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 0 14px 14px 0; color: #64748b; font-size: 11px; }
+.mail-nav-item.active { color: #1d4ed8; background: #dbeafe; font-weight: 650; }
+[data-theme="dark"] .mail-nav-item { color: #94a3b8; }
+[data-theme="dark"] .mail-nav-item.active { color: #bfdbfe; background: rgba(37,99,235,.24); }
+.mail-count { margin-left: auto; font: 700 9px/1 var(--font-code); }
+
+.mail-main { min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.mail-topbar { height: 58px; display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-bottom: 1px solid rgba(148, 163, 184, .16); }
+.mail-search { width: min(600px, 64%); height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 13px; border-radius: 9px; color: #64748b; background: rgba(226,232,240,.72); font-size: 11.5px; }
+[data-theme="dark"] .mail-search { color: #94a3b8; background: #202634; }
+.mail-spacer { flex: 1; }
+.mail-user { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 50%; color: white; background: #4f46e5; font-size: 10px; font-weight: 700; }
+.mail-toolbar { height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 13px; color: #64748b; font-size: 10.5px; }
+.mail-toolbar .icon-button { color: inherit; }
+.mail-range { margin-left: auto; }
+.message-list { padding: 0 12px 20px; overflow: hidden; }
+.message-row { height: 46px; display: grid; grid-template-columns: 25px 130px minmax(160px, 1fr) 74px; align-items: center; gap: 7px; padding: 0 9px; border-top: 1px solid rgba(148, 163, 184, .15); color: #64748b; background: rgba(255,255,255,.42); font-size: 10.5px; }
+.message-row:first-child { border-radius: 8px 8px 0 0; }
+.message-row:last-child { border-radius: 0 0 8px 8px; border-bottom: 1px solid rgba(148, 163, 184, .15); }
+[data-theme="dark"] .message-row { color: #94a3b8; background: rgba(31,37,51,.72); }
+.message-row.unread { color: #111827; font-weight: 650; background: white; }
+[data-theme="dark"] .message-row.unread { color: #e5e7eb; background: #242b39; }
+.message-check { width: 13px; height: 13px; border: 1px solid #94a3b8; border-radius: 3px; }
+.message-subject { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.message-time { justify-self: end; font: 600 9.5px/1 var(--font-code); }
+
+.capture-overlay { position: absolute; z-index: 50; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: var(--scrim); }
+.capture-overlay.open { display: flex; }
+.modal { width: min(590px, 78vw); max-height: calc(100% - 26px); overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--elevated); box-shadow: var(--shadow-lg); }
+.modal-header { display: flex; align-items: flex-start; gap: 14px; padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+.modal-title-wrap { min-width: 0; flex: 1; }
+.modal-title-wrap h2 { margin: 0; font-size: 16px; line-height: 1.3; }
+.modal-title-wrap p { margin: 5px 0 0; color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
+.modal-body { padding: 18px 20px; }
+.field { margin-bottom: 17px; }
+.field-label { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+.field-help { margin: 6px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.4; }
+.input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); outline: 0; color: var(--text-primary); background: var(--canvas); font-size: 12px; }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.site-review { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.site-row { min-height: 56px; display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.site-row:last-child { border-bottom: 0; }
+.site-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--text-primary); background: var(--surface); font: 700 10px/1 var(--font-code); }
+.site-copy { min-width: 0; flex: 1; }
+.site-domain { display: block; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+.site-account { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 10px; }
+.detected { display: flex; align-items: center; gap: 5px; color: var(--text-tertiary); font-size: 10px; }
+.notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; padding: 11px; border-radius: var(--radius-lg); color: var(--text-secondary); background: var(--accent-muted); font-size: 10.5px; line-height: 1.5; }
+.notice .icon { margin-top: 1px; color: var(--accent); }
+.notice strong { color: var(--text-primary); }
+.modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 13px 20px; border-top: 1px solid var(--border); background: var(--canvas); border-radius: 0 0 var(--radius-xl) var(--radius-xl); }
+.saving-note { margin-right: auto; display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 10px; }
+
+.profiles-view { flex-direction: column; background: var(--canvas); }
+.profiles-header { min-height: 49px; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--canvas); }
+.profiles-heading { min-width: 0; }
+.profiles-heading h2 { margin: 0; font-size: 15px; line-height: 1.3; }
+.profiles-heading p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 10.5px; }
+.profiles-header-actions { margin-left: auto; display: flex; gap: 7px; }
+.library-view { height: 49px; display: inline-flex; align-items: center; gap: 8px; padding: 0; border-bottom: 2px solid var(--accent); color: var(--text-primary); font-size: 13px; font-weight: 600; }
+.library-count { padding: 2px 6px; border-radius: var(--radius-full); color: white; background: var(--accent); font: 650 10px/1 var(--font-brand); }
+.profile-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(280px, 40%) minmax(0, 1fr); }
+.profile-list-panel { min-height: 0; overflow: auto; border-right: 1px solid var(--border); background: var(--canvas); }
+.profile-list-head { min-height: 39px; display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-primary); opacity: .7; font: 650 10px/1 var(--font-brand); letter-spacing: .06em; text-transform: uppercase; }
+.profile-list-head .button { height: 24px; color: var(--accent); border-color: transparent; background: var(--accent-muted); font-size: 9px; }
+.search { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-tertiary); background: var(--canvas); font-size: 10.5px; }
+.profile-list-item { width: 100%; min-height: 66px; display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-bottom: 1px solid var(--border); border-left: 2px solid transparent; text-align: left; }
+.profile-list-item:hover { background: var(--canvas); }
+.profile-list-item.active { border-left-color: var(--accent); background: var(--accent-muted); }
+.profile-list-avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--accent); background: var(--accent-muted); }
+.profile-list-avatar.research { color: #22d3ee; background: rgba(8,145,178,.15); }
+.profile-list-avatar.clean { color: var(--text-secondary); background: var(--canvas); border: 1px dashed var(--border-strong); }
+.profile-list-avatar .icon { width: 18px; height: 18px; }
+.profile-list-copy { min-width: 0; flex: 1; }
+.profile-list-title { display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 11.5px; font-weight: 650; }
+.profile-list-meta { margin-top: 4px; color: var(--text-tertiary); font-size: 10px; }
+.profile-list-arrow { color: var(--text-tertiary); }
+
+.profile-detail { min-width: 0; overflow: auto; padding: 0; }
+.detail-max { width: 100%; }
+.profile-editor-actions { min-height: 49px; display: flex; align-items: center; gap: 8px; padding: 8px 24px; border-bottom: 1px solid var(--border); }
+.profile-editor-body { padding: 20px 24px 36px; }
+.profile-identity-control { display: grid; grid-template-columns: 40px minmax(0,1fr); gap: 9px; align-items: center; }
+.profile-kv { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 10.5px; }
+.profile-kv span:first-child { color: var(--text-tertiary); font: 650 9px/1 var(--font-brand); letter-spacing: .04em; text-transform: uppercase; }
+.profile-kv span:last-child { color: var(--text-primary); font-family: var(--font-code); }
+.profile-title-row { display: flex; align-items: center; gap: 13px; }
+.profile-hero-avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: var(--accent); background: var(--accent-muted); }
+.profile-title-copy { min-width: 0; flex: 1; }
+.profile-title-copy h3 { margin: 0; font-size: 16px; }
+.profile-title-copy p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 10.5px; }
+.hero-actions { display: flex; gap: 7px; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 19px 0 22px; }
+.metric { padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--elevated); }
+.metric-label { color: var(--text-tertiary); font: 650 9px/1.2 var(--font-brand); letter-spacing: .06em; text-transform: uppercase; }
+.metric-value { margin-top: 6px; color: var(--text-primary); font-size: 12px; font-weight: 650; }
+.detail-section { margin-top: 22px; }
+.section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.section-heading h4 { margin: 0; font-size: 11.5px; }
+.section-heading p { margin: 0 0 0 auto; color: var(--text-tertiary); font-size: 9.5px; }
+.data-card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--elevated); }
+.data-row { min-height: 55px; display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.data-row:last-child { border-bottom: 0; }
+.data-row .site-icon { background: var(--surface); }
+.data-copy { min-width: 0; flex: 1; }
+.data-title { display: flex; align-items: center; gap: 7px; color: var(--text-primary); font-size: 11px; font-weight: 630; }
+.data-subtitle { margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; }
+.badge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: var(--radius-sm); color: var(--text-secondary); background: var(--surface); font: 650 9px/1 var(--font-code); }
+.badge.success { color: var(--success); background: var(--success-muted); }
+.badge.info { color: var(--accent); background: var(--accent-muted); }
+.row-action { color: var(--text-tertiary); }
+.privacy-card { display: flex; align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.privacy-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--radius-md); color: var(--accent); background: var(--accent-muted); }
+.privacy-copy { min-width: 0; flex: 1; }
+.privacy-copy strong { display: block; font-size: 10.5px; }
+.privacy-copy span { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.5; }
+
+.toast { position: fixed; z-index: 100; left: 50%; bottom: 20px; display: flex; align-items: center; gap: 9px; min-width: 270px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--text-primary); background: var(--elevated); box-shadow: var(--shadow-md); font-size: 11px; transform: translate(-50%, 18px); opacity: 0; pointer-events: none; transition: 180ms var(--ease); }
+.toast.show { transform: translate(-50%, 0); opacity: 1; }
+.toast .icon { color: var(--success); }
+
+.hint-pulse { animation: ring 2s ease-in-out 2; }
+@keyframes ring { 0%,100% { box-shadow: var(--shadow-sm); } 50% { box-shadow: 0 0 0 4px var(--accent-glow); } }
+
+/* Settings uses the real top-level tab pattern. Browser profile management is
+ * deliberately absent from the primary sidebar. */
+.settings-tabs { height: 40px; display: flex; align-items: end; gap: 0; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--canvas); }
+.settings-tab { height: 40px; padding: 0 13px; border-bottom: 2px solid transparent; color: var(--text-primary); opacity: .42; font: 650 10px/40px var(--font-brand); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.settings-tab.active { opacity: 1; border-bottom-color: var(--accent); }
+
+.identity-field { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 10px; align-items: start; }
+.icon-trigger { width: 40px; height: 36px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--accent); background: var(--accent-muted); }
+.icon-trigger:hover { border-color: var(--accent); }
+.icon-picker-popover { display: none; grid-template-columns: repeat(7, 34px); gap: 3px; margin: 8px 0 0; padding: 8px; width: max-content; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); box-shadow: var(--shadow-md); }
+.icon-picker-popover.open { display: grid; }
+.icon-choice { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-secondary); }
+.icon-choice:hover { color: var(--text-primary); background: var(--accent-muted); }
+.icon-choice.selected { color: var(--accent); border-color: var(--accent); background: var(--accent-muted); }
+.data-summary { display: flex; align-items: center; gap: 8px; padding: 10px 11px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 10.5px; }
+.data-summary strong { color: var(--text-primary); }
+.data-summary .badge { margin-left: auto; }
+
+/* Agent editor mirrors the real AgentsView + ProfileBuilder structure. */
+.agent-view { flex-direction: column; background: var(--canvas); }
+.agent-detail-head { min-height: 41px; display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.agent-actions { min-height: 49px; display: flex; align-items: center; gap: 8px; padding: 8px 24px; border-bottom: 1px solid var(--border); }
+.agent-actions-spacer { flex: 1; }
+.agent-scroll { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 36px; }
+.agent-form { width: 100%; }
+.form-section { margin: 0; padding: 12px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.form-section:first-child { padding-top: 0; border-top: 0; }
+.form-section-title { margin: 0 0 8px; color: var(--text-primary); opacity: .4; font: 650 10px/1 var(--font-brand); letter-spacing: .06em; text-transform: uppercase; }
+.real-input { width: 100%; height: 32px; margin-bottom: 8px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); background: var(--surface); font-size: 11px; }
+.real-input.name { height: 38px; font-size: 14px; font-weight: 650; }
+.real-textarea { width: 100%; min-height: 104px; padding: 9px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--surface); font: 10.5px/1.5 var(--font-code); }
+.model-trigger { height: 32px; display: flex; align-items: center; gap: 5px; padding: 0 28px 0 10px; position: relative; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); background: var(--surface); font-size: 11px; }
+.model-provider { color: var(--text-tertiary); }
+.model-name { font-family: var(--font-code); font-size: 10.5px; }
+.model-trigger .caret { position: absolute; right: 10px; }
+.enabled-row, .browser-access-row, .autonomy-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 0; }
+.check-box { width: 13px; height: 13px; margin-top: 2px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--accent); background: var(--surface); }
+.check-box .icon { width: 10px; height: 10px; stroke-width: 2.4; }
+.setting-copy { min-width: 0; flex: 1; }
+.setting-copy strong { display: block; font-size: 11px; }
+.setting-copy span { display: block; margin-top: 3px; color: var(--text-primary); opacity: .58; font-size: 9.5px; line-height: 1.4; }
+.skill-help-real { margin: 0 0 9px; color: var(--text-primary); opacity: .55; font-size: 9.5px; }
+.skill-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.skill-chip { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 5px 0 10px; border-radius: var(--radius-full); color: var(--accent); background: var(--accent-muted); font-size: 10px; font-weight: 650; }
+.skill-chip-x { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; font-size: 9px; }
+.add-skill { height: 28px; padding: 0 11px; border: 1px dashed var(--border-strong); border-radius: var(--radius-full); color: var(--text-secondary); font-size: 10px; font-weight: 650; }
+.mock-switch { width: 32px; height: 18px; flex: 0 0 auto; position: relative; margin-top: 1px; border-radius: var(--radius-full); background: var(--border-strong); transition: background 140ms var(--ease); }
+.mock-switch::after { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 50%; background: white; box-shadow: var(--shadow-sm); transition: transform 140ms var(--ease); }
+.mock-switch.on { background: var(--accent); }
+.mock-switch.on::after { transform: translateX(14px); }
+.browser-config-fields { margin: 9px 0 2px 41px; transition: opacity 140ms var(--ease); }
+.browser-config-fields.disabled { opacity: .42; pointer-events: none; }
+.browser-config-label { display: block; margin-bottom: 6px; color: var(--text-secondary); font-size: 10px; font-weight: 620; }
+.browser-config-help { margin: 7px 0 0; color: var(--text-tertiary); font-size: 9.5px; line-height: 1.45; }
+.inference-summary { height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--surface); font-size: 10px; }
+.inference-summary .caret { margin-left: auto; }
+.browser-profile-picker { position: relative; }
+.browser-select-button { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 9px; padding: 4px 28px 4px 7px; position: relative; border: 1px solid var(--accent); border-radius: var(--radius-md) var(--radius-md) 0 0; background: var(--surface); text-align: left; }
+.browser-profile-picker.closed .browser-select-button { border-color: var(--border); border-radius: var(--radius-md); }
+.browser-select-button > .caret { position: absolute; right: 10px; }
+.browser-select-copy { min-width: 0; flex: 1; }
+.browser-select-name { display: block; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+.browser-select-meta { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; }
+.browser-options { margin-top: -1px; overflow: hidden; border: 1px solid var(--accent); border-radius: 0 0 var(--radius-md) var(--radius-md); background: var(--elevated); box-shadow: var(--shadow-md); }
+.browser-options.closed { display: none; }
+.browser-options-label { padding: 8px 10px 5px; color: var(--text-tertiary); background: var(--surface); font: 700 8.5px/1 var(--font-brand); letter-spacing: .09em; text-transform: uppercase; }
+.browser-option { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-bottom: 1px solid var(--border); text-align: left; }
+.browser-option:last-child { border-bottom: 0; }
+.browser-option:hover, .browser-option.selected { background: var(--accent-muted); }
+.browser-option .profile-list-avatar, .browser-select-button .profile-list-avatar { width: 28px; height: 28px; border-radius: var(--radius-md); }
+.browser-option.selected::after { content: "✓"; margin-left: auto; color: var(--accent); font-size: 13px; font-weight: 750; }
+.access-warning { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 10px; border-radius: var(--radius-md); color: var(--text-secondary); background: var(--warning-muted); font-size: 10px; line-height: 1.45; }
+.access-warning .icon { color: var(--warning); }
+.access-warning.hidden { display: none; }
+.section-help { margin: 8px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.45; }
+
+.takeover-view { flex-direction: column; background: var(--inset); }
+.takeover-context { min-height: 58px; display: flex; align-items: center; gap: 11px; padding: 9px 13px; border-bottom: 1px solid var(--border); background: var(--elevated); }
+.takeover-context-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: var(--radius-lg); color: var(--accent); background: var(--accent-muted); }
+.takeover-context-copy { min-width: 0; flex: 1; }
+.takeover-context-copy strong { display: block; font-size: 11.5px; }
+.takeover-context-copy span { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; }
+.takeover-actions { display: flex; align-items: center; gap: 7px; }
+.agent-web-page { min-height: 0; height: 100%; display: grid; place-items: center; padding: 30px; color: #243047; background: #eef2f7; }
+[data-theme="dark"] .agent-web-page { color: #dce5f3; background: #121722; }
+.signin-card { width: min(500px, 72%); padding: 32px; border: 1px solid rgba(100,116,139,.2); border-radius: 16px; background: white; box-shadow: 0 20px 55px rgba(15,23,42,.11); text-align: center; }
+[data-theme="dark"] .signin-card { background: #1b2230; box-shadow: 0 20px 55px rgba(0,0,0,.35); }
+.signin-mark { width: 48px; height: 48px; margin: 0 auto 15px; display: grid; place-items: center; border-radius: 13px; color: white; background: #6554c0; font-weight: 750; }
+.signin-card h2 { margin: 0; font-size: 18px; }
+.signin-card p { margin: 7px 0 0; color: #64748b; font-size: 11px; line-height: 1.5; }
+[data-theme="dark"] .signin-card p { color: #94a3b8; }
+.signin-account { margin-top: 18px; padding: 11px; border-radius: 9px; color: #334155; background: #f1f5f9; font-size: 11px; font-weight: 650; }
+[data-theme="dark"] .signin-account { color: #cbd5e1; background: #252d3c; }
+.change-review { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.change-row { min-height: 54px; display: grid; grid-template-columns: 78px minmax(0,1fr); align-items: center; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.change-row:last-child { border-bottom: 0; }
+.change-kind { color: var(--text-tertiary); font: 700 8.5px/1 var(--font-brand); letter-spacing: .07em; text-transform: uppercase; }
+.change-domain strong { display: block; font-size: 10.5px; }
+.change-domain span { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 9.5px; }
+
+@media (max-width: 1250px) {
+    .prototype-title { width: 205px; }
+    .flow-button { padding: 0 9px; }
+    .summary-tradeoff { display: none; }
+    .app-shell { grid-template-columns: 264px minmax(0, 1fr); }
+    .message-row { grid-template-columns: 22px 105px minmax(130px, 1fr) 58px; }
+}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></symbol>
+    <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 17h6"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7 8 4v10l-8-4V7ZM20 7l-8 4v10l8-4V7Z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 18.5 3.5 21v-5A8 8 0 1 1 5 18.5Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6-.7-2H8.4l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4 1.8-.7Z"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M5 7h3l1.5-2h5L16 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1L19 8.5 15.5 5 5 15.5 4 20ZM13.5 7l3.5 3.5"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.8 3 8.2 7 10 4-1.8 7-5.2 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-launch" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M14 15.5a5 5 0 0 1 7 4.5"/></symbol>
+    <symbol id="i-flow" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 6h8M7.5 7.5 11 16M16.5 7.5 13 16"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5v7M14.5 8.5v7"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 5h16l2 9v5H2v-5l2-9Z"/><path d="M2 14h6l1.5 2h5L16 14h6"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6-5.4-2.9-5.4 2.9 1-6-4.4-4.3 6.1-.9L12 3Z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22V5.5Z"/></symbol>
+    <symbol id="i-basket" viewBox="0 0 24 24"><path d="M4 9h16l-1.5 11h-13L4 9ZM8 9l4-6 4 6M8 13v3M12 13v3M16 13v3"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h4a5 5 0 0 0 5-5c0-3-4-5-9-5Z"/><path d="M7.5 8h.01M11 6h.01M15 7h.01"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 3l-4 18"/></symbol>
+</svg>
+
+<header class="prototype-header">
+    <div class="prototype-title">
+        <p class="eyebrow">UX exploration · browser identity</p>
+        <h1>Persistent browser profiles</h1>
+    </div>
+    <nav class="flow-switcher" aria-label="Mockup states">
+        <button class="flow-button active" data-state-button="browse"><span class="flow-index">1</span>Browser</button>
+        <button class="flow-button" data-state-button="capture"><span class="flow-index">2</span>Save Browser state</button>
+        <button class="flow-button" data-state-button="assign"><span class="flow-index">3</span>Agent setup</button>
+        <button class="flow-button" data-state-button="takeover"><span class="flow-index">4</span>Takeover</button>
+        <button class="flow-button" data-state-button="profiles"><span class="flow-index">5</span>Manage profiles</button>
+    </nav>
+    <div class="prototype-actions">
+        <button class="icon-button bordered" id="themeToggle" aria-label="Toggle theme" title="Toggle theme"><svg class="icon"><use href="#i-sun"/></svg></button>
+        <button class="icon-button bordered" id="hintButton" aria-label="Show interaction hint" title="Show interaction hint"><svg class="icon"><use href="#i-info"/></svg></button>
+    </div>
+</header>
+
+<main class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <span class="wordmark">OMNIDECK</span>
+            <button class="collapse-button" aria-label="Collapse sidebar"><svg class="icon"><use href="#i-panel"/></svg></button>
+        </div>
+        <div class="side-scroll">
+            <nav class="nav" aria-label="Primary navigation">
+                <button class="nav-item" id="agentsNav" data-action="assign"><svg class="icon"><use href="#i-robot"/></svg><span>Agents</span></button>
+                <button class="nav-item"><svg class="icon"><use href="#i-target"/></svg><span>Routines</span></button>
+                <button class="nav-item"><svg class="icon"><use href="#i-box"/></svg><span>Artifacts</span></button>
+                <button class="nav-item"><svg class="icon"><use href="#i-grid"/></svg><span>Apps</span></button>
+                <button class="nav-item active" id="browserNav" data-action="browse"><svg class="icon"><use href="#i-globe"/></svg><span>Browser</span></button>
+            </nav>
+            <section class="conversation-panel">
+                <div class="conversation-head"><span>Conversations</span><button class="icon-button" aria-label="New folder"><svg class="icon sm"><use href="#i-plus"/></svg></button></div>
+                <div class="new-chat-wrap"><button class="new-chat"><span class="new-chat-icon"><svg class="icon sm"><use href="#i-plus"/></svg></span><span>New chat</span></button></div>
+                <div class="conversation-search"><svg class="icon sm"><use href="#i-search"/></svg><span>Search conversations…</span></div>
+                <div class="conversation-list">
+                    <div class="side-section">Today</div>
+                    <button class="conversation">Vendor renewal research</button>
+                    <button class="conversation">Plan Austin weekend</button>
+                    <div class="side-section">Yesterday</div>
+                    <button class="conversation">Weekly market brief</button>
+                </div>
+            </section>
+        </div>
+        <div class="sidebar-footer">
+            <button class="icon-button" aria-label="Toggle theme"><svg class="icon"><use href="#i-sun"/></svg></button>
+            <div class="sidebar-footer-spacer"></div>
+            <button class="icon-button" aria-label="Open desktop"><svg class="icon"><use href="#i-grid"/></svg></button>
+            <button class="icon-button" id="settingsNav" data-action="profiles" aria-label="Settings"><svg class="icon"><use href="#i-settings"/></svg></button>
+        </div>
+    </aside>
+
+    <section class="workspace">
+        <div class="desktop-tabs">
+            <button class="desktop-tab active"><svg class="icon sm"><use id="workspaceTabIcon" href="#i-globe"/></svg><span id="workspaceTabLabel">Browser</span><span class="tab-close">×</span></button>
+            <button class="desktop-tab"><svg class="icon sm"><use href="#i-chat"/></svg><span>Vendor renewal</span><span class="tab-close">×</span></button>
+            <div class="desktop-tab-spacer"></div>
+        </div>
+
+        <section class="screen browser-view visible" id="browserScreen">
+            <div class="browser-preview-content">
+                <div class="browser-page-head">
+                    <div class="browser-page-title" id="browserPageTitle">Inbox · alex@acme.test · Acme Mail</div>
+                    <span class="browser-session-note">Changes are saved only when you choose Save Browser state</span>
+                    <div class="browser-session-picker">
+                        <button class="browser-session-trigger" id="browserSessionTrigger" aria-expanded="false"><svg class="icon sm"><use id="browserSessionIcon" href="#i-box"/></svg><span id="browserSessionName">Default</span><span class="caret"></span></button>
+                        <div class="browser-session-menu closed" id="browserSessionMenu">
+                            <div class="browser-session-menu-label">Load a profile</div>
+                            <button class="browser-session-option selected" data-session-source="Default" data-source-icon="i-box">
+                                <span class="profile-list-avatar"><svg class="icon"><use href="#i-box"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Default</span><span class="browser-select-meta">8 sites · Last saved Aug 24</span></span>
+                            </button>
+                            <button class="browser-session-option" data-session-source="LinkedIn" data-source-icon="i-user">
+                                <span class="profile-list-avatar research"><svg class="icon"><use href="#i-user"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">LinkedIn</span><span class="browser-select-meta">2 sites · Last saved Aug 23</span></span>
+                            </button>
+                            <button class="browser-session-option" data-session-source="Gmail" data-source-icon="i-inbox">
+                                <span class="profile-list-avatar"><svg class="icon"><use href="#i-inbox"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Gmail</span><span class="browser-select-meta">3 sites · Last saved Aug 22</span></span>
+                            </button>
+                            <div class="browser-session-menu-label">Browser session</div>
+                            <button class="browser-session-option" data-session-source="fresh" data-source-icon="i-globe">
+                                <span class="profile-list-avatar clean"><svg class="icon"><use href="#i-globe"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Empty</span><span class="browser-select-meta">Open without saved cookies or site data</span></span>
+                            </button>
+                            <button class="browser-session-option" data-action="profiles">
+                                <span class="profile-list-avatar clean"><svg class="icon"><use href="#i-settings"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Manage profiles</span></span>
+                            </button>
+                            <div class="browser-session-menu-note">Loading a profile or starting fresh replaces the current Browser session. Save it first if you want to keep it.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="browser-url-bar">
+                    <button class="browser-nav-button" aria-label="Back"><svg class="icon sm"><use href="#i-arrow-left"/></svg></button>
+                    <button class="browser-nav-button" aria-label="Forward"><svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+                    <button class="browser-nav-button" aria-label="Reload"><svg class="icon sm"><use href="#i-refresh"/></svg></button>
+                    <svg class="icon sm browser-url-lock"><use href="#i-lock"/></svg>
+                    <span class="browser-url-value" id="browserUrlValue">https://mail.acme.test/inbox</span>
+                    <button class="browser-nav-button hint-pulse" id="saveStateButton" data-action="capture" aria-label="Save Browser state" title="Save Browser state"><svg class="icon sm"><use href="#i-camera"/></svg></button>
+                    <button class="browser-nav-button" aria-label="New tab"><svg class="icon sm"><use href="#i-plus"/></svg></button>
+                </div>
+                <div class="browser-frame">
+                    <div class="web-page">
+                <aside class="mail-sidebar">
+                    <div class="mail-brand"><span class="mail-mark"></span><span>Acme Mail</span></div>
+                    <button class="compose"><svg class="icon"><use href="#i-edit"/></svg>Compose</button>
+                    <nav class="mail-nav">
+                        <button class="mail-nav-item active"><svg class="icon sm"><use href="#i-inbox"/></svg>Inbox<span class="mail-count">4</span></button>
+                        <button class="mail-nav-item"><svg class="icon sm"><use href="#i-star"/></svg>Starred</button>
+                        <button class="mail-nav-item"><svg class="icon sm"><use href="#i-clock"/></svg>Snoozed</button>
+                        <button class="mail-nav-item"><svg class="icon sm"><use href="#i-arrow-right"/></svg>Sent</button>
+                    </nav>
+                </aside>
+                    <section class="mail-main">
+                    <div class="mail-topbar">
+                        <div class="mail-search"><svg class="icon"><use href="#i-search"/></svg>Search mail</div>
+                        <div class="mail-spacer"></div>
+                        <button class="icon-button"><svg class="icon"><use href="#i-settings"/></svg></button>
+                        <div class="mail-user">AM</div>
+                    </div>
+                    <div class="mail-toolbar">
+                        <span class="message-check"></span>
+                        <button class="icon-button"><svg class="icon sm"><use href="#i-refresh"/></svg></button>
+                        <button class="icon-button"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                        <span class="mail-range">1–8 of 1,248</span>
+                        <button class="icon-button"><svg class="icon sm"><use href="#i-arrow-left"/></svg></button>
+                        <button class="icon-button"><svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+                    </div>
+                    <div class="message-list">
+                        <div class="message-row unread"><span class="message-check"></span><span>Jordan Lee</span><span class="message-subject">Renewal proposal · revised pricing and next steps</span><span class="message-time">9:41 AM</span></div>
+                        <div class="message-row unread"><span class="message-check"></span><span>Procurement</span><span class="message-subject">Vendor documents ready for review</span><span class="message-time">8:15 AM</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>Acme Calendar</span><span class="message-subject">Agenda: Monday planning sync</span><span class="message-time">Yesterday</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>Mira Chen</span><span class="message-subject">Notes from the customer research session</span><span class="message-time">Aug 22</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>Travel Desk</span><span class="message-subject">Your Austin itinerary is confirmed</span><span class="message-time">Aug 22</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>GitHub</span><span class="message-subject">Security alert resolved for omnideck-labs</span><span class="message-time">Aug 21</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>Design Weekly</span><span class="message-subject">The case for visible identity in agentic tools</span><span class="message-time">Aug 21</span></div>
+                        <div class="message-row"><span class="message-check"></span><span>Sam Rivera</span><span class="message-subject">Re: trip options for the long weekend</span><span class="message-time">Aug 20</span></div>
+                    </div>
+                    </section>
+                    </div>
+                    <div class="fresh-browser-page">
+                        <div><span class="profile-list-avatar clean"><svg class="icon"><use id="browserEmptyIcon" href="#i-globe"/></svg></span><h2 id="browserEmptyTitle">Fresh Browser session</h2><p id="browserEmptyCopy">No saved site data has been loaded.</p></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="capture-overlay" id="captureOverlay" role="dialog" aria-modal="true" aria-labelledby="captureTitle">
+                <div class="modal">
+                    <div class="modal-header">
+                        <div class="modal-title-wrap">
+                            <h2 id="captureTitle">Save Browser state</h2>
+                            <p id="captureDescription">Persist this Browser session to a profile for future browser and agent sessions.</p>
+                        </div>
+                        <button class="icon-button" data-action="browse" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="field">
+                            <label class="field-label" for="profileDestination">Save to</label>
+                            <select class="input" id="profileDestination">
+                                <option value="Default">Update Default</option>
+                                <option value="new">Create a new profile</option>
+                                <option value="LinkedIn">Update LinkedIn</option>
+                                <option value="Gmail">Update Gmail</option>
+                            </select>
+                            <p class="field-help" id="destinationHelp">This replaces the browser state currently saved in Default.</p>
+                        </div>
+                        <div class="field" id="profileIdentityField" style="display:none">
+                            <label class="field-label" for="profileName">Profile identity</label>
+                            <div class="identity-field">
+                                <div>
+                                    <button class="icon-trigger" id="iconTrigger" aria-label="Choose profile icon" aria-expanded="false"><svg class="icon lg"><use id="captureIcon" href="#i-box"/></svg></button>
+                                    <div class="icon-picker-popover" id="iconPicker" aria-label="Choose an icon">
+                                        <button class="icon-choice selected" data-icon="i-box" aria-label="Briefcase"><svg class="icon"><use href="#i-box"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-book" aria-label="Book"><svg class="icon"><use href="#i-book"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-basket" aria-label="Basket"><svg class="icon"><use href="#i-basket"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-palette" aria-label="Palette"><svg class="icon"><use href="#i-palette"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-code" aria-label="Code"><svg class="icon"><use href="#i-code"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-camera" aria-label="Camera"><svg class="icon"><use href="#i-camera"/></svg></button>
+                                        <button class="icon-choice" data-icon="i-star" aria-label="Star"><svg class="icon"><use href="#i-star"/></svg></button>
+                                    </div>
+                                </div>
+                                <div><input class="input" id="profileName" value="New profile" /><p class="field-help">Choose an icon and name that make this profile recognizable when assigning an agent.</p></div>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Data that will be saved <span class="badge">8 sites</span></div>
+                            <div class="site-review">
+                                <div class="data-summary"><svg class="icon sm"><use href="#i-info"/></svg><span><strong>18 cookies</strong>, <strong>2 local-storage origins</strong>, and <strong>1 IndexedDB origin</strong>.</span></div>
+                                <div class="site-row"><span class="site-icon">A</span><span class="site-copy"><span class="site-domain">acme.test</span><span class="site-account">5 cookies · local storage · IndexedDB</span></span></div>
+                                <div class="site-row"><span class="site-icon">GH</span><span class="site-copy"><span class="site-domain">github.com</span><span class="site-account">7 cookies · local storage</span></span></div>
+                                <div class="site-row"><span class="site-icon">＋</span><span class="site-copy"><span class="site-domain">6 more sites</span></span></div>
+                            </div>
+                        </div>
+                        <div class="notice">
+                            <svg class="icon"><use href="#i-shield"/></svg>
+                            <div><strong>Agents using this profile can access sites where you’re signed in.</strong> Only assign it to agents you trust.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="button" data-action="browse">Cancel</button>
+                        <button class="button primary" id="saveProfile"><svg class="icon sm"><use href="#i-check"/></svg><span id="saveProfileLabel">Save profile</span></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="screen profiles-view" id="profilesScreen">
+            <nav class="settings-tabs" aria-label="Settings sections">
+                <button class="settings-tab">Skills</button><button class="settings-tab">Providers</button><button class="settings-tab">Integrations</button><button class="settings-tab">Memory</button><button class="settings-tab">Custom Tools</button><button class="settings-tab active">Browser Profiles</button><button class="settings-tab">System</button>
+            </nav>
+            <div class="profiles-header">
+                <button class="library-view">Profiles <span class="library-count">3</span></button>
+                <div class="profiles-header-actions">
+                    <div class="search" style="width:260px;margin:0"><svg class="icon sm"><use href="#i-search"/></svg>Search profiles…</div>
+                </div>
+            </div>
+            <div class="profile-layout">
+                <aside class="profile-list-panel">
+                    <div class="profile-list-head"><span>Profiles</span><button class="button" id="newProfileFromSettings" data-action="capture">+ New from Browser</button></div>
+                    <button class="profile-list-item active">
+                        <span class="profile-list-avatar"><svg class="icon"><use href="#i-box"/></svg></span>
+                        <span class="profile-list-copy"><span class="profile-list-title">Default</span><span class="profile-list-meta">8 sites · 2 agents</span></span>
+                        <svg class="icon sm profile-list-arrow"><use href="#i-arrow-right"/></svg>
+                    </button>
+                    <button class="profile-list-item">
+                        <span class="profile-list-avatar research"><svg class="icon"><use href="#i-user"/></svg></span>
+                        <span class="profile-list-copy"><span class="profile-list-title">LinkedIn</span><span class="profile-list-meta">2 sites · 1 agent</span></span>
+                        <svg class="icon sm profile-list-arrow"><use href="#i-arrow-right"/></svg>
+                    </button>
+                    <button class="profile-list-item">
+                        <span class="profile-list-avatar"><svg class="icon"><use href="#i-inbox"/></svg></span>
+                        <span class="profile-list-copy"><span class="profile-list-title">Gmail</span><span class="profile-list-meta">3 sites · 1 agent</span></span>
+                        <svg class="icon sm profile-list-arrow"><use href="#i-arrow-right"/></svg>
+                    </button>
+                </aside>
+                <article class="profile-detail">
+                    <div class="detail-max">
+                        <div class="profile-editor-actions">
+                            <button class="button danger">Delete</button>
+                            <div class="agent-actions-spacer"></div>
+                            <button class="button primary">Save</button>
+                        </div>
+                        <div class="profile-editor-body">
+                        <section class="form-section">
+                            <h3 class="form-section-title">Identity</h3>
+                            <div class="profile-identity-control"><button class="icon-trigger" aria-label="Choose profile icon"><svg class="icon lg"><use href="#i-box"/></svg></button><div><div class="real-input name" style="margin:0">Default</div><p class="field-help">Saved from Browser on Aug 24, 2026 at 6:42 PM</p></div></div>
+                        </section>
+                        <section class="form-section">
+                            <div class="section-heading"><h4>Sites in this profile</h4></div>
+                            <div class="data-card">
+                                <div class="data-row"><span class="site-icon">A</span><span class="data-copy"><span class="data-title">acme.test <span class="badge">5 cookies</span></span><span class="data-subtitle">Local storage and IndexedDB at mail.acme.test</span></span><button class="row-action"><svg class="icon"><use href="#i-more"/></svg></button></div>
+                                <div class="data-row"><span class="site-icon">GH</span><span class="data-copy"><span class="data-title">github.com <span class="badge">7 cookies</span></span><span class="data-subtitle">Local storage at github.com</span></span><button class="row-action"><svg class="icon"><use href="#i-more"/></svg></button></div>
+                                <div class="data-row"><span class="site-icon">＋</span><span class="data-copy"><span class="data-title">6 more sites</span></span><button class="button compact">Show all</button></div>
+                            </div>
+                        </section>
+
+                        <section class="form-section">
+                            <div class="section-heading"><h4>Assigned agents</h4><p>Configured from each agent’s settings</p></div>
+                            <div class="data-card">
+                                <div class="data-row"><span class="site-icon"><svg class="icon sm"><use href="#i-robot"/></svg></span><span class="data-copy"><span class="data-title">Research agent</span><span class="data-subtitle">New browser sessions begin with a copy of Default</span></span><button class="row-action" data-action="assign"><svg class="icon"><use href="#i-edit"/></svg></button></div>
+                                <div class="data-row"><span class="site-icon"><svg class="icon sm"><use href="#i-robot"/></svg></span><span class="data-copy"><span class="data-title">Email assistant</span><span class="data-subtitle">New browser sessions begin with a copy of Default</span></span><button class="row-action" data-action="assign"><svg class="icon"><use href="#i-edit"/></svg></button></div>
+                            </div>
+                            <button class="button" style="margin-top:9px" data-action="assign"><svg class="icon sm"><use href="#i-robot"/></svg>Open agent settings</button>
+                        </section>
+
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="screen agent-view" id="agentScreen">
+            <div class="agent-detail-head">
+                <button class="button ghost"><svg class="icon sm"><use href="#i-arrow-left"/></svg>Agents</button>
+            </div>
+            <div class="agent-actions">
+                <button class="button danger">Delete</button>
+                <div class="agent-actions-spacer"></div>
+                <button class="button"><svg class="icon sm"><use href="#i-launch"/></svg>Export</button>
+                <button class="button">Duplicate</button>
+                <button class="button primary" id="saveAgent">Save</button>
+            </div>
+            <div class="agent-scroll">
+                <div class="agent-form">
+                    <section class="form-section">
+                        <h3 class="form-section-title">Identity</h3>
+                        <div class="real-input name">Research agent</div>
+                        <div class="real-input">Researches vendors and prepares source-backed briefs.</div>
+                        <div class="enabled-row"><span class="check-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="setting-copy"><strong>Enabled</strong><span>Disabled agents are hidden from the chat panel and can’t be used by other agents.</span></span></div>
+                    </section>
+                    <section class="form-section">
+                        <h3 class="form-section-title">Provider &amp; Model</h3>
+                        <button class="model-trigger"><span class="model-provider">OpenAI</span><span>/</span><span class="model-name">gpt-5.6</span><span class="caret"></span></button>
+                    </section>
+                    <section class="form-section">
+                        <h3 class="form-section-title">System Prompt</h3>
+                        <div class="real-textarea">You are a careful research agent. Collect primary sources, compare claims, and cite the evidence used in your conclusions.</div>
+                    </section>
+                    <section class="form-section">
+                        <h3 class="form-section-title">Skills</h3>
+                        <p class="skill-help-real">Skills this profile loads. Each grants its tool categories to the agent.</p>
+                        <div class="skill-chips">
+                            <span class="skill-chip">Vendor research <button class="skill-chip-x" aria-label="Remove Vendor research">×</button></span>
+                            <span class="skill-chip">Source evaluation <button class="skill-chip-x" aria-label="Remove Source evaluation">×</button></span>
+                            <button class="add-skill"><svg class="icon sm"><use href="#i-plus"/></svg> Add skill</button>
+                        </div>
+                    </section>
+                    <section class="form-section" id="browserConfigSection">
+                        <h3 class="form-section-title">Browser</h3>
+                        <div class="browser-access-row">
+                            <button class="mock-switch on" id="browserAccessToggle" aria-pressed="true" aria-label="Allow browser access"></button>
+                            <span class="setting-copy"><strong>Allow browser access</strong><span>The agent can open websites and interact with them.</span></span>
+                        </div>
+                        <div class="browser-config-fields" id="browserConfigFields">
+                            <label class="browser-config-label">Starting profile</label>
+                            <div class="browser-profile-picker" id="agentProfilePicker">
+                                <button class="browser-select-button" id="agentProfileButton" aria-expanded="true">
+                                    <span class="profile-list-avatar"><svg class="icon"><use id="agentProfileIcon" href="#i-box"/></svg></span>
+                                    <span class="browser-select-copy"><span class="browser-select-name" id="agentProfileName">Default</span><span class="browser-select-meta" id="agentProfileMeta">8 sites · Saved Aug 24 at 6:42 PM</span></span><span class="caret"></span>
+                                </button>
+                                <div class="browser-options" id="agentProfileOptions">
+                                    <div class="browser-options-label">Saved profiles</div>
+                                    <button class="browser-option selected" data-browser-profile="Default" data-browser-icon="i-box" data-browser-meta="8 sites · Saved Aug 24 at 6:42 PM" data-warning="saved">
+                                        <span class="profile-list-avatar"><svg class="icon"><use href="#i-box"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Default</span><span class="browser-select-meta">8 sites · Saved Aug 24</span></span>
+                                    </button>
+                                    <button class="browser-option" data-browser-profile="LinkedIn" data-browser-icon="i-user" data-browser-meta="2 sites · Saved Aug 23 at 9:14 AM" data-warning="saved">
+                                        <span class="profile-list-avatar research"><svg class="icon"><use href="#i-user"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">LinkedIn</span><span class="browser-select-meta">2 sites · Saved Aug 23</span></span>
+                                    </button>
+                                    <button class="browser-option" data-browser-profile="Gmail" data-browser-icon="i-inbox" data-browser-meta="3 sites · Saved Aug 22 at 3:10 PM" data-warning="saved">
+                                        <span class="profile-list-avatar"><svg class="icon"><use href="#i-inbox"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Gmail</span><span class="browser-select-meta">3 sites · Saved Aug 22</span></span>
+                                    </button>
+                                    <div class="browser-options-label">Without a profile</div>
+                                    <button class="browser-option" data-browser-profile="Empty" data-browser-icon="i-globe" data-browser-meta="No saved site data" data-warning="empty">
+                                        <span class="profile-list-avatar clean"><svg class="icon"><use href="#i-globe"/></svg></span><span class="browser-select-copy"><span class="browser-select-name">Empty</span><span class="browser-select-meta">Start every browser session without saved sign-ins</span></span>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="browser-config-help">New browser sessions start with this profile. <button class="row-action" data-action="profiles">Manage profiles</button></p>
+                            <div class="access-warning" id="agentAccessWarning"><svg class="icon"><use href="#i-shield"/></svg><span><strong id="agentWarningTitle">Default may let this agent access sites where you’re signed in.</strong> <span id="agentWarningBody">Only assign profiles to agents you trust.</span></span><button class="button compact" id="agentWarningAction" data-action="profiles">Review profile</button></div>
+                        </div>
+                    </section>
+                    <section class="form-section">
+                        <h3 class="form-section-title">Autonomy</h3>
+                        <div class="autonomy-row"><button class="mock-switch on" aria-pressed="true"></button><span class="setting-copy"><strong>Allow spawning agents</strong><span>The agent can delegate work to sub-agents.</span></span></div>
+                        <div class="autonomy-row"><button class="mock-switch on" aria-pressed="true"></button><span class="setting-copy"><strong>Allow loading skills mid-conversation</strong><span>The agent can pull in additional skills on demand.</span></span></div>
+                    </section>
+                    <section class="form-section">
+                        <h3 class="form-section-title">Inference</h3>
+                        <button class="inference-summary"><span class="badge">Balanced</span><span>Temperature 0.7 · Thinking on · 12 iterations</span><span class="caret"></span></button>
+                    </section>
+                </div>
+            </div>
+        </section>
+
+        <section class="screen takeover-view" id="takeoverScreen">
+            <div class="browser-preview-content">
+                <div class="browser-page-head"><div class="browser-page-title">Notion · Acme workspace</div><span class="browser-session-note">Research agent · Profile: <strong id="takeoverProfileName">Default</strong></span></div>
+                <div class="browser-url-bar">
+                    <button class="browser-nav-button" aria-label="Back"><svg class="icon sm"><use href="#i-arrow-left"/></svg></button>
+                    <button class="browser-nav-button" aria-label="Forward"><svg class="icon sm"><use href="#i-arrow-right"/></svg></button>
+                    <button class="browser-nav-button" aria-label="Reload"><svg class="icon sm"><use href="#i-refresh"/></svg></button>
+                    <svg class="icon sm browser-url-lock"><use href="#i-lock"/></svg>
+                    <span class="browser-url-value editing">https://notion.so/workspace</span>
+                    <button class="browser-nav-button" id="reviewSessionChanges" aria-label="Save browser session" title="Save browser session"><svg class="icon sm"><use href="#i-camera"/></svg></button>
+                    <button class="browser-nav-button" aria-label="New tab"><svg class="icon sm"><use href="#i-plus"/></svg></button>
+                    <button class="browser-nav-button" id="endTakeover" aria-label="Release control"><svg class="icon"><use href="#i-pause"/></svg></button>
+                </div>
+                <div class="browser-frame">
+                    <div class="agent-web-page">
+                        <article class="signin-card">
+                            <div class="signin-mark">N</div>
+                            <h2>Acme workspace</h2>
+                            <p>Projects · Vendor renewal research · Sources</p>
+                            <div class="signin-account">alex@acme.test</div>
+                        </article>
+                    </div>
+                </div>
+            </div>
+
+            <div class="capture-overlay" id="updateOverlay" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+                <div class="modal">
+                    <div class="modal-header">
+                        <div class="modal-title-wrap">
+                            <h2 id="updateTitle">Save this browser session</h2>
+                            <p id="updateDescription">Update Default or create a new browser profile.</p>
+                        </div>
+                        <button class="icon-button" id="closeUpdateModal" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="field" id="sessionDestinationField">
+                            <label class="field-label" for="sessionDestination">Save to</label>
+                            <select class="input" id="sessionDestination">
+                                <option value="Default">Update Default</option>
+                                <option value="new">Create a new profile</option>
+                            </select>
+                            <p class="field-help" id="sessionDestinationHelp">This replaces the browser state currently saved in Default.</p>
+                        </div>
+                        <div class="field" id="sessionProfileIdentityField" style="display:none">
+                            <label class="field-label" for="sessionProfileName">Profile identity</label>
+                            <div class="identity-field">
+                                <div>
+                                    <button class="icon-trigger" id="sessionIconTrigger" aria-label="Choose profile icon" aria-expanded="false"><svg class="icon lg"><use id="sessionProfileIcon" href="#i-box"/></svg></button>
+                                    <div class="icon-picker-popover" id="sessionIconPicker" aria-label="Choose an icon">
+                                        <button class="icon-choice selected" data-session-icon="i-box" aria-label="Briefcase"><svg class="icon"><use href="#i-box"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-book" aria-label="Book"><svg class="icon"><use href="#i-book"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-basket" aria-label="Basket"><svg class="icon"><use href="#i-basket"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-palette" aria-label="Palette"><svg class="icon"><use href="#i-palette"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-code" aria-label="Code"><svg class="icon"><use href="#i-code"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-camera" aria-label="Camera"><svg class="icon"><use href="#i-camera"/></svg></button>
+                                        <button class="icon-choice" data-session-icon="i-star" aria-label="Star"><svg class="icon"><use href="#i-star"/></svg></button>
+                                    </div>
+                                </div>
+                                <div><input class="input" id="sessionProfileName" value="New profile" /><p class="field-help">Choose a name and icon for this browser profile.</p></div>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Data that will be saved <span class="badge">9 sites</span></div>
+                            <div class="site-review">
+                                <div class="data-summary"><svg class="icon sm"><use href="#i-info"/></svg><span><strong>24 cookies</strong>, <strong>3 local-storage origins</strong>, and <strong>2 IndexedDB origins</strong>.</span></div>
+                                <div class="site-row"><span class="site-icon">N</span><span class="site-copy"><span class="site-domain">notion.so</span><span class="site-account">4 cookies · local storage · IndexedDB</span></span></div>
+                                <div class="site-row"><span class="site-icon">A</span><span class="site-copy"><span class="site-domain">acme.test</span><span class="site-account">5 cookies · local storage · IndexedDB</span></span></div>
+                                <div class="site-row"><span class="site-icon">＋</span><span class="site-copy"><span class="site-domain">7 more sites</span></span></div>
+                            </div>
+                        </div>
+                        <div class="notice"><svg class="icon"><use href="#i-shield"/></svg><div><strong>Agents using this profile can access sites where you’re signed in.</strong> Only assign it to agents you trust.</div></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="button" id="cancelSessionSave">Cancel</button>
+                        <button class="button primary" id="saveSessionProfile"><svg class="icon sm"><use href="#i-check"/></svg><span id="saveSessionProfileLabel">Update Default</span></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </section>
+</main>
+
+<div class="toast" id="toast"><svg class="icon"><use href="#i-check"/></svg><span id="toastText">Saved</span></div>
+
+<script>
+const states = { browse: true, capture: true, assign: true, takeover: true, profiles: true };
+
+const stateButtons = [...document.querySelectorAll('[data-state-button]')];
+const browserScreen = document.getElementById('browserScreen');
+const profilesScreen = document.getElementById('profilesScreen');
+const agentScreen = document.getElementById('agentScreen');
+const takeoverScreen = document.getElementById('takeoverScreen');
+const captureOverlay = document.getElementById('captureOverlay');
+const updateOverlay = document.getElementById('updateOverlay');
+let currentState = 'browse';
+let selectedAgentProfile = 'Default';
+
+function setState(next) {
+    if (!states[next]) return;
+    currentState = next;
+    const browserVisible = next === 'browse' || next === 'capture';
+    browserScreen.classList.toggle('visible', browserVisible);
+    profilesScreen.classList.toggle('visible', next === 'profiles');
+    agentScreen.classList.toggle('visible', next === 'assign');
+    takeoverScreen.classList.toggle('visible', next === 'takeover');
+    captureOverlay.classList.toggle('open', next === 'capture');
+    updateOverlay.classList.remove('open');
+    stateButtons.forEach((button) => button.classList.toggle('active', button.dataset.stateButton === next));
+    document.getElementById('browserNav').classList.toggle('active', browserVisible);
+    document.getElementById('agentsNav').classList.toggle('active', next === 'assign' || next === 'takeover');
+    document.getElementById('settingsNav').classList.toggle('active', next === 'profiles');
+    const tab = next === 'assign'
+        ? { label: 'Agents', icon: '#i-robot' }
+        : next === 'takeover'
+            ? { label: 'Research agent · Browser', icon: '#i-user' }
+        : next === 'profiles'
+            ? { label: 'Settings', icon: '#i-settings' }
+            : { label: 'Browser', icon: '#i-globe' };
+    document.getElementById('workspaceTabLabel').textContent = tab.label;
+    document.getElementById('workspaceTabIcon').setAttribute('href', tab.icon);
+    if (next === 'takeover') document.getElementById('takeoverProfileName').textContent = selectedAgentProfile;
+    window.location.hash = next;
+}
+
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    document.getElementById('toastText').textContent = message;
+    toast.classList.add('show');
+    window.clearTimeout(showToast.timeout);
+    showToast.timeout = window.setTimeout(() => toast.classList.remove('show'), 2400);
+}
+
+let currentBrowserSource = 'Default';
+const browserSessionTrigger = document.getElementById('browserSessionTrigger');
+const browserSessionMenu = document.getElementById('browserSessionMenu');
+const browserFrame = browserScreen.querySelector('.browser-frame');
+
+function updateBrowserSourceDisplay(source, icon) {
+    currentBrowserSource = source;
+    document.getElementById('browserSessionName').textContent = source === 'fresh' ? 'Fresh session' : source;
+    document.getElementById('browserSessionIcon').setAttribute('href', `#${icon}`);
+    document.querySelectorAll('[data-session-source]').forEach((option) => option.classList.toggle('selected', option.dataset.sessionSource === source));
+}
+
+function loadBrowserSource(source, icon) {
+    updateBrowserSourceDisplay(source, icon);
+    browserSessionMenu.classList.add('closed');
+    browserSessionTrigger.setAttribute('aria-expanded', 'false');
+    browserFrame.classList.add('fresh');
+    document.getElementById('browserPageTitle').textContent = 'New tab';
+    document.getElementById('browserUrlValue').textContent = 'about:blank';
+    document.getElementById('browserEmptyIcon').setAttribute('href', `#${icon}`);
+    document.getElementById('browserEmptyTitle').textContent = source === 'fresh' ? 'Fresh Browser session' : `${source} loaded`;
+    document.getElementById('browserEmptyCopy').textContent = source === 'fresh'
+        ? 'No saved site data has been loaded.'
+        : 'This Browser session now contains the site data saved in this profile.';
+    showToast(source === 'fresh' ? 'Browser session cleared' : `${source} loaded into Browser`);
+}
+
+browserSessionTrigger.addEventListener('click', () => {
+    browserSessionMenu.classList.toggle('closed');
+    browserSessionTrigger.setAttribute('aria-expanded', browserSessionMenu.classList.contains('closed') ? 'false' : 'true');
+});
+document.querySelectorAll('[data-session-source]').forEach((option) => option.addEventListener('click', () => {
+    loadBrowserSource(option.dataset.sessionSource, option.dataset.sourceIcon);
+}));
+
+let captureMode = 'create';
+function setCaptureMode(mode) {
+    captureMode = mode;
+    const destination = document.getElementById('profileDestination');
+    const currentIsAvailable = [...destination.options].some((option) => option.value === currentBrowserSource);
+    destination.value = mode === 'current' && currentBrowserSource !== 'fresh' && currentIsAvailable ? currentBrowserSource : 'new';
+    updateCaptureDestination();
+}
+
+function updateCaptureDestination() {
+    const destination = document.getElementById('profileDestination').value;
+    const updating = destination !== 'new';
+    captureMode = updating ? 'update' : 'create';
+    document.getElementById('captureTitle').textContent = 'Save Browser state';
+    document.getElementById('captureDescription').textContent = 'Persist this Browser session to a profile for future browser and agent sessions.';
+    document.getElementById('profileIdentityField').style.display = updating ? 'none' : '';
+    document.getElementById('destinationHelp').textContent = updating
+        ? `This replaces the browser state currently saved in ${destination}.`
+        : 'Create a reusable profile with its own name and icon.';
+    document.getElementById('saveProfileLabel').textContent = updating ? `Update ${destination}` : 'Save new profile';
+}
+
+stateButtons.forEach((button) => button.addEventListener('click', () => {
+    if (button.dataset.stateButton === 'capture') setCaptureMode('current');
+    setState(button.dataset.stateButton);
+}));
+document.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => setState(button.dataset.action)));
+document.getElementById('saveStateButton').addEventListener('click', () => setCaptureMode('current'));
+document.getElementById('newProfileFromSettings').addEventListener('click', () => setCaptureMode('create'));
+document.getElementById('profileDestination').addEventListener('change', updateCaptureDestination);
+
+document.getElementById('saveProfile').addEventListener('click', () => {
+    const destination = document.getElementById('profileDestination').value;
+    const name = destination === 'new'
+        ? document.getElementById('profileName').value.trim() || 'Untitled profile'
+        : destination;
+    const icon = destination === 'new'
+        ? document.getElementById('captureIcon').getAttribute('href').replace('#', '')
+        : ({ Default: 'i-box', LinkedIn: 'i-user', Gmail: 'i-inbox' }[destination] || 'i-box');
+    if (destination === 'new' && ![...document.getElementById('profileDestination').options].some((option) => option.value === name)) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = `Update ${name}`;
+        document.getElementById('profileDestination').append(option);
+    }
+    updateBrowserSourceDisplay(name, icon);
+    setState('browse');
+    showToast(captureMode === 'update' ? `${name} updated` : `${name} saved as a browser profile`);
+    setCaptureMode('current');
+});
+
+const iconPicker = document.getElementById('iconPicker');
+const iconTrigger = document.getElementById('iconTrigger');
+iconTrigger.addEventListener('click', () => {
+    iconPicker.classList.toggle('open');
+    iconTrigger.setAttribute('aria-expanded', iconPicker.classList.contains('open') ? 'true' : 'false');
+});
+document.querySelectorAll('[data-icon]').forEach((choice) => choice.addEventListener('click', () => {
+    document.querySelectorAll('[data-icon]').forEach((item) => item.classList.toggle('selected', item === choice));
+    document.getElementById('captureIcon').setAttribute('href', `#${choice.dataset.icon}`);
+    iconPicker.classList.remove('open');
+    iconTrigger.setAttribute('aria-expanded', 'false');
+}));
+
+const agentProfileOptions = document.getElementById('agentProfileOptions');
+const agentProfilePicker = document.getElementById('agentProfilePicker');
+const agentAccessWarning = document.getElementById('agentAccessWarning');
+const agentWarningAction = document.getElementById('agentWarningAction');
+
+function updateAgentWarning(option) {
+    const warning = option.dataset.warning;
+    agentAccessWarning.classList.toggle('hidden', warning === 'empty');
+    if (warning === 'saved') {
+        const profileName = option.dataset.browserProfile;
+        document.getElementById('agentWarningTitle').textContent = `${profileName} may let this agent access included sites where you’re signed in.`;
+        document.getElementById('agentWarningBody').textContent = 'Only assign profiles to agents you trust.';
+        agentWarningAction.textContent = 'Review profile';
+        agentWarningAction.dataset.action = 'profiles';
+    }
+}
+
+document.getElementById('agentProfileButton').addEventListener('click', () => {
+    agentProfileOptions.classList.toggle('closed');
+    agentProfilePicker.classList.toggle('closed', agentProfileOptions.classList.contains('closed'));
+});
+document.querySelectorAll('[data-browser-profile]').forEach((option) => option.addEventListener('click', () => {
+    document.querySelectorAll('[data-browser-profile]').forEach((item) => item.classList.toggle('selected', item === option));
+    document.getElementById('agentProfileName').textContent = option.dataset.browserProfile;
+    document.getElementById('agentProfileMeta').textContent = option.dataset.browserMeta;
+    document.getElementById('agentProfileIcon').setAttribute('href', `#${option.dataset.browserIcon}`);
+    selectedAgentProfile = option.dataset.browserProfile;
+    updateAgentWarning(option);
+    agentProfileOptions.classList.add('closed');
+    agentProfilePicker.classList.add('closed');
+}));
+
+document.getElementById('browserAccessToggle').addEventListener('click', (event) => {
+    const enabled = !event.currentTarget.classList.contains('on');
+    event.currentTarget.classList.toggle('on', enabled);
+    event.currentTarget.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    document.getElementById('browserConfigFields').classList.toggle('disabled', !enabled);
+    if (!enabled) {
+        agentProfileOptions.classList.add('closed');
+        agentProfilePicker.classList.add('closed');
+    }
+});
+
+document.getElementById('saveAgent').addEventListener('click', () => {
+    showToast(`${document.getElementById('agentProfileName').textContent} set for new sessions`);
+});
+
+const sessionDestination = document.getElementById('sessionDestination');
+const sessionDestinationField = document.getElementById('sessionDestinationField');
+const sessionProfileIdentityField = document.getElementById('sessionProfileIdentityField');
+const sessionIconTrigger = document.getElementById('sessionIconTrigger');
+const sessionIconPicker = document.getElementById('sessionIconPicker');
+
+function updateSessionDestination() {
+    const creating = sessionDestination.value === 'new';
+    sessionProfileIdentityField.style.display = creating ? '' : 'none';
+    document.getElementById('sessionDestinationHelp').textContent = creating
+        ? 'Create a reusable profile with its own name and icon.'
+        : `This replaces the browser state currently saved in ${sessionDestination.value}.`;
+    document.getElementById('saveSessionProfileLabel').textContent = creating ? 'Save new profile' : `Update ${sessionDestination.value}`;
+}
+
+function configureTakeoverSave() {
+    const empty = selectedAgentProfile === 'Empty';
+    document.getElementById('takeoverProfileName').textContent = selectedAgentProfile;
+    sessionDestinationField.style.display = empty ? 'none' : '';
+    if (empty) {
+        sessionDestination.innerHTML = '<option value="new">Create a new profile</option>';
+        document.getElementById('updateDescription').textContent = 'Create a browser profile from this session.';
+    } else {
+        sessionDestination.innerHTML = `<option value="${selectedAgentProfile}">Update ${selectedAgentProfile}</option><option value="new">Create a new profile</option>`;
+        document.getElementById('updateDescription').textContent = `Update ${selectedAgentProfile} or create a new browser profile.`;
+    }
+    sessionDestination.value = empty ? 'new' : selectedAgentProfile;
+    updateSessionDestination();
+}
+
+document.getElementById('reviewSessionChanges').addEventListener('click', () => {
+    configureTakeoverSave();
+    updateOverlay.classList.add('open');
+});
+document.getElementById('closeUpdateModal').addEventListener('click', () => updateOverlay.classList.remove('open'));
+document.getElementById('cancelSessionSave').addEventListener('click', () => updateOverlay.classList.remove('open'));
+sessionDestination.addEventListener('change', updateSessionDestination);
+sessionIconTrigger.addEventListener('click', () => {
+    sessionIconPicker.classList.toggle('open');
+    sessionIconTrigger.setAttribute('aria-expanded', sessionIconPicker.classList.contains('open') ? 'true' : 'false');
+});
+document.querySelectorAll('[data-session-icon]').forEach((choice) => choice.addEventListener('click', () => {
+    document.querySelectorAll('[data-session-icon]').forEach((item) => item.classList.toggle('selected', item === choice));
+    document.getElementById('sessionProfileIcon').setAttribute('href', `#${choice.dataset.sessionIcon}`);
+    sessionIconPicker.classList.remove('open');
+    sessionIconTrigger.setAttribute('aria-expanded', 'false');
+}));
+document.getElementById('saveSessionProfile').addEventListener('click', () => {
+    const creating = sessionDestination.value === 'new';
+    const profileName = document.getElementById('sessionProfileName').value.trim() || 'Untitled profile';
+    updateOverlay.classList.remove('open');
+    showToast(creating ? `${profileName} saved as a browser profile` : `${sessionDestination.value} updated`);
+});
+document.getElementById('endTakeover').addEventListener('click', () => showToast('Browser control released'));
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+});
+
+document.getElementById('hintButton').addEventListener('click', () => {
+    setState('browse');
+    const saveButton = document.getElementById('saveStateButton');
+    saveButton.classList.remove('hint-pulse');
+    void saveButton.offsetWidth;
+    saveButton.classList.add('hint-pulse');
+    showToast('Save from Browser, assign in Agent setup, manage in Settings');
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        if (iconPicker.classList.contains('open')) {
+            iconPicker.classList.remove('open');
+            iconTrigger.setAttribute('aria-expanded', 'false');
+        } else if (sessionIconPicker.classList.contains('open')) {
+            sessionIconPicker.classList.remove('open');
+            sessionIconTrigger.setAttribute('aria-expanded', 'false');
+        } else if (updateOverlay.classList.contains('open')) {
+            updateOverlay.classList.remove('open');
+        } else if (currentState === 'capture') setState('browse');
+    }
+});
+
+const initialState = window.location.hash.slice(1);
+if (states[initialState]) setState(initialState);
+</script>
+</body>
+</html>

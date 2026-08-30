@@ -14,6 +14,11 @@ from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
 from agents import AgentProfile, build_agent, get_agent_profile
 from agents.types import Agent
 from artifacts import ArtifactsIndexWriter
+from browser_profiles._assignment import (
+    browser_profile_assignment_scope,
+    resolve_browser_profile_assignment,
+)
+from browser_profiles._conversation import prepare_conversation_browser
 from conversations import (
     BrowserTabsWriter,
     EventsLogWriter,
@@ -141,6 +146,14 @@ class AgentRunner:
                         profile,
                         conversation_id=conversation_id,
                     )
+                    browser_assignment = await resolve_browser_profile_assignment(profile)
+                    await prepare_conversation_browser(
+                        conversation_id,
+                        agent_profile_id=profile.id,
+                        browser_access=profile.browser_access,
+                        configured_profile_id=browser_assignment.source_profile_id,
+                        source_profile_id=browser_assignment.source_profile_id,
+                    )
                     ctx_manager = ContextManager(
                         history=history,
                         agent_state=agent_state,
@@ -160,34 +173,39 @@ class AgentRunner:
                         active_agent.name,
                         user_content,
                     )
-                    async with agent_span(
-                        active_agent.name,
-                        instruction=user_content,
-                        agent_state=agent_state,
-                        profile_name=profile.name,
-                    ):
-                        try:
-                            publish_event(AgentEvent(payload=UserMessagePayload(
-                                type="user_message",
-                                content=request.message,
-                                attachments=attachments,
-                            )))
-                        except Exception:  # pragma: no cover - defensive
-                            logger.exception("Failed to publish user_message event")
+                    with browser_profile_assignment_scope(browser_assignment):
+                        async with agent_span(
+                            active_agent.name,
+                            instruction=user_content,
+                            agent_state=agent_state,
+                            profile_name=profile.name,
+                        ):
+                            try:
+                                publish_event(
+                                    AgentEvent(
+                                        payload=UserMessagePayload(
+                                            type="user_message",
+                                            content=request.message,
+                                            attachments=attachments,
+                                        )
+                                    )
+                                )
+                            except Exception:  # pragma: no cover - defensive
+                                logger.exception("Failed to publish user_message event")
 
-                        # LoadedSkillHook adds current skill prompts before
-                        # each model call; the base system message stays fresh.
-                        _refresh_system_message(history, active_agent.instruction)
-                        hooks = default_hooks(
-                            active_agent,
-                            max_iterations=active_agent.max_iterations,
-                            ctx_manager=ctx_manager,
-                        )
-                        await run_turn(
-                            history=history,
-                            agent=active_agent,
-                            hooks=hooks,
-                        )
+                            # LoadedSkillHook adds current skill prompts before
+                            # each model call; the base system message stays fresh.
+                            _refresh_system_message(history, active_agent.instruction)
+                            hooks = default_hooks(
+                                active_agent,
+                                max_iterations=active_agent.max_iterations,
+                                ctx_manager=ctx_manager,
+                            )
+                            await run_turn(
+                                history=history,
+                                agent=active_agent,
+                                hooks=hooks,
+                            )
                 except StopRequestedError:
                     # Propagate through turn_scope so it emits turn_end, then
                     # swallow outside the scope as a normal stopped outcome.
@@ -200,10 +218,14 @@ class AgentRunner:
                     # Setup and other unexpected failures become one persisted
                     # generic error; turn_scope owns the following turn_end.
                     logger.exception("Error running agent for '%s'", conversation_id)
-                    publish_event(AgentEvent(payload=ErrorPayload(
-                        type="error",
-                        message="An error occurred while processing your message.",
-                    )))
+                    publish_event(
+                        AgentEvent(
+                            payload=ErrorPayload(
+                                type="error",
+                                message="An error occurred while processing your message.",
+                            )
+                        )
+                    )
         except StopRequestedError:
             logger.info("Agent run for conversation '%s' stopped by user", conversation_id)
         finally:
@@ -258,11 +280,13 @@ def _augment_message_with_attachments(
         )
         name = item.filename or "unnamed"
         file_lines.append(f"  - {name} ({item.content_type}) -> {container_path}")
-        attachments.append(UserAttachment(
-            filename=name,
-            content_type=item.content_type,
-            path=container_path,
-        ))
+        attachments.append(
+            UserAttachment(
+                filename=name,
+                content_type=item.content_type,
+                path=container_path,
+            )
+        )
 
     files_block = "\n".join(file_lines)
     augmented = f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
@@ -276,10 +300,7 @@ def _refresh_system_message(history: ConversationHistory, system_prompt: str) ->
     if memory:
         lines = "\n".join(f"  {key}: {entry.value}" for key, entry in memory.items())
         sep = "─" * 64
-        memory_block = (
-            "\n── Memory (persisted across sessions) ──────────────────────────\n"
-            f"{lines}\n{sep}\n"
-        )
+        memory_block = f"\n── Memory (persisted across sessions) ──────────────────────────\n{lines}\n{sep}\n"
         instruction = memory_block + instruction
     history.set_system_message(instruction)
 
@@ -324,20 +345,26 @@ def _log_turn_start(profile: AgentProfile) -> None:
         body.append("\nparams:  ", style="bold")
         body.append(", ".join(params), style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
-        border_style="bright_magenta",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
+            border_style="bright_magenta",
+            expand=False,
+        )
+    )
 
 
 def _emit_terminal_error(emit: EventSink) -> None:
     """Deliver a terminal failure when no conversation scope could be opened."""
-    emit(AgentEvent(payload=ErrorPayload(
-        type="error",
-        message="An error occurred while processing your message.",
-    )))
+    emit(
+        AgentEvent(
+            payload=ErrorPayload(
+                type="error",
+                message="An error occurred while processing your message.",
+            )
+        )
+    )
     emit(AgentEvent(payload=TurnEndPayload(type="turn_end")))
 
 

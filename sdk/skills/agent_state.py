@@ -9,9 +9,7 @@ from ._registry import Skill
 
 logger = logging.getLogger(__name__)
 
-_active_agent_state: ContextVar["AgentState | None"] = ContextVar(
-    "skills_active_agent_state", default=None
-)
+_active_agent_state: ContextVar["AgentState | None"] = ContextVar("skills_active_agent_state", default=None)
 
 
 class AgentState:
@@ -53,7 +51,8 @@ class AgentState:
         self._skills[skill.id] = skill
         logger.info(
             "Loaded skill '%s' (%d tools)",
-            skill.name, len(skill.tools),
+            skill.name,
+            len(skill.tools),
         )
         return True
 

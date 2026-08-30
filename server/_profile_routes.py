@@ -7,6 +7,7 @@ import logging
 
 from aiohttp import web
 
+from sdk.skills._policy import strip_internal_skills
 from agents._agent_profiles import (
     AgentProfile,
     delete_agent_profile,
@@ -17,6 +18,17 @@ from agents._agent_profiles import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_browser_settings(body: dict) -> None:
+    body["skills"] = strip_internal_skills(body.get("skills", []))
+    if not body.get("browser_access"):
+        body["browser_profile_id"] = None
+    profile_id = body.get("browser_profile_id")
+    if body.get("browser_access") and profile_id:
+        from browser_profiles import get_browser_profile_store
+
+        get_browser_profile_store().get(str(profile_id))
 
 
 async def handle_list_profiles(request: web.Request) -> web.Response:
@@ -47,6 +59,7 @@ async def handle_create_profile(request: web.Request) -> web.Response:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return web.json_response({"error": "Invalid JSON"}, status=400)
     try:
+        _normalize_browser_settings(body)
         profile = AgentProfile.model_validate(body)
         saved = save_agent_profile(profile)
         return web.json_response(saved.model_dump(), status=201)
@@ -74,6 +87,7 @@ async def handle_update_profile(request: web.Request) -> web.Response:
     # Block disabling the currently-set default agent.
     if body.get("enabled") is False:
         from settings import load_settings
+
         default_id = load_settings().get("default_agent")
         if default_id == profile_id:
             return web.json_response(
@@ -89,6 +103,7 @@ async def handle_update_profile(request: web.Request) -> web.Response:
 
     try:
         body["id"] = profile_id
+        _normalize_browser_settings(body)
         profile = AgentProfile.model_validate(body)
         saved = save_agent_profile(profile)
         return web.json_response(saved.model_dump())
@@ -109,12 +124,16 @@ async def handle_delete_profile(request: web.Request) -> web.Response:
     if usage:
         logger.warning(
             "Refused delete of profile '%s': in use by %d task(s)",
-            profile_id, len(usage),
+            profile_id,
+            len(usage),
         )
-        return web.json_response({
-            "error": "Profile is in use by tasks",
-            "usage": usage,
-        }, status=409)
+        return web.json_response(
+            {
+                "error": "Profile is in use by tasks",
+                "usage": usage,
+            },
+            status=409,
+        )
 
     try:
         delete_agent_profile(profile_id)
@@ -151,6 +170,7 @@ def _get_profile_usage(profile_id: str) -> list[dict]:
     """Find routines/tasks referencing a profile."""
     try:
         from tasks import get_store
+
         store = get_store()
     except RuntimeError:
         return []
@@ -159,24 +179,29 @@ def _get_profile_usage(profile_id: str) -> list[dict]:
         tasks = store.list_tasks(routine.id)
         for task in tasks:
             if getattr(task, "agent_profile", None) == profile_id:
-                usage.append({
-                    "routine_id": routine.id,
-                    "routine_description": routine.description,
-                    "task_id": task.id,
-                    "task_description": task.description,
-                })
+                usage.append(
+                    {
+                        "routine_id": routine.id,
+                        "routine_description": routine.description,
+                        "task_id": task.id,
+                        "task_description": task.description,
+                    }
+                )
     return usage
 
 
 async def handle_list_agents(_request: web.Request) -> web.Response:
     """Return agent profile IDs and the default agent."""
     from settings import load_settings
+
     profiles = list_agent_profiles()
     default_agent = load_settings().get("default_agent", "omnideck")
-    return web.json_response({
-        "agents": [p.id for p in profiles],
-        "default": default_agent,
-    })
+    return web.json_response(
+        {
+            "agents": [p.id for p in profiles],
+            "default": default_agent,
+        }
+    )
 
 
 def register_profile_routes(app: web.Application) -> None:

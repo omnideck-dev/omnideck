@@ -10,6 +10,8 @@ const FRAME_HEADER_BYTES = 20;
 // Thumbnails only need to look current, so they refresh on a slow timer instead
 // of once per frame. This is the only place a frame reaches React state.
 const THUMB_INTERVAL_MS = 1000;
+const RECONNECT_DELAY_MS = 250;
+const MAX_RECONNECT_ATTEMPTS = 20;
 
 /**
  * Write text to the host clipboard. Uses the async Clipboard API on secure
@@ -90,7 +92,15 @@ async function _readFilePayload(file) {
  * Returns the latest frame for the selected tab, the engage state + toggle, and
  * a `sendInput` for the surface to forward events.
  */
-export default function useBrowserControl({ conversationId, selectedTabId, canControl, enabled }) {
+export default function useBrowserControl({
+    conversationId,
+    selectedTabId,
+    canControl,
+    enabled,
+    scope = 'conversation',
+    alwaysEngaged = false,
+    sessionKey = null,
+}) {
     // One latest blob frame per tab, so a tab keeps showing its last frame in
     // the rail after deselection (only the selected tab is streamed live).
     const [framesByTab, setFramesByTab] = useState({});
@@ -99,10 +109,14 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
     const [engaged, setEngaged] = useState(false);
     const [connected, setConnected] = useState(false);
     const [error, setError] = useState(null);
+    const [connectionAttempt, setConnectionAttempt] = useState(0);
     // The cursor the remote page would show. The screencast image carries no
     // cursor, so without mirroring it the pointer stays an arrow over links.
     const [cursor, setCursor] = useState('default');
     const wsRef = useRef(null);
+    const connectedOnceRef = useRef(false);
+    const reconnectAttemptsRef = useRef(0);
+    const reconnectTimerRef = useRef(null);
     const framesRef = useRef({}); // mirror of framesByTab, for blob-url revocation
     const thumbAtRef = useRef({}); // per-tab timestamp of the last thumbnail refresh
     // Live frames bypass React entirely; the viewport subscribes to this.
@@ -112,10 +126,32 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
 
     // One socket per conversation, only while a browser view is open.
     useEffect(() => {
-        if (!enabled || !conversationId || typeof WebSocket === 'undefined') return undefined;
+        if (!enabled || (scope !== 'user' && !conversationId) || typeof WebSocket === 'undefined') return undefined;
+        let disposed = false;
+        const scheduleReconnect = () => {
+            if (
+                disposed
+                || !connectedOnceRef.current
+                || reconnectTimerRef.current !== null
+                || reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS
+            ) return;
+            reconnectAttemptsRef.current += 1;
+            reconnectTimerRef.current = setTimeout(() => {
+                reconnectTimerRef.current = null;
+                if (!disposed) setConnectionAttempt((attempt) => attempt + 1);
+            }, RECONNECT_DELAY_MS);
+        };
+        const markHealthy = () => {
+            connectedOnceRef.current = true;
+            reconnectAttemptsRef.current = 0;
+            setError(null);
+        };
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const query = scope === 'user'
+            ? 'scope=user'
+            : `conversation_id=${encodeURIComponent(conversationId)}`;
         const ws = new WebSocket(
-            `${proto}://${location.host}/api/browser/control?conversation_id=${encodeURIComponent(conversationId)}`,
+            `${proto}://${location.host}/api/browser/control?${query}`,
         );
         // A server rejection remains sticky for this ownership attempt so we
         // do not create a reconnect loop. Hiding/reselecting the Browser or
@@ -137,6 +173,7 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
                     offsetTop: head.getFloat32(16, false),
                 };
                 const jpeg = buf.slice(FRAME_HEADER_BYTES);
+                markHealthy();
                 const seq = frameBus.nextSeq();
                 // createImageBitmap decodes off the main thread, so a busy page
                 // does not stall the UI thread once per frame the way assigning
@@ -160,8 +197,10 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             let m;
             try { m = JSON.parse(e.data); } catch { return; }
             if (m.type === 'nav') {
+                markHealthy();
                 setNav({ tabId: m.tab_id, url: m.url, title: m.title });
             } else if (m.type === 'tabs') {
+                markHealthy();
                 setLiveTabs(Array.isArray(m.tabs) ? m.tabs : []);
             } else if (m.type === 'cursor') {
                 setCursor(m.cursor || 'default');
@@ -182,10 +221,18 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
                 setError(m.reason || 'browser_control_error');
                 setConnected(false);
                 setEngaged(false);
+                scheduleReconnect();
             }
         };
-        ws.onclose = () => { if (wsRef.current === ws) { wsRef.current = null; setConnected(false); } };
+        ws.onclose = () => {
+            if (wsRef.current === ws) {
+                wsRef.current = null;
+                setConnected(false);
+                scheduleReconnect();
+            }
+        };
         return () => {
+            disposed = true;
             try { ws.close(); } catch { /* already closing */ }
             wsRef.current = null;
             setConnected(false);
@@ -197,7 +244,16 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
             setLiveTabs(null);
             setCursor('default');
         };
-    }, [enabled, conversationId, frameBus]);
+    }, [enabled, conversationId, connectionAttempt, frameBus, scope, sessionKey]);
+
+    useEffect(() => () => {
+        if (reconnectTimerRef.current !== null) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        connectedOnceRef.current = false;
+        reconnectAttemptsRef.current = 0;
+    }, [enabled, conversationId, scope, sessionKey]);
 
     // Point the screencast at the selected tab. Runs both when the selection
     // changes and once the socket connects, so neither ordering misses the send.
@@ -246,10 +302,10 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         if (connected && ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
                 type: 'engage',
-                on: engaged && controlAvailable,
+                on: (alwaysEngaged || engaged) && controlAvailable,
             }));
         }
-    }, [engaged, controlAvailable, connected]);
+    }, [alwaysEngaged, engaged, controlAvailable, connected]);
 
     // Low-level: forward a raw input primitive (mouse/key/wheel/text) over the
     // channel. The screencast surface streams these; discrete commands below
@@ -290,9 +346,9 @@ export default function useBrowserControl({ conversationId, selectedTabId, canCo
         liveTabs,
         connected,
         error,
-        engaged: engaged && controlAvailable,
+        engaged: (alwaysEngaged || engaged) && controlAvailable,
         canControl: controlAvailable,
-        toggleEngage,
+        toggleEngage: alwaysEngaged ? null : toggleEngage,
         sendInput,
         closeTab,
         newTab,

@@ -28,6 +28,7 @@ describe('useBrowserControl', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         vi.unstubAllGlobals();
     });
 
@@ -74,5 +75,47 @@ describe('useBrowserControl', () => {
         expect(result.current.error).toBe('no_active_browser');
         expect(result.current.canControl).toBe(false);
         expect(result.current.engaged).toBe(false);
+    });
+
+    it('reconnects when an established conversation Browser is replaced', () => {
+        vi.useFakeTimers();
+        renderHook(() => useBrowserControl({
+            conversationId: 'conversation-1',
+            selectedTabId: 1,
+            canControl: true,
+            enabled: true,
+        }));
+        const socket = FakeWebSocket.instances[0];
+
+        act(() => {
+            socket.readyState = FakeWebSocket.OPEN;
+            socket.onopen();
+            socket.onmessage({ data: JSON.stringify({ type: 'tabs', tabs: [] }) });
+            socket.readyState = 3;
+            socket.onclose();
+            vi.advanceTimersByTime(250);
+        });
+
+        expect(FakeWebSocket.instances).toHaveLength(2);
+        expect(FakeWebSocket.instances[1].url).toContain('conversation_id=conversation-1');
+    });
+
+    it('reconnects when the root-agent Browser session identity changes', () => {
+        const { rerender } = renderHook(
+            ({ sessionKey }) => useBrowserControl({
+                conversationId: 'conversation-1',
+                selectedTabId: 1,
+                canControl: true,
+                enabled: true,
+                sessionKey,
+            }),
+            { initialProps: { sessionKey: 'root-agent-1' } },
+        );
+        const firstSocket = FakeWebSocket.instances[0];
+
+        rerender({ sessionKey: 'root-agent-2' });
+
+        expect(firstSocket.readyState).toBe(3);
+        expect(FakeWebSocket.instances).toHaveLength(2);
     });
 });

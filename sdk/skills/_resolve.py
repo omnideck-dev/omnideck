@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from sdk.skills._registry import Skill
+from sdk.skills._policy import BROWSER_CAPABILITY_ID, is_internal_skill, is_internal_tool_category
 from sdk.skills._store import get_skill_record, list_skill_records
 from sdk.skills._tool_categories import tool_categories
 from sdk.skills.agent_state import AgentState
@@ -51,6 +52,9 @@ async def _resolve(record: SkillRecord | None) -> Skill | None:
     categories = await tool_categories()
     tools: list[Callable[..., Any]] = []
     for cid in record.tool_categories:
+        if is_internal_tool_category(cid) and not is_internal_skill(record.id):
+            logger.warning("skill %r cannot grant the internal browser capability", record.id)
+            continue
         category = categories.get(cid)
         if category is None:
             logger.warning("skill grants unknown tool category %r", cid)
@@ -106,15 +110,27 @@ async def build_agent_state(profile: AgentProfile, *, conversation_id: str | Non
     """
     state = AgentState(_base_tools(allow_spawn=profile.allow_spawn, allow_load_skills=profile.allow_load_skills))
     for skill_id in profile.skills:
+        # Browser access is configured as an agent capability, not as an
+        # editable/loadable skill. Ignore stale profile data from older builds.
+        if is_internal_skill(skill_id):
+            continue
         skill = await resolve_skill(skill_id)
         if skill is None:
             logger.warning("profile %r references unknown skill %r; skipping", profile.id, skill_id)
             continue
         state.add(skill)
+    if profile.browser_access:
+        browser_skill = await resolve_skill(BROWSER_CAPABILITY_ID)
+        if browser_skill is None:
+            logger.warning("internal browser capability is unavailable")
+        else:
+            state.add(browser_skill)
+
     if conversation_id is not None:
         # Function-local to break an import cycle: importing conversations
         # pulls in the event log → sdk.events → sdk.skills, back to here.
         from conversations import load_loaded_skills
+
         await _restore_persisted_loaded_skills(state, load_loaded_skills(conversation_id))
     return state
 
@@ -127,6 +143,8 @@ async def _restore_persisted_loaded_skills(agent_state: AgentState, skill_ids: I
     stale metadata is harmless.
     """
     for skill_id in skill_ids:
+        if is_internal_skill(skill_id):
+            continue
         if skill_id in agent_state.skill_ids:
             continue
         skill = await resolve_skill(skill_id)
@@ -144,6 +162,7 @@ def persist_loaded_skills(agent_state: AgentState, conversation_id: str) -> None
     """
     # Function-local to break the conversations ↔ sdk.skills import cycle.
     from conversations import save_loaded_skills
+
     save_loaded_skills(conversation_id, agent_state.loaded_skill_ids)
 
 

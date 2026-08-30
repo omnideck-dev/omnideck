@@ -1,7 +1,6 @@
 import asyncio
 import logging
-import os
-from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -27,6 +26,7 @@ class DummyContext:
             await asyncio.sleep(9999)
         if self._fail_once and self._closed_calls == 1:
             from playwright.async_api import Error as PlaywrightError
+
             raise PlaywrightError("simulated close failure")
 
 
@@ -42,6 +42,7 @@ class DummyPW:
         self.stopped = True
         if self._fail:
             from playwright.async_api import Error as PlaywrightError
+
             raise PlaywrightError("simulated stop failure")
 
 
@@ -103,16 +104,17 @@ async def test_close_browser_function_idempotent(monkeypatch: pytest.MonkeyPatch
     """close_browser should be safe when no browser exists."""
     import tools.browser.core.pool as mod
 
-    # Ensure the pool has no persistent root Browser.
-    mod._root_browser = None
+    # Ensure the pool has no process-owning Browser.
+    mod._browser_host = None
     await mod.close_browser()  # Should not raise
 
     # Set one then close twice
-    ctx = DummyContext()
-    pw = DummyPW()
-    mod._root_browser = Browser(context=ctx, extra_headers={}, pw=pw)  # type: ignore[arg-type]
+    host = MagicMock()
+    host.close = AsyncMock()
+    mod._browser_host = host
     await mod.close_browser()
-    assert mod._root_browser is None
+    host.close.assert_awaited_once()
+    assert mod._browser_host is None
     # second call: still fine
     await mod.close_browser()
 

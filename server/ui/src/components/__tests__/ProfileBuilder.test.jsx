@@ -2,17 +2,16 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProfileBuilder from '../ProfileBuilder.jsx';
+import { BrowserProfilesCatalogProvider } from '../../features/browser/BrowserProfilesContext.jsx';
+import useBrowserProfiles from '../../features/browser/useBrowserProfiles.js';
 
 const SKILLS = [
     { id: 'coder', name: 'Coder', tool_categories: ['coding'] },
-    { id: 'browser', name: 'Web Browser', tool_categories: ['browser', 'webfetch'] },
     { id: 'assistant', name: 'Assistant', tool_categories: ['memory', 'email'] },
 ];
 
 const CATEGORIES = [
     { id: 'coding', label: 'Coding & Files', tool_count: 8, connected: null },
-    { id: 'browser', label: 'Web Browsing', tool_count: 16, connected: null },
-    { id: 'webfetch', label: 'Web Fetch', tool_count: 1, connected: null },
     { id: 'memory', label: 'Memory', tool_count: 3, connected: null },
     { id: 'email', label: 'Email', tool_count: 7, connected: false },
 ];
@@ -21,6 +20,7 @@ function _profile(overrides = {}) {
     return {
         id: 'p1', name: 'Omnideck', description: '', model: 'test-model:7b', provider: 'ollama',
         system_prompt: '', skills: ['coder'], allow_spawn: true, allow_load_skills: true,
+        browser_access: false, browser_profile_id: null,
         ...overrides,
     };
 }
@@ -31,7 +31,15 @@ function renderBuilder(props = {}) {
         profile: _profile(), skills: SKILLS, categories: CATEGORIES, providers: [],
         onSave, onDelete: vi.fn(), onDuplicate: vi.fn(), ...props,
     };
-    render(<ProfileBuilder {...merged} />);
+    function Wrapper({ children }) {
+        const catalog = useBrowserProfiles();
+        return (
+            <BrowserProfilesCatalogProvider value={catalog}>
+                {children}
+            </BrowserProfilesCatalogProvider>
+        );
+    }
+    render(<ProfileBuilder {...merged} />, { wrapper: Wrapper });
     return { onSave, ...merged };
 }
 
@@ -40,7 +48,10 @@ describe('ProfileBuilder skill picker + autonomy', () => {
 
     beforeEach(() => {
         _originalFetch = global.fetch;
-        global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
+        global.fetch = vi.fn(() => Promise.resolve({
+            ok: true,
+            json: async () => [{ id: 'default', name: 'Default', icon: 'bi-globe2' }],
+        }));
     });
 
     afterEach(() => {
@@ -53,8 +64,8 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         await user.click(screen.getByTestId('profile-add-skill'));
 
         expect(screen.getByTestId('profile-skill-option-coder')).toBeInTheDocument();
-        expect(screen.getByTestId('profile-skill-option-browser')).toBeInTheDocument();
         expect(screen.getByTestId('profile-skill-option-assistant')).toBeInTheDocument();
+        expect(screen.queryByText('Web Browser')).not.toBeInTheDocument();
         // Regression: the old hardcoded ids are gone.
         expect(screen.queryByText(/image_gen/i)).not.toBeInTheDocument();
         expect(screen.queryByText(/music_gen/i)).not.toBeInTheDocument();
@@ -66,11 +77,10 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         await user.click(screen.getByTestId('profile-add-skill'));
 
         const search = screen.getByPlaceholderText('Search your skills…');
-        await user.type(search, 'web');
+        await user.type(search, 'assist');
 
-        expect(screen.getByTestId('profile-skill-option-browser')).toBeInTheDocument();
+        expect(screen.getByTestId('profile-skill-option-assistant')).toBeInTheDocument();
         expect(screen.queryByTestId('profile-skill-option-coder')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('profile-skill-option-assistant')).not.toBeInTheDocument();
 
         await user.clear(search);
         await user.type(search, 'missing');
@@ -92,11 +102,46 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         const user = userEvent.setup();
         const { onSave } = renderBuilder();
         await user.click(screen.getByTestId('profile-add-skill'));
-        await user.click(screen.getByTestId('profile-skill-option-browser'));
+        await user.click(screen.getByTestId('profile-skill-option-assistant'));
         await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(onSave).toHaveBeenCalledWith(
-            expect.objectContaining({ skills: expect.arrayContaining(['coder', 'browser']) }),
+            expect.objectContaining({ skills: expect.arrayContaining(['coder', 'assistant']) }),
         );
+    });
+
+    it('configures Browser access separately and defaults to Default', async () => {
+        const user = userEvent.setup();
+        const { onSave } = renderBuilder();
+        expect(screen.queryByTestId('agent-browser-profile-select')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('switch', { name: 'Allow Browser access' }));
+        const select = await screen.findByTestId('agent-browser-profile-select');
+        expect(screen.getByText('Starting profile')).toBeInTheDocument();
+        expect(select).toHaveAttribute('data-value', 'default');
+
+        await user.click(select);
+        await user.click(screen.getByRole('option', { name: 'Empty' }));
+        await user.click(screen.getByRole('button', { name: 'Save' }));
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+            browser_access: true,
+            browser_profile_id: null,
+        }));
+    });
+
+    it('clears the hidden profile assignment when Browser access is disabled', async () => {
+        const user = userEvent.setup();
+        const { onSave } = renderBuilder({
+            profile: _profile({ browser_access: true, browser_profile_id: 'default' }),
+        });
+        await screen.findByTestId('agent-browser-profile-select');
+
+        await user.click(screen.getByRole('switch', { name: 'Allow Browser access' }));
+        await user.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+            browser_access: false,
+            browser_profile_id: null,
+        }));
     });
 
     it('closes the picker on Escape and on outside click', async () => {

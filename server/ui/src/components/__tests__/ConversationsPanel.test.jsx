@@ -779,6 +779,20 @@ describe('ConversationsPanel — folders', () => {
         );
     });
 
+    it('closes the folder icon picker on Escape without a focus error', async () => {
+        const user = userEvent.setup();
+        mockFetch(SESSIONS, FOLDERS);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getByText('Work')).toBeInTheDocument());
+
+        const menu = await openFolderMenu(user, 'Work');
+        await user.click(within(menu).getByTestId('recent-folder-menu-icon'));
+        await screen.findByTestId('recent-icon-picker');
+        await user.keyboard('{Escape}');
+
+        expect(screen.queryByTestId('recent-icon-picker')).not.toBeInTheDocument();
+    });
+
     it('closes the folder menu when its trigger is clicked again', async () => {
         const user = userEvent.setup();
         mockFetch(SESSIONS, FOLDERS);

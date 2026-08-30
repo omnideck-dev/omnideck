@@ -8,6 +8,10 @@ from rich.panel import Panel
 from rich.text import Text
 
 from agents import AgentProfile, build_agent, get_agent_profile
+from browser_profiles._assignment import (
+    browser_profile_assignment_scope,
+    resolve_browser_profile_assignment,
+)
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
@@ -73,12 +77,14 @@ def _log_spawn(agent_name: str, profile: AgentProfile, instruction_preview: str)
         preview += "…"
     body.append(preview, style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_cyan]🚀 Spawn Agent[/bold bright_cyan]",
-        border_style="bright_cyan",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_cyan]🚀 Spawn Agent[/bold bright_cyan]",
+            border_style="bright_cyan",
+            expand=False,
+        )
+    )
 
 
 def _log_spawn_complete(agent_name: str, result_preview: str) -> None:
@@ -92,12 +98,14 @@ def _log_spawn_complete(agent_name: str, result_preview: str) -> None:
         preview += "…"
     body.append(preview, style="green")
 
-    _console.print(Panel(
-        body,
-        title="[bold green]✅ Agent Complete[/bold green]",
-        border_style="green",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold green]✅ Agent Complete[/bold green]",
+            border_style="green",
+            expand=False,
+        )
+    )
 
 
 def _log_spawn_error(agent_name: str, error: str) -> None:
@@ -108,12 +116,15 @@ def _log_spawn_error(agent_name: str, error: str) -> None:
     body.append("\nerror: ", style="bold")
     body.append(error, style="red")
 
-    _console.print(Panel(
-        body,
-        title="[bold red]❌ Agent Error[/bold red]",
-        border_style="red",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold red]❌ Agent Error[/bold red]",
+            border_style="red",
+            expand=False,
+        )
+    )
+
 
 async def spawn_agent(
     instructions: str,
@@ -142,10 +153,7 @@ async def spawn_agent(
     """
     agent_profile = get_agent_profile(profile)
     if agent_profile is None:
-        msg = (
-            f"Agent profile '{profile}' not found. "
-            "Call list_agent_profiles() to see available profiles."
-        )
+        msg = f"Agent profile '{profile}' not found. Call list_agent_profiles() to see available profiles."
         _log_spawn_error(agent_name, msg)
         return msg
     if not agent_profile.enabled:
@@ -157,11 +165,15 @@ async def spawn_agent(
         return msg
 
     agent_state = await build_agent_state(agent_profile)
+    browser_assignment = await resolve_browser_profile_assignment(agent_profile)
     agent = build_agent(agent_profile, tools=agent_state.tools, name=agent_name)
 
     logger.info(
         "Spawning sub-agent '%s' (profile=%s, max_iter=%d, instruction=%.100s)",
-        agent_name, profile, agent.max_iterations, instructions,
+        agent_name,
+        profile,
+        agent.max_iterations,
+        instructions,
     )
     _log_spawn(agent_name, agent_profile, instructions)
 
@@ -170,70 +182,80 @@ async def spawn_agent(
     # same id, letting the UI anchor a card to this request and attach the
     # child to it.
     correlation_id = _uuid.uuid4().hex
-    publish_event(AgentEvent(payload=SpawnRequestedPayload(
-        type="spawn_requested",
-        correlation_id=correlation_id,
-    )))
-
-    async with agent_span(
-        agent_name,
-        instruction=instructions,
-        agent_state=agent_state,
-        profile_name=agent_profile.name,
-        correlation_id=correlation_id,
-    ):
-        conv_id = get_conversation_id() or "default"
-        history = ConversationHistory(
-            system_message=agent.instruction,
-            conversation_id=conv_id,
-            agent_id=get_current_agent_id(),
-        )
-        # Sub-agents share the parent conversation. Events keep flowing
-        # through the bound parent conversation (so they reach disk + UI),
-        # but the sub-agent's own history also receives them as an observer
-        # so its derived view (filtered by agent_id) is correct for the
-        # sub-agent's LLM calls.
-        parent_conv = get_current_conversation()
-        if parent_conv is not None:
-            parent_conv.subscribe(history.handle_event)
-        try:
-            publish_event(AgentEvent(payload=UserMessagePayload(
-                type="user_message", content=instructions,
-            )))
-        except Exception:  # pragma: no cover - defensive
-            logger.exception("Failed to publish sub-agent user_message event")
-
-        ctx_manager = ContextManager(
-            history=history,
-            agent_state=agent_state,
-            context_limit=agent.context_window,
-            agent_name=agent.name,
-            compaction_threshold=agent.compaction_threshold,
-            strategies=[
-                LLMCompactionStrategy(threshold=agent.compaction_threshold),
-            ],
-        )
-        hooks = default_hooks(
-            agent,
-            max_iterations=agent.max_iterations,
-            ctx_manager=ctx_manager,
-        )
-        try:
-            result_text = await run_turn(
-                history=history,
-                agent=agent,
-                hooks=hooks,
+    publish_event(
+        AgentEvent(
+            payload=SpawnRequestedPayload(
+                type="spawn_requested",
+                correlation_id=correlation_id,
             )
-        except StopRequestedError:
-            logger.info("Spawned agent '%s' stopped by user request", agent_name)
-            raise
-        except Exception as exc:
-            _log_spawn_error(agent_name, str(exc))
-            logger.exception("Unexpected error in spawned agent '%s'", agent_name)
-            raise
-        finally:
+        )
+    )
+
+    with browser_profile_assignment_scope(browser_assignment):
+        async with agent_span(
+            agent_name,
+            instruction=instructions,
+            agent_state=agent_state,
+            profile_name=agent_profile.name,
+            correlation_id=correlation_id,
+        ):
+            conv_id = get_conversation_id() or "default"
+            history = ConversationHistory(
+                system_message=agent.instruction,
+                conversation_id=conv_id,
+                agent_id=get_current_agent_id(),
+            )
+            # Sub-agents share the parent conversation. Events keep flowing
+            # through the bound parent conversation (so they reach disk + UI),
+            # but the sub-agent's own history also receives them as an observer
+            # so its derived view (filtered by agent_id) is correct for the
+            # sub-agent's LLM calls.
+            parent_conv = get_current_conversation()
             if parent_conv is not None:
-                parent_conv.unsubscribe(history.handle_event)
+                parent_conv.subscribe(history.handle_event)
+            try:
+                publish_event(
+                    AgentEvent(
+                        payload=UserMessagePayload(
+                            type="user_message",
+                            content=instructions,
+                        )
+                    )
+                )
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Failed to publish sub-agent user_message event")
+
+            ctx_manager = ContextManager(
+                history=history,
+                agent_state=agent_state,
+                context_limit=agent.context_window,
+                agent_name=agent.name,
+                compaction_threshold=agent.compaction_threshold,
+                strategies=[
+                    LLMCompactionStrategy(threshold=agent.compaction_threshold),
+                ],
+            )
+            hooks = default_hooks(
+                agent,
+                max_iterations=agent.max_iterations,
+                ctx_manager=ctx_manager,
+            )
+            try:
+                result_text = await run_turn(
+                    history=history,
+                    agent=agent,
+                    hooks=hooks,
+                )
+            except StopRequestedError:
+                logger.info("Spawned agent '%s' stopped by user request", agent_name)
+                raise
+            except Exception as exc:
+                _log_spawn_error(agent_name, str(exc))
+                logger.exception("Unexpected error in spawned agent '%s'", agent_name)
+                raise
+            finally:
+                if parent_conv is not None:
+                    parent_conv.unsubscribe(history.handle_event)
 
     result = (result_text or "").strip()
     _log_spawn_complete(agent_name, result)

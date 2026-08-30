@@ -91,6 +91,14 @@
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
 
+  /* ── Type scale ── */
+  --font-size-label: 10px;
+  --font-size-caption: 11px;
+  --font-size-small: 12px;
+  --font-size-body: 13px;
+  --font-size-ui: 14px;
+  --font-size-heading: 18px;
+
   /* ── Z-index scale ── */
   --z-sticky: 10;
   --z-flyout: 100;

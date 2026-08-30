@@ -27,6 +27,7 @@ import useDesktopShellLifecycle, {
     useDesktopRestoreSnapshot,
 } from './useDesktopShellLifecycle.js';
 import useDesktopViewInteractions from './useDesktopViewInteractions.js';
+import { BrowserProfileLoadRequestProvider } from '../browser/BrowserProfileLoadRequest.jsx';
 import {
     createNavigationView,
 } from '../navigation/desktopNavigationViews.js';
@@ -67,11 +68,13 @@ export default function Desktop() {
     return (
         <DesktopViewRuntimeProvider desktopLayout={desktopLayout}>
             <DesktopNavigationProvider>
-                <DesktopDomainEffects />
-                <DesktopShell
-                    desktopLayout={desktopLayout}
-                    desktopRestore={desktopRestore}
-                />
+                <BrowserProfileLoadRequestProvider>
+                    <DesktopDomainEffects />
+                    <DesktopShell
+                        desktopLayout={desktopLayout}
+                        desktopRestore={desktopRestore}
+                    />
+                </BrowserProfileLoadRequestProvider>
             </DesktopNavigationProvider>
         </DesktopViewRuntimeProvider>
     );

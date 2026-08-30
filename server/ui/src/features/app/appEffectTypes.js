@@ -13,6 +13,7 @@ export const APP_EFFECT_TYPES = Object.freeze(/** @type {const} */ ({
         'workspace/open-agent-resource-requested',
     OPEN_CUSTOM_APP_REQUESTED: 'custom-apps/open-requested',
     OPEN_ARTIFACT_REQUESTED: 'artifacts/open-requested',
+    OPEN_BROWSER_PROFILE_REQUESTED: 'browser/open-profile-requested',
     DESKTOP_VIEWS_CLOSING: 'desktop/views-closing',
     DESKTOP_VIEW_ACTION_REQUESTED: 'desktop/view-action-requested',
 }));

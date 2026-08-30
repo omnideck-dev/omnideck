@@ -48,6 +48,31 @@
     full.textContent='SCROLL';
     var t=document.createElement('div'); t.id='tall'; document.body.appendChild(t);
     window.addEventListener('scroll', function(){ if(window.scrollY>150) go('scrolled=1'); });
+  }else if(mode==='profile-seed'){
+    var value=p.get('value')||'';
+    document.cookie='profile-cookie='+encodeURIComponent(value)+'; path=/; SameSite=Lax';
+    localStorage.setItem('profile-value', value);
+    var seed=indexedDB.open('profile-db', 1);
+    seed.onupgradeneeded=function(){ seed.result.createObjectStore('values'); };
+    seed.onsuccess=function(){
+      var tx=seed.result.transaction('values','readwrite');
+      tx.objectStore('values').put(value,'saved');
+      tx.oncomplete=function(){ location.href=here+'?mode=profile-seeded&value='+encodeURIComponent(value); };
+    };
+  }else if(mode==='profile-report'){
+    var report=indexedDB.open('profile-db', 1), created=false;
+    report.onupgradeneeded=function(){ report.result.createObjectStore('values'); created=true; };
+    report.onsuccess=function(){
+      var finish=function(indexed){
+        var match=document.cookie.match(/(?:^|; )profile-cookie=([^;]*)/);
+        location.href=here+'?mode=profile-result&cookie='+encodeURIComponent(match?decodeURIComponent(match[1]):'')+
+          '&local='+encodeURIComponent(localStorage.getItem('profile-value')||'')+
+          '&indexed='+encodeURIComponent(indexed||'');
+      };
+      if(created){ finish(''); return; }
+      var read=report.result.transaction('values').objectStore('values').get('saved');
+      read.onsuccess=function(){ finish(read.result); };
+    };
   }else{
     full.textContent='IDLE';
   }

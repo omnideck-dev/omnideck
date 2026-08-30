@@ -71,6 +71,7 @@ class TestDisableDefaultRule:
     async def test_disable_non_default_is_allowed(self):
         """Disabling a profile that isn't the default succeeds."""
         from settings import save_settings
+
         save_settings({"default_agent": "computron"})
         save_agent_profile(AgentProfile(id="computron", name="C", model="m"))
         save_agent_profile(AgentProfile(id="other", name="Other", model="m"))
@@ -87,6 +88,7 @@ class TestDisableDefaultRule:
     async def test_disable_default_is_rejected(self):
         """Disabling the currently-set default_agent returns 400."""
         from settings import save_settings
+
         save_settings({"default_agent": "computron"})
         save_agent_profile(AgentProfile(id="computron", name="Computron", model="m"))
 
@@ -103,6 +105,7 @@ class TestDisableDefaultRule:
     async def test_enable_default_is_allowed(self):
         """Setting enabled=True on the default is fine (no-op)."""
         from settings import save_settings
+
         save_settings({"default_agent": "computron"})
         save_agent_profile(AgentProfile(id="computron", name="Computron", model="m"))
 
@@ -116,6 +119,7 @@ class TestDisableDefaultRule:
     async def test_updating_other_fields_on_default_is_allowed(self):
         """Changing name/description on the default doesn't trigger the rule."""
         from settings import save_settings
+
         save_settings({"default_agent": "computron"})
         save_agent_profile(AgentProfile(id="computron", name="C", model="m"))
 
@@ -131,6 +135,7 @@ class TestDisableDefaultRule:
     async def test_disable_default_after_reassignment_is_allowed(self):
         """Once default moves off a profile, that profile can be disabled."""
         from settings import save_settings
+
         save_settings({"default_agent": "computron"})
         save_agent_profile(AgentProfile(id="computron", name="C", model="m"))
         save_agent_profile(AgentProfile(id="other", name="Other", model="m"))
@@ -143,3 +148,32 @@ class TestDisableDefaultRule:
         )
         resp = await handle_update_profile(req)
         assert resp.status == 200
+
+
+@pytest.mark.unit
+async def test_disabling_browser_access_clears_the_hidden_profile_assignment():
+    """A disabled capability cannot retain an assignment outside the UI."""
+    save_agent_profile(
+        AgentProfile(
+            id="browser-agent",
+            name="Browser Agent",
+            model="m",
+            browser_access=True,
+            browser_profile_id="default",
+        )
+    )
+    req = _make_request(
+        match_info={"id": "browser-agent"},
+        json_body={
+            "id": "browser-agent",
+            "name": "Browser Agent",
+            "model": "m",
+            "browser_access": False,
+            "browser_profile_id": "default",
+        },
+    )
+
+    response = await handle_update_profile(req)
+
+    assert response.status == 200
+    assert json.loads(response.body)["browser_profile_id"] is None

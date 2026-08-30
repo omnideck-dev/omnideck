@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from aiohttp import web
 
+from sdk.skills._policy import grants_internal_tool_category, is_internal_skill
 from sdk.skills._store import (
     SkillRecord,
     delete_skill_record,
@@ -24,14 +25,20 @@ from sdk.skills._store import (
 logger = logging.getLogger(__name__)
 
 
+def _public_skills() -> list[SkillRecord]:
+    return [record for record in list_skill_records() if not is_internal_skill(record.id)]
+
+
 async def handle_list_skills(_request: web.Request) -> web.Response:
     """Return all skill records, sorted by name."""
-    return web.json_response([r.model_dump() for r in list_skill_records()])
+    return web.json_response([r.model_dump() for r in _public_skills()])
 
 
 async def handle_get_skill(request: web.Request) -> web.Response:
     """Return a single skill record by id."""
     skill_id = request.match_info["id"]
+    if is_internal_skill(skill_id):
+        return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
     record = get_skill_record(skill_id)
     if record is None:
         return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
@@ -45,6 +52,8 @@ async def handle_create_skill(request: web.Request) -> web.Response:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return web.json_response({"error": "Invalid JSON"}, status=400)
     body.setdefault("id", uuid4().hex[:12])
+    if is_internal_skill(body.get("id", "")) or grants_internal_tool_category(body.get("tool_categories", [])):
+        return web.json_response({"error": "Browser access is configured on the agent"}, status=400)
     try:
         saved = save_skill_record(SkillRecord.model_validate(body))
         return web.json_response(saved.model_dump(), status=201)
@@ -56,6 +65,8 @@ async def handle_create_skill(request: web.Request) -> web.Response:
 async def handle_update_skill(request: web.Request) -> web.Response:
     """Update a skill in place; the path id wins so a rename keeps the id."""
     skill_id = request.match_info["id"]
+    if is_internal_skill(skill_id):
+        return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
     if get_skill_record(skill_id) is None:
         return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
     try:
@@ -63,6 +74,8 @@ async def handle_update_skill(request: web.Request) -> web.Response:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return web.json_response({"error": "Invalid JSON"}, status=400)
     body["id"] = skill_id
+    if grants_internal_tool_category(body.get("tool_categories", [])):
+        return web.json_response({"error": "Browser access is configured on the agent"}, status=400)
     try:
         saved = save_skill_record(SkillRecord.model_validate(body))
         return web.json_response(saved.model_dump())
@@ -74,6 +87,8 @@ async def handle_update_skill(request: web.Request) -> web.Response:
 async def handle_delete_skill(request: web.Request) -> web.Response:
     """Delete a skill record by id."""
     skill_id = request.match_info["id"]
+    if is_internal_skill(skill_id):
+        return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
     if not delete_skill_record(skill_id):
         return web.json_response({"error": f"Skill '{skill_id}' not found"}, status=404)
     return web.Response(status=204)

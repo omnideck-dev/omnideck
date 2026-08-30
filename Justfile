@@ -201,9 +201,9 @@ test-browser-tools *args:
 test-file file:
     PYTHONPATH=. uv run pytest {{file}}
 
-# Run integration tests (needs a running container with Ollama)
+# Run local integration tests. Tests needing an external app opt in via OMNIDECK_URL.
 integration:
-    OMNIDECK_URL="${OMNIDECK_URL:-http://localhost:8080}" PYTHONPATH=. uv run pytest tests/integration/
+    PYTHONPATH=. uv run pytest tests/integration/
 
 # Coverage report
 test-cov:

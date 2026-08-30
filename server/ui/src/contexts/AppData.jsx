@@ -4,12 +4,14 @@ import useAgentProfiles from '../hooks/useAgentProfiles.js';
 import useFeatures from '../hooks/useFeatures.js';
 import useProviders from '../hooks/useProviders.js';
 import useSkills from '../hooks/useSkills.js';
+import useBrowserProfiles from '../features/browser/useBrowserProfiles.js';
+import { BrowserProfilesCatalogProvider } from '../features/browser/BrowserProfilesContext.jsx';
 
 /**
- * App-wide data that several panels need: agent profiles, providers, skills,
- * and feature flags. Provided once at the app root so callers don't have to
- * prop-drill (or call the underlying hooks twice and get separate copies of
- * their state).
+ * App-wide data that several panels need: agent profiles, Browser profiles,
+ * providers, skills, and feature flags. Provided once at the app root so
+ * callers don't have to prop-drill (or call the underlying hooks twice and
+ * get separate copies of their state).
  */
 const AppDataContext = createContext(null);
 
@@ -17,6 +19,7 @@ export function AppDataProvider({ children }) {
     const profilesHook = useAgentProfiles();
     const providersHook = useProviders();
     const skillsHook = useSkills();
+    const browserProfilesHook = useBrowserProfiles();
     const {
         features,
         loaded: featuresLoaded,
@@ -26,13 +29,16 @@ export function AppDataProvider({ children }) {
         profilesHook,
         providersHook,
         skillsHook,
+        browserProfilesHook,
         features,
         featuresLoaded,
         refreshFeatures,
     };
     return (
         <AppDataContext.Provider value={value}>
-            {children}
+            <BrowserProfilesCatalogProvider value={browserProfilesHook}>
+                {children}
+            </BrowserProfilesCatalogProvider>
         </AppDataContext.Provider>
     );
 }

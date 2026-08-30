@@ -21,6 +21,7 @@ from migrations._011_seed_welcome_conversation import migrate as _011_seed_welco
 from migrations._012_computron_path_rename import migrate as _012_computron_path_rename
 from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
 from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
+from migrations._015_browser_profiles import migrate as _015_browser_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("012_computron_path_rename", _012_computron_path_rename),
     ("013_goals_to_routines", _013_goals_to_routines),
     ("014_software_updates_setting", _014_software_updates_setting),
+    ("015_browser_profiles", _015_browser_profiles),
 ]
 
 

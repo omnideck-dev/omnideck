@@ -116,8 +116,8 @@ async def test_update_unknown_returns_404():
 @pytest.mark.unit
 async def test_update_duplicate_name_rejected():
     save_skill_record(SkillRecord(id="coder", name="Coder"))
-    save_skill_record(SkillRecord(id="browser", name="Browser"))
-    req = _make_request(match_info={"id": "browser"}, json_body={"name": "Coder"})
+    save_skill_record(SkillRecord(id="analyst", name="Analyst"))
+    req = _make_request(match_info={"id": "analyst"}, json_body={"name": "Coder"})
     resp = await handle_update_skill(req)
     assert resp.status == 400
 

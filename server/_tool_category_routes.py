@@ -12,6 +12,7 @@ import logging
 from aiohttp import web
 
 from sdk.skills import tool_categories
+from sdk.skills._policy import is_internal_tool_category
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ async def handle_list_tool_categories(_request: web.Request) -> web.Response:
                 "connected": c.connected,
             }
             for c in categories.values()
+            if not is_internal_tool_category(c.id)
         ]
     )
 

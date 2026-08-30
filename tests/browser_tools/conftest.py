@@ -135,7 +135,6 @@ def downloads_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 async def _live_browser(
-    tmp_path: Path,
     downloads_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[None]:
@@ -147,7 +146,6 @@ async def _live_browser(
     no-op so the tools don't need a live event/conversation context.
     """
     browser = await Browser.start(
-        str(tmp_path / "profile"),
         headless=False,
         downloads_path=str(downloads_dir),
     )

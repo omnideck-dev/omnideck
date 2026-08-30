@@ -43,7 +43,10 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
                     + say(task_reply)
                 ),
                 "depends_on": [],
-                "agent_profile": "code_expert",
+                # Routines inherit Browser access from their configured agent.
+                # This task intentionally exercises a Browser call, so use the
+                # shipped agent that explicitly has Browser access.
+                "agent_profile": "research_agent",
             }
         ],
     }

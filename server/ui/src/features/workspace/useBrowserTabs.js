@@ -12,10 +12,22 @@ import useBrowserControl from './useBrowserControl.js';
  *
  * Returns the control object, the merged tab list, and the selection state.
  */
-export default function useBrowserTabs({ conversationId, canControl, enabled, agentTabs }) {
+export default function useBrowserTabs({
+    conversationId,
+    canControl,
+    enabled,
+    agentTabs,
+    sessionKey = null,
+}) {
     const [selectedTabId, setSelectedTabId] = useState(null);
 
-    const control = useBrowserControl({ conversationId, selectedTabId, canControl, enabled });
+    const control = useBrowserControl({
+        conversationId,
+        selectedTabId,
+        canControl,
+        enabled,
+        sessionKey,
+    });
 
     // Prefer the live channel list once it has sent anything (fresh during
     // takeover, when the agent emits no screenshots), reusing agent screenshots

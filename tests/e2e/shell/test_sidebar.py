@@ -7,9 +7,7 @@ from tests.e2e.pages import ChatView, Sidebar
 
 def _sidebar_order(page: Page, selector: str) -> list[str]:
     """Return the DOM order for one reorderable sidebar group."""
-    return page.locator(selector).evaluate_all(
-        """rows => rows.map((row) => row.getAttribute('data-reorder-id'))"""
-    )
+    return page.locator(selector).evaluate_all("""rows => rows.map((row) => row.getAttribute('data-reorder-id'))""")
 
 
 def _drag_below(page: Page, source_testid: str, target_testid: str) -> None:
@@ -86,13 +84,12 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
     ChatView(page).goto()
     sidebar = Sidebar(page)
     sidebar.set_collapsed(False)
-    page.evaluate(
-        "localStorage.removeItem('omnideck_sidebar_navigation_order')"
-    )
+    page.evaluate("localStorage.removeItem('omnideck_sidebar_navigation_order')")
     page.reload()
 
     selector = "[data-testid^='sidebar-nav-']"
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "agents",
         "routines",
         "artifacts",
@@ -115,7 +112,8 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
     expect(page.get_by_test_id("routines-view")).to_be_visible()
 
     _drag_below(page, "sidebar-nav-agents", "sidebar-nav-artifacts")
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "routines",
         "artifacts",
         "agents",
@@ -123,7 +121,8 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
     expect(page.get_by_test_id("routines-view")).to_be_visible()
 
     page.reload()
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "routines",
         "artifacts",
         "agents",
@@ -131,7 +130,8 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
 
     page.get_by_test_id("sidebar-nav-agents").click(button="right")
     page.get_by_test_id("sidebar-reorder-move-up").click()
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "routines",
         "agents",
         "artifacts",
@@ -140,7 +140,8 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
     agents = page.get_by_test_id("sidebar-nav-agents")
     agents.focus()
     agents.press("Alt+ArrowUp")
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "agents",
         "routines",
         "artifacts",
@@ -148,7 +149,8 @@ def test_destination_order_supports_drag_keyboard_context_menu_and_persistence(
 
     sidebar.set_collapsed(True)
     _drag_below(page, "sidebar-nav-agents", "sidebar-nav-routines")
-    assert _sidebar_order(page, selector)[:3] == [
+    assert _sidebar_order(page, selector)[:4] == [
+        "browser",
         "routines",
         "agents",
         "artifacts",

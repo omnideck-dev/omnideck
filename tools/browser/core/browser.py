@@ -1,15 +1,9 @@
-"""Core Playwright browser utilities for agent tools.
-
-This module provides a minimal, persistent Chromium context with small anti-bot tweaks
-suited for LLM-powered browsing tools. It focuses on sensible defaults and clean
-shutdown while keeping a light surface area.
-"""
+"""Core Playwright browser utilities for agent tools."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import platform
 import secrets
 import time
 from collections.abc import Awaitable, Callable
@@ -18,15 +12,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from playwright.async_api import (
-    Browser as PlaywrightBrowser,
-)
-from playwright.async_api import (
     BrowserContext,
     Frame,
     Page,
     Playwright,
     Response,
-    async_playwright,
 )
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -35,18 +25,11 @@ from config import load_config
 from tools.browser.core.challenges import detect_challenge
 from tools.browser.core.downloads import DownloadInfo
 from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.launch import (
-    _ANTI_BOT_SCRIPT,
-    _OPEN_SHADOW_DOM_SCRIPT,
-    _apply_ua_override,
-    _chrome_args,
-    _chrome_ua_metadata,
-    _launch_options,
-)
 from tools.browser.core.tab import Tab
 
 if TYPE_CHECKING:  # Imported only for type checking to avoid runtime dependency surface
     from playwright.async_api import Geolocation, ProxySettings
+    from tools.browser.core.host import BrowserHost
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +49,10 @@ class ActionResult:
 
 
 class Browser:
-    """Minimal persistent Playwright browser core for powering LLM tools.
+    """Minimal Playwright browser core for powering LLM tools.
 
     Example:
-        browser = await Browser.start(profile_dir="~/.playwright/profiles/agent1")
+        browser = await Browser.start(storage_state=saved_state)
         tab = await browser.new_tab()
         await browser.navigate("https://example.com", tab=tab)
         ...
@@ -81,8 +64,6 @@ class Browser:
         context: BrowserContext,
         extra_headers: dict[str, str] | None = None,
         pw: Playwright | None = None,
-        pw_browser: PlaywrightBrowser | None = None,
-        profile_dir: str = "",
         downloads_dir: str = "",
     ) -> None:
         """Initialize the browser wrapper.
@@ -91,16 +72,12 @@ class Browser:
             context: The Playwright browser context.
             extra_headers: Default HTTP headers applied to all requests.
             pw: The Playwright driver instance used to launch the browser.
-            pw_browser: The Playwright Browser object. Present on the root
-                browser so sub-agents can create new contexts on it.
-            profile_dir: Path to the browser session state directory.
             downloads_dir: Directory where captured downloads are stored.
         """
         self._context: BrowserContext = context
-        self._profile_dir: str = profile_dir
         self._extra_headers: dict[str, str] = extra_headers or {}
         self._pw: Playwright | None = pw
-        self._pw_browser = pw_browser
+        self._owned_host: BrowserHost | None = None
         self._closed: bool = False
         self._tabs_by_id: dict[int, Tab] = {}
         self._tabs_by_page: dict[Page, Tab] = {}
@@ -116,20 +93,6 @@ class Browser:
         self._context.on("page", self._track_page)
         for page in self._context.pages:
             self._track_page(page)
-
-        # Capture the Playwright driver PID so the atexit handler can kill the
-        # process tree if the async close path never ran (e.g. SIGKILL, event
-        # loop torn down before shutdown hooks complete).
-        self._driver_pid: int | None = None
-        self._ua_string: str | None = None
-        self._ua_metadata: dict | None = None
-        try:
-            transport = pw._impl_obj._connection._transport  # type: ignore[union-attr]
-            proc = getattr(transport, "_proc", None)
-            if proc:
-                self._driver_pid = proc.pid
-        except Exception:  # noqa: BLE001
-            pass
 
     def _attach_download_listener(self, page: Page) -> None:
         """Attach a download event listener to a page if not already attached."""
@@ -223,8 +186,8 @@ class Browser:
     @classmethod
     async def start(
         cls,
-        profile_dir: str,
         *,
+        storage_state: dict[str, Any] | str | None = None,
         headless: bool = False,
         locale: str = "en-US",
         timezone_id: str = "America/Chicago",
@@ -236,17 +199,14 @@ class Browser:
         extra_headers: dict[str, str] | None = None,
         args: list[str] | None = None,
     ) -> Browser:
-        """Launch system Chrome and create a browser context.
+        """Launch system Chrome and create one independently owned session.
 
-        Uses ``chromium.launch()`` which returns a ``Browser`` object,
-        allowing sub-agents to create additional contexts on the same
-        Chrome process via ``_pw_browser``.
-
-        Session state (cookies, localStorage) is persisted to a JSON file
-        in *profile_dir* and restored on the next launch.
+        A caller may seed the context with a Playwright storage-state document.
+        Closing a Browser never persists its state; persistence is an explicit
+        application-level operation.
 
         Args:
-            profile_dir: Directory for session state persistence.
+            storage_state: Playwright storage state to seed the new context.
             headless: Whether to launch without a visible window.
             locale: BCP 47 locale tag.
             timezone_id: IANA timezone ID to emulate.
@@ -261,150 +221,30 @@ class Browser:
         Returns:
             A ready-to-use ``Browser`` wrapping the context.
         """
-        profile_path = Path(profile_dir).expanduser().resolve()
-        profile_path.mkdir(parents=True, exist_ok=True)
+        from tools.browser.core.host import BrowserHost
 
-        chrome_args = _chrome_args(args)
-
-        resolved_downloads_path: str | None = None
-        if downloads_path:
-            dl_path = Path(downloads_path).expanduser().resolve()
-            dl_path.mkdir(parents=True, exist_ok=True)
-            resolved_downloads_path = str(dl_path)
-
-        launch_kwargs = _launch_options(
+        host = await BrowserHost.start(
             headless=headless,
-            chrome_args=chrome_args,
-            downloads_path=resolved_downloads_path,
-        )
-
-        pw: Playwright = await async_playwright().start()
-        try:
-            pw_browser = await pw.chromium.launch(**launch_kwargs)
-        except Exception:  # noqa: BLE001 - restart the driver after any launch failure
-            try:
-                await asyncio.wait_for(pw.stop(), timeout=5.0)
-            except Exception:  # noqa: BLE001
-                pass
-            pw = await async_playwright().start()
-            try:
-                pw_browser = await pw.chromium.launch(**launch_kwargs)
-            except Exception:
-                await pw.stop()
-                raise
-
-        # Restore session state (cookies + localStorage) from previous run.
-        state_file = profile_path / "storage_state.json"
-        storage_state: str | None = None
-        if state_file.exists():
-            storage_state = str(state_file)
-            logger.info("Restoring browser session from %s", state_file)
-
-        context_kwargs: dict[str, Any] = dict(
-            no_viewport=True,
             locale=locale,
             timezone_id=timezone_id,
+            proxy=proxy,
             accept_downloads=accept_downloads,
+            downloads_path=downloads_path,
             geolocation=geolocation,
-            permissions=permissions or [],
-            java_script_enabled=True,
-            storage_state=storage_state,
+            permissions=permissions,
+            extra_headers=extra_headers,
+            args=args,
         )
-        if proxy:
-            context_kwargs["proxy"] = proxy
-
-        # On arm64, Playwright's bundled Chromium sends "HeadlessChrome" in
-        # its User-Agent and "Chromium" in Client Hints — both bot signals.
-        # Use CDP to patch both surfaces atomically with a real Chrome
-        # fingerprint matching the version of the underlying engine.
-        ua_string: str | None = None
-        ua_metadata: dict | None = None
-        if platform.machine() != "x86_64":
-            ua_string, ua_metadata = _chrome_ua_metadata(pw_browser.version)
-            context_kwargs["user_agent"] = ua_string
-
-        context = await pw_browser.new_context(**context_kwargs)
-
-        headers = {
-            "Accept-Language": "%s,en;q=0.9" % locale,
-            **(extra_headers or {}),
-        }
-        await context.set_extra_http_headers(headers)
-
-        await context.add_init_script(_ANTI_BOT_SCRIPT)
-        await context.add_init_script(_OPEN_SHADOW_DOM_SCRIPT)
-
-        if ua_string is not None and ua_metadata is not None:
-            await _apply_ua_override(context, ua_string, ua_metadata)
-
-        instance = cls(
-            context=context,
-            extra_headers=headers,
-            pw=pw,
-            pw_browser=pw_browser,
-            profile_dir=str(profile_path),
-            downloads_dir=resolved_downloads_path or "",
-        )
-        instance._ua_string = ua_string
-        instance._ua_metadata = ua_metadata
+        try:
+            instance = await host.create_session(storage_state=storage_state)
+        except Exception:
+            await host.close()
+            raise
+        instance._owned_host = host
         return instance
 
-    @classmethod
-    async def _start_ephemeral(
-        cls,
-        root_browser: Browser,
-        storage_state: Any,
-    ) -> Browser:
-        """Create an ephemeral browser context on the root's Chrome process.
-
-        The new context inherits cookies and localStorage from *storage_state*
-        but is fully isolated — changes do not affect the root profile or other
-        ephemeral contexts.
-
-        Args:
-            root_browser: The root browser whose ``_pw_browser`` hosts the
-                new context. Also used as template for headers and anti-bot
-                patches.
-            storage_state: Cookies and localStorage snapshot from
-                ``root_browser._context.storage_state()``.
-
-        Returns:
-            A ``Browser`` wrapping the new ephemeral context.
-        """
-        if root_browser._pw_browser is None:
-            raise RuntimeError("Root Browser does not own a Chromium process")
-        context = await root_browser._pw_browser.new_context(
-            storage_state=storage_state,
-            no_viewport=True,
-            locale="en-US",
-            timezone_id="America/Chicago",
-            accept_downloads=True,
-            java_script_enabled=True,
-        )
-
-        # Apply the same HTTP headers and anti-bot patches as the root.
-        headers = dict(root_browser._extra_headers)
-        await context.set_extra_http_headers(headers)
-        await context.add_init_script(_ANTI_BOT_SCRIPT)
-        await context.add_init_script(_OPEN_SHADOW_DOM_SCRIPT)
-
-        # Propagate arm64 UA override from the root browser.
-        if root_browser._ua_string is not None and root_browser._ua_metadata is not None:
-            await _apply_ua_override(context, root_browser._ua_string, root_browser._ua_metadata)
-
-        instance = cls(
-            context=context,
-            extra_headers=headers,
-            pw=None,  # ephemeral — does not own the Playwright driver
-            profile_dir="",
-            downloads_dir=root_browser._downloads_dir,
-        )
-        instance._ua_string = root_browser._ua_string
-        instance._ua_metadata = root_browser._ua_metadata
-        return instance
-
-    async def _close_context(self) -> None:
-        """Close only the browser context, not the Playwright driver.
+    async def close_session(self) -> None:
+        """Close only this session's context, leaving its shared host running.
 
         Used for ephemeral sub-agent contexts that share the root's Chromium
         process.  The ``close()`` method is inappropriate here because it also
@@ -423,6 +263,10 @@ class Browser:
             await asyncio.wait_for(self._context.close(), timeout=5.0)
         except Exception:  # noqa: BLE001
             logger.warning("Failed to close ephemeral browser context")
+
+    async def capture_storage_state(self) -> dict[str, Any]:
+        """Capture transferable cookies, local storage, and IndexedDB."""
+        return await self._context.storage_state(indexed_db=True)
 
     async def new_tab(self) -> Tab:
         """Open and return a new stable tab.
@@ -604,16 +448,6 @@ class Browser:
             return
         self._closed = True
 
-        # Persist session state (cookies + localStorage) so the next launch
-        # can restore login sessions.
-        if self._profile_dir:
-            state_file = Path(self._profile_dir) / "storage_state.json"
-            try:
-                await self._context.storage_state(path=str(state_file))
-                logger.info("Saved browser session state to %s", state_file)
-            except Exception:  # noqa: BLE001
-                logger.warning("Failed to save browser storage state")
-
         context_exc: Exception | None = None
         pages_to_close = list(self._context.pages)
         for page in pages_to_close:
@@ -656,14 +490,8 @@ class Browser:
                 exc,
             )
         finally:
-            # Close the Playwright Browser (kills Chrome), then stop the driver.
-            try:
-                if self._pw_browser is not None:
-                    logger.debug("Closing Playwright Browser ...")
-                    await asyncio.wait_for(self._pw_browser.close(), timeout=self._CONTEXT_CLOSE_TIMEOUT_S)
-                    logger.debug("Playwright Browser closed")
-            except Exception:  # noqa: BLE001
-                logger.warning("Failed to close Playwright Browser")
+            if self._owned_host is not None:
+                await self._owned_host.close()
             try:
                 if self._pw is not None:
                     logger.debug("Stopping Playwright driver ...")
