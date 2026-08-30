@@ -28,6 +28,21 @@
     margin: var(--sp-5) 0;
 }
 
+.loadingState {
+    display: flex;
+    min-height: 148px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-small);
+}
+
+.loadingState > :global(.bi) {
+    color: var(--accent);
+    animation: browserSaveSpin 900ms linear infinite;
+}
+
 .field {
     display: flex;
     flex: 1;
@@ -79,7 +94,7 @@
 
 .identity {
     display: grid;
-    grid-template-columns: var(--sp-10) minmax(0, 1fr);
+    grid-template-columns: var(--sp-8) minmax(0, 1fr);
     align-items: end;
     gap: var(--sp-3);
 }
@@ -138,5 +153,17 @@
     .identity {
         grid-template-columns: 1fr;
         align-items: start;
+    }
+}
+
+@keyframes browserSaveSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loadingState > :global(.bi) {
+        animation: none;
     }
 }

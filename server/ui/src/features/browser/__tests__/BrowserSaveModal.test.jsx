@@ -55,6 +55,37 @@ describe('BrowserSaveModal', () => {
         });
     });
 
+    it('does not render fallback save options while the Browser preview is loading', async () => {
+        let resolveProfiles;
+        let resolvePreview;
+        mocks.listBrowserProfiles.mockReturnValue(new Promise((resolve) => {
+            resolveProfiles = resolve;
+        }));
+        mocks.previewBrowserState.mockReturnValue(new Promise((resolve) => {
+            resolvePreview = resolve;
+        }));
+
+        renderModal({ conversationId: 'conversation-1', onClose: vi.fn() });
+
+        expect(screen.getByRole('status')).toHaveTextContent('Reading current Browser…');
+        expect(screen.queryByTestId('browser-save-target')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('browser-save-confirm')).not.toBeInTheDocument();
+
+        resolveProfiles([DEFAULT]);
+        resolvePreview({
+            preview_token: 'preview-default',
+            source_profile_id: 'default',
+            agent_name: 'Default agent',
+            sites: [],
+        });
+
+        const target = await screen.findByTestId('browser-save-target');
+        expect(target).toHaveAttribute('data-value', 'default');
+        expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
+        expect(screen.getByTestId('browser-save-confirm')).toHaveTextContent('Update Default');
+    });
+
     it('describes prospective data and updates the loaded profile by default', async () => {
         const user = userEvent.setup();
         const onClose = vi.fn();
@@ -143,7 +174,8 @@ describe('BrowserSaveModal', () => {
         renderModal({ onClose: vi.fn() });
 
         expect(await screen.findByText('Preview failed')).toBeInTheDocument();
-        expect(screen.getByTestId('browser-save-confirm')).toBeDisabled();
+        expect(screen.queryByTestId('browser-save-target')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('browser-save-confirm')).not.toBeInTheDocument();
         expect(mocks.saveBrowserState).not.toHaveBeenCalled();
     });
 });

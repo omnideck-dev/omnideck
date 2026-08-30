@@ -36,8 +36,10 @@ export default function BrowserSaveModal({
     const [error, setError] = useState('');
 
     useEffect(() => {
+        let active = true;
         Promise.all([refreshBrowserProfiles(), previewBrowserState(conversationId)])
             .then(([nextProfiles, preview]) => {
+                if (!active) return;
                 setSites(preview.sites);
                 setPreviewToken(preview.preview_token);
                 setAgentName(preview.agent_name || '');
@@ -48,8 +50,15 @@ export default function BrowserSaveModal({
                 setSourceProfileId(availableSource);
                 setTarget(availableSource || NEW_PROFILE);
             })
-            .catch((err) => setError(err.message))
-            .finally(() => setLoading(false));
+            .catch((err) => {
+                if (active) setError(err.message);
+            })
+            .finally(() => {
+                if (active) setLoading(false);
+            });
+        return () => {
+            active = false;
+        };
     }, [conversationId]);
 
     const options = useMemo(() => {
@@ -108,47 +117,53 @@ export default function BrowserSaveModal({
                 />
             </div>
 
-            <label className={styles.field}>
-                <span>Save as</span>
-                <Select
-                    options={options}
-                    value={target}
-                    onChange={setTarget}
-                    disabled={loading}
-                    ariaLabel="Save Browser profile destination"
-                    className={styles.destination}
-                    testId="browser-save-target"
-                />
-            </label>
-
-            {isNew && (
-                <div className={styles.newProfile}>
-                    <div className={styles.identity}>
-                        <BrowserIconPicker value={icon} onChange={setIcon} />
-                        <label className={styles.field}>
-                            <span>Profile name</span>
-                            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Work accounts" autoFocus />
-                        </label>
-                    </div>
-                    {conversationId && (
-                        <label className={styles.assign}>
-                            <input type="checkbox" checked={assign} onChange={(event) => setAssign(event.target.checked)} />
-                            <span>Use this profile for {agentName || 'this agent'} next time</span>
-                        </label>
-                    )}
+            {loading ? (
+                <div className={styles.loadingState} role="status">
+                    <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+                    Reading current Browser…
                 </div>
-            )}
+            ) : previewToken && (
+                <>
+                    <label className={styles.field}>
+                        <span>Save as</span>
+                        <Select
+                            options={options}
+                            value={target}
+                            onChange={setTarget}
+                            ariaLabel="Save Browser profile destination"
+                            className={styles.destination}
+                            testId="browser-save-target"
+                        />
+                    </label>
 
-            <div className={styles.savedData}>
-                <div className={styles.savedDataTitle}>Sites that will be saved</div>
-                {loading ? (
-                    <div className={styles.empty}>Reading current Browser…</div>
-                ) : groupedSites.length ? (
-                    <div className={styles.sites}>
-                        {groupedSites.map((site) => <span key={site.domain}>{site.domain}</span>)}
+                    {isNew && (
+                        <div className={styles.newProfile}>
+                            <div className={styles.identity}>
+                                <BrowserIconPicker value={icon} onChange={setIcon} size="md" />
+                                <label className={styles.field}>
+                                    <span>Profile name</span>
+                                    <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Work accounts" autoFocus />
+                                </label>
+                            </div>
+                            {conversationId && (
+                                <label className={styles.assign}>
+                                    <input type="checkbox" checked={assign} onChange={(event) => setAssign(event.target.checked)} />
+                                    <span>Use this profile for {agentName || 'this agent'} next time</span>
+                                </label>
+                            )}
+                        </div>
+                    )}
+
+                    <div className={styles.savedData}>
+                        <div className={styles.savedDataTitle}>Sites that will be saved</div>
+                        {groupedSites.length ? (
+                            <div className={styles.sites}>
+                                {groupedSites.map((site) => <span key={site.domain}>{site.domain}</span>)}
+                            </div>
+                        ) : <div className={styles.empty}>No site data yet.</div>}
                     </div>
-                ) : <div className={styles.empty}>No site data yet.</div>}
-            </div>
+                </>
+            )}
 
             {error && (
                 <div className={styles.error}>
@@ -157,14 +172,16 @@ export default function BrowserSaveModal({
             )}
             <div className={styles.footer}>
                 <Button onClick={onClose}>Cancel</Button>
-                <Button
-                    variant="filled"
-                    onClick={save}
-                    disabled={loading || busy || !previewToken || (isNew && !name.trim())}
-                    data-testid="browser-save-confirm"
-                >
-                    {busy ? 'Saving…' : isNew ? 'Save new profile' : `Update ${targetProfile?.name || 'profile'}`}
-                </Button>
+                {previewToken && (
+                    <Button
+                        variant="filled"
+                        onClick={save}
+                        disabled={busy || (isNew && !name.trim())}
+                        data-testid="browser-save-confirm"
+                    >
+                        {busy ? 'Saving…' : isNew ? 'Save new profile' : `Update ${targetProfile?.name || 'profile'}`}
+                    </Button>
+                )}
             </div>
         </Modal>
     );
