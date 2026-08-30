@@ -19,6 +19,17 @@ Open `index.html` and use the five numbered states in the prototype header:
 5. **Manage profiles** — site inspection, assignments, icons, and removal live
    under a Browser Profiles settings tab.
 
+Open `browser-controls-options.html` to compare three additional treatments for
+the Browser's profile controls against the real Browser surface:
+
+1. **Profile strip** — keeps profile selection, save, and management visible in
+   a dedicated row while making the selected state more recognizable.
+2. **Unified menu** — consolidates loading, saving, and management into one
+   Browser-state menu for a quieter surface.
+3. **Browser chrome** — places the profile control and save affordance beside
+   the address field, matching where conventional browsers expose identity and
+   session controls.
+
 ## Proposed product model
 
 - **Browser** is the user's working browser session. Product language never
