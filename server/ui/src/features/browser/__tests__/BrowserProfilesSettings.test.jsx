@@ -141,8 +141,13 @@ describe('BrowserProfilesSettings', () => {
 
     it('names the agents preventing a profile from being deleted', async () => {
         const user = userEvent.setup();
-        const conflict = new Error('This browser profile is assigned to an agent');
-        conflict.details = { agents: ['Recruiting', 'LinkedIn Outreach'] };
+        const conflict = new Error('This browser profile is in use');
+        conflict.details = {
+            usage: {
+                loaded_in_browser: false,
+                agents: ['Recruiting', 'LinkedIn Outreach'],
+            },
+        };
         mocks.deleteBrowserProfile.mockRejectedValue(conflict);
         renderSettings();
 
@@ -158,6 +163,48 @@ describe('BrowserProfilesSettings', () => {
         expect(screen.getByText('Agents: Recruiting · LinkedIn Outreach')).toBeInTheDocument();
         expect(within(screen.getByRole('alert')).queryByRole('list')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Open LinkedIn' })).toBeInTheDocument();
+    });
+
+    it('explains that a loaded profile must be loaded away before deletion', async () => {
+        const user = userEvent.setup();
+        const conflict = new Error('This browser profile is in use');
+        conflict.details = {
+            usage: { loaded_in_browser: true, agents: [] },
+        };
+        mocks.deleteBrowserProfile.mockRejectedValue(conflict);
+        renderSettings();
+
+        await user.click(await screen.findByRole('button', { name: 'Open LinkedIn' }));
+        const remove = screen.getByTestId('browser-profile-delete');
+        await user.click(remove);
+        await user.click(remove);
+
+        expect(await screen.findByText("Can't delete — profile is in use")).toBeInTheDocument();
+        expect(screen.getByText(
+            'Load another profile or Empty in Browser, then try again.',
+        )).toBeInTheDocument();
+        expect(screen.queryByText(/^Agents:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Open LinkedIn' })).toBeInTheDocument();
+    });
+
+    it('combines Browser and agent usage in one deletion conflict', async () => {
+        const user = userEvent.setup();
+        const conflict = new Error('This browser profile is in use');
+        conflict.details = {
+            usage: { loaded_in_browser: true, agents: ['Recruiting'] },
+        };
+        mocks.deleteBrowserProfile.mockRejectedValue(conflict);
+        renderSettings();
+
+        await user.click(await screen.findByRole('button', { name: 'Open LinkedIn' }));
+        const remove = screen.getByTestId('browser-profile-delete');
+        await user.click(remove);
+        await user.click(remove);
+
+        expect(await screen.findByText(
+            'Load another profile or Empty in Browser. Also assign the agent another Browser profile or Empty, then try again.',
+        )).toBeInTheDocument();
+        expect(screen.getByText('Agent: Recruiting')).toBeInTheDocument();
     });
 
     it('opens Browser with a request to load the selected profile', async () => {

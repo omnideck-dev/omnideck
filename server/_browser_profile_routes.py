@@ -34,7 +34,6 @@ from browser_profiles._store import summarize_browser_sites
 from tools.browser.core.pool import (
     get_browser_by_conversation_id,
     get_user_browser_source_profile_id,
-    set_user_browser_source_profile_id,
 )
 
 
@@ -201,9 +200,16 @@ async def handle_delete_browser_profile(request: web.Request) -> web.Response:
         for profile in agent_profiles
         if profile.browser_access and profile.browser_profile_id == profile_id
     ]
-    if assigned:
+    loaded_in_browser = get_user_browser_source_profile_id() == profile_id
+    if assigned or loaded_in_browser:
         return web.json_response(
-            {"error": "This browser profile is assigned to an agent", "agents": assigned},
+            {
+                "error": "This browser profile is in use",
+                "usage": {
+                    "loaded_in_browser": loaded_in_browser,
+                    "agents": assigned,
+                },
+            },
             status=409,
         )
     disabled_references = [
@@ -222,8 +228,6 @@ async def handle_delete_browser_profile(request: web.Request) -> web.Response:
             save_agent_profile,
             profile.model_copy(update={"browser_profile_id": None}),
         )
-    if get_user_browser_source_profile_id() == profile_id:
-        set_user_browser_source_profile_id(None)
     detach_deleted_browser_profile(profile_id)
     return web.Response(status=204)
 

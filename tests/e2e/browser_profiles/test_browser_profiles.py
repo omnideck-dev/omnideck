@@ -36,6 +36,11 @@ def _load_profile(page: Page, name: str) -> BrowserControl:
     return BrowserControl(page).wait_loaded(timeout=30_000)
 
 
+def _start_empty(api_client: ApiClient) -> None:
+    response = api_client.post("/api/browser/session/load", data={"profile_id": None})
+    assert response.status == 200
+
+
 def _assert_report(browser: BrowserControl, value: str) -> None:
     browser.goto(fixture_url("profile-report"))
     expect(browser.address).to_have_value(
@@ -227,7 +232,37 @@ def test_create_profile_and_rename_it_in_settings(page: Page, api_client: ApiCli
         page.get_by_test_id("browser-page").wait_for(state="visible")
         expect(page.get_by_test_id("replace-browser-modal")).to_be_hidden()
     finally:
+        _start_empty(api_client)
         api_client.delete(f"/api/browser/profiles/{created['id']}")
+
+
+def test_loaded_profile_must_be_loaded_away_before_delete(page: Page, api_client: ApiClient):
+    """A selected profile remains intact until Browser loads another state."""
+    created = _save_new_profile(
+        page,
+        api_client,
+        name="Loaded deletion guard E2E",
+        value="loaded-delete-guard",
+    )
+    deleted = False
+    try:
+        blocked = api_client.delete(f"/api/browser/profiles/{created['id']}")
+        assert blocked.status == 409
+        assert blocked.json()["usage"] == {
+            "loaded_in_browser": True,
+            "agents": [],
+        }
+
+        _load_profile(page, "Empty")
+        removed = api_client.delete(f"/api/browser/profiles/{created['id']}")
+        assert removed.status == 204
+        deleted = True
+        page.reload()
+        page.get_by_test_id("browser-page").wait_for(state="visible")
+    finally:
+        if not deleted:
+            _start_empty(api_client)
+            api_client.delete(f"/api/browser/profiles/{created['id']}")
 
 
 def test_takeover_from_empty_can_save_and_assign_new_profile(page: Page, api_client: ApiClient):
@@ -338,6 +373,7 @@ def test_profile_settings_remove_one_site_or_clear_all_state(
             == []
         )
     finally:
+        _start_empty(api_client)
         for profile in (removable, clearable):
             api_client.delete(f"/api/browser/profiles/{profile['id']}")
 
@@ -386,5 +422,6 @@ def test_switching_agents_replaces_browser_with_each_assigned_profile(
     finally:
         for agent_id in agent_ids:
             api_client.delete(f"/api/profiles/{agent_id}")
+        _start_empty(api_client)
         for profile in (alpha, beta):
             api_client.delete(f"/api/browser/profiles/{profile['id']}")

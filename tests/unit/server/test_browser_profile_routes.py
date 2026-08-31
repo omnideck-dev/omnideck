@@ -1,6 +1,7 @@
 """Security and provenance checks for Browser-profile HTTP routes."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -176,3 +177,77 @@ async def test_clear_state_updates_the_saved_profile(monkeypatch):
 
     assert response.status == 200
     store.clear_state.assert_called_once_with("work")
+
+
+@pytest.mark.unit
+async def test_delete_rejects_profile_loaded_in_user_browser(monkeypatch):
+    store = MagicMock()
+    monkeypatch.setattr(routes, "get_browser_profile_store", lambda: store)
+    monkeypatch.setattr(routes, "list_agent_profiles", lambda **_kwargs: [])
+    monkeypatch.setattr(routes, "get_user_browser_source_profile_id", lambda: "work")
+
+    response = await routes.handle_delete_browser_profile(_request())
+
+    assert response.status == 409
+    assert json.loads(response.body) == {
+        "error": "This browser profile is in use",
+        "usage": {"loaded_in_browser": True, "agents": []},
+    }
+    store.delete.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_delete_rejects_profile_assigned_to_agents(monkeypatch):
+    store = MagicMock()
+    assigned = SimpleNamespace(
+        name="Recruiting",
+        browser_access=True,
+        browser_profile_id="work",
+    )
+    monkeypatch.setattr(routes, "get_browser_profile_store", lambda: store)
+    monkeypatch.setattr(routes, "list_agent_profiles", lambda **_kwargs: [assigned])
+    monkeypatch.setattr(routes, "get_user_browser_source_profile_id", lambda: None)
+
+    response = await routes.handle_delete_browser_profile(_request())
+
+    assert response.status == 409
+    assert json.loads(response.body)["usage"] == {
+        "loaded_in_browser": False,
+        "agents": ["Recruiting"],
+    }
+    store.delete.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_delete_combines_browser_and_agent_usage(monkeypatch):
+    store = MagicMock()
+    assigned = SimpleNamespace(
+        name="Recruiting",
+        browser_access=True,
+        browser_profile_id="work",
+    )
+    monkeypatch.setattr(routes, "get_browser_profile_store", lambda: store)
+    monkeypatch.setattr(routes, "list_agent_profiles", lambda **_kwargs: [assigned])
+    monkeypatch.setattr(routes, "get_user_browser_source_profile_id", lambda: "work")
+
+    response = await routes.handle_delete_browser_profile(_request())
+
+    assert response.status == 409
+    assert json.loads(response.body)["usage"] == {
+        "loaded_in_browser": True,
+        "agents": ["Recruiting"],
+    }
+    store.delete.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_delete_succeeds_after_profile_is_no_longer_in_use(monkeypatch):
+    store = MagicMock()
+    monkeypatch.setattr(routes, "get_browser_profile_store", lambda: store)
+    monkeypatch.setattr(routes, "list_agent_profiles", lambda **_kwargs: [])
+    monkeypatch.setattr(routes, "get_user_browser_source_profile_id", lambda: None)
+
+    response = await routes.handle_delete_browser_profile(_request())
+
+    assert response.status == 204
+    store.delete.assert_called_once_with("work")

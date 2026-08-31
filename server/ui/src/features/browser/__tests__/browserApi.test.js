@@ -9,8 +9,11 @@ describe('browserApi', () => {
 
     it('preserves structured error details returned by the server', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-            error: 'This browser profile is assigned to an agent',
-            agents: ['Recruiting', 'LinkedIn Outreach'],
+            error: 'This browser profile is in use',
+            usage: {
+                loaded_in_browser: true,
+                agents: ['Recruiting', 'LinkedIn Outreach'],
+            },
         }), {
             status: 409,
             headers: { 'Content-Type': 'application/json' },
@@ -18,10 +21,13 @@ describe('browserApi', () => {
 
         await expect(deleteBrowserProfile('linkedin')).rejects.toMatchObject({
             name: 'BrowserRequestError',
-            message: 'This browser profile is assigned to an agent',
+            message: 'This browser profile is in use',
             status: 409,
             details: {
-                agents: ['Recruiting', 'LinkedIn Outreach'],
+                usage: {
+                    loaded_in_browser: true,
+                    agents: ['Recruiting', 'LinkedIn Outreach'],
+                },
             },
         });
 

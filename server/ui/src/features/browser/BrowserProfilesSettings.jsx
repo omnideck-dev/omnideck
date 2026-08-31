@@ -42,6 +42,17 @@ function siteDataSummary(site) {
     return parts.join(' · ') || 'Saved site data';
 }
 
+function profileUsageDescription(loadedInBrowser, assignedAgents) {
+    const agentCount = assignedAgents.length;
+    if (loadedInBrowser && agentCount > 0) {
+        return `Load another profile or Empty in Browser. Also assign ${agentCount === 1 ? 'the agent' : `the ${agentCount} agents`} another Browser profile or Empty, then try again.`;
+    }
+    if (loadedInBrowser) {
+        return 'Load another profile or Empty in Browser, then try again.';
+    }
+    return `Used by ${agentCount} ${agentCount === 1 ? 'agent' : 'agents'}. Assign ${agentCount === 1 ? 'it' : 'them'} another Browser profile or Empty, then try again.`;
+}
+
 export default function BrowserProfilesSettings() {
     const navigation = useDesktopNavigationCommands();
     const {
@@ -199,9 +210,12 @@ export default function BrowserProfilesSettings() {
     };
 
     const displayedError = error || profilesError;
-    const assignedAgents = Array.isArray(error?.details?.agents)
-        ? error.details.agents
+    const profileUsage = error?.details?.usage;
+    const loadedInBrowser = profileUsage?.loaded_in_browser === true;
+    const assignedAgents = Array.isArray(profileUsage?.agents)
+        ? profileUsage.agents
         : [];
+    const profileInUse = loadedInBrowser || assignedAgents.length > 0;
 
     return (
         <div className={styles.page} data-testid="browser-profiles-settings">
@@ -218,11 +232,11 @@ export default function BrowserProfilesSettings() {
                 <div className={styles.error}>
                     <Callout
                         tone="danger"
-                        title={assignedAgents.length > 0
+                        title={profileInUse
                             ? "Can't delete — profile is in use"
                             : 'Browser profile error'}
-                        description={assignedAgents.length > 0
-                            ? `Used by ${assignedAgents.length} ${assignedAgents.length === 1 ? 'agent' : 'agents'}. Assign ${assignedAgents.length === 1 ? 'it' : 'them'} another Browser profile or Empty, then try again.`
+                        description={profileInUse
+                            ? profileUsageDescription(loadedInBrowser, assignedAgents)
                             : displayedError.message}
                     >
                         {assignedAgents.length > 0 && (
