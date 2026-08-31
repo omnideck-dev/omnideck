@@ -45,12 +45,10 @@ async def start_user_browser_fresh() -> Browser:
 
 async def save_user_browser_to_existing(
     profile_id: str,
-    *,
-    storage_state: dict[str, Any] | None = None,
 ) -> BrowserProfile:
     """Explicitly overwrite a saved profile with the current Browser state."""
     browser = await ensure_user_browser()
-    captured = storage_state if storage_state is not None else await browser.capture_storage_state()
+    captured = await browser.capture_storage_state()
     profile = await asyncio.to_thread(
         get_browser_profile_store().save_state,
         profile_id,
@@ -64,11 +62,10 @@ async def save_user_browser_as_new(
     *,
     name: str,
     icon: str,
-    storage_state: dict[str, Any] | None = None,
 ) -> BrowserProfile:
     """Explicitly create a profile from the current Browser state."""
     browser = await ensure_user_browser()
-    captured = storage_state if storage_state is not None else await browser.capture_storage_state()
+    captured = await browser.capture_storage_state()
     profile = await asyncio.to_thread(
         get_browser_profile_store().create,
         name=name,
@@ -82,11 +79,9 @@ async def save_user_browser_as_new(
 async def save_browser_context_to_existing(
     browser: Browser,
     profile_id: str,
-    *,
-    storage_state: dict[str, Any] | None = None,
 ) -> BrowserProfile:
     """Save a takeover context into an existing profile."""
-    captured = storage_state if storage_state is not None else await browser.capture_storage_state()
+    captured = await browser.capture_storage_state()
     return await asyncio.to_thread(
         get_browser_profile_store().save_state,
         profile_id,
@@ -99,10 +94,9 @@ async def save_browser_context_as_new(
     *,
     name: str,
     icon: str,
-    storage_state: dict[str, Any] | None = None,
 ) -> BrowserProfile:
     """Create a saved profile from a takeover context."""
-    captured = storage_state if storage_state is not None else await browser.capture_storage_state()
+    captured = await browser.capture_storage_state()
     return await asyncio.to_thread(
         get_browser_profile_store().create,
         name=name,

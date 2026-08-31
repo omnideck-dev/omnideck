@@ -32,7 +32,7 @@ export default function BrowserSaveModal({
     const [sourceProfileId, setSourceProfileId] = useState(loadedProfileId ?? null);
     const [destinationReady, setDestinationReady] = useState(loadedProfileIsKnown);
     const [agentName, setAgentName] = useState('');
-    const [previewToken, setPreviewToken] = useState(null);
+    const [previewLoaded, setPreviewLoaded] = useState(false);
     const [name, setName] = useState('');
     const [icon, setIcon] = useState('bi-globe2');
     const [assign, setAssign] = useState(false);
@@ -46,7 +46,7 @@ export default function BrowserSaveModal({
             .then(([nextProfiles, preview]) => {
                 if (!active) return;
                 setSites(preview.sites);
-                setPreviewToken(preview.preview_token);
+                setPreviewLoaded(true);
                 setAgentName(preview.agent_name || '');
                 const availableSource = preview.source_profile_id
                     && nextProfiles.some((profile) => profile.id === preview.source_profile_id)
@@ -88,7 +88,7 @@ export default function BrowserSaveModal({
     const groupedSites = useMemo(() => groupBrowserSites(sites), [sites]);
 
     const save = async () => {
-        if (!previewToken || (isNew && !name.trim())) return;
+        if (!previewLoaded || (isNew && !name.trim())) return;
         setBusy(true);
         setError('');
         try {
@@ -98,7 +98,6 @@ export default function BrowserSaveModal({
                 name: name.trim(),
                 icon,
                 assignToAgent: isNew && assign,
-                previewToken,
             });
             upsertProfile(result.profile);
             onSaved?.(result.profile, result.assigned_to_agent, agentName);
@@ -192,7 +191,7 @@ export default function BrowserSaveModal({
                     <Button
                         variant="filled"
                         onClick={save}
-                        disabled={loading || busy || !previewToken || (isNew && !name.trim())}
+                        disabled={loading || busy || !previewLoaded || (isNew && !name.trim())}
                         data-testid="browser-save-confirm"
                     >
                         {busy ? 'Saving…' : isNew ? 'Save new profile' : `Update ${targetProfile?.name || 'profile'}`}

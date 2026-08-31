@@ -123,23 +123,55 @@ async def test_takeover_updates_its_actual_source_profile(monkeypatch):
     )
 
     assert response.status == 200
-    save.assert_awaited_once_with(browser, "work", storage_state=None)
+    save.assert_awaited_once_with(browser, "work")
 
 
 @pytest.mark.unit
-async def test_expired_preview_is_not_silently_recaptured(monkeypatch):
-    browser = MagicMock()
-    monkeypatch.setattr(routes, "ensure_user_browser", AsyncMock(return_value=browser))
-    save = AsyncMock()
+async def test_save_captures_current_user_browser_state_at_confirmation(monkeypatch):
+    save = AsyncMock(return_value=_profile("default"))
     monkeypatch.setattr(routes, "save_user_browser_to_existing", save)
 
     response = await routes.handle_save_browser_session(
-        _request(json_body={"profile_id": "default", "preview_token": "expired"}),
+        _request(json_body={"profile_id": "default"}),
     )
 
-    assert response.status == 409
-    assert "Browser changed" in json.loads(response.body)["error"]
-    save.assert_not_awaited()
+    assert response.status == 200
+    save.assert_awaited_once_with("default")
+
+
+@pytest.mark.unit
+async def test_preview_returns_only_browser_source_and_site_summary(monkeypatch):
+    browser = MagicMock()
+    browser.capture_storage_state = AsyncMock(
+        return_value={
+            "cookies": [
+                {
+                    "name": "session",
+                    "value": "secret",
+                    "domain": ".example.test",
+                    "path": "/",
+                }
+            ],
+            "origins": [],
+        }
+    )
+    monkeypatch.setattr(routes, "ensure_user_browser", AsyncMock(return_value=browser))
+    monkeypatch.setattr(routes, "get_user_browser_source_profile_id", lambda: "work")
+
+    response = await routes.handle_preview_browser_session(_request())
+
+    assert response.status == 200
+    assert json.loads(response.body) == {
+        "source_profile_id": "work",
+        "sites": [
+            {
+                "domain": "example.test",
+                "cookies": 1,
+                "local_storage": False,
+                "indexed_db": False,
+            }
+        ],
+    }
 
 
 @pytest.mark.unit

@@ -16,10 +16,6 @@ from browser_profiles._conversation import (
     get_conversation_browser_session,
     set_conversation_browser_source_profile_id,
 )
-from browser_profiles._preview import (
-    capture_browser_state_preview,
-    consume_browser_state_preview,
-)
 from browser_profiles._session import (
     browser_session_summary,
     ensure_user_browser,
@@ -50,7 +46,6 @@ class SaveBrowserStateRequest(_RequestModel):
     name: str = Field(default="", max_length=100)
     icon: str = Field(default="bi-globe2", pattern=r"^bi-[a-z0-9-]+$", max_length=64)
     assign_to_agent: bool = False
-    preview_token: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class UpdateBrowserProfileRequest(_RequestModel):
@@ -120,28 +115,13 @@ async def handle_load_browser_session(request: web.Request) -> web.Response:
 async def handle_save_browser_session(request: web.Request) -> web.Response:
     body = await _validated_json(request, SaveBrowserStateRequest)
     assert isinstance(body, SaveBrowserStateRequest)
-    browser = await ensure_user_browser()
-    storage_state = consume_browser_state_preview(
-        body.preview_token,
-        scope="user",
-        browser=browser,
-    )
-    if body.preview_token and storage_state is None:
-        return web.json_response(
-            {"error": "Browser changed. Close this dialog and save again."},
-            status=409,
-        )
     try:
         if body.profile_id:
-            profile = await save_user_browser_to_existing(
-                body.profile_id,
-                storage_state=storage_state,
-            )
+            profile = await save_user_browser_to_existing(body.profile_id)
         else:
             profile = await save_user_browser_as_new(
                 name=body.name,
                 icon=body.icon,
-                storage_state=storage_state,
             )
     except KeyError:
         return web.json_response({"error": "Browser profile not found"}, status=404)
@@ -154,11 +134,10 @@ async def handle_save_browser_session(request: web.Request) -> web.Response:
 
 async def handle_preview_browser_session(_request: web.Request) -> web.Response:
     browser = await ensure_user_browser()
-    token, storage_state = await capture_browser_state_preview(browser, scope="user")
+    storage_state = await browser.capture_storage_state()
     sites = summarize_browser_sites(storage_state)
     return web.json_response(
         {
-            "preview_token": token,
             "source_profile_id": get_user_browser_source_profile_id(),
             "sites": [site.model_dump(mode="json") for site in sites],
         }
@@ -283,29 +262,14 @@ async def handle_save_takeover(request: web.Request) -> web.Response:
             {"error": "Only a new profile can be assigned during takeover"},
             status=400,
         )
-    storage_state = consume_browser_state_preview(
-        body.preview_token,
-        scope=f"conversation:{conversation_id}",
-        browser=browser,
-    )
-    if body.preview_token and storage_state is None:
-        return web.json_response(
-            {"error": "Browser changed. Close this dialog and save again."},
-            status=409,
-        )
     try:
         if body.profile_id:
-            profile = await save_browser_context_to_existing(
-                browser,
-                body.profile_id,
-                storage_state=storage_state,
-            )
+            profile = await save_browser_context_to_existing(browser, body.profile_id)
         else:
             profile = await save_browser_context_as_new(
                 browser,
                 name=body.name,
                 icon=body.icon,
-                storage_state=storage_state,
             )
     except KeyError:
         return web.json_response({"error": "Browser profile not found"}, status=404)
@@ -343,10 +307,7 @@ async def handle_preview_takeover(request: web.Request) -> web.Response:
     session = get_conversation_browser_session(conversation_id)
     if session is None or not session.browser_access:
         return web.json_response({"error": "No active Browser assignment"}, status=409)
-    token, storage_state = await capture_browser_state_preview(
-        browser,
-        scope=f"conversation:{conversation_id}",
-    )
+    storage_state = await browser.capture_storage_state()
     agent_profile = await asyncio.to_thread(
         get_agent_profile,
         session.agent_profile_id,
@@ -354,7 +315,6 @@ async def handle_preview_takeover(request: web.Request) -> web.Response:
     sites = summarize_browser_sites(storage_state)
     return web.json_response(
         {
-            "preview_token": token,
             "source_profile_id": session.source_profile_id,
             "agent_name": agent_profile.name if agent_profile is not None else "",
             "sites": [site.model_dump(mode="json") for site in sites],

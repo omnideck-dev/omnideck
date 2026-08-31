@@ -47,7 +47,6 @@ export async function saveBrowserState({
     name = '',
     icon = 'bi-globe2',
     assignToAgent = false,
-    previewToken = null,
 }) {
     const path = conversationId
         ? `/api/browser/conversations/${encodeURIComponent(conversationId)}/save`
@@ -60,7 +59,6 @@ export async function saveBrowserState({
             name,
             icon,
             assign_to_agent: assignToAgent,
-            preview_token: previewToken,
         }),
     }));
     return conversationId ? data : { profile: data, assigned_to_agent: false };
