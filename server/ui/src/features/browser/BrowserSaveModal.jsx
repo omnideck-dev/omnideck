@@ -17,6 +17,7 @@ export default function BrowserSaveModal({
     onClose,
     onSaved,
     conversationId = null,
+    loadedProfile,
 }) {
     const {
         profiles,
@@ -24,8 +25,12 @@ export default function BrowserSaveModal({
         upsertProfile,
     } = useBrowserProfilesCatalog();
     const [sites, setSites] = useState([]);
-    const [target, setTarget] = useState(NEW_PROFILE);
-    const [sourceProfileId, setSourceProfileId] = useState(null);
+    const loadedProfileIsKnown = loadedProfile !== undefined;
+    const loadedProfileId = loadedProfile?.id ?? null;
+    const initialTarget = loadedProfileId || NEW_PROFILE;
+    const [target, setTarget] = useState(initialTarget);
+    const [sourceProfileId, setSourceProfileId] = useState(loadedProfileId ?? null);
+    const [destinationReady, setDestinationReady] = useState(loadedProfileIsKnown);
     const [agentName, setAgentName] = useState('');
     const [previewToken, setPreviewToken] = useState(null);
     const [name, setName] = useState('');
@@ -48,7 +53,10 @@ export default function BrowserSaveModal({
                     ? preview.source_profile_id
                     : null;
                 setSourceProfileId(availableSource);
-                setTarget(availableSource || NEW_PROFILE);
+                if (!loadedProfileIsKnown || preview.source_profile_id !== loadedProfileId) {
+                    setTarget(availableSource || NEW_PROFILE);
+                }
+                setDestinationReady(true);
             })
             .catch((err) => {
                 if (active) setError(err.message);
@@ -62,16 +70,21 @@ export default function BrowserSaveModal({
     }, [conversationId]);
 
     const options = useMemo(() => {
-        const updatableProfiles = conversationId
-            ? profiles.filter((profile) => profile.id === sourceProfileId)
+        const availableProfiles = loadedProfile
+            && !profiles.some((profile) => profile.id === loadedProfile.id)
+            ? [loadedProfile, ...profiles]
             : profiles;
+        const updatableProfiles = conversationId
+            ? availableProfiles.filter((profile) => profile.id === sourceProfileId)
+            : availableProfiles;
         return [
             ...updatableProfiles.map((profile) => ({ value: profile.id, label: `Update ${profile.name}` })),
             { value: NEW_PROFILE, label: 'Create new profile' },
         ];
-    }, [conversationId, profiles, sourceProfileId]);
+    }, [conversationId, loadedProfile, profiles, sourceProfileId]);
     const isNew = target === NEW_PROFILE;
-    const targetProfile = profiles.find((profile) => profile.id === target);
+    const targetProfile = profiles.find((profile) => profile.id === target)
+        || (loadedProfile?.id === target ? loadedProfile : null);
     const groupedSites = useMemo(() => groupBrowserSites(sites), [sites]);
 
     const save = async () => {
@@ -117,12 +130,12 @@ export default function BrowserSaveModal({
                 />
             </div>
 
-            {loading ? (
+            {!destinationReady ? (
                 <div className={styles.loadingState} role="status">
                     <i className="bi bi-arrow-clockwise" aria-hidden="true" />
                     Reading current Browser…
                 </div>
-            ) : previewToken && (
+            ) : (
                 <>
                     <label className={styles.field}>
                         <span>Save as</span>
@@ -130,6 +143,7 @@ export default function BrowserSaveModal({
                             options={options}
                             value={target}
                             onChange={setTarget}
+                            disabled={loading}
                             ariaLabel="Save Browser profile destination"
                             className={styles.destination}
                             testId="browser-save-target"
@@ -156,7 +170,9 @@ export default function BrowserSaveModal({
 
                     <div className={styles.savedData}>
                         <div className={styles.savedDataTitle}>Sites that will be saved</div>
-                        {groupedSites.length ? (
+                        {loading ? (
+                            <div className={styles.empty} role="status">Reading current Browser…</div>
+                        ) : groupedSites.length ? (
                             <div className={styles.sites}>
                                 {groupedSites.map((site) => <span key={site.domain}>{site.domain}</span>)}
                             </div>
@@ -172,11 +188,11 @@ export default function BrowserSaveModal({
             )}
             <div className={styles.footer}>
                 <Button onClick={onClose}>Cancel</Button>
-                {previewToken && (
+                {destinationReady && (
                     <Button
                         variant="filled"
                         onClick={save}
-                        disabled={busy || (isNew && !name.trim())}
+                        disabled={loading || busy || !previewToken || (isNew && !name.trim())}
                         data-testid="browser-save-confirm"
                     >
                         {busy ? 'Saving…' : isNew ? 'Save new profile' : `Update ${targetProfile?.name || 'profile'}`}

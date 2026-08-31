@@ -55,7 +55,7 @@ describe('BrowserSaveModal', () => {
         });
     });
 
-    it('does not render fallback save options while the Browser preview is loading', async () => {
+    it('uses the root Browser loaded profile before its preview finishes loading', async () => {
         let resolveProfiles;
         let resolvePreview;
         mocks.listBrowserProfiles.mockReturnValue(new Promise((resolve) => {
@@ -65,12 +65,13 @@ describe('BrowserSaveModal', () => {
             resolvePreview = resolve;
         }));
 
-        renderModal({ conversationId: 'conversation-1', onClose: vi.fn() });
+        renderModal({ loadedProfile: DEFAULT, onClose: vi.fn() });
 
         expect(screen.getByRole('status')).toHaveTextContent('Reading current Browser…');
-        expect(screen.queryByTestId('browser-save-target')).not.toBeInTheDocument();
+        expect(screen.getByTestId('browser-save-target')).toHaveAttribute('data-value', 'default');
         expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('browser-save-confirm')).not.toBeInTheDocument();
+        expect(screen.getByTestId('browser-save-confirm')).toHaveTextContent('Update Default');
+        expect(screen.getByTestId('browser-save-confirm')).toBeDisabled();
 
         resolveProfiles([DEFAULT]);
         resolvePreview({
@@ -84,6 +85,18 @@ describe('BrowserSaveModal', () => {
         expect(target).toHaveAttribute('data-value', 'default');
         expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
         expect(screen.getByTestId('browser-save-confirm')).toHaveTextContent('Update Default');
+        expect(screen.getByTestId('browser-save-confirm')).toBeEnabled();
+    });
+
+    it('waits for the takeover source profile instead of showing a fallback destination', async () => {
+        mocks.previewBrowserState.mockReturnValue(new Promise(() => {}));
+
+        renderModal({ conversationId: 'conversation-1', onClose: vi.fn() });
+
+        expect(screen.getByRole('status')).toHaveTextContent('Reading current Browser…');
+        expect(screen.queryByTestId('browser-save-target')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('browser-save-confirm')).not.toBeInTheDocument();
     });
 
     it('describes prospective data and updates the loaded profile by default', async () => {

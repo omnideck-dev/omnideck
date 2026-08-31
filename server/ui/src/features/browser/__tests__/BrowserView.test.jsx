@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     loadBrowserSession: vi.fn(),
     openSettings: vi.fn(),
     profileLoadRequest: null,
+    saveModalProps: vi.fn(),
 }));
 
 vi.mock('../../navigation/DesktopNavigation.jsx', () => ({
@@ -43,7 +44,12 @@ vi.mock('../browserApi.js', () => ({
     loadBrowserSession: mocks.loadBrowserSession,
 }));
 
-vi.mock('../BrowserSaveModal.jsx', () => ({ default: () => null }));
+vi.mock('../BrowserSaveModal.jsx', () => ({
+    default: (props) => {
+        mocks.saveModalProps(props);
+        return <div data-testid="mock-browser-save-modal" />;
+    },
+}));
 
 const SESSION = {
     source_profile_id: 'default',
@@ -158,6 +164,21 @@ describe('BrowserView profile load requests', () => {
 
         expect(screen.queryByTestId('replace-browser-modal')).not.toBeInTheDocument();
         expect(mocks.loadBrowserSession).not.toHaveBeenCalled();
+    });
+
+    it('gives the save modal the profile already loaded in the root Browser', async () => {
+        mocks.profileLoadRequest = null;
+        const user = userEvent.setup();
+        await act(async () => {
+            renderBrowserView();
+        });
+
+        await user.click(await screen.findByTestId('browser-save-state'));
+
+        expect(screen.getByTestId('mock-browser-save-modal')).toBeInTheDocument();
+        expect(mocks.saveModalProps).toHaveBeenLastCalledWith(expect.objectContaining({
+            loadedProfile: SESSION.profiles[0],
+        }));
     });
 
     it('ignores an open-in-Browser request for the profile already loaded', async () => {

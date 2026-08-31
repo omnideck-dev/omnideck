@@ -30,6 +30,10 @@ export default function BrowserView() {
     const [sessionKey, setSessionKey] = useState(0);
     const refreshingDeletedSource = useRef(false);
     const selectedSource = session?.source_profile_id || EMPTY_BROWSER_PROFILE;
+    const loadedProfile = session?.source_profile_id
+        ? (profiles.find((profile) => profile.id === session.source_profile_id)
+            || session.profiles?.find((profile) => profile.id === session.source_profile_id))
+        : null;
 
     useEffect(() => {
         getBrowserSession()
@@ -167,6 +171,7 @@ export default function BrowserView() {
 
             {showSave && (
                 <BrowserSaveModal
+                    loadedProfile={loadedProfile}
                     onClose={() => setShowSave(false)}
                     onSaved={() => getBrowserSession().then((nextSession) => {
                         setSession(nextSession);
