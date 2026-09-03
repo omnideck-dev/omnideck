@@ -306,7 +306,6 @@ def test_imported_profile_starts_without_local_browser_profile():
             "profiles": [
                 {
                     "name": "Researcher",
-                    "browser_access": True,
                     "browser_profile_id": "work",
                 }
             ]

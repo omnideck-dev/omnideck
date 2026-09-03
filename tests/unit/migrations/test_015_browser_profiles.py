@@ -21,7 +21,6 @@ def test_migration_moves_browser_skill_to_agent_setting(tmp_path):
 
     migrated = json.loads(path.read_text())
     assert migrated["skills"] == ["coder"]
-    assert "browser_access" not in migrated
     assert migrated["browser_profile_id"] == "default"
     assert (tmp_path / "browser" / "profiles" / "default" / "profile.json").exists()
 
@@ -35,31 +34,7 @@ def test_migration_gives_general_browser_access_without_old_skill(tmp_path):
     migrate(tmp_path)
 
     migrated = json.loads(path.read_text())
-    assert "browser_access" not in migrated
     assert migrated["browser_profile_id"] == "default"
-
-
-def test_migration_represents_enabled_empty_browser_with_reserved_profile_id(tmp_path):
-    profiles = tmp_path / "agent_profiles"
-    profiles.mkdir()
-    path = profiles / "empty.json"
-    path.write_text(
-        json.dumps(
-            {
-                "id": "empty",
-                "name": "Empty Browser Agent",
-                "skills": [],
-                "browser_access": True,
-                "browser_profile_id": None,
-            }
-        )
-    )
-
-    migrate(tmp_path)
-
-    migrated = json.loads(path.read_text())
-    assert "browser_access" not in migrated
-    assert migrated["browser_profile_id"] == "empty"
 
 
 def test_migration_removes_legacy_browser_skill_record(tmp_path):

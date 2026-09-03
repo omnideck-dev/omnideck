@@ -15,7 +15,7 @@ from agents._agent_profiles import (
     list_agent_profiles,
     save_agent_profile,
 )
-from browser.profile_store import DEFAULT_BROWSER_PROFILE_ID, EMPTY_BROWSER_PROFILE_ID
+from browser.profile_store import EMPTY_BROWSER_PROFILE_ID
 from browser.runtime import get_browser_runtime
 from sdk.skills._policy import strip_reserved_skills
 
@@ -24,14 +24,6 @@ logger = logging.getLogger(__name__)
 
 def _normalize_browser_settings(body: dict) -> None:
     body["skills"] = strip_reserved_skills(body.get("skills", []))
-    if "browser_access" in body:
-        legacy_access = body.pop("browser_access")
-        if not legacy_access:
-            body["browser_profile_id"] = None
-        elif "browser_profile_id" not in body:
-            body["browser_profile_id"] = DEFAULT_BROWSER_PROFILE_ID
-        elif body.get("browser_profile_id") is None:
-            body["browser_profile_id"] = EMPTY_BROWSER_PROFILE_ID
     profile_id = body.get("browser_profile_id")
     if profile_id not in (None, EMPTY_BROWSER_PROFILE_ID):
         get_browser_runtime().profiles.get(str(profile_id))

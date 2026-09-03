@@ -12,9 +12,7 @@ import logging
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
-
-from browser.profile_store import DEFAULT_BROWSER_PROFILE_ID, EMPTY_BROWSER_PROFILE_ID
+from pydantic import BaseModel, Field
 from config import load_config
 from settings import load_settings
 
@@ -51,23 +49,6 @@ class AgentProfile(BaseModel):
     context_window: int | None = None
     compaction_threshold: float | None = None
     max_iterations: int | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_legacy_browser_access(cls, value: object) -> object:
-        """Accept the feature branch's former two-field Browser representation."""
-        if not isinstance(value, dict) or "browser_access" not in value:
-            return value
-        data = dict(value)
-        browser_access = data.pop("browser_access")
-        if not browser_access:
-            data["browser_profile_id"] = None
-        elif "browser_profile_id" not in value:
-            data["browser_profile_id"] = DEFAULT_BROWSER_PROFILE_ID
-        elif value.get("browser_profile_id") is None:
-            data["browser_profile_id"] = EMPTY_BROWSER_PROFILE_ID
-        return data
-
 
 def _profiles_dir() -> Path:
     cfg = load_config()

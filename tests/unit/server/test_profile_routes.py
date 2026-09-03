@@ -151,7 +151,7 @@ class TestDisableDefaultRule:
 
 
 @pytest.mark.unit
-async def test_clearing_browser_profile_disables_browser_access():
+async def test_null_browser_profile_disables_browser_capability():
     """A null profile selection is the single representation of no access."""
     save_agent_profile(
         AgentProfile(

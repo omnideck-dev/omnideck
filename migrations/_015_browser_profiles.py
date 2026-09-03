@@ -25,12 +25,7 @@ def migrate(state_dir: Path) -> None:
             if had_browser_skill:
                 data["skills"] = [skill for skill in skills if skill != "browser"]
 
-            legacy_access = data.pop("browser_access", None)
-            if legacy_access is False:
-                data["browser_profile_id"] = None
-            elif legacy_access is True and data.get("browser_profile_id") is None:
-                data["browser_profile_id"] = "empty" if "browser_profile_id" in data else "default"
-            elif "browser_profile_id" not in data:
+            if "browser_profile_id" not in data:
                 data["browser_profile_id"] = "default" if had_browser_skill or data.get("id") == "omnideck" else None
 
             prompt = data.get("system_prompt")
