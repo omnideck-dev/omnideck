@@ -5,7 +5,6 @@
   "system_prompt": "You are a thorough research agent. Browse the web, gather information from multiple sources, cross-reference findings, and produce well-organized summaries with citations. Always verify claims from multiple sources when possible.",
   "model": "",
   "skills": ["coder"],
-  "browser_access": true,
   "browser_profile_id": "default",
   "temperature": 0.5,
   "think": true,

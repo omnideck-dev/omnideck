@@ -20,7 +20,7 @@ function _profile(overrides = {}) {
     return {
         id: 'p1', name: 'Omnideck', description: '', model: 'test-model:7b', provider: 'ollama',
         system_prompt: '', skills: ['coder'], allow_spawn: true, allow_load_skills: true,
-        browser_access: false, browser_profile_id: null,
+        browser_profile_id: null,
         ...overrides,
     };
 }
@@ -123,15 +123,14 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         await user.click(screen.getByRole('option', { name: 'Empty' }));
         await user.click(screen.getByRole('button', { name: 'Save' }));
         expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-            browser_access: true,
-            browser_profile_id: null,
+            browser_profile_id: 'empty',
         }));
     });
 
     it('clears the hidden profile assignment when Browser access is disabled', async () => {
         const user = userEvent.setup();
         const { onSave } = renderBuilder({
-            profile: _profile({ browser_access: true, browser_profile_id: 'default' }),
+            profile: _profile({ browser_profile_id: 'default' }),
         });
         await screen.findByTestId('agent-browser-profile-select');
 
@@ -139,7 +138,6 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         await user.click(screen.getByRole('button', { name: 'Save' }));
 
         expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-            browser_access: false,
             browser_profile_id: null,
         }));
     });

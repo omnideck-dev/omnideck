@@ -134,7 +134,7 @@ build-backend = "setuptools.build_meta"
 include = [
     "agent_runtime*",
     "agents*",
-    "browser_profiles*",
+    "browser*",
     "config*",
     "migrations*",
     "models*",
@@ -148,3 +148,6 @@ include = [
 exclude = [
     "tests*",
 ]
+
+[tool.setuptools.package-data]
+browser = ["capability.json"]

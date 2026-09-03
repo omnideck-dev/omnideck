@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ._policy import is_internal_skill
+from ._policy import is_reserved_skill_id
 from ._resolve import resolve_skill_by_name
 from ._store import list_skill_records
 from .agent_state import get_active_agent_state
@@ -74,7 +74,7 @@ def _log_skill_error(skill_name: str, error: str) -> None:
 
 
 def _available_skill_names() -> list[str]:
-    return [r.name for r in list_skill_records() if not is_internal_skill(r.id)]
+    return [r.name for r in list_skill_records() if not is_reserved_skill_id(r.id)]
 
 
 def list_available_skills() -> str:
@@ -86,7 +86,7 @@ def list_available_skills() -> str:
     Returns:
         A formatted list of skill names and descriptions.
     """
-    records = [r for r in list_skill_records() if not is_internal_skill(r.id)]
+    records = [r for r in list_skill_records() if not is_reserved_skill_id(r.id)]
     if not records:
         return "No skills available."
     lines = [f"  - {r.name}: {r.description}" for r in records]
@@ -109,16 +109,8 @@ async def load_skill(name: str) -> str:
     if agent_state is None:
         return "Error: no active skill scope (internal error)"
 
-    internal_record = next(
-        (item for item in list_skill_records() if item.name == name and is_internal_skill(item.id)),
-        None,
-    )
-    if internal_record is not None and internal_record.id in agent_state.skill_ids:
-        _log_skill_already_loaded(name)
-        return f"Skill '{name}' is already loaded."
-
     record = next(
-        (item for item in list_skill_records() if item.name == name and not is_internal_skill(item.id)),
+        (item for item in list_skill_records() if item.name == name and not is_reserved_skill_id(item.id)),
         None,
     )
     skill = await resolve_skill_by_name(name) if record is not None else None

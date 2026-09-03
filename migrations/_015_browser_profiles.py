@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def migrate(state_dir: Path) -> None:
-    """Backfill agent browser access and create Default profile metadata."""
+    """Move Browser access to one profile selection and create Default."""
     profiles_dir = state_dir / "agent_profiles"
     if profiles_dir.is_dir():
         for path in profiles_dir.glob("*.json"):
@@ -25,12 +25,13 @@ def migrate(state_dir: Path) -> None:
             if had_browser_skill:
                 data["skills"] = [skill for skill in skills if skill != "browser"]
 
-            if "browser_access" not in data:
-                data["browser_access"] = had_browser_skill or data.get("id") == "omnideck"
-            if data.get("browser_access") and "browser_profile_id" not in data:
-                data["browser_profile_id"] = "default"
-            if not data.get("browser_access"):
+            legacy_access = data.pop("browser_access", None)
+            if legacy_access is False:
                 data["browser_profile_id"] = None
+            elif legacy_access is True and data.get("browser_profile_id") is None:
+                data["browser_profile_id"] = "empty" if "browser_profile_id" in data else "default"
+            elif "browser_profile_id" not in data:
+                data["browser_profile_id"] = "default" if had_browser_skill or data.get("id") == "omnideck" else None
 
             prompt = data.get("system_prompt")
             if data.get("id") == "omnideck" and isinstance(prompt, str):
@@ -55,8 +56,14 @@ def migrate(state_dir: Path) -> None:
 
             path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    # Browser is now an explicit agent capability rather than an editable or
+    # loadable skill. Remove the former seeded record if migration 006 copied it.
+    legacy_browser_skill = state_dir / "skills" / "browser.json"
+    if legacy_browser_skill.exists():
+        legacy_browser_skill.unlink()
+
     # Preserve browser/profiles/default/storage_state.json from the former
     # implicit-persistence implementation and add metadata beside it.
-    from browser_profiles._store import BrowserProfileStore
+    from browser.profile_store import BrowserProfileStore
 
     BrowserProfileStore(state_dir / "browser" / "profiles").ensure_default()

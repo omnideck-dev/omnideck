@@ -32,13 +32,13 @@ from agents._agent_profiles import (
     list_agent_profiles,
     save_agent_profile,
 )
+from sdk.skills._policy import grants_restricted_tool_category, is_reserved_skill_id
 from sdk.skills._store import (
     SkillRecord,
     get_skill_record,
     list_skill_records,
     save_skill_record,
 )
-from sdk.skills._policy import grants_internal_tool_category, is_internal_skill
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +156,9 @@ def _pack_profile(profile: AgentProfile, *, include_skills: bool, include_model:
                     skill_id,
                 )
                 continue
-            if is_internal_skill(record.id) or grants_internal_tool_category(record.tool_categories):
+            if is_reserved_skill_id(record.id) or grants_restricted_tool_category(record.tool_categories):
                 logger.warning(
-                    "profile %r references application-managed skill %r; omitting from pack",
+                    "profile %r references reserved skill %r; omitting from pack",
                     profile.id,
                     skill_id,
                 )
@@ -168,7 +168,7 @@ def _pack_profile(profile: AgentProfile, *, include_skills: bool, include_model:
     # Browser grants and profile ids are local security policy. They never
     # travel with an exported agent, even if a future PackedProfile model adds
     # fields with similar names.
-    data = profile.model_dump(exclude={"id", "skills", "browser_access", "browser_profile_id"})
+    data = profile.model_dump(exclude={"id", "skills", "browser_profile_id"})
     if not include_model:
         data["provider"] = ""
         data["model"] = ""
@@ -212,14 +212,14 @@ def build_skill_pack(skill_id: str) -> Pack:
         KeyError: If the skill doesn't exist.
     """
     record = get_skill_record(skill_id)
-    if record is None or is_internal_skill(record.id) or grants_internal_tool_category(record.tool_categories):
+    if record is None or is_reserved_skill_id(record.id) or grants_restricted_tool_category(record.tool_categories):
         raise KeyError(skill_id)
     return Pack(skills=[_pack_skill(record)])
 
 
 def _import_skill(packed: PackedSkill, used_names: set[str]) -> SkillRecord:
     """Persist a packed skill as a fresh record, de-duplicating its name."""
-    if grants_internal_tool_category(packed.tool_categories):
+    if grants_restricted_tool_category(packed.tool_categories):
         raise ValueError("Browser access is configured on the agent and cannot be imported as a skill.")
     new_name = _dedupe_name(packed.name, used_names)
     used_names.add(new_name)
@@ -256,7 +256,7 @@ def import_pack(pack: Pack) -> ImportSummary:
         *pack.skills,
         *(skill for profile in pack.profiles for skill in profile.skills),
     ]
-    if any(grants_internal_tool_category(skill.tool_categories) for skill in packed_skills):
+    if any(grants_restricted_tool_category(skill.tool_categories) for skill in packed_skills):
         raise ValueError("Browser access is configured on the agent and cannot be imported as a skill.")
 
     used_skill_names = {r.name for r in list_skill_records()}

@@ -32,7 +32,8 @@ from urllib.parse import urlencode
 import pytest
 from aiohttp import web
 
-from tools.browser import Browser, new_tab
+from browser.core.browser import Browser
+from tools.browser import new_tab
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

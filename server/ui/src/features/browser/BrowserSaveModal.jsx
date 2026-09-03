@@ -29,7 +29,7 @@ export default function BrowserSaveModal({
     const loadedProfileId = loadedProfile?.id ?? null;
     const initialTarget = loadedProfileId || NEW_PROFILE;
     const [target, setTarget] = useState(initialTarget);
-    const [sourceProfileId, setSourceProfileId] = useState(loadedProfileId ?? null);
+    const [loadedBrowserProfileId, setLoadedBrowserProfileId] = useState(loadedProfileId ?? null);
     const [destinationReady, setDestinationReady] = useState(loadedProfileIsKnown);
     const [agentName, setAgentName] = useState('');
     const [previewLoaded, setPreviewLoaded] = useState(false);
@@ -48,13 +48,13 @@ export default function BrowserSaveModal({
                 setSites(preview.sites);
                 setPreviewLoaded(true);
                 setAgentName(preview.agent_name || '');
-                const availableSource = preview.source_profile_id
-                    && nextProfiles.some((profile) => profile.id === preview.source_profile_id)
-                    ? preview.source_profile_id
+                const availableProfile = preview.browser_profile_id
+                    && nextProfiles.some((profile) => profile.id === preview.browser_profile_id)
+                    ? preview.browser_profile_id
                     : null;
-                setSourceProfileId(availableSource);
-                if (!loadedProfileIsKnown || preview.source_profile_id !== loadedProfileId) {
-                    setTarget(availableSource || NEW_PROFILE);
+                setLoadedBrowserProfileId(availableProfile);
+                if (!loadedProfileIsKnown || preview.browser_profile_id !== loadedProfileId) {
+                    setTarget(availableProfile || NEW_PROFILE);
                 }
                 setDestinationReady(true);
             })
@@ -75,13 +75,13 @@ export default function BrowserSaveModal({
             ? [loadedProfile, ...profiles]
             : profiles;
         const updatableProfiles = conversationId
-            ? availableProfiles.filter((profile) => profile.id === sourceProfileId)
+            ? availableProfiles.filter((profile) => profile.id === loadedBrowserProfileId)
             : availableProfiles;
         return [
             ...updatableProfiles.map((profile) => ({ value: profile.id, label: `Update ${profile.name}` })),
             { value: NEW_PROFILE, label: 'Create new profile' },
         ];
-    }, [conversationId, loadedProfile, profiles, sourceProfileId]);
+    }, [conversationId, loadedBrowserProfileId, loadedProfile, profiles]);
     const isNew = target === NEW_PROFILE;
     const targetProfile = profiles.find((profile) => profile.id === target)
         || (loadedProfile?.id === target ? loadedProfile : null);

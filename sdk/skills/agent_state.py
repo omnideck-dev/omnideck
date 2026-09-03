@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from ._registry import Skill
@@ -10,6 +11,16 @@ from ._registry import Skill
 logger = logging.getLogger(__name__)
 
 _active_agent_state: ContextVar["AgentState | None"] = ContextVar("skills_active_agent_state", default=None)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentCapability:
+    """Application-granted tools and prompt guidance, never user-loadable."""
+
+    id: str
+    name: str
+    prompt: str
+    tools: list[Callable[..., Any]]
 
 
 class AgentState:
@@ -22,6 +33,7 @@ class AgentState:
 
     def __init__(self, base_tools: list[Callable[..., Any]]) -> None:
         self._base_tools: list[Callable[..., Any]] = list(base_tools)
+        self._capabilities: dict[str, AgentCapability] = {}
         self._skills: dict[str, Skill] = {}  # keyed by skill id
         self._loaded_ids: set[str] = set()  # subset attached at runtime, not by the profile
 
@@ -33,6 +45,10 @@ class AgentState:
         pinned to old conversations.
         """
         self._attach(skill)
+
+    def add_capability(self, capability: AgentCapability) -> None:
+        """Grant an application-controlled capability to this agent."""
+        self._capabilities.setdefault(capability.id, capability)
 
     def load(self, skill: Skill) -> None:
         """Attach a skill loaded at runtime — by the agent mid-conversation or
@@ -66,6 +82,12 @@ class AgentState:
             if fname not in seen:
                 result.append(t)
                 seen.add(fname)
+        for capability in self._capabilities.values():
+            for tool in capability.tools:
+                fname = getattr(tool, "__name__", None)
+                if fname not in seen:
+                    result.append(tool)
+                    seen.add(fname)
         for skill in self._skills.values():
             for t in skill.tools:
                 fname = getattr(t, "__name__", None)
@@ -88,17 +110,20 @@ class AgentState:
         """
         return frozenset(self._loaded_ids)
 
-    def build_skill_prompt(self) -> str:
-        """Format loaded skill prompts for system message injection.
+    def build_prompt_extensions(self) -> str:
+        """Format capability and loaded-skill guidance for the system prompt.
 
         Returns:
             Formatted string with all skill prompts, or empty string
             if no skills are loaded.
         """
-        if not self._skills:
+        if not self._capabilities and not self._skills:
             return ""
-        parts = [f"### {s.name}\n{s.prompt}" for s in self._skills.values()]
-        return "\n── Loaded Skills ──\n\n" + "\n\n".join(parts)
+        parts = [
+            *(f"### {capability.name}\n{capability.prompt}" for capability in self._capabilities.values()),
+            *(f"### {skill.name}\n{skill.prompt}" for skill in self._skills.values()),
+        ]
+        return "\n── Capabilities & Skills ──\n\n" + "\n\n".join(parts)
 
 
 def get_active_agent_state() -> "AgentState | None":

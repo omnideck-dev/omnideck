@@ -43,7 +43,7 @@ describe('BrowserSaveModal', () => {
         vi.clearAllMocks();
         mocks.listBrowserProfiles.mockResolvedValue([DEFAULT]);
         mocks.previewBrowserState.mockResolvedValue({
-            source_profile_id: 'default',
+            browser_profile_id: 'default',
             sites: [
                 { domain: 'github.com', cookies: 4, local_storage: true, indexed_db: false },
             ],
@@ -74,7 +74,7 @@ describe('BrowserSaveModal', () => {
 
         resolveProfiles([DEFAULT]);
         resolvePreview({
-            source_profile_id: 'default',
+            browser_profile_id: 'default',
             agent_name: 'Default agent',
             sites: [],
         });
@@ -146,7 +146,7 @@ describe('BrowserSaveModal', () => {
 
     it('only allows a new profile when takeover started from Empty', async () => {
         mocks.previewBrowserState.mockResolvedValue({
-            source_profile_id: null,
+            browser_profile_id: 'empty',
             agent_name: 'Empty agent',
             sites: [],
         });
@@ -163,7 +163,7 @@ describe('BrowserSaveModal', () => {
         const work = { ...DEFAULT, id: 'work', name: 'Work' };
         mocks.listBrowserProfiles.mockResolvedValue([DEFAULT, work]);
         mocks.previewBrowserState.mockResolvedValue({
-            source_profile_id: 'work',
+            browser_profile_id: 'work',
             agent_name: 'Work agent',
             sites: [],
         });

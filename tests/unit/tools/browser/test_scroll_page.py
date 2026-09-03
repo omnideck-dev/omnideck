@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from browser.core.document import Document
+from browser.core.input.scroll import ScrollOutcome
 from config import load_config
 from tools.browser import BrowserToolError
-from tools.browser.core.document import Document
-from tools.browser.core.input.scroll import ScrollOutcome
 from tools.browser.interactions import scroll_page
 
 _cfg = load_config()

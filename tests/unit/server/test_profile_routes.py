@@ -151,14 +151,13 @@ class TestDisableDefaultRule:
 
 
 @pytest.mark.unit
-async def test_disabling_browser_access_clears_the_hidden_profile_assignment():
-    """A disabled capability cannot retain an assignment outside the UI."""
+async def test_clearing_browser_profile_disables_browser_access():
+    """A null profile selection is the single representation of no access."""
     save_agent_profile(
         AgentProfile(
             id="browser-agent",
             name="Browser Agent",
             model="m",
-            browser_access=True,
             browser_profile_id="default",
         )
     )
@@ -168,8 +167,7 @@ async def test_disabling_browser_access_clears_the_hidden_profile_assignment():
             "id": "browser-agent",
             "name": "Browser Agent",
             "model": "m",
-            "browser_access": False,
-            "browser_profile_id": "default",
+            "browser_profile_id": None,
         },
     )
 

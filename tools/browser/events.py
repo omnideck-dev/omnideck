@@ -27,9 +27,9 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from tools.browser.core.tab import Tab
+    from browser.core.tab import Tab
 
-from tools.browser.core.pool import get_browser
+from browser.runtime import get_browser
 
 logger = logging.getLogger(__name__)
 

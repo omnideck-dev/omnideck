@@ -135,28 +135,20 @@ async def test_build_adds_profile_skill_tools():
 
 
 @pytest.mark.unit
-async def test_browser_access_adds_internal_capability_without_loading_profile_state():
-    save_skill_record(
-        SkillRecord(
-            id="browser",
-            name="Browser",
-            prompt="Browse websites.",
-            tool_categories=["browser"],
-        )
-    )
+async def test_browser_selection_adds_application_capability():
     state = await build_agent_state(
         _profile(
-            browser_access=True,
             browser_profile_id="default",
         )
     )
 
     assert "open_url" in _names(state.tools)
-    assert "Browse websites." in state.build_skill_prompt()
+    assert "Browser automation." in state.build_prompt_extensions()
+    assert "browser" not in state.skill_ids
 
 
 @pytest.mark.unit
-async def test_stale_browser_skill_cannot_bypass_agent_browser_access():
+async def test_stale_browser_skill_cannot_bypass_disabled_browser():
     save_skill_record(
         SkillRecord(
             id="browser",
@@ -165,7 +157,7 @@ async def test_stale_browser_skill_cannot_bypass_agent_browser_access():
             tool_categories=["browser"],
         )
     )
-    state = await build_agent_state(_profile(skills=["browser"], browser_access=False))
+    state = await build_agent_state(_profile(skills=["browser"], browser_profile_id=None))
     assert "open_url" not in _names(state.tools)
     assert "browser" not in state.skill_ids
 
@@ -179,7 +171,7 @@ async def test_custom_skill_cannot_grant_browser_category():
             tool_categories=["browser"],
         )
     )
-    state = await build_agent_state(_profile(skills=["custom"], browser_access=False))
+    state = await build_agent_state(_profile(skills=["custom"], browser_profile_id=None))
     assert "open_url" not in _names(state.tools)
 
 
@@ -198,7 +190,7 @@ async def test_build_profile_skills_stay_out_of_loaded_delta():
 async def test_build_adds_profile_skill_prompts():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code.", tool_categories=["coding"]))
     state = await build_agent_state(_profile(skills=["coder"]))
-    section = state.build_skill_prompt()
+    section = state.build_prompt_extensions()
     assert "Coder" in section
     assert "Write code." in section
 

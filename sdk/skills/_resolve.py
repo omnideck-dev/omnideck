@@ -14,15 +14,18 @@ writes them back. The conversation metadata is this package's to read and write
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Iterable
+from functools import cache
+from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
+from sdk.skills._policy import is_reserved_skill_id, is_restricted_tool_category
 from sdk.skills._registry import Skill
-from sdk.skills._policy import BROWSER_CAPABILITY_ID, is_internal_skill, is_internal_tool_category
 from sdk.skills._store import get_skill_record, list_skill_records
 from sdk.skills._tool_categories import tool_categories
-from sdk.skills.agent_state import AgentState
+from sdk.skills.agent_state import AgentCapability, AgentState
 
 if TYPE_CHECKING:
     from agents._agent_profiles import AgentProfile
@@ -52,8 +55,8 @@ async def _resolve(record: SkillRecord | None) -> Skill | None:
     categories = await tool_categories()
     tools: list[Callable[..., Any]] = []
     for cid in record.tool_categories:
-        if is_internal_tool_category(cid) and not is_internal_skill(record.id):
-            logger.warning("skill %r cannot grant the internal browser capability", record.id)
+        if is_restricted_tool_category(cid):
+            logger.warning("skill %r cannot grant restricted tool category %r", record.id, cid)
             continue
         category = categories.get(cid)
         if category is None:
@@ -112,19 +115,15 @@ async def build_agent_state(profile: AgentProfile, *, conversation_id: str | Non
     for skill_id in profile.skills:
         # Browser access is configured as an agent capability, not as an
         # editable/loadable skill. Ignore stale profile data from older builds.
-        if is_internal_skill(skill_id):
+        if is_reserved_skill_id(skill_id):
             continue
         skill = await resolve_skill(skill_id)
         if skill is None:
             logger.warning("profile %r references unknown skill %r; skipping", profile.id, skill_id)
             continue
         state.add(skill)
-    if profile.browser_access:
-        browser_skill = await resolve_skill(BROWSER_CAPABILITY_ID)
-        if browser_skill is None:
-            logger.warning("internal browser capability is unavailable")
-        else:
-            state.add(browser_skill)
+    if profile.browser_profile_id is not None:
+        state.add_capability(await _browser_capability())
 
     if conversation_id is not None:
         # Function-local to break an import cycle: importing conversations
@@ -135,6 +134,32 @@ async def build_agent_state(profile: AgentProfile, *, conversation_id: str | Non
     return state
 
 
+@cache
+def _browser_capability_definition() -> dict[str, Any]:
+    resource = files("browser").joinpath("capability.json")
+    value = json.loads(resource.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("Invalid Browser capability definition")
+    return value
+
+
+async def _browser_capability() -> AgentCapability:
+    """Resolve the application-controlled Browser tools and prompt."""
+    definition = _browser_capability_definition()
+    categories = await tool_categories()
+    tools: list[Callable[..., Any]] = []
+    for category_id in definition.get("tool_categories", []):
+        category = categories.get(str(category_id))
+        if category is not None:
+            tools.extend(category.tools)
+    return AgentCapability(
+        id="browser",
+        name="Browser",
+        prompt=str(definition.get("prompt", "")),
+        tools=tools,
+    )
+
+
 async def _restore_persisted_loaded_skills(agent_state: AgentState, skill_ids: Iterable[str]) -> None:
     """Resolve previously-loaded skills by id and add them to ``agent_state``.
 
@@ -143,7 +168,7 @@ async def _restore_persisted_loaded_skills(agent_state: AgentState, skill_ids: I
     stale metadata is harmless.
     """
     for skill_id in skill_ids:
-        if is_internal_skill(skill_id):
+        if is_reserved_skill_id(skill_id):
             continue
         if skill_id in agent_state.skill_ids:
             continue

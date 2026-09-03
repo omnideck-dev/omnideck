@@ -161,7 +161,6 @@ def test_build_profile_pack_omits_browser_capability_and_assignment():
     save_agent_profile(
         _profile(
             skills=["browser"],
-            browser_access=True,
             browser_profile_id="work",
         )
     )
@@ -169,7 +168,6 @@ def test_build_profile_pack_omits_browser_capability_and_assignment():
     pack = build_profile_pack("researcher", include_skills=True, include_model=True)
 
     assert pack.profiles[0].skills == []
-    assert "browser_access" not in pack.profiles[0].model_dump()
     assert "browser_profile_id" not in pack.profiles[0].model_dump()
 
 
@@ -302,7 +300,7 @@ def test_import_pack_skill_free_profile_imports_with_no_skills():
 
 
 @pytest.mark.unit
-def test_imported_profile_starts_without_local_browser_access():
+def test_imported_profile_starts_without_local_browser_profile():
     packed = Pack.model_validate(
         {
             "profiles": [
@@ -317,7 +315,6 @@ def test_imported_profile_starts_without_local_browser_access():
 
     summary = import_pack(packed)
 
-    assert summary.profiles[0].browser_access is False
     assert summary.profiles[0].browser_profile_id is None
 
 

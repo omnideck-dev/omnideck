@@ -18,7 +18,7 @@ drains input in order (collapsing superseded pointer moves), and one writer task
 ships the newest frame. Coordinates travel with the frame metadata Chromium
 reports, so page scale and top-offset are never guessed from the image size.
 
-Scope is enforced by ``get_browser_by_conversation_id``: the channel can only reach
+Scope is enforced by ``BrowserRuntime.get_conversation_browser``: the channel can only reach
 the depth-0 conversation context. Sub-agent contexts and the persistent profile
 template are unreachable, and CDP targets a page rather than the display — there
 is no path from here to the OS. The handshake's ``Origin`` is checked because the
@@ -43,10 +43,9 @@ from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
-from tools.browser.core.browser import Browser
-from browser_profiles._session import ensure_user_browser
-from tools.browser.core.pool import get_browser_by_conversation_id
-from tools.browser.core.tab import Tab
+from browser.core.browser import Browser
+from browser.core.tab import Tab
+from browser.runtime import get_browser_runtime
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable, Coroutine
@@ -803,10 +802,10 @@ async def browser_control_handler(request: Request) -> web.StreamResponse:
 
     browser: Browser | None
     if request.query.get("scope") == "user":
-        browser = await ensure_user_browser()
+        browser = await get_browser_runtime().ensure_user_browser()
     else:
         conversation_id = request.query.get("conversation_id", "")
-        browser = await get_browser_by_conversation_id(conversation_id) if conversation_id else None
+        browser = await get_browser_runtime().get_conversation_browser(conversation_id) if conversation_id else None
     if browser is None:
         await ws.send_json({"type": "error", "reason": "no_active_browser"})
         await ws.close()

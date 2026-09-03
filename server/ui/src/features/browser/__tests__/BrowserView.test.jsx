@@ -52,7 +52,7 @@ vi.mock('../BrowserSaveModal.jsx', () => ({
 }));
 
 const SESSION = {
-    source_profile_id: 'default',
+    browser_profile_id: 'default',
     profiles: [
         { id: 'default', name: 'Default' },
         { id: 'linkedin', name: 'LinkedIn' },
@@ -81,7 +81,7 @@ describe('BrowserView profile load requests', () => {
         mocks.listBrowserProfiles.mockResolvedValue(SESSION.profiles);
         mocks.loadBrowserSession.mockResolvedValue({
             ...SESSION,
-            source_profile_id: 'linkedin',
+            browser_profile_id: 'linkedin',
         });
         mocks.profileLoadRequest = {
             profileId: 'linkedin',
@@ -127,12 +127,12 @@ describe('BrowserView profile load requests', () => {
         expect(screen.queryByRole('heading', { name: 'Load Client social?' })).not.toBeInTheDocument();
     });
 
-    it('reconciles a live Browser session when its source profile is deleted', async () => {
+    it('reconciles a live Browser session when its loaded profile disappears', async () => {
         mocks.profileLoadRequest = null;
         mocks.getBrowserSession
-            .mockResolvedValueOnce({ ...SESSION, source_profile_id: 'linkedin' })
+            .mockResolvedValueOnce({ ...SESSION, browser_profile_id: 'linkedin' })
             .mockResolvedValueOnce({
-                source_profile_id: null,
+                browser_profile_id: 'empty',
                 profiles: [SESSION.profiles[0]],
             });
 
@@ -146,7 +146,7 @@ describe('BrowserView profile load requests', () => {
         await waitFor(() => expect(mocks.getBrowserSession).toHaveBeenCalledTimes(2));
         expect(screen.getByTestId('browser-profile-select')).toHaveAttribute(
             'data-value',
-            '__empty__',
+            'empty',
         );
     });
 

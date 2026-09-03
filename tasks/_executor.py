@@ -6,14 +6,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
-from browser_profiles._assignment import (
-    browser_profile_assignment_scope,
-    resolve_browser_profile_assignment,
-)
+from browser.runtime import get_browser_runtime
 from conversations import EventsLogWriter
 from sdk import default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events import run_conversation_exit_hooks
 from sdk.events._context import (
     agent_span,
     publish_event,
@@ -23,6 +19,7 @@ from sdk.events._models import (
     FileOutputPayload,
     UserMessagePayload,
 )
+from sdk.lifecycle import run_conversation_exit_hooks
 from sdk.skills import build_agent_state
 from sdk.turn import turn_scope
 
@@ -58,7 +55,6 @@ class TaskExecutor:
         try:
             profile = self._profile_for(task)
             agent_state = await build_agent_state(profile)
-            browser_assignment = await resolve_browser_profile_assignment(profile)
             agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
 
             history = ConversationHistory(
@@ -93,17 +89,20 @@ class TaskExecutor:
                         max_iterations=agent.max_iterations,
                         ctx_manager=ctx_manager,
                     )
-                    with browser_profile_assignment_scope(browser_assignment):
-                        async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
-                            publish_event(
-                                AgentEvent(
-                                    payload=UserMessagePayload(
-                                        type="user_message",
-                                        content=instruction,
-                                    )
+                    async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
+                        await get_browser_runtime().prepare_current_agent_browser(
+                            agent_profile_id=profile.id,
+                            browser_profile_id=profile.browser_profile_id,
+                        )
+                        publish_event(
+                            AgentEvent(
+                                payload=UserMessagePayload(
+                                    type="user_message",
+                                    content=instruction,
                                 )
                             )
-                            result = await run_turn(history, agent, hooks=hooks)
+                        )
+                        result = await run_turn(history, agent, hooks=hooks)
             finally:
                 # Unsubscribe synchronously before the await so a cancellation
                 # mid-drain can't skip the unsubscribes and leak observers onto

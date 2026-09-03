@@ -119,46 +119,79 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
     flags = load_config().features
 
     browser_tools: list[Callable[..., Any]] = [
-        goto, new_tab, close_tab, browse_page, read_page, click, press_and_hold,
-        fill_field, press_keys, select_option, scroll_page, go_back, drag,
-        inspect_page, execute_javascript, save_page_content,
+        goto,
+        new_tab,
+        close_tab,
+        browse_page,
+        read_page,
+        click,
+        press_and_hold,
+        fill_field,
+        press_keys,
+        select_option,
+        scroll_page,
+        go_back,
+        drag,
+        inspect_page,
+        execute_javascript,
+        save_page_content,
     ]
     if flags.visual_grounding:
         from tools.browser import browser_visual_action
+
         browser_tools.append(browser_visual_action)
 
     categories: dict[str, ToolCategory] = {
         "coding": ToolCategory(
-            "coding", "Coding & Files", "Read, edit, and run code on the virtual computer.",
+            "coding",
+            "Coding & Files",
+            "Read, edit, and run code on the virtual computer.",
             [read_file, grep, list_dir, write_file, apply_text_patch, replace_in_file, run_bash_cmd, install_packages],
         ),
         "browser": ToolCategory(
-            "browser", "Web Browsing", "Drive a live browser — navigate, read, click, fill forms.",
+            "browser",
+            "Web Browsing",
+            "Drive a live browser — navigate, read, click, fill forms.",
             browser_tools,
         ),
         "webfetch": ToolCategory(
-            "webfetch", "Web Fetch", "Fetch a page as clean text — no browser needed.", [fetch_url],
+            "webfetch",
+            "Web Fetch",
+            "Fetch a page as clean text — no browser needed.",
+            [fetch_url],
         ),
         "memory": ToolCategory(
-            "memory", "Memory", "Persist and recall facts across conversations.",
+            "memory",
+            "Memory",
+            "Persist and recall facts across conversations.",
             [remember, forget, load_memory],
         ),
         "planning": ToolCategory(
-            "planning", "Routine Planning", "Break work into tracked routines and tasks.",
+            "planning",
+            "Routine Planning",
+            "Break work into tracked routines and tasks.",
             [begin_routine, add_task, commit_routine, list_routines, list_tasks, trigger_routine],
         ),
     }
 
     if flags.image_generation:
         from tools.generation import generate_image
+
         categories["image_generation"] = ToolCategory(
-            "image_generation", "Image Generation", "Generate images from text prompts.", [generate_image],
+            "image_generation",
+            "Image Generation",
+            "Generate images from text prompts.",
+            [generate_image],
         )
 
     if flags.music_generation:
         from tools.generation import generate_music
+
         categories["music_generation"] = ToolCategory(
-            "music_generation", "Music Generation", "Generate music from text prompts.", [generate_music],
+            "music_generation",
+            "Music Generation",
+            "Generate music from text prompts.",
+            [generate_music],
         )
 
     if flags.desktop:
@@ -175,14 +208,24 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         )
 
         desktop_tools: list[Callable[..., Any]] = [
-            read_screen, describe_screen, mouse_click, mouse_double_click,
-            mouse_drag, keyboard_type, keyboard_press, scroll, desktop_shell,
+            read_screen,
+            describe_screen,
+            mouse_click,
+            mouse_double_click,
+            mouse_drag,
+            keyboard_type,
+            keyboard_press,
+            scroll,
+            desktop_shell,
         ]
         if flags.visual_grounding:
             from tools.desktop import perform_visual_action
+
             desktop_tools.append(perform_visual_action)
         categories["desktop"] = ToolCategory(
-            "desktop", "Desktop Control", "Control a GUI desktop — mouse, keyboard, screen reading.",
+            "desktop",
+            "Desktop Control",
+            "Control a GUI desktop — mouse, keyboard, screen reading.",
             desktop_tools,
         )
 

@@ -9,8 +9,8 @@ from sdk.skills.agent_state import get_active_agent_state
 
 logger = logging.getLogger(__name__)
 
-# Marker used to find and replace the skill section in the system message.
-_SKILL_SECTION_MARKER = "\n── Loaded Skills ──"
+# Marker used to find and replace the capability/skill section in the system message.
+_PROMPT_EXTENSIONS_MARKER = "\n── Capabilities & Skills ──"
 
 
 class LoadedSkillHook:
@@ -33,7 +33,7 @@ class LoadedSkillHook:
         if agent_state is None:
             return
 
-        skill_section = agent_state.build_skill_prompt()
+        skill_section = agent_state.build_prompt_extensions()
 
         messages = history.messages
         if not messages or messages[0].get("role") != "system":
@@ -42,7 +42,7 @@ class LoadedSkillHook:
         current = messages[0]["content"] or ""
 
         # Strip any existing skill section before appending the current one.
-        marker_pos = current.find(_SKILL_SECTION_MARKER)
+        marker_pos = current.find(_PROMPT_EXTENSIONS_MARKER)
         if marker_pos >= 0:
             base = current[:marker_pos]
         else:

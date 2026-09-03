@@ -8,10 +8,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from agents import AgentProfile, build_agent, get_agent_profile
-from browser_profiles._assignment import (
-    browser_profile_assignment_scope,
-    resolve_browser_profile_assignment,
-)
+from browser.runtime import get_browser_runtime
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
@@ -165,7 +162,6 @@ async def spawn_agent(
         return msg
 
     agent_state = await build_agent_state(agent_profile)
-    browser_assignment = await resolve_browser_profile_assignment(agent_profile)
     agent = build_agent(agent_profile, tools=agent_state.tools, name=agent_name)
 
     logger.info(
@@ -191,71 +187,74 @@ async def spawn_agent(
         )
     )
 
-    with browser_profile_assignment_scope(browser_assignment):
-        async with agent_span(
-            agent_name,
-            instruction=instructions,
-            agent_state=agent_state,
-            profile_name=agent_profile.name,
-            correlation_id=correlation_id,
-        ):
-            conv_id = get_conversation_id() or "default"
-            history = ConversationHistory(
-                system_message=agent.instruction,
-                conversation_id=conv_id,
-                agent_id=get_current_agent_id(),
-            )
-            # Sub-agents share the parent conversation. Events keep flowing
-            # through the bound parent conversation (so they reach disk + UI),
-            # but the sub-agent's own history also receives them as an observer
-            # so its derived view (filtered by agent_id) is correct for the
-            # sub-agent's LLM calls.
-            parent_conv = get_current_conversation()
-            if parent_conv is not None:
-                parent_conv.subscribe(history.handle_event)
-            try:
-                publish_event(
-                    AgentEvent(
-                        payload=UserMessagePayload(
-                            type="user_message",
-                            content=instructions,
-                        )
+    async with agent_span(
+        agent_name,
+        instruction=instructions,
+        agent_state=agent_state,
+        profile_name=agent_profile.name,
+        correlation_id=correlation_id,
+    ):
+        await get_browser_runtime().prepare_current_agent_browser(
+            agent_profile_id=agent_profile.id,
+            browser_profile_id=agent_profile.browser_profile_id,
+        )
+        conv_id = get_conversation_id() or "default"
+        history = ConversationHistory(
+            system_message=agent.instruction,
+            conversation_id=conv_id,
+            agent_id=get_current_agent_id(),
+        )
+        # Sub-agents share the parent conversation. Events keep flowing
+        # through the bound parent conversation (so they reach disk + UI),
+        # but the sub-agent's own history also receives them as an observer
+        # so its derived view (filtered by agent_id) is correct for the
+        # sub-agent's LLM calls.
+        parent_conv = get_current_conversation()
+        if parent_conv is not None:
+            parent_conv.subscribe(history.handle_event)
+        try:
+            publish_event(
+                AgentEvent(
+                    payload=UserMessagePayload(
+                        type="user_message",
+                        content=instructions,
                     )
                 )
-            except Exception:  # pragma: no cover - defensive
-                logger.exception("Failed to publish sub-agent user_message event")
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to publish sub-agent user_message event")
 
-            ctx_manager = ContextManager(
+        ctx_manager = ContextManager(
+            history=history,
+            agent_state=agent_state,
+            context_limit=agent.context_window,
+            agent_name=agent.name,
+            compaction_threshold=agent.compaction_threshold,
+            strategies=[
+                LLMCompactionStrategy(threshold=agent.compaction_threshold),
+            ],
+        )
+        hooks = default_hooks(
+            agent,
+            max_iterations=agent.max_iterations,
+            ctx_manager=ctx_manager,
+        )
+        try:
+            result_text = await run_turn(
                 history=history,
-                agent_state=agent_state,
-                context_limit=agent.context_window,
-                agent_name=agent.name,
-                compaction_threshold=agent.compaction_threshold,
-                strategies=[
-                    LLMCompactionStrategy(threshold=agent.compaction_threshold),
-                ],
+                agent=agent,
+                hooks=hooks,
             )
-            hooks = default_hooks(
-                agent,
-                max_iterations=agent.max_iterations,
-                ctx_manager=ctx_manager,
-            )
-            try:
-                result_text = await run_turn(
-                    history=history,
-                    agent=agent,
-                    hooks=hooks,
-                )
-            except StopRequestedError:
-                logger.info("Spawned agent '%s' stopped by user request", agent_name)
-                raise
-            except Exception as exc:
-                _log_spawn_error(agent_name, str(exc))
-                logger.exception("Unexpected error in spawned agent '%s'", agent_name)
-                raise
-            finally:
-                if parent_conv is not None:
-                    parent_conv.unsubscribe(history.handle_event)
+        except StopRequestedError:
+            logger.info("Spawned agent '%s' stopped by user request", agent_name)
+            raise
+        except Exception as exc:
+            _log_spawn_error(agent_name, str(exc))
+            logger.exception("Unexpected error in spawned agent '%s'", agent_name)
+            raise
+        finally:
+            if parent_conv is not None:
+                parent_conv.unsubscribe(history.handle_event)
 
     result = (result_text or "").strip()
     _log_spawn_complete(agent_name, result)

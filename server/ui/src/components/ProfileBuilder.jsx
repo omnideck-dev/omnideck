@@ -9,6 +9,7 @@ import Popover from './primitives/Popover.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import Select from './primitives/Select.jsx';
 import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
+import { EMPTY_BROWSER_PROFILE } from '../features/browser/BrowserProfileMenu.jsx';
 import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
@@ -389,12 +390,11 @@ export default function ProfileBuilder({
                         <div className={styles.sectionLabel}>Browser</div>
                         <label className={styles.browserAccessRow}>
                             <ToggleSwitch
-                                checked={draft.browser_access === true}
+                                checked={draft.browser_profile_id !== null}
                                 onChange={(event) => {
                                     const enabled = event.target.checked;
                                     setDraft((current) => current ? {
                                         ...current,
-                                        browser_access: enabled,
                                         browser_profile_id: enabled
                                             ? (current.browser_profile_id || 'default')
                                             : null,
@@ -407,25 +407,25 @@ export default function ProfileBuilder({
                                 <span className={styles.autoHelp}>The agent can open websites in its own isolated Browser session.</span>
                             </span>
                         </label>
-                        {draft.browser_access === true && (
+                        {draft.browser_profile_id !== null && (
                             <div className={styles.browserProfileField}>
                                 <label id="agent-browser-profile-label">Starting profile</label>
                                 <Select
                                     options={[
-                                        { value: '__empty__', label: 'Empty' },
+                                        { value: EMPTY_BROWSER_PROFILE, label: 'Empty' },
                                         ...browserProfiles.map((item) => ({
                                             value: item.id,
                                             label: item.name,
                                         })),
                                     ]}
-                                    value={draft.browser_profile_id || '__empty__'}
-                                    onChange={(value) => update('browser_profile_id', value === '__empty__' ? null : value)}
+                                    value={draft.browser_profile_id}
+                                    onChange={(value) => update('browser_profile_id', value)}
                                     ariaLabelledBy="agent-browser-profile-label"
                                     className={styles.browserProfileSelect}
                                     testId="agent-browser-profile-select"
                                 />
                                 <div className={styles.browserProfileHint}>
-                                    {draft.browser_profile_id ? (
+                                    {draft.browser_profile_id !== EMPTY_BROWSER_PROFILE ? (
                                         <>
                                             <BrowserProfileIcon icon={browserProfiles.find((item) => item.id === draft.browser_profile_id)?.icon} />
                                             The agent gets an isolated copy of this saved profile.

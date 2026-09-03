@@ -1,40 +1,40 @@
-"""Canonical policy for application-managed skills and tool categories."""
+"""Policy for application-reserved skills and restricted tool categories."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-BROWSER_CAPABILITY_ID = "browser"
-INTERNAL_SKILL_IDS = frozenset({BROWSER_CAPABILITY_ID})
-INTERNAL_TOOL_CATEGORY_IDS = frozenset({BROWSER_CAPABILITY_ID})
+LEGACY_BROWSER_SKILL_ID = "browser"
+RESERVED_SKILL_IDS = frozenset({LEGACY_BROWSER_SKILL_ID})
+RESTRICTED_TOOL_CATEGORY_IDS = frozenset({"browser"})
 
 
-def is_internal_skill(skill_id: str) -> bool:
-    """Return whether a skill is managed by the application rather than users."""
-    return skill_id in INTERNAL_SKILL_IDS
+def is_reserved_skill_id(skill_id: str) -> bool:
+    """Return whether an ID belongs to an application capability."""
+    return skill_id in RESERVED_SKILL_IDS
 
 
-def is_internal_tool_category(category_id: str) -> bool:
-    """Return whether a category is granted only by application policy."""
-    return category_id in INTERNAL_TOOL_CATEGORY_IDS
+def is_restricted_tool_category(category_id: str) -> bool:
+    """Return whether user-editable skills may grant a tool category."""
+    return category_id in RESTRICTED_TOOL_CATEGORY_IDS
 
 
-def strip_internal_skills(skill_ids: Iterable[str]) -> list[str]:
-    """Remove application-managed capabilities from user-editable assignments."""
-    return [skill_id for skill_id in skill_ids if not is_internal_skill(skill_id)]
+def strip_reserved_skills(skill_ids: Iterable[str]) -> list[str]:
+    """Remove obsolete application-capability IDs from skill assignments."""
+    return [skill_id for skill_id in skill_ids if not is_reserved_skill_id(skill_id)]
 
 
-def grants_internal_tool_category(category_ids: Iterable[str]) -> bool:
-    """Return whether a user-editable skill attempts to grant an internal category."""
-    return any(is_internal_tool_category(category_id) for category_id in category_ids)
+def grants_restricted_tool_category(category_ids: Iterable[str]) -> bool:
+    """Return whether a skill attempts to grant a restricted category."""
+    return any(is_restricted_tool_category(category_id) for category_id in category_ids)
 
 
 __all__ = [
-    "BROWSER_CAPABILITY_ID",
-    "INTERNAL_SKILL_IDS",
-    "INTERNAL_TOOL_CATEGORY_IDS",
-    "grants_internal_tool_category",
-    "is_internal_skill",
-    "is_internal_tool_category",
-    "strip_internal_skills",
+    "LEGACY_BROWSER_SKILL_ID",
+    "RESTRICTED_TOOL_CATEGORY_IDS",
+    "RESERVED_SKILL_IDS",
+    "grants_restricted_tool_category",
+    "is_reserved_skill_id",
+    "is_restricted_tool_category",
+    "strip_reserved_skills",
 ]

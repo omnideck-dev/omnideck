@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,6 +23,15 @@ from sdk.events import (
     publish_event,
 )
 from sdk.turn import StopRequestedError, ToolLoopError
+
+
+@pytest.fixture(autouse=True)
+def _browser_runtime(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Keep agent-run tests isolated from the process Browser runtime."""
+    runtime = MagicMock()
+    runtime.prepare_current_agent_browser = AsyncMock()
+    monkeypatch.setattr(runner_module, "get_browser_runtime", lambda: runtime)
+    return runtime
 
 
 def _request(conversation_id: str) -> AgentRunRequest:
@@ -165,10 +175,14 @@ async def test_tool_loop_failure_is_not_duplicated(
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
 
     async def _failing_run_turn(**_kwargs: Any) -> None:
-        publish_event(AgentEvent(payload=ErrorPayload(
-            type="error",
-            message="usage limit reached",
-        )))
+        publish_event(
+            AgentEvent(
+                payload=ErrorPayload(
+                    type="error",
+                    message="usage limit reached",
+                )
+            )
+        )
         raise ToolLoopError("usage limit reached")
 
     monkeypatch.setattr(runner_module, "run_turn", _failing_run_turn)
@@ -187,41 +201,56 @@ async def test_published_events_are_forwarded_once_and_in_order(
     """Runner delivery includes nested lifecycle without duplicate events."""
 
     async def _fake_tool_loop(**_kwargs: Any) -> None:
-        publish_event(AgentEvent(payload=ContentPayload(
-            type="content",
-            content="one",
-        )))
+        publish_event(
+            AgentEvent(
+                payload=ContentPayload(
+                    type="content",
+                    content="one",
+                )
+            )
+        )
         await asyncio.sleep(0)
         async with agent_span("nested"):
-            publish_event(AgentEvent(payload=ContentPayload(
-                type="content",
-                content="secret",
-                thinking="hidden",
-            )))
+            publish_event(
+                AgentEvent(
+                    payload=ContentPayload(
+                        type="content",
+                        content="secret",
+                        thinking="hidden",
+                    )
+                )
+            )
 
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
     monkeypatch.setattr(runner_module, "run_turn", _fake_tool_loop)
 
     seen = await _run("runner-event-order")
 
-    content = [
-        (event.payload.content, event.payload.thinking)
-        for event in seen
-        if event.payload.type == "content"
-    ]
+    content = [(event.payload.content, event.payload.thinking) for event in seen if event.payload.type == "content"]
     assert content == [("one", None), ("secret", "hidden")]
     assert any(
-        isinstance(event.payload, AgentStartedPayload)
-        and event.payload.agent_name == "nested"
-        for event in seen
+        isinstance(event.payload, AgentStartedPayload) and event.payload.agent_name == "nested" for event in seen
     )
-    completed_indexes = [
-        index
-        for index, event in enumerate(seen)
-        if isinstance(event.payload, AgentCompletedPayload)
-    ]
+    completed_indexes = [index for index, event in enumerate(seen) if isinstance(event.payload, AgentCompletedPayload)]
     assert completed_indexes[-1] < len(seen) - 1
     assert seen[-1].payload.type == "turn_end"
+
+
+async def test_runner_prepares_browser_from_agent_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    _browser_runtime: MagicMock,
+) -> None:
+    """The application runner passes the selected profile to Browser runtime."""
+    profile = _profile().model_copy(update={"browser_profile_id": "empty"})
+    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: profile)
+    monkeypatch.setattr(runner_module, "run_turn", AsyncMock(return_value=None))
+
+    await _run("runner-browser-profile")
+
+    _browser_runtime.prepare_current_agent_browser.assert_awaited_once_with(
+        agent_profile_id="profile-1",
+        browser_profile_id="empty",
+    )
 
 
 async def test_stopped_root_lifecycle_precedes_turn_end(
@@ -230,10 +259,14 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     """A stopped root records stopped completion before terminal delivery."""
 
     async def _stopped_tool_loop(**_kwargs: Any) -> None:
-        publish_event(AgentEvent(payload=ContentPayload(
-            type="content",
-            content="partial",
-        )))
+        publish_event(
+            AgentEvent(
+                payload=ContentPayload(
+                    type="content",
+                    content="partial",
+                )
+            )
+        )
         raise StopRequestedError
 
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
@@ -243,8 +276,7 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     root_completed = [
         event
         for event in seen
-        if isinstance(event.payload, AgentCompletedPayload)
-        and event.payload.agent_name == "TEST"
+        if isinstance(event.payload, AgentCompletedPayload) and event.payload.agent_name == "TEST"
     ]
 
     assert root_completed[-1].payload.status == "stopped"

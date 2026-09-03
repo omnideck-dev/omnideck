@@ -28,11 +28,11 @@ export default function BrowserView() {
     const [showSave, setShowSave] = useState(false);
     const [error, setError] = useState('');
     const [sessionKey, setSessionKey] = useState(0);
-    const refreshingDeletedSource = useRef(false);
-    const selectedSource = session?.source_profile_id || EMPTY_BROWSER_PROFILE;
-    const loadedProfile = session?.source_profile_id
-        ? (profiles.find((profile) => profile.id === session.source_profile_id)
-            || session.profiles?.find((profile) => profile.id === session.source_profile_id))
+    const refreshingDeletedProfile = useRef(false);
+    const selectedBrowserProfileId = session?.browser_profile_id || EMPTY_BROWSER_PROFILE;
+    const loadedProfile = selectedBrowserProfileId !== EMPTY_BROWSER_PROFILE
+        ? (profiles.find((profile) => profile.id === selectedBrowserProfileId)
+            || session?.profiles?.find((profile) => profile.id === selectedBrowserProfileId))
         : null;
 
     useEffect(() => {
@@ -46,26 +46,27 @@ export default function BrowserView() {
 
     useEffect(() => {
         if (!profileLoadRequest?.profileId || !session) return;
-        if (profileLoadRequest.profileId !== selectedSource) {
+        if (profileLoadRequest.profileId !== selectedBrowserProfileId) {
             setPendingLoadName(profileLoadRequest.profileName || '');
             setPendingLoad(profileLoadRequest.profileId);
         }
         clearProfileLoadRequest();
-    }, [clearProfileLoadRequest, profileLoadRequest, selectedSource, session]);
+    }, [clearProfileLoadRequest, profileLoadRequest, selectedBrowserProfileId, session]);
 
     useEffect(() => {
-        const sourceProfileId = session?.source_profile_id;
+        const loadedBrowserProfileId = session?.browser_profile_id;
         if (
-            !sourceProfileId
+            !loadedBrowserProfileId
+            || loadedBrowserProfileId === EMPTY_BROWSER_PROFILE
             || !profilesLoaded
-            || profiles.some((profile) => profile.id === sourceProfileId)
-            || refreshingDeletedSource.current
+            || profiles.some((profile) => profile.id === loadedBrowserProfileId)
+            || refreshingDeletedProfile.current
         ) return;
 
         // A profile can be deleted from Settings while Browser remains open.
         // Refresh the server-owned session so the selector does not keep a
         // source profile that no longer exists.
-        refreshingDeletedSource.current = true;
+        refreshingDeletedProfile.current = true;
         getBrowserSession()
             .then((nextSession) => {
                 setSession(nextSession);
@@ -73,9 +74,9 @@ export default function BrowserView() {
             })
             .catch((err) => setError(err.message))
             .finally(() => {
-                refreshingDeletedSource.current = false;
+                refreshingDeletedProfile.current = false;
             });
-    }, [profiles, profilesLoaded, replaceProfiles, session?.source_profile_id]);
+    }, [profiles, profilesLoaded, replaceProfiles, session?.browser_profile_id]);
 
     const control = useBrowserControl({
         conversationId: null,
@@ -107,10 +108,9 @@ export default function BrowserView() {
     };
 
     const replaceSession = async () => {
-        const profileId = pendingLoad === EMPTY_BROWSER_PROFILE ? null : pendingLoad;
         setError('');
         try {
-            const next = await loadBrowserSession(profileId);
+            const next = await loadBrowserSession(pendingLoad);
             setSession(next);
             replaceProfiles(next.profiles || []);
             setSelectedTabId(null);
@@ -137,9 +137,9 @@ export default function BrowserView() {
                     browserActions={(
                         <BrowserProfileMenu
                             profiles={profiles}
-                            value={selectedSource}
+                            value={selectedBrowserProfileId}
                             onChange={(value) => {
-                                if (value === selectedSource) return;
+                                if (value === selectedBrowserProfileId) return;
                                 setPendingLoadName('');
                                 setPendingLoad(value);
                             }}

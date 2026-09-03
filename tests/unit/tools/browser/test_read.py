@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from browser.core.document import Document
+from tests.unit.tools.browser.support.playwright_stubs import StubPage
 from tools.browser import BrowserToolError
-from tools.browser.core.document import Document
 from tools.browser.read import (
     _chunk_bounds,
     _chunk_of,
@@ -13,13 +14,14 @@ from tools.browser.read import (
     _search,
     read_page,
 )
-from tests.unit.tools.browser.support.playwright_stubs import StubPage
 
 
 def _make_fake_get_document(page: _ReadContentPage):
     """Build a fake document resolver for read-page unit tests."""
+
     async def _fake(tool_name: str, *, tab=None):
-        from tools.browser.core.exceptions import BrowserToolError as BTE
+        from browser.core.exceptions import BrowserToolError as BTE
+
         if page.url in {"", "about:blank"}:
             raise BTE("No open page to read", tool=tool_name)
 
@@ -32,6 +34,7 @@ def _make_fake_get_document(page: _ReadContentPage):
                 return await page.title()
 
         return object(), _Tab(), Document(frame=page, page=page)
+
     return _fake
 
 
@@ -377,9 +380,7 @@ async def test_read_page_long_content_is_chunked(
 async def test_read_page_chunk_two_differs_from_chunk_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    paragraphs = "".join(
-        f"<p>Paragraph number {i} with unique content.</p>" for i in range(2000)
-    )
+    paragraphs = "".join(f"<p>Paragraph number {i} with unique content.</p>" for i in range(2000))
     _patch_view(monkeypatch, _ReadContentPage(html=f"<body>{paragraphs}</body>"))
 
     first = await read_page(chunk=1, tab="1")
@@ -480,7 +481,7 @@ async def test_read_page_query_no_matches(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_read_page_no_browser_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tools.browser.core.exceptions import BrowserToolError as BTE
+    from browser.core.exceptions import BrowserToolError as BTE
 
     async def _raise(tool_name: str, *, tab=None):
         raise BTE("No open page to read", tool=tool_name)

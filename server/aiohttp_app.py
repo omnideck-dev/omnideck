@@ -108,9 +108,15 @@ def create_app(
     Returns:
         Configured aiohttp web.Application instance.
     """
-    from browser_profiles._conversation import register_conversation_browser_cleanup
+    from browser.runtime import get_browser_runtime
+    from sdk.lifecycle import (
+        register_agent_span_exit_hook,
+        register_conversation_exit_hook,
+    )
 
-    register_conversation_browser_cleanup()
+    browser_runtime = get_browser_runtime()
+    register_agent_span_exit_hook(browser_runtime.close_agent)
+    register_conversation_exit_hook(browser_runtime.close_conversation)
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
     app[ACTIVE_RUN_MANAGER_KEY] = ActiveRunManager(build_agent_runner())
 

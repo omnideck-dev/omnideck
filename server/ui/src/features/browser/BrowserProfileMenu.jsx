@@ -5,7 +5,7 @@ import Popover from '../../components/primitives/Popover.jsx';
 import { BrowserProfileIcon } from './browserIcons.jsx';
 import styles from './BrowserProfileMenu.module.css';
 
-export const EMPTY_BROWSER_PROFILE = '__empty__';
+export const EMPTY_BROWSER_PROFILE = 'empty';
 
 function ProfileIcon({ profile }) {
     if (!profile) {

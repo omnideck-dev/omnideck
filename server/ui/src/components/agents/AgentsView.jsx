@@ -32,7 +32,6 @@ function draftAgent(providers) {
         model: '',
         system_prompt: '',
         skills: [],
-        browser_access: false,
         browser_profile_id: null,
         allow_spawn: true,
         allow_load_skills: true,

@@ -3,13 +3,15 @@
 import pytest
 
 from sdk.skills._registry import Skill
-from sdk.skills.agent_state import AgentState
+from sdk.skills.agent_state import AgentCapability, AgentState
 
 
 def _make_tool(name: str):
     """Create a dummy tool function with a given __name__."""
+
     async def tool() -> str:
         return name
+
     tool.__name__ = name
     return tool
 
@@ -49,6 +51,22 @@ class TestAgentState:
         ls.add(sk)
         assert len(ls.tools) == 2  # a (base) + b (skill), not a again
 
+    def test_capability_adds_tools_and_prompt_without_becoming_a_skill(self):
+        """Application capabilities compose alongside skills but remain separate."""
+        state = AgentState([_make_tool("base")])
+        state.add_capability(
+            AgentCapability(
+                id="browser",
+                name="Browser",
+                prompt="Browse safely.",
+                tools=[_make_tool("open_url")],
+            )
+        )
+
+        assert {tool.__name__ for tool in state.tools} == {"base", "open_url"}
+        assert state.skill_ids == frozenset()
+        assert "### Browser\nBrowse safely." in state.build_prompt_extensions()
+
     def test_add_tracks_skill_id(self):
         """skill_ids reflects every attached skill."""
         browser = _make_skill("browser", ["open_url"])
@@ -87,20 +105,20 @@ class TestAgentState:
         ls.add(sk)
         assert isinstance(ls.skill_ids, frozenset)
 
-    def test_build_skill_prompt_empty(self):
-        """build_skill_prompt returns empty string with no skills loaded."""
+    def test_build_prompt_extensions_empty(self):
+        """build_prompt_extensions returns empty string with no skills loaded."""
         ls = AgentState([_make_tool("a")])
-        assert ls.build_skill_prompt() == ""
+        assert ls.build_prompt_extensions() == ""
 
-    def test_build_skill_prompt(self):
-        """build_skill_prompt includes loaded skill prompts."""
+    def test_build_prompt_extensions(self):
+        """build_prompt_extensions includes loaded skill prompts."""
         browser = _make_skill("browser", ["open_url"], prompt="Browse the web.")
         coder = _make_skill("coder", ["read_file"], prompt="Edit files.")
         ls = AgentState([])
         ls.add(browser)
         ls.add(coder)
-        prompt = ls.build_skill_prompt()
-        assert "── Loaded Skills ──" in prompt
+        prompt = ls.build_prompt_extensions()
+        assert "── Capabilities & Skills ──" in prompt
         assert "### browser" in prompt
         assert "Browse the web." in prompt
         assert "### coder" in prompt

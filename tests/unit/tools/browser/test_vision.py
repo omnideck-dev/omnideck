@@ -7,10 +7,10 @@ import importlib
 
 import pytest
 
+from browser.core.document import Document
+from browser.core.rendering import RenderedDocument
 from tools._grounding import GroundingResponse
 from tools.browser import BrowserToolError
-from tools.browser.core.document import Document
-from tools.browser.core.rendering import RenderedDocument
 from tools.browser.vision import browser_visual_action, inspect_page
 
 # ── Shared helpers ────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ class _FakeBrowser:
         return self._tab
 
     async def coordinate_action(self, action_fn, *, source_tab=None):
-        from tools.browser.core.browser import ActionResult
+        from browser.core.browser import ActionResult
 
         await action_fn()
         return ActionResult(
@@ -228,9 +228,7 @@ async def test_inspect_page_ref_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert answer == "Mock answer"
     assert _fake_vision_generate.called
-    assert _fake_vision_generate.last_image == base64.b64encode(
-        b"element-bytes"
-    ).decode("ascii")
+    assert _fake_vision_generate.last_image == base64.b64encode(b"element-bytes").decode("ascii")
 
 
 @pytest.mark.unit

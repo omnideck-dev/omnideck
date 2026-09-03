@@ -13,7 +13,7 @@ from conversations import (
 )
 from sdk.context import ConversationHistory
 from sdk.context._view import build_transcript_view
-from sdk.events import run_conversation_exit_hooks
+from sdk.lifecycle import run_conversation_exit_hooks
 from sdk.turn import is_turn_active
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 # next access.
 _MAX_CACHED_CONVERSATIONS = 25
 _conversations: OrderedDict[str, ConversationHistory] = OrderedDict()
+
+
+async def evict_conversation(conversation_id: str) -> bool:
+    """Remove a conversation from memory and release its runtime resources."""
+    removed = _conversations.pop(conversation_id, None) is not None
+    await run_conversation_exit_hooks(conversation_id)
+    return removed
 
 
 async def _hydrate(conversation_id: str, events: list[dict[str, Any]]) -> ConversationHistory:
@@ -74,10 +81,10 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             if cid == exclude:
                 continue
             if not is_turn_active(cid):
-                _conversations.pop(cid)
-                await run_conversation_exit_hooks(cid)
+                await evict_conversation(cid)
                 logger.info(
-                    "Evicted LRU conversation %s from in-memory cache", cid,
+                    "Evicted LRU conversation %s from in-memory cache",
+                    cid,
                 )
                 break
         else:
