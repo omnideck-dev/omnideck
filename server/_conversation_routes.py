@@ -30,12 +30,14 @@ from conversations import (
     create_folder,
     delete_conversation,
     delete_folder,
+    evict_conversation,
     folder_exists,
     generate_conversation_title,
     list_archived_conversations,
     list_conversations,
     list_folders,
     load_conversation_metadata,
+    load_conversation_resume_state,
     save_conversation_folder,
     save_conversation_pinned,
     save_conversation_title,
@@ -44,7 +46,6 @@ from conversations import (
     update_folder,
 )
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
-from server._conversation_cache import evict_conversation, resume_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -214,12 +215,12 @@ async def resume_conversation_handler(request: Request) -> Response:
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
-    data = await resume_conversation(conversation_id)
+    resume_state = await load_conversation_resume_state(conversation_id)
 
     active_run = None
     if active is not None:
         resume_after_seq = 0
-        for event in reversed(data["events"]):
+        for event in reversed(resume_state.events):
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
@@ -234,18 +235,11 @@ async def resume_conversation_handler(request: Request) -> Response:
             "resume_after_seq": resume_after_seq,
         }
 
-    return web.json_response(
-        {
-            "conversation_id": conversation_id,
-            "messages": data["messages"],
-            "events": data["events"],
-            "browser_tabs": data["browser_tabs"],
-            "terminal": data["terminal"],
-            "preview_state": data["preview_state"],
-            "profile_id": data["profile_id"],
-            "active_run": active_run,
-        }
-    )
+    return web.json_response({
+        "conversation_id": conversation_id,
+        **resume_state.model_dump(),
+        "active_run": active_run,
+    })
 
 
 async def save_preview_state_handler(request: Request) -> Response:

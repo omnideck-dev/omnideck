@@ -1,4 +1,4 @@
-"""Unit tests for ``server._conversation_cache`` cache + resume behavior."""
+"""Unit tests for the conversation cache and resume-state loader."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from conversations import _cache as cc
 from conversations._store import save_conversation_profile
 from sdk.context import ConversationHistory
-from server import _conversation_cache as cc
 
 
 def _seed_events_jsonl(conv_dir: Path, conv_id: str, user_content: str = "hi") -> None:
@@ -195,10 +195,10 @@ async def test_lru_does_not_evict_just_inserted_when_others_active(
     assert set(cc._conversations) == {"a", "b", "c"}
 
 
-async def test_resume_conversation_marks_most_recently_used(
+async def test_load_resume_state_marks_conversation_most_recently_used(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """resume_conversation places the resumed entry at the LRU tail."""
+    """Loading resume state places the conversation at the LRU tail."""
     monkeypatch.setattr(
         "conversations._store._get_conversations_dir", lambda: tmp_path,
     )
@@ -216,17 +216,17 @@ async def test_resume_conversation_marks_most_recently_used(
         '"attachments":[]}\n'
     )
 
-    result = await cc.resume_conversation("from-disk")
+    result = await cc.load_conversation_resume_state("from-disk")
     assert result is not None
     assert list(cc._conversations)[-1] == "from-disk"
 
 
 async def test_resume_returns_empty_snapshot_without_persisted_events() -> None:
     """Loading before the first event returns the normal snapshot shape."""
-    result = await cc.resume_conversation("just-reserved")
+    result = await cc.load_conversation_resume_state("just-reserved")
 
-    assert result["messages"] == []
-    assert result["events"] == []
+    assert result.messages == []
+    assert result.events == []
     assert "just-reserved" in cc._conversations
 
 
@@ -251,38 +251,38 @@ async def test_resume_returns_complete_persisted_event_log(
         '{"id":"evt_cu","type":"context_usage","timestamp":"2026-01-01T00:00:03+00:00",'
         '"conversation_id":"spawn-conv","agent_id":"root.a.1","context_used":100}\n'
     )
-    result = await cc.resume_conversation("spawn-conv")
+    result = await cc.load_conversation_resume_state("spawn-conv")
     assert result is not None
-    types = [e["type"] for e in result["events"]]
+    types = [e["type"] for e in result.events]
     assert "spawn_requested" in types
     assert "context_usage" in types
 
 
-async def test_resume_conversation_returns_saved_profile(
+async def test_load_resume_state_returns_saved_profile(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """resume_conversation surfaces the conversation's locked-in profile."""
+    """Resume state surfaces the conversation's locked-in agent profile."""
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
     _seed_events_jsonl(tmp_path, "c-prof")
     save_conversation_profile("c-prof", "research")
 
-    result = await cc.resume_conversation("c-prof")
+    result = await cc.load_conversation_resume_state("c-prof")
 
     assert result is not None
-    assert result["profile_id"] == "research"
+    assert result.profile_id == "research"
 
 
-async def test_resume_conversation_profile_none_when_unset(
+async def test_load_resume_state_profile_none_when_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """A conversation with no saved profile resumes with None."""
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path)
     _seed_events_jsonl(tmp_path, "c-old")
 
-    result = await cc.resume_conversation("c-old")
+    result = await cc.load_conversation_resume_state("c-old")
 
     assert result is not None
-    assert result["profile_id"] is None
+    assert result.profile_id is None
 
 
 async def test_resume_returns_browser_tabs_sidecar(
@@ -301,10 +301,10 @@ async def test_resume_returns_browser_tabs_sidecar(
               "timestamp": "2026-01-01T00:00:05+00:00"},
     }), encoding="utf-8")
 
-    result = await cc.resume_conversation("c-tabs")
+    result = await cc.load_conversation_resume_state("c-tabs")
 
     assert result is not None
-    (tab,) = result["browser_tabs"]
+    (tab,) = result.browser_tabs
     assert tab["url"] == "https://a.example"
     assert tab["agent_id"] == "root.test.1"
 
@@ -323,10 +323,10 @@ async def test_resume_returns_terminal_sidecar(
                          "timestamp": "2026-01-01T00:00:05+00:00"}],
     }), encoding="utf-8")
 
-    result = await cc.resume_conversation("c-term")
+    result = await cc.load_conversation_resume_state("c-term")
 
     assert result is not None
-    (entry,) = result["terminal"]["root.test.1"]
+    (entry,) = result.terminal["root.test.1"]
     assert entry["cmd"] == "ls"
     assert entry["stdout"] == "a.txt\n"
 
@@ -350,9 +350,9 @@ async def test_warm_resume_reads_complete_log_from_disk(
     await cc.get_or_create_conversation("c-warm")
     cc._conversations["c-warm"].seed_events([])
 
-    result = await cc.resume_conversation("c-warm")
+    result = await cc.load_conversation_resume_state("c-warm")
 
     assert result is not None
-    assert [event["type"] for event in result["events"]] == [
+    assert [event["type"] for event in result.events] == [
         "agent_started", "user_message", "context_usage",
     ]

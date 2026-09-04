@@ -109,10 +109,8 @@ def create_app(
         Configured aiohttp web.Application instance.
     """
     from browser.runtime import get_browser_runtime
-    from sdk.lifecycle import (
-        register_agent_span_exit_hook,
-        register_conversation_exit_hook,
-    )
+    from conversations import register_conversation_exit_hook
+    from sdk.lifecycle import register_agent_span_exit_hook
 
     browser_runtime = get_browser_runtime()
     register_agent_span_exit_hook(browser_runtime.close_agent)

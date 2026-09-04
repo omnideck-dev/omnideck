@@ -1,8 +1,21 @@
-"""Pydantic models for conversation persistence."""
+"""Models for conversation state and persistence."""
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
+
+
+class ConversationResumeState(BaseModel):
+    """Persisted conversation and workspace state used when resuming."""
+
+    messages: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+    browser_tabs: list[dict[str, Any]]
+    terminal: dict[str, list[dict[str, Any]]]
+    preview_state: dict[str, Any]
+    profile_id: str | None
 
 
 class ConversationSummary(BaseModel):

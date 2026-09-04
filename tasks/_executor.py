@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
 from browser.runtime import get_browser_runtime
-from conversations import EventsLogWriter
+from conversations import EventsLogWriter, run_conversation_exit_hooks
 from sdk import default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events._context import (
@@ -19,7 +19,6 @@ from sdk.events._models import (
     FileOutputPayload,
     UserMessagePayload,
 )
-from sdk.lifecycle import run_conversation_exit_hooks
 from sdk.skills import build_agent_state
 from sdk.turn import turn_scope
 

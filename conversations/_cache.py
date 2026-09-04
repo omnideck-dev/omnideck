@@ -1,20 +1,19 @@
-"""In-memory conversation cache and resume support."""
+"""In-memory conversation cache and persisted resume state."""
 
 import logging
 from collections import OrderedDict
 from typing import Any
 
-from conversations import (
-    load_browser_tabs,
-    load_conversation_profile,
-    load_events_jsonl,
-    load_preview_state,
-    load_terminal,
-)
 from sdk.context import ConversationHistory
 from sdk.context._view import build_transcript_view
-from sdk.lifecycle import run_conversation_exit_hooks
 from sdk.turn import is_turn_active
+
+from ._browser_tabs import load_browser_tabs
+from ._events_log import load_events_jsonl
+from ._lifecycle import run_conversation_exit_hooks
+from ._models import ConversationResumeState
+from ._store import load_conversation_profile, load_preview_state
+from ._terminal import load_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -94,26 +93,16 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
             return
 
 
-async def resume_conversation(conversation_id: str) -> dict:
-    """Load a conversation's history derived from events.jsonl.
-
-    Returns a dict with:
-        messages: the conversation transcript derived from the event log
-            via ``build_transcript_view`` (user-facing, not the compacted
-            LLM view).
-        events: complete persisted canonical event log. The frontend decides
-            which state models each event contributes to; this API does not
-            maintain a second event-type allowlist.
-        browser_tabs: latest browser snapshot per tab from the sidecar,
-            so the preview panel restores without replaying screenshots.
-        terminal: per-agent terminal transcripts from the sidecar (the
-            last N commands, merged), keyed by agent_id.
-        preview_state: persisted preview-panel state.
-        profile_id: the agent profile last used in this conversation, or
-            None if it predates per-conversation profiles.
+async def load_conversation_resume_state(
+    conversation_id: str,
+) -> ConversationResumeState:
+    """Load the persisted state needed to resume a conversation.
 
     Args:
         conversation_id: Conversation whose persisted state should be loaded.
+
+    Returns:
+        Typed transcript, event, workspace, and agent-profile state.
     """
     # Disk is the durability contract for resume. The in-memory history keeps
     # only what the active LLM view needs and is deliberately not a second
@@ -128,11 +117,11 @@ async def resume_conversation(conversation_id: str) -> dict:
     # Transcript view: the conversation as it happened, not the
     # post-compaction LLM view. The frontend draws compaction chips itself.
     transcript = build_transcript_view(events)
-    return {
-        "messages": transcript,
-        "events": events,
-        "browser_tabs": load_browser_tabs(conversation_id),
-        "terminal": load_terminal(conversation_id),
-        "preview_state": load_preview_state(conversation_id),
-        "profile_id": load_conversation_profile(conversation_id),
-    }
+    return ConversationResumeState(
+        messages=transcript,
+        events=events,
+        browser_tabs=load_browser_tabs(conversation_id),
+        terminal=load_terminal(conversation_id),
+        preview_state=load_preview_state(conversation_id),
+        profile_id=load_conversation_profile(conversation_id),
+    )

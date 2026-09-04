@@ -122,8 +122,8 @@ async def agent_span(
     agents whose skills should survive across turns). Otherwise a fresh
     empty AgentState is created.
 
-    On exit, releases any ephemeral browser context created by this agent
-    (sub-agents only, depth > 0).
+    On exit, runs registered cleanup hooks for resources scoped to this agent
+    execution.
 
     Args:
         agent_name: Human-readable agent name for event attribution.
