@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import BrowserPreview from '../../components/BrowserPreview.jsx';
 import Button from '../../components/primitives/Button.jsx';
@@ -18,7 +18,6 @@ export default function BrowserView() {
     const { request: profileLoadRequest, clearRequest: clearProfileLoadRequest } = useBrowserProfileLoadRequest();
     const {
         profiles,
-        loaded: profilesLoaded,
         replaceProfiles,
     } = useBrowserProfilesCatalog();
     const [session, setSession] = useState(null);
@@ -28,7 +27,6 @@ export default function BrowserView() {
     const [showSave, setShowSave] = useState(false);
     const [error, setError] = useState('');
     const [sessionKey, setSessionKey] = useState(0);
-    const refreshingDeletedProfile = useRef(false);
     const selectedBrowserProfileId = session?.browser_profile_id || EMPTY_BROWSER_PROFILE;
     const loadedProfile = selectedBrowserProfileId !== EMPTY_BROWSER_PROFILE
         ? (profiles.find((profile) => profile.id === selectedBrowserProfileId)
@@ -52,31 +50,6 @@ export default function BrowserView() {
         }
         clearProfileLoadRequest();
     }, [clearProfileLoadRequest, profileLoadRequest, selectedBrowserProfileId, session]);
-
-    useEffect(() => {
-        const loadedBrowserProfileId = session?.browser_profile_id;
-        if (
-            !loadedBrowserProfileId
-            || loadedBrowserProfileId === EMPTY_BROWSER_PROFILE
-            || !profilesLoaded
-            || profiles.some((profile) => profile.id === loadedBrowserProfileId)
-            || refreshingDeletedProfile.current
-        ) return;
-
-        // A profile can be deleted from Settings while Browser remains open.
-        // Refresh the server-owned session so the selector does not keep a
-        // source profile that no longer exists.
-        refreshingDeletedProfile.current = true;
-        getBrowserSession()
-            .then((nextSession) => {
-                setSession(nextSession);
-                replaceProfiles(nextSession.profiles || []);
-            })
-            .catch((err) => setError(err.message))
-            .finally(() => {
-                refreshingDeletedProfile.current = false;
-            });
-    }, [profiles, profilesLoaded, replaceProfiles, session?.browser_profile_id]);
 
     const control = useBrowserControl({
         conversationId: null,

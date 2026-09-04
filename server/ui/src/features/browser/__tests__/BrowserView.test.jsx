@@ -127,29 +127,6 @@ describe('BrowserView profile load requests', () => {
         expect(screen.queryByRole('heading', { name: 'Load Client social?' })).not.toBeInTheDocument();
     });
 
-    it('reconciles a live Browser session when its loaded profile disappears', async () => {
-        mocks.profileLoadRequest = null;
-        mocks.getBrowserSession
-            .mockResolvedValueOnce({ ...SESSION, browser_profile_id: 'linkedin' })
-            .mockResolvedValueOnce({
-                browser_profile_id: 'empty',
-                profiles: [SESSION.profiles[0]],
-            });
-
-        await act(async () => {
-            renderBrowserView();
-        });
-        await waitFor(() => expect(mocks.getBrowserSession).toHaveBeenCalledOnce());
-
-        act(() => profilesCatalog.removeProfile('linkedin'));
-
-        await waitFor(() => expect(mocks.getBrowserSession).toHaveBeenCalledTimes(2));
-        expect(screen.getByTestId('browser-profile-select')).toHaveAttribute(
-            'data-value',
-            'empty',
-        );
-    });
-
     it('does not prompt when the current profile is selected again', async () => {
         mocks.profileLoadRequest = null;
         const user = userEvent.setup();
