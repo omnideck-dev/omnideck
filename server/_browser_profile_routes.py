@@ -10,7 +10,7 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents import get_agent_profile, list_agent_profiles, save_agent_profile
-from browser import EMPTY_BROWSER_PROFILE_ID, BrowserProfile, summarize_browser_sites
+from browser import BrowserProfile, summarize_browser_sites
 from browser.runtime import get_browser_runtime
 
 
@@ -19,7 +19,7 @@ class _RequestModel(BaseModel):
 
 
 class LoadBrowserSessionRequest(_RequestModel):
-    profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    profile_id: str = Field(min_length=1, max_length=128)
 
 
 class SaveBrowserStateRequest(_RequestModel):
@@ -83,10 +83,9 @@ async def handle_browser_session(_request: web.Request) -> web.Response:
 async def handle_load_browser_session(request: web.Request) -> web.Response:
     body = await _validated_json(request, LoadBrowserSessionRequest)
     assert isinstance(body, LoadBrowserSessionRequest)
-    profile_id = body.profile_id or EMPTY_BROWSER_PROFILE_ID
     try:
         runtime = get_browser_runtime()
-        await runtime.load_user_browser_profile(profile_id)
+        await runtime.load_user_browser_profile(body.profile_id)
     except KeyError:
         return web.json_response({"error": "Browser profile not found"}, status=404)
     return web.json_response(await runtime.summarize_user_browser())

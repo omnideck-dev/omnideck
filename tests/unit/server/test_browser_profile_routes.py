@@ -64,6 +64,12 @@ async def test_request_validation_rejects_non_text_profile_name():
 
 
 @pytest.mark.unit
+async def test_load_browser_session_requires_an_explicit_profile_id():
+    with pytest.raises(web.HTTPBadRequest):
+        await routes.handle_load_browser_session(_request(json_body={}))
+
+
+@pytest.mark.unit
 async def test_empty_takeover_cannot_overwrite_an_existing_profile(monkeypatch):
     runtime = _runtime(monkeypatch, binding_profile_id="empty")
 
