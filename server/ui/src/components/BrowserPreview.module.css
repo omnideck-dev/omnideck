@@ -53,11 +53,18 @@
 
 .thumbWrap {
   position: relative;
-  flex: 0 0 96px;
+  /* Keep every tab at the same generous base size. min-width:0 prevents an
+     unbroken hostname from overriding the flex basis and stretching the card. */
+  flex: 0 0 120px;
+  width: 120px;
+  min-width: 0;
 }
 
 .thumbCard {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   cursor: pointer;
   border-radius: var(--radius-md);
   overflow: hidden;
