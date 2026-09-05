@@ -183,6 +183,10 @@ logs:
 unit:
     PYTHONPATH=. uv run pytest tests/unit/
 
+# Run runtime integration contracts with real orchestration and scripted I/O
+test-runtime *args:
+    PYTHONPATH=. uv run pytest tests/integration/agent_runtime/ {{args}}
+
 # Run browser-tools tests (real headed Chrome against local fixture pages)
 test-browser-tools *args:
     #!/usr/bin/env bash
@@ -309,8 +313,8 @@ e2e *args:
     else
         just _build-image "$image"
     fi
-    name="omnideck_e2e"
-    port=9090
+    name="${E2E_CONTAINER:-omnideck_e2e}"
+    port="${E2E_PORT:-9090}"
     state=$(mktemp -d)
     mkdir -p "$state/home" "$state/state"
     cleanup() {

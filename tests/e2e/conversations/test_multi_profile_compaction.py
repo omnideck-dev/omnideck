@@ -1,122 +1,42 @@
-"""E2E: a conversation that spans multiple root agent profiles and
-contains a compaction event.
+"""Real compaction must account for earlier root turns across profile changes."""
 
-The migrator (and the resume API) must view the same compaction chip
-regardless of profile switches between turns. Specifically, the chip's
-scope.user_messages should reflect ALL root user messages compacted,
-not just the ones for the agent_name on the compaction event.
-"""
-
-from __future__ import annotations
-
-import json
 import time
-from datetime import UTC, datetime, timedelta
 
-import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e._helpers import container_exec
+from tests.e2e._runtime import agent_profile, compaction_settings, delete_conversation, resume, run_turn
 from tests.e2e.pages import ChatView, RecentConversations
 
-CONV_DIR = "/var/lib/computron/conversations"
 
-
-def _seed_multi_profile_conv(conv_id: str, *, title: str | None = None) -> None:
-    """Seed: three root turns under two different profiles, a compaction,
-    then one post-compaction turn under a third profile. The compaction
-    summarized turns from MULTIPLE agent_names — its embedded stats
-    must record the cross-profile scope correctly."""
-    base = datetime.now(UTC)
-    def _t(o: int) -> str:
-        return (base + timedelta(seconds=o)).isoformat()
-
-    def _turn(idx: int, agent_id: str, agent_name: str,
-              user_text: str, assistant_text: str,
-              t_offset: int) -> list[dict]:
-        return [
-            {"id": f"evt_{conv_id}_start_{idx}", "type": "agent_started",
-             "timestamp": _t(t_offset), "conversation_id": conv_id,
-             "agent_id": agent_id, "agent_name": agent_name,
-             "parent_agent_id": None},
-            {"id": f"evt_{conv_id}_user_{idx}", "type": "user_message",
-             "timestamp": _t(t_offset + 1), "conversation_id": conv_id,
-             "agent_id": agent_id, "agent_name": agent_name, "depth": 0,
-             "content": user_text, "attachments": []},
-            {"id": f"evt_{conv_id}_iter_{idx}", "type": "iteration",
-             "timestamp": _t(t_offset + 2), "conversation_id": conv_id,
-             "agent_id": agent_id, "agent_name": agent_name,
-             "iteration_index": 0,
-             "content": assistant_text, "thinking": None, "tool_calls": []},
-            {"id": f"evt_{conv_id}_done_{idx}", "type": "agent_completed",
-             "timestamp": _t(t_offset + 3), "conversation_id": conv_id,
-             "agent_id": agent_id, "agent_name": agent_name,
-             "status": "success"},
-        ]
-
-    events: list[dict] = []
-    events += _turn(1, "root.profile_a.1", "PROFILE_A", "ask 1", "reply 1", 0)
-    events += _turn(2, "root.profile_a.2", "PROFILE_A", "ask 2", "reply 2", 4)
-    events += _turn(3, "root.profile_b.1", "PROFILE_B", "ask 3", "reply 3", 8)
-    events.append({
-        "id": f"evt_{conv_id}_compaction",
-        "type": "compaction",
-        "timestamp": _t(12),
-        "conversation_id": conv_id,
-        "agent_id": "root.profile_a.1",  # migrator tags with first root id
-        "agent_name": "PROFILE_A",
-        "kept_from_id": f"evt_{conv_id}_user_4",
-        "kept_to_id": f"evt_{conv_id}_iter_4",
-        "summary_text": "Earlier: user explored two profiles then switched.",
-        "user_intent_summary": "exploring multi-profile behavior",
-        # Migrator-shaped stats — cross-profile scope.
-        "stats": {
-            "scope": {"user_messages": 3, "iterations": 3, "tool_results": 0},
-            "summary_chars": 53, "summary_tokens": 13, "summary_lines": 1,
-            "model": "test-model", "input_char_count": 600, "elapsed_seconds": 1.0,
-        },
-    })
-    events += _turn(4, "root.profile_c.1", "PROFILE_C", "post-compact ask", "post reply", 13)
-
-    events_jsonl = "\n".join(json.dumps(e) for e in events) + "\n"
-    meta = json.dumps({"title": title if title is not None else conv_id})
-    container_exec(
-        "import pathlib\n"
-        f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
-        "d.mkdir(parents=True, exist_ok=True)\n"
-        f"(d / 'events.jsonl').write_text({events_jsonl!r})\n"
-        f"(d / 'metadata.json').write_text({meta!r})\n"
-    )
-
-
-def _cleanup(conv_id: str) -> None:
-    container_exec(
-        "import shutil, pathlib\n"
-        f"p = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
-        "if p.exists(): shutil.rmtree(p)\n"
-    )
-
-
-@pytest.mark.e2e
 def test_compaction_chip_renders_across_profile_switches(page: Page):
-    """The chip's scope.user_messages must reflect the cross-profile
-    count (3) the migrator embedded, not the count for the single
-    agent_name tagged on the compaction event (1)."""
-    nonce = time.time_ns()
-    conv_id = f"e2e_multi_profile_compact_{nonce}"
-    _seed_multi_profile_conv(conv_id)
-    try:
-        ChatView(page).goto()
-        RecentConversations(page).open_by_title(conv_id)
-        chip = page.get_by_test_id("compaction-chip").first
-        expect(chip).to_be_visible(timeout=5_000)
-        expect(chip).to_contain_text("earlier conversation compacted")
-        chip.click()
-        panel = page.get_by_test_id("compaction-panel").first
-        expect(panel).to_be_visible()
-        expect(panel).to_contain_text(
-            "Earlier: user explored two profiles then switched.",
-        )
-        expect(panel).to_contain_text("exploring multi-profile behavior")
-    finally:
-        _cleanup(conv_id)
+    conversation = f"e2e_multi_profile_compact_{time.time_ns()}"
+    with compaction_settings(), agent_profile(name="Profile A") as a, agent_profile(name="Profile B") as b, agent_profile(
+        name="Profile C", context_window=1000, compaction_threshold=0.01,
+    ) as c:
+        try:
+            for i, profile in enumerate((a, b, a, b, c)):
+                run_turn(conversation, f"exploring profiles, phase {i}", profile_id=profile["id"])
+            events = resume(conversation)["events"]
+            compactions = [e for e in events if e["type"] == "compaction"]
+            assert len(compactions) == 1
+            event = compactions[0]
+            boundary = next(i for i, e in enumerate(events) if e["id"] == event["kept_from_id"])
+            earlier = events[:boundary]
+            assert {e["agent_name"] for e in earlier if e["type"] == "iteration"} == {"PROFILE A", "PROFILE B"}
+            user_count = sum(e["type"] == "user_message" for e in earlier)
+            assert user_count >= 2
+            assert event["stats"]["scope"]["user_messages"] == user_count
+            ChatView(page).goto().new_conversation()
+            RecentConversations(page).open_by_id(conversation)
+            chip = page.get_by_test_id("compaction-chip")
+            expect(chip).to_have_count(1)
+            expect(chip).to_contain_text("earlier conversation compacted")
+            chip.click()
+            panel = page.get_by_test_id("compaction-panel")
+            expect(panel).to_be_visible()
+            expect(panel).to_contain_text(event["summary_text"])
+            expect(panel).to_contain_text(event["user_intent_summary"])
+            scope = event["stats"]["scope"]
+            expect(panel).to_contain_text(f"{scope['user_messages'] + scope['iterations']} messages")
+        finally:
+            delete_conversation(conversation)
