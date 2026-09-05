@@ -28,7 +28,7 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 
 | Need | Component | Import | Use when |
 |---|---|---|---|
-| Text button | `Button` | `primitives/Button.jsx` | variants: `outline` (default), `filled` (one primary/surface), `ghost` (quiet), `danger`. Icon via children: `<Button><Icon/> Label</Button>` |
+| Text button | `Button` | `primitives/Button.jsx` | variants: `outline` (default), `filled` (one primary/surface), `ghost` (quiet), `danger`. Icon via children: `<Button><Icon/> Label</Button>`. For an in-flight async action, pass `loading` and optionally `loadingLabel`; the primitive supplies the spinner, disabled state, and `aria-busy`. |
 | Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"`; icon as child |
 | Icon picker popover | `IconPickerPopover` | `primitives/IconPickerPopover.jsx` | Curated Bootstrap icon selection shared by folders and profile identity controls. Anchor it with `anchorRef` or `anchorRect`; supply `icons`, `current`, `onPick`, and `onClose`. |
 | Select / dropdown | `Select` | `primitives/Select.jsx` | Canonical application-rendered select-only combobox. Pass `options`, `value`, `onChange`, and an accessible label. Native `<select>` is prohibited because host-rendered menus cannot satisfy the shared visual contract. |

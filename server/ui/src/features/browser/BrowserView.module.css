@@ -39,17 +39,3 @@
     gap: var(--sp-2);
     margin-top: var(--sp-5);
 }
-
-.spinner {
-    width: 12px;
-    height: 12px;
-    display: inline-block;
-    border: 2px solid var(--border);
-    border-top-color: currentColor;
-    border-radius: 50%;
-    animation: spin 800ms linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}

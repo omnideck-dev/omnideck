@@ -476,6 +476,20 @@ body {
 }
 .btn-danger:hover { background: rgba(220,38,38,0.15); }
 
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border: 2px solid var(--border);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: btn-spin 800ms linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
 .btn-icon {
   width: 28px;
   height: 28px;
@@ -3386,6 +3400,7 @@ body {
         <button class="btn btn-ghost">Ghost</button>
         <button class="btn btn-danger">Danger</button>
         <button class="btn btn-filled" disabled style="opacity:0.5;cursor:not-allowed">Disabled</button>
+        <button class="btn btn-filled" disabled aria-busy="true" style="opacity:0.5;cursor:not-allowed"><span class="btn-spinner" aria-hidden="true"></span>Loading&hellip;</button>
       </div>
       <div class="component-row" style="margin-top:4px">
         <button class="btn-icon" title="Settings"><i class="bi bi-gear"></i></button>
@@ -3401,6 +3416,7 @@ body {
         // <code>.btn-outline</code> &mdash; the default for everything that isn&apos;t the primary CTA. Cancel, Back, Retry, Configure. A real, peer choice the user might pick.<br>
         // <code>.btn-ghost</code> &mdash; tertiary / quiet. Use when the button stands alone or genuinely shouldn&apos;t compete for attention (a solo Skip, a hover-revealed row action). Reads as "an escape hatch."<br>
         // <code>.btn-danger</code> &mdash; destructive (Delete, Disconnect, Remove). Use anywhere the action can&apos;t be cheaply undone.<br>
+        // <strong style="color:var(--text-secondary)">Async actions:</strong> keep the action in place, replace its contents with a spinner and concise progress label, and disable it until the operation settles. In React, use <code>&lt;Button loading loadingLabel="Saving&hellip;"&gt;</code>; do not recreate the spinner locally.<br>
         // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> if two buttons live in the same action row, neither should be <code>ghost</code>. Use <code>filled</code> for the one primary CTA, <code>outline</code> for the rest, <code>danger</code> for destructive. Reach for <code>ghost</code> only when the button is alone or you specifically want it to feel almost-not-there.<br>
         // Counter-example: a wizard footer of <code>[Back] [Cancel] [Save]</code>. All three are peer choices &mdash; render Back &amp; Cancel as <code>outline</code> and Save as <code>filled</code>. A <code>ghost</code> Cancel sitting next to outline Back reads as disabled, especially in dark mode.
       </div>

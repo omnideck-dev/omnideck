@@ -149,13 +149,9 @@ export default function BrowserView() {
                         <Button
                             variant="filled"
                             onClick={replaceSession}
-                            disabled={isReplacingBrowser}
-                            aria-busy={isReplacingBrowser}
+                            loading={isReplacingBrowser}
                         >
-                            {isReplacingBrowser && <span className={styles.spinner} aria-hidden="true" />}
-                            {isReplacingBrowser
-                                ? 'Loading…'
-                                : (pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty' : 'Load profile')}
+                            {pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty' : 'Load profile'}
                         </Button>
                     </div>
                 </Modal>
