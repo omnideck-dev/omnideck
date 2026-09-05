@@ -18,14 +18,14 @@ import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-
-from ._cleanup import run_agent_span_exit_hooks
 from typing import TYPE_CHECKING, Protocol
+
+from sdk.lifecycle import run_agent_span_exit_hooks
 
 if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
     from collections.abc import AsyncGenerator
 
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 
 from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload
 
@@ -51,9 +51,7 @@ class EventSink(Protocol):
 # Event sink bound for the current coroutine context. Set by turn_scope.
 # publish_event routes through the sink's add_event so the in-memory log is
 # updated synchronously before observers fan out — no race.
-_current_conversation: ContextVar[EventSink | None] = ContextVar(
-    "assistant_events_current_conversation", default=None
-)
+_current_conversation: ContextVar[EventSink | None] = ContextVar("assistant_events_current_conversation", default=None)
 
 
 def get_current_conversation() -> EventSink | None:
@@ -101,8 +99,6 @@ def get_current_agent_id() -> str | None:
     return stack[-1][0] if stack else None
 
 
-
-
 def get_current_depth() -> int:
     """Return the current nesting depth (0 = root, 1+ = sub-agents)."""
     stack = _context_stack.get()
@@ -126,8 +122,8 @@ async def agent_span(
     agents whose skills should survive across turns). Otherwise a fresh
     empty AgentState is created.
 
-    On exit, releases any ephemeral browser context created by this agent
-    (sub-agents only, depth > 0).
+    On exit, runs registered cleanup hooks for resources scoped to this agent
+    execution.
 
     Args:
         agent_name: Human-readable agent name for event attribution.
@@ -165,18 +161,25 @@ async def agent_span(
 
     logger.info(
         "Agent started: %s (id=%s, parent=%s, depth=%d)",
-        agent_name, context_id, parent_id, depth,
+        agent_name,
+        context_id,
+        parent_id,
+        depth,
     )
 
-    publish_event(AgentEvent(payload=AgentStartedPayload(
-        type="agent_started",
-        agent_id=context_id,
-        agent_name=agent_name or "",
-        parent_agent_id=parent_id,
-        instruction=instruction,
-        profile_name=profile_name,
-        correlation_id=correlation_id,
-    )))
+    publish_event(
+        AgentEvent(
+            payload=AgentStartedPayload(
+                type="agent_started",
+                agent_id=context_id,
+                agent_name=agent_name or "",
+                parent_agent_id=parent_id,
+                instruction=instruction,
+                profile_name=profile_name,
+                correlation_id=correlation_id,
+            )
+        )
+    )
 
     status = "success"
     try:
@@ -184,6 +187,7 @@ async def agent_span(
     except Exception as exc:
         # Import here to avoid circular dependency with sdk.turn
         from sdk.turn._turn import StopRequestedError
+
         status = "stopped" if isinstance(exc, StopRequestedError) else "error"
         raise
     finally:
@@ -191,14 +195,21 @@ async def agent_span(
 
         logger.info(
             "Agent completed: %s (id=%s, status=%s, depth=%d)",
-            agent_name, context_id, status, depth,
+            agent_name,
+            context_id,
+            status,
+            depth,
         )
-        publish_event(AgentEvent(payload=AgentCompletedPayload(
-            type="agent_completed",
-            agent_id=context_id,
-            agent_name=agent_name or "",
-            status=status,
-        )))
+        publish_event(
+            AgentEvent(
+                payload=AgentCompletedPayload(
+                    type="agent_completed",
+                    agent_id=context_id,
+                    agent_name=agent_name or "",
+                    status=status,
+                )
+            )
+        )
         unregister_nudge_queue(context_id)
         _active_agent_state.reset(ls_token)
         _context_stack.reset(token)

@@ -17,7 +17,7 @@ import pytest
 
 from sdk.context import ConversationHistory
 from sdk.events import agent_span
-from sdk.skills import AgentState
+from sdk.agent_state import AgentState
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage
 from sdk.turn import run_turn
 from agents.types import Agent

@@ -11,21 +11,22 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.skills._resolve import (
+from sdk.agent_state import (
     _restore_persisted_loaded_skills,
+    AgentState,
     build_agent_state,
     persist_loaded_skills,
+)
+from sdk.skills._resolve import (
     resolve_skill,
     resolve_skill_by_name,
 )
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tool_categories import ToolCategory
-from sdk.skills.agent_state import AgentState
 
 
 def _tool(name):
-    def f():
-        ...
+    def f(): ...
 
     f.__name__ = name
     return f
@@ -36,6 +37,7 @@ def _categories() -> dict[str, ToolCategory]:
         "coding": ToolCategory("coding", "Coding", "", [_tool("read_file"), _tool("run_bash_cmd")]),
         "memory": ToolCategory("memory", "Memory", "", [_tool("remember")]),
         "email": ToolCategory("email", "Email", "", [_tool("search_email")]),
+        "browser": ToolCategory("browser", "Browser", "", [_tool("open_url")]),
     }
 
 
@@ -48,6 +50,7 @@ def _isolate(tmp_path, monkeypatch):
         return _categories()
 
     monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("tools.browser.capability.tool_categories", _cats)
 
 
 def _names(tools):
@@ -135,6 +138,47 @@ async def test_build_adds_profile_skill_tools():
 
 
 @pytest.mark.unit
+async def test_browser_selection_adds_application_capability():
+    state = await build_agent_state(
+        _profile(
+            browser_profile_id="default",
+        )
+    )
+
+    assert "open_url" in _names(state.tools)
+    assert "Browser automation." in state.build_prompt_extensions()
+    assert "browser" not in state.skill_ids
+
+
+@pytest.mark.unit
+async def test_stale_browser_skill_cannot_bypass_disabled_browser():
+    save_skill_record(
+        SkillRecord(
+            id="browser",
+            name="Browser",
+            prompt="Browse websites.",
+            tool_categories=["browser"],
+        )
+    )
+    state = await build_agent_state(_profile(skills=["browser"], browser_profile_id=None))
+    assert "open_url" not in _names(state.tools)
+    assert "browser" not in state.skill_ids
+
+
+@pytest.mark.unit
+async def test_custom_skill_cannot_grant_browser_category():
+    save_skill_record(
+        SkillRecord(
+            id="custom",
+            name="Custom",
+            tool_categories=["browser"],
+        )
+    )
+    state = await build_agent_state(_profile(skills=["custom"], browser_profile_id=None))
+    assert "open_url" not in _names(state.tools)
+
+
+@pytest.mark.unit
 async def test_build_profile_skills_stay_out_of_loaded_delta():
     """A profile's skills attach but aren't part of the persisted delta, so the
     profile is re-derived each turn and a profile edit isn't pinned to a
@@ -149,7 +193,7 @@ async def test_build_profile_skills_stay_out_of_loaded_delta():
 async def test_build_adds_profile_skill_prompts():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code.", tool_categories=["coding"]))
     state = await build_agent_state(_profile(skills=["coder"]))
-    section = state.build_skill_prompt()
+    section = state.build_prompt_extensions()
     assert "Coder" in section
     assert "Write code." in section
 

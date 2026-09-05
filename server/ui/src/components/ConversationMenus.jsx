@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import ConfirmButton from './primitives/ConfirmButton.jsx';
+import IconPickerPopover from './primitives/IconPickerPopover.jsx';
 import { MENU_WIDTH, DEFAULT_FOLDER_ICON, FOLDER_ICONS } from './conversationSections.js';
 import styles from './ConversationMenus.module.css';
 
@@ -230,63 +231,16 @@ export function FolderMenu({ rect, onClose, onChangeIcon, onRename, onDelete }) 
  * there isn't room. Closes on outside click or Escape.
  */
 export function IconPicker({ rect, current, onPick, onClose }) {
-    const ref = useRef(null);
-    const [pos, setPos] = useState(null);
-
-    useLayoutEffect(() => {
-        const el = ref.current;
-        const height = el ? el.offsetHeight : 0;
-        const width = el ? el.offsetWidth : 220;
-        const margin = 8;
-        let left = rect.left;
-        if (left + width + margin > window.innerWidth) {
-            left = Math.max(margin, window.innerWidth - width - margin);
-        }
-        let top = rect.bottom + 4;
-        if (top + height + margin > window.innerHeight) {
-            top = Math.max(margin, rect.top - 4 - height);
-        }
-        setPos({ left, top });
-    }, [rect]);
-
-    useEffect(() => {
-        const onDown = (e) => {
-            if (ref.current?.contains(e.target)) return;
-            onClose();
-        };
-        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('mousedown', onDown);
-        document.addEventListener('keydown', onKey);
-        return () => {
-            document.removeEventListener('mousedown', onDown);
-            document.removeEventListener('keydown', onKey);
-        };
-    }, [onClose]);
-
-    return createPortal(
-        <div
-            ref={ref}
-            className={styles.iconPicker}
-            role="menu"
-            data-testid="recent-icon-picker"
-            style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            {FOLDER_ICONS.map((icon) => (
-                <button
-                    key={icon}
-                    type="button"
-                    className={[styles.iconOption, icon === current ? styles.iconOptionActive : ''].filter(Boolean).join(' ')}
-                    onClick={() => onPick(icon)}
-                    title={icon.replace('bi-', '')}
-                    aria-label={icon.replace('bi-', '')}
-                    data-testid="recent-icon-option"
-                    data-icon={icon}
-                >
-                    <i className={`bi ${icon}`} />
-                </button>
-            ))}
-        </div>,
-        document.body,
+    return (
+        <IconPickerPopover
+            anchorRect={rect}
+            icons={FOLDER_ICONS}
+            current={current}
+            onPick={onPick}
+            onClose={onClose}
+            ariaLabel="Choose folder icon"
+            testId="recent-icon-picker"
+            optionTestId="recent-icon-option"
+        />
     );
 }

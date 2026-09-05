@@ -14,6 +14,7 @@ from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
 from agents import AgentProfile, build_agent, get_agent_profile
 from agents.types import Agent
 from artifacts import ArtifactsIndexWriter
+from browser.runtime import get_browser_runtime
 from conversations import (
     BrowserTabsWriter,
     EventsLogWriter,
@@ -31,7 +32,7 @@ from sdk.events import (
     agent_span,
     publish_event,
 )
-from sdk.skills import build_agent_state, persist_loaded_skills
+from sdk.agent_state import build_agent_state, persist_loaded_skills
 from sdk.turn import ToolLoopError, check_stop, turn_scope
 from sdk.turn._turn import StopRequestedError
 from tools.memory import load_memory
@@ -166,12 +167,20 @@ class AgentRunner:
                         agent_state=agent_state,
                         profile_name=profile.name,
                     ):
+                        await get_browser_runtime().prepare_current_agent_browser(
+                            agent_profile_id=profile.id,
+                            browser_profile_id=profile.browser_profile_id,
+                        )
                         try:
-                            publish_event(AgentEvent(payload=UserMessagePayload(
-                                type="user_message",
-                                content=request.message,
-                                attachments=attachments,
-                            )))
+                            publish_event(
+                                AgentEvent(
+                                    payload=UserMessagePayload(
+                                        type="user_message",
+                                        content=request.message,
+                                        attachments=attachments,
+                                    )
+                                )
+                            )
                         except Exception:  # pragma: no cover - defensive
                             logger.exception("Failed to publish user_message event")
 
@@ -200,10 +209,14 @@ class AgentRunner:
                     # Setup and other unexpected failures become one persisted
                     # generic error; turn_scope owns the following turn_end.
                     logger.exception("Error running agent for '%s'", conversation_id)
-                    publish_event(AgentEvent(payload=ErrorPayload(
-                        type="error",
-                        message="An error occurred while processing your message.",
-                    )))
+                    publish_event(
+                        AgentEvent(
+                            payload=ErrorPayload(
+                                type="error",
+                                message="An error occurred while processing your message.",
+                            )
+                        )
+                    )
         except StopRequestedError:
             logger.info("Agent run for conversation '%s' stopped by user", conversation_id)
         finally:
@@ -258,11 +271,13 @@ def _augment_message_with_attachments(
         )
         name = item.filename or "unnamed"
         file_lines.append(f"  - {name} ({item.content_type}) -> {container_path}")
-        attachments.append(UserAttachment(
-            filename=name,
-            content_type=item.content_type,
-            path=container_path,
-        ))
+        attachments.append(
+            UserAttachment(
+                filename=name,
+                content_type=item.content_type,
+                path=container_path,
+            )
+        )
 
     files_block = "\n".join(file_lines)
     augmented = f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
@@ -276,10 +291,7 @@ def _refresh_system_message(history: ConversationHistory, system_prompt: str) ->
     if memory:
         lines = "\n".join(f"  {key}: {entry.value}" for key, entry in memory.items())
         sep = "─" * 64
-        memory_block = (
-            "\n── Memory (persisted across sessions) ──────────────────────────\n"
-            f"{lines}\n{sep}\n"
-        )
+        memory_block = f"\n── Memory (persisted across sessions) ──────────────────────────\n{lines}\n{sep}\n"
         instruction = memory_block + instruction
     history.set_system_message(instruction)
 
@@ -324,20 +336,26 @@ def _log_turn_start(profile: AgentProfile) -> None:
         body.append("\nparams:  ", style="bold")
         body.append(", ".join(params), style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
-        border_style="bright_magenta",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
+            border_style="bright_magenta",
+            expand=False,
+        )
+    )
 
 
 def _emit_terminal_error(emit: EventSink) -> None:
     """Deliver a terminal failure when no conversation scope could be opened."""
-    emit(AgentEvent(payload=ErrorPayload(
-        type="error",
-        message="An error occurred while processing your message.",
-    )))
+    emit(
+        AgentEvent(
+            payload=ErrorPayload(
+                type="error",
+                message="An error occurred while processing your message.",
+            )
+        )
+    )
     emit(AgentEvent(payload=TurnEndPayload(type="turn_end")))
 
 

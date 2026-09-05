@@ -5,6 +5,7 @@ import ArtifactsHubDesktopView, {
 } from '../artifacts/ArtifactDesktopAdapter.jsx';
 import ConversationDesktopView from '../conversation/ConversationDesktopView.jsx';
 import AppsDesktopView from '../customApps/AppsDesktopView.jsx';
+import BrowserView from '../browser/BrowserView.jsx';
 import CustomAppDesktopView from '../customApps/CustomAppDesktopAdapter.jsx';
 import RoutinesDesktopView from '../routines/RoutinesDesktopView.jsx';
 import WorkspaceResourceDesktopView from
@@ -56,7 +57,10 @@ export default function DesktopViewContent({
     // Page-like views are statically known today. Keeping this switch explicit
     // makes the supported View types visible without introducing a premature
     // runtime registration system.
-    if (view.type === 'settings') return <SettingsView />;
+    if (view.type === 'settings') {
+        return <SettingsView initialTab={view.identity?.navigationTarget?.tab || 'skills'} />;
+    }
+    if (view.type === 'browser') return <BrowserView />;
     if (view.type === 'agents') return <AgentsView />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
     if (view.type === 'artifacts') {

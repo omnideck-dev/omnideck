@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 import {
     useActiveConversationId,
@@ -19,6 +19,9 @@ import {
     workspaceResourceIdentityForView,
 } from './workspaceResourceDesktopViews.js';
 import WorkspaceResourceView from './WorkspaceResourceView.jsx';
+import BrowserSaveModal from '../browser/BrowserSaveModal.jsx';
+import { useAppData } from '../../contexts/AppData.jsx';
+import { useToast } from '../../components/ToastProvider.jsx';
 
 /**
  * Installs Workspace lifecycle reactions which are independent of rendering a
@@ -67,6 +70,7 @@ export default function WorkspaceResourceDesktopView({ view, visible }) {
         activeConversationId,
         isStreaming,
     } = useConversationSessionState();
+    const [showSaveBrowser, setShowSaveBrowser] = useState(false);
     // There is one root Browser View per conversation and one host per View.
     // `visible` keeps hidden tabs from streaming without confusing Desktop
     // focus—which may remain on Chat in the opposite tab group—with whether
@@ -83,11 +87,40 @@ export default function WorkspaceResourceDesktopView({ view, visible }) {
         visibleView: ownsBrowserSession ? view : null,
     });
     return (
-        <WorkspaceResourceView
-            agentId={agentId}
-            resourceId={resourceId}
-            browser={browser}
-            visible={visible}
+        <>
+            <WorkspaceResourceView
+                agentId={agentId}
+                resourceId={resourceId}
+                browser={browser}
+                visible={visible}
+                onSaveBrowserState={() => setShowSaveBrowser(true)}
+            />
+            {showSaveBrowser && (
+                <TakeoverSaveModal
+                    conversationId={activeConversationId}
+                    onClose={() => setShowSaveBrowser(false)}
+                />
+            )}
+        </>
+    );
+}
+
+function TakeoverSaveModal({ conversationId, onClose }) {
+    const { profilesHook } = useAppData();
+    const { addToast } = useToast();
+    return (
+        <BrowserSaveModal
+            conversationId={conversationId}
+            onClose={onClose}
+            onSaved={(profile, assigned, agentName) => {
+                if (assigned) profilesHook.refresh();
+                addToast(
+                    assigned
+                        ? `Saved “${profile.name}” and assigned it to ${agentName || 'the agent'}.`
+                        : `Saved Browser state to “${profile.name}”.`,
+                    { type: 'success' },
+                );
+            }}
         />
     );
 }

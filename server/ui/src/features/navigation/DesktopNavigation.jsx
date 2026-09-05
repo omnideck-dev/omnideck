@@ -103,6 +103,16 @@ export function DesktopNavigationProvider({ children }) {
         (profileId = null) => openTarget({ kind: 'agents', profileId }),
         [openTarget],
     );
+    const openBrowser = useCallback((profileId = null, profileName = '') => {
+        const opened = openTarget({ kind: 'browser' });
+        if (opened && profileId) {
+            dispatchAppEffect({
+                type: APP_EFFECT_TYPES.OPEN_BROWSER_PROFILE_REQUESTED,
+                payload: { profileId, profileName },
+            });
+        }
+        return opened;
+    }, [dispatchAppEffect, openTarget]);
     const openRoutines = useCallback(
         (routineId = null, runId = null) => openTarget({
             kind: 'routines',
@@ -151,6 +161,7 @@ export function DesktopNavigationProvider({ children }) {
         openConversation,
         openSettings,
         openAgents,
+        openBrowser,
         openRoutines,
         openArtifacts,
         openApps,
@@ -160,6 +171,7 @@ export function DesktopNavigationProvider({ children }) {
         openAgents,
         openApps,
         openArtifacts,
+        openBrowser,
         openChat,
         openConversation,
         openCustomApp,

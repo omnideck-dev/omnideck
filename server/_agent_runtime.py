@@ -3,8 +3,8 @@
 from aiohttp import web
 
 from agent_runtime import ActiveRunManager, AgentRunner
+from conversations import get_or_create_conversation
 from sdk.context import ConversationHistory
-from server._conversation_cache import get_or_create_conversation
 
 ACTIVE_RUN_MANAGER_KEY: web.AppKey[ActiveRunManager] = web.AppKey(
     "active_run_manager",

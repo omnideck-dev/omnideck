@@ -15,7 +15,7 @@ from sdk.events import (
     set_current_conversation,
 )
 from sdk.hooks._nudge_hook import NudgeHook
-from sdk.skills import AgentState
+from sdk.agent_state import AgentState
 from sdk.turn import turn_scope
 from sdk.turn._nudge_queue import queue_nudge
 

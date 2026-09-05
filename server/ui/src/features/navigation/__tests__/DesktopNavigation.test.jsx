@@ -199,6 +199,27 @@ describe('DesktopNavigationProvider', () => {
         });
     });
 
+    it('opens the durable Browser view and sends profile loading as a one-time effect', () => {
+        const { result } = renderHook(
+            useDesktopNavigationCommands,
+            { wrapper },
+        );
+
+        act(() => result.current.openBrowser('linkedin', 'Client social'));
+
+        expect(desktop.commands.openView).toHaveBeenCalledWith(
+            expect.objectContaining({
+                id: 'destination:browser',
+                identity: { navigationTarget: { kind: 'browser' } },
+            }),
+            { tabGroupId: 'left' },
+        );
+        expect(dispatchAppEffect).toHaveBeenCalledWith({
+            type: APP_EFFECT_TYPES.OPEN_BROWSER_PROFILE_REQUESTED,
+            payload: { profileId: 'linkedin', profileName: 'Client social' },
+        });
+    });
+
     it('does not change Desktop when conversation loading fails', async () => {
         session.loadConversation.mockResolvedValue(false);
         const { result } = renderHook(

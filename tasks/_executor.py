@@ -6,10 +6,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
-from conversations import EventsLogWriter
+from browser.runtime import get_browser_runtime
+from conversations import EventsLogWriter, run_conversation_exit_hooks
 from sdk import default_hooks, run_turn
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events import run_conversation_exit_hooks
 from sdk.events._context import (
     agent_span,
     publish_event,
@@ -19,7 +19,7 @@ from sdk.events._models import (
     FileOutputPayload,
     UserMessagePayload,
 )
-from sdk.skills import build_agent_state
+from sdk.agent_state import build_agent_state
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
@@ -89,6 +89,10 @@ class TaskExecutor:
                         ctx_manager=ctx_manager,
                     )
                     async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
+                        await get_browser_runtime().prepare_current_agent_browser(
+                            agent_profile_id=profile.id,
+                            browser_profile_id=profile.browser_profile_id,
+                        )
                         publish_event(
                             AgentEvent(
                                 payload=UserMessagePayload(

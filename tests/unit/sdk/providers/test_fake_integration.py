@@ -12,7 +12,7 @@ import pytest
 from agents.types import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._fake import FakeProvider
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 from sdk.turn._execution import run_turn
 from tests.e2e._protocol import bash, say
 

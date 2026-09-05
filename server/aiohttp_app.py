@@ -29,6 +29,7 @@ from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY, build_agent_runner
 from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
+from server._browser_profile_routes import register_browser_profile_routes
 from server._container_file_routes import register_container_file_routes
 from server._conversation_routes import register_conversation_routes
 from server._custom_app_routes import register_custom_app_routes
@@ -77,10 +78,7 @@ async def cors_and_error_middleware(
     # CSRF: mutating requests must carry X-Requested-With: XMLHttpRequest.
     # Same-origin JS can always set this header; cross-origin JS cannot because
     # the server does not list it in Access-Control-Allow-Headers.
-    if (
-        request.method in _CSRF_METHODS
-        and request.headers.get("X-Requested-With") != "XMLHttpRequest"
-    ):
+    if request.method in _CSRF_METHODS and request.headers.get("X-Requested-With") != "XMLHttpRequest":
         return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
     try:
         resp: StreamResponse = await handler(request)
@@ -110,6 +108,13 @@ def create_app(
     Returns:
         Configured aiohttp web.Application instance.
     """
+    from browser.runtime import get_browser_runtime
+    from conversations import register_conversation_exit_hook
+    from sdk.lifecycle import register_agent_span_exit_hook
+
+    browser_runtime = get_browser_runtime()
+    register_agent_span_exit_hook(browser_runtime.close_agent)
+    register_conversation_exit_hook(browser_runtime.close_conversation)
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
     app[ACTIVE_RUN_MANAGER_KEY] = ActiveRunManager(build_agent_runner())
 
@@ -153,6 +158,7 @@ def create_app(
 
     # Browser takeover side channel (WebSocket)
     register_browser_control_routes(app)
+    register_browser_profile_routes(app)
 
     # Conversation sessions API
     register_conversation_routes(app)
@@ -287,7 +293,8 @@ async def _init_integrations_signal(app: web.Application) -> None:
 
     # Store the task on the app so the GC doesn't drop it before it completes.
     app["_integrations_load"] = asyncio.create_task(
-        _load_with_retry(), name="integrations-load-gate",
+        _load_with_retry(),
+        name="integrations-load-gate",
     )
 
 

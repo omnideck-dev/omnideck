@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 
+from browser.core.exceptions import BrowserToolError
+from browser.core.formatting import format_rendered_document
 from tools.browser._tool_context import get_document
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.formatting import format_rendered_document
 from tools.browser.events import emit_screenshot_after
 
 logger = logging.getLogger(__name__)

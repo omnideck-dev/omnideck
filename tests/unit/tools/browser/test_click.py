@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from browser.core.document import Document, ResolvedElement
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
-from tools.browser.core.document import Document, ResolvedElement
 from tools.browser.interactions import click
 
 

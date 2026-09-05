@@ -7,11 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from browser.core.document import Document
+from browser.core.exceptions import BrowserToolError
 from tools._grounding import GroundingResponse
 from tools.browser._visual_actions import _normalize_hotkey, execute_action
-from tools.browser.core.document import Document
-from tools.browser.core.exceptions import BrowserToolError
-
 
 # ── Helpers ────────────────────────────────────────────────────────────
 

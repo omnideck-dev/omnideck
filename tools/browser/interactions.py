@@ -15,15 +15,15 @@ from typing import Any
 
 from playwright.async_api import Error as PlaywrightError
 
+from browser.core.exceptions import BrowserToolError
+from browser.core.formatting import format_rendered_document
+from browser.core.input.scroll import ScrollOutcome
 from config import load_config
 from tools.browser._tool_context import get_document
 from tools.browser._tool_support import (
     _log_browser_panel,
     format_action_result,
 )
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.formatting import format_rendered_document
-from tools.browser.core.input.scroll import ScrollOutcome
 from tools.browser.events import emit_screenshot_after, set_result_tab
 
 # ---------------------------------------------------------------------------

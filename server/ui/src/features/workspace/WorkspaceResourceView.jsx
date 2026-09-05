@@ -19,6 +19,7 @@ export default function WorkspaceResourceView({
     resourceId,
     browser,
     visible = true,
+    onSaveBrowserState,
 }) {
     const workspace = useWorkspaceState().byAgentId[agentId];
     if (!workspace) return null;
@@ -36,6 +37,7 @@ export default function WorkspaceResourceView({
                 onSelectTab={ownsBrowserSession ? browser.setSelectedTabId : undefined}
                 control={ownsBrowserSession ? browser.control : undefined}
                 inputActive={visible && ownsBrowserSession}
+                onSaveState={ownsBrowserSession ? onSaveBrowserState : undefined}
             />
         );
     }

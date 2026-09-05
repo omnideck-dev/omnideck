@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
+from browser.core.browser import ActionResult
+from browser.core.rendering import RenderedDocument
 from tools.browser import BrowserToolError, close_tab, goto, new_tab
-from tools.browser.core.browser import ActionResult
-from tools.browser.core.rendering import RenderedDocument
 
 
 class _StubPage:

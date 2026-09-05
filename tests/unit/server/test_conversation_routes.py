@@ -10,6 +10,7 @@ import pytest
 
 import conversations._store as _store
 from agent_runtime import AgentRunInfo
+from conversations import ConversationResumeState
 from conversations._folders import create_folder, list_folders
 from conversations._store import (
     conversation_exists,
@@ -77,26 +78,39 @@ def _seed(conv_id: str) -> None:
     """Create a minimal event log so the conversation exists on disk."""
     d = _store._get_conversations_dir() / conv_id
     d.mkdir(parents=True, exist_ok=True)
-    (d / "events.jsonl").write_text(json.dumps({
-        "id": f"evt_{conv_id}", "type": "agent_started",
-        "timestamp": "2026-01-01T00:00:00", "conversation_id": conv_id,
-        "agent_id": "root.test.1", "agent_name": "TEST",
-        "parent_agent_id": None,
-    }) + "\n")
+    (d / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "id": f"evt_{conv_id}",
+                "type": "agent_started",
+                "timestamp": "2026-01-01T00:00:00",
+                "conversation_id": conv_id,
+                "agent_id": "root.test.1",
+                "agent_name": "TEST",
+                "parent_agent_id": None,
+            }
+        )
+        + "\n"
+    )
 
 
 @pytest.mark.unit
 async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
     """The HTTP payload includes the explicit browser and terminal restores."""
-    resume = AsyncMock(return_value={
-        "messages": [],
-        "events": [{"id": "event-1", "type": "agent_started"}],
-        "browser_tabs": [{"tab_id": 1, "agent_id": "root-1"}],
-        "terminal": {"root-1": [{"cmd_id": "command-1"}]},
-        "preview_state": {"active_tab": "browser"},
-        "profile_id": "general",
-    })
-    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    resume = AsyncMock(
+        return_value=ConversationResumeState(
+            messages=[],
+            events=[{"id": "event-1", "type": "agent_started"}],
+            browser_tabs=[{"tab_id": 1, "agent_id": "root-1"}],
+            terminal={"root-1": [{"cmd_id": "command-1"}]},
+            preview_state={"active_tab": "browser"},
+            profile_id="general",
+        )
+    )
+    monkeypatch.setattr(
+        "server._conversation_routes.load_conversation_resume_state",
+        resume,
+    )
     monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: True)
 
     response = await resume_conversation_handler(_make_request("conversation-1", None))
@@ -112,7 +126,10 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
 async def test_resume_route_returns_404_for_unknown_conversation(monkeypatch) -> None:
     """A missing conversation without an active run cannot be resumed."""
     resume = AsyncMock()
-    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    monkeypatch.setattr(
+        "server._conversation_routes.load_conversation_resume_state",
+        resume,
+    )
     monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: False)
 
     response = await resume_conversation_handler(_make_request("missing", None))
@@ -126,19 +143,24 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The cursor identifies the newest snapshot event from the active run."""
-    resume = AsyncMock(return_value={
-        "messages": [],
-        "events": [
-            {"id": "old-event", "type": "iteration"},
-            {"id": "run-started", "type": "agent_started"},
-            {"id": "run-user", "type": "user_message"},
-        ],
-        "browser_tabs": [],
-        "terminal": {},
-        "preview_state": None,
-        "profile_id": "general",
-    })
-    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    resume = AsyncMock(
+        return_value=ConversationResumeState(
+            messages=[],
+            events=[
+                {"id": "old-event", "type": "iteration"},
+                {"id": "run-started", "type": "agent_started"},
+                {"id": "run-user", "type": "user_message"},
+            ],
+            browser_tabs=[],
+            terminal={},
+            preview_state={},
+            profile_id="general",
+        )
+    )
+    monkeypatch.setattr(
+        "server._conversation_routes.load_conversation_resume_state",
+        resume,
+    )
     manager = MagicMock()
     manager.active_for_conversation.return_value = AgentRunInfo(
         run_id="run-1",
@@ -150,11 +172,13 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         "run-started": 1,
     }.get(event_id)
 
-    response = await resume_conversation_handler(_make_request(
-        "conversation-1",
-        None,
-        active_run_manager=manager,
-    ))
+    response = await resume_conversation_handler(
+        _make_request(
+            "conversation-1",
+            None,
+            active_run_manager=manager,
+        )
+    )
     body = json.loads(response.body)
 
     assert body["active_run"] == {
@@ -172,15 +196,20 @@ async def test_resume_route_returns_active_run_before_first_persisted_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A just-reserved run is discoverable with a cursor of zero."""
-    resume = AsyncMock(return_value={
-        "messages": [],
-        "events": [],
-        "browser_tabs": [],
-        "terminal": {},
-        "preview_state": None,
-        "profile_id": None,
-    })
-    monkeypatch.setattr("server._conversation_routes.resume_conversation", resume)
+    resume = AsyncMock(
+        return_value=ConversationResumeState(
+            messages=[],
+            events=[],
+            browser_tabs=[],
+            terminal={},
+            preview_state={},
+            profile_id=None,
+        )
+    )
+    monkeypatch.setattr(
+        "server._conversation_routes.load_conversation_resume_state",
+        resume,
+    )
     manager = MagicMock()
     manager.active_for_conversation.return_value = AgentRunInfo(
         run_id="run-new",
@@ -188,11 +217,13 @@ async def test_resume_route_returns_active_run_before_first_persisted_event(
         last_seq=0,
     )
 
-    response = await resume_conversation_handler(_make_request(
-        "conversation-new",
-        None,
-        active_run_manager=manager,
-    ))
+    response = await resume_conversation_handler(
+        _make_request(
+            "conversation-new",
+            None,
+            active_run_manager=manager,
+        )
+    )
     body = json.loads(response.body)
 
     assert body["active_run"]["run_id"] == "run-new"
@@ -375,13 +406,16 @@ class TestFolderRoutes:
 class TestArchiveRoutes:
     """POST archive/unarchive and GET archived listing."""
 
-    async def test_archive_moves_conversation(self, _conv_dir: Path) -> None:
+    async def test_archive_moves_conversation(self, _conv_dir: Path, monkeypatch) -> None:
         """Archiving succeeds and the conversation leaves the active store."""
+        evict = AsyncMock()
+        monkeypatch.setattr("server._conversation_routes.evict_conversation", evict)
         _seed("c1")
         resp = await archive_conversation_handler(_make_request("c1", None))
         assert resp.status == 204
         assert conversation_exists("c1") is False
         assert [s.conversation_id for s in list_archived_conversations()] == ["c1"]
+        evict.assert_awaited_once_with("c1")
 
     async def test_archive_missing_404(self, _conv_dir: Path) -> None:
         """Archiving an unknown conversation is a 404."""
@@ -448,6 +482,20 @@ async def test_delete_active_conversation_409(_conv_dir: Path) -> None:
 
 
 @pytest.mark.unit
+async def test_delete_evicts_live_conversation_resources(_conv_dir: Path, monkeypatch) -> None:
+    """Deleting persisted history also releases cached runtime resources."""
+    evict = AsyncMock()
+    monkeypatch.setattr("server._conversation_routes.evict_conversation", evict)
+    _seed("c1")
+
+    response = await delete_conversation_handler(_make_request("c1", None))
+
+    assert response.status == 204
+    assert conversation_exists("c1") is False
+    evict.assert_awaited_once_with("c1")
+
+
+@pytest.mark.unit
 class TestGenerateTitle:
     """POST /api/conversations/sessions/{id}/title."""
 
@@ -455,7 +503,8 @@ class TestGenerateTitle:
         """The first message is turned into a title, persisted, and returned."""
         gen = AsyncMock(return_value="A Snappy Title")
         monkeypatch.setattr(
-            "server._conversation_routes.generate_conversation_title", gen,
+            "server._conversation_routes.generate_conversation_title",
+            gen,
         )
         resp = await generate_title_handler(
             _make_request("c1", {"first_message": "how do I flush the muxer"}),
@@ -470,7 +519,8 @@ class TestGenerateTitle:
         save_conversation_title("c1", "User Named This")
         gen = AsyncMock(return_value="Generated Instead")
         monkeypatch.setattr(
-            "server._conversation_routes.generate_conversation_title", gen,
+            "server._conversation_routes.generate_conversation_title",
+            gen,
         )
         resp = await generate_title_handler(
             _make_request("c1", {"first_message": "hello"}),
@@ -484,7 +534,8 @@ class TestGenerateTitle:
         """A blank first message is rejected and no generation runs."""
         gen = AsyncMock(return_value="x")
         monkeypatch.setattr(
-            "server._conversation_routes.generate_conversation_title", gen,
+            "server._conversation_routes.generate_conversation_title",
+            gen,
         )
         resp = await generate_title_handler(_make_request("c1", {"first_message": "   "}))
         assert resp.status == 400
@@ -504,7 +555,8 @@ class TestGenerateTitle:
         """If generation raises, the endpoint reports 502 and saves no title."""
         gen = AsyncMock(side_effect=RuntimeError("model unavailable"))
         monkeypatch.setattr(
-            "server._conversation_routes.generate_conversation_title", gen,
+            "server._conversation_routes.generate_conversation_title",
+            gen,
         )
         resp = await generate_title_handler(
             _make_request("c1", {"first_message": "hello"}),

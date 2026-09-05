@@ -3,7 +3,7 @@
 import pytest
 
 from sdk.events._context import agent_span
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 
 
 def _make_tool(name: str):

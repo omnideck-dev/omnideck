@@ -96,7 +96,10 @@ export default function Popover({
         window.addEventListener('scroll', updatePosition, true);
 
         const anchor = anchorRef.current;
-        const observer = anchor && typeof ResizeObserver !== 'undefined'
+        const observer = anchor
+            && typeof Element !== 'undefined'
+            && anchor instanceof Element
+            && typeof ResizeObserver !== 'undefined'
             ? new ResizeObserver(updatePosition)
             : null;
         observer?.observe(anchor);
@@ -118,7 +121,7 @@ export default function Popover({
             if (event.key !== 'Escape') return;
             event.preventDefault();
             onClose?.();
-            returnFocusRef.current?.focus();
+            returnFocusRef.current?.focus?.();
         };
         document.addEventListener('mousedown', handleOutsideMouseDown);
         document.addEventListener('keydown', handleKeyDown);

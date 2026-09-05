@@ -25,7 +25,7 @@ from sdk.providers._models import (
     ToolCall,
     ToolCallFunction,
 )
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 from sdk.turn._execution import ToolLoopError, run_turn
 from sdk.turn._turn import StopRequestedError
 

@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ScreencastViewport from '../ScreencastViewport.jsx';
-import createFrameBus from '../../features/workspace/frameBus.js';
+import createFrameBus from '../../features/browser/frameBus.js';
 
 // Animation frames are driven by hand so the batched paint and the batched input
 // flush both happen at a point the test chooses.

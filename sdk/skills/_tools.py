@@ -6,9 +6,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from ._policy import is_reserved_skill_id
 from ._resolve import resolve_skill_by_name
 from ._store import list_skill_records
-from .agent_state import get_active_agent_state
+from sdk.agent_state import get_active_agent_state
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,14 @@ def _log_skill_loaded(skill_name: str, description: str, new_tools: list[str]) -
         body.append("\ntools: ", style="bold")
         body.append("(none — guidance only)", style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_magenta]⚡ Skill Loaded[/bold bright_magenta]",
-        border_style="bright_magenta",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_magenta]⚡ Skill Loaded[/bold bright_magenta]",
+            border_style="bright_magenta",
+            expand=False,
+        )
+    )
 
 
 def _log_skill_already_loaded(skill_name: str) -> None:
@@ -42,12 +45,14 @@ def _log_skill_already_loaded(skill_name: str) -> None:
     body.append(skill_name, style="bright_magenta")
     body.append("  (already loaded)", style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold dim]⚡ Skill[/bold dim]",
-        border_style="dim",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold dim]⚡ Skill[/bold dim]",
+            border_style="dim",
+            expand=False,
+        )
+    )
 
 
 def _log_skill_error(skill_name: str, error: str) -> None:
@@ -58,16 +63,18 @@ def _log_skill_error(skill_name: str, error: str) -> None:
     body.append(f"\nerror: ", style="bold")
     body.append(error, style="red")
 
-    _console.print(Panel(
-        body,
-        title="[bold red]⚡ Skill Error[/bold red]",
-        border_style="red",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold red]⚡ Skill Error[/bold red]",
+            border_style="red",
+            expand=False,
+        )
+    )
 
 
 def _available_skill_names() -> list[str]:
-    return [r.name for r in list_skill_records()]
+    return [r.name for r in list_skill_records() if not is_reserved_skill_id(r.id)]
 
 
 def list_available_skills() -> str:
@@ -79,7 +86,7 @@ def list_available_skills() -> str:
     Returns:
         A formatted list of skill names and descriptions.
     """
-    records = list_skill_records()
+    records = [r for r in list_skill_records() if not is_reserved_skill_id(r.id)]
     if not records:
         return "No skills available."
     lines = [f"  - {r.name}: {r.description}" for r in records]
@@ -102,7 +109,11 @@ async def load_skill(name: str) -> str:
     if agent_state is None:
         return "Error: no active skill scope (internal error)"
 
-    skill = await resolve_skill_by_name(name)
+    record = next(
+        (item for item in list_skill_records() if item.name == name and not is_reserved_skill_id(item.id)),
+        None,
+    )
+    skill = await resolve_skill_by_name(name) if record is not None else None
     if skill is None:
         available = ", ".join(_available_skill_names())
         error_msg = f"Unknown skill '{name}'. Available: {available}"

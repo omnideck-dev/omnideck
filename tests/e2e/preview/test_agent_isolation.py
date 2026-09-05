@@ -28,20 +28,17 @@ def isolation_page(browser, browser_context_args):
         + write_file(one, "hello from agent one")
         + send_file(one)
     )
-    agent_two = (
-        bash('echo "agent-two"')
-        + write_file(two, "hello from agent two")
-        + send_file(two)
-    )
+    agent_two = bash('echo "agent-two"') + write_file(two, "hello from agent two") + send_file(two)
     chat.send(
-        spawn(agent_one, profile="code_expert", name="ALPHA")
-        + spawn(agent_two, profile="code_expert", name="BRAVO")
+        # Research Agent explicitly has Browser access. Code Expert does not,
+        # so using it here would make a Browser-isolation assertion depend on
+        # the implicit Browser availability removed by agent Browser settings.
+        spawn(agent_one, profile="research_agent", name="ALPHA")
+        + spawn(agent_two, profile="research_agent", name="BRAVO")
     ).wait_streaming(timeout=40_000)
 
     network = NetworkView(page)
-    assert network.indicator.is_visible(), (
-        "Network indicator not visible — sub-agents may not have been spawned"
-    )
+    assert network.indicator.is_visible(), "Network indicator not visible — sub-agents may not have been spawned"
 
     yield page
 
@@ -92,12 +89,8 @@ def test_agent_browser_opens_explicitly(isolation_page: Page):
     expect(activity.execution_tab("browser")).to_be_visible(timeout=10_000)
     browser_view = activity.execution_view("browser")
     expect(browser_view).to_be_visible()
-    expect(browser_view.get_by_test_id("browser-frame")).to_be_visible(
-        timeout=15_000
-    )
-    expect(
-        browser_view.get_by_test_id("browser-take-control")
-    ).to_have_count(0)
+    expect(browser_view.get_by_test_id("browser-frame")).to_be_visible(timeout=15_000)
+    expect(browser_view.get_by_test_id("browser-take-control")).to_have_count(0)
 
 
 def test_root_and_subagent_browsers_have_one_control_session(
@@ -118,38 +111,24 @@ def test_root_and_subagent_browsers_have_one_control_session(
         alpha_id = activity.agent_id
         activity.back_to_network().back_to_chat()
         chat = ChatView(isolation_page)
-        chat.send(open_url("https://example.org")).wait_streaming(
-            timeout=30_000
-        )
+        chat.send(open_url("https://example.org")).wait_streaming(timeout=30_000)
 
         root_tab = chat.preview.browser_tab
         expect(root_tab).to_be_visible(timeout=10_000)
         root_tab.click()
 
-        root_browser = isolation_page.locator(
-            "[data-view-id$=':root:browser']"
-        )
+        root_browser = isolation_page.locator("[data-view-id$=':root:browser']")
         expect(root_browser).to_have_count(1)
-        expect(
-            root_browser.get_by_test_id("browser-take-control")
-        ).to_be_enabled(timeout=10_000)
+        expect(root_browser.get_by_test_id("browser-take-control")).to_be_enabled(timeout=10_000)
 
         # ALPHA's Browser is still open, but it contributes neither another
         # takeover affordance nor another control connection.
-        expect(
-            isolation_page.get_by_test_id(f"view-tab-{alpha_id}:browser")
-        ).to_be_visible()
+        expect(isolation_page.get_by_test_id(f"view-tab-{alpha_id}:browser")).to_be_visible()
         alpha_browser = isolation_page.locator(
-            "[data-view-type='workspace-resource']"
-            f"[data-view-owner-id='{alpha_id}']"
-            "[data-view-resource-id='browser']"
+            f"[data-view-type='workspace-resource'][data-view-owner-id='{alpha_id}'][data-view-resource-id='browser']"
         )
-        expect(
-            alpha_browser.get_by_test_id("browser-take-control")
-        ).to_have_count(0)
-        expect(
-            isolation_page.get_by_test_id("browser-take-control")
-        ).to_have_count(1)
+        expect(alpha_browser.get_by_test_id("browser-take-control")).to_have_count(0)
+        expect(isolation_page.get_by_test_id("browser-take-control")).to_have_count(1)
         assert len(control_sockets) == 1
     finally:
         isolation_page.remove_listener("websocket", record_control_socket)
@@ -163,20 +142,16 @@ def test_agent_artifact_opens_manually_and_is_durable(isolation_page: Page):
     activity.open_first_file_preview()
     tab = isolation_page.get_by_test_id("view-tab-artifact:one.txt")
     expect(tab).to_be_visible()
-    expect(
-        isolation_page.locator(
-            "[data-view-type='artifact-file'][data-visible='true']"
-        )
-    ).to_contain_text("hello from agent one")
+    expect(isolation_page.locator("[data-view-type='artifact-file'][data-visible='true']")).to_contain_text(
+        "hello from agent one"
+    )
 
     activity = _open_agent(isolation_page, "BRAVO")
     expect(tab).to_be_visible()
     activity.open_first_file_preview()
-    expect(
-        isolation_page.locator(
-            "[data-view-type='artifact-file'][data-visible='true']"
-        )
-    ).to_contain_text("hello from agent two")
+    expect(isolation_page.locator("[data-view-type='artifact-file'][data-visible='true']")).to_contain_text(
+        "hello from agent two"
+    )
 
 
 def test_open_agent_views_remain_bound_while_returning_to_chat(
@@ -190,15 +165,9 @@ def test_open_agent_views_remain_bound_while_returning_to_chat(
     alpha.back_to_network().back_to_chat()
 
     expect(
-        isolation_page.locator(
-            "[data-view-type='workspace-resource']"
-            f"[data-view-owner-id='{alpha_id}']"
-        )
+        isolation_page.locator(f"[data-view-type='workspace-resource'][data-view-owner-id='{alpha_id}']")
     ).to_have_count(2)
     expect(
-        isolation_page.locator(
-            "[data-view-type='workspace-resource']"
-            f"[data-view-owner-id='{bravo_id}']"
-        )
+        isolation_page.locator(f"[data-view-type='workspace-resource'][data-view-owner-id='{bravo_id}']")
     ).to_have_count(1)
     expect(isolation_page.get_by_test_id("chat-title-bar")).to_be_visible()

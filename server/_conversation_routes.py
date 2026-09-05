@@ -30,12 +30,14 @@ from conversations import (
     create_folder,
     delete_conversation,
     delete_folder,
+    evict_conversation,
     folder_exists,
     generate_conversation_title,
     list_archived_conversations,
     list_conversations,
     list_folders,
     load_conversation_metadata,
+    load_conversation_resume_state,
     save_conversation_folder,
     save_conversation_pinned,
     save_conversation_title,
@@ -44,7 +46,6 @@ from conversations import (
     update_folder,
 )
 from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
-from server._conversation_cache import resume_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ async def delete_conversation_handler(request: Request) -> Response:
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
+    await evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -102,6 +104,7 @@ async def archive_conversation_handler(request: Request) -> Response:
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
+    await evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -138,7 +141,8 @@ async def update_conversation_handler(request: Request) -> Response:
         folder_id = body["folder_id"]
         if folder_id is not None and not isinstance(folder_id, str):
             return web.json_response(
-                {"error": "folder_id must be a string or null"}, status=400,
+                {"error": "folder_id must be a string or null"},
+                status=400,
             )
         if isinstance(folder_id, str) and not folder_exists(folder_id):
             return web.json_response({"error": "Folder not found"}, status=400)
@@ -186,7 +190,8 @@ async def generate_title_handler(request: Request) -> Response:
     first_message = body.get("first_message")
     if not isinstance(first_message, str) or not first_message.strip():
         return web.json_response(
-            {"error": "first_message must be a non-empty string"}, status=400,
+            {"error": "first_message must be a non-empty string"},
+            status=400,
         )
 
     existing = load_conversation_metadata(conversation_id).get("title")
@@ -210,12 +215,12 @@ async def resume_conversation_handler(request: Request) -> Response:
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
-    data = await resume_conversation(conversation_id)
+    resume_state = await load_conversation_resume_state(conversation_id)
 
     active_run = None
     if active is not None:
         resume_after_seq = 0
-        for event in reversed(data["events"]):
+        for event in reversed(resume_state.events):
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
@@ -232,12 +237,7 @@ async def resume_conversation_handler(request: Request) -> Response:
 
     return web.json_response({
         "conversation_id": conversation_id,
-        "messages": data["messages"],
-        "events": data["events"],
-        "browser_tabs": data["browser_tabs"],
-        "terminal": data["terminal"],
-        "preview_state": data["preview_state"],
-        "profile_id": data["profile_id"],
+        **resume_state.model_dump(),
         "active_run": active_run,
     })
 

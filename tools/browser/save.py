@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from browser.core.exceptions import BrowserToolError
+from browser.core.formatting import format_save_result
+from browser.core.markdown import html_to_markdown
 from config import load_config
 from tools.browser._tool_context import get_document
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.formatting import format_save_result
-from tools.browser.core.markdown import html_to_markdown
 
 logger = logging.getLogger(__name__)
 

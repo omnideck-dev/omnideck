@@ -26,6 +26,9 @@ const NAV_ORDER_KEY = 'omnideck_sidebar_navigation_order';
 // Memory and Custom Tools live under Settings, not in the nav.
 const NAV_ITEMS = [
     {
+        id: 'browser', icon: 'bi-globe2', label: 'Browser', command: 'openBrowser',
+    },
+    {
         id: 'agents', icon: 'bi-robot', label: 'Agents', command: 'openAgents',
     },
     {

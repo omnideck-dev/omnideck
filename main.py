@@ -8,9 +8,9 @@ import os
 import aiohttp.web
 from dotenv import load_dotenv
 
+from browser.runtime import close_browser
 from logging_config import setup_logging
 from server.aiohttp_app import create_app
-from tools.browser import close_browser
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ def main() -> None:
 
     async def _shutdown_executor(_app: aiohttp.web.Application) -> None:  # pragma: no cover
         import asyncio
+
         loop = asyncio.get_running_loop()
         try:
             await asyncio.wait_for(loop.shutdown_default_executor(), timeout=5.0)

@@ -8,8 +8,10 @@ people; this file is the index an agent greps **before** building UI.
 
 1. **Before writing any UI, look for a canonical component or class here and reuse it.**
    Most "new" UI is an existing primitive + tokens.
-2. **Never hardcode colors, spacing, radii, fonts, or z-index** — use the tokens below.
-   They auto-swap for dark mode via `[data-theme="dark"]`.
+2. **Never hardcode colors, spacing, radii, font families/sizes, or z-index** —
+   use the tokens below. They auto-swap for dark mode via `[data-theme="dark"]`.
+   Exact control geometry documented by the showcase (for example the 32px input
+   height) may be copied when no component owns it.
 3. **No generic primitive exists for some patterns** (Input and Cards). For
    those, replicate the documented CSS class **into your component's
    `.module.css`** (copy the spec from the showcase / an existing component) — that's
@@ -26,8 +28,10 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 
 | Need | Component | Import | Use when |
 |---|---|---|---|
-| Text button | `Button` | `primitives/Button.jsx` | variants: `outline` (default), `filled` (one primary/surface), `ghost` (quiet), `danger`. Icon via children: `<Button><Icon/> Label</Button>` |
+| Text button | `Button` | `primitives/Button.jsx` | variants: `outline` (default), `filled` (one primary/surface), `ghost` (quiet), `danger`. Icon via children: `<Button><Icon/> Label</Button>`. For an in-flight async action, pass `loading` and optionally `loadingLabel`; the primitive supplies the spinner, disabled state, and `aria-busy`. |
 | Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"`; icon as child |
+| Icon picker popover | `IconPickerPopover` | `primitives/IconPickerPopover.jsx` | Curated Bootstrap icon selection shared by folders and profile identity controls. Anchor it with `anchorRef` or `anchorRect`; supply `icons`, `current`, `onPick`, and `onClose`. |
+| Select / dropdown | `Select` | `primitives/Select.jsx` | Canonical application-rendered select-only combobox. Pass `options`, `value`, `onChange`, and an accessible label. Native `<select>` is prohibited because host-rendered menus cannot satisfy the shared visual contract. |
 | Two-click destructive | `ConfirmButton` | `primitives/ConfirmButton.jsx` | delete/disconnect where a modal is overkill; arms on first click, fires on second |
 | Search field | `SearchInput` | `primitives/SearchInput.jsx` | `value`, `onChange(string)`, `placeholder`, `ariaLabel`, `testId`, `clearable`, `className`. Canonical `.input` + leading glyph + focus glow |
 | Ordinary dropdown | `Select` | `primitives/Select.jsx` | Canonical body-font, 32px select-only combobox. Consumers may specialize font size and width, but not family or height. Supports keyboard navigation, typeahead, portaled viewport-aware menus, and full-label hover text. |
@@ -76,5 +80,6 @@ Use the variable, never the literal.
 - **Spacing (4px base):** `--sp-1`..`--sp-12` (4,8,12,16,20,24,32,40,48)
 - **Z-index:** `--z-sticky` 10 · `--z-flyout` 100 · `--z-toast` 1000 · `--z-modal` 9999 · `--z-wizard` 10000 · `--z-tooltip` 10001
 - **Fonts:** `--font-brand` (mono wordmark/uppercase) · `--font-body` (UI) · `--font-code` (code/paths)
+- **Type sizes:** `--font-size-label` 10 · `--font-size-caption` 11 · `--font-size-small` 12 · `--font-size-body` 13 · `--font-size-ui` 14 · `--font-size-heading` 18
 - **Layout:** `--header-height` 36 · `--sidebar-width` 44 · `--flyout-width` 270
 - **Motion:** `--ease` · `--ease-out` (use for transitions)

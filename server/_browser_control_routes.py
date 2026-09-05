@@ -18,7 +18,7 @@ drains input in order (collapsing superseded pointer moves), and one writer task
 ships the newest frame. Coordinates travel with the frame metadata Chromium
 reports, so page scale and top-offset are never guessed from the image size.
 
-Scope is enforced by ``get_browser_by_conversation_id``: the channel can only reach
+Scope is enforced by ``BrowserRuntime.get_conversation_browser``: the channel can only reach
 the depth-0 conversation context. Sub-agent contexts and the persistent profile
 template are unreachable, and CDP targets a page rather than the display — there
 is no path from here to the OS. The handshake's ``Origin`` is checked because the
@@ -43,9 +43,9 @@ from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
-from tools.browser.core.browser import Browser
-from tools.browser.core.pool import get_browser_by_conversation_id
-from tools.browser.core.tab import Tab
+from browser.core.browser import Browser
+from browser.core.tab import Tab
+from browser.runtime import get_browser_runtime
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable, Coroutine
@@ -58,11 +58,27 @@ logger = logging.getLogger(__name__)
 # Named keys the CDP Input domain needs virtual-key codes for. Letters and
 # digits are derived instead, so this only covers the non-printable set.
 _NAMED_VK: dict[str, int] = {
-    "Enter": 13, "Backspace": 8, "Tab": 9, "Escape": 27, "Delete": 46,
-    "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
-    "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34,
-    "Shift": 16, "Control": 17, "Alt": 18, "Meta": 91, "CapsLock": 20,
-    "Insert": 45, "ContextMenu": 93, " ": 32,
+    "Enter": 13,
+    "Backspace": 8,
+    "Tab": 9,
+    "Escape": 27,
+    "Delete": 46,
+    "ArrowLeft": 37,
+    "ArrowUp": 38,
+    "ArrowRight": 39,
+    "ArrowDown": 40,
+    "Home": 36,
+    "End": 35,
+    "PageUp": 33,
+    "PageDown": 34,
+    "Shift": 16,
+    "Control": 17,
+    "Alt": 18,
+    "Meta": 91,
+    "CapsLock": 20,
+    "Insert": 45,
+    "ContextMenu": 93,
+    " ": 32,
 }
 _NAMED_VK.update({("F" + str(n)): 111 + n for n in range(1, 13)})
 
@@ -73,10 +89,28 @@ _KEY_TEXT: dict[str, str] = {"Enter": "\r", "Tab": "\t"}
 # Punctuation virtual-key codes. Pages that read event.keyCode for shortcuts
 # (and Chromium's own find/zoom handling) need these to be right.
 _PUNCT_VK: dict[str, int] = {
-    ";": 186, ":": 186, "=": 187, "+": 187, ",": 188, "<": 188,
-    "-": 189, "_": 189, ".": 190, ">": 190, "/": 191, "?": 191,
-    "`": 192, "~": 192, "[": 219, "{": 219, "\\": 220, "|": 220,
-    "]": 221, "}": 221, "'": 222, '"': 222,
+    ";": 186,
+    ":": 186,
+    "=": 187,
+    "+": 187,
+    ",": 188,
+    "<": 188,
+    "-": 189,
+    "_": 189,
+    ".": 190,
+    ">": 190,
+    "/": 191,
+    "?": 191,
+    "`": 192,
+    "~": 192,
+    "[": 219,
+    "{": 219,
+    "\\": 220,
+    "|": 220,
+    "]": 221,
+    "}": 221,
+    "'": 222,
+    '"': 222,
 }
 
 _MOUSE_TYPE: dict[str, str] = {
@@ -399,7 +433,10 @@ class _ControlSession:
             tid = self._tab.id if self._tab else None
             header = _FRAME_HEADER.pack(
                 tid if tid is not None else -1,
-                meta.device_width, meta.device_height, meta.page_scale, meta.offset_top,
+                meta.device_width,
+                meta.device_height,
+                meta.page_scale,
+                meta.offset_top,
             )
             try:
                 await self._ws.send_bytes(header + data)
@@ -471,10 +508,13 @@ class _ControlSession:
         if cdp is None:
             return
         try:
-            res = await cdp.send("Runtime.evaluate", {
-                "expression": _cursor_js(x, y),
-                "returnByValue": True,
-            })
+            res = await cdp.send(
+                "Runtime.evaluate",
+                {
+                    "expression": _cursor_js(x, y),
+                    "returnByValue": True,
+                },
+            )
         except Exception:  # noqa: BLE001 - cursor mirroring is cosmetic
             return
         cursor = (res.get("result") or {}).get("value") or ""
@@ -704,6 +744,10 @@ class _ControlSession:
             self._watch_tab(existing)
         self._pump_task = asyncio.create_task(self._input_pump())
         self._writer_task = asyncio.create_task(self._frame_writer())
+        # A conversation Browser also has screenshot-fed tabs in the client,
+        # but the standalone user Browser does not. Always announce the live
+        # list so a client can select the first tab and begin screencasting.
+        self.request_tabs()
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -747,7 +791,7 @@ def _is_multiple(chooser: FileChooser) -> bool:
 
 
 async def browser_control_handler(request: Request) -> web.StreamResponse:
-    """Bridge a control WebSocket to the conversation's root browser."""
+    """Bridge a control WebSocket to the user's or an agent's Browser."""
     if not _same_origin(request):
         return web.Response(status=403, text="Forbidden origin")
 
@@ -756,8 +800,12 @@ async def browser_control_handler(request: Request) -> web.StreamResponse:
     ws = web.WebSocketResponse(compress=False)
     await ws.prepare(request)
 
-    conversation_id = request.query.get("conversation_id", "")
-    browser = await get_browser_by_conversation_id(conversation_id) if conversation_id else None
+    browser: Browser | None
+    if request.query.get("scope") == "user":
+        browser = await get_browser_runtime().ensure_user_browser()
+    else:
+        conversation_id = request.query.get("conversation_id", "")
+        browser = await get_browser_runtime().get_conversation_browser(conversation_id) if conversation_id else None
     if browser is None:
         await ws.send_json({"type": "error", "reason": "no_active_browser"})
         await ws.close()
@@ -854,21 +902,30 @@ async def _dispatch_input(cdp: CDPSession, event: InputEvent) -> None:
     """
     t = event.type
     if t in _MOUSE_TYPE:
-        await cdp.send("Input.dispatchMouseEvent", {
-            "type": _MOUSE_TYPE[t],
-            "x": event.x, "y": event.y,
-            "button": event.button,
-            "buttons": event.buttons,
-            "clickCount": 0 if t == "mousemove" else event.click_count,
-            "modifiers": event.mods,
-        })
+        await cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": _MOUSE_TYPE[t],
+                "x": event.x,
+                "y": event.y,
+                "button": event.button,
+                "buttons": event.buttons,
+                "clickCount": 0 if t == "mousemove" else event.click_count,
+                "modifiers": event.mods,
+            },
+        )
     elif t == "wheel":
-        await cdp.send("Input.dispatchMouseEvent", {
-            "type": "mouseWheel",
-            "x": event.x, "y": event.y,
-            "deltaX": event.dx, "deltaY": event.dy,
-            "modifiers": event.mods,
-        })
+        await cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseWheel",
+                "x": event.x,
+                "y": event.y,
+                "deltaX": event.dx,
+                "deltaY": event.dy,
+                "modifiers": event.mods,
+            },
+        )
     elif t in ("text", "paste"):
         if event.text:
             await cdp.send("Input.insertText", {"text": event.text})

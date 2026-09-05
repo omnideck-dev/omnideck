@@ -14,8 +14,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from browser.core.formatting import format_javascript_result
 from tools.browser._tool_context import get_document
-from tools.browser.core.formatting import format_javascript_result
 from tools.browser.events import emit_screenshot
 
 logger = logging.getLogger(__name__)

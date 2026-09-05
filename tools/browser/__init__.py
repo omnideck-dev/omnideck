@@ -1,8 +1,8 @@
-"""Browser tools package.
+"""LLM-facing Browser tools.
 
 Browser state persists between tool calls within its conversation or agent
-scope. This includes cookies, localStorage/sessionStorage, and open tabs.
-Call ``close_browser`` (or restart the process) to fully reset that state.
+scope. Runtime and Chromium lifecycle APIs live in the top-level ``browser``
+domain package.
 
 Public API:
 - goto: Navigate an existing tab to a URL.
@@ -20,15 +20,11 @@ Public API:
   action (click, type, scroll, drag, etc.).
 - execute_javascript: Execute arbitrary JavaScript for advanced scenarios (use sparingly;
   prefer structured tools like click, fill_field for reliability).
-- close_browser: Cleanly close the persistent Playwright browser.
 """
 
+from browser.core.exceptions import BrowserToolError
+
 from .browse import browse_page
-from .core.browser import Browser
-from .core.exceptions import BrowserToolError
-from .core.pool import close_browser, get_browser
-from .core.rendering import RenderedDocument
-from .core.tab import Tab
 from .interactions import (
     click,
     drag,
@@ -48,19 +44,14 @@ from .vision import (
 )
 
 __all__ = [
-    "Browser",
     "BrowserToolError",
-    "RenderedDocument",
-    "Tab",
     "browse_page",
     "browser_visual_action",
     "click",
-    "close_browser",
     "close_tab",
     "drag",
     "execute_javascript",
     "fill_field",
-    "get_browser",
     "go_back",
     "goto",
     "inspect_page",

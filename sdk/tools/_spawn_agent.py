@@ -8,6 +8,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from agents import AgentProfile, build_agent, get_agent_profile
+from browser.runtime import get_browser_runtime
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
@@ -19,7 +20,7 @@ from sdk.events import (
     publish_event,
 )
 from sdk.hooks import default_hooks
-from sdk.skills import build_agent_state
+from sdk.agent_state import build_agent_state
 from sdk.turn import StopRequestedError, get_conversation_id, run_turn
 
 logger = logging.getLogger(__name__)
@@ -73,12 +74,14 @@ def _log_spawn(agent_name: str, profile: AgentProfile, instruction_preview: str)
         preview += "…"
     body.append(preview, style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_cyan]🚀 Spawn Agent[/bold bright_cyan]",
-        border_style="bright_cyan",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_cyan]🚀 Spawn Agent[/bold bright_cyan]",
+            border_style="bright_cyan",
+            expand=False,
+        )
+    )
 
 
 def _log_spawn_complete(agent_name: str, result_preview: str) -> None:
@@ -92,12 +95,14 @@ def _log_spawn_complete(agent_name: str, result_preview: str) -> None:
         preview += "…"
     body.append(preview, style="green")
 
-    _console.print(Panel(
-        body,
-        title="[bold green]✅ Agent Complete[/bold green]",
-        border_style="green",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold green]✅ Agent Complete[/bold green]",
+            border_style="green",
+            expand=False,
+        )
+    )
 
 
 def _log_spawn_error(agent_name: str, error: str) -> None:
@@ -108,12 +113,15 @@ def _log_spawn_error(agent_name: str, error: str) -> None:
     body.append("\nerror: ", style="bold")
     body.append(error, style="red")
 
-    _console.print(Panel(
-        body,
-        title="[bold red]❌ Agent Error[/bold red]",
-        border_style="red",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold red]❌ Agent Error[/bold red]",
+            border_style="red",
+            expand=False,
+        )
+    )
+
 
 async def spawn_agent(
     instructions: str,
@@ -142,10 +150,7 @@ async def spawn_agent(
     """
     agent_profile = get_agent_profile(profile)
     if agent_profile is None:
-        msg = (
-            f"Agent profile '{profile}' not found. "
-            "Call list_agent_profiles() to see available profiles."
-        )
+        msg = f"Agent profile '{profile}' not found. Call list_agent_profiles() to see available profiles."
         _log_spawn_error(agent_name, msg)
         return msg
     if not agent_profile.enabled:
@@ -161,7 +166,10 @@ async def spawn_agent(
 
     logger.info(
         "Spawning sub-agent '%s' (profile=%s, max_iter=%d, instruction=%.100s)",
-        agent_name, profile, agent.max_iterations, instructions,
+        agent_name,
+        profile,
+        agent.max_iterations,
+        instructions,
     )
     _log_spawn(agent_name, agent_profile, instructions)
 
@@ -170,10 +178,14 @@ async def spawn_agent(
     # same id, letting the UI anchor a card to this request and attach the
     # child to it.
     correlation_id = _uuid.uuid4().hex
-    publish_event(AgentEvent(payload=SpawnRequestedPayload(
-        type="spawn_requested",
-        correlation_id=correlation_id,
-    )))
+    publish_event(
+        AgentEvent(
+            payload=SpawnRequestedPayload(
+                type="spawn_requested",
+                correlation_id=correlation_id,
+            )
+        )
+    )
 
     async with agent_span(
         agent_name,
@@ -182,6 +194,10 @@ async def spawn_agent(
         profile_name=agent_profile.name,
         correlation_id=correlation_id,
     ):
+        await get_browser_runtime().prepare_current_agent_browser(
+            agent_profile_id=agent_profile.id,
+            browser_profile_id=agent_profile.browser_profile_id,
+        )
         conv_id = get_conversation_id() or "default"
         history = ConversationHistory(
             system_message=agent.instruction,
@@ -197,9 +213,14 @@ async def spawn_agent(
         if parent_conv is not None:
             parent_conv.subscribe(history.handle_event)
         try:
-            publish_event(AgentEvent(payload=UserMessagePayload(
-                type="user_message", content=instructions,
-            )))
+            publish_event(
+                AgentEvent(
+                    payload=UserMessagePayload(
+                        type="user_message",
+                        content=instructions,
+                    )
+                )
+            )
         except Exception:  # pragma: no cover - defensive
             logger.exception("Failed to publish sub-agent user_message event")
 

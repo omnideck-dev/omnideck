@@ -33,9 +33,7 @@ from sdk.skills._store import (
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     """Point both stores at temp directories per test."""
-    monkeypatch.setattr(
-        "agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles"
-    )
+    monkeypatch.setattr("agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles")
     monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
@@ -70,6 +68,7 @@ def _packed_skill(**overrides) -> PackedSkill:
 
 
 # ── Build ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 def test_build_profile_pack_missing_profile_raises():
@@ -157,6 +156,22 @@ def test_build_profile_pack_include_skills_skips_dangling_reference():
 
 
 @pytest.mark.unit
+def test_build_profile_pack_omits_browser_capability_and_assignment():
+    save_skill_record(_skill(id="browser", name="Browser", tool_categories=["browser"]))
+    save_agent_profile(
+        _profile(
+            skills=["browser"],
+            browser_profile_id="work",
+        )
+    )
+
+    pack = build_profile_pack("researcher", include_skills=True, include_model=True)
+
+    assert pack.profiles[0].skills == []
+    assert "browser_profile_id" not in pack.profiles[0].model_dump()
+
+
+@pytest.mark.unit
 def test_build_profile_pack_without_include_skills_leaves_profile_skill_free():
     save_skill_record(_skill())
     save_agent_profile(_profile(skills=["coder"]))
@@ -181,7 +196,16 @@ def test_build_skill_pack_packs_single_skill():
     assert pack.skills[0].name == "Coder"
 
 
+@pytest.mark.unit
+def test_build_skill_pack_rejects_application_managed_browser_skill():
+    save_skill_record(_skill(id="browser", name="Browser", tool_categories=["browser"]))
+
+    with pytest.raises(KeyError):
+        build_skill_pack("browser")
+
+
 # ── Import ────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 def test_import_pack_rejects_foreign_kind():
@@ -199,6 +223,21 @@ def test_import_pack_rejects_newer_version():
 def test_import_pack_rejects_empty():
     with pytest.raises(ValueError, match="no agents or skills"):
         import_pack(Pack())
+
+
+@pytest.mark.unit
+def test_import_pack_rejects_browser_capability_before_writing_any_records():
+    pack = Pack(
+        skills=[
+            _packed_skill(name="Safe"),
+            _packed_skill(name="Browser", tool_categories=["browser"]),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Browser access"):
+        import_pack(pack)
+
+    assert list_skill_records() == []
 
 
 @pytest.mark.unit
@@ -260,7 +299,26 @@ def test_import_pack_skill_free_profile_imports_with_no_skills():
     assert summary.skills == []
 
 
+@pytest.mark.unit
+def test_imported_profile_starts_without_local_browser_profile():
+    packed = Pack.model_validate(
+        {
+            "profiles": [
+                {
+                    "name": "Researcher",
+                    "browser_profile_id": "work",
+                }
+            ]
+        }
+    )
+
+    summary = import_pack(packed)
+
+    assert summary.profiles[0].browser_profile_id is None
+
+
 # ── Round trip ─────────────────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 def test_roundtrip_with_skills_lands_a_complete_copy():

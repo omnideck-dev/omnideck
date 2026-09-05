@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.text import Text
 
 from sdk.events import AgentEvent, ContextUsagePayload, publish_event
-from sdk.skills import AgentState
+from sdk.agent_state import AgentState
 
 from ._estimator import estimate_tokens
 from ._history import ConversationHistory
