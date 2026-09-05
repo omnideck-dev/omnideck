@@ -59,6 +59,9 @@ jobs:
       - name: Run browser-tools tests
         run: just test-browser-tools
 
+      - name: Run integration tests
+        run: just integration
+
   ui-tests:
     runs-on: ubuntu-latest
     steps:
