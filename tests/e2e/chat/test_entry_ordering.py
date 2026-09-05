@@ -1,181 +1,29 @@
-"""E2E tests for activity log entry ordering.
-
-Verifies that thinking, content, and tool_call entries appear in
-chronological order in both the chat view and the agent activity view.
-
-The original bug: tool_call events dispatched to the React reducer
-synchronously while thinking/content tokens were deferred to a
-requestAnimationFrame callback. Even when events arrive in one batch,
-the dispatch timing caused tool calls to appear before their preceding
-thinking blocks. The fix unifies all activity log entries into a single
-RAF-flushed buffer.
-"""
-
-import json
+"""E2E ordering of real model thinking, content, and executed tool calls."""
 
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import call_tool, model_script, model_tool, say, spawn
+from tests.e2e._runtime import agent_profile
 from tests.e2e.pages import ChatView, NetworkView
 
 
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
+@pytest.fixture
+def coder_profile():
+    with agent_profile() as profile:
+        yield profile
 
 
-def _event(payload_type, agent_id="root", agent_name="computron",
-           depth=0, **payload_fields):
-    """Build a single JSONL event dict.
-
-    Lifecycle events (agent_started, agent_completed) need agent_id and
-    agent_name inside the payload because the frontend reads them from
-    there when registering agents in the state tree.
-    """
-    payload = {"type": payload_type, **payload_fields}
-    if payload_type in ("agent_started", "agent_completed"):
-        payload.setdefault("agent_id", agent_id)
-        payload.setdefault("agent_name", agent_name)
-    return {
-        "payload": payload,
-        "agent_id": agent_id,
-        "agent_name": agent_name,
-        "timestamp": "2026-05-09T00:00:00",
-        "depth": depth,
-    }
-
-
-# Root agent: two iterations. Iter 0 = thinking + content + tool_call.
-# Iter 1 = thinking + content. The chat view derives its entries from
-# the per-iteration ``iteration`` events (events-first architecture),
-# while the activity rail still builds incrementally from content / tool
-# deltas — both are emitted here so this stream exercises both paths.
-SINGLE_AGENT_EVENTS = _build_jsonl([
-    _event("agent_started", agent_id="root", agent_name="computron",
-           parent_agent_id=None),
-    # Iteration 0
-    _event("content", thinking="Planning the approach"),
-    _event("content", content="Here is my plan."),
-    _event("tool_call", name="run_bash_cmd"),
-    _event("iteration", iteration_index=0,
-           thinking="Planning the approach", content="Here is my plan.",
-           tool_calls=[{"id": "tc-1", "name": "run_bash_cmd",
-                        "arguments": None}]),
-    # Iteration 1
-    _event("content", thinking="Reviewing the output"),
-    _event("content", content="Done."),
-    _event("iteration", iteration_index=1,
-           thinking="Reviewing the output", content="Done.",
-           tool_calls=[]),
-    _event("agent_completed", agent_id="root", agent_name="computron",
-           status="success"),
-    _event("turn_end"),
-])
-
-
-# Root agent emits one spawn_agent tool call → one sub-agent runs and
-# finishes → root replies. Used to verify the chat footer counts the
-# spawn_agent call and the panel views it.
-SPAWN_ONLY_EVENTS = _build_jsonl([
-    _event("agent_started", agent_id="root", agent_name="computron",
-           parent_agent_id=None),
-    # Root iteration 0: the spawn_agent tool call
-    _event("tool_call", name="spawn_agent",
-           arguments={"agent_name": "worker"}),
-    _event("spawn_requested", correlation_id="c-1"),
-    _event("iteration", iteration_index=0,
-           thinking=None, content=None,
-           tool_calls=[{"id": "tc-spawn", "name": "spawn_agent",
-                        "arguments": {"agent_name": "worker"}}]),
-    _event("agent_started", agent_id="sub1", agent_name="worker",
-           parent_agent_id="root", correlation_id="c-1", depth=1,
-           instruction="Do the work"),
-    _event("agent_completed", agent_id="sub1", agent_name="worker",
-           depth=1, status="success"),
-    # Root iteration 1: the wrap-up reply
-    _event("content", content="Worker finished."),
-    _event("iteration", iteration_index=1,
-           thinking=None, content="Worker finished.", tool_calls=[]),
-    _event("agent_completed", agent_id="root", agent_name="computron",
-           status="success"),
-    _event("turn_end"),
-])
-
-
-# Root + sub-agent. Sub-agent: thinking → content → tool_call → content,
-# split across two iterations to mirror how the backend now emits it.
-MULTI_AGENT_EVENTS = _build_jsonl([
-    _event("agent_started", agent_id="root", agent_name="computron",
-           parent_agent_id=None),
-    _event("content", content="Spawning a helper."),
-    _event("iteration", iteration_index=0,
-           thinking=None, content="Spawning a helper.", tool_calls=[]),
-    _event("agent_started", agent_id="sub1", agent_name="helper_agent",
-           parent_agent_id="root", depth=1),
-    # Sub iteration 0: thinking + content + tool_call
-    _event("content", agent_id="sub1", agent_name="helper_agent",
-           depth=1, thinking="Let me figure this out"),
-    _event("content", agent_id="sub1", agent_name="helper_agent",
-           depth=1, content="Working on it."),
-    _event("tool_call", agent_id="sub1", agent_name="helper_agent",
-           depth=1, name="write_file"),
-    _event("iteration", agent_id="sub1", agent_name="helper_agent",
-           depth=1, iteration_index=0,
-           thinking="Let me figure this out", content="Working on it.",
-           tool_calls=[{"id": "tc-w", "name": "write_file",
-                        "arguments": None}]),
-    # Sub iteration 1: content only
-    _event("content", agent_id="sub1", agent_name="helper_agent",
-           depth=1, content="File written."),
-    _event("iteration", agent_id="sub1", agent_name="helper_agent",
-           depth=1, iteration_index=1,
-           thinking=None, content="File written.", tool_calls=[]),
-    _event("agent_completed", agent_id="sub1", agent_name="helper_agent",
-           depth=1, status="success"),
-    _event("content", content="Helper finished."),
-    _event("iteration", iteration_index=1,
-           thinking=None, content="Helper finished.", tool_calls=[]),
-    _event("agent_completed", agent_id="root", agent_name="computron",
-           status="success"),
-    _event("turn_end"),
-])
-
-
-def _mock_chat_with(body: str):
-    def handler(route: Route):
-        route.fulfill(
-            status=200,
-            headers={"Content-Type": "application/json"},
-            body=body,
-        )
-    return handler
-
-
-def _get_entries(container):
-    """Return ordered (type, text) tuples for all activity entries.
-
-    Completed thinking blocks auto-collapse to a 'Show thinking' toggle;
-    expand them first so the inner text is readable for assertions.
-    """
-    selector = (
-        "[data-testid='entry-thinking'],"
-        "[data-testid='entry-content'],"
-        "[data-testid='entry-tool-call']"
-    )
-    entries = container.locator(selector)
-    count = entries.count()
-    for i in range(count):
-        el = entries.nth(i)
-        if el.get_attribute("data-testid") == "entry-thinking":
-            toggle = el.get_by_test_id("thinking-toggle")
-            if toggle.count() > 0 and "Show thinking" in (toggle.inner_text() or ""):
-                toggle.click()
-    result = []
-    for i in range(count):
-        el = entries.nth(i)
-        tid = el.get_attribute("data-testid")
-        text = el.inner_text().strip()
-        result.append((tid, text))
-    return result
+SINGLE_AGENT_PROMPT = model_script(
+    {"thinking": "Planning the approach", "content": "Here is my plan.",
+     "tool_calls": [model_tool("run_bash_cmd", cmd="printf proof")]},
+    {"thinking": "Reviewing the output", "content": "Done."},
+)
+CHILD_PROMPT = model_script(
+    {"thinking": "Let me figure this out", "content": "Working on it.",
+     "tool_calls": [model_tool("run_bash_cmd", cmd="printf child-proof")]},
+    {"content": "Work completed."},
+)
 
 
 # ── Chat view ──────────────────────────────────────────────────────────
@@ -184,10 +32,10 @@ def _get_entries(container):
 @pytest.mark.e2e
 def test_chat_view_hides_thinking_and_tool_calls(page: Page):
     """Chat view shows only content inline; thinking and tool_calls are
-    hidden and viewd via the per-turn activity footer."""
+    hidden and viewed via the per-turn activity footer."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat_with(SINGLE_AGENT_EVENTS))
-    chat.send("test")
+    chat.send(call_tool("load_skill", name="coder") + say("ready")).wait_streaming()
+    chat.send(SINGLE_AGENT_PROMPT)
     chat.wait_streaming()
     page.wait_for_timeout(500)
 
@@ -208,8 +56,8 @@ def test_chat_view_activity_footer_reveals_hidden(page: Page):
     """The activity footer summarises the hidden thinking + tool calls
     and reveals them in a panel on click."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat_with(SINGLE_AGENT_EVENTS))
-    chat.send("test")
+    chat.send(call_tool("load_skill", name="coder") + say("ready")).wait_streaming()
+    chat.send(SINGLE_AGENT_PROMPT)
     chat.wait_streaming()
     page.wait_for_timeout(500)
 
@@ -245,8 +93,7 @@ def test_chat_footer_counts_spawn_agent_calls(page: Page):
     made the chat footer report 0 tools on a spawn-only turn.
     """
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat_with(SPAWN_ONLY_EVENTS))
-    chat.send("delegate this")
+    chat.send(spawn(say("done"), name="worker") + say("Worker finished."))
     chat.wait_streaming()
     page.wait_for_timeout(500)
 
@@ -268,12 +115,11 @@ def test_chat_footer_counts_spawn_agent_calls(page: Page):
 
 
 @pytest.mark.e2e
-def test_activity_view_entry_order(page: Page):
+def test_activity_view_entry_order(page: Page, coder_profile):
     """Sub-agent activity view shows thinking → content → tool_call → content
     via the ActivityRail's per-type rows."""
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", _mock_chat_with(MULTI_AGENT_EVENTS))
-    chat.send("test")
+    chat.send(spawn(CHILD_PROMPT, profile=coder_profile["id"], name="helper_agent") + say("Helper finished."))
     chat.wait_streaming()
     page.wait_for_timeout(200)
 
@@ -305,5 +151,5 @@ def test_activity_view_entry_order(page: Page):
 
     expect(rows.nth(0)).to_contain_text("Let me figure this out")
     expect(rows.nth(1)).to_contain_text("Working on it.")
-    expect(rows.nth(2)).to_contain_text("write_file")
-    expect(rows.nth(3)).to_contain_text("File written.")
+    expect(rows.nth(2)).to_contain_text("run_bash_cmd")
+    expect(rows.nth(3)).to_contain_text("Work completed.")

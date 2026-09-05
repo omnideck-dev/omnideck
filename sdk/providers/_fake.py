@@ -10,6 +10,9 @@ Rather than guess intent from natural language, the fake reads an explicit
 of directives, each delimited by ``<<NAME ...>>`` ... ``<<END>>``:
 
     <<SAY>>text<<END>>             reply with this text (verbatim, multiline)
+    <<MODEL>>[ChatMessage, ...]<<END>>
+        emit scripted model responses with thinking/content and real tool calls.
+        Non-final responses require tools; application events are never scripted.
     <<TOOL name>>{json args}<<END>>  call tool *name* with JSON keyword args,
         e.g. ``<<TOOL run_bash_cmd>>{"cmd": "echo hi"}<<END>>`` or
         ``<<TOOL close_tab>>{"tab": 2}<<END>>``. Skill-gated tools (coder,
@@ -49,6 +52,7 @@ which directive comes next.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from collections.abc import AsyncGenerator, Callable
@@ -93,7 +97,7 @@ _ENDSPAWN_RE = re.compile(r"<<ENDSPAWN>>", re.IGNORECASE)
 _PARALLEL_OPEN_RE = re.compile(r"<<PARALLEL>>", re.IGNORECASE)
 _ENDPARALLEL_RE = re.compile(r"<<ENDPARALLEL>>", re.IGNORECASE)
 _SIMPLE_RE = re.compile(
-    r"<<(?P<name>SAY|TOOL|FAIL|PROVIDERFAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
+    r"<<(?P<name>MODEL|SAY|TOOL|FAIL|PROVIDERFAIL)(?P<arg>[^>]*)>>(?P<body>.*?)<<END>>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -230,6 +234,8 @@ class FakeProvider:
     ) -> ChatResponse:
         """Return the planned response (used by vision/summarizer call sites)."""
         kind, payload = _plan(messages, tools)
+        if kind == "response":
+            return payload
         if kind == "provider_error":
             raise ProviderError(payload[1], retryable=False)
         if kind == "tools":
@@ -250,6 +256,15 @@ class FakeProvider:
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream content deltas (text replies) then a final ChatResponse."""
         kind, payload = _plan(messages, tools)
+        if kind == "response":
+            # Scripted model output still goes through the production loop's
+            # delta, iteration, tool dispatch, and lifecycle publishers.
+            for field in ("thinking", "content"):
+                for chunk in _chunks(getattr(payload.message, field) or ""):
+                    if chunk:
+                        yield ChatDelta(**{field: chunk})
+            yield payload
+            return
         if kind == "provider_error":
             where, message = payload
             if where == "mid":
@@ -394,6 +409,10 @@ def _plan(
     if not directives:
         return "final", task or "OK"
 
+    for kind, _arg, body in directives:
+        if kind == "MODEL":
+            return "response", _model_response(body, messages, tools)
+
     rounds, say_parts, provider_fail, fail_after = _build_rounds(directives)
 
     # PROVIDERFAIL makes the provider itself raise (a real ProviderError, e.g. a
@@ -423,6 +442,47 @@ def _plan(
         seen += len(round_calls)
 
     return "final", "\n".join(say_parts) if say_parts else "done"
+
+
+def _model_response(
+    body: str,
+    messages: list[dict[str, Any]],
+    tools: list[Callable[..., Any]] | None,
+) -> ChatResponse:
+    """Select a scripted model response using completed, stable tool-call IDs.
+
+    Only model output is scripted. Tool results and application events must be
+    produced by execution. The latest completed step survives context compaction,
+    unlike counting every previous tool result. No process-global cursor is used,
+    so repeated requests are deterministic and child agents remain independent.
+    """
+    raw = json.loads(body)
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("MODEL requires a non-empty list of chat messages")
+    responses = [ChatMessage.model_validate(item) for item in raw]
+    if any(not response.tool_calls for response in responses[:-1]):
+        raise ValueError("Every non-final MODEL response must include a tool call")
+    prefix = f"fake_{hashlib.sha256(body.encode()).hexdigest()[:12]}_step_"
+    pattern = re.compile(re.escape(prefix) + r"(\d+)_call_\d+$")
+    # A new user input starts a new script even when identical text was used in
+    # an earlier turn. A compaction retains the pinned input and recent results.
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    completed = [int(match.group(1)) for m in messages[last_user + 1:]
+                 if m.get("role") == "tool"
+                 and (match := pattern.fullmatch(str(m.get("tool_call_id", ""))))]
+    index = max(completed, default=-1) + 1
+    if index >= len(responses):
+        raise ValueError("MODEL script exhausted before the agent completed")
+    message = responses[index]
+    available = {getattr(tool, "__name__", "") for tool in tools or []}
+    for call in message.tool_calls or []:
+        skill = _REQUIRED_SKILL.get(call.function.name)
+        if skill and call.function.name not in available:
+            return ChatResponse(message=ChatMessage(tool_calls=[_tool_call("load_skill", {"name": skill})]),
+                                done_reason="tool_calls")
+    for call_index, call in enumerate(message.tool_calls or []):
+        call.id = f"{prefix}{index}_call_{call_index}"
+    return ChatResponse(message=message, done_reason="tool_calls" if message.tool_calls else "stop")
 
 
 def _default_profile_id() -> str:

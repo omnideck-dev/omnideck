@@ -26,6 +26,21 @@ def say(text: str) -> str:
     return f"<<SAY>>{text}<<END>>"
 
 
+def model_script(*responses: dict) -> str:
+    """Script model messages, including thinking/content before real tool calls.
+
+    Each response uses ChatMessage fields. Non-final responses must call a tool
+    so the real SDK loop continues. No runtime event or tool result is supplied.
+    """
+    body = json.dumps(responses).replace("<", "\\u003c")
+    return f"<<MODEL>>{body}<<END>>"
+
+
+def model_tool(name: str, **arguments: object) -> dict:
+    """One model-requested tool call for a model_script response."""
+    return {"function": {"name": name, "arguments": arguments}}
+
+
 def call_tool(tool_name: str, **args: object) -> str:
     """Agent invokes *tool_name* with keyword *args* (a generic escape hatch).
 

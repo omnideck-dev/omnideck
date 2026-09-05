@@ -1,107 +1,12 @@
-"""E2E tests for the inline recent-conversations list in the sidebar.
+"""E2E conversation management using actual FakeProvider turns and public APIs."""
 
-Verifies listing, recency order, switching between, and deleting
-conversations. One test drives a fake-provider response via the directive
-protocol; the rest seed conversations directly in the container for speed
-and determinism.
-"""
-
-import json
 import time
-from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e._helpers import container_exec
 from tests.e2e._protocol import say
+from tests.e2e._runtime import create_conversation, delete_conversation
 from tests.e2e.pages import ChatView, RecentConversations
-
-CONV_DIR = "/var/lib/computron/conversations"
-
-
-def _messages_to_events_jsonl(conv_id: str, messages: list[dict]) -> str:
-    """Synthesize the events.jsonl that resume now reads from.
-
-    Timestamps are derived from the wall clock so seeded conversations
-    sort correctly alongside live-created ones — ``started_at`` is the
-    first event's timestamp, not the file's mtime.
-    """
-    agent_id = "root.computron.1"
-    started = datetime.now(UTC)
-    started_ts = started.isoformat()
-    lines = [json.dumps({
-        "id": f"evt_{conv_id}_started",
-        "type": "agent_started",
-        "timestamp": started_ts,
-        "conversation_id": conv_id,
-        "agent_id": agent_id,
-        "agent_name": "COMPUTRON",
-        "parent_agent_id": None,
-    })]
-    for i, m in enumerate(messages, start=1):
-        role = m.get("role")
-        ts = (started + timedelta(seconds=i)).isoformat()
-        base = {
-            "id": f"evt_{conv_id}_{i}",
-            "timestamp": ts,
-            "conversation_id": conv_id,
-            "agent_id": agent_id,
-        }
-        if role == "user":
-            lines.append(json.dumps({**base, "type": "user_message",
-                                       "content": m.get("content", ""), "attachments": []}))
-        elif role == "assistant":
-            tcs = []
-            for tc in (m.get("tool_calls") or []):
-                fn = tc.get("function") or {}
-                tcs.append({"id": tc.get("id"),
-                            "name": fn.get("name"),
-                            "arguments": fn.get("arguments")})
-            lines.append(json.dumps({**base, "type": "iteration",
-                                       "iteration_index": i - 1,
-                                       "content": m.get("content"),
-                                       "thinking": m.get("thinking"),
-                                       "tool_calls": tcs}))
-        elif role == "tool":
-            lines.append(json.dumps({**base, "type": "tool_result",
-                                       "tool_call_id": m.get("tool_call_id"),
-                                       "tool_name": m.get("tool_name"),
-                                       "content": m.get("content", "")}))
-    return "\n".join(lines) + "\n"
-
-
-def _seed_conversation(
-    conv_id: str,
-    messages: list[dict],
-    *,
-    title: str = "",
-) -> str:
-    """Create a conversation on disk inside the container.
-
-    Writes ``events.jsonl`` (the source of truth the resume API reads)
-    plus optional ``metadata.json`` for the title.
-    """
-    events_jsonl = _messages_to_events_jsonl(conv_id, messages)
-    script = (
-        "import json, pathlib\n"
-        f"d = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
-        "d.mkdir(parents=True, exist_ok=True)\n"
-        f"(d / 'events.jsonl').write_text({events_jsonl!r})\n"
-    )
-    if title:
-        meta = json.dumps({"title": title})
-        script += f"(d / 'metadata.json').write_text({meta!r})\n"
-    script += f"print('{conv_id}')\n"
-    return container_exec(script)
-
-
-def _delete_conversation(conv_id: str) -> None:
-    """Remove a seeded conversation from the container."""
-    container_exec(
-        "import shutil, pathlib\n"
-        f"p = pathlib.Path('{CONV_DIR}/{conv_id}')\n"
-        "if p.exists(): shutil.rmtree(p)\n"
-    )
 
 
 def test_recent_list_is_visible_on_load(page: Page):
@@ -124,10 +29,10 @@ def test_search_filters_the_recent_list(page: Page):
     nonce = time.time_ns()
     keep_id = f"e2e_search_keep_{nonce}"
     other_id = f"e2e_search_other_{nonce}"
-    _seed_conversation(keep_id, [
+    create_conversation(keep_id, [
         {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
     ], title=f"FindMe {nonce}")
-    _seed_conversation(other_id, [
+    create_conversation(other_id, [
         {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
     ], title=f"Unrelated {nonce}")
 
@@ -140,8 +45,8 @@ def test_search_filters_the_recent_list(page: Page):
         expect(page.get_by_text(f"FindMe {nonce}")).to_be_visible()
         expect(page.get_by_text(f"Unrelated {nonce}")).not_to_be_visible()
     finally:
-        _delete_conversation(keep_id)
-        _delete_conversation(other_id)
+        delete_conversation(keep_id)
+        delete_conversation(other_id)
 
 
 def test_clear_search_button_resets_the_filter(page: Page):
@@ -149,10 +54,10 @@ def test_clear_search_button_resets_the_filter(page: Page):
     nonce = time.time_ns()
     keep_id = f"e2e_clear_keep_{nonce}"
     other_id = f"e2e_clear_other_{nonce}"
-    _seed_conversation(keep_id, [
+    create_conversation(keep_id, [
         {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
     ], title=f"FindMe {nonce}")
-    _seed_conversation(other_id, [
+    create_conversation(other_id, [
         {"role": "user", "content": "x"}, {"role": "assistant", "content": "y"},
     ], title=f"Unrelated {nonce}")
 
@@ -173,8 +78,8 @@ def test_clear_search_button_resets_the_filter(page: Page):
         expect(page.get_by_text(f"FindMe {nonce}")).to_be_visible()
         expect(page.get_by_text(f"Unrelated {nonce}")).to_be_visible()
     finally:
-        _delete_conversation(keep_id)
-        _delete_conversation(other_id)
+        delete_conversation(keep_id)
+        delete_conversation(other_id)
 
 
 def test_deleting_active_conversation_opens_a_new_one(page: Page):
@@ -182,7 +87,7 @@ def test_deleting_active_conversation_opens_a_new_one(page: Page):
     nonce = time.time_ns()
     conv_id = f"e2e_delete_active_{nonce}"
     title = f"DeleteActive {nonce}"
-    _seed_conversation(conv_id, [
+    create_conversation(conv_id, [
         {"role": "user", "content": f"OPEN_MARKER_{nonce}"},
         {"role": "assistant", "content": "I am open."},
     ], title=title)
@@ -202,17 +107,17 @@ def test_deleting_active_conversation_opens_a_new_one(page: Page):
         expect(page.get_by_text(title)).not_to_be_visible()
         expect(page.get_by_test_id("message-user")).to_have_count(0)
     finally:
-        _delete_conversation(conv_id)
+        delete_conversation(conv_id)
 
 
 def test_multiple_conversations_listed_in_recency_order(page: Page):
-    """Seeded conversations appear in most-recent-first order."""
+    """Created conversations appear in most-recent-first order."""
     nonce = time.time_ns()
     ids = [f"e2e_order_{i}_{nonce}" for i in range(3)]
     titles = [f"Conv {chr(65 + i)} {nonce}" for i in range(3)]
 
     for i, (cid, title) in enumerate(zip(ids, titles)):
-        _seed_conversation(cid, [
+        create_conversation(cid, [
             {"role": "user", "content": f"msg {i}"},
             {"role": "assistant", "content": f"reply {i}"},
         ], title=title)
@@ -223,15 +128,15 @@ def test_multiple_conversations_listed_in_recency_order(page: Page):
         recent = RecentConversations(page)
         expect(recent.items.first).to_be_visible(timeout=5000)
 
-        # Restrict the list order to our own seeds — other rows (e.g. a pinned
+        # Restrict the list order to our own conversations — other rows (e.g. a pinned
         # welcome conversation) may sit among them — and assert those appear
-        # most-recent-first, i.e. the reverse of seed order.
-        seeded = set(ids)
-        mine = [cid for cid in recent.order() if cid in seeded]
+        # most-recent-first, i.e. the reverse of creation order.
+        created = set(ids)
+        mine = [cid for cid in recent.order() if cid in created]
         assert mine == ids[::-1], f"expected newest-first {ids[::-1]}, got {mine}"
     finally:
         for cid in ids:
-            _delete_conversation(cid)
+            delete_conversation(cid)
 
 
 def test_switch_between_conversations(page: Page):
@@ -240,14 +145,14 @@ def test_switch_between_conversations(page: Page):
     older_id = f"e2e_switch_old_{nonce}"
     newer_id = f"e2e_switch_new_{nonce}"
 
-    _seed_conversation(older_id, [
+    create_conversation(older_id, [
         {"role": "user", "content": f"ALPHA_MARKER_{nonce}"},
         {"role": "assistant", "content": "I see alpha."},
     ], title=f"Alpha Conv {nonce}")
 
     time.sleep(0.2)
 
-    _seed_conversation(newer_id, [
+    create_conversation(newer_id, [
         {"role": "user", "content": f"BETA_MARKER_{nonce}"},
         {"role": "assistant", "content": "I see beta."},
     ], title=f"Beta Conv {nonce}")
@@ -274,8 +179,8 @@ def test_switch_between_conversations(page: Page):
         )
         expect(assistant_msgs.first).to_contain_text("I see alpha.")
     finally:
-        _delete_conversation(older_id)
-        _delete_conversation(newer_id)
+        delete_conversation(older_id)
+        delete_conversation(newer_id)
 
 
 def test_delete_conversation(page: Page):
@@ -286,14 +191,14 @@ def test_delete_conversation(page: Page):
     keep_title = f"KeepMe {nonce}"
     delete_title = f"DeleteMe {nonce}"
 
-    _seed_conversation(keep_id, [
+    create_conversation(keep_id, [
         {"role": "user", "content": "I should survive"},
         {"role": "assistant", "content": "Noted."},
     ], title=keep_title)
 
     time.sleep(0.2)
 
-    _seed_conversation(delete_id, [
+    create_conversation(delete_id, [
         {"role": "user", "content": "I will be deleted"},
         {"role": "assistant", "content": "Goodbye."},
     ], title=delete_title)
@@ -313,5 +218,5 @@ def test_delete_conversation(page: Page):
         expect(page.get_by_text(delete_title)).not_to_be_visible()
         expect(page.get_by_text(keep_title)).to_be_visible()
     finally:
-        _delete_conversation(keep_id)
-        _delete_conversation(delete_id)
+        delete_conversation(keep_id)
+        delete_conversation(delete_id)

@@ -1,0 +1,43 @@
+{
+  "budget_probe": {
+    "max_iterations": 1,
+    "tool_rounds_executed": 3,
+    "tools_per_model_call": [
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "stop_between_tools_probe": {
+    "executed_after_stop": [
+      "second"
+    ]
+  },
+  "cancellation_probe": {
+    "cancelled_agent_status": "success",
+    "persistable_partial_iterations": 0
+  },
+  "orphan_tool_probe": {
+    "tool_finished_after_turn_end": true,
+    "event_order": [
+      "agent_started",
+      "user_message",
+      "content",
+      "iteration",
+      "tool_call",
+      "tool_call",
+      "agent_completed",
+      "turn_end",
+      "tool_result"
+    ]
+  },
+  "routine_retry_probe": {
+    "side_effect_executions_after_one_retry": 2
+  },
+  "routine_self_dependency_probe": {
+    "self_dependency_accepted": true,
+    "run_status": "pending",
+    "ready_tasks": 0
+  }
+}
