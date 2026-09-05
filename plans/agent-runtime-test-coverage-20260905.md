@@ -152,8 +152,8 @@ covered by successful task-execution tests.
   contracts and three browser-persistence cases. During focused debugging, the
   runtime subset can be selected with
   `just test-file tests/integration/agent_runtime/`.
-- Pre-merge CI runs `just integration` in the existing browser-tools job, which
-  already installs test dependencies and verifies Chrome. Run relevant E2E
+- Pre-merge CI runs `just integration` in the integration-tests job, which also
+  runs the browser-tool integration suite and verifies Chrome. Run relevant E2E
   suites manually before opening a runtime-refactor PR. The existing complete
   post-merge E2E image-release gate remains in place.
 - `E2E_CONTAINER` and `E2E_PORT` now override the previous shared container/port.

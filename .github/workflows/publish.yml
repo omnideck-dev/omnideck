@@ -11,9 +11,10 @@ permissions:
   packages: write
 
 jobs:
-  # Tests gate everything. They run on PRs and pushes; the image is only built
-  # and published on pushes, and only after all three test jobs pass.
-  unit-tests:
+  # Verification runs in four parallel jobs on PRs and pushes. Images are only
+  # built and published on pushes after every pre-merge check passes.
+  python-unit-tests:
+    name: Python unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,7 +34,8 @@ jobs:
       - name: Run unit tests
         run: just unit
 
-  browser-tools:
+  integration-tests:
+    name: Python and browser integration tests
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -56,13 +58,14 @@ jobs:
           google-chrome --version
           command -v xvfb-run
 
-      - name: Run browser-tools tests
+      - name: Run browser-tool integration tests
         run: just test-browser-tools
 
-      - name: Run integration tests
+      - name: Run application integration tests
         run: just integration
 
-  ui-tests:
+  frontend-tests:
+    name: Frontend unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,7 +86,8 @@ jobs:
       - name: Run UI tests
         run: just test-ui run
 
-  quality:
+  static-analysis:
+    name: Static analysis and repository policy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -102,12 +106,12 @@ jobs:
           cache: npm
           cache-dependency-path: server/ui/package-lock.json
 
-      - name: Install quality dependencies
+      - name: Install analysis dependencies
         run: |
           uv sync --frozen --extra dev --extra test
           npm ci --prefix server/ui
 
-      - name: Run agent quality gate
+      - name: Run static analysis and policy checks
         run: just check
 
   # Full-stack e2e against the image that was just built, by digest, before
@@ -168,7 +172,7 @@ jobs:
 
   # Build each platform natively on its own runner — no QEMU emulation.
   build:
-    needs: [unit-tests, browser-tools, ui-tests, quality]
+    needs: [python-unit-tests, integration-tests, frontend-tests, static-analysis]
     if: github.event_name == 'push'
     strategy:
       matrix:
