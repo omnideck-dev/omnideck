@@ -34,7 +34,7 @@ describe('useBrowserControl', () => {
 
     it('allows takeover only while the control channel is connected', () => {
         const { result } = renderHook(() => useBrowserControl({
-            conversationId: 'conversation-1',
+            target: { type: 'conversation', conversationId: 'conversation-1' },
             selectedTabId: 1,
             canControl: true,
             enabled: true,
@@ -54,7 +54,7 @@ describe('useBrowserControl', () => {
 
     it('surfaces a rejected root-browser session and revokes takeover', () => {
         const { result } = renderHook(() => useBrowserControl({
-            conversationId: 'conversation-1',
+            target: { type: 'conversation', conversationId: 'conversation-1' },
             selectedTabId: 1,
             canControl: true,
             enabled: true,
@@ -80,7 +80,7 @@ describe('useBrowserControl', () => {
     it('reconnects when an established conversation Browser is replaced', () => {
         vi.useFakeTimers();
         renderHook(() => useBrowserControl({
-            conversationId: 'conversation-1',
+            target: { type: 'conversation', conversationId: 'conversation-1' },
             selectedTabId: 1,
             canControl: true,
             enabled: true,
@@ -103,7 +103,7 @@ describe('useBrowserControl', () => {
     it('reconnects when the root-agent Browser session identity changes', () => {
         const { rerender } = renderHook(
             ({ sessionKey }) => useBrowserControl({
-                conversationId: 'conversation-1',
+                target: { type: 'conversation', conversationId: 'conversation-1' },
                 selectedTabId: 1,
                 canControl: true,
                 enabled: true,
@@ -121,11 +121,10 @@ describe('useBrowserControl', () => {
 
     it('opens a user-scoped Browser without a conversation', () => {
         const { result } = renderHook(() => useBrowserControl({
-            conversationId: null,
+            target: { type: 'user' },
             selectedTabId: 1,
             canControl: true,
             enabled: true,
-            scope: 'user',
             alwaysEngaged: true,
         }));
         const socket = FakeWebSocket.instances[0];

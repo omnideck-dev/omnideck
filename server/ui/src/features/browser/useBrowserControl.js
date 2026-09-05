@@ -14,6 +14,12 @@ const RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 20;
 
 /**
+ * @typedef {{ type: 'user' }
+ *   | { type: 'conversation', conversationId: string }
+ * } BrowserControlTarget
+ */
+
+/**
  * Write text to the host clipboard. Uses the async Clipboard API on secure
  * origins (https / localhost); falls back to a hidden-textarea execCommand on
  * plain-http hosts where `navigator.clipboard` is unavailable. Both paths rely
@@ -93,15 +99,27 @@ async function _readFilePayload(file) {
  * Returns the latest frame for the selected tab, the engage state + toggle, and
  * a `sendInput` for the surface to forward events.
  */
+/**
+ * @param {object} options
+ * @param {BrowserControlTarget | null} options.target
+ * @param {number | null} options.selectedTabId
+ * @param {boolean} options.canControl
+ * @param {boolean} options.enabled
+ * @param {boolean} [options.alwaysEngaged]
+ * @param {string | number | null} [options.sessionKey]
+ */
 export default function useBrowserControl({
-    conversationId,
+    target,
     selectedTabId,
     canControl,
     enabled,
-    scope = 'conversation',
     alwaysEngaged = false,
     sessionKey = null,
 }) {
+    const targetType = target?.type ?? null;
+    const conversationId = target?.type === 'conversation'
+        ? target.conversationId
+        : null;
     // One latest blob frame per tab, so a tab keeps showing its last frame in
     // the rail after deselection (only the selected tab is streamed live).
     const [framesByTab, setFramesByTab] = useState({});
@@ -128,7 +146,12 @@ export default function useBrowserControl({
     // One socket per mounted, enabled control surface. User and conversation
     // Browser views may therefore each have an independent live connection.
     useEffect(() => {
-        if (!enabled || (scope !== 'user' && !conversationId) || typeof WebSocket === 'undefined') return undefined;
+        if (
+            !enabled
+            || !targetType
+            || (targetType === 'conversation' && !conversationId)
+            || typeof WebSocket === 'undefined'
+        ) return undefined;
         let disposed = false;
         const scheduleReconnect = () => {
             if (
@@ -149,7 +172,7 @@ export default function useBrowserControl({
             setError(null);
         };
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-        const query = scope === 'user'
+        const query = targetType === 'user'
             ? 'scope=user'
             : `conversation_id=${encodeURIComponent(conversationId)}`;
         const ws = new WebSocket(
@@ -246,7 +269,7 @@ export default function useBrowserControl({
             setLiveTabs(null);
             setCursor('default');
         };
-    }, [enabled, conversationId, connectionAttempt, frameBus, scope, sessionKey]);
+    }, [enabled, conversationId, connectionAttempt, frameBus, sessionKey, targetType]);
 
     useEffect(() => () => {
         if (reconnectTimerRef.current !== null) {
@@ -255,7 +278,7 @@ export default function useBrowserControl({
         }
         connectedOnceRef.current = false;
         reconnectAttemptsRef.current = 0;
-    }, [enabled, conversationId, scope, sessionKey]);
+    }, [enabled, conversationId, sessionKey, targetType]);
 
     // Point the screencast at the selected tab. Runs both when the selection
     // changes and once the socket connects, so neither ordering misses the send.

@@ -22,7 +22,9 @@ export default function useBrowserTabs({
     const [selectedTabId, setSelectedTabId] = useState(null);
 
     const control = useBrowserControl({
-        conversationId,
+        target: conversationId
+            ? { type: 'conversation', conversationId }
+            : null,
         selectedTabId,
         canControl,
         enabled,

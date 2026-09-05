@@ -53,11 +53,10 @@ export default function BrowserView() {
     }, [clearProfileLoadRequest, profileLoadRequest, selectedBrowserProfileId, session]);
 
     const control = useBrowserControl({
-        conversationId: null,
+        target: { type: 'user' },
         selectedTabId,
         canControl: true,
         enabled: !!session,
-        scope: 'user',
         alwaysEngaged: true,
         sessionKey,
     });
