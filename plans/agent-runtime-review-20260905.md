@@ -85,9 +85,8 @@ Update agents/README.md and docs/sdk_semantics.md along the way. They refer to r
 - `just check` passed: Python/React lint, Python/TypeScript checks, tool
   documentation, release-note and workflow policies.
 - Six targeted probes reproduced the observations above using scripted providers
-  and in-memory tools. [Probe source](../tests/review_runtime_20260905.py),
-  [results](../artifacts/runtime-review-probes.json). The retry probe exercises
-  the real TaskRunner with a scripted executor; TaskExecutor's fresh-history
-  behavior was checked in source.
+  and in-memory tools. [Probe source](../tests/review_runtime_20260905.py). The
+  retry probe exercises the real TaskRunner with a scripted executor;
+  TaskExecutor's fresh-history behavior was checked in source.
 - The SDK test fixture rewrites ConversationHistory's constructor and forwards events into tracked histories. Add contract tests using the real constructor, turn_scope, agent_span, and event path; the standalone probes deliberately avoid that compatibility fixture.
 - This was source review and local verification, not a live-provider/browser end-to-end assessment. Application source was not changed.

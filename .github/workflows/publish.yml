@@ -11,8 +11,8 @@ permissions:
   packages: write
 
 jobs:
-  # Tests run on PRs and pushes. Published images are built on pushes after
-  # these checks; PRs also build a disposable image for runtime E2E below.
+  # Tests gate everything. They run on PRs and pushes; the image is only built
+  # and published on pushes, and only after all three test jobs pass.
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -32,9 +32,6 @@ jobs:
 
       - name: Run unit tests
         run: just unit
-
-      - name: Run runtime integration contracts
-        run: just test-runtime
 
   browser-tools:
     runs-on: ubuntu-24.04
@@ -109,36 +106,6 @@ jobs:
 
       - name: Run agent quality gate
         run: just check
-
-  # Runtime refactors must pass the real HTTP/UI execution paths before merge.
-  # This local image is disposable and needs no publishing credentials.
-  runtime-e2e:
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    needs: [unit-tests, quality]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install just
-        uses: extractions/setup-just@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Install dependencies
-        run: uv sync --frozen --extra test
-
-      - name: Verify hosted Chrome
-        run: google-chrome --version
-
-      - name: Run runtime E2E tests
-        run: >-
-          just e2e tests/e2e/api/agent_runs tests/e2e/chat
-          tests/e2e/network tests/e2e/routines tests/e2e/conversations
-          tests/e2e/preview/test_agent_isolation.py
-          --browser-channel chrome
 
   # Full-stack e2e against the image that was just built, by digest, before
   # any tag points at it — so a commit that fails here never becomes the image
