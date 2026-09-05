@@ -113,7 +113,7 @@ All of these completed successfully before the event-fixture migration above:
 | Check | Result |
 | --- | --- |
 | Full Python unit suite (`just unit`) | 1,940 passed |
-| Runtime integration contracts (`just test-runtime`) | 18 passed |
+| Agent runtime integration contracts | 18 passed |
 | Actual Chrome browser persistence integration | 3 passed |
 | Full frontend suite (`just test-ui run`) | 763 passed in 118 files |
 | Runtime/chat/routine/child UI E2E selection | 57 passed |
@@ -146,16 +146,16 @@ TaskRunner still contains substantial uncovered notification/retry/recurrence
 branches; the refactor's scheduling policy must not be inferred to be fully
 covered by successful task-execution tests.
 
-## CI and reproducibility
+## Test execution and reproducibility
 
-- `just test-runtime` runs the fast contracts, including on PRs via the existing
-  unit-tests job.
-- Added `runtime-e2e` for pull requests and merge queues. It builds a disposable
-  image and runs API execution, chat, conversation management/resume, network,
-  routine, and child-isolation E2E.
-  The existing complete post-merge E2E image-release gate remains in place.
-  Hosted execution and repository required-status settings were not exercised
-  locally; the workflow and equivalent test commands were checked locally.
+- `just integration` runs all integration tests, including the 18 agent runtime
+  contracts and three browser-persistence cases. During focused debugging, the
+  runtime subset can be selected with
+  `just test-file tests/integration/agent_runtime/`.
+- Pre-merge CI runs `just integration` in the existing browser-tools job, which
+  already installs test dependencies and verifies Chrome. Run relevant E2E
+  suites manually before opening a runtime-refactor PR. The existing complete
+  post-merge E2E image-release gate remains in place.
 - `E2E_CONTAINER` and `E2E_PORT` now override the previous shared container/port.
   Another local test run replaced the default container during verification;
   unique names/ports resolved that collision. No runtime source fix was needed.
