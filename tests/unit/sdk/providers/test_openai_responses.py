@@ -563,3 +563,77 @@ class TestStreamingOutOfOrderEvents:
         assert len(final.message.tool_calls) == 2
         assert final.message.tool_calls[0].function.arguments == {"x": 1}
         assert final.message.tool_calls[1].function.arguments == {"y": 2}
+
+
+# ---------------------------------------------------------------------------
+# _build_kwargs sampling parameters
+# ---------------------------------------------------------------------------
+
+
+def _provider() -> Any:
+    from sdk.providers._openai_responses import OpenAIResponsesProvider
+
+    return OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+
+@pytest.mark.unit
+class TestBuildKwargsSamplingParams:
+    def test_sampling_params_kept_for_non_reasoning_model(self):
+        kwargs = _provider()._build_kwargs(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            options={"temperature": 0.7, "top_p": 0.9},
+            think=False,
+        )
+        assert kwargs["temperature"] == 0.7
+        assert kwargs["top_p"] == 0.9
+
+    def test_sampling_params_dropped_for_reasoning_model(self):
+        """gpt-5 family and o-series reject `temperature` (issue #152)."""
+        kwargs = _provider()._build_kwargs(
+            model="gpt-5.5",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            options={"temperature": 0.7, "top_p": 0.9},
+            think=False,
+        )
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+
+    def test_sampling_params_dropped_when_thinking(self):
+        """A `reasoning` block and `temperature` cannot coexist, on any model."""
+        kwargs = _provider()._build_kwargs(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            options={"temperature": 0.7, "top_p": 0.9},
+            think=True,
+        )
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+        assert kwargs["reasoning"] == {"effort": "medium", "summary": "auto"}
+
+    def test_unknown_model_keeps_sampling_params(self):
+        """Custom base_url deployments are not assumed to be reasoning models."""
+        kwargs = _provider()._build_kwargs(
+            model="some-local-model",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            options={"temperature": 0.7},
+            think=False,
+        )
+        assert kwargs["temperature"] == 0.7
+
+    def test_other_kwargs_are_unaffected(self):
+        kwargs = _provider()._build_kwargs(
+            model="gpt-5.5",
+            messages=[{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}],
+            tools=None,
+            options={"temperature": 0.7, "max_tokens": 512},
+            think=False,
+        )
+        assert kwargs["model"] == "gpt-5.5"
+        assert kwargs["store"] is False
+        assert kwargs["instructions"] == "be brief"
+        assert kwargs["max_output_tokens"] == 512
