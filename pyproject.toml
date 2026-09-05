@@ -150,4 +150,4 @@ exclude = [
 ]
 
 [tool.setuptools.package-data]
-browser = ["capability.json"]
+"tools.browser" = ["capability.json"]

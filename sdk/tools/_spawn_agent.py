@@ -20,7 +20,7 @@ from sdk.events import (
     publish_event,
 )
 from sdk.hooks import default_hooks
-from sdk.skills import build_agent_state
+from sdk.agent_state import build_agent_state
 from sdk.turn import StopRequestedError, get_conversation_id, run_turn
 
 logger = logging.getLogger(__name__)

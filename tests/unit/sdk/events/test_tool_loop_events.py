@@ -24,7 +24,7 @@ from sdk.events import (
     reset_current_conversation,
     set_current_conversation,
 )
-from sdk.skills import AgentState
+from sdk.agent_state import AgentState
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
 from sdk.turn import run_turn, turn_scope
 from agents.types import Agent

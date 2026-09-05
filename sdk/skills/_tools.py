@@ -9,7 +9,7 @@ from rich.text import Text
 from ._policy import is_reserved_skill_id
 from ._resolve import resolve_skill_by_name
 from ._store import list_skill_records
-from .agent_state import get_active_agent_state
+from sdk.agent_state import get_active_agent_state
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ import pytest
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tools import list_available_skills, load_skill
 from sdk.skills._tool_categories import ToolCategory
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 
 
 def _make_tool(name: str):

@@ -32,7 +32,7 @@ from sdk.events import (
     agent_span,
     publish_event,
 )
-from sdk.skills import build_agent_state, persist_loaded_skills
+from sdk.agent_state import build_agent_state, persist_loaded_skills
 from sdk.turn import ToolLoopError, check_stop, turn_scope
 from sdk.turn._turn import StopRequestedError
 from tools.memory import load_memory

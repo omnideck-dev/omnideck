@@ -19,7 +19,7 @@ from sdk.events._models import (
     FileOutputPayload,
     UserMessagePayload,
 )
-from sdk.skills import build_agent_state
+from sdk.agent_state import build_agent_state
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:

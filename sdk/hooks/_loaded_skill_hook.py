@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from sdk.context import ConversationHistory
-from sdk.skills.agent_state import get_active_agent_state
+from sdk.agent_state import get_active_agent_state
 
 logger = logging.getLogger(__name__)
 

@@ -11,16 +11,18 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.skills._resolve import (
+from sdk.agent_state import (
     _restore_persisted_loaded_skills,
+    AgentState,
     build_agent_state,
     persist_loaded_skills,
+)
+from sdk.skills._resolve import (
     resolve_skill,
     resolve_skill_by_name,
 )
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tool_categories import ToolCategory
-from sdk.skills.agent_state import AgentState
 
 
 def _tool(name):
@@ -48,6 +50,7 @@ def _isolate(tmp_path, monkeypatch):
         return _categories()
 
     monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("tools.browser.capability.tool_categories", _cats)
 
 
 def _names(tools):

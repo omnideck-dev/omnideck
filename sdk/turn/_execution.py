@@ -23,7 +23,7 @@ from sdk.events import (
     publish_event,
 )
 from sdk.providers import ChatDelta, ChatResponse, ProviderError, ToolCall, get_provider
-from sdk.skills.agent_state import _active_agent_state
+from sdk.agent_state import _active_agent_state
 from sdk.tools import _execute_tool_call
 
 from ._turn import StopRequestedError, check_stop

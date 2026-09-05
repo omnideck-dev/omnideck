@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from sdk.context import ContextManager, ConversationHistory, TriggerPoint
-from sdk.skills import AgentState
+from sdk.agent_state import AgentState
 
 
 def _empty_state() -> AgentState:

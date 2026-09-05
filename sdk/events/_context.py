@@ -25,7 +25,7 @@ from sdk.lifecycle import run_agent_span_exit_hooks
 if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
     from collections.abc import AsyncGenerator
 
-from sdk.skills.agent_state import AgentState, _active_agent_state
+from sdk.agent_state import AgentState, _active_agent_state
 
 from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload
 

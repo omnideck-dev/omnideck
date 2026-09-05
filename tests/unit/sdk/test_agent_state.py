@@ -2,8 +2,9 @@
 
 import pytest
 
+from sdk.agent_state import AgentState
+from sdk.capabilities import AgentCapability
 from sdk.skills._registry import Skill
-from sdk.skills.agent_state import AgentCapability, AgentState
 
 
 def _make_tool(name: str):
