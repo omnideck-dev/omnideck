@@ -1,6 +1,6 @@
 # Agent execution regression contracts
 
-Run `just test-runtime`. These tests connect the production `ActiveRunManager`,
+Run `just integration`. These tests connect the production `ActiveRunManager`,
 `AgentRunner`, SDK scopes/hooks/tool loop, subagent execution, `TaskRunner`,
 `TaskExecutor`, and file-backed stores. They do not mock `run_turn` or rewrite
 history/event behavior. They deliberately live outside the SDK unit suite's

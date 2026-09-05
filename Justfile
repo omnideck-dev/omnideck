@@ -183,10 +183,6 @@ logs:
 unit:
     PYTHONPATH=. uv run pytest tests/unit/
 
-# Run runtime integration contracts with real orchestration and scripted I/O
-test-runtime *args:
-    PYTHONPATH=. uv run pytest tests/integration/agent_runtime/ {{args}}
-
 # Run browser-tools tests (real headed Chrome against local fixture pages)
 test-browser-tools *args:
     #!/usr/bin/env bash
