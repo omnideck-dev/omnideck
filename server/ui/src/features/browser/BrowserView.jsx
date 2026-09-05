@@ -25,6 +25,7 @@ export default function BrowserView() {
     const [selectedTabId, setSelectedTabId] = useState(null);
     const [pendingLoad, setPendingLoad] = useState(undefined);
     const [pendingLoadName, setPendingLoadName] = useState('');
+    const [isReplacingBrowser, setIsReplacingBrowser] = useState(false);
     const [showSave, setShowSave] = useState(false);
     const [error, setError] = useState('');
     const [sessionKey, setSessionKey] = useState(0);
@@ -81,7 +82,9 @@ export default function BrowserView() {
     };
 
     const replaceSession = async () => {
+        if (isReplacingBrowser || pendingLoad === undefined) return;
         setError('');
+        setIsReplacingBrowser(true);
         try {
             const next = await loadBrowserSession(pendingLoad);
             setSession(next);
@@ -91,6 +94,8 @@ export default function BrowserView() {
             clearPendingLoad();
         } catch (err) {
             setError(err.message);
+        } finally {
+            setIsReplacingBrowser(false);
         }
     };
 
@@ -126,7 +131,13 @@ export default function BrowserView() {
             )}
 
             {pendingLoad !== undefined && (
-                <Modal onClose={clearPendingLoad} labelledBy="replace-browser-title" testId="replace-browser-modal">
+                <Modal
+                    onClose={() => {
+                        if (!isReplacingBrowser) clearPendingLoad();
+                    }}
+                    labelledBy="replace-browser-title"
+                    testId="replace-browser-modal"
+                >
                     <h2 id="replace-browser-title" className={styles.modalTitle}>
                         {pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty?' : `Load ${pendingLoadName || profileOptions.find((option) => option.value === pendingLoad)?.label}?`}
                     </h2>
@@ -134,9 +145,17 @@ export default function BrowserView() {
                         Your current tabs and any changes you haven’t saved to a profile will be discarded.
                     </p>
                     <div className={styles.modalActions}>
-                        <Button onClick={clearPendingLoad}>Cancel</Button>
-                        <Button variant="filled" onClick={replaceSession}>
-                            {pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty' : 'Load profile'}
+                        <Button onClick={clearPendingLoad} disabled={isReplacingBrowser}>Cancel</Button>
+                        <Button
+                            variant="filled"
+                            onClick={replaceSession}
+                            disabled={isReplacingBrowser}
+                            aria-busy={isReplacingBrowser}
+                        >
+                            {isReplacingBrowser && <span className={styles.spinner} aria-hidden="true" />}
+                            {isReplacingBrowser
+                                ? 'Loading…'
+                                : (pendingLoad === EMPTY_BROWSER_PROFILE ? 'Use Empty' : 'Load profile')}
                         </Button>
                     </div>
                 </Modal>

@@ -105,6 +105,36 @@ describe('BrowserView profile load requests', () => {
         expect(mocks.clearProfileLoadRequest).toHaveBeenCalledOnce();
     });
 
+    it('shows progress and prevents dismissal while replacing the Browser', async () => {
+        let finishLoading;
+        mocks.loadBrowserSession.mockImplementation(() => new Promise((resolve) => {
+            finishLoading = resolve;
+        }));
+        const user = userEvent.setup();
+        await act(async () => {
+            renderBrowserView();
+        });
+
+        await user.click(await screen.findByRole('button', { name: 'Load profile' }));
+
+        const loadingButton = screen.getByRole('button', { name: 'Loading…' });
+        expect(loadingButton).toBeDisabled();
+        expect(loadingButton).toHaveAttribute('aria-busy', 'true');
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+        await user.keyboard('{Escape}');
+        expect(screen.getByTestId('replace-browser-modal')).toBeInTheDocument();
+
+        await act(async () => {
+            finishLoading({
+                ...SESSION,
+                browser_profile_id: 'linkedin',
+            });
+        });
+
+        expect(screen.queryByTestId('replace-browser-modal')).not.toBeInTheDocument();
+    });
+
     it('clears a canceled profile request before Browser remounts', async () => {
         const user = userEvent.setup();
         let rendered;
