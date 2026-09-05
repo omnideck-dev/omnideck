@@ -1,5 +1,5 @@
 /**
- * Carries screencast frames from the socket to the canvas without React.
+ * Carries Browser screencast frames from the socket to the canvas without React.
  *
  * A live view repaints at the page's own rate. Routing that through component
  * state re-renders the whole app on every frame, so frames go through this

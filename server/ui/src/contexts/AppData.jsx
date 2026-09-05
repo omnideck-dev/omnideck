@@ -29,7 +29,6 @@ export function AppDataProvider({ children }) {
         profilesHook,
         providersHook,
         skillsHook,
-        browserProfilesHook,
         features,
         featuresLoaded,
         refreshFeatures,

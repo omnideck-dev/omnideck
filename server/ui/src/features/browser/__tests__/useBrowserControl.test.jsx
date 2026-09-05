@@ -118,4 +118,26 @@ describe('useBrowserControl', () => {
         expect(firstSocket.readyState).toBe(3);
         expect(FakeWebSocket.instances).toHaveLength(2);
     });
+
+    it('opens a user-scoped Browser without a conversation', () => {
+        const { result } = renderHook(() => useBrowserControl({
+            conversationId: null,
+            selectedTabId: 1,
+            canControl: true,
+            enabled: true,
+            scope: 'user',
+            alwaysEngaged: true,
+        }));
+        const socket = FakeWebSocket.instances[0];
+
+        expect(socket.url).toContain('scope=user');
+
+        act(() => {
+            socket.readyState = FakeWebSocket.OPEN;
+            socket.onopen();
+        });
+
+        expect(result.current.engaged).toBe(true);
+        expect(result.current.toggleEngage).toBeNull();
+    });
 });

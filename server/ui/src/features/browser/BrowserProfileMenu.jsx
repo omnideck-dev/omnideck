@@ -3,9 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import IconButton from '../../components/primitives/IconButton.jsx';
 import Popover from '../../components/primitives/Popover.jsx';
 import { BrowserProfileIcon } from './browserIcons.jsx';
+import { EMPTY_BROWSER_PROFILE } from './browserProfileConstants.js';
 import styles from './BrowserProfileMenu.module.css';
-
-export const EMPTY_BROWSER_PROFILE = 'empty';
 
 function ProfileIcon({ profile }) {
     if (!profile) {

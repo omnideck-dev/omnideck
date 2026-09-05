@@ -9,7 +9,7 @@ function fakeBitmap(label) {
 
 const frame = (seq, bitmap) => ({ bitmap, meta: {}, tabId: 1, seq });
 
-describe('createFrameBus', () => {
+describe('Browser createFrameBus', () => {
     it('publishes a frame to every subscriber', () => {
         const bus = createFrameBus();
         const a = vi.fn();

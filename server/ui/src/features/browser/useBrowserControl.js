@@ -82,12 +82,13 @@ async function _readFilePayload(file) {
 }
 
 /**
- * Owns the workspace's browser control side channel for a conversation.
+ * Owns one mounted Browser view's live control side channel.
  *
- * Opens one WebSocket to `/api/browser/control`, streams the CDP screencast of
- * the user-selected tab (re-pointing it whenever the selection changes), and —
- * when control is engaged — forwards input primitives back. Control can only be
- * engaged while no turn is active (`canControl`); a starting turn forces it off.
+ * Opens one WebSocket to `/api/browser/control`, scoped either to the user's
+ * Browser or a conversation's root-agent Browser. It streams the selected tab's
+ * CDP screencast and forwards input while control is engaged. Conversation
+ * callers decide when takeover is allowed through `canControl`; the user Browser
+ * passes `alwaysEngaged` because it is never agent-controlled.
  *
  * Returns the latest frame for the selected tab, the engage state + toggle, and
  * a `sendInput` for the surface to forward events.
@@ -124,7 +125,8 @@ export default function useBrowserControl({
     if (frameBusRef.current === null) frameBusRef.current = createFrameBus();
     const frameBus = frameBusRef.current;
 
-    // One socket per conversation, only while a browser view is open.
+    // One socket per mounted, enabled control surface. User and conversation
+    // Browser views may therefore each have an independent live connection.
     useEffect(() => {
         if (!enabled || (scope !== 'user' && !conversationId) || typeof WebSocket === 'undefined') return undefined;
         let disposed = false;

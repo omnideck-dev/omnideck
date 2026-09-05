@@ -29,7 +29,7 @@ vi.mock('../BrowserProfileLoadRequest.jsx', () => ({
     }),
 }));
 
-vi.mock('../../workspace/useBrowserControl.js', () => ({
+vi.mock('../useBrowserControl.js', () => ({
     default: () => ({
         liveTabs: [{ id: 'browser-tab', url: 'about:blank', title: 'Untitled' }],
         engaged: true,

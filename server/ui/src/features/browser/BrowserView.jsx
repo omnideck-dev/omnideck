@@ -5,12 +5,13 @@ import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import Modal from '../../components/primitives/Modal.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
-import useBrowserControl from '../workspace/useBrowserControl.js';
 import { getBrowserSession, loadBrowserSession } from './browserApi.js';
-import BrowserProfileMenu, { EMPTY_BROWSER_PROFILE } from './BrowserProfileMenu.jsx';
+import { EMPTY_BROWSER_PROFILE } from './browserProfileConstants.js';
+import BrowserProfileMenu from './BrowserProfileMenu.jsx';
 import BrowserSaveModal from './BrowserSaveModal.jsx';
 import { useBrowserProfileLoadRequest } from './BrowserProfileLoadRequest.jsx';
 import { useBrowserProfilesCatalog } from './BrowserProfilesContext.jsx';
+import useBrowserControl from './useBrowserControl.js';
 import styles from './BrowserView.module.css';
 
 export default function BrowserView() {

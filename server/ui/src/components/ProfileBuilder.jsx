@@ -9,7 +9,7 @@ import Popover from './primitives/Popover.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import Select from './primitives/Select.jsx';
 import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
-import { EMPTY_BROWSER_PROFILE } from '../features/browser/BrowserProfileMenu.jsx';
+import { EMPTY_BROWSER_PROFILE } from '../features/browser/browserProfileConstants.js';
 import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';

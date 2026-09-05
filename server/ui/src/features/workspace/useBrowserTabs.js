@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import useBrowserControl from './useBrowserControl.js';
+import useBrowserControl from '../browser/useBrowserControl.js';
 
 /**
  * Owns the browser side channel and the tab model the workspace renders.

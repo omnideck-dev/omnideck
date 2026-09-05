@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import BrowserProfileMenu, { EMPTY_BROWSER_PROFILE } from '../BrowserProfileMenu.jsx';
+import BrowserProfileMenu from '../BrowserProfileMenu.jsx';
+import { EMPTY_BROWSER_PROFILE } from '../browserProfileConstants.js';
 
 const PROFILES = [
     { id: 'default', name: 'Default', icon: 'bi-globe2' },
