@@ -70,6 +70,40 @@ test('browser jobs reuse hosted Chrome instead of downloading Playwright browser
   );
 });
 
+test('pre-merge jobs are named for their verification responsibilities', () => {
+  assert.match(
+    publishWorkflow,
+    /python-unit-tests:\n    name: Python unit tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /integration-tests:\n    name: Python and browser integration tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /frontend-tests:\n    name: Frontend unit tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /static-analysis:\n    name: Static analysis and repository policy/,
+  );
+  assert.match(
+    publishWorkflow,
+    /build:\n    needs: \[python-unit-tests, integration-tests, frontend-tests, static-analysis\]/,
+  );
+});
+
+test('integration suites share the hosted browser job', () => {
+  const integrationJob = publishWorkflow.slice(
+    publishWorkflow.indexOf('  integration-tests:'),
+    publishWorkflow.indexOf('  frontend-tests:'),
+  );
+
+  assert.match(integrationJob, /runs-on: ubuntu-24\.04/);
+  assert.match(integrationJob, /run: just test-browser-tools/);
+  assert.match(integrationJob, /run: just integration/);
+});
+
 test('Linux package installation is retried and time-bounded', () => {
   assert.equal(
     [...desktopWorkflow.matchAll(/bash \.github\/scripts\/install-apt-packages\.sh/g)]
