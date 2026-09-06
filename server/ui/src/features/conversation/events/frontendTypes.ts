@@ -22,6 +22,7 @@ export type AgentActivityEntry =
     | { type: 'error'; message: string; timestamp: number };
 
 export type AgentAction =
+    | { type: 'RECORD_AGENT_USAGE'; agentId: string; iterationIndex: number; totalTokens: number | null }
     | {
         type: 'AGENT_STARTED';
         agentId: string;

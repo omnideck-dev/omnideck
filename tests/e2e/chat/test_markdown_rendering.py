@@ -50,7 +50,7 @@ def test_code_blocks_render_in_activity_view(page: Page):
     chat = ChatView(page).goto().new_conversation()
     chat.send(SUBAGENT_PROMPT).wait_streaming()
 
-    network = NetworkView(page)
+    network = NetworkView(page).show_details()
     expect(network.indicator).to_be_visible(timeout=10_000)
     network.open()
 

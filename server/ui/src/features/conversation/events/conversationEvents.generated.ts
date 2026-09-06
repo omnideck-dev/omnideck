@@ -174,6 +174,7 @@ export interface IterationPayload {
     content: string | null;
     tool_calls: Array<IterationToolCall>;
     stopped: boolean;
+    total_tokens: number | null;
 }
 
 export interface ToolResultPayload {

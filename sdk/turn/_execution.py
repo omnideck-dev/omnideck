@@ -49,6 +49,7 @@ def _publish_iteration(
     thinking: str | None,
     tool_calls: list[IterationToolCall] | None = None,
     stopped: bool = False,
+    total_tokens: int | None = None,
 ) -> None:
     """Publish an iteration event. Logs but never raises on failure."""
     try:
@@ -61,6 +62,7 @@ def _publish_iteration(
                     content=content,
                     tool_calls=tool_calls or [],
                     stopped=stopped,
+                    total_tokens=total_tokens,
                 )
             )
         )
@@ -348,6 +350,13 @@ async def run_turn(
                     iteration - 1,
                     content=content,
                     thinking=thinking,
+                    # Anthropic reports cache reads/writes separately from
+                    # prompt_tokens; OpenAI includes them in prompt_tokens.
+                    total_tokens=(
+                        response.usage.prompt_tokens + response.usage.completion_tokens
+                        + (response.usage.cache_read_tokens + response.usage.cache_creation_tokens
+                           if agent.provider == "anthropic" else 0)
+                    ) or None,
                     tool_calls=[
                         IterationToolCall(
                             id=tc.id,

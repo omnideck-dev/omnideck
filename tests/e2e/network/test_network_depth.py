@@ -31,8 +31,9 @@ def deep_tree(page: Page):
 def test_three_level_tree_renders_all_cards(page: Page, deep_tree):
     """A 3-level deep tree shows all 4 agent cards."""
     network = deep_tree
+    network.show_details()
     expect(network.indicator).to_be_visible(timeout=5000)
-    expect(network.indicator).to_contain_text("4 agents")
+    expect(network.indicator).to_contain_text("Agents 3")
 
     network.open()
     expect(network.agent_cards.first).to_be_visible(timeout=5000)

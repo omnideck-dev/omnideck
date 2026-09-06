@@ -1,0 +1,41 @@
+.container { flex-shrink: 0; }
+/* Details contains actions and disclosure content, not selectable options.
+ * Match the canonical dropdown chrome without using combobox semantics. */
+.trigger { display: flex; align-items: center; gap: var(--sp-2); height: 32px; padding: 0 10px; background: var(--canvas); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-md); font-family: var(--font-body); font-size: 12px; cursor: pointer; }
+[data-theme="dark"] .trigger { background: var(--surface); }
+.trigger:hover { border-color: var(--border-strong); background: var(--elevated); }
+.trigger[aria-expanded="true"], .trigger:focus-visible { border-color: var(--accent); box-shadow: var(--shadow-glow); outline: none; }
+.trigger > i { font-size: 10px; color: var(--text-tertiary); }
+.trigger[aria-expanded="true"] > i { transform: rotate(180deg); }
+.row:focus-visible, .advanced summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.popover { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); color: var(--text-primary); font-family: var(--font-body); box-shadow: var(--shadow-lg); }
+.heading { padding: 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.resources { padding: 6px; }
+.resourceGroup { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+.groupHeading { display: flex; align-items: center; gap: 10px; margin: 0; padding: 9px 8px 3px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.groupHeading > i { width: 16px; text-align: center; color: var(--accent); }
+.groupRows { padding-left: 26px; }
+.row { width: 100%; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+.row:hover { background: var(--accent-muted); }
+.icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--accent-muted); color: var(--accent); font-size: 17px; }
+.copy { flex: 1; min-width: 0; }
+.copy strong { display: block; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.copy > span { display: block; margin-top: 3px; font-size: 11px; color: var(--text-secondary); }
+.count { margin-left: 4px; padding: 2px 5px; background: var(--border); border-radius: 10px; font-size: 10px; }
+.badge { padding: 2px 6px; background: var(--accent-muted); color: var(--accent); border-radius: 9px; font-size: 10px; white-space: nowrap; }
+.chevron { font-size: 11px; color: var(--text-secondary); }
+.advanced { border-top: 1px solid var(--border); }
+.advanced summary { padding: 12px 14px; font-size: 12px; cursor: pointer; }
+.advanced summary span { display: block; margin-top: 3px; margin-left: 14px; color: var(--text-secondary); font-size: 11px; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px 14px; margin: 0; border-top: 1px solid var(--border); }
+.stats dt { font-size: 11px; color: var(--text-secondary); }
+.stats dd { margin: 3px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.context { padding: 12px 14px; border-top: 1px solid var(--border); font-size: 12px; }
+.context > div { display: flex; justify-content: space-between; gap: 8px; }
+.context progress { display: block; width: 100%; height: 5px; margin: 10px 0; accent-color: var(--accent); }
+.context small { color: var(--text-secondary); font-size: 11px; }
+.usage { width: calc(100% - 28px); margin: 8px 14px; border-collapse: collapse; font-size: 11px; color: var(--text-primary); }
+.usage caption { text-align: left; font-size: 12px; margin-bottom: 8px; }
+.usage th, .usage td { padding: 7px 4px; border-bottom: 1px solid var(--border); text-align: right; font-weight: 400; font-variant-numeric: tabular-nums; }
+.usage th:first-child { text-align: left; overflow-wrap: anywhere; }
+.usage thead { color: var(--text-secondary); }

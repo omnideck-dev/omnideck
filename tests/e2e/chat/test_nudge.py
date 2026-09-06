@@ -14,7 +14,7 @@ def test_nudge_sends_correct_agent_id(page: Page):
     chat = ChatView(page).goto().new_conversation()
     try:
         chat.send(spawn(bash("sleep 8") + say("obsolete answer"), name="research_agent") + say("parent done"))
-        network = NetworkView(page)
+        network = NetworkView(page).show_details()
         expect(network.indicator).to_be_visible(timeout=10_000)
         network.open()
         activity = network.select_agent(1)

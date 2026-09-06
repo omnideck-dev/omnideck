@@ -90,6 +90,25 @@ function rootViewEffect(resourceId, agentId = 'root-1') {
 }
 
 describe('useWorkspaceResourceDesktopViews', () => {
+    it.each(['browser', 'terminal'])('reopens a dismissed root %s through the Details action and preserves its placement', (resourceId) => {
+        const { result } = renderHook(useHarness, { wrapper });
+        act(() => result.current.dispatchAgent({ type: 'AGENT_STARTED', agentId: 'root-1', agentName: 'root', parentAgentId: null, timestamp: 1 }));
+        act(() => result.current.dispatchEffect(rootViewEffect(resourceId)));
+        const viewId = `workspace-resource:conversation-1:root:${resourceId}`;
+        act(() => {
+            result.current.dispatchEffect({ type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING, payload: { views: [result.current.desktopLayout.model.openViewsById[viewId]] } });
+            result.current.desktopLayout.commands.closeView(viewId);
+        });
+        act(() => result.current.dispatchEffect(rootViewEffect(resourceId)));
+        expect(result.current.desktopLayout.model.openViewsById[viewId]).toBeUndefined();
+        const reopen = { type: APP_EFFECT_TYPES.OPEN_AGENT_WORKSPACE_RESOURCE_REQUESTED, payload: { agentId: 'root-1', resourceId } };
+        act(() => result.current.dispatchEffect(reopen));
+        expect(result.current.desktopLayout.model.tabGroups.right.activeViewId).toBe(viewId);
+        act(() => result.current.desktopLayout.commands.moveView(viewId, DESKTOP_TAB_GROUP_IDS.LEFT));
+        act(() => result.current.dispatchEffect(reopen));
+        expect(result.current.desktopLayout.model.tabGroups.left.activeViewId).toBe(viewId);
+        expect(result.current.desktopLayout.model.openViews.filter((view) => view.id === viewId)).toHaveLength(1);
+    });
     it('adds a root Browser tab opposite Chat without taking focus', () => {
         const { result } = renderHook(useHarness, { wrapper });
 
