@@ -97,6 +97,18 @@ def _coerce_value(expected_type: Any, value: Any) -> Any:
 
     origin = get_origin(unwrapped)
 
+    # dict[K, V] — if the LLM sent a JSON string (common when a tool returns
+    # a dict that gets stringified), parse it back.  This is a defensive
+    # fallback for any tool that still uses dict params.
+    if origin is dict:
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                msg = f"expected a dict, got string that is not valid JSON: {value!r}"
+                raise ValueError(msg)
+        return value
+
     # list[T] — coerce each element when the item type is known. A non-list
     # here is a model mistake (e.g. a bare string where list[str] is
     # expected); fail loudly so the model gets a corrective error instead of
@@ -251,7 +263,11 @@ async def _execute_tool_call(
         else:
             result = tool_func(**validated_args)
         normalized = _normalize_tool_result(result)
-        return str(normalized) if not isinstance(normalized, str) else normalized
+        if isinstance(normalized, str):
+            return normalized
+        # Serialize structured results as JSON (not Python repr) so the LLM
+        # can pass them back to tools that expect dict/list params.
+        return json.dumps(normalized, default=str)
     except StopRequestedError:
         raise
     except (ValueError, TypeError, json.JSONDecodeError) as exc:
