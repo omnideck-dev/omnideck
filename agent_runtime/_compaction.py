@@ -1,7 +1,5 @@
 """Application-configured LLM compaction and model resource management."""
 
-from sdk.context import TriggerPoint
-
 import asyncio
 import logging
 from datetime import datetime
@@ -22,8 +20,7 @@ from sdk.events import (
 )
 from settings import load_settings
 
-from sdk.context._history import ConversationHistory
-from sdk.context._models import ContextStats
+from sdk.context import ContextStats, ConversationHistory, TriggerPoint
 
 logger = logging.getLogger(__name__)
 _console = Console(stderr=True)

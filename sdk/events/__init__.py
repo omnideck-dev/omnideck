@@ -7,8 +7,8 @@ This package provides:
     ``publish_event`` and ``agent_span`` are available for emission and
     attribution inside a turn scope.
 
-Turn lifecycle management (``turn_scope``, stop signaling, nudge queues) lives
-in ``sdk.turn``.
+Execution bindings live in ``sdk.turn``; caller-supplied stop and nudge state
+lives in ``sdk.control.ExecutionControl``.
 """
 
 from ._context import (

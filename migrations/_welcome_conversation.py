@@ -45,7 +45,7 @@ from migrations._welcome_constants import (
     WELCOME_CONVERSATION_ID,
     WELCOME_DASHBOARD_FILENAME,
 )
-from sdk.events._models import (
+from sdk.events import (
     AgentCompletedPayload,
     AgentEvent,
     AgentEventPayload,

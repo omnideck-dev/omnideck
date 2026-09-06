@@ -35,7 +35,7 @@ from migrations._terminal_collapse import merge_terminal_transcripts
 logger = logging.getLogger(__name__)
 
 # Same constants used by the compaction strategy. Kept in sync with
-# sdk/context/_strategy.py; if those change there, update here.
+# agent_runtime/_compaction.py; if those change there, update here.
 _SUMMARY_PREFIX = "[Conversation summary — earlier messages were compacted]\n\n"
 _INTENT_PREFIX = "[User intent history]\n"
 # Same chars/token approximation the live strategy and view layer use.

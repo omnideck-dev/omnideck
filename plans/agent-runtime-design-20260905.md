@@ -292,7 +292,8 @@ model-facing spawn arguments remain compatible. Old task results load with an
 absent optional `agent_run_id`.
 
 Regression tests enforce SDK imports both statically and by importing/executing
-it with application imports blocked in a fresh process. Actual FakeProvider
+it with application imports blocked in a fresh process. A reverse import check
+keeps application callers on public SDK modules. Actual FakeProvider
 integration tests exercise detached waiters, early cancellation, routine-owner
 cancellation and resource release, per-run nudge isolation, and child usage/
 artifact aggregation. HTTP E2E adds cross-conversation nudge refusal; routine

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from sdk.events._models import AgentEvent
+from sdk.events import AgentEvent
 
 from ._store import record_artifact
 

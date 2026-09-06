@@ -75,3 +75,21 @@ asyncio.run(main())
         [sys.executable, "-c", code, *sorted(APPLICATION_MODULES)], cwd=ROOT, capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_application_imports_use_public_sdk_modules():
+    violations = []
+    for module in APPLICATION_MODULES - {"tests"}:
+        root = ROOT / module
+        paths = root.rglob("*.py") if root.is_dir() else [root.with_suffix(".py")]
+        for path in paths:
+            for node in ast.walk(ast.parse(path.read_text())):
+                modules = []
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    modules = [node.module]
+                for name in modules:
+                    if name.startswith("sdk.") and any(part.startswith("_") for part in name.split(".")[1:]):
+                        violations.append(f"{path.relative_to(ROOT)}:{node.lineno}: {name}")
+    assert violations == []

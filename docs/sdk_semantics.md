@@ -8,6 +8,7 @@ their lifetime. Both interactive chat and routine tasks use this same path.
 - `sdk`: `Agent`, `AgentCapabilities`, `AgentExecutor`, provider contracts and real
   provider adapters, generic `Skill`, context/history, events, controls, and hooks.
   It does not import application packages or read application settings.
+  Application callers use the public SDK exports.
 - `agent_runtime`: `AgentFactory`, `AgentRunner`, `AgentRuntime`, `RunSession`,
   `RunHandle`, configured LLM compaction, and the scratchpad hook.
 - `agents`: saved `AgentProfile` configuration.

@@ -9,7 +9,7 @@ import logging
 
 from config import load_config
 from sdk.events import AgentEvent, publish_event
-from sdk.events._models import DesktopActivePayload
+from sdk.events import DesktopActivePayload
 from tools.desktop._exec import DesktopExecError, _current_display, _run_desktop_cmd
 
 logger = logging.getLogger(__name__)

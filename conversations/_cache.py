@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from sdk.context import ConversationHistory
-from sdk.context._view import build_transcript_view
+from sdk.context import build_transcript_view
 
 from ._browser_tabs import load_browser_tabs
 from ._events_log import load_events_jsonl
