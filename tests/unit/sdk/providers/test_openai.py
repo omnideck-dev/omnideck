@@ -224,8 +224,8 @@ class TestNormalizeResponse:
     def test_no_usage(self):
         raw = _FakeResponse(choices=[_FakeChoice(message=_FakeMessage(content="hi"))], usage=None)
         result = _normalize_response(raw)
-        assert result.usage.prompt_tokens == 0
-        assert result.usage.completion_tokens == 0
+        assert result.usage.prompt_tokens is None
+        assert result.usage.completion_tokens is None
 
 
 # ---------------------------------------------------------------------------

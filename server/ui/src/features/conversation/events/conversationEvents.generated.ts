@@ -47,6 +47,16 @@ export interface IterationToolCall {
     arguments: Record<string, unknown> | null;
 }
 
+export interface TokenUsage {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    cache_read_tokens: number | null;
+    cache_creation_tokens: number | null;
+    cache_creation_5m_tokens: number | null;
+    cache_creation_1h_tokens: number | null;
+    reported_cost_usd: number | null;
+}
+
 export interface UserAttachment {
     filename: string;
     content_type: string;
@@ -174,6 +184,7 @@ export interface IterationPayload {
     content: string | null;
     tool_calls: Array<IterationToolCall>;
     stopped: boolean;
+    usage: TokenUsage | null;
     total_tokens: number | null;
 }
 

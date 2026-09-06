@@ -92,6 +92,7 @@ export function getAgentEventActions(event) {
                 agentId,
                 iterationIndex: event.iteration_index,
                 totalTokens: event.total_tokens ?? null,
+                ...(event.usage ? { usage: event.usage } : {}),
             });
             if (retainActivity) batched.push({
                 type: 'FINALIZE_AGENT_ITERATION',

@@ -212,7 +212,7 @@ function _agentReducer(state, action) {
                         ...agent,
                         usageByIteration: {
                             ...agent.usageByIteration,
-                            [action.iterationIndex]: action.totalTokens,
+                            [action.iterationIndex]: action.usage ?? action.totalTokens ?? null,
                         },
                     },
                 },

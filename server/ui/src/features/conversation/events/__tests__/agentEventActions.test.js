@@ -16,6 +16,14 @@ function event(type, fields = {}) {
 }
 
 describe('getAgentEventActions', () => {
+    it('passes provider reports through intact at every agent depth', () => {
+        const usage = { prompt_tokens: 100, completion_tokens: 20, cache_read_tokens: 60, cache_creation_tokens: 10, reported_cost_usd: 0 };
+        for (const depth of [0, 1, 2]) {
+            const action = getAgentEventActions(event('iteration', { depth, iteration_index: 0, usage, tool_calls: [] })).immediate[0];
+            expect(action.usage).toEqual(usage);
+            expect(action.totalTokens).toBeNull();
+        }
+    });
     it('records reported usage for primary and sub-agent calls, retaining unknown historical usage', () => {
         for (const depth of [0, 1]) {
             const base = { depth, iteration_index: 3, tool_calls: [] };

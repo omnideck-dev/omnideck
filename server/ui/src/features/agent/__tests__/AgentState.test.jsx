@@ -35,6 +35,17 @@ function agentStarted(agentId, { name = 'root', parentAgentId = null } = {}) {
 }
 
 describe('agent state', () => {
+    it('retains per-call breakdowns through duplicate delivery and later turns', () => {
+        const { getState, dispatch } = renderWithProvider();
+        dispatch(agentStarted('r1'));
+        const usage = { prompt_tokens: 100, completion_tokens: 20, cache_read_tokens: 60, reported_cost_usd: 0 };
+        const action = { type: 'RECORD_AGENT_USAGE', agentId: 'r1', iterationIndex: 0, usage, totalTokens: null };
+        dispatch(action);
+        dispatch(action);
+        dispatch(agentStarted('r2'));
+        expect(getState().agents.r1.usageByIteration).toEqual({ 0: usage });
+        expect(getState().agents.r2.usageByIteration).toEqual({});
+    });
     it('records usage idempotently and does not carry usage into a new primary turn', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(agentStarted('r1'));

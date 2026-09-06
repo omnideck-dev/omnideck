@@ -22,6 +22,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from sdk.providers._models import TokenUsage
+
 
 class ContentPayload(BaseModel):
     """LLM-generated text content (natural language and/or chain-of-thought).
@@ -384,8 +386,9 @@ class IterationPayload(BaseModel):
     content: str | None = None
     tool_calls: list[IterationToolCall] = Field(default_factory=list)
     stopped: bool = False
-    # Provider-reported input + output for this call. None for old events,
-    # interrupted calls, or providers that did not report usage.
+    # Detailed provider-normalized usage for this call, never a running total.
+    usage: TokenUsage | None = None
+    # Legacy records only; retained for replay of earlier conversation histories.
     total_tokens: int | None = Field(default=None, ge=0)
 
 

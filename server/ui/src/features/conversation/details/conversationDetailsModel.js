@@ -1,11 +1,10 @@
 import { formatAgentName } from '../../../utils/agentUtils.js';
 import { workspaceResourceViewId } from '../../workspace/workspaceResourceDesktopViews.js';
+import { aggregateUsage } from './conversationUsage.js';
 
 function tokenTotal(agents) {
-    const calls = agents.flatMap((agent) => Object.values(agent.usageByIteration || {}));
-    // Never present a partial history or current context size as total usage.
-    if (!calls.length || calls.some((value) => value === null)) return null;
-    return calls.reduce((sum, value) => sum + value, 0);
+    const total = aggregateUsage(agents).total;
+    return total.reportedCalls === total.callCount ? total.value : null;
 }
 
 /** Derived display data only. Resource availability stays in Workspace state. */
@@ -68,10 +67,11 @@ export function buildConversationDetails({ conversationId, turns = [], agents = 
         turnCount: turns.length,
         agentCount: children.length,
         totalTokens: tokenTotal(nodes),
+        usage: aggregateUsage(nodes),
         contextUsage: agents[rootId]?.contextUsage || null,
         agentUsage: [
-            { id: 'primary', label: 'Primary agent', tokens: tokenTotal(roots) },
-            ...children.map((agent) => ({ id: agent.id, label: formatAgentName(agent.name), tokens: tokenTotal([agent]) })),
+            { id: 'primary', label: 'Primary agent', tokens: tokenTotal(roots), usage: aggregateUsage(roots) },
+            ...children.map((agent) => ({ id: agent.id, label: formatAgentName(agent.name), tokens: tokenTotal([agent]), usage: aggregateUsage([agent]) })),
         ],
     };
 }

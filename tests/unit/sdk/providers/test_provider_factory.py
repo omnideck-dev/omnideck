@@ -100,14 +100,14 @@ class TestGetProvider:
         from sdk.providers._openai import OpenAIProvider
         assert isinstance(provider, OpenAIProvider)
 
-    def test_openrouter_uses_openai_provider(self, tmp_path):
-        """openrouter maps to OpenAIProvider (OpenAI-compatible API)."""
+    def test_openrouter_uses_specialized_usage_adapter(self, tmp_path):
+        """OpenRouter reuses the transport but owns its charge semantics."""
         (tmp_path / "llm_openrouter.sock").touch()
         with patch("sdk.providers.load_settings", return_value={}), \
              patch("sdk.providers.load_config", return_value=_fake_config(str(tmp_path))):
             provider = get_provider("openrouter")
-        from sdk.providers._openai import OpenAIProvider
-        assert isinstance(provider, OpenAIProvider)
+        from sdk.providers._openrouter import OpenRouterProvider
+        assert isinstance(provider, OpenRouterProvider)
 
     def test_not_configured_raises(self):
         """A provider with no direct entry and no broker socket gives a clear error."""

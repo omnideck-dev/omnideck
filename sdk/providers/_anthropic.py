@@ -340,13 +340,11 @@ def _normalize_response(raw: Any) -> ChatResponse:
                 ),
             ))
 
-    cache_read = getattr(raw.usage, "cache_read_input_tokens", 0) or 0
-    cache_creation = getattr(raw.usage, "cache_creation_input_tokens", 0) or 0
-    if cache_read or cache_creation:
-        logger.debug(
-            "cache tokens: read=%d creation=%d (prompt=%d, completion=%d)",
-            cache_read, cache_creation, raw.usage.input_tokens, raw.usage.output_tokens,
-        )
+    usage = getattr(raw, "usage", None)
+    cache_read = getattr(usage, "cache_read_input_tokens", None)
+    cache_creation = getattr(usage, "cache_creation_input_tokens", None)
+    creation = getattr(usage, "cache_creation", None)
+    uncached = getattr(usage, "input_tokens", None)
 
     return ChatResponse(
         message=ChatMessage(
@@ -355,10 +353,14 @@ def _normalize_response(raw: Any) -> ChatResponse:
             tool_calls=tool_calls or None,
         ),
         usage=TokenUsage(
-            prompt_tokens=raw.usage.input_tokens,
-            completion_tokens=raw.usage.output_tokens,
+            # Anthropic excludes reads/writes from input_tokens. Absent optional
+            # caching counters contribute zero, but remain unknown as a breakdown.
+            prompt_tokens=uncached + (cache_read or 0) + (cache_creation or 0) if uncached is not None else None,
+            completion_tokens=getattr(usage, "output_tokens", None),
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_creation,
+            cache_creation_5m_tokens=getattr(creation, "ephemeral_5m_input_tokens", None),
+            cache_creation_1h_tokens=getattr(creation, "ephemeral_1h_input_tokens", None),
         ),
         done_reason=_STOP_REASON_MAP.get(raw.stop_reason, raw.stop_reason),
         raw=raw,

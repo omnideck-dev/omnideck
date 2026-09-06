@@ -66,12 +66,32 @@ class ChatMessage(BaseModel):
 
 
 class TokenUsage(BaseModel):
-    """Normalized token counts."""
+    """Provider-reported usage; None means unreported, not zero.
 
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
+    Prompt tokens INCLUDE cache reads and writes across every provider. Cache
+    counters are subsets, never additional input. Cost is an explicit reported
+    USD charge, not an estimate; providers with other/unknown units leave it None.
+    Cache-write TTL buckets are retained for diagnostics and future pricing.
+    """
+
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    cache_creation_tokens: int | None = Field(default=None, ge=0)
+    cache_creation_5m_tokens: int | None = Field(default=None, ge=0)
+    cache_creation_1h_tokens: int | None = Field(default=None, ge=0)
+    reported_cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    def combined_with(self, other: "TokenUsage") -> "TokenUsage":
+        """Preserve the SDK execution summary without hiding missing counters.
+
+        Conversation/agent UI totals are derived separately from per-call events.
+        """
+        return TokenUsage(**{
+            key: left + right if left is not None and right is not None else None
+            for key in type(self).model_fields
+            for left, right in [(getattr(self, key), getattr(other, key))]
+        })
 
 
 class ChatDelta(BaseModel):

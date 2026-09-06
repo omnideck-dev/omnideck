@@ -20,7 +20,7 @@ _PROVIDER_PATHS: dict[str, str] = {
     "ollama": "sdk.providers._ollama:OllamaProvider",
     "openai": "sdk.providers._openai_responses:OpenAIResponsesProvider",
     "openai_compat": "sdk.providers._openai:OpenAIProvider",
-    "openrouter": "sdk.providers._openai:OpenAIProvider",
+    "openrouter": "sdk.providers._openrouter:OpenRouterProvider",
     "anthropic": "sdk.providers._anthropic:AnthropicProvider",
     "fake": "sdk.providers._fake:FakeProvider",
 }

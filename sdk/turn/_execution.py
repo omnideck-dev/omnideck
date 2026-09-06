@@ -37,7 +37,7 @@ def _publish_iteration(
     thinking: str | None,
     tool_calls: list[IterationToolCall] | None = None,
     stopped: bool = False,
-    total_tokens: int | None = None,
+    usage: TokenUsage | None = None,
 ) -> None:
     """Publish an iteration event. Logs but never raises on failure."""
     try:
@@ -50,7 +50,7 @@ def _publish_iteration(
                     content=content,
                     tool_calls=tool_calls or [],
                     stopped=stopped,
-                    total_tokens=total_tokens,
+                    usage=usage,
                 )
             )
         )
@@ -309,9 +309,8 @@ class AgentExecutor:
                     if response is None:
                         raise ToolLoopError("No ChatResponse received from provider")
 
-                    usage = TokenUsage(
-                        **{key: getattr(usage, key) + getattr(response.usage, key) for key in TokenUsage.model_fields}
-                    )
+                    call_usage = response.usage.model_copy(deep=True)
+                    usage = call_usage if iteration == 1 else usage.combined_with(call_usage)
 
                     # ── after_model hooks (chain: each can rewrite response) ─
                     for hook in hooks:
@@ -349,6 +348,7 @@ class AgentExecutor:
                         iteration - 1,
                         content=content,
                         thinking=thinking,
+                        usage=call_usage,
                         tool_calls=[
                             IterationToolCall(
                                 id=tc.id,

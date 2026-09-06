@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import Popover from '../../../components/primitives/Popover.jsx';
 import { formatTokens } from '../../../utils/agentUtils.js';
 import styles from './ConversationDetails.module.css';
+import AgentUsageDetails, { UsageValue } from './AgentUsageDetails.jsx';
 
 function readSeen(key) {
     try {
@@ -51,8 +52,8 @@ function AdvancedStats({ model }) {
             <summary>Advanced <span>Turns, tokens, cost, and context</span></summary>
             <dl className={styles.stats}>
                 <div><dt>Turns</dt><dd data-testid="chat-turns">{model.turnCount}</dd></div>
-                <div><dt>Tokens used</dt><dd>{formatTokens(model.totalTokens) ?? '—'}</dd></div>
-                <div><dt>Est. cost</dt><dd>—</dd></div>
+                <div><dt>Tokens used</dt><dd><UsageValue metric={model.usage.total} /></dd></div>
+                <div><dt>Reported cost</dt><dd><UsageValue metric={model.usage.cost} cost /></dd></div>
                 <div><dt>Sub-agents</dt><dd>{model.agentCount}</dd></div>
             </dl>
             {limit > 0 && <div className={styles.context}>
@@ -60,13 +61,7 @@ function AdvancedStats({ model }) {
                 <progress aria-label="Primary context used" value={Math.min(used, limit)} max={limit} />
                 <small>{remaining ? `About ${formatTokens(remaining)} tokens until compaction` : 'Compaction threshold reached'}</small>
             </div>}
-            <table className={styles.usage}>
-                <caption>Usage by agent</caption>
-                <thead><tr><th scope="col">Agent</th><th scope="col">Tokens</th><th scope="col">Cost</th></tr></thead>
-                <tbody>{model.agentUsage.map((agent) => <tr key={agent.id}>
-                    <th scope="row">{agent.label}</th><td>{formatTokens(agent.tokens) ?? '—'}</td><td>—</td>
-                </tr>)}</tbody>
-            </table>
+            <AgentUsageDetails agents={model.agentUsage} />
         </details>
     );
 }

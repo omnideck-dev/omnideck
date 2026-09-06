@@ -8,6 +8,44 @@ const model = () => buildConversationDetails(input);
 beforeEach(() => localStorage.clear());
 
 describe('Details disclosure', () => {
+    it('shows expandable per-agent breakdowns, cached input, and partial reported cost', () => {
+        const usage = { prompt_tokens: 100, completion_tokens: 20, cache_read_tokens: 60, cache_creation_tokens: 10, reported_cost_usd: 0.0123 };
+        const data = buildConversationDetails({ ...input, agents: {
+            r: { ...input.agents.r, usageByIteration: { 0: usage } },
+            c: { id: 'c', parentId: 'r', name: 'Analyst', status: 'success', usageByIteration: { 0: { prompt_tokens: 50, completion_tokens: 10 } } },
+        } });
+        render(<ConversationDetails conversationId="conv" model={data} onSelect={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+        fireEvent.click(screen.getByText('Advanced'));
+        expect(screen.getByText('partial').parentElement).toHaveTextContent('$0.0123 partial');
+        const region = screen.getByRole('region', { name: 'Usage by agent' });
+        const primary = within(region).getByText('Primary agent').closest('details');
+        const child = within(region).getByText('Analyst').closest('details');
+        expect(primary).toHaveAttribute('open');
+        expect(within(primary).getByText('Input').nextElementSibling).toHaveTextContent('100');
+        expect(within(primary).getByText('Of which cached').nextElementSibling).toHaveTextContent('60');
+        expect(within(primary).getByText('Output').nextElementSibling).toHaveTextContent('20');
+        expect(within(primary).getByText('Reported cost').nextElementSibling).toHaveTextContent('$0.0123');
+        expect(child).not.toHaveAttribute('open');
+        fireEvent.click(child.querySelector('summary'));
+        expect(within(child).getByText('Input')).toBeVisible();
+        expect(within(child).getByText('Reported cost').nextElementSibling).toHaveTextContent('—');
+        expect(within(child).queryByText('Of which cached')).not.toBeInTheDocument();
+        expect(screen.queryByText(/cache write/i)).not.toBeInTheDocument();
+    });
+
+    it('shows reported zeros and does not round tiny charges to free', () => {
+        const data = buildConversationDetails({ ...input, agents: {
+            r: { ...input.agents.r, usageByIteration: { 0: { prompt_tokens: 0, completion_tokens: 0, cache_read_tokens: 0, reported_cost_usd: 0.000001 } } },
+            c: { id: 'c', parentId: 'r', name: 'Analyst', usageByIteration: { 0: { prompt_tokens: 0, completion_tokens: 0, reported_cost_usd: 0 } } },
+        } });
+        render(<ConversationDetails conversationId="conv" model={data} onSelect={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+        fireEvent.click(screen.getByText('Advanced'));
+        expect(screen.getAllByText('<$0.0001').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('$0.00').length).toBeGreaterThan(0);
+        expect(screen.getByText('Of which cached').nextElementSibling).toHaveTextContent('0');
+    });
     it('groups workspace items by type and routes each owner to its own resource', () => {
         const data = buildConversationDetails({ ...input, agents: {
             ...input.agents,
