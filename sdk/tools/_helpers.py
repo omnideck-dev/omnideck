@@ -200,7 +200,7 @@ async def _execute_tool_call(
         Plain string result for the LLM to read.
     """
     from sdk.events import AgentEvent, ToolCallPayload, publish_event
-    from sdk.turn._turn import StopRequestedError
+    from sdk.control import StopRequestedError
 
     # Some models emit function names with Python call syntax, e.g.
     # "browse_page(full_page=True)" instead of "browse_page".  Strip the

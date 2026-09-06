@@ -1,8 +1,8 @@
-"""Tests for AgentState — base tools + dynamic skill attachment."""
+"""Tests for AgentCapabilities — base tools + dynamic skill attachment."""
 
 import pytest
 
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 from sdk.capabilities import AgentCapability
 from sdk.skills._registry import Skill
 
@@ -27,13 +27,13 @@ def _make_skill(name: str, tool_names: list[str], prompt: str = "p") -> Skill:
 
 
 @pytest.mark.unit
-class TestAgentState:
-    """Tests for AgentState add, dedup, find, and prompt building."""
+class TestAgentCapabilities:
+    """Tests for AgentCapabilities add, dedup, find, and prompt building."""
 
     def test_init_copies_tools(self):
-        """AgentState makes a copy of the input list."""
+        """AgentCapabilities makes a copy of the input list."""
         original = [_make_tool("a")]
-        ls = AgentState(original)
+        ls = AgentCapabilities(original)
         assert len(ls.tools) == 1
         original.append(_make_tool("b"))
         assert len(ls.tools) == 1
@@ -41,20 +41,20 @@ class TestAgentState:
     def test_add_adds_tools(self):
         """Adding a skill adds its tools."""
         sk = _make_skill("sk", ["b", "c"])
-        ls = AgentState([_make_tool("a")])
+        ls = AgentCapabilities([_make_tool("a")])
         ls.add(sk)
         assert {t.__name__ for t in ls.tools} == {"a", "b", "c"}
 
     def test_add_deduplicates(self):
         """Tools with the same __name__ are not added twice."""
         sk = _make_skill("sk", ["a", "b"])
-        ls = AgentState([_make_tool("a")])
+        ls = AgentCapabilities([_make_tool("a")])
         ls.add(sk)
         assert len(ls.tools) == 2  # a (base) + b (skill), not a again
 
     def test_capability_adds_tools_and_prompt_without_becoming_a_skill(self):
         """Application capabilities compose alongside skills but remain separate."""
-        state = AgentState([_make_tool("base")])
+        state = AgentCapabilities([_make_tool("base")])
         state.add_capability(
             AgentCapability(
                 id="browser",
@@ -72,7 +72,7 @@ class TestAgentState:
         """skill_ids reflects every attached skill."""
         browser = _make_skill("browser", ["open_url"])
         coder = _make_skill("coder", ["read_file"])
-        ls = AgentState([])
+        ls = AgentCapabilities([])
         assert ls.skill_ids == frozenset()
         ls.add(browser)
         assert ls.skill_ids == frozenset({"browser"})
@@ -84,7 +84,7 @@ class TestAgentState:
         attached but not part of the persisted delta."""
         base = _make_skill("base", ["a"])
         extra = _make_skill("extra", ["b"])
-        ls = AgentState([])
+        ls = AgentCapabilities([])
         ls.add(base)  # profile baseline
         ls.load(extra)  # loaded at runtime
         assert ls.skill_ids == frozenset({"base", "extra"})
@@ -93,7 +93,7 @@ class TestAgentState:
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
         sk = _make_skill("sk", ["t"])
-        ls = AgentState([])
+        ls = AgentCapabilities([])
         ls.add(sk)
         ls.add(sk)
         assert len(ls.tools) == 1
@@ -102,20 +102,20 @@ class TestAgentState:
     def test_skill_ids_is_frozen(self):
         """skill_ids returns a frozenset (immutable snapshot)."""
         sk = _make_skill("x", [])
-        ls = AgentState([])
+        ls = AgentCapabilities([])
         ls.add(sk)
         assert isinstance(ls.skill_ids, frozenset)
 
     def test_build_prompt_extensions_empty(self):
         """build_prompt_extensions returns empty string with no skills loaded."""
-        ls = AgentState([_make_tool("a")])
+        ls = AgentCapabilities([_make_tool("a")])
         assert ls.build_prompt_extensions() == ""
 
     def test_build_prompt_extensions(self):
         """build_prompt_extensions includes loaded skill prompts."""
         browser = _make_skill("browser", ["open_url"], prompt="Browse the web.")
         coder = _make_skill("coder", ["read_file"], prompt="Edit files.")
-        ls = AgentState([])
+        ls = AgentCapabilities([])
         ls.add(browser)
         ls.add(coder)
         prompt = ls.build_prompt_extensions()

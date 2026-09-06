@@ -165,6 +165,11 @@ async def test_nested_children_have_isolated_history_and_paired_results(harness)
         request = next(r for r in h.provider.requests if r["model"] == name)
         assert [m["content"] for m in request["messages"] if m["role"] == "user"] == [request_text]
         assert "root secret" not in json.dumps(request["messages"])
+    assert len({r["run_id"] for r in h.provider.requests}) == 1
+    child_request = next(r for r in h.provider.requests if r["model"] == "child")
+    assert child_request["parent_execution_id"] == started["ROOT"].agent_id
+    grandchild_request = next(r for r in h.provider.requests if r["model"] == "grandchild")
+    assert grandchild_request["parent_execution_id"] == started["CHILD"].agent_id
     root_last = [r for r in h.provider.requests if r["model"] == "root"][-1]
     assert "child answer" in json.dumps(root_last["messages"])
     assert "grandchild answer" not in json.dumps(root_last["messages"])

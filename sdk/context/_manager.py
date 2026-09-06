@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.text import Text
 
 from sdk.events import AgentEvent, ContextUsagePayload, publish_event
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 
 from ._estimator import estimate_tokens
 from ._history import ConversationHistory
@@ -20,14 +20,14 @@ _console = Console(stderr=True)
 class ContextManager:
     """Per-agent context manager.
 
-    Holds references to the live ``ConversationHistory`` and ``AgentState``
+    Holds references to the live ``ConversationHistory`` and ``AgentCapabilities``
     (does not own either), computes the current token estimate over both
     on demand, and runs ``ContextStrategy`` instances at the appropriate
     trigger points.
 
     Args:
         history: The conversation history to manage.
-        agent_state: The live agent state — its ``.tools`` property is
+        agent_capabilities: The live agent state — its ``.tools`` property is
             read at every stats lookup so dynamically loaded skills are
             included in the estimate.
         context_limit: Maximum context window size in tokens.
@@ -41,14 +41,14 @@ class ContextManager:
     def __init__(
         self,
         history: ConversationHistory,
-        agent_state: AgentState,
+        agent_capabilities: AgentCapabilities,
         context_limit: int,
         strategies: list[ContextStrategy] | None = None,
         agent_name: str = "",
         compaction_threshold: float = 0.75,
     ) -> None:
         self._history = history
-        self._agent_state = agent_state
+        self._agent_capabilities = agent_capabilities
         self._context_limit = context_limit
         self._agent_name = agent_name
         self._compaction_threshold = compaction_threshold
@@ -57,7 +57,7 @@ class ContextManager:
     @property
     def stats(self) -> ContextStats:
         """Current context statistics estimated from history + current tools."""
-        used = estimate_tokens(self._history.messages, tools=self._agent_state.tools)
+        used = estimate_tokens(self._history.messages, tools=self._agent_capabilities.tools)
         return ContextStats(context_used=used, context_limit=self._context_limit)
 
     async def after_model(

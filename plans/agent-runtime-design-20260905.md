@@ -4,7 +4,7 @@ This proposal builds on the review of upstream commit 6d02b60d. It focuses on ex
 
 Keep two layers in the same repository:
 
-- **sdk:** executes a configured agent using supplied state, history, provider, tools, control, and an event sink.
+- **sdk:** executes a configured agent using supplied capabilities, history, provider, control, and an event sink.
 - **agent_runtime:** owns application runs and composes profiles, conversation persistence, capabilities, resources, and execution.
 - HTTP, routines, and future channel adapters depend on agent_runtime. Application wiring depends on the SDK. The SDK core must not import application profiles, browser runtime, conversation storage, or global application settings.
 
@@ -60,13 +60,13 @@ Keep AgentRunner, but make it execute one agent invocation consistently for root
 
 Its sequence is:
 
-1. Ask AgentFactory to prepare the profile, provider, agent specification, state, and prompt inputs.
+1. Ask AgentFactory to prepare the profile, provider, Agent, AgentCapabilities, and prompt inputs.
 2. Obtain the appropriate history view from the session: accumulated root conversation or isolated child view.
 3. Establish attribution using the already allocated execution identity.
 4. Open execution-scoped resources, including browser preparation.
-5. Compose the system prompt and hooks and create ContextManager for this history/state.
+5. Compose the system prompt and hooks and create ContextManager for this history and these capabilities.
 6. Record the invocation input and call AgentExecutor with explicit dependencies.
-7. Translate expected execution outcomes, persist permitted state changes, emit agent lifecycle completion, and release execution resources.
+7. Translate expected execution outcomes, persist permitted skill changes, emit agent lifecycle completion, and release execution resources.
 
 Both root and child calls use this sequence. Differences are explicit policies for history, skill restoration, memory, and resource lifetime. They must not be inferred from HTTP or routine caller types.
 
@@ -76,18 +76,18 @@ AgentRunner no longer owns the network response, cron scheduling, root conversat
 
 **4. AgentFactory — consolidate profile and capability composition**
 
-Extract profile-based preparation from build_agent, build_agent_state, and the duplicated setup in the three callers.
+Extract profile-based preparation from build_agent, build_agent_capabilities, and the duplicated setup in the three callers.
 
-It resolves and validates AgentProfile, translates its model options to a generic AgentSpec, resolves the provider through application configuration, builds AgentState from base tools/capabilities/skills, restores the permitted persisted skill delta, and prepares prompt inputs such as memory.
+It resolves and validates AgentProfile, translates its model options to a generic Agent, resolves the provider through application configuration, builds AgentCapabilities from base tools/capabilities/skills, restores the permitted persisted skill delta, and prepares prompt inputs such as memory.
 
 Return a small PreparedAgent dataclass, not a running task:
 
 ```python
 @dataclass
 class PreparedAgent:
-    spec: AgentSpec
+    agent: Agent
     provider: Provider
-    state: AgentState
+    capabilities: AgentCapabilities
     # Application metadata/prompt inputs needed by AgentRunner.
 ```
 
@@ -103,8 +103,8 @@ Promote the execution logic in sdk/turn/_execution.py into a reusable executor w
 class AgentExecutor:
     async def execute(
         self, *,
-        spec: AgentSpec,
-        state: AgentState,
+        agent: Agent,
+        capabilities: AgentCapabilities,
         history: ConversationHistory,
         provider: Provider,
         context: ExecutionContext,
@@ -114,11 +114,11 @@ class AgentExecutor:
 
 It owns the model/tool iteration, model request construction, tool dispatch, hook ordering, and normalized execution outcome. AgentRunner owns application setup and agent lifecycle; AgentRuntime owns the run and task tree.
 
-The executor uses the supplied provider and execution options instead of loading application config. The active tools come from AgentState, eliminating the competing Agent.tools list. Required state is explicit; ContextVars remain convenience access for legacy tool functions, bound to the supplied context.
+The executor uses the supplied provider and execution options instead of loading application config. The active tools come from AgentCapabilities, eliminating the competing Agent.tools list. Required capabilities are explicit; ContextVars remain convenience access for tool functions, bound to the supplied context.
 
 Start with the existing tool helper functions inside this implementation. Extract a ToolExecutor when dispatch policy has enough behavior to justify it; adding an empty wrapper immediately would not improve the design.
 
-run_turn can temporarily delegate to this executor while callers migrate. The target SDK execution surface should operate without importing application storage or performing implicit global setup.
+Migrate run_turn callers directly to AgentExecutor and remove the replaced entry point in the same change where practical. Do not introduce a compatibility wrapper by default. The SDK execution surface should operate without importing application storage or performing implicit global setup.
 
 **6. RunHandle — a view and control surface**
 
@@ -140,9 +140,9 @@ A handle owns neither the run nor a channel. Multiple handles/subscribers can ob
 
 **Supporting types and changes to existing SDK classes**
 
-- AgentSpec replaces/moves agents.types.Agent into the SDK as an immutable execution configuration: name, instructions, model/options, context settings, and execution limits. Provider objects are injected separately; AgentState owns effective tools.
-- AgentState remains a per-execution mutable object for tools, capabilities, and loaded skills. Its app-specific construction and persistence functions move to the factory/composition layer.
-- ExecutionContext carries opaque run/execution/conversation identity, parent identity, a scoped control object, and an event publisher. It has no HTTP request, websocket, Telegram client, or TaskStore. Each child receives its own context and state.
+- Agent retains the existing name and moves from agents.types into the SDK. It holds instructions, model settings, context settings, and execution limits. Provider objects are injected separately; AgentCapabilities owns effective tools.
+- AgentCapabilities renames the existing AgentState. It is a per-execution mutable object owning available tools, capabilities, loaded skills, and their prompt guidance. Its app-specific construction and persistence functions move to the factory/composition layer. AgentProfile remains the saved configuration used to prepare Agent and AgentCapabilities.
+- ExecutionContext carries opaque run/execution/conversation identity, parent identity, a scoped control object, and an event publisher. It has no HTTP request, websocket, Telegram client, or TaskStore. Each child receives its own context and AgentCapabilities.
 - ExecutionControl provides stop observation and per-execution nudge delivery. Runtime sessions own the actual control state, including the parent/child relationships. SDK primitives consume it instead of consulting process-global active-run maps.
 - ExecutionResult contains status, final/partial output, normalized error, finish reason, and execution-local usage. RunResult adds run identity and aggregates artifact references and usage across the tree without double counting child work. Generic faults that have not been normalized still propagate to the runtime boundary.
 - ConversationHistory remains the model-history projection; ContextManager remains the per-agent compaction controller. Their dependencies are injected. RunSession assembles persistence and observation around them.
@@ -181,10 +181,31 @@ When the routine owner explicitly cancels a task, its adapter requests stop on t
 
 **A practical migration**
 
-1. Establish the identity and request/result/context contracts, then make the current loop accept explicit state/provider/control. Keep existing public paths available during transition.
+1. Retain Agent, rename AgentState to AgentCapabilities, and establish the identity and request/result/context contracts. Make the loop accept explicit capabilities/provider/control and extract AgentExecutor. Update affected imports and callers directly.
 2. Extract AgentFactory and AgentRunner's shared execution path; migrate spawn_agent onto registered child invocation.
 3. Evolve ActiveRunManager/_ActiveRun into AgentRuntime/RunSession and return RunHandle. Keep the existing HTTP endpoints and event payload compatibility.
 4. Inject AgentRuntime into TaskExecutor and remove routine-specific execution setup.
-5. Remove the compatibility entry points and enforce the SDK-to-application import boundary.
+5. Enforce the SDK-to-application import boundary and verify that obsolete entry points and duplicate execution paths have been removed.
 
 Acceptance should demonstrate the same profile preparation and lifecycle path for root, child, and routine execution; isolated child histories; a single root terminal event; typed completion without parsing event text; and a headless caller using the runtime without constructing an aiohttp request. Deferred defect fixes can then target these owners without being bundled into every extraction.
+
+
+**Migration discipline and regression coverage**
+
+Each refactor stage updates its affected callers and removes replaced code together. Avoid old-name aliases, dual APIs, and layers of backward-compatible shims. If a temporary adapter is necessary for a concrete caller that cannot migrate in the same stage, document that caller and the removal step; an adapter is an exception, not the default migration strategy. Preserve user-visible behavior and persisted data contracts intentionally.
+
+Add or strengthen integration and E2E tests alongside each behavioral change. Reuse existing coverage where it already proves the contract; do not add tests that merely check class names or duplicate the implementation.
+
+- SDK extraction: integration tests exercise actual provider requests, tool execution, capability/skill changes and prompt guidance, stop/nudge handling, and typed completion through FakeProvider. Run relevant chat/tool/skill E2E scenarios through the real application.
+- Shared runner and child invocation: integration tests verify common profile preparation, child history and capability isolation, attribution, and child failure/stop behavior. E2E tests drive real delegation through FakeProvider and check its visible output and lifecycle.
+- Runtime/session ownership: integration tests verify conversation admission, observer detachment, replay, owned task cleanup, and exactly one terminal event. E2E tests cover disconnect/reconnect, stop, nudge, and restored conversation behavior.
+- Routine migration: integration tests verify TaskExecutor uses the ordinary runtime, maps completion correctly, and propagates explicit cancellation. E2E tests start routines through the application and verify persisted results and their presentation.
+
+Integration and E2E execution coverage uses the actual FakeProvider protocol with the real runtime; scripted model responses are the controlled boundary. Do not intercept chat responses or seed fabricated JSONL to stand in for execution. Assert observable outcomes, persisted state, and event ordering where relevant. Run the full integration suite and relevant E2E scenarios manually before each refactor PR, with the complete E2E suite at the final migration boundary; retain the full post-merge E2E release gate.
+
+
+**First implementation stage**
+
+The SDK extraction retains Agent in sdk.agent and renames the capabilities module and its callers directly. AgentExecutor.execute accepts AgentCapabilities, Provider, ExecutionContext, hooks, and max_parallel_tools; the application resolves provider and concurrency settings. ExecutionControl supplies the shared stop signal and each execution's nudge inbox. ExecutionResult returns success/stopped/error, final or partial output, finish reason, execution-local usage, and error details. Callers that require success use raise_for_status so existing agent lifecycle and task-failure handling remain consistent.
+
+The manager passes its admitted run ID through AgentRunRequest; child executors inherit that ID. Direct root callers and routine task executions allocate their own run IDs. Current turn/agent scopes still own lifecycle events and resource cleanup. AgentFactory, the unified runner setup, and AgentRuntime/RunSession ownership remain the following stages. No run_turn wrapper or AgentState alias is retained.

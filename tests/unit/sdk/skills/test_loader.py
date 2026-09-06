@@ -1,7 +1,7 @@
 """Tests for the load_skill meta-tool.
 
 load_skill resolves a skill by name from the store and adds it (tools + prompt)
-to the active AgentState. These mock ``tool_categories`` and isolate the store.
+to the active AgentCapabilities. These mock ``tool_categories`` and isolate the store.
 """
 
 import pytest
@@ -9,7 +9,7 @@ import pytest
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tools import list_available_skills, load_skill
 from sdk.skills._tool_categories import ToolCategory
-from sdk.agent_state import AgentState, _active_agent_state
+from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
 
 
 def _make_tool(name: str):
@@ -32,24 +32,24 @@ def _isolate(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def agent_state():
-    state = AgentState([_make_tool("preexisting")])
-    token = _active_agent_state.set(state)
+def agent_capabilities():
+    state = AgentCapabilities([_make_tool("preexisting")])
+    token = _active_agent_capabilities.set(state)
     yield state
-    _active_agent_state.reset(token)
+    _active_agent_capabilities.reset(token)
 
 
 @pytest.mark.unit
-async def test_load_adds_tools(agent_state):
+async def test_load_adds_tools(agent_capabilities):
     save_skill_record(SkillRecord(id="test_sk", name="test_sk", prompt="Use these.", tool_categories=["coding"]))
     result = await load_skill("test_sk")
-    assert "new_tool" in {t.__name__ for t in agent_state.tools}
-    assert "test_sk" in agent_state.loaded_skill_ids
+    assert "new_tool" in {t.__name__ for t in agent_capabilities.tools}
+    assert "test_sk" in agent_capabilities.loaded_skill_ids
     assert "Loaded" in result
 
 
 @pytest.mark.unit
-async def test_load_returns_confirmation(agent_state):
+async def test_load_returns_confirmation(agent_capabilities):
     save_skill_record(SkillRecord(id="prompted", name="prompted", prompt="Follow this workflow.", tool_categories=[]))
     result = await load_skill("prompted")
     assert "Loaded" in result
@@ -57,7 +57,7 @@ async def test_load_returns_confirmation(agent_state):
 
 
 @pytest.mark.unit
-async def test_already_loaded(agent_state):
+async def test_already_loaded(agent_capabilities):
     save_skill_record(SkillRecord(id="once", name="once", tool_categories=["coding"]))
     await load_skill("once")
     result = await load_skill("once")
@@ -65,7 +65,7 @@ async def test_already_loaded(agent_state):
 
 
 @pytest.mark.unit
-async def test_unknown_skill_lists_available(agent_state):
+async def test_unknown_skill_lists_available(agent_capabilities):
     save_skill_record(SkillRecord(id="real", name="real", tool_categories=["coding"]))
     result = await load_skill("bogus")
     assert "Unknown skill 'bogus'" in result
@@ -82,10 +82,10 @@ def test_list_available_lists_saved_skills():
 
 
 @pytest.mark.unit
-async def test_no_active_agent_state():
-    token = _active_agent_state.set(None)
+async def test_no_active_agent_capabilities():
+    token = _active_agent_capabilities.set(None)
     try:
         result = await load_skill("anything")
         assert "Error" in result
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)

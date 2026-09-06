@@ -15,10 +15,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_active_agent_state: ContextVar["AgentState | None"] = ContextVar("active_agent_state", default=None)
+_active_agent_capabilities: ContextVar["AgentCapabilities | None"] = ContextVar(
+    "active_agent_capabilities", default=None
+)
 
 
-class AgentState:
+class AgentCapabilities:
     """Track the tools, capabilities, and skills active for an agent run.
 
     Holds the agent's base tools, application-granted capabilities, and skills.
@@ -121,9 +123,9 @@ class AgentState:
         return "\n── Capabilities & Skills ──\n\n" + "\n\n".join(parts)
 
 
-def get_active_agent_state() -> "AgentState | None":
-    """Return the AgentState for the current agent scope, or None."""
-    return _active_agent_state.get()
+def get_active_agent_capabilities() -> "AgentCapabilities | None":
+    """Return the AgentCapabilities for the current agent scope, or None."""
+    return _active_agent_capabilities.get()
 
 
 def _base_tools(*, allow_spawn: bool, allow_load_skills: bool) -> list[Callable[..., Any]]:
@@ -154,16 +156,16 @@ def _base_tools(*, allow_spawn: bool, allow_load_skills: bool) -> list[Callable[
     return tools
 
 
-async def build_agent_state(
+async def build_agent_capabilities(
     profile: AgentProfile,
     *,
     conversation_id: str | None = None,
-) -> AgentState:
+) -> AgentCapabilities:
     """Build one run's state from agent settings, capabilities, and skills."""
     from sdk.skills._policy import is_reserved_skill_id
     from sdk.skills._resolve import resolve_skill
 
-    state = AgentState(
+    state = AgentCapabilities(
         _base_tools(
             allow_spawn=profile.allow_spawn,
             allow_load_skills=profile.allow_load_skills,
@@ -198,7 +200,7 @@ async def build_agent_state(
 
 
 async def _restore_persisted_loaded_skills(
-    agent_state: AgentState,
+    agent_capabilities: AgentCapabilities,
     skill_ids: Iterable[str],
 ) -> None:
     """Resolve and restore the conversation's dynamically loaded skills."""
@@ -206,25 +208,25 @@ async def _restore_persisted_loaded_skills(
     from sdk.skills._resolve import resolve_skill
 
     for skill_id in skill_ids:
-        if is_reserved_skill_id(skill_id) or skill_id in agent_state.skill_ids:
+        if is_reserved_skill_id(skill_id) or skill_id in agent_capabilities.skill_ids:
             continue
         skill = await resolve_skill(skill_id)
         if skill is None:
             logger.warning("loaded skill %r no longer resolves; skipping", skill_id)
             continue
-        agent_state.load(skill)
+        agent_capabilities.load(skill)
 
 
-def persist_loaded_skills(agent_state: AgentState, conversation_id: str) -> None:
+def persist_loaded_skills(agent_capabilities: AgentCapabilities, conversation_id: str) -> None:
     """Persist the conversation's dynamically loaded skill IDs."""
     from conversations import save_loaded_skills
 
-    save_loaded_skills(conversation_id, agent_state.loaded_skill_ids)
+    save_loaded_skills(conversation_id, agent_capabilities.loaded_skill_ids)
 
 
 __all__ = [
-    "AgentState",
-    "build_agent_state",
-    "get_active_agent_state",
+    "AgentCapabilities",
+    "build_agent_capabilities",
+    "get_active_agent_capabilities",
     "persist_loaded_skills",
 ]

@@ -1,8 +1,8 @@
 """Tests for skill resolution and agent-state composition.
 
 resolve_skill maps a stored record's tool category ids to live tools via
-``tool_categories`` and bundles them into a runtime Skill. build_agent_state
-assembles a profile's AgentState: base tools (spawn/load gated by its autonomy
+``tool_categories`` and bundles them into a runtime Skill. build_agent_capabilities
+assembles a profile's AgentCapabilities: base tools (spawn/load gated by its autonomy
 toggles) plus its skills added as units, so prompts and tools both apply. These
 mock ``tool_categories`` directly — what each category resolves to is the
 category registry's concern, tested separately.
@@ -11,10 +11,10 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.agent_state import (
+from sdk.agent_capabilities import (
     _restore_persisted_loaded_skills,
-    AgentState,
-    build_agent_state,
+    AgentCapabilities,
+    build_agent_capabilities,
     persist_loaded_skills,
 )
 from sdk.skills._resolve import (
@@ -110,22 +110,22 @@ async def test_resolve_by_name():
 
 @pytest.mark.unit
 async def test_build_includes_base_tools():
-    state = await build_agent_state(_profile(skills=[]))
+    state = await build_agent_capabilities(_profile(skills=[]))
     assert {"save_to_scratchpad", "datetime_tool"} <= _names(state.tools)
 
 
 @pytest.mark.unit
 async def test_build_honors_allow_spawn():
-    on = _names((await build_agent_state(_profile(allow_spawn=True))).tools)
-    off = _names((await build_agent_state(_profile(allow_spawn=False))).tools)
+    on = _names((await build_agent_capabilities(_profile(allow_spawn=True))).tools)
+    off = _names((await build_agent_capabilities(_profile(allow_spawn=False))).tools)
     assert "spawn_agent" in on
     assert "spawn_agent" not in off
 
 
 @pytest.mark.unit
 async def test_build_honors_allow_load_skills():
-    on = _names((await build_agent_state(_profile(allow_load_skills=True))).tools)
-    off = _names((await build_agent_state(_profile(allow_load_skills=False))).tools)
+    on = _names((await build_agent_capabilities(_profile(allow_load_skills=True))).tools)
+    off = _names((await build_agent_capabilities(_profile(allow_load_skills=False))).tools)
     assert "load_skill" in on
     assert "load_skill" not in off
 
@@ -133,13 +133,13 @@ async def test_build_honors_allow_load_skills():
 @pytest.mark.unit
 async def test_build_adds_profile_skill_tools():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    state = await build_agent_state(_profile(skills=["coder"]))
+    state = await build_agent_capabilities(_profile(skills=["coder"]))
     assert "read_file" in _names(state.tools)
 
 
 @pytest.mark.unit
 async def test_browser_selection_adds_application_capability():
-    state = await build_agent_state(
+    state = await build_agent_capabilities(
         _profile(
             browser_profile_id="default",
         )
@@ -160,7 +160,7 @@ async def test_stale_browser_skill_cannot_bypass_disabled_browser():
             tool_categories=["browser"],
         )
     )
-    state = await build_agent_state(_profile(skills=["browser"], browser_profile_id=None))
+    state = await build_agent_capabilities(_profile(skills=["browser"], browser_profile_id=None))
     assert "open_url" not in _names(state.tools)
     assert "browser" not in state.skill_ids
 
@@ -174,7 +174,7 @@ async def test_custom_skill_cannot_grant_browser_category():
             tool_categories=["browser"],
         )
     )
-    state = await build_agent_state(_profile(skills=["custom"], browser_profile_id=None))
+    state = await build_agent_capabilities(_profile(skills=["custom"], browser_profile_id=None))
     assert "open_url" not in _names(state.tools)
 
 
@@ -184,7 +184,7 @@ async def test_build_profile_skills_stay_out_of_loaded_delta():
     profile is re-derived each turn and a profile edit isn't pinned to a
     conversation by stale metadata."""
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    state = await build_agent_state(_profile(skills=["coder"]))
+    state = await build_agent_capabilities(_profile(skills=["coder"]))
     assert "coder" in state.skill_ids
     assert state.loaded_skill_ids == frozenset()
 
@@ -192,7 +192,7 @@ async def test_build_profile_skills_stay_out_of_loaded_delta():
 @pytest.mark.unit
 async def test_build_adds_profile_skill_prompts():
     save_skill_record(SkillRecord(id="coder", name="Coder", prompt="Write code.", tool_categories=["coding"]))
-    state = await build_agent_state(_profile(skills=["coder"]))
+    state = await build_agent_capabilities(_profile(skills=["coder"]))
     section = state.build_prompt_extensions()
     assert "Coder" in section
     assert "Write code." in section
@@ -200,7 +200,7 @@ async def test_build_adds_profile_skill_prompts():
 
 @pytest.mark.unit
 async def test_build_skips_unknown_skill():
-    state = await build_agent_state(_profile(skills=["ghost"]))
+    state = await build_agent_capabilities(_profile(skills=["ghost"]))
     assert "datetime_tool" in _names(state.tools)  # base intact, no crash
 
 
@@ -208,7 +208,7 @@ async def test_build_skips_unknown_skill():
 async def test_build_dedups_tools_by_name():
     save_skill_record(SkillRecord(id="m1", name="M1", tool_categories=["memory"]))
     save_skill_record(SkillRecord(id="m2", name="M2", tool_categories=["memory"]))
-    state = await build_agent_state(_profile(skills=["m1", "m2"]))
+    state = await build_agent_capabilities(_profile(skills=["m1", "m2"]))
     assert [t.__name__ for t in state.tools].count("remember") == 1
 
 
@@ -218,7 +218,7 @@ async def test_build_restores_conversation_loaded_skills(monkeypatch):
     top of the profile's skills — read from conversation metadata."""
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
     monkeypatch.setattr("conversations.load_loaded_skills", lambda cid: {"coder"})
-    state = await build_agent_state(_profile(skills=[]), conversation_id="c1")
+    state = await build_agent_capabilities(_profile(skills=[]), conversation_id="c1")
     assert "coder" in state.loaded_skill_ids
     assert "read_file" in _names(state.tools)
 
@@ -234,7 +234,7 @@ async def test_build_without_conversation_id_skips_restore(monkeypatch):
         return {"coder"}
 
     monkeypatch.setattr("conversations.load_loaded_skills", _spy)
-    state = await build_agent_state(_profile(skills=[]))
+    state = await build_agent_capabilities(_profile(skills=[]))
     assert called is False
     assert state.loaded_skill_ids == frozenset()
 
@@ -248,7 +248,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
         lambda cid, ids: saved.update(cid=cid, ids=ids),
     )
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    state = AgentState([])
+    state = AgentCapabilities([])
     await _restore_persisted_loaded_skills(state, ["coder"])
     persist_loaded_skills(state, "c1")
     assert saved["cid"] == "c1"
@@ -258,7 +258,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
 @pytest.mark.unit
 async def test_restore_skills_resolves_and_adds_by_id():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    state = AgentState([])
+    state = AgentCapabilities([])
     await _restore_persisted_loaded_skills(state, ["coder"])
     assert "coder" in state.loaded_skill_ids
     assert "read_file" in _names(state.tools)
@@ -267,7 +267,7 @@ async def test_restore_skills_resolves_and_adds_by_id():
 @pytest.mark.unit
 async def test_restore_skills_skips_already_loaded():
     save_skill_record(SkillRecord(id="coder", name="Coder", tool_categories=["coding"]))
-    state = AgentState([])
+    state = AgentCapabilities([])
     await _restore_persisted_loaded_skills(state, ["coder"])
     await _restore_persisted_loaded_skills(state, ["coder"])  # second restore is a no-op
     assert state.loaded_skill_ids == frozenset({"coder"})
@@ -275,6 +275,6 @@ async def test_restore_skills_skips_already_loaded():
 
 @pytest.mark.unit
 async def test_restore_skills_skips_unresolvable_id():
-    state = AgentState([])
+    state = AgentCapabilities([])
     await _restore_persisted_loaded_skills(state, ["ghost"])  # no such record — stale metadata
     assert state.loaded_skill_ids == frozenset()

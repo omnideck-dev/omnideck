@@ -3,6 +3,9 @@
 This module re-exports commonly used helpers for convenience.
 """
 
+from .agent import Agent
+from .agent_capabilities import AgentCapabilities
+from .control import ExecutionControl
 from .context import ContextManager, ConversationHistory
 from .hooks import (
     BudgetGuard,
@@ -12,10 +15,13 @@ from .hooks import (
     StopHook,
     default_hooks,
 )
-from .turn import run_turn
+from .turn import AgentExecutor, ExecutionContext, ExecutionResult
 from .providers import LLMRuntimeStats, llm_runtime_stats
 
 __all__ = [
+    "Agent",
+    "AgentCapabilities",
+    "ExecutionControl",
     "BudgetGuard",
     "ContextHook",
     "ContextManager",
@@ -26,5 +32,7 @@ __all__ = [
     "StopHook",
     "default_hooks",
     "llm_runtime_stats",
-    "run_turn",
+    "AgentExecutor",
+    "ExecutionContext",
+    "ExecutionResult",
 ]

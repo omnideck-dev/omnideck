@@ -36,9 +36,9 @@ def model_script(*responses: dict) -> str:
     return f"<<MODEL>>{body}<<END>>"
 
 
-def model_tool(name: str, **arguments: object) -> dict:
+def model_tool(tool_name: str, **arguments: object) -> dict:
     """One model-requested tool call for a model_script response."""
-    return {"function": {"name": name, "arguments": arguments}}
+    return {"function": {"name": tool_name, "arguments": arguments}}
 
 
 def call_tool(tool_name: str, **args: object) -> str:

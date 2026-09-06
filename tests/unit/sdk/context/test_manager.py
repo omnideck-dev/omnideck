@@ -5,18 +5,18 @@ from unittest.mock import patch
 import pytest
 
 from sdk.context import ContextManager, ConversationHistory, TriggerPoint
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 
 
-def _empty_state() -> AgentState:
-    return AgentState([])
+def _empty_state() -> AgentCapabilities:
+    return AgentCapabilities([])
 
 
 @pytest.mark.unit
 def test_initial_stats_with_empty_history():
     cm = ContextManager(
         history=ConversationHistory(),
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=128_000,
     )
     stats = cm.stats
@@ -30,7 +30,7 @@ def test_stats_reflects_history_growth():
     history = ConversationHistory()
     cm = ContextManager(
         history=history,
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=100_000,
     )
     before = cm.stats.context_used
@@ -59,7 +59,7 @@ def test_stats_reflects_history_growth():
 
 
 @pytest.mark.unit
-def test_stats_includes_tools_from_agent_state():
+def test_stats_includes_tools_from_agent_capabilities():
     def some_tool(name: str) -> str:
         """Echo back.
 
@@ -70,10 +70,10 @@ def test_stats_includes_tools_from_agent_state():
 
     history = ConversationHistory()
     cm_no_tools = ContextManager(
-        history=history, agent_state=AgentState([]), context_limit=100_000,
+        history=history, agent_capabilities=AgentCapabilities([]), context_limit=100_000,
     )
     cm_with_tools = ContextManager(
-        history=history, agent_state=AgentState([some_tool]), context_limit=100_000,
+        history=history, agent_capabilities=AgentCapabilities([some_tool]), context_limit=100_000,
     )
     assert cm_with_tools.stats.context_used > cm_no_tools.stats.context_used
 
@@ -84,7 +84,7 @@ async def test_after_model_publishes_event():
     history = ConversationHistory([{"role": "user", "content": "x" * 300}])
     cm = ContextManager(
         history=history,
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=128_000,
     )
 
@@ -108,7 +108,7 @@ async def test_after_model_emits_configured_compaction_threshold():
     history = ConversationHistory([{"role": "user", "content": "x" * 300}])
     cm = ContextManager(
         history=history,
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=128_000,
         compaction_threshold=0.6,
     )
@@ -127,7 +127,7 @@ async def test_context_hook_drives_after_model():
 
     history = ConversationHistory()
     cm = ContextManager(
-        history=history, agent_state=_empty_state(), context_limit=128_000,
+        history=history, agent_capabilities=_empty_state(), context_limit=128_000,
     )
     hook = ContextHook(cm)
     sentinel = object()
@@ -161,7 +161,7 @@ async def test_before_model_strategy_fires_when_threshold_exceeded():
     strategy = _FakeStrategy()
     cm = ContextManager(
         history=history,
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=20,
         strategies=[strategy],
     )
@@ -175,7 +175,7 @@ async def test_before_model_strategy_fires_when_threshold_exceeded():
 async def test_before_model_with_no_strategies():
     cm = ContextManager(
         history=ConversationHistory(),
-        agent_state=_empty_state(),
+        agent_capabilities=_empty_state(),
         context_limit=128_000,
     )
     await cm.before_model()  # should not raise

@@ -44,10 +44,11 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr("conversations._cache._conversations", OrderedDict())
     monkeypatch.setattr("sdk.lifecycle._hooks", [])
     monkeypatch.setattr("conversations._lifecycle._hooks", [])
-    monkeypatch.setattr("sdk.turn._execution._get_parallel_config", lambda: config.parallel)
+    monkeypatch.setattr("agent_runtime._execution_context.load_config", lambda: config)
 
     provider = ScriptedProvider()
-    monkeypatch.setattr("sdk.turn._execution.get_provider", lambda _name: provider)
+    for target in ("agent_runtime._runner.get_provider", "sdk.tools._spawn_agent.get_provider", "tasks._executor.get_provider"):
+        monkeypatch.setattr(target, lambda _name: provider)
     monkeypatch.setattr("sdk.context._strategy.get_provider", lambda _name: provider)
     # Compaction settings are application configuration, not the strategy.
     monkeypatch.setattr("sdk.context._strategy.load_settings", lambda: {

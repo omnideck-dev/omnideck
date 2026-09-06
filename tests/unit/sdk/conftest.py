@@ -10,7 +10,7 @@ This conftest bridges the two worlds: it patches
 messages, and patches ``publish_event`` at the execution sites to
 forward published events into every ConversationHistory created during
 the test. The result is that existing tests using the
-``ConversationHistory([...])`` + ``run_turn`` pattern continue to see
+``ConversationHistory([...])`` + ``AgentExecutor.execute`` pattern continue to see
 the history surface populated as they always did.
 """
 

@@ -9,6 +9,8 @@ from rich.text import Text
 
 from agents import AgentProfile, build_agent, get_agent_profile
 from browser.runtime import get_browser_runtime
+from agent_runtime._execution_context import execution_context, parallel_tool_limit
+from sdk.providers import get_provider
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
@@ -20,8 +22,8 @@ from sdk.events import (
     publish_event,
 )
 from sdk.hooks import default_hooks
-from sdk.agent_state import build_agent_state
-from sdk.turn import StopRequestedError, get_conversation_id, run_turn
+from sdk.agent_capabilities import build_agent_capabilities
+from sdk.turn import StopRequestedError, get_conversation_id, AgentExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +163,8 @@ async def spawn_agent(
         _log_spawn_error(agent_name, msg)
         return msg
 
-    agent_state = await build_agent_state(agent_profile)
-    agent = build_agent(agent_profile, tools=agent_state.tools, name=agent_name)
+    agent_capabilities = await build_agent_capabilities(agent_profile)
+    agent = build_agent(agent_profile, name=agent_name)
 
     logger.info(
         "Spawning sub-agent '%s' (profile=%s, max_iter=%d, instruction=%.100s)",
@@ -190,7 +192,7 @@ async def spawn_agent(
     async with agent_span(
         agent_name,
         instruction=instructions,
-        agent_state=agent_state,
+        agent_capabilities=agent_capabilities,
         profile_name=agent_profile.name,
         correlation_id=correlation_id,
     ):
@@ -226,7 +228,7 @@ async def spawn_agent(
 
         ctx_manager = ContextManager(
             history=history,
-            agent_state=agent_state,
+            agent_capabilities=agent_capabilities,
             context_limit=agent.context_window,
             agent_name=agent.name,
             compaction_threshold=agent.compaction_threshold,
@@ -240,11 +242,17 @@ async def spawn_agent(
             ctx_manager=ctx_manager,
         )
         try:
-            result_text = await run_turn(
+            execution_result = await AgentExecutor().execute(
                 history=history,
                 agent=agent,
+                capabilities=agent_capabilities,
+                provider=get_provider(agent.provider),
+                context=execution_context(),
+                max_parallel_tools=parallel_tool_limit(),
                 hooks=hooks,
             )
+            execution_result.raise_for_status()
+            result_text = execution_result.output
         except StopRequestedError:
             logger.info("Spawned agent '%s' stopped by user request", agent_name)
             raise

@@ -16,6 +16,7 @@ from sdk.providers import ChatDelta, ChatMessage, ChatResponse, TokenUsage, Tool
 from sdk.skills._store import SkillRecord, save_skill_record
 from sdk.skills._tool_categories import ToolCategory
 from sdk.turn import get_conversation_id
+from sdk.turn._models import _current_execution
 from tasks._file_store import FileTaskStore
 
 
@@ -41,7 +42,10 @@ class ScriptedProvider:
         self.scripts[model].extend(steps)
 
     def take(self, kwargs):
+        execution = _current_execution.get()
         request = {
+            "run_id": execution.run_id if execution is not None else None,
+            "parent_execution_id": execution.parent_execution_id if execution is not None else None,
             **deepcopy(kwargs),
             "tools": [tool.__name__ for tool in kwargs.get("tools", [])],
             "agent_id": get_current_agent_id(),
@@ -114,6 +118,8 @@ class Harness:
         info, stream = await self.start(profile, **kwargs)
         records = await collect(stream)
         assert all(record.run_id == info.run_id for record in records)
+        matching = [r for r in self.provider.requests if r["conversation_id"] == info.conversation_id]
+        assert matching[-1]["run_id"] == info.run_id
         assert [r.seq for r in records] == list(range(1, len(records) + 1))
         return [r.event for r in records]
 

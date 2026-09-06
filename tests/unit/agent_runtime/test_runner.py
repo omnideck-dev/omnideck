@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from sdk.turn import ExecutionResult
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,6 +29,7 @@ from sdk.turn import StopRequestedError, ToolLoopError
 @pytest.fixture(autouse=True)
 def _browser_runtime(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Keep agent-run tests isolated from the process Browser runtime."""
+    monkeypatch.setattr(runner_module, "get_provider", lambda _: MagicMock())
     runtime = MagicMock()
     runtime.prepare_current_agent_browser = AsyncMock()
     monkeypatch.setattr(runner_module, "get_browser_runtime", lambda: runtime)
@@ -174,7 +176,7 @@ async def test_tool_loop_failure_is_not_duplicated(
     """A ToolLoopError keeps its specific error and one scope-owned turn_end."""
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
 
-    async def _failing_run_turn(**_kwargs: Any) -> None:
+    async def _failing_execute(self, **_kwargs: Any) -> None:
         publish_event(
             AgentEvent(
                 payload=ErrorPayload(
@@ -185,7 +187,7 @@ async def test_tool_loop_failure_is_not_duplicated(
         )
         raise ToolLoopError("usage limit reached")
 
-    monkeypatch.setattr(runner_module, "run_turn", _failing_run_turn)
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _failing_execute)
 
     seen = await _run("runner-tool-failure")
     errors = [event for event in seen if event.payload.type == "error"]
@@ -200,7 +202,7 @@ async def test_published_events_are_forwarded_once_and_in_order(
 ) -> None:
     """Runner delivery includes nested lifecycle without duplicate events."""
 
-    async def _fake_tool_loop(**_kwargs: Any) -> None:
+    async def _fake_tool_loop(self, **_kwargs: Any) -> ExecutionResult:
         publish_event(
             AgentEvent(
                 payload=ContentPayload(
@@ -221,8 +223,10 @@ async def test_published_events_are_forwarded_once_and_in_order(
                 )
             )
 
+        return ExecutionResult("success")
+
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
-    monkeypatch.setattr(runner_module, "run_turn", _fake_tool_loop)
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _fake_tool_loop)
 
     seen = await _run("runner-event-order")
 
@@ -243,7 +247,7 @@ async def test_runner_prepares_browser_from_agent_profile(
     """The application runner passes the selected profile to Browser runtime."""
     profile = _profile().model_copy(update={"browser_profile_id": "empty"})
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: profile)
-    monkeypatch.setattr(runner_module, "run_turn", AsyncMock(return_value=None))
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", AsyncMock(return_value=ExecutionResult("success")))
 
     await _run("runner-browser-profile")
 
@@ -258,7 +262,7 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
 ) -> None:
     """A stopped root records stopped completion before terminal delivery."""
 
-    async def _stopped_tool_loop(**_kwargs: Any) -> None:
+    async def _stopped_tool_loop(self, **_kwargs: Any) -> None:
         publish_event(
             AgentEvent(
                 payload=ContentPayload(
@@ -270,7 +274,7 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
         raise StopRequestedError
 
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
-    monkeypatch.setattr(runner_module, "run_turn", _stopped_tool_loop)
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _stopped_tool_loop)
 
     seen = await _run("runner-stop-order")
     root_completed = [

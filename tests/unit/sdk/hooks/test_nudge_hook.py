@@ -15,7 +15,7 @@ from sdk.events import (
     set_current_conversation,
 )
 from sdk.hooks._nudge_hook import NudgeHook
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 from sdk.turn import turn_scope
 from sdk.turn._nudge_queue import queue_nudge
 
@@ -45,7 +45,7 @@ async def test_nudge_hook_publishes_user_message_event_when_nudges_present():
     async with turn_scope():
         conv_token = set_current_conversation(conv)
         try:
-            async with agent_span("Test", agent_state=AgentState([])) as agent_id:
+            async with agent_span("Test", agent_capabilities=AgentCapabilities([])) as agent_id:
                 queue_nudge(agent_id, "first nudge")
                 queue_nudge(agent_id, "second nudge")
                 await hook.before_model(history, iteration=1, agent_name="Test")
@@ -75,7 +75,7 @@ async def test_nudge_hook_emits_nothing_when_queue_empty():
     async with turn_scope():
         conv_token = set_current_conversation(conv)
         try:
-            async with agent_span("Test", agent_state=AgentState([])):
+            async with agent_span("Test", agent_capabilities=AgentCapabilities([])):
                 await hook.before_model(history, iteration=1, agent_name="Test")
         finally:
             reset_current_conversation(conv_token)

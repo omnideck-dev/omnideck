@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import uuid4
 from collections.abc import Awaitable, Callable, Sequence
 
 from rich.console import Console
@@ -12,16 +13,18 @@ from rich.text import Text
 
 from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
 from agents import AgentProfile, build_agent, get_agent_profile
-from agents.types import Agent
+from sdk.agent import Agent
 from artifacts import ArtifactsIndexWriter
 from browser.runtime import get_browser_runtime
+from agent_runtime._execution_context import execution_context, parallel_tool_limit
+from sdk.providers import get_provider
 from conversations import (
     BrowserTabsWriter,
     EventsLogWriter,
     TerminalWriter,
     save_conversation_profile,
 )
-from sdk import default_hooks, run_turn
+from sdk import AgentExecutor, default_hooks
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
     AgentEvent,
@@ -32,9 +35,9 @@ from sdk.events import (
     agent_span,
     publish_event,
 )
-from sdk.agent_state import build_agent_state, persist_loaded_skills
+from sdk.agent_capabilities import build_agent_capabilities, persist_loaded_skills
 from sdk.turn import ToolLoopError, check_stop, turn_scope
-from sdk.turn._turn import StopRequestedError
+from sdk.control import StopRequestedError
 from tools.memory import load_memory
 from tools.virtual_computer.receive_file import receive_attachment
 
@@ -109,7 +112,7 @@ class AgentRunner:
         for observer in observers:
             history.subscribe(observer)
 
-        agent_state = None
+        agent_capabilities = None
         try:
             # The scope begins as soon as persistence and delivery observers
             # exist. Setup failures can therefore become ordinary run events,
@@ -136,15 +139,15 @@ class AgentRunner:
 
                     save_conversation_profile(conversation_id, profile.id)
 
-                    # Fresh AgentState each turn: the profile's skills, plus
+                    # Fresh AgentCapabilities each turn: the profile's skills, plus
                     # any loaded in earlier turns and restored from metadata.
-                    agent_state = await build_agent_state(
+                    agent_capabilities = await build_agent_capabilities(
                         profile,
                         conversation_id=conversation_id,
                     )
                     ctx_manager = ContextManager(
                         history=history,
-                        agent_state=agent_state,
+                        agent_capabilities=agent_capabilities,
                         context_limit=active_agent.context_window,
                         agent_name=active_agent.name,
                         compaction_threshold=active_agent.compaction_threshold,
@@ -164,7 +167,7 @@ class AgentRunner:
                     async with agent_span(
                         active_agent.name,
                         instruction=user_content,
-                        agent_state=agent_state,
+                        agent_capabilities=agent_capabilities,
                         profile_name=profile.name,
                     ):
                         await get_browser_runtime().prepare_current_agent_browser(
@@ -192,17 +195,22 @@ class AgentRunner:
                             max_iterations=active_agent.max_iterations,
                             ctx_manager=ctx_manager,
                         )
-                        await run_turn(
+                        result = await AgentExecutor().execute(
                             history=history,
                             agent=active_agent,
+                            capabilities=agent_capabilities,
+                            provider=get_provider(active_agent.provider),
+                            context=execution_context(run_id=request.run_id or f"run_{uuid4().hex}"),
+                            max_parallel_tools=parallel_tool_limit(),
                             hooks=hooks,
                         )
+                        result.raise_for_status()
                 except StopRequestedError:
                     # Propagate through turn_scope so it emits turn_end, then
                     # swallow outside the scope as a normal stopped outcome.
                     raise
                 except ToolLoopError:
-                    # run_turn already published the specific error. Swallow
+                    # AgentExecutor already published the specific error. Swallow
                     # only after agent_span recorded an error completion.
                     logger.debug("Agent run failed; error already published")
                 except Exception:
@@ -227,9 +235,9 @@ class AgentRunner:
                 history.unsubscribe(observer)
             await history.drain_observers()
 
-        if agent_state is not None and agent_state.loaded_skill_ids:
+        if agent_capabilities is not None and agent_capabilities.loaded_skill_ids:
             try:
-                persist_loaded_skills(agent_state, conversation_id)
+                persist_loaded_skills(agent_capabilities, conversation_id)
             except Exception:
                 logger.exception(
                     "Failed to save loaded skills for '%s'",
@@ -252,8 +260,8 @@ def _resolve_profile(profile_id: str | None) -> AgentProfile:
 
 
 def _build_agent_from_profile(profile: AgentProfile) -> Agent:
-    """Construct an Agent; per-turn skill tools live in AgentState."""
-    return build_agent(profile, tools=[])
+    """Construct an Agent; per-turn skill tools live in AgentCapabilities."""
+    return build_agent(profile)
 
 
 def _augment_message_with_attachments(
