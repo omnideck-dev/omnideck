@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from agent_core.providers import resolve_role_options
 from settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,11 @@ async def vision_generate(
 
     from . import get_provider
     provider = get_provider(vision_provider)
+    vision_options, model_info = await resolve_role_options(
+        provider, vision_model, "vision", vision_options,
+    )
+    if model_info is not None and not model_info.supports_thinking:
+        vision_think = False
     messages: list[dict[str, Any]] = [{
         "role": "user",
         "content": prompt,

@@ -25,6 +25,7 @@ from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
 from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
 from migrations._015_browser_profiles import migrate as _015_browser_profiles
 from migrations._016_connection_tool_categories import migrate_connections, cleanup, NAME, CLEANUP_NAME
+from migrations._017_model_aware_role_defaults import migrate as _017_model_aware_role_defaults
 
 from migrations._engine import _load_applied, _save_applied, run_migration_plan
 
@@ -53,6 +54,7 @@ def _migration_plan(vault_dir: Path) -> list[tuple[str, Callable[[Path], None]]]
         ("broker:001_operation_grants", lambda _state: _broker_operation_grants(vault_dir)),
         (NAME, partial(migrate_connections, vault_dir=vault_dir)),
         (CLEANUP_NAME, cleanup),
+        ("017_model_aware_role_defaults", _017_model_aware_role_defaults),
     ]
 
 

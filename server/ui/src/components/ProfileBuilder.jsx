@@ -12,7 +12,15 @@ import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
 import { EMPTY_BROWSER_PROFILE } from '../features/browser/browserProfileConstants.js';
 import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import ToolSelection from './skills/ToolSelection.jsx';
-import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
+import {
+    InferenceSettings,
+    resolvePreset,
+    detectPreset,
+    INFERENCE_FIELDS,
+    isSupported,
+    resolveInferenceCapabilities,
+    sanitizeProfileForModel,
+} from './inference';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -42,9 +50,11 @@ export default function ProfileBuilder({
     const iconAnchor = useRef(null);
     const lastBrowser = useRef('default');
     const { profiles: browserProfiles } = useBrowserProfilesCatalog();
+    const [resolvedModel, setResolvedModel] = useState(null);
 
     useEffect(() => {
         setSaveError(null);
+        setResolvedModel(null);
         setDraft(profile ? clone(profile) : null);
         setBaseline(profile ? clone(profile) : null);
         setIconOpen(false);
@@ -68,19 +78,32 @@ export default function ProfileBuilder({
     }, [isDirty, onDirtyChange]);
 
     const draftProvider = draft?.provider || providers?.[0]?.name || 'ollama';
-    const activePreset = useMemo(() => draft ? detectPreset(draft, draftProvider) : null, [draft, draftProvider]);
+    const modelInfo = resolvedModel?.provider === draftProvider && resolvedModel?.model === draft?.model
+        ? resolvedModel.info
+        : null;
+    const inferenceCapabilities = useMemo(
+        () => resolveInferenceCapabilities(draftProvider, modelInfo),
+        [draftProvider, modelInfo],
+    );
+    const activePreset = useMemo(
+        () => draft ? detectPreset(draft, inferenceCapabilities) : null,
+        [draft, inferenceCapabilities],
+    );
     const update = useCallback((field, value) => setDraft(prev => prev ? { ...prev, [field]: value } : prev), []);
     const applyPreset = useCallback(presetId => {
-        const values = resolvePreset(presetId, draftProvider);
+        const values = resolvePreset(presetId, inferenceCapabilities);
         if (!values) return;
         setDraft(prev => {
             if (!prev) return prev;
             const next = { ...prev };
             for (const key of INFERENCE_FIELDS) next[key] = null;
-            for (const [key, value] of Object.entries(values)) if (isSupported(key, draftProvider)) next[key] = value;
+            for (const [key, value] of Object.entries(values)) if (isSupported(key, inferenceCapabilities)) next[key] = value;
             return next;
         });
-    }, [draftProvider]);
+    }, [inferenceCapabilities]);
+    const handleModelResolved = useCallback((provider, model, info) => {
+        setResolvedModel({ provider, model, info });
+    }, []);
 
     const handleSave = async () => {
         if (!draft || saving || (!isDirty && !draft._unsaved) || (draft._unsaved && !draft.model)) return;
@@ -150,8 +173,17 @@ export default function ProfileBuilder({
                     </label>
                     <div className={styles.field} data-testid="profile-model-picker"><span>Model</span>
                         <ModelPicker providers={providers || []} selectedProvider={draft.provider || null} selectedModel={draft.model || null}
-                            onSelect={(provider, model, meta) => setDraft(prev => ({ ...prev, provider: provider || '', model: model || '',
-                                ...(meta?.context_window != null ? { context_window: meta.context_window } : {}) }))} inline />
+                            onSelect={(provider, model, meta) => {
+                                setResolvedModel({ provider, model, info: meta || null });
+                                setDraft(prev => {
+                                    if (!prev) return prev;
+                                    const selected = { ...prev, provider: provider || '', model: model || '' };
+                                    return sanitizeProfileForModel(
+                                        selected, resolveInferenceCapabilities(provider, meta || null), meta || null,
+                                    );
+                                });
+                            }}
+                            onModelResolved={handleModelResolved} inline />
                         {draft._unsaved && !draft.model && <span id="agent-model-required" className={styles.pending} data-testid="profile-model-required">Choose a model to create this agent.</span>}
                     </div>
                     <div data-testid="profile-enabled-toggle"><SettingRow icon="bi-eye" title="Available in chat and to other agents"
@@ -204,7 +236,7 @@ export default function ProfileBuilder({
                     <summary><i className="bi bi-chevron-right" aria-hidden="true" /><span><span className={styles.modelTitle}>Model settings</span>
                         <span className={styles.hint}>Preset, thinking, sampling and length limits.</span></span></summary>
                     <div className={styles.modelSettingsBody}>
-                        <InferenceSettings draft={draft} provider={draftProvider} activePreset={activePreset} onFieldChange={update} onApplyPreset={applyPreset} />
+                        <InferenceSettings draft={draft} capabilities={inferenceCapabilities} activePreset={activePreset} onFieldChange={update} onApplyPreset={applyPreset} />
                     </div>
                 </details>
             </fieldset>
