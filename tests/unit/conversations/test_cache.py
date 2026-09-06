@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -153,7 +154,7 @@ async def test_lru_access_promotes_to_most_recently_used(
 async def test_lru_skips_active_turn(monkeypatch: pytest.MonkeyPatch) -> None:
     """Conversations whose turn is in flight are not evicted."""
     monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(cc, "is_turn_active", lambda cid: cid == "a")
+    monkeypatch.setattr(cc, "_leases", Counter({"a": 1}))
 
     await cc.get_or_create_conversation("a")
     await cc.get_or_create_conversation("b")
@@ -170,7 +171,7 @@ async def test_lru_skips_active_turn(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_lru_overflow_when_all_active(monkeypatch: pytest.MonkeyPatch) -> None:
     """When every cached conv is mid-turn, the cache temporarily overflows."""
     monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(cc, "is_turn_active", lambda _cid: True)
+    monkeypatch.setattr(cc, "_leases", Counter({"a": 1, "b": 1, "c": 1}))
 
     await cc.get_or_create_conversation("a")
     await cc.get_or_create_conversation("b")
@@ -185,7 +186,7 @@ async def test_lru_does_not_evict_just_inserted_when_others_active(
 ) -> None:
     """Just-inserted conv survives even when every existing entry is mid-turn."""
     monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
-    monkeypatch.setattr(cc, "is_turn_active", lambda cid: cid in {"a", "b"})
+    monkeypatch.setattr(cc, "_leases", Counter({"a": 1, "b": 1}))
 
     await cc.get_or_create_conversation("a")
     await cc.get_or_create_conversation("b")
@@ -356,3 +357,18 @@ async def test_warm_resume_reads_complete_log_from_disk(
     assert [event["type"] for event in result.events] == [
         "agent_started", "user_message", "context_usage",
     ]
+
+
+async def test_nested_conversation_leases_survive_inner_exit_and_release_on_failure(monkeypatch):
+    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 1)
+    with pytest.raises(RuntimeError, match="owner failed"):
+        with cc.conversation_lease("leased"):
+            await cc.get_or_create_conversation("leased")
+            with cc.conversation_lease("leased"):
+                await cc.get_or_create_conversation("other")
+            await cc.get_or_create_conversation("third")
+            assert "leased" in cc._conversations
+            raise RuntimeError("owner failed")
+    await cc.get_or_create_conversation("last")
+    assert "leased" not in cc._conversations
+    assert "leased" not in cc._leases

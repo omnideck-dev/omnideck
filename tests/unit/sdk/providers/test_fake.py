@@ -2,7 +2,7 @@
 
 import pytest
 
-from sdk.providers._fake import FakeProvider
+from providers._fake import FakeProvider
 from sdk.providers._models import ChatResponse
 from tests.e2e._protocol import bash, call_tool, open_url, say, send_file, write_file
 
@@ -281,7 +281,7 @@ async def test_list_models_offline():
 
 @pytest.mark.unit
 def test_env_gating_routes_to_fake(monkeypatch):
-    import sdk.providers as providers
+    import providers
 
     monkeypatch.setenv("MOCK_LLM", "1")
     providers.reset_provider()

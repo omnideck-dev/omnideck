@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from sdk.agent import Agent
+from sdk.context import ContextManager
+
+from ._types import Hook
 
 from ._budget_guard import BudgetGuard
 from ._context_hook import ContextHook
@@ -11,23 +14,21 @@ from ._logging_hook import LoggingHook
 from ._loop_detector import LoopDetector
 from ._nudge_hook import NudgeHook
 from ._result_cap import ToolResultCapHook
-from ._scratchpad_hook import ScratchpadHook
 from ._stop_hook import StopHook
 
 
 def default_hooks(
-    agent: Any,
+    agent: Agent,
     *,
     max_iterations: int = 0,
-    ctx_manager: Any | None = None,
-) -> list[Any]:
+    ctx_manager: ContextManager | None = None,
+) -> list[Hook]:
     """Return the standard set of hooks used by all agents."""
-    hooks: list[Any] = [NudgeHook(), StopHook()]
+    hooks: list[Hook] = [NudgeHook(), StopHook()]
     if max_iterations > 0:
         hooks.append(BudgetGuard(max_iterations))
     hooks.append(LoopDetector())
     hooks.append(LoggingHook(agent))
-    hooks.append(ScratchpadHook())
     hooks.append(LoadedSkillHook())
     context_window = getattr(agent, "context_window", 0) or 0
     if context_window > 0:

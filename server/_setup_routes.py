@@ -24,7 +24,7 @@ from migrations._welcome_constants import (
     WELCOME_CONVERSATION_ID,
     WELCOME_DASHBOARD_FILENAME,
 )
-from sdk.providers import get_provider
+from providers import get_provider
 from settings import load_settings, save_settings
 from setup import mark_ready
 

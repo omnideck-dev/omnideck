@@ -753,12 +753,13 @@ async def test_pre_set_external_stop_skips_provider_request() -> None:
 
 async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: MagicMock) -> None:
     """Stopping mid-stream persists the streamed-so-far text as a stopped iteration."""
-    from sdk.turn import request_stop, turn_scope
+    from sdk.turn import turn_scope
+    from sdk.control import get_execution_control
 
     class _StreamThenStop:
         async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
             yield ChatDelta(content="par")
-            request_stop("c-stop")  # arm the stop before the next token arrives
+            get_execution_control().stop()  # arm the stop before the next token arrives
             yield ChatDelta(content="tial")
 
         async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
@@ -785,12 +786,13 @@ async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publi
     iteration event but never derives into provider-facing history — an
     assistant message with no content and no tool calls would be rejected
     by OpenAI-style providers on the next turn."""
-    from sdk.turn import request_stop, turn_scope
+    from sdk.turn import turn_scope
+    from sdk.control import get_execution_control
 
     class _ThinkThenStop:
         async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
             yield ChatDelta(thinking="planning")
-            request_stop("c-think-stop")
+            get_execution_control().stop()
             yield ChatDelta(thinking="more planning")
 
         async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover
@@ -821,14 +823,15 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
     """A stop landing between the final delta and the iteration publish (the
     after_model window) must not lose the fully-streamed answer."""
     from sdk.hooks import StopHook
-    from sdk.turn import request_stop, turn_scope
+    from sdk.turn import turn_scope
+    from sdk.control import get_execution_control
 
     class _StreamAll:
         async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[Any, None]:
             yield ChatDelta(content="complete ")
             yield ChatDelta(content="answer")
             # Stop arrives after streaming finished, before after_model runs.
-            request_stop("c-late-stop")
+            get_execution_control().stop()
             yield _text_response("complete answer")
 
         async def chat(self, **kwargs: Any) -> ChatResponse:  # pragma: no cover

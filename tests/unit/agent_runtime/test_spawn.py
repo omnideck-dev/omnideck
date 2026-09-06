@@ -7,7 +7,8 @@ specifically the disabled-profile refusal.
 import pytest
 
 from functools import partial
-from agent_runtime._runner import AgentRunner, _Execution
+from agent_runtime import AgentRunner, AgentRunRequest, RunSession
+from conversations import get_or_create_conversation
 from agent_runtime._spawn import make_spawn_tool
 from sdk.agent_capabilities import AgentCapabilities
 from sdk.context import ConversationHistory
@@ -18,16 +19,12 @@ from sdk.turn import ExecutionContext
 @pytest.fixture
 def spawn_agent():
     runner = AgentRunner()
-    runner._executions["parent"] = _Execution("run", "conversation", None)
-    context = ExecutionContext(
-        execution_id="parent",
-        conversation_id="conversation",
-        run_id="run",
-        event_sink=ConversationHistory(conversation_id="conversation"),
-        control=ExecutionControl(),
-    )
+    session = RunSession(AgentRunRequest(
+        conversation_id="conversation", message="test", attachments=None, profile_id="parent",
+    ), "run", get_or_create_conversation)
+    context = session.root_context
     with context.bind("PARENT", AgentCapabilities([])):
-        yield make_spawn_tool(partial(runner._invoke_child, "parent"))
+        yield make_spawn_tool(partial(runner._invoke_child, session, context))
 
 
 @pytest.fixture(autouse=True)

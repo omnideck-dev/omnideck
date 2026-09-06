@@ -7,7 +7,8 @@ import re
 
 from aiohttp import web
 
-from sdk.providers import Provider, get_provider
+from sdk.providers import Provider
+from providers import get_provider
 
 logger = logging.getLogger(__name__)
 

@@ -6,9 +6,9 @@ to the active AgentCapabilities. These mock ``tool_categories`` and isolate the 
 
 import pytest
 
-from sdk.skills._store import SkillRecord, save_skill_record
-from sdk.skills._tools import list_available_skills, load_skill
-from sdk.skills._tool_categories import ToolCategory
+from skills._store import SkillRecord, save_skill_record
+from skills._tools import list_available_skills, load_skill
+from skills._tool_categories import ToolCategory
 from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
 
 
@@ -23,12 +23,12 @@ def _make_tool(name: str):
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     """Temp skill store, with a fixed 'coding' tool category."""
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
     async def _cats():
         return {"coding": ToolCategory("coding", "Coding", "", [_make_tool("new_tool")])}
 
-    monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("skills._resolve.tool_categories", _cats)
 
 
 @pytest.fixture()

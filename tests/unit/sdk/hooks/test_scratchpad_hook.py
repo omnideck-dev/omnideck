@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from sdk.hooks._scratchpad_hook import ScratchpadHook
+from agent_runtime._scratchpad_hook import ScratchpadHook
 
 
 @pytest.fixture()

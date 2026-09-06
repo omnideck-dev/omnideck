@@ -1,6 +1,6 @@
 # Agent execution regression contracts
 
-Run `just integration`. These tests connect the production `ActiveRunManager`,
+Run `just integration`. These tests connect the production `AgentRuntime`, `RunSession`,
 `AgentRunner`, SDK scopes/hooks/tool loop, subagent execution, `TaskRunner`,
 `TaskExecutor`, and file-backed stores. They do not mock `AgentExecutor.execute` or rewrite
 history/event behavior. They deliberately live outside the SDK unit suite's
@@ -15,6 +15,9 @@ Tests requiring actual Chrome belong in browser integration or E2E tests.
 async generators. It records model requests so the tests can assert profile
 options, active tools, and history isolation. Unexpected model requests fail.
 Concurrency tests use events to establish overlap and completion order.
+
+The shared-runner and run-session integration tests use the actual FakeProvider
+protocol, with real tool functions and event-gated concurrency.
 
 The E2E counterpart uses the existing `MOCK_LLM=1` FakeProvider directive
 protocol. See `tests/e2e/api/agent_runs`, `tests/e2e/routines`, and existing

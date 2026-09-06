@@ -8,13 +8,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_runtime import ActiveRunManager, AgentRunRequest
+from agent_runtime import AgentRuntime, AgentRunRequest
 from agents import AgentProfile
 from agents._agent_profiles import save_agent_profile
 from sdk.events import AgentEvent, get_current_agent_id
 from sdk.providers import ChatDelta, ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
-from sdk.skills._store import SkillRecord, save_skill_record
-from sdk.skills._tool_categories import ToolCategory
+from skills._store import SkillRecord, save_skill_record
+from skills._tool_categories import ToolCategory
 from sdk.turn import get_conversation_id
 from sdk.turn._models import _current_execution
 from tasks._file_store import FileTaskStore
@@ -78,7 +78,7 @@ class ScriptedProvider:
 
 @dataclass
 class Harness:
-    manager: ActiveRunManager
+    manager: AgentRuntime
     provider: ScriptedProvider
     home: Path
     store: FileTaskStore
@@ -112,7 +112,7 @@ class Harness:
             conversation_id=conversation, profile_id=profile,
             message=message, attachments=attachments,
         ))
-        return info, self.manager.subscribe(info.run_id, after_seq=0)
+        return info, info.events(after_seq=0)
 
     async def run(self, profile="leaf", **kwargs):
         info, stream = await self.start(profile, **kwargs)

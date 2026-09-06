@@ -1,4 +1,4 @@
-"""Tests for SummarizeStrategy and related helpers."""
+"""Tests for LLMCompactionStrategy and related helpers."""
 
 from __future__ import annotations
 
@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sdk.context import ConversationHistory, SummarizeStrategy
+from sdk.context import ConversationHistory
+from agent_runtime._compaction import LLMCompactionStrategy
 from sdk.context._models import ContextStats
-from sdk.context._strategy import (
+from agent_runtime._compaction import (
     _SUMMARY_PREFIX,
     _extract_prior_summary,
     _find_first_user,
@@ -43,14 +44,14 @@ async def test_compaction_publishes_payload_and_derived_view_shows_summary():
         {"role": "assistant", "content": "recent assistant"},
     ]
     history = _build_history(messages)
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
 
     published_payloads: list = []
     captured = MagicMock(side_effect=lambda evt: published_payloads.append(evt.payload))
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.publish_event", captured), \
-         patch("sdk.context._strategy.load_settings",
+         patch("agent_runtime._compaction.publish_event", captured), \
+         patch("agent_runtime._compaction.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
         mock_summarize.return_value = ("This is the summary.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
@@ -76,11 +77,11 @@ async def test_compaction_failure_raises_with_user_facing_message():
         {"role": "assistant", "content": "recent assistant"},
     ]
     history = _build_history(messages)
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1, summary_model="test-model")
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy._unload_model", new_callable=AsyncMock), \
-         patch("sdk.context._strategy.load_settings",
+         patch("agent_runtime._compaction._unload_model", new_callable=AsyncMock), \
+         patch("agent_runtime._compaction.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
         mock_summarize.side_effect = ProviderError("rate limited (status code: 429)", retryable=True)
         with pytest.raises(ProviderError) as excinfo:
@@ -114,13 +115,13 @@ async def test_compaction_does_not_mutate_history_directly():
         {"role": "assistant", "content": "Done!"},
     ]
     history = _build_history(messages)
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2, summary_model="test-model")
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=2, summary_model="test-model")
 
     events_before = list(history.recorded_events)
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.publish_event"), \
-         patch("sdk.context._strategy.load_settings",
+         patch("agent_runtime._compaction.publish_event"), \
+         patch("agent_runtime._compaction.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
         mock_summarize.return_value = ("Summary text.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
@@ -241,14 +242,14 @@ async def test_compaction_payload_carries_audit_fields():
         {"role": "assistant", "content": "recent reply"},
     ]
     history = _build_history(messages)
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1)
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1)
 
     payloads: list = []
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
-         patch("sdk.context._strategy.publish_event",
+         patch("agent_runtime._compaction.publish_event",
                side_effect=lambda evt: payloads.append(evt.payload)), \
-         patch("sdk.context._strategy.load_settings",
+         patch("agent_runtime._compaction.load_settings",
                return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {"temperature": 0.3}}):
         mock_summarize.return_value = ("Summary.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
@@ -268,9 +269,9 @@ async def test_compaction_payload_carries_audit_fields():
 @pytest.mark.asyncio
 async def test_unload_model_spawns_subprocess_and_awaits():
     """_unload_model should use create_subprocess_exec and await communicate()."""
-    from sdk.context._strategy import _unload_model
+    from agent_runtime._compaction import _unload_model
 
-    with patch("sdk.context._strategy.asyncio.create_subprocess_exec") as mock_csp:
+    with patch("agent_runtime._compaction.asyncio.create_subprocess_exec") as mock_csp:
         mock_proc = MagicMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))
         mock_csp.return_value = mock_proc
@@ -289,9 +290,9 @@ async def test_unload_model_spawns_subprocess_and_awaits():
 @pytest.mark.asyncio
 async def test_unload_model_handles_timeout():
     """_unload_model should kill the process on timeout."""
-    from sdk.context._strategy import _unload_model
+    from agent_runtime._compaction import _unload_model
 
-    with patch("sdk.context._strategy.asyncio.create_subprocess_exec") as mock_csp:
+    with patch("agent_runtime._compaction.asyncio.create_subprocess_exec") as mock_csp:
         mock_proc = MagicMock()
         mock_proc.communicate = AsyncMock(side_effect=TimeoutError)
         mock_proc.kill = MagicMock()
@@ -308,9 +309,9 @@ async def test_unload_model_handles_timeout():
 @pytest.mark.asyncio
 async def test_unload_model_handles_subprocess_error():
     """_unload_model should catch OSError during subprocess creation."""
-    from sdk.context._strategy import _unload_model
+    from agent_runtime._compaction import _unload_model
 
-    with patch("sdk.context._strategy.asyncio.create_subprocess_exec",
+    with patch("agent_runtime._compaction.asyncio.create_subprocess_exec",
                side_effect=OSError("ollama not found")):
         # Should not raise — the exception is caught and logged.
         await _unload_model("test-model")
@@ -349,7 +350,7 @@ def _started(agent_id: str, agent_name: str, evt_id: str,
 def test_compute_stats_full_population():
     """All scope counts, savings math, and spanned_seconds populate
     when the event log has the right shape."""
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
@@ -397,7 +398,7 @@ def test_compute_stats_cross_turn_agent_id_suffix():
     counted when compaction fires on a later turn (agent_id ends in .2).
     Both turns are depth-0 agents, so the root-view scope spans them
     regardless of the per-turn ``.N`` agent_id suffix."""
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
@@ -435,7 +436,7 @@ def test_resolve_kept_bounds_cross_turn_agent_id_suffix():
     ".2", ".3"); scoping to one id would only count the current turn's
     iterations and prevent compaction from ever firing in a multi-turn
     conversation."""
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=2,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
@@ -471,7 +472,7 @@ def test_resolve_kept_bounds_spans_mid_conversation_profile_switch():
     agent_id, but every turn is still a depth-0 root agent. The
     iteration count must span the switch so compaction can fire on the
     new (e.g. smaller-context) profile instead of resetting to zero."""
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=2,
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=2,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([
@@ -508,7 +509,7 @@ def test_resolve_kept_bounds_spans_mid_conversation_profile_switch():
 def test_compute_stats_second_compaction_skips_prior_range():
     """The range starts after the previous compaction event, not at the
     log head — earlier-compacted events are not re-counted."""
-    strategy = SummarizeStrategy(threshold=0.5, keep_recent_groups=1,
+    strategy = LLMCompactionStrategy(threshold=0.5, keep_recent_groups=1,
                                  summary_model="m")
     history = ConversationHistory(conversation_id="c1")
     history.seed_events([

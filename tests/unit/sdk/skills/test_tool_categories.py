@@ -16,8 +16,8 @@ from config import FeaturesConfig
 from integrations.permissions import Access, Capability
 from agent_runtime._factory import _base_tools
 from agent_runtime._spawn import make_spawn_tool
-from sdk.skills._tool_categories import _custom_tools_category
-from sdk.skills._tool_categories import _static_tool_categories, tool_categories
+from skills._tool_categories import _custom_tools_category
+from skills._tool_categories import _static_tool_categories, tool_categories
 from sdk.tools._callable_schema import callable_to_json_schema
 from tools.integrations._tool_resolution import _BUILDERS
 from tools.integrations.types import RegisteredIntegration

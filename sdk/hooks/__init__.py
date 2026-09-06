@@ -12,6 +12,7 @@ Phase signatures:
     on_turn_end(final_content, agent_name) -> None
 """
 
+from ._types import AfterModelHook, AfterToolHook, BeforeModelHook, BeforeToolHook, Hook, TurnEndHook, TurnStartHook
 from ._budget_guard import BudgetGuard
 from ._context_hook import ContextHook
 from ._default import default_hooks
@@ -20,17 +21,17 @@ from ._logging_hook import LoggingHook
 from ._loop_detector import LoopDetector
 from ._nudge_hook import NudgeHook
 from ._result_cap import ToolResultCapHook
-from ._scratchpad_hook import ScratchpadHook
 from ._stop_hook import StopHook
 
 __all__ = [
+    "Hook", "TurnStartHook", "BeforeModelHook", "AfterModelHook",
+    "BeforeToolHook", "AfterToolHook", "TurnEndHook",
     "BudgetGuard",
     "ContextHook",
     "LoadedSkillHook",
     "LoggingHook",
     "LoopDetector",
     "NudgeHook",
-    "ScratchpadHook",
     "StopHook",
     "ToolResultCapHook",
     "default_hooks",

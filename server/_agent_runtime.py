@@ -1,24 +1,8 @@
-"""Compose and expose the server's process-scoped agent runtime."""
+"""The server's process-scoped runtime shared by channel and routine adapters."""
 
 from aiohttp import web
+from agent_runtime import AgentRuntime
 
-from agent_runtime import ActiveRunManager, AgentRunner
-from conversations import get_or_create_conversation
-from sdk.context import ConversationHistory
+AGENT_RUNTIME_KEY: web.AppKey[AgentRuntime] = web.AppKey("agent_runtime", AgentRuntime)
 
-ACTIVE_RUN_MANAGER_KEY: web.AppKey[ActiveRunManager] = web.AppKey(
-    "active_run_manager",
-    ActiveRunManager,
-)
-
-
-async def _load_conversation(conversation_id: str) -> ConversationHistory:
-    return await get_or_create_conversation(conversation_id)
-
-
-def build_agent_runner() -> AgentRunner:
-    """Build the channel-neutral runner with application persistence attached."""
-    return AgentRunner(_load_conversation)
-
-
-__all__ = ["ACTIVE_RUN_MANAGER_KEY", "build_agent_runner"]
+__all__ = ["AGENT_RUNTIME_KEY"]

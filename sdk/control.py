@@ -35,3 +35,8 @@ class ExecutionControl:
 
 
 _current_control: ContextVar[ExecutionControl | None] = ContextVar("execution_control", default=None)
+
+
+def get_execution_control() -> ExecutionControl | None:
+    """Return the control supplied to the current execution scope."""
+    return _current_control.get()

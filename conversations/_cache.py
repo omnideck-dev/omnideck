@@ -1,12 +1,13 @@
 """In-memory conversation cache and persisted resume state."""
 
 import logging
-from collections import OrderedDict
+from collections import Counter, OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from sdk.context import ConversationHistory
 from sdk.context._view import build_transcript_view
-from sdk.turn import is_turn_active
 
 from ._browser_tabs import load_browser_tabs
 from ._events_log import load_events_jsonl
@@ -22,6 +23,21 @@ logger = logging.getLogger(__name__)
 # doesn't hold every conversation a user has ever opened. The on-disk
 # state is authoritative; an evicted entry is rehydrated from disk on
 # next access.
+_leases: Counter[str] = Counter()
+
+
+@contextmanager
+def conversation_lease(conversation_id: str) -> Iterator[None]:
+    """Keep cached conversation resources alive while an application run owns them."""
+    _leases[conversation_id] += 1
+    try:
+        yield
+    finally:
+        _leases[conversation_id] -= 1
+        if _leases[conversation_id] == 0:
+            del _leases[conversation_id]
+
+
 _MAX_CACHED_CONVERSATIONS = 25
 _conversations: OrderedDict[str, ConversationHistory] = OrderedDict()
 
@@ -69,17 +85,14 @@ async def _evict_lru_conversation(exclude: str | None = None) -> None:
     nobody else can find, and a subsequent chat for the same id would
     rehydrate from disk, producing two parallel writers.
 
-    ``exclude`` skips the conversation that triggered this eviction. The
-    caller has not yet entered ``turn_scope`` for it, so ``is_turn_active``
-    cannot recognize it as protected — without this guard the just-inserted
-    entry would be evicted by its own insert in the rare case where every
-    other cached entry is mid-turn.
+    ``exclude`` also protects a newly hydrated conversation that is being
+    opened for browsing without an active execution lease.
     """
     while len(_conversations) > _MAX_CACHED_CONVERSATIONS:
         for cid in _conversations:
             if cid == exclude:
                 continue
-            if not is_turn_active(cid):
+            if not _leases[cid]:
                 await evict_conversation(cid)
                 logger.info(
                     "Evicted LRU conversation %s from in-memory cache",

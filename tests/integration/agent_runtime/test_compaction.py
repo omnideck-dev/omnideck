@@ -19,7 +19,7 @@ async def test_compaction_preserves_tool_pairs_and_agent_scope(harness, monkeypa
     async def lookup(value: str) -> str:
         return f"finding:{value}"
 
-    monkeypatch.setattr("sdk.context._strategy._unload_model", unload)
+    monkeypatch.setattr("agent_runtime._compaction._unload_model", unload)
     h.skill("lookup", lookup)
     h.profile(skills=["lookup"], context_window=1000, compaction_threshold=0.01)
     h.provider.plan("leaf", *[

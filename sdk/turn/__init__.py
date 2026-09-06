@@ -2,37 +2,27 @@
 
 This package provides:
 - ``AgentExecutor``: Execution engine driving the chat/tool loop.
-- ``turn_scope``: Async context manager for conversation turn lifecycle.
-- Stop/nudge signaling utilities for user-initiated control.
+- ``turn_scope``: Async context manager for standalone execution bindings.
+- Accessors for the supplied execution context and cooperative stop signal.
 """
 
 from ._execution import AgentExecutor
-from ._models import ExecutionContext, ExecutionResult, ToolLoopError
-from ._nudge_queue import drain_nudges, queue_nudge, register_nudge_queue, unregister_nudge_queue
+from ._models import ExecutionContext, ExecutionResult, ToolLoopError, get_execution_context
 from sdk.control import StopRequestedError
 from ._turn import (
-    any_turn_active,
     check_stop,
     get_conversation_id,
-    is_turn_active,
-    request_stop,
     turn_scope,
 )
 
 __all__ = [
     "StopRequestedError",
     "ToolLoopError",
-    "any_turn_active",
     "check_stop",
-    "drain_nudges",
     "get_conversation_id",
-    "is_turn_active",
-    "queue_nudge",
-    "register_nudge_queue",
-    "request_stop",
     "AgentExecutor",
     "ExecutionContext",
+    "get_execution_context",
     "ExecutionResult",
     "turn_scope",
-    "unregister_nudge_queue",
 ]

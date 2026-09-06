@@ -251,3 +251,53 @@ E2E scenario now also runs browser/file work through two child levels, checks th
 runtime-generated hierarchy and persisted file result, and opens the result in
 the UI. Existing lifecycle, stop, nudge, parallel-child, compaction, skill,
 reconnect, and conversation-resume tests continue to cover the shared path.
+
+
+**Final implementation stage**
+
+Stages three through five are implemented together. `AgentRuntime` replaces
+`ActiveRunManager`; `RunSession` replaces `_ActiveRun` and owns all root/child
+execution contexts, controls, event replay, conversation leases, disk observers,
+artifacts, and cleanup. `RunHandle` is the observer/control API. `RunResult`
+contains typed root completion, aggregate execution usage, artifact payloads,
+and per-execution results. Admission and task ownership no longer live in SDK
+scopes or global nudge maps. Existing handles retain replay after completion;
+the runtime drops completed runs from its active maps.
+
+`AgentRunner` retains profile preparation and the common root/child execution
+path, but its execution registry and resource setup move into the supplied
+session. Parent-bound spawn invocations register children with that session.
+`RunPolicy` makes memory, skill restore/persistence, naming, and conversation
+lifetime explicit. `TaskExecutor` receives the same runtime used by HTTP, starts
+a run, and maps its result. It stores `agent_run_id` separately from workflow
+identity and cancels/awaits the owned handle when its routine task is cancelled.
+
+The SDK no longer imports application packages. Configured provider and vision
+selection move to `providers`, including FakeProvider because its directive
+protocol knows application tools/profiles. Persistent skill catalog/resolution/
+policy/tools move to `skills`. The generic `Skill` stays in the SDK. Configured
+LLM compaction and scratchpad integration move to `agent_runtime`; generic
+context management, strategy contracts, provider adapters, and hooks stay in
+the SDK. Old imports, global control registries, the transitional execution
+context helper, and the compactor alias are removed directly.
+
+Ownership changes intentionally tighten three behaviors: cancelling a waiter
+only detaches it; explicit task cancellation reports agent status `stopped`;
+and foreign/stale execution IDs are refused for nudges. All entry points now
+attach the same artifact/browser/terminal/event observers. The single root
+terminal event is emitted after session cleanup. Cached chat resources retain
+their conversation lifetime; routine resources are released before task
+completion. HTTP endpoints, event payload shapes, persisted conversations, and
+model-facing spawn arguments remain compatible. Old task results load with an
+absent optional `agent_run_id`.
+
+Regression tests enforce SDK imports both statically and by importing/executing
+it with application imports blocked in a fresh process. Actual FakeProvider
+integration tests exercise detached waiters, early cancellation, routine-owner
+cancellation and resource release, per-run nudge isolation, and child usage/
+artifact aggregation. HTTP E2E adds cross-conversation nudge refusal; routine
+E2E verifies stored agent-run identity alongside nested browser/file work.
+
+SDK hook inputs now use structural phase protocols (`Hook`); consumers implement
+only the phases they need. Dispatch order and synchronous/async phase behavior
+remain unchanged.

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import ActiveRunManager, AgentRunner, AgentRunRequest, RunAttachment
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
@@ -54,11 +54,9 @@ async def _load_empty_history(
 
 async def _run(conversation_id: str) -> list[AgentEvent]:
     seen: list[AgentEvent] = []
-    await AgentRunner(_load_empty_history).run(
-        _request(conversation_id),
-        emit=seen.append,
-        stop_event=asyncio.Event(),
-    )
+    runtime = AgentRuntime(conversation_loader=_load_empty_history)
+    handle = await runtime.start(_request(conversation_id))
+    seen = [record.event async for record in handle.events()]
     return seen
 
 
@@ -132,11 +130,11 @@ async def test_manager_stop_before_concrete_runner_starts_skips_setup(
         "get_agent_profile",
         _unexpected_profile_lookup,
     )
-    manager = ActiveRunManager(AgentRunner(_load_empty_history))
+    manager = AgentRuntime(conversation_loader=_load_empty_history)
 
     info = await manager.start(_request("early-stop"))
-    stream = manager.subscribe(info.run_id, after_seq=0)
-    assert manager.request_stop("early-stop") is True
+    stream = info.events(after_seq=0)
+    info.stop()
 
     records = [record async for record in stream]
 
@@ -154,9 +152,9 @@ async def test_setup_failure_is_persisted_and_ends_once(
         raise RuntimeError("profile store unavailable")
 
     monkeypatch.setattr(factory_module, "get_agent_profile", _explode)
-    manager = ActiveRunManager(AgentRunner(_load_empty_history))
+    manager = AgentRuntime(conversation_loader=_load_empty_history)
     info = await manager.start(_request(conversation_id))
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
 
     records = [record async for record in stream]
     persisted = load_events_jsonl(conversation_id)

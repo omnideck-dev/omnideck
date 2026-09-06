@@ -10,7 +10,7 @@ from collections import OrderedDict
 import pytest
 import pytest_asyncio
 
-from agent_runtime import ActiveRunManager, AgentRunner
+from agent_runtime import AgentRuntime, AgentRunner
 from config import load_config
 from conversations import get_or_create_conversation
 from sdk.events import get_current_agent_id
@@ -33,7 +33,7 @@ async def harness(tmp_path, monkeypatch):
     # parsing, skill composition, and all disk serialization still run.
     for target in (
         "agents._agent_profiles.load_config",
-        "sdk.skills._store.load_config",
+        "skills._store.load_config",
         "tools.memory.memory.load_config",
         "tools.virtual_computer.receive_file.load_config",
         "tools.scratchpad.scratchpad.load_config",
@@ -44,23 +44,23 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr("conversations._cache._conversations", OrderedDict())
     monkeypatch.setattr("sdk.lifecycle._hooks", [])
     monkeypatch.setattr("conversations._lifecycle._hooks", [])
-    monkeypatch.setattr("agent_runtime._execution_context.load_config", lambda: config)
+    monkeypatch.setattr("agent_runtime._runner.load_config", lambda: config)
 
     provider = ScriptedProvider()
     monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _name: provider)
-    monkeypatch.setattr("sdk.context._strategy.get_provider", lambda _name: provider)
+    monkeypatch.setattr("agent_runtime._compaction.get_provider", lambda _name: provider)
     # Compaction settings are application configuration, not the strategy.
-    monkeypatch.setattr("sdk.context._strategy.load_settings", lambda: {
+    monkeypatch.setattr("agent_runtime._compaction.load_settings", lambda: {
         "compaction_provider": "scripted", "compaction_model": "summary", "compaction_options": {},
     })
 
-    manager = ActiveRunManager(AgentRunner(get_or_create_conversation), shutdown_timeout=0.1)
+    manager = AgentRuntime(conversation_loader=get_or_create_conversation, shutdown_timeout=0.1)
     h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config)
 
     async def categories():
         return h.categories
 
-    monkeypatch.setattr("sdk.skills._resolve.tool_categories", categories)
+    monkeypatch.setattr("skills._resolve.tool_categories", categories)
     monkeypatch.setattr("tools.browser.capability.tool_categories", categories)
 
     class BrowserService:

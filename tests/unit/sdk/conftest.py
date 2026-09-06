@@ -154,7 +154,7 @@ def _events_first_test_bridge(monkeypatch):
     # (notably ``sdk.tools._helpers``).
     import sdk.events as _events
     import sdk.turn._execution as _execution
-    import sdk.context._strategy as _strategy
+    import agent_runtime._compaction as _strategy
 
     targets: list[tuple[Any, str]] = [
         (_events, "publish_event"),

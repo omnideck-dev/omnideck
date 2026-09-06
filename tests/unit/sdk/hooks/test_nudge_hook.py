@@ -17,7 +17,7 @@ from sdk.events import (
 from sdk.hooks._nudge_hook import NudgeHook
 from sdk.agent_capabilities import AgentCapabilities
 from sdk.turn import turn_scope
-from sdk.turn._nudge_queue import queue_nudge
+from sdk.control import get_execution_control
 
 
 class _FakeHistory:
@@ -46,8 +46,8 @@ async def test_nudge_hook_publishes_user_message_event_when_nudges_present():
         conv_token = set_current_conversation(conv)
         try:
             async with agent_span("Test", agent_capabilities=AgentCapabilities([])) as agent_id:
-                queue_nudge(agent_id, "first nudge")
-                queue_nudge(agent_id, "second nudge")
+                get_execution_control().nudge("first nudge")
+                get_execution_control().nudge("second nudge")
                 await hook.before_model(history, iteration=1, agent_name="Test")
         finally:
             reset_current_conversation(conv_token)

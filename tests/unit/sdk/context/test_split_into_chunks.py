@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from sdk.context._strategy import _split_into_chunks
+from agent_runtime._compaction import _split_into_chunks
 
 
 def _make_msg(role: str, content: str = "", **kwargs) -> dict:

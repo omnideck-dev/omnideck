@@ -17,6 +17,11 @@ from sdk.providers import TokenUsage
 _current_execution: ContextVar[ExecutionContext | None] = ContextVar("execution_context", default=None)
 
 
+def get_execution_context() -> ExecutionContext | None:
+    """Return the caller-supplied execution context bound to this coroutine."""
+    return _current_execution.get()
+
+
 class ToolLoopError(Exception):
     """An execution failed while processing a model or tool request."""
 

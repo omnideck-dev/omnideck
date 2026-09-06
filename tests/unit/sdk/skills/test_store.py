@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from sdk.skills._store import (
+from skills._store import (
     SkillRecord,
     delete_skill_record,
     get_skill_record,
@@ -21,7 +21,7 @@ from sdk.skills._store import (
 @pytest.fixture(autouse=True)
 def _isolate_skills(tmp_path, monkeypatch):
     """Point the store at a temp directory per test."""
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
 def _record(**overrides) -> SkillRecord:

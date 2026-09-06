@@ -66,3 +66,46 @@ def test_control_reaches_running_agent_and_is_persisted(api_client: ApiClient, a
     finally:
         response.close()
         _stop_and_delete_conversation(api_client, conversation)
+
+
+def test_nudge_cannot_target_an_execution_in_another_conversation(api_client: ApiClient) -> None:
+    conversations = [_conversation_id("nudge_owner"), _conversation_id("nudge_foreign")]
+    streams = []
+    try:
+        agent_ids = []
+        for conversation in conversations:
+            response = api_client.open_stream("POST", "/api/chat", data={
+                "conversation_id": conversation, "profile_id": _default_profile_id(api_client),
+                "message": bash("sleep 5") + say("original answer"),
+            }, timeout=20)
+            streams.append(response)
+            assert response.status == 200
+            while True:
+                raw = response.readline()
+                assert raw, "execution completed before its control window"
+                event = json.loads(raw)
+                if event["payload"]["type"] == "iteration":
+                    agent_ids.append(event["agent_id"])
+                    break
+        rejected = api_client.post("/api/nudge", data={
+            "conversation_id": conversations[0], "agent_id": agent_ids[1],
+            "message": say("foreign injection"),
+        })
+        assert rejected.status == 409, rejected.text
+        accepted = api_client.post("/api/nudge", data={
+            "conversation_id": conversations[0], "agent_id": agent_ids[0],
+            "message": say("owner updated"),
+        })
+        assert accepted.status == 200, accepted.text
+        for response in streams:
+            tail = [json.loads(line) for line in response.read().decode().splitlines() if line.strip()]
+            assert tail[-1]["payload"]["type"] == "turn_end"
+        left, right = [_resume(api_client, conversation)["events"] for conversation in conversations]
+        assert [e["content"] for e in left if e["type"] == "iteration"][-1] == "owner updated"
+        assert [e["content"] for e in right if e["type"] == "iteration"][-1] == "original answer"
+        assert not any(e.get("is_nudge") for e in right)
+    finally:
+        for response in streams:
+            response.close()
+        for conversation in conversations:
+            _stop_and_delete_conversation(api_client, conversation)

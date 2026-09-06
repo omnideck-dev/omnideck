@@ -6,15 +6,16 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 import pytest
+from sdk.turn import ExecutionResult
+from agent_runtime import RunSession
 
 from agent_runtime import (
-    ActiveRunConflictError,
-    ActiveRunManager,
-    ActiveRunManagerClosedError,
+    RunConflictError,
+    AgentRuntime,
+    AgentRuntimeClosedError,
     AgentRunRequest,
     InvalidRunCursorError,
     SequencedEvent,
-    UnknownActiveRunError,
 )
 from sdk.events import (
     AgentEvent,
@@ -69,11 +70,10 @@ class CallbackRunner:
     async def run(
         self,
         request: AgentRunRequest,
-        *,
-        emit: Callable[[AgentEvent], None],
-        stop_event: asyncio.Event,
-    ) -> None:
-        await self._callback(request, emit, stop_event)
+        session: RunSession,
+    ) -> ExecutionResult:
+        await self._callback(request, session.add_event, session.stop_event)
+        return ExecutionResult("success")
 
 
 class ControlledRunner:
@@ -91,11 +91,11 @@ class ControlledRunner:
     async def run(
         self,
         request: AgentRunRequest,
-        *,
-        emit: Callable[[AgentEvent], None],
-        stop_event: asyncio.Event,
-    ) -> None:
+        session: RunSession,
+    ) -> ExecutionResult:
         """Capture manager-owned controls and wait for test release."""
+        emit = session.add_event
+        stop_event = session.stop_event
         assert request.profile_id == "profile-1"
         assert request.conversation_id
         self.emit_event = emit
@@ -104,7 +104,7 @@ class ControlledRunner:
         self.started.set()
         try:
             await self.release.wait()
-            emit(_turn_end())
+            return ExecutionResult("success")
         except asyncio.CancelledError:
             self.cancelled.set()
             raise
@@ -122,9 +122,9 @@ async def _collect_stream(stream) -> list[SequencedEvent]:
 async def test_disconnect_only_closes_subscriber_and_runner_keeps_running() -> None:
     """Closing a subscription must not cancel its background runner."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
     info = await manager.start(_request())
-    first_stream = manager.subscribe(info.run_id, after_seq=0)
+    first_stream = info.events(after_seq=0)
 
     await runner.started.wait()
     runner.emit(_content("event-1", "one"))
@@ -137,7 +137,7 @@ async def test_disconnect_only_closes_subscriber_and_runner_keeps_running() -> N
     assert runner.cancelled.is_set() is False
 
     runner.emit(_content("event-2", "two"))
-    resumed_stream = manager.subscribe(info.run_id, after_seq=1)
+    resumed_stream = info.events(after_seq=1)
     collect_task = asyncio.create_task(_collect_stream(resumed_stream))
     runner.release.set()
     resumed = await collect_task
@@ -152,15 +152,15 @@ async def test_disconnect_only_closes_subscriber_and_runner_keeps_running() -> N
 async def test_second_subscriber_gets_replay_then_live_events_in_order() -> None:
     """A later subscriber receives retained records before newly emitted ones."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
     info = await manager.start(_request())
-    initial_stream = manager.subscribe(info.run_id, after_seq=0)
+    initial_stream = info.events(after_seq=0)
 
     await runner.started.wait()
     runner.emit(_content("event-1", "one"))
     assert (await anext(initial_stream)).event.id == "event-1"
 
-    replay_stream = manager.subscribe(info.run_id, after_seq=0)
+    replay_stream = info.events(after_seq=0)
     replayed = await anext(replay_stream)
     assert (replayed.seq, replayed.event.id) == (1, "event-1")
 
@@ -178,20 +178,20 @@ async def test_second_subscriber_gets_replay_then_live_events_in_order() -> None
 async def test_event_ids_resolve_to_resume_sequences() -> None:
     """Persisted event IDs can locate the correct active-run replay cursor."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
     info = await manager.start(_request())
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
 
     await runner.started.wait()
     runner.emit(_content("event-1", "one"))
     runner.emit(_content("event-2", "two"))
 
-    assert manager.sequence_for_event(info.run_id, "event-1") == 1
-    assert manager.sequence_for_event(info.run_id, "event-2") == 2
-    assert manager.sequence_for_event(info.run_id, "missing") is None
+    assert info.sequence_for_event("event-1") == 1
+    assert info.sequence_for_event("event-2") == 2
+    assert info.sequence_for_event("missing") is None
     active = manager.active_for_conversation("conversation-1")
     assert active is not None
-    assert active.last_seq == 2
+    assert active.snapshot().last_seq == 2
 
     collect_task = asyncio.create_task(_collect_stream(stream))
     runner.release.set()
@@ -201,7 +201,7 @@ async def test_event_ids_resolve_to_resume_sequences() -> None:
 async def test_concurrent_starts_reserve_conversation_once() -> None:
     """Concurrent starts cannot create two runs for one conversation."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
 
     results = await asyncio.gather(
         manager.start(_request()),
@@ -210,12 +210,12 @@ async def test_concurrent_starts_reserve_conversation_once() -> None:
     )
 
     infos = [result for result in results if not isinstance(result, Exception)]
-    conflicts = [result for result in results if isinstance(result, ActiveRunConflictError)]
+    conflicts = [result for result in results if isinstance(result, RunConflictError)]
     assert len(infos) == 1
     assert len(conflicts) == 1
 
     info = infos[0]
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
     await runner.started.wait()
     collect_task = asyncio.create_task(_collect_stream(stream))
     runner.release.set()
@@ -225,23 +225,19 @@ async def test_concurrent_starts_reserve_conversation_once() -> None:
 async def test_stop_before_runner_starts_is_not_lost() -> None:
     """The manager-owned stop event records a stop before task scheduling."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
     info = await manager.start(_request())
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
 
-    assert manager.request_stop("conversation-1") is True
-    assert manager.request_stop("missing") is False
-
-    await runner.started.wait()
-    assert runner.stop_was_set_on_start is True
-
-    collect_task = asyncio.create_task(_collect_stream(stream))
-    runner.release.set()
-    await collect_task
+    info.stop()
+    records = await _collect_stream(stream)
+    assert runner.started.is_set() is False
+    assert [r.event.payload.type for r in records] == ["turn_end"]
+    assert (await info.wait()).status == "stopped"
 
 
-async def test_manager_does_not_synthesize_domain_events_after_runner_failure() -> None:
-    """Errors and terminal events remain the AgentRunner's responsibility."""
+async def test_runtime_normalizes_unexpected_runner_failure() -> None:
+    """The runtime supplies an error and terminal event even for an unexpected runner failure."""
 
     async def failing_runner(
         _request: AgentRunRequest,
@@ -250,13 +246,13 @@ async def test_manager_does_not_synthesize_domain_events_after_runner_failure() 
     ) -> None:
         raise RuntimeError("setup exploded")
 
-    manager = ActiveRunManager(CallbackRunner(failing_runner))
+    manager = AgentRuntime(CallbackRunner(failing_runner))
     info = await manager.start(_request())
     records = await _collect_stream(
-        manager.subscribe(info.run_id, after_seq=0),
+        info.events(after_seq=0),
     )
 
-    assert records == []
+    assert [r.event.payload.type for r in records] == ["error", "turn_end"]
     assert manager.active_for_conversation("conversation-1") is None
 
 
@@ -272,10 +268,10 @@ async def test_runner_owned_failure_events_are_not_duplicated() -> None:
         emit(_turn_end())
         raise RuntimeError("provider unavailable")
 
-    manager = ActiveRunManager(CallbackRunner(failing_runner))
+    manager = AgentRuntime(CallbackRunner(failing_runner))
     info = await manager.start(_request())
     records = await _collect_stream(
-        manager.subscribe(info.run_id, after_seq=0),
+        info.events(after_seq=0),
     )
 
     assert [record.event.payload.type for record in records] == [
@@ -294,10 +290,10 @@ async def test_normal_runner_turn_end_is_not_duplicated() -> None:
     ) -> None:
         emit(_turn_end())
 
-    manager = ActiveRunManager(CallbackRunner(runner))
+    manager = AgentRuntime(CallbackRunner(runner))
     info = await manager.start(_request())
     records = await _collect_stream(
-        manager.subscribe(info.run_id, after_seq=0),
+        info.events(after_seq=0),
     )
 
     assert [record.event.payload.type for record in records] == ["turn_end"]
@@ -313,31 +309,29 @@ async def test_fast_completion_is_pruned_but_initial_subscription_finishes() -> 
     ) -> None:
         return
 
-    manager = ActiveRunManager(CallbackRunner(immediate_runner))
+    manager = AgentRuntime(CallbackRunner(immediate_runner))
     info = await manager.start(_request())
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
 
     records = await _collect_stream(stream)
 
-    assert records == []
+    assert [r.event.payload.type for r in records] == ["turn_end"]
     assert manager.get(info.run_id) is None
-    with pytest.raises(UnknownActiveRunError):
-        manager.subscribe(info.run_id, after_seq=0)
+    assert manager.get(info.run_id) is None
 
 
 async def test_invalid_and_unknown_cursors_are_rejected() -> None:
     """Subscribers cannot request negative, future, or unknown cursors."""
     runner = ControlledRunner()
-    manager = ActiveRunManager(runner)
+    manager = AgentRuntime(runner)
     info = await manager.start(_request())
-    stream = manager.subscribe(info.run_id, after_seq=0)
+    stream = info.events(after_seq=0)
 
     with pytest.raises(InvalidRunCursorError):
-        manager.subscribe(info.run_id, after_seq=-1)
+        info.events(after_seq=-1)
     with pytest.raises(InvalidRunCursorError):
-        manager.subscribe(info.run_id, after_seq=1)
-    with pytest.raises(UnknownActiveRunError):
-        manager.subscribe("run_missing", after_seq=0)
+        info.events(after_seq=1)
+    assert manager.get("run_missing") is None
 
     collect_task = asyncio.create_task(_collect_stream(stream))
     runner.release.set()
@@ -358,7 +352,7 @@ async def test_close_requests_stop_and_rejects_new_work() -> None:
         await stop_event.wait()
         stopped.set()
 
-    manager = ActiveRunManager(CallbackRunner(stop_aware_runner))
+    manager = AgentRuntime(CallbackRunner(stop_aware_runner))
     await manager.start(_request())
     await started.wait()
 
@@ -366,7 +360,7 @@ async def test_close_requests_stop_and_rejects_new_work() -> None:
 
     assert stopped.is_set()
     assert manager.active_for_conversation("conversation-1") is None
-    with pytest.raises(ActiveRunManagerClosedError):
+    with pytest.raises(AgentRuntimeClosedError):
         await manager.start(_request("conversation-2"))
 
 
@@ -387,7 +381,7 @@ async def test_close_cancels_runner_after_shutdown_timeout() -> None:
             cancelled.set()
             raise
 
-    manager = ActiveRunManager(CallbackRunner(stuck_runner), shutdown_timeout=0.001)
+    manager = AgentRuntime(CallbackRunner(stuck_runner), shutdown_timeout=0.001)
     await manager.start(_request())
     await started.wait()
 

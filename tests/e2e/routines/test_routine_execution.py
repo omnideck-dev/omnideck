@@ -104,6 +104,8 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page, dele
         assert result["result"] == task_reply
         assert result["file_outputs"] == [output_path]
         assert result["conversation_id"]
+        assert result["agent_run_id"].startswith("run_")
+        assert result["agent_run_id"] != run["id"]
 
         # Read the actual execution log after task completion. No seeded events
         # or intercepted response fixtures: the runtime generated this hierarchy.

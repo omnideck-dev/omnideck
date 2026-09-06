@@ -25,7 +25,7 @@ async def invoke(h, mode):
         task = h.store.create_task(routine.id, "task", "leaf input", agent_profile="leaf")
         run = h.store.queue_run(routine.id)
         result = h.store.get_task_results(run.id)[0]
-        output, files = await TaskExecutor(h.store).run(result, task)
+        output, files = await TaskExecutor(h.store, h.manager).run(result, task)
         conversation = h.store.get_task_results(run.id)[0].conversation_id
         return load_events_jsonl(conversation), output
     if mode == "child":

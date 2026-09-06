@@ -3,7 +3,7 @@
 import pytest
 
 from sdk.providers import ChatResponse
-from sdk.providers._fake import FakeProvider
+from providers._fake import FakeProvider
 from tests.e2e._protocol import model_script, model_tool, say, spawn
 
 

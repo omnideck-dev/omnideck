@@ -12,13 +12,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import ActiveRunConflictError, UnknownActiveRunError
+from agent_runtime import RunConflictError
 from server._agent_run_routes import (
     chat_handler,
     chat_run_events_handler,
     stop_handler,
 )
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._ui_routes import index_handler
 
 
@@ -94,8 +94,8 @@ async def test_chat_active_run_conflict_returns_user_friendly_409() -> None:
         "conversation_id": "abc",
     }))
     manager = MagicMock()
-    manager.start = AsyncMock(side_effect=ActiveRunConflictError("conflict"))
-    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+    manager.start = AsyncMock(side_effect=RunConflictError("conflict"))
+    req.app = {AGENT_RUNTIME_KEY: manager}
 
     resp = await chat_handler(req)
 
@@ -133,12 +133,13 @@ async def test_stop_targets_active_run_manager() -> None:
     """Stop sets the manager-owned signal rather than an HTTP-task signal."""
     manager = MagicMock()
     req = _make_request(query={"conversation_id": "conversation-1"})
-    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+    req.app = {AGENT_RUNTIME_KEY: manager}
 
     resp = await stop_handler(req)
 
     assert resp.status == 200
-    manager.request_stop.assert_called_once_with("conversation-1")
+    manager.active_for_conversation.assert_called_once_with("conversation-1")
+    manager.active_for_conversation.return_value.stop.assert_called_once_with()
 
 
 # -- run events handler ----------------------------------------------------
@@ -159,15 +160,15 @@ async def test_run_events_rejects_non_integer_cursor() -> None:
 async def test_run_events_returns_404_for_completed_run() -> None:
     """Unknown and already-pruned runs tell the client to reload persistence."""
     manager = MagicMock()
-    manager.subscribe.side_effect = UnknownActiveRunError("gone")
+    manager.get.return_value = None
     req = _make_request(query={"after": "3"})
     req.match_info = {"run_id": "run-1"}
-    req.app = {ACTIVE_RUN_MANAGER_KEY: manager}
+    req.app = {AGENT_RUNTIME_KEY: manager}
 
     resp = await chat_run_events_handler(req)
 
     assert resp.status == 404
-    manager.subscribe.assert_called_once_with("run-1", after_seq=3)
+    manager.get.assert_called_once_with("run-1")
 
 
 # -- index_handler ----------------------------------------------------------

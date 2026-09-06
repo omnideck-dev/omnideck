@@ -58,7 +58,7 @@ import re
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
-from ._models import (
+from sdk.providers._models import (
     ChatDelta,
     ChatMessage,
     ChatResponse,

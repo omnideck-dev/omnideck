@@ -11,13 +11,13 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from sdk.skills._policy import is_restricted_tool_category
+from skills._policy import is_restricted_tool_category
 from sdk.skills._registry import Skill
-from sdk.skills._store import get_skill_record, list_skill_records
-from sdk.skills._tool_categories import tool_categories
+from skills._store import get_skill_record, list_skill_records
+from skills._tool_categories import tool_categories
 
 if TYPE_CHECKING:
-    from sdk.skills._store import SkillRecord
+    from skills._store import SkillRecord
 
 logger = logging.getLogger(__name__)
 

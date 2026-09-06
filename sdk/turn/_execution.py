@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from typing import Any
 
+from sdk.hooks._types import Hook
 from sdk.agent import Agent
 from sdk.context import ConversationHistory
 from sdk.events import (
@@ -154,7 +155,7 @@ async def _stream_chat_with_retries(
 async def _run_tool_with_hooks(
     tool_call: Any,
     tools: list[Callable[..., Any]],
-    hooks: list[Any],
+    hooks: Sequence[Hook],
 ) -> None:
     """Execute a single tool call with before/after hooks.
 
@@ -208,7 +209,7 @@ class AgentExecutor:
         capabilities: AgentCapabilities,
         provider: Provider,
         context: ExecutionContext,
-        hooks: list[Any] | None = None,
+        hooks: Sequence[Hook] | None = None,
         max_parallel_tools: int = 1,
     ) -> ExecutionResult:
         if max_parallel_tools < 1:
@@ -230,7 +231,7 @@ class AgentExecutor:
         agent: Agent,
         capabilities: AgentCapabilities,
         provider: Provider,
-        hooks: list[Any],
+        hooks: Sequence[Hook],
         max_parallel_tools: int,
     ) -> ExecutionResult:
         for hook in hooks:

@@ -1,121 +1,94 @@
-# SDK Semantics
+# SDK and runtime semantics
 
-Core concepts and their relationships in the Computron 9000 agent SDK.
+The SDK executes supplied agents. The application runtime prepares them and owns
+their lifetime. Both interactive chat and routine tasks use this same path.
 
-## Conversation
+## Package boundaries
 
-A persistent, multi-turn exchange between user and agent(s), identified
-by a string `conversation_id` (default: `"default"`).
+- `sdk`: `Agent`, `AgentCapabilities`, `AgentExecutor`, provider contracts and real
+  provider adapters, generic `Skill`, context/history, events, controls, and hooks.
+  It does not import application packages or read application settings.
+- `agent_runtime`: `AgentFactory`, `AgentRunner`, `AgentRuntime`, `RunSession`,
+  `RunHandle`, configured LLM compaction, and the scratchpad hook.
+- `agents`: saved `AgentProfile` configuration.
+- `providers`: configured provider selection, vision selection, and the
+  application-aware FakeProvider directive protocol.
+- `skills`: stored skill catalog, resolution, policy, and skill management tools.
+- `server` and `tasks`: adapters for HTTP and scheduled workflows.
 
-A conversation owns:
-- **ConversationHistory** — ordered list of messages (system, user, agent, tool)
-- **ContextManager** — tracks token usage and runs compaction strategies
+## Agent preparation and execution
 
-Conversations are cached by `server/_conversation_cache.py`, persisted to disk,
-and resumable. Application-level run setup lives in `agent_runtime`, while
-channels subscribe through `ActiveRunManager`. Multiple conversations can be
-active concurrently, each isolated by its ID.
+`AgentFactory` resolves an `AgentProfile` into `PreparedAgent`: an `Agent` holding
+instructions/model settings/limits, an injected `Provider`, `AgentCapabilities`
+holding effective tools and loaded-skill guidance, and the base system prompt.
 
-**Defined in:** `sdk/context/_history.py`, `sdk/context/_manager.py`,
-`server/_conversation_cache.py`, `agent_runtime/`
+`AgentRunner` prepares each root or child through that factory and calls
+`AgentExecutor.execute` with explicit provider, capabilities, history, hooks,
+execution context, and tool concurrency. The SDK returns `ExecutionResult` with
+status, output, finish reason, execution-local usage, and normalized error.
 
-## Turn
+Hooks implement the phases they need: turn start/end, before/after model, or
+before/after tool. Generic defaults live in the SDK. The runner composes the
+application scratchpad hook and configured compaction strategy.
 
-A single user message → agent response cycle. One turn includes:
-- The user message that triggered it
-- All LLM calls, tool executions, and sub-agent work needed to produce a response
-- All events emitted during that work
+## Run ownership
 
-`turn_scope(conversation_id)` is the async context manager that sets up and
-tears down a turn's resources:
-- A fresh `EventDispatcher` bound via ContextVar
-- A per-conversation stop event for cooperative cancellation
-- A nudge queue for injecting messages into the root agent's loop
-- Conversation liveness tracking
+`AgentRuntime.start(request)` reserves a conversation and creates a `RunSession`
+and a background task. It returns `RunHandle`. A second concurrent run in the
+same conversation is rejected; different conversations may run concurrently.
 
-A conversation contains many turns, executed sequentially.
+The session owns the root and live child `ExecutionContext` objects, shared stop
+signal, individual nudge inboxes, event replay, disk observers, artifact records,
+and cleanup. A conversation lease prevents cache eviction during execution.
+`RunPolicy` explicitly controls skill restore/persistence, memory, agent naming,
+and cached versus run-lifetime conversation resources.
 
-### Hooks
+`RunHandle.events(after_seq)` replays and follows sequenced events. `wait()` returns
+`RunResult`, aggregating execution usage and emitted artifacts. Cancelling either
+observer detaches it; execution continues. `stop()` requests cooperative stop.
+`cancel()` explicitly cancels owned work, and callers await completion to ensure
+cleanup. Nudge delivery accepts only live execution IDs belonging to this run.
 
-Hooks are pluggable callbacks invoked at defined phases of a turn. They let
-the server layer behavior (persistence, context management, logging) onto the
-core loop without modifying it. The phases, in order:
+The session emits exactly one root `turn_end` after cleanup. The runtime removes
+completed runs from its active maps. Existing handles retain their result and
+replay; later HTTP conversation resume reads persisted events.
 
-- `on_turn_start(agent_name)` — before any LLM work begins
-- `before_model(history, iteration, agent_name)` — before each LLM call
-- `after_model(response, history, iteration, agent_name)` — after each LLM call (can rewrite the response)
-- `before_tool(tool_name, arguments)` — before each tool execution (can intercept)
-- `after_tool(tool_name, arguments, result)` — after each tool execution (can rewrite result)
-- `on_turn_end(final_content, agent_name)` — after the turn completes (always runs, even on error)
+## Child execution
 
-**Defined in:** `sdk/turn/_turn.py`, `sdk/turn/_execution.py`
+The application's `spawn_agent` tool is an ordinary supplied SDK callable. Its
+closure binds the parent session and context. Invocation verifies that parent is
+still live and currently bound, then registers a child in the same session.
+The runner follows its ordinary preparation/execution path.
 
-## Agent Span
+A child gets isolated history, capabilities, and a nudge inbox. It shares the
+run ID, stop signal, and canonical event destination. Nested children use the
+same rules. Child output becomes the parent's tool result; child status and
+usage remain individually available in `RunResult.executions`.
 
-A hierarchical execution context wrapping one agent's work within a turn.
-The root agent gets depth 0; each sub-agent it spawns gets depth 1+.
+`agent_span(execution=context)` binds the supplied identity and emits agent
+start/completion events. Cancellation reports `stopped`. The generic standalone
+SDK `turn_scope` remains a context-binding convenience; it owns no application
+run registry, remote-control map, persistence, or root terminal event.
 
-`agent_span(context_id, agent_name)` is a context manager that:
-- Pushes onto a ContextVar stack so `publish_event()` can attribute events
-- Emits `AgentStartedPayload` on entry, `AgentCompletedPayload` on exit
-- Generates hierarchical IDs (e.g. `root`, `root.browser_agent.1`)
+## Events and history
 
-Agent spans nest naturally — sub-agents inherit the parent's turn context
-(dispatcher, conversation ID, stop event) via ContextVar semantics, but get
-their own position in the context stack.
+`publish_event()` enriches events with the bound execution's identity, name, and
+depth. Events flow through the session's history to disk observers, child-history
+projections, artifact indexing, and replay. Children create no disk writers.
 
-**Defined in:** `sdk/events/_context.py`
+`ConversationHistory` projects model messages. Each agent's `ContextManager`
+controls compaction using an injected `ContextStrategy`. The application's
+`LLMCompactionStrategy` owns configured summarization and model resource cleanup.
+It keeps assistant messages with their tool results at compaction boundaries.
 
-## Message Group
+## Channel and routine adapters
 
-A logical unit used during context compaction: **one agent message plus
-its associated tool-call results**. This ensures tool calls and their results
-are never split at compaction boundaries, preventing orphaned tool results
-that confuse the LLM.
+HTTP handlers translate requests, subscribe to a handle, and expose controls.
+A future messaging channel can do the same without changing SDK execution.
+Channel credentials, message delivery, and retries belong in that adapter.
 
-Compaction strategies use `keep_recent_groups` to count backward from the
-tail of the conversation history, preserving the N most recent groups
-verbatim while summarizing or clearing older ones.
-
-**Defined in:** `sdk/context/_strategy.py` (`_count_kept_by_assistant_groups`)
-
-## Event
-
-A discrete, typed message emitted during a turn describing what the agent is
-doing, thinking, or producing. Events flow from agents/tools → EventDispatcher
-→ subscribers (typically the SSE handler streaming to the frontend).
-
-Events are published via `publish_event()`, which enriches them with the
-current agent span's `agent_name`, `agent_id`, and `depth` before dispatching.
-This keeps call sites simple — tools just publish the event, attribution is
-automatic.
-
-**Defined in:** `sdk/events/_models.py`, `sdk/events/_dispatcher.py`,
-`sdk/events/_context.py`
-
-## Relationships
-
-```
-Conversation
-│   owns ConversationHistory + ContextManager
-│   identified by conversation_id
-│
-├── Turn 1 (user message → agent response)
-│   │   scoped by turn_scope(conversation_id)
-│   │   owns EventDispatcher, stop event, nudge queue
-│   │
-│   ├── Agent Span: root (depth=0)
-│   │   ├── LLM call → tool calls → LLM call → ...
-│   │   ├── Agent Span: sub-agent (depth=1)
-│   │   │   └── LLM call → tool calls → ...
-│   │   └── Agent Span: another sub-agent (depth=1)
-│   │       └── ...
-│   │
-│   └── Events flow: publish_event() → dispatcher → subscribers → UI
-│
-├── Turn 2
-│   └── ...
-│
-└── Compaction (between turns)
-    └── Operates on message groups within ConversationHistory
-```
+`TaskRunner` retains workflow scheduling, dependencies, and retry policy.
+`TaskExecutor` builds task instructions, starts the injected shared runtime, and
+maps its result to persisted task output. `TaskResult.agent_run_id` identifies
+that agent run separately from its workflow `run_id`. An explicit routine-owner
+cancellation cancels its handle and waits for session cleanup.

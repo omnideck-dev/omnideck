@@ -12,7 +12,7 @@ from tests.unit.sdk._execution_inputs import execution_inputs
 
 from sdk.agent import Agent
 from sdk.context import ConversationHistory
-from sdk.providers._fake import FakeProvider
+from providers._fake import FakeProvider
 from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
 from sdk.turn import AgentExecutor
 from tests.e2e._protocol import bash, say

@@ -133,6 +133,8 @@ build-backend = "setuptools.build_meta"
 # Explicitly include our flat-layout top-level packages
 include = [
     "agent_runtime*",
+    "providers*",
+    "skills*",
     "agents*",
     "browser*",
     "config*",

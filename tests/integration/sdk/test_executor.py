@@ -13,7 +13,7 @@ from sdk.turn._models import _current_execution
 from sdk.context import ConversationHistory
 from sdk.events import AgentEvent, AgentStartedPayload, UserMessagePayload, publish_event
 from sdk.hooks import LoadedSkillHook, NudgeHook
-from sdk.providers._fake import FakeProvider
+from providers._fake import FakeProvider
 from sdk.skills._registry import Skill
 from tests.e2e._protocol import call_tool, say
 

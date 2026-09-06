@@ -17,7 +17,7 @@ from agents._agent_profiles import (
 )
 from browser.profile_store import EMPTY_BROWSER_PROFILE_ID
 from browser.runtime import get_browser_runtime
-from sdk.skills._policy import strip_reserved_skills
+from skills._policy import strip_reserved_skills
 
 logger = logging.getLogger(__name__)
 

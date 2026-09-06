@@ -42,7 +42,7 @@ graph TD
     LLM --> HIST[ConversationHistory<br/>mutated in place]
 ```
 
-**Defined in:** `sdk/context/_strategy.py` (1,007 lines)
+**Defined in:** `agent_runtime/_compaction.py` (1,007 lines)
 **Orchestrated by:** `sdk/context/_manager.py` (134 lines)
 **Triggered by:** `sdk/hooks/_context_hook.py` (29 lines)
 
@@ -153,8 +153,9 @@ tail, counts assistant messages, sets the boundary before the Nth one found.
 
 ## LLMCompactionStrategy
 
-The active compaction strategy. Aliased as `SummarizeStrategy` for backward
-compatibility.
+The application-configured compaction strategy in
+`agent_runtime/_compaction.py`. The SDK exposes the generic `ContextStrategy`
+interface.
 
 ### Trigger
 
