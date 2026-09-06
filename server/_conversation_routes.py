@@ -45,7 +45,7 @@ from conversations import (
     unarchive_conversation,
     update_folder,
 )
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._agent_runtime import AGENT_RUNTIME_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ async def list_conversations_handler(_request: Request) -> Response:
 async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
         return web.json_response(
             {"error": "This conversation is still running. Stop it before deleting."},
@@ -95,7 +95,7 @@ async def list_archived_handler(_request: Request) -> Response:
 async def archive_conversation_handler(request: Request) -> Response:
     """Archive a conversation, moving it out of the active list."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
         return web.json_response(
             {"error": "This conversation is still running. Stop it before archiving."},
@@ -211,7 +211,7 @@ async def generate_title_handler(request: Request) -> Response:
 async def resume_conversation_handler(request: Request) -> Response:
     """Resume a past conversation by loading its full-fidelity history."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
@@ -224,14 +224,14 @@ async def resume_conversation_handler(request: Request) -> Response:
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
-            sequence = manager.sequence_for_event(active.run_id, event_id)
+            sequence = active.sequence_for_event(event_id)
             if sequence is not None:
                 resume_after_seq = sequence
                 break
         active_run = {
             "run_id": active.run_id,
             "status": "running",
-            "last_seq": active.last_seq,
+            "last_seq": active.snapshot().last_seq,
             "resume_after_seq": resume_after_seq,
         }
 

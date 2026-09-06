@@ -5,30 +5,38 @@ from copy import deepcopy
 
 import pytest
 
-from agent_runtime import AgentRunner, AgentRunRequest
+from agent_runtime import AgentRunRequest
 from conversations import load_events_jsonl, load_loaded_skills, list_conversations
-from sdk.providers._fake import FakeProvider
-from sdk.turn._models import _current_execution
+from providers._fake import FakeProvider
+from agent_core.turn._models import _current_execution
 from tasks import TaskExecutor
 from tools.memory import remember
 from tests.e2e._protocol import call_tool, say, spawn
 
 
+async def _run(runtime, request):
+    handle = await runtime.start(request)
+    return await handle.wait()
+
+
 class ObservedFakeProvider(FakeProvider):
     """Observe ownership and model inputs without replacing provider behavior."""
 
-    def __init__(self, runner):
-        self.runner = runner
+    def __init__(self, runtime):
+        self.runtime = runtime
+        self.sessions = {}
         self.requests = []
         self.spawn_tools = {}
 
     async def chat_stream(self, **kwargs):
         context = _current_execution.get()
-        owner = self.runner._executions[context.execution_id]
+        session = self.runtime._runs_by_id[context.run_id]
+        self.sessions[context.run_id] = session
+        owner = session.executions[context.execution_id]
         assert owner.run_id == context.run_id
         assert owner.parent_execution_id == context.parent_execution_id
         if context.parent_execution_id:
-            assert context.parent_execution_id in self.runner._executions
+            assert context.parent_execution_id in session.executions
         for tool in kwargs.get("tools", []):
             if tool.__name__ == "spawn_agent":
                 self.spawn_tools[kwargs["model"]] = tool
@@ -69,11 +77,11 @@ async def test_shared_runner_preserves_delegation_ownership_and_real_tool_result
         task = h.store.create_task(routine.id, "delegate", instruction, agent_profile="child")
         run = h.store.queue_run(routine.id)
         task_result = h.store.get_task_results(run.id)[0]
-        executor = TaskExecutor(h.store)
-        runner = executor._runner
+        executor = TaskExecutor(h.store, h.manager)
+        runtime = h.manager
     else:
-        runner = AgentRunner()
-    provider = ObservedFakeProvider(runner)
+        runtime = h.manager
+    provider = ObservedFakeProvider(runtime)
     monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
 
     if entry == "routine":
@@ -82,17 +90,12 @@ async def test_shared_runner_preserves_delegation_ownership_and_real_tool_result
         conversation = h.store.get_task_results(run.id)[0].conversation_id
     else:
         conversation = "shared-runner"
-        await runner.run(
-            AgentRunRequest(
+        await _run(runtime, AgentRunRequest(
                 conversation_id=conversation,
                 profile_id="parent" if entry == "child" else "leaf",
                 message=instruction,
                 attachments=None,
-                run_id="owned-run",
-            ),
-            emit=lambda _: None,
-            stop_event=asyncio.Event(),
-        )
+                ))
     if entry != "routine":
         summary = next(c for c in list_conversations() if c.conversation_id == conversation)
         assert summary.turn_count == 1
@@ -114,7 +117,7 @@ async def test_shared_runner_preserves_delegation_ownership_and_real_tool_result
     for request in provider.requests:
         includes_memory = "interactive-memory-proof" in request["messages"][0]["content"]
         assert includes_memory == (entry != "routine" and request["context"].parent_execution_id is None)
-    assert runner._executions == {}
+    assert runtime._runs_by_id == {}
     assert set(h.exited_agents) == {e["agent_id"] for e in starts}
     assert load_loaded_skills(conversation) == set()
     for tool in provider.spawn_tools.values():
@@ -127,8 +130,8 @@ async def test_spawn_tool_rejects_use_from_a_different_live_parent(harness, monk
     h.profile("parent", allow_spawn=True)
     h.profile("child", skills=["ownership"], allow_spawn=True)
     h.profile("leaf")
-    runner = AgentRunner()
-    provider = ObservedFakeProvider(runner)
+    runtime = h.manager
+    provider = ObservedFakeProvider(runtime)
     monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
     rejected = []
 
@@ -143,28 +146,24 @@ async def test_spawn_tool_rejects_use_from_a_different_live_parent(harness, monk
     child = (
         call_tool("use_parent_tool") + spawn(say("valid grandchild"), profile="leaf", name="LEAF") + say("child done")
     )
-    await runner.run(
-        AgentRunRequest(
+    await _run(runtime, AgentRunRequest(
             conversation_id="bound-owner",
             profile_id="parent",
             attachments=None,
             message=spawn(child, profile="child", name="CHILD") + say("parent done"),
-        ),
-        emit=lambda _: None,
-        stop_event=asyncio.Event(),
-    )
+        ))
     assert rejected == [True]
     starts = [e for e in load_events_jsonl("bound-owner") if e["type"] == "agent_started"]
     assert len(starts) == 3
     assert starts[-1]["parent_agent_id"] == starts[1]["agent_id"]
-    assert runner._executions == {}
+    assert runtime._runs_by_id == {}
 
 
 @pytest.mark.parametrize("outcome", ["failure", "cancellation"])
 async def test_shared_runner_unregisters_ownership_after_interrupted_preparation(harness, monkeypatch, outcome):
     h = harness
     h.profile("parent", allow_spawn=True)
-    runner = AgentRunner()
+    runtime = h.manager
     entered = asyncio.Event()
     saved_tools = []
 
@@ -175,27 +174,22 @@ async def test_shared_runner_unregisters_ownership_after_interrupted_preparation
             raise RuntimeError("preparation failed")
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(runner._factory, "prepare", prepare)
+    monkeypatch.setattr(runtime._runner._factory, "prepare", prepare)
     task = asyncio.create_task(
-        runner.run(
-            AgentRunRequest(
+        _run(runtime, AgentRunRequest(
                 conversation_id="interrupted",
                 profile_id="parent",
                 message="prepare",
                 attachments=None,
-            ),
-            emit=lambda _: None,
-            stop_event=asyncio.Event(),
-        )
+            ))
     )
     await asyncio.wait_for(entered.wait(), 5)
     if outcome == "cancellation":
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        runtime.active_for_conversation("interrupted").cancel()
+        assert (await task).status == "stopped"
     else:
         await task
-    assert runner._executions == {}
+    assert runtime._runs_by_id == {}
     with pytest.raises(RuntimeError, match="owning parent"):
         await saved_tools[0](instructions="stale", profile="parent")
 
@@ -204,14 +198,14 @@ async def test_child_preparation_failure_leaves_no_unpaired_spawn_or_registered_
     h = harness
     h.profile("parent", allow_spawn=True)
     h.profile("child", provider="", model="")
-    runner = AgentRunner()
-    provider = ObservedFakeProvider(runner)
+    runtime = h.manager
+    provider = ObservedFakeProvider(runtime)
     monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
 
-    await runner.run(AgentRunRequest(
+    await _run(runtime, AgentRunRequest(
         conversation_id="child-setup-failure", profile_id="parent", attachments=None,
         message=spawn(say("never executes"), profile="child", name="CHILD") + say("parent recovered"),
-    ), emit=lambda _: None, stop_event=asyncio.Event())
+    ))
 
     events = load_events_jsonl("child-setup-failure")
     assert not any(e["type"] == "spawn_requested" for e in events)
@@ -219,4 +213,4 @@ async def test_child_preparation_failure_leaves_no_unpaired_spawn_or_registered_
     results = [e for e in events if e["type"] == "tool_result"]
     assert len(results) == 1 and "not fully configured" in results[0]["content"]
     assert events[-1]["type"] == "agent_completed" and events[-1]["status"] == "success"
-    assert runner._executions == {}
+    assert runtime._runs_by_id == {}

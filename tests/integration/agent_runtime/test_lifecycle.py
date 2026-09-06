@@ -1,4 +1,4 @@
-"""Drive real runtime ownership and SDK scopes through an HTTP channel."""
+"""Drive real runtime ownership and agent core scopes through an HTTP channel."""
 
 import asyncio
 import json
@@ -7,11 +7,11 @@ import pytest
 from aiohttp import web
 
 from conversations import load_events_jsonl
-from sdk.events import get_current_agent_id
-from sdk.providers import ChatDelta, ProviderError
-from sdk.turn import get_conversation_id, is_turn_active
+from agent_core.events import get_current_agent_id
+from agent_core.providers import ChatDelta, ProviderError
+from agent_core.turn import get_conversation_id
 from server._agent_run_routes import register_agent_run_routes
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._agent_runtime import AGENT_RUNTIME_KEY
 
 from ._support import assert_lifecycle, call, collect, payloads, reply
 
@@ -38,7 +38,7 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
     if outcome == "success":
         h.provider.plan("leaf", reply("finished"))
     app = web.Application()
-    app[ACTIVE_RUN_MANAGER_KEY] = h.manager
+    app[AGENT_RUNTIME_KEY] = h.manager
     register_agent_run_routes(app)
     client = await aiohttp_client(app)
     request = {"conversation_id": "contract", "profile_id": "leaf", "message": "work"}
@@ -88,7 +88,6 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
     if outcome == "success":
         assert "new priority" in json.dumps(h.provider.requests[-1]["messages"])
         assert len([e for e in persisted if e["type"] == "user_message" and e.get("is_nudge")]) == 1
-    assert not is_turn_active("contract")
     assert get_conversation_id() is None
     assert get_current_agent_id() is None
     assert h.manager.active_for_conversation("contract") is None
@@ -130,7 +129,7 @@ async def test_parallel_children_overlap_without_crossing_state_or_results(harne
     _info, stream = await h.start("root")
     drain = asyncio.create_task(collect(stream))
     async def watch_right():
-        async for record in h.manager.subscribe(_info.run_id, after_seq=0):
+        async for record in _info.events():
             p = record.event.payload
             if p.type == "agent_completed" and p.agent_name == "RIGHT":
                 right_finished.set()

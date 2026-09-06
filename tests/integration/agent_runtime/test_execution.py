@@ -12,8 +12,8 @@ from conversations import (
     get_or_create_conversation, load_browser_tabs, load_events_jsonl,
     load_loaded_skills, load_terminal,
 )
-from sdk.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
-from sdk.providers import ProviderError
+from agent_core.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
+from agent_core.providers import ProviderError
 from tasks import TaskExecutor
 
 from ._support import assert_lifecycle, call, payloads, reply
@@ -25,7 +25,7 @@ async def invoke(h, mode):
         task = h.store.create_task(routine.id, "task", "leaf input", agent_profile="leaf")
         run = h.store.queue_run(routine.id)
         result = h.store.get_task_results(run.id)[0]
-        output, files = await TaskExecutor(h.store).run(result, task)
+        output, files = await TaskExecutor(h.store, h.manager).run(result, task)
         conversation = h.store.get_task_results(run.id)[0].conversation_id
         return load_events_jsonl(conversation), output
     if mode == "child":

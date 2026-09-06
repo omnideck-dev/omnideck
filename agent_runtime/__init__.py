@@ -1,41 +1,26 @@
-"""Application-level orchestration for durable agent runs.
+"""Channel-neutral application runtime and agent composition."""
 
-``Agent run`` is the channel-neutral application vocabulary layered over the
-SDK's existing ``turn`` vocabulary. A turn still describes the scoped SDK
-execution of one user-message/agent-response cycle. A run describes the work
-that an application starts, owns, observes, stops, and reconnects to.
-
-Today one run drives one root turn. Keeping the concepts separate lets HTTP,
-Telegram, Slack, and future non-chat interfaces share the same runtime without
-making "chat request" the primary abstraction of the public API.
-"""
-
-from ._active_runs import (
-    ActiveRunConflictError,
-    ActiveRunError,
-    ActiveRunManager,
-    ActiveRunManagerClosedError,
-    InvalidRunCursorError,
-    UnknownActiveRunError,
-)
+from ._runtime import AgentRuntime, AgentRuntimeClosedError, RunConflictError, RunHandle
+from ._session import RunSession, ConversationLoader, InvalidRunCursorError
+from ._models import AgentRunRequest, RunAttachment, RunPolicy, RunResult, RunSnapshot, SequencedEvent
 from ._factory import AgentFactory, PreparedAgent
-from ._models import AgentRunInfo, AgentRunRequest, EventSink, RunAttachment, SequencedEvent
-from ._runner import AgentRunner, ConversationLoader
+from ._runner import AgentRunner
 
 __all__ = [
-    "ActiveRunConflictError",
-    "ActiveRunError",
-    "ActiveRunManager",
-    "ActiveRunManagerClosedError",
+    "AgentRuntime",
+    "AgentRuntimeClosedError",
+    "RunConflictError",
+    "RunHandle",
+    "RunSession",
+    "ConversationLoader",
+    "InvalidRunCursorError",
+    "AgentRunRequest",
+    "RunAttachment",
+    "RunPolicy",
+    "RunResult",
+    "RunSnapshot",
+    "SequencedEvent",
     "AgentFactory",
     "PreparedAgent",
-    "AgentRunInfo",
-    "AgentRunRequest",
     "AgentRunner",
-    "ConversationLoader",
-    "EventSink",
-    "InvalidRunCursorError",
-    "RunAttachment",
-    "SequencedEvent",
-    "UnknownActiveRunError",
 ]

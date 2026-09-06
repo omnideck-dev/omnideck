@@ -24,7 +24,7 @@ Controls how many tool-call loop iterations an agent can perform before being fo
 
 ### How It Works
 
-The tool loop in `ollama/sdk/tool_loop.py` tracks iterations. When the limit is hit:
+The tool loop in `ollama/agent_core/tool_loop.py` tracks iterations. When the limit is hit:
 
 1. A "wrap up" message is injected: `"Tool call budget exhausted. Wrap up and respond."`
 2. The tools list is set to `[]` — the model can only produce text

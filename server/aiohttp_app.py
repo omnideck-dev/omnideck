@@ -23,10 +23,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from aiohttp.web_request import Request
     from aiohttp.web_response import StreamResponse
 
-from agent_runtime import ActiveRunManager
+from agent_runtime import AgentRuntime
 from config import load_config
 from server._agent_run_routes import register_agent_run_routes
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY, build_agent_runner
+from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
 from server._browser_profile_routes import register_browser_profile_routes
@@ -110,13 +110,13 @@ def create_app(
     """
     from browser.runtime import get_browser_runtime
     from conversations import register_conversation_exit_hook
-    from sdk.lifecycle import register_agent_span_exit_hook
+    from agent_core.lifecycle import register_agent_span_exit_hook
 
     browser_runtime = get_browser_runtime()
     register_agent_span_exit_hook(browser_runtime.close_agent)
     register_conversation_exit_hook(browser_runtime.close_conversation)
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
-    app[ACTIVE_RUN_MANAGER_KEY] = ActiveRunManager(build_agent_runner())
+    app[AGENT_RUNTIME_KEY] = AgentRuntime()
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -211,7 +211,7 @@ def create_app(
 
 async def _stop_active_run_manager(app: web.Application) -> None:
     """Gracefully stop process-owned agent runs during server shutdown."""
-    await app[ACTIVE_RUN_MANAGER_KEY].close()
+    await app[AGENT_RUNTIME_KEY].close()
 
 
 async def _run_data_migrations(_app: web.Application) -> None:
@@ -349,7 +349,7 @@ async def _init_task_runner(app: web.Application) -> None:
     from tasks import TaskExecutor, TaskRunner, TelegramNotifier, get_store
 
     store = get_store()
-    executor = TaskExecutor(store)
+    executor = TaskExecutor(store, app[AGENT_RUNTIME_KEY])
 
     notifier = None
     if config.routines.notifications.enabled:
@@ -372,4 +372,4 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
         await runner.stop()
 
 
-__all__ = ["ACTIVE_RUN_MANAGER_KEY", "create_app"]
+__all__ = ["AGENT_RUNTIME_KEY", "create_app"]

@@ -17,7 +17,7 @@ import json
 import logging
 from typing import TypedDict
 
-from sdk.events import AgentEvent
+from agent_core.events import AgentEvent
 
 from ._store import _get_conv_dir
 

@@ -96,7 +96,8 @@ async def inspect_page(
 
     encoded_image = base64.b64encode(screenshot_bytes).decode("ascii")
 
-    from sdk.providers import ProviderError, vision_generate
+    from agent_core.providers import ProviderError
+    from providers import vision_generate
 
     try:
         answer = await vision_generate(clean_prompt, encoded_image)

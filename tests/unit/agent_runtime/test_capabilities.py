@@ -11,15 +11,15 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.agent_capabilities import AgentCapabilities
+from agent_core.agent_capabilities import AgentCapabilities
 from agent_runtime._factory import AgentFactory, _restore_persisted_loaded_skills, persist_loaded_skills
 from agent_runtime._spawn import make_spawn_tool
-from sdk.skills._resolve import (
+from skills._resolve import (
     resolve_skill,
     resolve_skill_by_name,
 )
-from sdk.skills._store import SkillRecord, save_skill_record
-from sdk.skills._tool_categories import ToolCategory
+from skills._store import SkillRecord, save_skill_record
+from skills._tool_categories import ToolCategory
 
 
 async def _invoke_child(instructions, profile, agent_name):
@@ -48,12 +48,12 @@ def _categories() -> dict[str, ToolCategory]:
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     """Temp skill store, and a fixed set of resolved tool categories."""
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
     async def _cats():
         return _categories()
 
-    monkeypatch.setattr("sdk.skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("skills._resolve.tool_categories", _cats)
     monkeypatch.setattr("tools.browser.capability.tool_categories", _cats)
 
 

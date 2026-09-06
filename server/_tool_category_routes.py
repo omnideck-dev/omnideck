@@ -11,8 +11,8 @@ import logging
 
 from aiohttp import web
 
-from sdk.skills import tool_categories
-from sdk.skills._policy import is_restricted_tool_category
+from skills import tool_categories
+from skills._policy import is_restricted_tool_category
 
 logger = logging.getLogger(__name__)
 

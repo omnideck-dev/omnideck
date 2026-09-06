@@ -8,8 +8,8 @@ from functools import cache
 from importlib.resources import files
 from typing import Any
 
-from sdk.capabilities import AgentCapability
-from sdk.skills._tool_categories import tool_categories
+from agent_core.capabilities import AgentCapability
+from skills._tool_categories import tool_categories
 
 
 @cache

@@ -41,8 +41,8 @@ Two real tiers of tools:
 ## Key architecture decisions
 
 ### 1. Per-tool category membership + a coverage test (the maintainability guarantee)
-A category registry module (`sdk/tools/_categories.py`) defines each category and a **lazy
-loader** that imports and returns its tools — mirroring how `sdk/tools/_core.py` and
+A category registry module (`agent_core/tools/_categories.py`) defines each category and a **lazy
+loader** that imports and returns its tools — mirroring how `agent_core/tools/_core.py` and
 `_ensure_builtins` already lazy-import to keep startup fast and respect feature/heavy-dep
 gating. Membership is the source of truth for "what tools does category X grant."
 
@@ -55,7 +55,7 @@ base set — fail = a new tool was added without a category.
 - **`SkillRecord`** (persisted JSON, one file per `id`): `{ id, name, description, prompt,
   categories: list[str], enabled, builtin }`. `id` is a stable hidden key (the foreign key
   used everywhere); `name` is an editable, unique display field. No callables — kills the
-  `list[Any]` pydantic deadlock that motivated lazy registration (`sdk/skills/_registry.py:23`).
+  `list[Any]` pydantic deadlock that motivated lazy registration (`agent_core/skills/_registry.py:23`).
 - **Resolved skill** (runtime): the existing `Skill` object with `.tools` populated, built at
   composition time. `AgentState.add()` is unchanged.
 
@@ -68,7 +68,7 @@ so it's untouched.
 
 ### 4. Integration categories reuse the existing `_core.py` wiring
 Extract the per-capability `_ids_with_access` + `build_*_tool(ids)` blocks
-(`sdk/tools/_core.py:54-130`) into a shared `integration_tools_for(capability, records)`.
+(`agent_core/tools/_core.py:54-130`) into a shared `integration_tools_for(capability, records)`.
 Both the (now-shrunk) `get_core_tools` *removal* and the integration-category resolver call
 it — single source of truth for the access thresholds and factory wiring. Disconnected
 capability → returns `[]` → granting that category is harmless. Catalog visibility uses the
@@ -102,7 +102,7 @@ stay **unique** so the LLM-facing `load_skill(name)`/`list_available_skills` are
 |---|---|---|
 | `server/message_handler.py:268-288` | `get_core_tools() + active_agent.tools`; loop `get_skill` (skip on None); restore loop | base set gated by toggles; `await resolve_skill`; drop the hard-wired `remember/forget/run_bash_cmd` from `_build_agent_from_profile:242` (now via categories) |
 | `tasks/_executor.py:67,96-102` | `get_core_tools()`; loop `get_skill` (**raises** on None) | gated base set; `await resolve_skill`; **skip-with-warning** not raise |
-| `sdk/tools/_spawn_agent.py:157-168` | `get_core_tools()`; loop `get_skill` (returns error string on None) | gated base set; `await resolve_skill` |
+| `agent_core/tools/_spawn_agent.py:157-168` | `get_core_tools()`; loop `get_skill` (returns error string on None) | gated base set; `await resolve_skill` |
 
 A shared helper `compose_agent_tools(profile, extra_tools=()) -> list[Callable]` (async)
 centralizes: gated base set + resolved skill categories + dedup. All three sites call it.
@@ -136,15 +136,15 @@ disk to transform. Two mechanisms cover the transition:
 
 ## Backend modules
 
-- **New** `sdk/tools/_categories.py` — `Category` defs, lazy loaders, `list_categories(features)`,
+- **New** `agent_core/tools/_categories.py` — `Category` defs, lazy loaders, `list_categories(features)`,
   `resolve_category_tools(...)`, `catalog(records, features)` (for the API, with connection state).
-- **New** `sdk/tools/_integration_tools.py` — `integration_tools_for(capability, records)` +
+- **New** `agent_core/tools/_integration_tools.py` — `integration_tools_for(capability, records)` +
   `_ids_with_access` (moved from `_core.py`).
-- **New** `sdk/skills/_store.py` — `SkillRecord` (`id`+unique `name`), `list/get/save/
+- **New** `agent_core/skills/_store.py` — `SkillRecord` (`id`+unique `name`), `list/get/save/
   delete_skill_record`, JSON `{id}.json` under `{home}/skills/`; mirrors `agents/_agent_profiles.py`.
-- **New** `sdk/skills/_resolve.py` — async `resolve_skill(name)`, `resolve_skill_tools(category_ids)`,
+- **New** `agent_core/skills/_resolve.py` — async `resolve_skill(name)`, `resolve_skill_tools(category_ids)`,
   `compose_agent_tools(profile, extra_tools=())`.
-- **Change** `sdk/tools/_core.py` — drop integration blocks; add `datetime_tool` to base; expose
+- **Change** `agent_core/tools/_core.py` — drop integration blocks; add `datetime_tool` to base; expose
   the toggle-gated base assembly.
 - **Change** `agents/_agent_profiles.py` — add `allow_spawn`, `allow_load_skills`.
 - **Change** the 3 composition sites to call `compose_agent_tools`.

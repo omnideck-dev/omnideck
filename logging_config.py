@@ -39,7 +39,7 @@ def setup_logging() -> None:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
     logging.getLogger("agents").setLevel(logging.DEBUG)
-    logging.getLogger("sdk").setLevel(logging.DEBUG)
+    logging.getLogger("agent_core").setLevel(logging.DEBUG)
     # REPLs default to INFO so users see helpful output without increasing
     # global verbosity. Individual REPL modules can still override as needed.
     logging.getLogger("repls").setLevel(logging.INFO)

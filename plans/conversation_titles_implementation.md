@@ -72,7 +72,7 @@ This implementation adds auto-generated conversation titles to improve the user 
 All tests pass:
 - `tests/test_conversation_titles.py` - 4 tests covering ConversationSummary model and title generation
 - `tests/tools/conversations/` - 20 existing tests still pass
-- `tests/sdk/context/` - conversation history tests still pass
+- `tests/agent_core/context/` - conversation history tests still pass
 
 ## Success Criteria Checklist
 
