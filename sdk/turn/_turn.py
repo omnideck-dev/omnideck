@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
+from sdk.control import ExecutionControl, _current_control
 from sdk.events import (
     AgentEvent,
     TurnEndPayload,
@@ -35,10 +36,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class StopRequestedError(Exception):
-    """Raised at safe checkpoints when the user requests a stop."""
-
-
 _DEFAULT_CONVERSATION_ID = "default"
 
 # Conversations that currently have an active turn.
@@ -47,10 +44,6 @@ _active_conversations: set[str] = set()
 # Per-conversation stop events so the HTTP stop endpoint can target a specific
 # conversation without interfering with others.
 _active_stop_events: dict[str, asyncio.Event] = {}
-
-# Stop event bound to the currently active turn, accessible without passing
-# it through every call frame.
-_stop_event: ContextVar[asyncio.Event | None] = ContextVar("turn_stop_event", default=None)
 
 # Conversation ID for the current coroutine context, set inside turn_scope()
 # and inherited by sub-agents automatically via ContextVar semantics.
@@ -80,9 +73,9 @@ def check_stop() -> None:
     Call this at safe checkpoints (e.g. top of tool loop, before each tool
     execution) to allow clean interruption without cancelling tasks mid-await.
     """
-    event = _stop_event.get()
-    if event is not None and event.is_set():
-        raise StopRequestedError()
+    control = _current_control.get()
+    if control is not None:
+        control.check_stop()
 
 
 def is_turn_active(conversation_id: str | None = None) -> bool:
@@ -131,7 +124,7 @@ async def turn_scope(
     active_stop_event = stop_event if stop_event is not None else asyncio.Event()
     _active_conversations.add(sid)
     _active_stop_events[sid] = active_stop_event
-    stop_token = _stop_event.set(active_stop_event)
+    stop_token = _current_control.set(ExecutionControl(active_stop_event))
     conversation_token = _conversation_id.set(sid)
     conv_token = set_current_conversation(conversation) if conversation is not None else None
     try:
@@ -143,7 +136,7 @@ async def turn_scope(
             except Exception:  # pragma: no cover - defensive
                 logger.exception("Failed to publish turn_end for conversation '%s'", sid)
             reset_current_conversation(conv_token)
-        _stop_event.reset(stop_token)
+        _current_control.reset(stop_token)
         _conversation_id.reset(conversation_token)
         _active_conversations.discard(sid)
         _active_stop_events.pop(sid, None)

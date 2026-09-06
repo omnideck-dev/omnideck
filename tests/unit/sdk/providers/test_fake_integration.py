@@ -1,4 +1,4 @@
-"""Integration test: the real run_turn loop driven by the real FakeProvider.
+"""Integration test: the real AgentExecutor.execute loop driven by the real FakeProvider.
 
 Proves a directive prompt flows through the agent loop end-to-end — the fake
 emits a tool call, the loop executes the (stub) tool, then the fake returns
@@ -8,12 +8,13 @@ the final reply — using the same code path the app uses.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from tests.unit.sdk._execution_inputs import execution_inputs
 
-from agents.types import Agent
+from sdk.agent import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._fake import FakeProvider
-from sdk.agent_state import AgentState, _active_agent_state
-from sdk.turn._execution import run_turn
+from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
+from sdk.turn import AgentExecutor
 from tests.e2e._protocol import bash, say
 
 _MOD = "sdk.turn._execution"
@@ -27,7 +28,7 @@ def _agent() -> Agent:
         provider="fake",
         model="fake-model",
         options={},
-        tools=[],
+
         think=False,
         max_iterations=0,
     )
@@ -52,7 +53,7 @@ async def test_directive_drives_tool_then_reply():
     cfg.enabled = False
     cfg.max_concurrent = 1
 
-    token = _active_agent_state.set(AgentState(base_tools=[run_bash_cmd]))
+    token = _active_agent_capabilities.set(AgentCapabilities(base_tools=[run_bash_cmd]))
     try:
         # NOTE: do not patch ``publish_event`` here. The events-first
         # conftest bridge patches it with a forwarder that routes tool
@@ -61,13 +62,12 @@ async def test_directive_drives_tool_then_reply():
         # overrides that forwarder, so the tool result never lands, the
         # fake planner re-emits the same BASH directive every iteration,
         # and the loop spins forever.
-        with (
-            patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
-            patch(f"{_MOD}._get_parallel_config", return_value=cfg),
-        ):
-            result = await run_turn(history, _agent(), hooks=[])
+        provider = FakeProvider()
+        execution = await AgentExecutor().execute(history=history, hooks=[], agent=_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
+        result = execution.output
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
     # The fake emitted run_bash_cmd, the loop executed it, then the fake
     # returned the SAY reply.
@@ -86,14 +86,13 @@ async def test_plain_prompt_without_directives_echoes():
         {"role": "user", "content": "hello world"},
     ])
 
-    token = _active_agent_state.set(AgentState(base_tools=[]))
+    token = _active_agent_capabilities.set(AgentCapabilities(base_tools=[]))
     try:
-        with (
-            patch(f"{_MOD}.get_provider", return_value=FakeProvider()),
-            patch(f"{_MOD}._get_parallel_config", return_value=MagicMock(enabled=False, max_concurrent=1)),
-        ):
-            result = await run_turn(history, _agent(), hooks=[])
+        provider = FakeProvider()
+        execution = await AgentExecutor().execute(history=history, hooks=[], agent=_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
+        result = execution.output
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
     assert result == "hello world"

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from agent_runtime._models import AgentRunInfo, AgentRunRequest, EventSink, SequencedEvent
@@ -212,7 +212,7 @@ class ActiveRunManager:
         """Drive one run without taking ownership of its domain events."""
         try:
             await self._runner.run(
-                request,
+                replace(request, run_id=run.run_id),
                 emit=run.append,
                 stop_event=run.stop_event,
             )

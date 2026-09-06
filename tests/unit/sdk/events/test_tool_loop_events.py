@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any, List
 
 import pytest
+from contextlib import nullcontext
+from tests.unit.sdk._execution_inputs import execution_inputs
 
 from sdk.context import ConversationHistory
 from sdk.events import (
@@ -24,10 +26,10 @@ from sdk.events import (
     reset_current_conversation,
     set_current_conversation,
 )
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
-from sdk.turn import run_turn, turn_scope
-from agents.types import Agent
+from sdk.turn import AgentExecutor, turn_scope
+from sdk.agent import Agent
 
 
 def _make_response(
@@ -76,7 +78,7 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
     import sdk.turn._execution as mod
 
     # Patch provider used by the module under test
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     # Minimal tool implementation that will be found by name
     def echo_tool(x: int) -> dict[str, int]:  # noqa: D401 - simple dummy
@@ -103,18 +105,16 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
         provider="ollama",
         model="dummy",
         options={},
-        tools=[echo_tool],
+
     )
 
     history.subscribe(_handler)
     async with turn_scope():
         conv_token = set_current_conversation(history)
         try:
-            async with agent_span("Test", agent_state=AgentState(agent.tools)):
-                await run_turn(
-                    history,
-                    agent=agent,
-                )
+            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
+                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+                execution.raise_for_status()
         finally:
             reset_current_conversation(conv_token)
             await history.drain_observers()
@@ -148,7 +148,7 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
-    """run_turn should emit one IterationPayload per iteration (bundling thinking,
+    """AgentExecutor.execute should emit one IterationPayload per iteration (bundling thinking,
     content, tool_calls) and one ToolResultPayload per tool that runs."""
     resp1 = _make_response(
         content="picking a tool",
@@ -158,7 +158,7 @@ async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
     resp2 = _make_response(content="done")
 
     import sdk.turn._execution as mod
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     def echo_tool(x: int) -> dict[str, int]:
         return {"x": x}
@@ -179,15 +179,16 @@ async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
         provider="ollama",
         model="dummy",
         options={},
-        tools=[echo_tool],
+
     )
 
     history.subscribe(_handler)
     async with turn_scope():
         conv_token = set_current_conversation(history)
         try:
-            async with agent_span("Test", agent_state=AgentState(agent.tools)):
-                await run_turn(history, agent=agent)
+            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
+                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+                execution.raise_for_status()
         finally:
             reset_current_conversation(conv_token)
             await history.drain_observers()
@@ -235,7 +236,7 @@ async def test_history_derived_view_matches_appended_messages(monkeypatch):
         tool_calls=[{"name": "echo_tool", "arguments": {"x": 1}}],
     )
     resp2 = _make_response(content="all done")
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     def echo_tool(x: int) -> dict[str, int]:
         return {"x": x}
@@ -257,7 +258,7 @@ async def test_history_derived_view_matches_appended_messages(monkeypatch):
         provider="ollama",
         model="dummy",
         options={},
-        tools=[echo_tool],
+
     )
 
     from sdk.events import reset_current_conversation, set_current_conversation
@@ -265,13 +266,14 @@ async def test_history_derived_view_matches_appended_messages(monkeypatch):
     async with turn_scope(conversation_id="conv-parity"):
         conv_token = set_current_conversation(history)
         try:
-            async with agent_span("Test", agent_state=AgentState(agent.tools)) as agent_id:
+            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])) as agent_id:
                 # Stamp the history with the bound agent id so per-agent filtering works.
                 history._agent_id = agent_id
                 publish_event(AgentEvent(payload=UserMessagePayload(
                     type="user_message", content="do it",
                 )))
-                await run_turn(history, agent=agent)
+                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+                execution.raise_for_status()
         finally:
             reset_current_conversation(conv_token)
             await history.drain_observers()

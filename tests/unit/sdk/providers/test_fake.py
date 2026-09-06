@@ -218,7 +218,7 @@ class TestOpenAndSpawn:
         assert call.function.arguments["agent_name"] == "ALPHA"
 
     async def test_fail_directive_raises_for_error_status(self):
-        # FAIL makes the agent raise, which run_turn turns into an error
+        # FAIL makes the agent raise, which AgentExecutor.execute turns into an error
         # status via the agent span. Here we just assert the provider
         # raises with the message.
         import pytest

@@ -13,13 +13,14 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agents.types import Agent
-from sdk.agent_state import AgentState
+from sdk.agent import Agent
+from agent_runtime._execution_context import execution_context
+from sdk.agent_capabilities import AgentCapabilities
 from sdk.context import ConversationHistory
 from sdk.events import AgentEvent, UserMessagePayload, agent_span, publish_event
 from sdk.hooks import BudgetGuard, StopHook
 from sdk.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
-from sdk.turn import StopRequestedError, run_turn, turn_scope
+from sdk.turn import StopRequestedError, AgentExecutor, turn_scope
 from tasks._file_store import FileTaskStore
 from tasks._runner import TaskRunner
 from tasks._tools import commit_routine
@@ -44,16 +45,19 @@ class ScriptedProvider:
 
 async def execute(provider, tools, seen, *, hooks=None, stop=None, parallel=False):
     agent = Agent(name="PROBE", description="", instruction="probe", provider="probe",
-                  model="probe", options={}, tools=tools, max_iterations=1)
+                  model="probe", options={}, max_iterations=1)
     history = ConversationHistory(system_message="probe", conversation_id="review-probe")
     history.subscribe(seen.append)
-    cfg = SimpleNamespace(enabled=parallel, max_concurrent=2)
-    with patch("sdk.turn._execution.get_provider", return_value=provider), \
-         patch("sdk.turn._execution._get_parallel_config", return_value=cfg):
-        async with turn_scope(history, conversation_id="review-probe", stop_event=stop):
-            async with agent_span("PROBE", agent_state=AgentState(tools)):
-                publish_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="go")))
-                await run_turn(history, agent, hooks=hooks or [])
+    capabilities = AgentCapabilities(tools)
+    async with turn_scope(history, conversation_id="review-probe", stop_event=stop):
+        async with agent_span("PROBE", agent_capabilities=capabilities):
+            publish_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="go")))
+            result = await AgentExecutor().execute(
+                history=history, agent=agent, capabilities=capabilities,
+                provider=provider, context=execution_context(run_id="review-probe"), hooks=hooks or [],
+                max_parallel_tools=2 if parallel else 1,
+            )
+            result.raise_for_status()
     return history
 
 

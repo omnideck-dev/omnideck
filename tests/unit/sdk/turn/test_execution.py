@@ -1,6 +1,6 @@
 """Tests for the turn execution engine (sdk.turn._execution).
 
-Covers the full run_turn loop: provider calls, tool execution, hook
+Covers the full AgentExecutor.execute loop: provider calls, tool execution, hook
 invocation order, history mutation, and stop/error propagation.
 """
 
@@ -12,9 +12,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from tests.unit.sdk._execution_inputs import execution_inputs
 
 import sdk.turn._execution as _execution
-from agents.types import Agent
+from sdk.agent import Agent
 from sdk.context import ConversationHistory
 from sdk.providers._models import (
     ChatDelta,
@@ -25,9 +26,9 @@ from sdk.providers._models import (
     ToolCall,
     ToolCallFunction,
 )
-from sdk.agent_state import AgentState, _active_agent_state
-from sdk.turn._execution import ToolLoopError, run_turn
-from sdk.turn._turn import StopRequestedError
+from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
+from sdk.turn._execution import ToolLoopError, AgentExecutor
+from sdk.control import StopRequestedError
 
 _MOD = "sdk.turn._execution"
 
@@ -45,7 +46,6 @@ def _make_agent(**overrides: Any) -> Agent:
         "provider": "ollama",
         "model": "test-model",
         "options": {},
-        "tools": [],
         "think": False,
         "max_iterations": 0,
     }
@@ -149,14 +149,13 @@ class RecordingHook:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _patch_parallel_config():
+@pytest.fixture
+def tool_concurrency():
     """Disable parallel tool execution by default."""
     cfg = MagicMock()
     cfg.enabled = False
     cfg.max_concurrent = 4
-    with patch(f"{_MOD}._get_parallel_config", return_value=cfg):
-        yield cfg
+    yield cfg
 
 
 @pytest.fixture
@@ -179,18 +178,18 @@ def _patch_publish_event():
         yield spy.mock
 
 
-def _activate_agent_state(tools: list[Callable[..., Any]]):
-    """Set up the AgentState context var with the given tools."""
-    state = AgentState(base_tools=tools)
-    return _active_agent_state.set(state)
+def _activate_agent_capabilities(tools: list[Callable[..., Any]]):
+    """Set up the AgentCapabilities context var with the given tools."""
+    state = AgentCapabilities(base_tools=tools)
+    return _active_agent_capabilities.set(state)
 
 
 @pytest.fixture(autouse=True)
-def _agent_state():
-    """Provide a default AgentState with _dummy_tool."""
-    token = _activate_agent_state([_dummy_tool])
+def _agent_capabilities():
+    """Provide a default AgentCapabilities with _dummy_tool."""
+    token = _activate_agent_capabilities([_dummy_tool])
     yield
-    _active_agent_state.reset(token)
+    _active_agent_capabilities.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +202,9 @@ async def test_simple_text_response() -> None:
     provider = FakeProvider([_text_response("Hello!")])
     history = ConversationHistory([{"role": "user", "content": "Hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "Hello!"
     assert len(history) == 2
@@ -222,10 +222,12 @@ async def test_tool_call_then_final_response() -> None:
     )
     history = ConversationHistory([{"role": "user", "content": "call the tool"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "Got it: result:ping"
+    assert execution.usage == TokenUsage(prompt_tokens=20, completion_tokens=10)
     # History: user, assistant (tool call), tool result, assistant (final)
     assert len(history) == 4
     assert history.messages[1]["role"] == "assistant"
@@ -251,8 +253,9 @@ async def test_multiple_tool_calls_sequential() -> None:
     provider = FakeProvider([response_with_two_tools, _text_response("done")])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "done"
     tool_msgs = [m for m in history.messages if m["role"] == "tool"]
@@ -271,12 +274,13 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
     provider = FakeProvider([streamed_turn])
     history = ConversationHistory([{"role": "user", "content": "Hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "Hello!"
     # Two content delta events stream before the final response;
-    # turn_end belongs to turn_scope, not run_turn.
+    # turn_end belongs to turn_scope, not AgentExecutor.execute.
     delta_calls = [
         c
         for c in _patch_publish_event.call_args_list
@@ -300,8 +304,8 @@ async def test_hooks_fire_in_order_text_only() -> None:
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     hook = RecordingHook()
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent(), hooks=[hook])
+    execution = await AgentExecutor().execute(history=history, hooks=[hook], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     assert hook.phase_names == [
         "on_turn_start",
@@ -322,8 +326,8 @@ async def test_hooks_fire_in_order_with_tool_call() -> None:
     history = ConversationHistory([{"role": "user", "content": "go"}])
     hook = RecordingHook()
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent(), hooks=[hook])
+    execution = await AgentExecutor().execute(history=history, hooks=[hook], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     assert hook.phase_names == [
         "on_turn_start",
@@ -354,8 +358,8 @@ async def test_before_tool_intercept_skips_execution() -> None:
     )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent(), hooks=[InterceptHook()])
+    execution = await AgentExecutor().execute(history=history, hooks=[InterceptHook()], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     tool_msg = next(m for m in history.messages if m["role"] == "tool")
     assert tool_msg["content"] == "intercepted-result"
@@ -376,8 +380,8 @@ async def test_after_tool_transforms_result() -> None:
     )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent(), hooks=[TransformHook()])
+    execution = await AgentExecutor().execute(history=history, hooks=[TransformHook()], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     tool_msg = next(m for m in history.messages if m["role"] == "tool")
     assert tool_msg["content"] == "RESULT:HELLO"
@@ -398,8 +402,9 @@ async def test_after_model_can_rewrite_response() -> None:
     provider = FakeProvider([_text_response("original")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent(), hooks=[RewriteHook()])
+    execution = await AgentExecutor().execute(history=history, hooks=[RewriteHook()], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "rewritten"
     assert history.messages[-1]["content"] == "rewritten"
@@ -415,8 +420,8 @@ async def test_on_turn_end_fires_on_success() -> None:
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     hook = RecordingHook()
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent(), hooks=[hook])
+    execution = await AgentExecutor().execute(history=history, hooks=[hook], agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     end_calls = [c for c in hook.calls if c[0] == "on_turn_end"]
     assert len(end_calls) == 1
@@ -434,9 +439,9 @@ async def test_on_turn_end_fires_on_stop() -> None:
     provider = FakeProvider([_text_response("unreachable")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        with pytest.raises(StopRequestedError):
-            await run_turn(history, _make_agent(), hooks=[StopOnBeforeModel(), hook])
+    with pytest.raises(StopRequestedError):
+        execution = await AgentExecutor().execute(history=history, hooks=[StopOnBeforeModel(), hook], agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     assert "on_turn_end" in hook.phase_names
 
@@ -452,9 +457,9 @@ async def test_on_turn_end_fires_on_error() -> None:
     provider = FakeProvider([_text_response("unreachable")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        with pytest.raises(ToolLoopError):
-            await run_turn(history, _make_agent(), hooks=[BrokenBeforeModel(), hook])
+    with pytest.raises(ToolLoopError):
+        execution = await AgentExecutor().execute(history=history, hooks=[BrokenBeforeModel(), hook], agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     assert "on_turn_end" in hook.phase_names
 
@@ -470,7 +475,7 @@ async def test_stop_requested_propagates() -> None:
     async def _stopping_tool(x: str) -> str:
         raise StopRequestedError()
 
-    token = _activate_agent_state([_stopping_tool])
+    token = _activate_agent_capabilities([_stopping_tool])
     try:
         provider = FakeProvider(
             [
@@ -479,11 +484,11 @@ async def test_stop_requested_propagates() -> None:
         )
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
-        with patch(f"{_MOD}.get_provider", return_value=provider):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent())
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
 
 async def test_tool_error_wrapped_in_tool_loop_error() -> None:
@@ -492,7 +497,7 @@ async def test_tool_error_wrapped_in_tool_loop_error() -> None:
     async def _broken_tool(x: str) -> str:
         raise ValueError("tool broke")
 
-    token = _activate_agent_state([_broken_tool])
+    token = _activate_agent_capabilities([_broken_tool])
     try:
         provider = FakeProvider(
             [
@@ -501,11 +506,11 @@ async def test_tool_error_wrapped_in_tool_loop_error() -> None:
         )
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
-        with patch(f"{_MOD}.get_provider", return_value=provider):
-            with pytest.raises(ToolLoopError):
-                await run_turn(history, _make_agent())
+        with pytest.raises(ToolLoopError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
 
 async def test_non_retryable_provider_error_raises_immediately() -> None:
@@ -518,20 +523,10 @@ async def test_non_retryable_provider_error_raises_immediately() -> None:
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=FailingProvider()):
-        with pytest.raises(ToolLoopError):
-            await run_turn(history, _make_agent())
-
-
-async def test_no_agent_state_raises() -> None:
-    """run_turn outside an agent_span raises ToolLoopError."""
-    _active_agent_state.set(None)
-    provider = FakeProvider([_text_response("x")])
-    history = ConversationHistory([{"role": "user", "content": "hi"}])
-
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        with pytest.raises(ToolLoopError, match="agent_span"):
-            await run_turn(history, _make_agent())
+    provider = FailingProvider()
+    with pytest.raises(ToolLoopError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
 
 # ---------------------------------------------------------------------------
@@ -543,8 +538,8 @@ async def test_assistant_message_includes_agent_name() -> None:
     provider = FakeProvider([_text_response("hi")])
     history = ConversationHistory([{"role": "user", "content": "hello"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     assert history.messages[-1]["agent_name"] == "test-agent"
 
@@ -559,8 +554,8 @@ async def test_tool_calls_serialized_as_dicts() -> None:
     )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     assistant_msg = history.messages[1]
     tc = assistant_msg["tool_calls"][0]
@@ -577,8 +572,8 @@ async def test_tool_result_has_call_id_and_name() -> None:
     )
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     tool_msg = next(m for m in history.messages if m["role"] == "tool")
     assert tool_msg["tool_call_id"] == "call_abc"
@@ -590,8 +585,8 @@ async def test_thinking_preserved_in_history() -> None:
     provider = FakeProvider([_text_response("answer", thinking="let me think...")])
     history = ConversationHistory([{"role": "user", "content": "think about it"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+    execution.raise_for_status()
 
     assert history.messages[-1]["thinking"] == "let me think..."
 
@@ -601,10 +596,10 @@ async def test_thinking_preserved_in_history() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_parallel_tool_calls(_patch_parallel_config: MagicMock) -> None:
+async def test_parallel_tool_calls(tool_concurrency: MagicMock) -> None:
     """With parallel enabled, multiple tool calls run concurrently."""
-    _patch_parallel_config.enabled = True
-    _patch_parallel_config.max_concurrent = 4
+    tool_concurrency.enabled = True
+    tool_concurrency.max_concurrent = 4
 
     response_with_two_tools = ChatResponse(
         message=ChatMessage(
@@ -619,8 +614,9 @@ async def test_parallel_tool_calls(_patch_parallel_config: MagicMock) -> None:
     provider = FakeProvider([response_with_two_tools, _text_response("done")])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        result = await run_turn(history, _make_agent())
+    execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, tool_concurrency.max_concurrent if tool_concurrency.enabled else 1))
+    execution.raise_for_status()
+    result = execution.output
 
     assert result == "done"
     tool_msgs = [m for m in history.messages if m["role"] == "tool"]
@@ -629,15 +625,15 @@ async def test_parallel_tool_calls(_patch_parallel_config: MagicMock) -> None:
     assert results == {"result:a", "result:b"}
 
 
-async def test_parallel_tool_failure_recorded_as_result(_patch_parallel_config: MagicMock) -> None:
+async def test_parallel_tool_failure_recorded_as_result(tool_concurrency: MagicMock) -> None:
     """A failing tool in parallel mode gets its error caught by _execute_tool_call
     and recorded as a normal tool result string, not an exception."""
-    _patch_parallel_config.enabled = True
+    tool_concurrency.enabled = True
 
     async def _failing_tool(x: str) -> str:
         raise ValueError("nope")
 
-    token = _activate_agent_state([_dummy_tool, _failing_tool])
+    token = _activate_agent_capabilities([_dummy_tool, _failing_tool])
     try:
         response = ChatResponse(
             message=ChatMessage(
@@ -652,8 +648,9 @@ async def test_parallel_tool_failure_recorded_as_result(_patch_parallel_config: 
         provider = FakeProvider([response, _text_response("recovered")])
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
-        with patch(f"{_MOD}.get_provider", return_value=provider):
-            result = await run_turn(history, _make_agent())
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, tool_concurrency.max_concurrent if tool_concurrency.enabled else 1))
+        execution.raise_for_status()
+        result = execution.output
 
         assert result == "recovered"
         tool_msgs = [m for m in history.messages if m["role"] == "tool"]
@@ -661,17 +658,17 @@ async def test_parallel_tool_failure_recorded_as_result(_patch_parallel_config: 
         error_msg = next(m for m in tool_msgs if m["tool_call_id"] == "c2")
         assert "nope" in error_msg["content"]
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
 
-async def test_parallel_stop_requested_propagates(_patch_parallel_config: MagicMock) -> None:
+async def test_parallel_stop_requested_propagates(tool_concurrency: MagicMock) -> None:
     """StopRequestedError from a parallel tool halts the turn, not silently recorded."""
-    _patch_parallel_config.enabled = True
+    tool_concurrency.enabled = True
 
     async def _stopping_tool(x: str) -> str:
         raise StopRequestedError()
 
-    token = _activate_agent_state([_dummy_tool, _stopping_tool])
+    token = _activate_agent_capabilities([_dummy_tool, _stopping_tool])
     try:
         response = ChatResponse(
             message=ChatMessage(
@@ -686,11 +683,11 @@ async def test_parallel_stop_requested_propagates(_patch_parallel_config: MagicM
         provider = FakeProvider([response])
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
-        with patch(f"{_MOD}.get_provider", return_value=provider):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent())
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, tool_concurrency.max_concurrent if tool_concurrency.enabled else 1))
+            execution.raise_for_status()
     finally:
-        _active_agent_state.reset(token)
+        _active_agent_capabilities.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -712,9 +709,10 @@ async def test_provider_error_publishes_error_event(_patch_publish_event: MagicM
 
     history = ConversationHistory([{"role": "user", "content": "Hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=_RaisingProvider()):
-        with pytest.raises(ToolLoopError):
-            await run_turn(history, _make_agent())
+    provider = _RaisingProvider()
+    with pytest.raises(ToolLoopError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     error_events = [
         c.args[0] for c in _patch_publish_event.call_args_list if getattr(c.args[0].payload, "type", None) == "error"
@@ -741,14 +739,14 @@ async def test_pre_set_external_stop_skips_provider_request() -> None:
     stop_event.set()
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
-    with patch(f"{_MOD}.get_provider", return_value=provider):
-        async with turn_scope(
-            history,
-            conversation_id="c-early-stop",
-            stop_event=stop_event,
-        ):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent())
+    async with turn_scope(
+        history,
+        conversation_id="c-early-stop",
+        stop_event=stop_event,
+    ):
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
 
     assert provider.calls == 0
 
@@ -767,10 +765,11 @@ async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: 
             return _text_response("unused")
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
-    with patch(f"{_MOD}.get_provider", return_value=_StreamThenStop()):
-        async with turn_scope(history, conversation_id="c-stop"):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent())
+    provider = _StreamThenStop()
+    async with turn_scope(history, conversation_id="c-stop"):
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
 
     stopped = [
         c.args[0]
@@ -798,10 +797,11 @@ async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publi
             return _text_response("unused")
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
-    with patch(f"{_MOD}.get_provider", return_value=_ThinkThenStop()):
-        async with turn_scope(history, conversation_id="c-think-stop"):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent())
+    provider = _ThinkThenStop()
+    async with turn_scope(history, conversation_id="c-think-stop"):
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
 
     # The event log keeps the partial for the UI...
     stopped = [
@@ -835,10 +835,11 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
             return _text_response("unused")
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
-    with patch(f"{_MOD}.get_provider", return_value=_StreamAll()):
-        async with turn_scope(history, conversation_id="c-late-stop"):
-            with pytest.raises(StopRequestedError):
-                await run_turn(history, _make_agent(), hooks=[StopHook()])
+    provider = _StreamAll()
+    async with turn_scope(history, conversation_id="c-late-stop"):
+        with pytest.raises(StopRequestedError):
+            execution = await AgentExecutor().execute(history=history, hooks=[StopHook()], agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
 
     stopped = [
         c.args[0]
@@ -864,9 +865,10 @@ async def test_provider_error_mid_stream_persists_partial(_patch_publish_event: 
             return _text_response("unused")
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
-    with patch(f"{_MOD}.get_provider", return_value=_StreamThenDie()):
-        with pytest.raises(ToolLoopError):
-            await run_turn(history, _make_agent())
+    provider = _StreamThenDie()
+    with pytest.raises(ToolLoopError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     payload_types = [getattr(c.args[0].payload, "type", None) for c in _patch_publish_event.call_args_list]
     stopped = [
@@ -894,12 +896,10 @@ async def test_tool_failure_does_not_republish_completed_iteration(_patch_publis
     provider = FakeProvider([streamed_turn])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
-    with (
-        patch(f"{_MOD}.get_provider", return_value=provider),
-        patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")),
-    ):
+    with patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")):
         with pytest.raises(ToolLoopError):
-            await run_turn(history, _make_agent())
+            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+            execution.raise_for_status()
 
     iterations = [
         c.args[0]

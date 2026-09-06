@@ -21,11 +21,12 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Protocol
 
 from sdk.lifecycle import run_agent_span_exit_hooks
+from sdk.control import ExecutionControl, _current_control
 
 if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
     from collections.abc import AsyncGenerator
 
-from sdk.agent_state import AgentState, _active_agent_state
+from sdk.agent_capabilities import AgentCapabilities, _active_agent_capabilities
 
 from ._models import AgentCompletedPayload, AgentEvent, AgentStartedPayload
 
@@ -109,7 +110,7 @@ def get_current_depth() -> int:
 async def agent_span(
     agent_name: str | None = None,
     instruction: str | None = None,
-    agent_state: AgentState | None = None,
+    agent_capabilities: AgentCapabilities | None = None,
     profile_name: str | None = None,
     correlation_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
@@ -118,9 +119,9 @@ async def agent_span(
     Events published inside will be tagged with the given agent name and an
     incremented depth. Emits agent lifecycle events on entry and exit.
 
-    When an AgentState is passed, the span borrows it (useful for multi-turn
+    When an AgentCapabilities is passed, the span borrows it (useful for multi-turn
     agents whose skills should survive across turns). Otherwise a fresh
-    empty AgentState is created.
+    empty AgentCapabilities is created.
 
     On exit, runs registered cleanup hooks for resources scoped to this agent
     execution.
@@ -128,7 +129,7 @@ async def agent_span(
     Args:
         agent_name: Human-readable agent name for event attribution.
         instruction: The instruction or user message this agent was given.
-        agent_state: AgentState to use for this span. A fresh empty one is
+        agent_capabilities: AgentCapabilities to use for this span. A fresh empty one is
             created when None.
         profile_name: Name of the agent profile, shown in the UI.
         correlation_id: Id shared with a preceding SpawnRequestedPayload
@@ -147,17 +148,22 @@ async def agent_span(
     context_id = _make_child_context_id(agent_name)
     depth = len(stack)
     token = _context_stack.set((*stack, (context_id, agent_name)))
-    # Borrow an existing AgentState (multi-turn agents) or create a fresh
+    # Borrow an existing AgentCapabilities (multi-turn agents) or create a fresh
     # one (sub-agents). Skills loaded mid-span persist for the span's
     # lifetime; a borrowed instance also preserves skills across spans.
-    ls_token = _active_agent_state.set(agent_state if agent_state is not None else AgentState([]))
+    ls_token = _active_agent_capabilities.set(agent_capabilities if agent_capabilities is not None else AgentCapabilities([]))
 
     # Lazy import: sdk.turn._nudge_queue is a leaf module with no internal
     # deps, but importing it at module level triggers sdk.turn.__init__ which
     # pulls in _execution.py → sdk.events (circular).
-    from sdk.turn._nudge_queue import register_nudge_queue, unregister_nudge_queue
+    from sdk.turn._nudge_queue import register_nudge_queue, unregister_nudge_queue, _nudge_queues
 
     register_nudge_queue(context_id)
+    parent_control = _current_control.get()
+    control = ExecutionControl(nudges=_nudge_queues[context_id])
+    if parent_control is not None:
+        control.stop_event = parent_control.stop_event
+    control_token = _current_control.set(control)
 
     logger.info(
         "Agent started: %s (id=%s, parent=%s, depth=%d)",
@@ -186,7 +192,7 @@ async def agent_span(
         yield context_id
     except Exception as exc:
         # Import here to avoid circular dependency with sdk.turn
-        from sdk.turn._turn import StopRequestedError
+        from sdk.control import StopRequestedError
 
         status = "stopped" if isinstance(exc, StopRequestedError) else "error"
         raise
@@ -210,8 +216,9 @@ async def agent_span(
                 )
             )
         )
+        _current_control.reset(control_token)
         unregister_nudge_queue(context_id)
-        _active_agent_state.reset(ls_token)
+        _active_agent_capabilities.reset(ls_token)
         _context_stack.reset(token)
 
 

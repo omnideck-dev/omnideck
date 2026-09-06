@@ -1,23 +1,20 @@
 """Build Agent instances from AgentProfile configs."""
 
-from collections.abc import Callable
 from typing import Any
 
 from agents._agent_profiles import AgentProfile
-from agents.types import Agent
+from sdk.agent import Agent
 
 
 def build_agent(
     profile: AgentProfile,
-    tools: list[Callable[..., Any]],
     *,
     name: str | None = None,
 ) -> Agent:
-    """Construct an Agent from a profile and tool list.
+    """Construct an Agent from a saved profile.
 
     Args:
         profile: Source profile for model/instruction/inference settings.
-        tools: Tool callables the agent can invoke.
         name: Override the Agent name (defaults to the profile name upcased).
 
     Raises:
@@ -44,7 +41,6 @@ def build_agent(
         name=name or profile.name.upper(),
         description=profile.description,
         instruction=profile.system_prompt,
-        tools=tools,
         provider=profile.provider,
         model=profile.model,
         think=profile.think or False,

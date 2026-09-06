@@ -1,4 +1,4 @@
-"""Tests for tool result serialization and history behaviour in run_turn.
+"""Tests for tool result serialization and history behaviour in AgentExecutor.execute.
 
 These tests mock the provider to emit tool_calls and verify that tool
 results are stored as plain strings in tool messages — Pydantic models are
@@ -14,13 +14,15 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from contextlib import nullcontext
+from tests.unit.sdk._execution_inputs import execution_inputs
 
 from sdk.context import ConversationHistory
 from sdk.events import agent_span
-from sdk.agent_state import AgentState
+from sdk.agent_capabilities import AgentCapabilities
 from sdk.providers._models import ChatMessage, ChatResponse, TokenUsage
-from sdk.turn import run_turn
-from agents.types import Agent
+from sdk.turn import AgentExecutor
+from sdk.agent import Agent
 from tools.virtual_computer.models import ApplyPatchResult
 
 
@@ -75,7 +77,7 @@ async def test_tool_serialization_apply_text_patch_success(monkeypatch):
 
     import sdk.turn._execution as mod
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     def apply_text_patch(path: str, old_text: str, new_text: str) -> ApplyPatchResult:
         return ApplyPatchResult(
@@ -84,9 +86,10 @@ async def test_tool_serialization_apply_text_patch_success(monkeypatch):
         )
 
     history = ConversationHistory([{"role": "system", "content": "x"}])
-    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, tools=[apply_text_patch])
-    async with agent_span("Test", agent_state=AgentState(agent.tools)):
-        await run_turn(history, agent=agent)
+    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, )
+    async with agent_span("Test", agent_capabilities=AgentCapabilities([apply_text_patch])):
+        execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     messages = history.messages
     tool_msg = next(msg for msg in reversed(messages) if msg.get("role") == "tool")
@@ -114,15 +117,16 @@ async def test_tool_serialization_apply_text_patch_invalid_range(monkeypatch):
 
     import sdk.turn._execution as mod
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     def apply_text_patch(path: str, old_text: str, new_text: str) -> ApplyPatchResult:
         return ApplyPatchResult(success=False, file_path=path, error="No match found")
 
     history = ConversationHistory([{"role": "system", "content": "x"}])
-    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, tools=[apply_text_patch])
-    async with agent_span("Test", agent_state=AgentState(agent.tools)):
-        await run_turn(history, agent=agent)
+    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, )
+    async with agent_span("Test", agent_capabilities=AgentCapabilities([apply_text_patch])):
+        execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     tool_msg = next(msg for msg in reversed(history.messages) if msg.get("role") == "tool")
     content = tool_msg["content"]
@@ -140,15 +144,16 @@ async def test_tool_serialization_tool_exception_as_error(monkeypatch):
 
     import sdk.turn._execution as mod
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     def explode(x: int) -> str:
         raise RuntimeError("boom")
 
     history = ConversationHistory([{"role": "system", "content": "x"}])
-    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, tools=[explode])
-    async with agent_span("Test", agent_state=AgentState(agent.tools)):
-        await run_turn(history, agent=agent)
+    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, )
+    async with agent_span("Test", agent_capabilities=AgentCapabilities([explode])):
+        execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     tool_msg = next(msg for msg in reversed(history.messages) if msg.get("role") == "tool")
     content = tool_msg["content"]
@@ -165,15 +170,16 @@ async def test_tool_serialization_async_tool_returns_dict(monkeypatch):
 
     import sdk.turn._execution as mod
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp1, resp2]))
+    provider = _ProviderScript([resp1, resp2])
 
     async def run_bash_cmd(cmd: str) -> dict[str, Any]:
         return {"stdout": "hi\n", "stderr": None, "exit_code": 0}
 
     history = ConversationHistory([{"role": "system", "content": "x"}])
-    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, tools=[run_bash_cmd])
-    async with agent_span("Test", agent_state=AgentState(agent.tools)):
-        await run_turn(history, agent=agent)
+    agent = Agent(name="Test", description="d", instruction="x", provider="ollama", model="dummy", options={}, )
+    async with agent_span("Test", agent_capabilities=AgentCapabilities([run_bash_cmd])):
+        execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     tool_msg = next(msg for msg in reversed(history.messages) if msg.get("role") == "tool")
     content = tool_msg["content"]
@@ -194,15 +200,16 @@ async def test_thinking_always_persisted_in_history(monkeypatch):
 
     import sdk.turn._execution as mod
 
-    monkeypatch.setattr(mod, "get_provider", lambda *_a, **_k: _ProviderScript([resp]))
+    provider = _ProviderScript([resp])
 
     history = ConversationHistory([{"role": "system", "content": "x"}])
     agent = Agent(
         name="Test", description="d", instruction="x",
-        provider="ollama", model="dummy", options={}, tools=[],
+        provider="ollama", model="dummy", options={},
     )
-    async with agent_span("Test", agent_state=AgentState(agent.tools)):
-        await run_turn(history, agent=agent)
+    async with agent_span("Test", agent_capabilities=AgentCapabilities([])):
+        execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     assistant_msg = next(m for m in history.messages if m["role"] == "assistant")
     assert assistant_msg["thinking"] == "deep thought"

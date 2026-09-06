@@ -423,7 +423,7 @@ def _plan(
     completed = _completed_step_count(messages)
     # FAIL makes the agent raise once it has completed the tool steps that
     # precede it, driving a genuine error status through the real agent loop
-    # (run_turn re-raises → the agent span records status="error").
+    # (the caller propagates the failed result so agent_span records an error).
     if fail_after is not None and completed >= fail_after[0]:
         raise RuntimeError(fail_after[1])
 

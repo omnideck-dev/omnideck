@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 from typing import TYPE_CHECKING
 
 from agents import build_agent, get_agent_profile
 from browser.runtime import get_browser_runtime
+from agent_runtime._execution_context import execution_context, parallel_tool_limit
+from sdk.providers import get_provider
 from conversations import EventsLogWriter, run_conversation_exit_hooks
-from sdk import default_hooks, run_turn
+from sdk import AgentExecutor, default_hooks
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events._context import (
     agent_span,
@@ -19,7 +22,7 @@ from sdk.events._models import (
     FileOutputPayload,
     UserMessagePayload,
 )
-from sdk.agent_state import build_agent_state
+from sdk.agent_capabilities import build_agent_capabilities
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
@@ -53,8 +56,8 @@ class TaskExecutor:
 
         try:
             profile = self._profile_for(task)
-            agent_state = await build_agent_state(profile)
-            agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
+            agent_capabilities = await build_agent_capabilities(profile)
+            agent = build_agent(profile, name="TASK_AGENT")
 
             history = ConversationHistory(
                 system_message=agent.instruction,
@@ -76,7 +79,7 @@ class TaskExecutor:
                 async with turn_scope(history, conversation_id=conversation_id):
                     ctx_manager = ContextManager(
                         history=history,
-                        agent_state=agent_state,
+                        agent_capabilities=agent_capabilities,
                         context_limit=agent.context_window,
                         agent_name=agent.name,
                         strategies=[
@@ -88,7 +91,7 @@ class TaskExecutor:
                         max_iterations=agent.max_iterations,
                         ctx_manager=ctx_manager,
                     )
-                    async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
+                    async with agent_span(agent.name, instruction=instruction, agent_capabilities=agent_capabilities):
                         await get_browser_runtime().prepare_current_agent_browser(
                             agent_profile_id=profile.id,
                             browser_profile_id=profile.browser_profile_id,
@@ -101,7 +104,16 @@ class TaskExecutor:
                                 )
                             )
                         )
-                        result = await run_turn(history, agent, hooks=hooks)
+                        result = await AgentExecutor().execute(
+                            history=history,
+                            agent=agent,
+                            capabilities=agent_capabilities,
+                            provider=get_provider(agent.provider),
+                            context=execution_context(run_id=f"run_{uuid4().hex}"),
+                            hooks=hooks,
+                            max_parallel_tools=parallel_tool_limit(),
+                        )
+                        result.raise_for_status()
             finally:
                 # Unsubscribe synchronously before the await so a cancellation
                 # mid-drain can't skip the unsubscribes and leak observers onto
@@ -111,7 +123,7 @@ class TaskExecutor:
                 history.unsubscribe(_capture_file_output)
                 await history.drain_observers()
 
-            return result or "", file_paths
+            return result.output or "", file_paths
         finally:
             # Routine task conversations are single-execution resources rather
             # than server-cached interactive conversations. Always run their

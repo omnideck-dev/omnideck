@@ -31,6 +31,8 @@ class AgentRunRequest:
     message: str
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
+    # Assigned by the runtime at admission; direct runners may allocate it.
+    run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

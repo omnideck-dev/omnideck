@@ -9,7 +9,7 @@ from rich.text import Text
 from ._policy import is_reserved_skill_id
 from ._resolve import resolve_skill_by_name
 from ._store import list_skill_records
-from sdk.agent_state import get_active_agent_state
+from sdk.agent_capabilities import get_active_agent_capabilities
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ async def load_skill(name: str) -> str:
     Returns:
         Confirmation message, or an error message.
     """
-    agent_state = get_active_agent_state()
-    if agent_state is None:
+    agent_capabilities = get_active_agent_capabilities()
+    if agent_capabilities is None:
         return "Error: no active skill scope (internal error)"
 
     record = next(
@@ -120,11 +120,11 @@ async def load_skill(name: str) -> str:
         _log_skill_error(name, error_msg)
         return error_msg
 
-    if skill.id in agent_state.skill_ids:
+    if skill.id in agent_capabilities.skill_ids:
         _log_skill_already_loaded(name)
         return f"Skill '{name}' is already loaded."
 
-    agent_state.load(skill)
+    agent_capabilities.load(skill)
     skill_tools = [getattr(t, "__name__", "?") for t in skill.tools]
     _log_skill_loaded(name, skill.description, skill_tools)
     return f"Loaded skill '{name}' ({len(skill_tools)} tools). Instructions added to system prompt."

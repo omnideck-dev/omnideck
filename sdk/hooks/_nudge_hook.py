@@ -8,10 +8,9 @@ from typing import Any
 from sdk.events import (
     AgentEvent,
     UserMessagePayload,
-    get_current_agent_id,
     publish_event,
 )
-from sdk.turn import drain_nudges
+from sdk.control import _current_control
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,8 @@ class NudgeHook:
 
     async def before_model(self, history: Any, iteration: int, agent_name: str) -> None:
         """Publish any queued nudge messages as a user message event."""
-        nudges = drain_nudges(get_current_agent_id())
+        control = _current_control.get()
+        nudges = control.drain_nudges() if control is not None else []
         if nudges:
             combined = "\n\n".join(nudges)
             try:
