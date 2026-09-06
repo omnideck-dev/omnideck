@@ -187,6 +187,25 @@ remove_test_resources() {
   "$podman_path" machine rm --force "odrt-${TEST_NAMESPACE}" >/dev/null 2>&1 || true
 }
 
+remove_test_profile() {
+  local profile_root="$1"
+  if [[ ! -d "$profile_root" ]]; then
+    return
+  fi
+
+  local podman_path
+  podman_path="$(find_podman || true)"
+  if [[ "$(uname -s)" == "Linux" && -n "$podman_path" ]]; then
+    # Rootless image layers can contain directories owned by subordinate UIDs.
+    # Enter Podman's user namespace so the complete isolated profile remains
+    # removable after a successful first run.
+    "$podman_path" unshare rm -rf -- "$profile_root"
+    return
+  fi
+
+  rm -rf -- "$profile_root"
+}
+
 # Removes the podman package while leaving image and volume storage on disk.
 # Distribution package managers keep ~/.local/share/containers untouched, so
 # reinstalling brings existing containers and volumes back exactly as they were.
@@ -339,9 +358,7 @@ prepare_test_scenario() {
         "This removes only the isolated ${TEST_NAMESPACE} container, machine, volumes, and profile at: $profile_root" \
         "$skip_confirmation"
       remove_test_resources
-      if [[ -d "$profile_root" ]]; then
-        rm -rf -- "$profile_root"
-      fi
+      remove_test_profile "$profile_root"
       ;;
     resume)
       confirm_reset \
