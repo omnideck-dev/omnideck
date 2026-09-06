@@ -9,7 +9,7 @@ function tokenTotal(agents) {
 }
 
 /** Derived display data only. Resource availability stays in Workspace state. */
-export function buildConversationDetails({ conversationId, turns = [], agents = {}, rootId, workspace = {}, openViewsById = {} }) {
+export function buildConversationDetails({ conversationId, turns = [], agents = {}, rootId, workspace = {} }) {
     const nodes = Object.values(agents);
     const children = nodes.filter((agent) => agent.parentId != null);
     const roots = nodes.filter((agent) => agent.parentId == null);
@@ -58,7 +58,6 @@ export function buildConversationDetails({ conversationId, turns = [], agents = 
                 ownerLabel: isRoot ? 'Primary agent' : formatAgentName(agent.name),
                 label: isRoot ? label : `${formatAgentName(agent.name)} · ${label}`,
                 icon: resourceId === 'browser' ? 'globe' : 'terminal',
-                description: openViewsById[id] ? 'Open in workspace' : 'View closed',
                 updateIds: [id],
             });
         }

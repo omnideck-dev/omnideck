@@ -12,11 +12,11 @@ function readSeen(key) {
 
 function ResourceRow({ row, grouped = false, isNew, onSelect }) {
     return <button className={styles.row}
-        aria-label={grouped ? `${row.ownerLabel} ${row.resourceId === 'browser' ? 'Browser' : 'Terminal'} · ${row.description}${isNew ? ' · New' : ''}` : undefined}
+        aria-label={grouped ? `${row.ownerLabel} ${row.resourceId === 'browser' ? 'Browser' : 'Terminal'}${isNew ? ' · New' : ''}` : undefined}
         data-testid={row.id === 'artifacts' ? 'conversation-artifacts-trigger' : row.id === 'agents' ? 'network-indicator' : undefined}
         onClick={() => onSelect(row)}>
         {!grouped && <span className={styles.icon}><i className={`bi bi-${row.icon}`} aria-hidden="true" /></span>}
-        <span className={styles.copy}><strong>{grouped ? row.ownerLabel : row.label} {row.count != null && <span className={styles.count}>{row.count}</span>}</strong><span>{row.description}</span></span>
+        <span className={styles.copy}><strong>{grouped ? row.ownerLabel : row.label} {row.count != null && <span className={styles.count}>{row.count}</span>}</strong>{row.description && <span>{row.description}</span>}</span>
         {isNew && <span className={styles.badge}>New</span>}
         <i className={`bi bi-chevron-right ${styles.chevron}`} aria-hidden="true" />
     </button>;

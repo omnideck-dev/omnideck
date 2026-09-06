@@ -9,7 +9,8 @@ through useConversationDetails and supplies the existing navigation callbacks.
 - Browser and Terminal availability is derived from existing Workspace state:
   browser tabs and terminal command records. No availability flags or backend
   resource catalog were added.
-- Desktop's open-view catalog supplies “Open in workspace” versus “View closed.”
+- Resource rows use the same label whether their view is open or closed;
+  Details does not subscribe to Desktop's open-view catalog.
   The same row action focuses an existing view or reopens a closed one through
   the existing Workspace Desktop adapter, retaining its deterministic identity.
 - The current root workspace appears once across turns. Browser and Terminal

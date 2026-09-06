@@ -39,7 +39,7 @@ MOUNT = """async () => {
     };
     function Review() {
         const [views, setViews] = React.useState({'workspace-resource:review:root:browser': {}});
-        const model = buildConversationDetails({...source, openViewsById: views});
+        const model = buildConversationDetails(source);
         return h('div', {style: {height: '100vh', padding: 16, background: 'var(--canvas)'}},
             h('p', {style: {margin: '0 0 14px', color: 'var(--text-secondary)'}}, 'Implementation review · real components, sample conversation data'),
             h('div', {className: styles.panel, style: {height: 'calc(100% - 50px)', border: '1px solid var(--border)', borderRadius: 8}},
@@ -66,12 +66,12 @@ with sync_playwright() as p:
     page.wait_for_function("window.__vite_plugin_react_preamble_installed__ === true")
     page.evaluate(MOUNT)
     page.get_by_role("button", name="Details", exact=False).click()
-    expect(page.get_by_role("button", name="Primary agent Browser · Open in workspace", exact=False)).to_be_visible()
-    page.get_by_role("button", name="Primary agent Terminal · View closed", exact=False).click()
+    expect(page.get_by_role("button", name="Primary agent Browser", exact=False)).to_be_visible()
+    page.get_by_role("button", name="Primary agent Terminal", exact=False).click()
     expect(page.get_by_role("button", name="Close terminal")).to_be_visible()
     page.get_by_role("button", name="Close terminal").click()
     page.get_by_role("button", name="Details", exact=True).click()
-    expect(page.get_by_role("button", name="Primary agent Terminal · View closed", exact=False)).to_be_visible()
+    expect(page.get_by_role("button", name="Primary agent Terminal", exact=False)).to_be_visible()
     page.locator("summary").click()
     for width, theme in [(1000, "dark"), (360, "dark"), (360, "light")]:
         page.set_viewport_size({"width": width, "height": 820})

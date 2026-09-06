@@ -55,15 +55,15 @@ def test_details_reopens_workspace_resource_with_existing_content(page: Page, re
     assert_content()
     NetworkView(page).show_details()
     details = page.get_by_role("region", name="Conversation details")
-    row = details.get_by_role("button", name=re.compile(rf"^{resource.title()} "))
-    expect(row).to_contain_text("Open in workspace")
+    row = details.get_by_role("button", name=re.compile(rf"^{resource.title()}(?: |$)"))
+    expect(row).to_be_visible()
     page.keyboard.press("Escape")
 
     desktop.choose_tab_action(resource, "close")
     expect(tab).to_have_count(0)
     expect(view).to_have_count(0)
     NetworkView(page).show_details()
-    expect(row).to_contain_text("View closed")
+    expect(row).to_be_visible()
     row.click()
 
     expect(details).not_to_be_visible()
@@ -75,7 +75,7 @@ def test_details_reopens_workspace_resource_with_existing_content(page: Page, re
 
     # Selecting the already-open row focuses the same view without duplicating it.
     NetworkView(page).show_details()
-    expect(row).to_contain_text("Open in workspace")
+    expect(row).to_be_visible()
     row.click()
     expect(tab).to_have_count(1)
     expect(view).to_have_count(1)
@@ -107,9 +107,9 @@ def test_details_groups_spawned_resources_and_opens_their_owner(page: Page):
     terminals = details.get_by_role("region", name="Terminals", exact=True)
     expect(browsers.get_by_role("button")).to_have_count(1)
     expect(terminals.get_by_role("button")).to_have_count(2)
-    expect(browsers.get_by_role("button", name=re.compile(r"^ALPHA Browser"))).to_contain_text("View closed")
-    expect(terminals.get_by_role("button", name=re.compile(r"^ALPHA Terminal"))).to_contain_text("View closed")
-    expect(terminals.get_by_role("button", name=re.compile(r"^BRAVO Terminal"))).to_contain_text("View closed")
+    expect(browsers.get_by_role("button", name=re.compile(r"^ALPHA Browser"))).to_be_visible()
+    expect(terminals.get_by_role("button", name=re.compile(r"^ALPHA Terminal"))).to_be_visible()
+    expect(terminals.get_by_role("button", name=re.compile(r"^BRAVO Terminal"))).to_be_visible()
 
     for owner, agent_id, resource in [
         ("ALPHA", alpha_id, "browser"),

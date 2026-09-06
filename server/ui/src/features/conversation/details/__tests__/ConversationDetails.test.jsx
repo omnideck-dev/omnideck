@@ -40,16 +40,14 @@ describe('Details disclosure', () => {
         expect(screen.getByRole('button', { name: /Terminal/ })).not.toHaveTextContent('New');
     });
 
-    it('uses the same row action for open and closed views', () => {
+    it('routes repeated resource selections through the same action', () => {
         const onSelect = vi.fn();
-        const closed = model();
-        const { rerender } = render(<ConversationDetails conversationId="conv" model={closed} onSelect={onSelect} />);
+        render(<ConversationDetails conversationId="conv" model={model()} onSelect={onSelect} />);
         fireEvent.click(screen.getByRole('button', { name: /Details/ }));
-        fireEvent.click(screen.getByRole('button', { name: /Terminal View closed/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Terminal/ }));
         expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: 'r', resourceId: 'terminal' }));
-        rerender(<ConversationDetails conversationId="conv" model={buildConversationDetails({ ...input, openViewsById: { 'workspace-resource:conv:root:terminal': {} } })} onSelect={onSelect} />);
         fireEvent.click(screen.getByRole('button', { name: /Details/ }));
-        fireEvent.click(screen.getByRole('button', { name: /Terminal Open in workspace/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Terminal/ }));
         expect(onSelect).toHaveBeenCalledTimes(2);
     });
 

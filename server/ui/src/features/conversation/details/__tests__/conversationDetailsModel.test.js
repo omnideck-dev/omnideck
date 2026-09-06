@@ -7,14 +7,11 @@ const input = { conversationId: 'conv', rootId: 'r', agents: { r: root, c: child
 const browserId = 'workspace-resource:conv:root:browser';
 
 describe('conversation details projection', () => {
-    it('keeps an available resource discoverable after closing its Desktop view', () => {
+    it('derives available resources from workspace content without Desktop state', () => {
         const workspace = { r: { browserTabs: { 1: { screenshot: 'png' } }, terminalLines: [{ cmd: 'true', stdout: null }] } };
-        const open = buildConversationDetails({ ...input, workspace, openViewsById: { [browserId]: {} } });
-        expect(open.rows.find((row) => row.id === browserId).description).toBe('Open in workspace');
-        const closed = buildConversationDetails({ ...input, workspace });
-        expect(closed.rows.find((row) => row.id === browserId)).toMatchObject({ description: 'View closed', agentId: 'r', resourceId: 'browser' });
-        expect(closed.rows.find((row) => row.resourceId === 'terminal')).toBeTruthy();
-        expect(closed.updateIds).toEqual(open.updateIds);
+        const result = buildConversationDetails({ ...input, workspace });
+        expect(result.rows.find((row) => row.id === browserId)).toMatchObject({ agentId: 'r', resourceId: 'browser' });
+        expect(result.rows.find((row) => row.resourceId === 'terminal')).toBeTruthy();
     });
 
     it('omits unused resources and retains only the current root plus sub-agent resources', () => {
