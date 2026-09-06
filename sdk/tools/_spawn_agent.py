@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from agents import AgentProfile, build_agent, get_agent_profile
+from agents import AgentProfile, build_agent, get_agent_profile, resolve_agent_runtime_metadata
 from browser.runtime import get_browser_runtime
 from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
 from sdk.events import (
@@ -162,7 +162,9 @@ async def spawn_agent(
         return msg
 
     agent_state = await build_agent_state(agent_profile)
-    agent = build_agent(agent_profile, tools=agent_state.tools, name=agent_name)
+    agent = await resolve_agent_runtime_metadata(
+        build_agent(agent_profile, tools=agent_state.tools, name=agent_name),
+    )
 
     logger.info(
         "Spawning sub-agent '%s' (profile=%s, max_iter=%d, instruction=%.100s)",

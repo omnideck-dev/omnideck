@@ -40,20 +40,12 @@ _DEFAULTS: dict[str, Any] = {
     "vision_provider": "",
     "vision_model": "",
     "vision_think": False,
-    "vision_options": {
-        "num_ctx": 60000,
-        "num_predict": 512,
-        "temperature": 0.3,
-        "top_k": 20,
-    },
+    # Empty means provider/model-native defaults. Specialized runtime helpers
+    # add only the small output ceiling appropriate to the role.
+    "vision_options": {},
     "compaction_provider": "",
     "compaction_model": "",
-    "compaction_options": {
-        "num_ctx": 32768,
-        "num_predict": 8192,
-        "temperature": 0.3,
-        "top_k": 20,
-    },
+    "compaction_options": {},
     "title_provider": "",
     "title_model": "",
     "custom_apps_enabled": False,

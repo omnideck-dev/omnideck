@@ -12,44 +12,30 @@ from pathlib import Path
 from typing import Any
 
 from ._base import BaseAPIProvider
-from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
+from ._models import (
+    ChatDelta,
+    ChatMessage,
+    ChatResponse,
+    LLMConfig,
+    ModelInfo,
+    ProviderError,
+    TokenUsage,
+    ToolCall,
+    ToolCallFunction,
+)
+from ._model_metadata import (
+    discovered_metadata,
+    fallback_metadata,
+    inference_controls,
+    request_control_supported,
+    thinking_configuration,
+    thinking_default,
+)
 from sdk.tools import callable_to_json_schema
 
 logger = logging.getLogger(__name__)
 
 _MODEL_CACHE_TTL = 300.0  # 5 minutes
-
-# (context_window, max_output_tokens, supports_images, supports_thinking)
-# Longer prefixes first so "gpt-4o-mini" matches before "gpt-4o".
-_OPENAI_KNOWN_MODELS: list[tuple[str, int, int, bool, bool]] = [
-    ("gpt-5.5-pro",  1_050_000, 128_000, True,  True),
-    ("gpt-5.5",      1_050_000, 128_000, True,  True),
-    ("gpt-5.4-nano", 400_000,   128_000, True,  True),
-    ("gpt-5.4-mini", 400_000,   128_000, True,  True),
-    ("gpt-5.4",      1_050_000, 128_000, True,  True),
-    ("gpt-5-mini",   400_000,   128_000, True,  True),
-    ("gpt-5",        400_000,   128_000, True,  True),
-    ("gpt-4.1-nano", 1_047_576, 32_768,  True,  False),
-    ("gpt-4.1-mini", 1_047_576, 32_768,  True,  False),
-    ("gpt-4.1",      1_047_576, 32_768,  True,  False),
-    ("gpt-4o-mini",  128_000,   16_384,  True,  False),
-    ("gpt-4o",       128_000,   16_384,  True,  False),
-    ("gpt-4-turbo",  128_000,   4_096,   True,  False),
-    ("o4-mini",      200_000,   100_000, True,  True),
-    ("o3-mini",      200_000,   100_000, False, True),
-    ("o3",           200_000,   100_000, True,  True),
-    ("o1-pro",       200_000,   100_000, True,  True),
-    ("o1-mini",      128_000,   65_536,  False, True),
-    ("o1",           200_000,   100_000, True,  True),
-]
-
-
-def _lookup_openai_model(model_id: str) -> tuple[int, int, bool, bool] | None:
-    for prefix, ctx, out, images, thinking in _OPENAI_KNOWN_MODELS:
-        if model_id.startswith(prefix):
-            return ctx, out, images, thinking
-    return None
-
 
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
@@ -70,12 +56,14 @@ class OpenAIResponsesProvider(BaseAPIProvider):
         base_url: str | None = None,
         *,
         proxy_socket: Path | None = None,
+        send_authorization: bool = True,
     ) -> None:
         super().__init__(api_key, base_url)
         import openai
 
         if proxy_socket is not None:
             import httpx
+
             transport = httpx.AsyncHTTPTransport(uds=str(proxy_socket))
             http_client = httpx.AsyncClient(transport=transport)
             self._client = openai.AsyncOpenAI(
@@ -88,7 +76,16 @@ class OpenAIResponsesProvider(BaseAPIProvider):
             if base_url:
                 kwargs["base_url"] = base_url
             kwargs["api_key"] = api_key or "not-required"
-            self._client = openai.AsyncOpenAI(**kwargs)
+            client_class = openai.AsyncOpenAI
+            if not send_authorization:
+
+                class _NoAuthAsyncOpenAI(openai.AsyncOpenAI):
+                    @property
+                    def auth_headers(self) -> dict[str, str]:
+                        return {}
+
+                client_class = _NoAuthAsyncOpenAI
+            self._client = client_class(**kwargs)
 
         self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
@@ -120,9 +117,19 @@ class OpenAIResponsesProvider(BaseAPIProvider):
         max_tokens = opts.get("num_predict") or opts.get("max_tokens")
         if max_tokens:
             kwargs["max_output_tokens"] = max_tokens
-        if opts.get("temperature") is not None:
+        if (
+            opts.get("temperature") is not None
+            and request_control_supported(
+                "openai_responses", model, "temperature", think=think,
+            )
+        ):
             kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_p") is not None:
+        if (
+            opts.get("top_p") is not None
+            and request_control_supported(
+                "openai_responses", model, "top_p", think=think,
+            )
+        ):
             kwargs["top_p"] = opts["top_p"]
         if tools:
             kwargs["tools"] = _convert_tools(tools)
@@ -227,14 +234,46 @@ class OpenAIResponsesProvider(BaseAPIProvider):
             response = await self._client.models.list()
             results: list[ModelInfo] = []
             for m in response.data:
-                meta = _lookup_openai_model(m.id)
-                results.append(ModelInfo(
-                    name=m.id,
-                    context_window=meta[0] if meta else None,
-                    max_output_tokens=meta[1] if meta else None,
-                    supports_images=meta[2] if meta else False,
-                    supports_thinking=meta[3] if meta else False,
+                meta = fallback_metadata(m.id)
+                discovered = discovered_metadata(m)
+                supports_thinking = bool(discovered.get(
+                    "supports_thinking", meta.get("supports_thinking", False),
                 ))
+                thinking_control, thinking_levels, thinking_required = thinking_configuration(
+                    "openai_responses", m.id, supports_thinking,
+                )
+                if discovered.get("thinking_levels"):
+                    thinking_levels = discovered["thinking_levels"]
+                if "thinking_required" in discovered:
+                    thinking_required = discovered["thinking_required"]
+                results.append(
+                    ModelInfo(
+                        name=m.id,
+                        context_window=discovered.get("context_window", meta.get("context_window")),
+                        max_output_tokens=discovered.get(
+                            "max_output_tokens", meta.get("max_output_tokens"),
+                        ),
+                        supports_images=bool(discovered.get(
+                            "supports_images", meta.get("supports_images", False),
+                        )),
+                        supports_thinking=supports_thinking,
+                        inference_api="openai_responses",
+                        inference_controls=inference_controls(
+                            "openai_responses",
+                            supports_thinking,
+                            thinking_control,
+                            model_id=m.id,
+                            supported_parameters=discovered.get("supported_parameters"),
+                        ),
+                        thinking_control=thinking_control,
+                        thinking_levels=thinking_levels,
+                        thinking_default=discovered.get("thinking_default") or thinking_default(
+                            m.id, thinking_control, thinking_levels,
+                        ),
+                        thinking_required=thinking_required,
+                        reasoning_efforts=thinking_levels if supports_thinking else None,
+                    )
+                )
             self._model_cache = results
             self._model_cache_at = now
             return self._model_cache
@@ -279,10 +318,12 @@ def _convert_messages(
                     content_parts.append({"type": "input_text", "text": content})
                 for img in images:
                     media_type = img.get("media_type", "image/png")
-                    content_parts.append({
-                        "type": "input_image",
-                        "image_url": f"data:{media_type};base64,{img['data']}",
-                    })
+                    content_parts.append(
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{media_type};base64,{img['data']}",
+                        }
+                    )
                 items.append({"role": "user", "content": content_parts})
             else:
                 items.append({"role": "user", "content": content})
@@ -294,12 +335,14 @@ def _convert_messages(
 
             # Emit text as an output message item
             if content:
-                items.append({
-                    "type": "message",
-                    "role": "assistant",
-                    "status": "completed",
-                    "content": [{"type": "output_text", "text": content, "annotations": []}],
-                })
+                items.append(
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": content, "annotations": []}],
+                    }
+                )
 
             # Emit tool calls as function_call items
             if tool_calls:
@@ -314,24 +357,28 @@ def _convert_messages(
                         item_id = "fc_" + call_id[5:]
                     else:
                         item_id = call_id
-                    items.append({
-                        "type": "function_call",
-                        "id": item_id,
-                        "call_id": call_id,
-                        "name": func.get("name", ""),
-                        "arguments": json.dumps(args) if isinstance(args, dict) else args,
-                    })
+                    items.append(
+                        {
+                            "type": "function_call",
+                            "id": item_id,
+                            "call_id": call_id,
+                            "name": func.get("name", ""),
+                            "arguments": json.dumps(args) if isinstance(args, dict) else args,
+                        }
+                    )
             continue
 
         if role == "tool":
             content = msg.get("content", "")
             if isinstance(content, dict):
                 content = json.dumps(content)
-            items.append({
-                "type": "function_call_output",
-                "call_id": msg.get("tool_call_id", ""),
-                "output": content,
-            })
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": msg.get("tool_call_id", ""),
+                    "output": content,
+                }
+            )
             continue
 
     return instructions, items
@@ -348,12 +395,14 @@ def _convert_tools(tools: list[Callable[..., Any]]) -> list[dict[str, Any]]:
     for func in tools:
         schema = callable_to_json_schema(func)
         fn = schema.get("function", {})
-        result.append({
-            "type": "function",
-            "name": fn.get("name", ""),
-            "description": fn.get("description", ""),
-            "parameters": fn.get("parameters", {}),
-        })
+        result.append(
+            {
+                "type": "function",
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "parameters": fn.get("parameters", {}),
+            }
+        )
     return result
 
 
@@ -367,10 +416,12 @@ def _build_tool_calls(tc_accum: dict[int, dict[str, str]]) -> list[ToolCall] | N
                 args = json.loads(tc["arguments"])
             except json.JSONDecodeError:
                 args = {}
-        result.append(ToolCall(
-            id=tc["call_id"] or tc["id"] or None,
-            function=ToolCallFunction(name=tc["name"], arguments=args),
-        ))
+        result.append(
+            ToolCall(
+                id=tc["call_id"] or tc["id"] or None,
+                function=ToolCallFunction(name=tc["name"], arguments=args),
+            )
+        )
     return result or None
 
 
@@ -424,10 +475,12 @@ def _normalize_response(raw: Any) -> ChatResponse:
                     args = json.loads(item.arguments)
                 except json.JSONDecodeError:
                     args = {}
-            tool_calls.append(ToolCall(
-                id=item.call_id,
-                function=ToolCallFunction(name=item.name, arguments=args),
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=item.call_id,
+                    function=ToolCallFunction(name=item.name, arguments=args),
+                )
+            )
         elif item.type == "reasoning":
             for summary in getattr(item, "summary", []) or []:
                 if getattr(summary, "type", None) == "summary_text":

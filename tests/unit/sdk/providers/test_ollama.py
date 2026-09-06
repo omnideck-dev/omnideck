@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sdk.providers._ollama import OllamaProvider, _normalize_response, _wrap_ollama_error
+from sdk.providers._ollama import (
+    OllamaProvider,
+    _build_ollama_kwargs,
+    _normalize_response,
+    _wrap_ollama_error,
+)
 
 
 @dataclass
@@ -104,6 +109,29 @@ async def _async_iter(items):
 
 @pytest.mark.unit
 class TestOllamaProviderChat:
+    def test_graded_thinking_uses_top_level_think_parameter(self):
+        kwargs = _build_ollama_kwargs(
+            "gpt-oss:20b",
+            [{"role": "user", "content": "hi"}],
+            None,
+            {"reasoning_effort": "high", "temperature": 0.2},
+            True,
+        )
+
+        assert kwargs["think"] == "high"
+        assert kwargs["options"] == {"temperature": 0.2}
+
+    def test_required_thinking_cannot_be_disabled_by_a_stale_profile(self):
+        kwargs = _build_ollama_kwargs(
+            "gpt-oss:20b",
+            [{"role": "user", "content": "hi"}],
+            None,
+            None,
+            False,
+        )
+
+        assert kwargs["think"] is True
+
     @pytest.mark.asyncio
     async def test_chat_delegates_to_client(self):
         """Provider.chat calls the underlying AsyncClient.chat and normalizes."""
@@ -196,3 +224,23 @@ class TestOllamaProviderListModels:
         assert result[0].supports_images is True
         assert result[0].parameter_size == "8B"
         assert result[1].name == "mistral:7b"
+
+    @pytest.mark.asyncio
+    async def test_gpt_oss_exposes_required_thinking_levels(self):
+        provider = OllamaProvider.__new__(OllamaProvider)
+        provider._client = AsyncMock()
+        provider._model_cache = None
+        provider._model_cache_at = 0.0
+        model = MagicMock(model="gpt-oss:20b", details=None)
+        provider._client.list.return_value = MagicMock(models=[model])
+        provider._client.show.return_value = MagicMock(
+            capabilities=["completion", "thinking"],
+            modelinfo={"gptoss.context_length": 131072},
+        )
+
+        result = await provider.list_models()
+
+        assert result[0].thinking_control == "reasoning_effort"
+        assert result[0].thinking_levels == ["low", "medium", "high"]
+        assert result[0].thinking_required is True
+        assert "reasoning_effort" in (result[0].inference_controls or [])

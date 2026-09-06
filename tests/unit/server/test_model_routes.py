@@ -40,7 +40,13 @@ class TestHandleListModels:
     async def test_returns_models_list(self):
         """Successful provider response is forwarded as JSON."""
         models = [
-            ModelInfo(name="gpt-4", supports_images=True, capabilities=["vision"]),
+            ModelInfo(
+                name="gpt-4",
+                supports_images=True,
+                capabilities=["vision"],
+                inference_api="openai_responses",
+                inference_controls=["temperature", "top_p"],
+            ),
             ModelInfo(name="gpt-3.5"),
         ]
         with patch("server._model_routes.get_provider") as mock_get:
@@ -53,6 +59,8 @@ class TestHandleListModels:
         assert resp.status == 200
         body = json.loads(resp.body)
         assert [m["name"] for m in body["models"]] == ["gpt-4", "gpt-3.5"]
+        assert body["models"][0]["inference_api"] == "openai_responses"
+        assert body["models"][0]["inference_controls"] == ["temperature", "top_p"]
 
     async def test_provider_error_message_is_sanitized(self):
         """Provider errors pass through with credential-shaped tokens redacted."""

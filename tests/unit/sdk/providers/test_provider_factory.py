@@ -109,6 +109,14 @@ class TestGetProvider:
         from sdk.providers._openai import OpenAIProvider
         assert isinstance(provider, OpenAIProvider)
 
+    def test_aperture_uses_gateway_provider(self):
+        with patch("sdk.providers.load_settings", return_value=_direct("aperture", "http://ai.example.ts.net")), \
+             patch("sdk.providers.load_config", return_value=_fake_config()):
+            provider = get_provider("aperture")
+        from sdk.providers._aperture import ApertureProvider
+        assert isinstance(provider, ApertureProvider)
+        assert provider._gateway_url == "http://ai.example.ts.net"
+
     def test_not_configured_raises(self):
         """A provider with no direct entry and no broker socket gives a clear error."""
         with patch("sdk.providers.load_settings", return_value={}), \
@@ -140,3 +148,8 @@ class TestProxySocketPath:
         with patch("sdk.providers.load_config", return_value=_fake_config(str(tmp_path))):
             result = _proxy_socket_path("openrouter")
         assert result == tmp_path / "llm_openrouter.sock"
+
+    def test_aperture(self, tmp_path):
+        with patch("sdk.providers.load_config", return_value=_fake_config(str(tmp_path))):
+            result = _proxy_socket_path("aperture")
+        assert result == tmp_path / "llm_aperture.sock"

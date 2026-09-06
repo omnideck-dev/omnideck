@@ -35,8 +35,10 @@ class TestLoadSettings:
         assert s["direct_providers"] == {}
         assert s["vision_provider"] == ""
         assert s["vision_model"] == ""
+        assert s["vision_options"] == {}
         assert s["compaction_provider"] == ""
         assert s["compaction_model"] == ""
+        assert s["compaction_options"] == {}
         assert s["title_provider"] == ""
         assert s["title_model"] == ""
         assert s["custom_apps_enabled"] is False

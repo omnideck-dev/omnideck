@@ -17,6 +17,7 @@ const PROVIDER_META = {
     anthropic: { label: 'Anthropic', icon: 'bi-cloud' },
     openai: { label: 'OpenAI', icon: 'bi-cloud' },
     openrouter: { label: 'OpenRouter', icon: 'bi-router' },
+    aperture: { label: 'Tailscale Aperture', icon: 'bi-diagram-3' },
 };
 
 // Backend status → StatusDot status + user-facing label. The supervisor
@@ -245,6 +246,7 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
     const meta = _meta(provider.name);
     const view = _statusView(status);
     const isDirect = provider.kind === 'direct';
+    const isAperture = provider.name === 'aperture';
 
     const [field, setField] = useState(provider.base_url || '');
     // When the selected provider changes, reset the input.
@@ -321,7 +323,7 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
 
             <div className={styles.detailSection}>
                 <div className={styles.detailSectionLabel}>
-                    {isDirect ? 'Base URL' : 'API Key'}
+                    {isAperture ? 'Gateway URL' : isDirect ? 'Base URL' : 'API Key'}
                 </div>
                 <div className={styles.inputRow}>
                     <input
@@ -329,7 +331,7 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                         className={`${styles.input} ${styles.inputMono}`}
                         value={field}
                         onChange={(e) => setField(e.target.value)}
-                        placeholder={isDirect ? 'http://host:port' : 'Paste a new key to replace the current one'}
+                        placeholder={isAperture ? 'http://aperture-hostname' : isDirect ? 'http://host:port' : 'Paste a new key to replace the current one'}
                         autoComplete={isDirect ? 'off' : 'new-password'}
                     />
                     <Button variant="filled" onClick={handleSave} disabled={saving || !field}>
@@ -339,6 +341,11 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                 {!isDirect && (
                     <div className={styles.formHint}>
                         Stored encrypted in the vault. Saving restarts the broker.
+                    </div>
+                )}
+                {isAperture && (
+                    <div className={styles.formHint}>
+                        Tailscale provides identity and encryption. API formats are discovered automatically.
                     </div>
                 )}
                 {saveError && (
@@ -391,7 +398,7 @@ function EmptyState({ onAdd }) {
             <div className={styles.emptyHeading}>No providers configured</div>
             <div className={styles.emptyDesc}>
                 Agents need at least one LLM provider to run. Add Ollama for local models,
-                or a cloud API like Anthropic, OpenAI, or OpenRouter.
+                Tailscale Aperture for managed work models, or a cloud API.
             </div>
             <Button variant="filled" onClick={onAdd} data-testid="providers-empty-add-btn">
                 <i className="bi bi-plus-lg" /> Add Provider

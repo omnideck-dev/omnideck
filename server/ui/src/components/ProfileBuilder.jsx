@@ -12,7 +12,15 @@ import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
 import { EMPTY_BROWSER_PROFILE } from '../features/browser/browserProfileConstants.js';
 import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
-import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
+import {
+    InferenceSettings,
+    resolvePreset,
+    detectPreset,
+    INFERENCE_FIELDS,
+    isSupported,
+    resolveInferenceCapabilities,
+    sanitizeProfileForModel,
+} from './inference';
 
 const HELP_SECTIONS = [
     { title: 'Name', body: 'How this profile appears in the profile list and agent selector.' },
@@ -26,8 +34,8 @@ const HELP_SECTIONS = [
     { title: 'Top K', body: 'Limits sampling to the K most probable tokens. 10 = factual, 40 = general, 100+ = creative.' },
     { title: 'Top P', body: 'Nucleus sampling — considers tokens whose cumulative probability exceeds P. 0.5 = focused, 0.9 = general, 1.0 = everything.' },
     { title: 'Repeat Penalty', body: '1.0 = off, 1.1 = general use, 1.5+ = strongly discourages repetition in long outputs.' },
-    { title: 'Context Window', body: 'Maximum context window in tokens. Higher values allow longer conversations but use more memory (Ollama only).' },
-    { title: 'Max Output (num_predict)', body: 'Maximum tokens the model can generate per turn. -1 = unlimited.' },
+    { title: 'Runtime Context Window', body: 'Ollama-only context allocation. Cloud models use their detected fixed capacity automatically.' },
+    { title: 'Max Output (num_predict)', body: 'Maximum tokens the model can generate per turn. Ollama also accepts -1 for unlimited output.' },
     { title: 'Iterations (max_iterations)', body: 'How many tool-call rounds the agent can chain per user message before stopping.' },
     { title: 'Thinking', body: 'When enabled, the model reasons step-by-step before answering. Good for math, logic, and code generation.' },
 ];
@@ -54,9 +62,11 @@ export default function ProfileBuilder({
     const [showPicker, setShowPicker] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
     const { profiles: browserProfiles } = useBrowserProfilesCatalog();
+    const [resolvedModel, setResolvedModel] = useState(null);
 
     useEffect(() => {
         setSaveError(null);
+        setResolvedModel(null);
         if (profile) {
             setDraft(_cloneProfile(profile));
         } else {
@@ -77,11 +87,19 @@ export default function ProfileBuilder({
     // Inference-option support (think, top_k, num_ctx, etc.) depends on which
     // provider this profile points at, not on any global default.
     const draftProvider = draft?.provider || providers?.[0]?.name || 'ollama';
+    const modelInfo = resolvedModel?.provider === draftProvider
+        && resolvedModel?.model === draft?.model
+        ? resolvedModel.info
+        : null;
+    const inferenceCapabilities = useMemo(
+        () => resolveInferenceCapabilities(draftProvider, modelInfo),
+        [draftProvider, modelInfo],
+    );
 
     const activePreset = useMemo(() => {
         if (!draft) return null;
-        return detectPreset(draft, draftProvider);
-    }, [draft, draftProvider]);
+        return detectPreset(draft, inferenceCapabilities);
+    }, [draft, inferenceCapabilities]);
 
     // Skill picker: the library keyed by id, category metadata for chips, and
     // the search-filtered options.
@@ -103,7 +121,7 @@ export default function ProfileBuilder({
     }, []);
 
     const applyPreset = useCallback((presetId) => {
-        const values = resolvePreset(presetId, draftProvider);
+        const values = resolvePreset(presetId, inferenceCapabilities);
         if (!values) return;
         setDraft((prev) => {
             if (!prev) return prev;
@@ -112,13 +130,17 @@ export default function ProfileBuilder({
                 next[k] = null;
             }
             for (const [k, v] of Object.entries(values)) {
-                if (isSupported(k, draftProvider)) {
+                if (isSupported(k, inferenceCapabilities)) {
                     next[k] = v;
                 }
             }
             return next;
         });
-    }, [draftProvider]);
+    }, [inferenceCapabilities]);
+
+    const handleModelResolved = useCallback((provider, model, info) => {
+        setResolvedModel({ provider, model, info });
+    }, []);
 
     const toggleSkill = useCallback((skill) => {
         setDraft((prev) => {
@@ -256,15 +278,15 @@ export default function ProfileBuilder({
                             selectedProvider={draft.provider || null}
                             selectedModel={draft.model || null}
                             onSelect={(p, name, meta) => {
+                                setResolvedModel({ provider: p, model: name, info: meta || null });
                                 setDraft((prev) => {
                                     if (!prev) return prev;
-                                    const next = { ...prev, provider: p || '', model: name || '' };
-                                    if (meta?.context_window != null) {
-                                        next.context_window = meta.context_window;
-                                    }
-                                    return next;
+                                    const selected = { ...prev, provider: p || '', model: name || '' };
+                                    const nextCapabilities = resolveInferenceCapabilities(p, meta || null);
+                                    return sanitizeProfileForModel(selected, nextCapabilities, meta || null);
                                 });
                             }}
+                            onModelResolved={handleModelResolved}
                             inline
                         />
                         {draft._unsaved && !draft.model && (
@@ -467,7 +489,7 @@ export default function ProfileBuilder({
                     <InferenceSettings
                         key={draft.id}
                         draft={draft}
-                        provider={draftProvider}
+                        capabilities={inferenceCapabilities}
                         activePreset={activePreset}
                         onFieldChange={update}
                         onApplyPreset={applyPreset}

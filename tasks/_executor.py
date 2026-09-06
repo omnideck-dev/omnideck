@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from agents import build_agent, get_agent_profile
+from agents import build_agent, get_agent_profile, resolve_agent_runtime_metadata
 from browser.runtime import get_browser_runtime
 from conversations import EventsLogWriter, run_conversation_exit_hooks
 from sdk import default_hooks, run_turn
@@ -54,7 +54,9 @@ class TaskExecutor:
         try:
             profile = self._profile_for(task)
             agent_state = await build_agent_state(profile)
-            agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
+            agent = await resolve_agent_runtime_metadata(
+                build_agent(profile, tools=agent_state.tools, name="TASK_AGENT"),
+            )
 
             history = ConversationHistory(
                 system_message=agent.instruction,
