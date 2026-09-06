@@ -37,6 +37,7 @@ def _publish_iteration(
     thinking: str | None,
     tool_calls: list[IterationToolCall] | None = None,
     stopped: bool = False,
+    total_tokens: int | None = None,
 ) -> None:
     """Publish an iteration event. Logs but never raises on failure."""
     try:
@@ -49,6 +50,7 @@ def _publish_iteration(
                     content=content,
                     tool_calls=tool_calls or [],
                     stopped=stopped,
+                    total_tokens=total_tokens,
                 )
             )
         )

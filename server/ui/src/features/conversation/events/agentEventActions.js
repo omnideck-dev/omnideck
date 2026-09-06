@@ -87,6 +87,12 @@ export function getAgentEventActions(event) {
             break;
         }
         case EVENT.ITERATION:
+            immediate.push({
+                type: 'RECORD_AGENT_USAGE',
+                agentId,
+                iterationIndex: event.iteration_index,
+                totalTokens: event.total_tokens ?? null,
+            });
             if (retainActivity) batched.push({
                 type: 'FINALIZE_AGENT_ITERATION',
                 agentId,

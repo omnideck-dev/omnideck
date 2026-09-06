@@ -384,6 +384,9 @@ class IterationPayload(BaseModel):
     content: str | None = None
     tool_calls: list[IterationToolCall] = Field(default_factory=list)
     stopped: bool = False
+    # Provider-reported input + output for this call. None for old events,
+    # interrupted calls, or providers that did not report usage.
+    total_tokens: int | None = Field(default=None, ge=0)
 
 
 class ToolResultPayload(BaseModel):

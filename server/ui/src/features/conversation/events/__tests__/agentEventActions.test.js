@@ -16,6 +16,15 @@ function event(type, fields = {}) {
 }
 
 describe('getAgentEventActions', () => {
+    it('records reported usage for primary and sub-agent calls, retaining unknown historical usage', () => {
+        for (const depth of [0, 1]) {
+            const base = { depth, iteration_index: 3, tool_calls: [] };
+            expect(getAgentEventActions(event('iteration', { ...base, total_tokens: 321 })).immediate).toEqual([
+                { type: 'RECORD_AGENT_USAGE', agentId: 'agent-1', iterationIndex: 3, totalTokens: 321 },
+            ]);
+            expect(getAgentEventActions(event('iteration', base)).immediate[0].totalTokens).toBeNull();
+        }
+    });
     it('builds immediate lifecycle and context actions', () => {
         expect(getAgentEventActions(event('agent_started', {
             agent_name: 'Researcher',

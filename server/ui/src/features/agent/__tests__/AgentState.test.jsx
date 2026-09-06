@@ -35,6 +35,17 @@ function agentStarted(agentId, { name = 'root', parentAgentId = null } = {}) {
 }
 
 describe('agent state', () => {
+    it('records usage idempotently and does not carry usage into a new primary turn', () => {
+        const { getState, dispatch } = renderWithProvider();
+        dispatch(agentStarted('r1'));
+        const usage = { type: 'RECORD_AGENT_USAGE', agentId: 'r1', iterationIndex: 0, totalTokens: 25 };
+        dispatch(usage);
+        dispatch(usage);
+        dispatch({ ...usage, iterationIndex: 1, totalTokens: null });
+        dispatch(agentStarted('r2'));
+        expect(getState().agents.r1.usageByIteration).toEqual({ 0: 25, 1: null });
+        expect(getState().agents.r2.usageByIteration).toEqual({});
+    });
     describe('finalized agent iterations', () => {
         const finalIteration = {
             type: 'FINALIZE_AGENT_ITERATION',

@@ -25,7 +25,7 @@ def network_after_turn(page: Page):
         + spawn(bash("echo a") + bash("echo b") + say("done"),
                 profile="code_expert", name="code_expert")
     ).wait_streaming()
-    network = NetworkView(page)
+    network = NetworkView(page).show_details()
     expect(network.indicator).to_be_visible(timeout=5000)
     return network
 
@@ -35,18 +35,18 @@ def network_after_turn(page: Page):
 
 def test_indicator_shows_agent_count(page: Page, network_after_turn):
     """Indicator badge shows total agent count."""
-    expect(network_after_turn.indicator).to_contain_text("3 agents")
+    expect(network_after_turn.indicator).to_contain_text("Agents 2")
 
 
 def test_indicator_complete_status(page: Page, network_after_turn):
-    """Indicator dot shows 'complete' when all agents finish."""
-    dot = network_after_turn.indicator.locator("[class*='complete']")
-    expect(dot).to_be_visible()
+    """Agents row describes completion without a status dot."""
+    expect(network_after_turn.indicator).to_contain_text("2 finished")
 
 
 def test_indicator_clears_on_new_conversation(page: Page, network_after_turn):
     """Starting a new conversation removes the indicator."""
     ChatView(page).new_conversation()
+    network_after_turn.show_details()
     expect(network_after_turn.indicator).not_to_be_visible()
 
 

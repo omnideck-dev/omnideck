@@ -11,7 +11,7 @@ vi.mock('../ChatInput.jsx', () => ({ default: () => <div data-testid="chat-input
 const { agentState } = vi.hoisted(() => ({ agentState: { value: { rootId: null, agents: {} } } }));
 vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => agentState.value }));
 
-beforeEach(() => { agentState.value = { rootId: null, agents: {} }; });
+beforeEach(() => { agentState.value = { rootId: null, agents: {} }; localStorage.clear(); });
 
 const _turn = (id) => ({ id, agentId: 'root.test.1', children: [] });
 
@@ -46,28 +46,38 @@ describe('ChatPanel title bar', () => {
 
     it('counts a turn per turn object', () => {
         renderPanel({ turns: [_turn('t0'), _turn('t1')] });
-        expect(screen.getByTestId('chat-turns')).toHaveTextContent('2 turns');
+        expect(screen.queryByTestId('chat-turns')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+        fireEvent.click(screen.getByText('Advanced'));
+        expect(screen.getByTestId('chat-turns')).toHaveTextContent('2');
     });
 
     it('uses the singular for a single turn', () => {
         renderPanel({ turns: [_turn('t0')] });
-        expect(screen.getByTestId('chat-turns')).toHaveTextContent('1 turn');
+        fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+        fireEvent.click(screen.getByText('Advanced'));
+        expect(screen.getByTestId('chat-turns')).toHaveTextContent('1');
     });
 
     it('shows the network indicator only when the conversation has an agent network', () => {
-        renderPanel({ networkAgentCount: 0 });
+        agentState.value = { rootId: 'root', agents: {
+            root: { id: 'root', parentId: null, name: 'Primary' },
+            child: { id: 'child', parentId: 'root', name: 'Analyst', status: 'running' },
+        } };
+        const onOpenNetwork = vi.fn();
+        renderPanel({ onOpenNetwork });
         expect(screen.queryByTestId('network-indicator')).not.toBeInTheDocument();
-        render(
-            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
-                networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
-        );
-        expect(screen.getByTestId('network-indicator')).toHaveTextContent('3 agents');
+        fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+        expect(screen.getByTestId('network-indicator')).toHaveTextContent('Agents 1');
+        fireEvent.click(screen.getByTestId('network-indicator'));
+        expect(onOpenNetwork).toHaveBeenCalledOnce();
     });
 
     it('delegates conversation artifact navigation to the desktop', () => {
         const onOpenArtifacts = vi.fn();
         renderPanel({ onOpenArtifacts });
 
+        fireEvent.click(screen.getByRole('button', { name: /Details/ }));
         fireEvent.click(screen.getByTestId('conversation-artifacts-trigger'));
         expect(onOpenArtifacts).toHaveBeenCalledOnce();
     });

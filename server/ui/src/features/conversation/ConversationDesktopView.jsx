@@ -22,6 +22,8 @@ import {
     useConversationSessionState,
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
+import useConversationDetails from './details/useConversationDetails.js';
+import { useConversationCatalog } from './catalog/ConversationCatalog.jsx';
 
 /** Conversation-domain adapter for Chat and Agent Network modes. */
 export default function ConversationDesktopView({ view, tabGroupId }) {
@@ -46,6 +48,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const { defaultProfileId } = useAppSettings();
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
+    const detailsModel = useConversationDetails(activeConversationId, turns);
+    const { items: conversations } = useConversationCatalog();
+    const conversationTitle = conversations.find((item) => item.conversation_id === activeConversationId)?.title;
     const artifacts = useArtifactDesktopActions();
     const {
         openAgentWorkspaceResource,
@@ -105,6 +110,9 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 networkAgentCount={agentCounts.total}
                 networkRunningCount={agentCounts.running}
                 onOpenNetwork={() => navigation.openNetwork()}
+                detailsModel={detailsModel}
+                conversationTitle={conversationTitle}
+                onOpenWorkspaceResource={openAgentWorkspaceResource}
                 onOpenArtifacts={() => artifacts.openConversationArtifacts(
                     activeConversationId,
                     tabGroupId,
