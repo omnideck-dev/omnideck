@@ -8,7 +8,7 @@ import pytest
 from agent_runtime import AgentRunRequest
 from conversations import load_events_jsonl, load_loaded_skills, list_conversations
 from providers._fake import FakeProvider
-from sdk.turn._models import _current_execution
+from agent_core.turn._models import _current_execution
 from tasks import TaskExecutor
 from tools.memory import remember
 from tests.e2e._protocol import call_tool, say, spawn

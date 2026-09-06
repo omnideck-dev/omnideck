@@ -25,7 +25,7 @@ from skills._store import SKILLS_SUBDIR
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "sdk" / "skills" / "default_skills"
+_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "agent_core" / "skills" / "default_skills"
 _ASSISTANT = "assistant"
 
 

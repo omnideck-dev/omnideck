@@ -384,7 +384,7 @@ typecheck:
 
 # Verify every registered agent tool has schema-ready Google documentation
 tool-docs:
-    uv run --extra test pytest -p no:warnings tests/unit/sdk/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
+    uv run --extra test pytest -p no:warnings tests/unit/agent_core/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
 
 # Verify the shared release-note contract and any outstanding fragments
 release-note-policy:

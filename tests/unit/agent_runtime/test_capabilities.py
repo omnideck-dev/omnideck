@@ -11,7 +11,7 @@ category registry's concern, tested separately.
 import pytest
 
 from agents._agent_profiles import AgentProfile
-from sdk.agent_capabilities import AgentCapabilities
+from agent_core.agent_capabilities import AgentCapabilities
 from agent_runtime._factory import AgentFactory, _restore_persisted_loaded_skills, persist_loaded_skills
 from agent_runtime._spawn import make_spawn_tool
 from skills._resolve import (

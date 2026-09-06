@@ -6,12 +6,12 @@ from datetime import datetime
 
 from rich.console import Console
 
-from sdk.providers import ProviderError
+from agent_core.providers import ProviderError
 from providers import get_provider
 from rich.panel import Panel
 from rich.text import Text
 
-from sdk.events import (
+from agent_core.events import (
     AgentEvent,
     CompactionPayload,
     CompactionScope,
@@ -20,7 +20,7 @@ from sdk.events import (
 )
 from settings import load_settings
 
-from sdk.context import ContextStats, ConversationHistory, TriggerPoint
+from agent_core.context import ContextStats, ConversationHistory, TriggerPoint
 
 logger = logging.getLogger(__name__)
 _console = Console(stderr=True)
@@ -131,8 +131,8 @@ _SUMMARIZE_PROMPT = (
     "clicked search'\n"
     "  Browser RIGHT: 'Searched Google Flights nonstop AUS→ORD Apr 10-12. "
     "Best: American $634, United $714, Delta $558'\n"
-    "  Code WRONG: 'Read sdk/context/_history.py'\n"
-    "  Code RIGHT: 'ConversationHistory (sdk/context/_history.py): owns the "
+    "  Code WRONG: 'Read agent_core/context/_history.py'\n"
+    "  Code RIGHT: 'ConversationHistory (agent_core/context/_history.py): owns the "
     "in-memory event log, subscribe(handler)/unsubscribe()/add_event(event) "
     "for observer fan-out, drain_observers() waits for async observers'\n"
     "- For code: preserve key signatures, field names, and behavioural details "

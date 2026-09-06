@@ -1,4 +1,4 @@
-"""Real HTTP controls reaching a root/child SDK loop and durable events."""
+"""Real HTTP controls reaching a root/child agent core loop and durable events."""
 
 import json
 

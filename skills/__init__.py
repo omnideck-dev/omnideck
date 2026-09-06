@@ -4,7 +4,7 @@ Provides the Skill model, skill resolution, and the load_skill /
 list_available_skills meta-tools.
 """
 
-from sdk.skills import Skill
+from agent_core.skills import Skill
 from ._resolve import (
     resolve_skill,
     resolve_skill_by_name,

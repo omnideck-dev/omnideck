@@ -12,8 +12,8 @@ from conversations import (
     get_or_create_conversation, load_browser_tabs, load_events_jsonl,
     load_loaded_skills, load_terminal,
 )
-from sdk.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
-from sdk.providers import ProviderError
+from agent_core.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
+from agent_core.providers import ProviderError
 from tasks import TaskExecutor
 
 from ._support import assert_lifecycle, call, payloads, reply

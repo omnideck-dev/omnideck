@@ -10,10 +10,10 @@ from functools import partial
 from agent_runtime import AgentRunner, AgentRunRequest, RunSession
 from conversations import get_or_create_conversation
 from agent_runtime._spawn import make_spawn_tool
-from sdk.agent_capabilities import AgentCapabilities
-from sdk.context import ConversationHistory
-from sdk.control import ExecutionControl
-from sdk.turn import ExecutionContext
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.context import ConversationHistory
+from agent_core.control import ExecutionControl
+from agent_core.turn import ExecutionContext
 
 
 @pytest.fixture

@@ -30,7 +30,7 @@ def model_script(*responses: dict) -> str:
     """Script model messages, including thinking/content before real tool calls.
 
     Each response uses ChatMessage fields. Non-final responses must call a tool
-    so the real SDK loop continues. No runtime event or tool result is supplied.
+    so the real agent core loop continues. No runtime event or tool result is supplied.
     """
     body = json.dumps(responses).replace("<", "\\u003c")
     return f"<<MODEL>>{body}<<END>>"

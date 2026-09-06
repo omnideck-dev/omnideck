@@ -43,8 +43,8 @@ graph TD
 ```
 
 **Defined in:** `agent_runtime/_compaction.py` (1,007 lines)
-**Orchestrated by:** `sdk/context/_manager.py` (134 lines)
-**Triggered by:** `sdk/hooks/_context_hook.py` (29 lines)
+**Orchestrated by:** `agent_core/context/_manager.py` (134 lines)
+**Triggered by:** `agent_core/hooks/_context_hook.py` (29 lines)
 
 ### Trigger Flow
 
@@ -313,7 +313,7 @@ Inference options (`num_ctx`, `num_predict`, `temperature`, etc.) come from
 |---|---|
 | Main agent runs | `agent_runtime/_runner.py` |
 | Background tasks | `tasks/_executor.py:62` |
-| Sub-agents | `sdk/tools/_spawn_agent.py:196` |
+| Sub-agents | `agent_core/tools/_spawn_agent.py:196` |
 
 ## Persistence
 
@@ -329,7 +329,7 @@ enabling offline quality evaluation via the compaction eval web app
 
 ## Related Documentation
 
-- `docs/sdk_semantics.md` — Message Groups concept and turn lifecycle diagram
+- `docs/agent_core_semantics.md` — Message Groups concept and turn lifecycle diagram
 - `docs/hooks.md` — ContextHook description
 - `docs/summarizer_optimization/experiments.md` — Prompt and model tuning history
 - `docs/summarizer_optimization/run_prompt_eval.py` — A/B test runner for summarizer configs

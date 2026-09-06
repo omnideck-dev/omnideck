@@ -8,17 +8,17 @@ from typing import Any, cast
 
 from config import load_config
 from settings import load_settings
-from sdk.providers import LLMConfig, Provider
+from agent_core.providers import LLMConfig, Provider
 from ._vision import vision_generate
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_PATHS: dict[str, str] = {
-    "ollama": "sdk.providers._ollama:OllamaProvider",
-    "openai": "sdk.providers._openai_responses:OpenAIResponsesProvider",
-    "openai_compat": "sdk.providers._openai:OpenAIProvider",
-    "openrouter": "sdk.providers._openai:OpenAIProvider",
-    "anthropic": "sdk.providers._anthropic:AnthropicProvider",
+    "ollama": "agent_core.providers._ollama:OllamaProvider",
+    "openai": "agent_core.providers._openai_responses:OpenAIResponsesProvider",
+    "openai_compat": "agent_core.providers._openai:OpenAIProvider",
+    "openrouter": "agent_core.providers._openai:OpenAIProvider",
+    "anthropic": "agent_core.providers._anthropic:AnthropicProvider",
     "fake": "providers._fake:FakeProvider",
 }
 

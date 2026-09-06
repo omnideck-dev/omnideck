@@ -18,8 +18,8 @@ from browser.profile_store import (
 from browser.profiles import BrowserProfile, BrowserProfileSite
 from browser.session_pool import BrowserSessionPool, BrowserStorageStateLoader
 from config import load_config
-from sdk.events import get_current_agent_id, get_current_depth
-from sdk.turn import get_conversation_id
+from agent_core.events import get_current_agent_id, get_current_depth
+from agent_core.turn import get_conversation_id
 
 logger = logging.getLogger(__name__)
 

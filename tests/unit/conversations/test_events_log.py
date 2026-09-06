@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from conversations._events_log import EventsLogWriter, _serialize_event
-from sdk.events import (
+from agent_core.events import (
     AgentEvent,
     ContentPayload,
     ErrorPayload,

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from conversations import BrowserTabsWriter, load_browser_tabs
-from sdk.events import AgentEvent, BrowserScreenshotPayload, ContentPayload
+from agent_core.events import AgentEvent, BrowserScreenshotPayload, ContentPayload
 
 
 @pytest.fixture()

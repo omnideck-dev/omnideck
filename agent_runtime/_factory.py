@@ -1,4 +1,4 @@
-"""Translate saved profiles and application services into SDK execution inputs."""
+"""Translate saved profiles and application services into agent core execution inputs."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents import AgentProfile, get_agent_profile
-from sdk.agent import Agent
-from sdk.agent_capabilities import AgentCapabilities
-from sdk.providers import Provider
+from agent_core.agent import Agent
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.providers import Provider
 from providers import get_provider
 from tools.memory import load_memory
 

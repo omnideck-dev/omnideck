@@ -9,9 +9,9 @@ from typing import Protocol
 from uuid import uuid4
 
 from conversations import get_or_create_conversation
-from sdk.control import StopRequestedError
-from sdk.events import AgentEvent, ErrorPayload
-from sdk.turn import ExecutionResult
+from agent_core.control import StopRequestedError
+from agent_core.events import AgentEvent, ErrorPayload
+from agent_core.turn import ExecutionResult
 
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
 from ._session import ConversationLoader, RunSession

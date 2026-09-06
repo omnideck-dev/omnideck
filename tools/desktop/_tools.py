@@ -213,7 +213,7 @@ async def describe_screen() -> str:
     Returns:
         Text description of the desktop from the vision model.
     """
-    from sdk.providers import ProviderError
+    from agent_core.providers import ProviderError
     from providers import vision_generate
     from settings import load_settings
 

@@ -47,8 +47,8 @@ async def tool_categories() -> dict[str, ToolCategory]:
     on every call, so runtime changes take effect without restarting.
     """
     # Imported here, not at module top: reaching into the tools package runs its
-    # __init__, which pulls tools.browser -> sdk.events -> this package — a
-    # load-time cycle. By call time sdk.events is fully initialized.
+    # __init__, which pulls tools.browser -> agent_core.events -> this package — a
+    # load-time cycle. By call time agent_core.events is fully initialized.
     from tools.integrations import CapabilityTools, integration_tools_by_capability
 
     categories = dict(_static_tool_categories())

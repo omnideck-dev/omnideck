@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 import pytest
-from sdk.turn import ExecutionResult
+from agent_core.turn import ExecutionResult
 from agent_runtime import RunSession
 
 from agent_runtime import (
@@ -17,7 +17,7 @@ from agent_runtime import (
     InvalidRunCursorError,
     SequencedEvent,
 )
-from sdk.events import (
+from agent_core.events import (
     AgentEvent,
     ContentPayload,
     ErrorPayload,

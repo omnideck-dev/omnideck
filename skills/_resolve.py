@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from skills._policy import is_restricted_tool_category
-from sdk.skills import Skill
+from agent_core.skills import Skill
 from skills._store import get_skill_record, list_skill_records
 from skills._tool_categories import tool_categories
 

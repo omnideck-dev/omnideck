@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from sdk.turn import ExecutionResult
+from agent_core.turn import ExecutionResult
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -14,8 +14,8 @@ from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
 from conversations import load_events_jsonl
-from sdk.context import ConversationHistory
-from sdk.events import (
+from agent_core.context import ConversationHistory
+from agent_core.events import (
     AgentCompletedPayload,
     AgentEvent,
     AgentStartedPayload,
@@ -24,7 +24,7 @@ from sdk.events import (
     agent_span,
     publish_event,
 )
-from sdk.turn import StopRequestedError, ToolLoopError
+from agent_core.turn import StopRequestedError, ToolLoopError
 
 
 @pytest.fixture(autouse=True)

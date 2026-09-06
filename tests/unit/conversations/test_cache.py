@@ -11,7 +11,7 @@ import pytest
 
 from conversations import _cache as cc
 from conversations._store import save_conversation_profile
-from sdk.context import ConversationHistory
+from agent_core.context import ConversationHistory
 
 
 def _seed_events_jsonl(conv_dir: Path, conv_id: str, user_content: str = "hi") -> None:

@@ -111,7 +111,7 @@ async def test_describe_screen_returns_vision_response(_mock_vision_deps):
 @pytest.mark.asyncio
 async def test_describe_screen_no_vision_model():
     """describe_screen() returns error when no vision model configured."""
-    from sdk.providers import ProviderError
+    from agent_core.providers import ProviderError
 
     fake_settings = {"vision_model": "", "vision_options": {}, "vision_think": False}
 
@@ -143,7 +143,7 @@ async def test_describe_screen_capture_failure(_mock_vision_deps):
 @pytest.mark.asyncio
 async def test_describe_screen_vision_model_failure():
     """describe_screen() returns error when vision model fails."""
-    from sdk.providers import ProviderError
+    from agent_core.providers import ProviderError
 
     fake_settings = {
         "vision_model": "qwen3.5:4b",

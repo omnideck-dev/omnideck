@@ -1,7 +1,7 @@
 """Use real profiles, skills, hooks, scopes, history, runners, and disk writers.
 
 Only provider I/O, browser I/O, category discovery, and storage locations are
-substituted. This directory deliberately does not inherit the SDK unit suite's
+substituted. This directory deliberately does not inherit the agent core unit suite's
 legacy history/event compatibility fixture.
 """
 
@@ -13,8 +13,8 @@ import pytest_asyncio
 from agent_runtime import AgentRuntime, AgentRunner
 from config import load_config
 from conversations import get_or_create_conversation
-from sdk.events import get_current_agent_id
-from sdk.turn import get_conversation_id
+from agent_core.events import get_current_agent_id
+from agent_core.turn import get_conversation_id
 from tasks._file_store import FileTaskStore
 
 from ._support import Harness, ScriptedProvider
@@ -42,7 +42,7 @@ async def harness(tmp_path, monkeypatch):
         monkeypatch.setattr(target, lambda: config)
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
     monkeypatch.setattr("conversations._cache._conversations", OrderedDict())
-    monkeypatch.setattr("sdk.lifecycle._hooks", [])
+    monkeypatch.setattr("agent_core.lifecycle._hooks", [])
     monkeypatch.setattr("conversations._lifecycle._hooks", [])
     monkeypatch.setattr("agent_runtime._runner.load_config", lambda: config)
 
@@ -73,7 +73,7 @@ async def harness(tmp_path, monkeypatch):
     browser = BrowserService()
     monkeypatch.setattr("agent_runtime._runner.get_browser_runtime", lambda: browser)
 
-    from sdk.lifecycle import register_agent_span_exit_hook
+    from agent_core.lifecycle import register_agent_span_exit_hook
     from conversations import register_conversation_exit_hook
 
     async def agent_exit(agent_id):

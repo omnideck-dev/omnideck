@@ -13,15 +13,15 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from sdk.agent import Agent
-from sdk.turn import ExecutionContext
-from sdk.control import ExecutionControl
-from sdk.agent_capabilities import AgentCapabilities
-from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, UserMessagePayload, agent_span, publish_event
-from sdk.hooks import BudgetGuard, StopHook
-from sdk.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
-from sdk.turn import StopRequestedError, AgentExecutor, turn_scope
+from agent_core.agent import Agent
+from agent_core.turn import ExecutionContext
+from agent_core.control import ExecutionControl
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.context import ConversationHistory
+from agent_core.events import AgentEvent, UserMessagePayload, agent_span, publish_event
+from agent_core.hooks import BudgetGuard, StopHook
+from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
+from agent_core.turn import StopRequestedError, AgentExecutor, turn_scope
 from tasks._file_store import FileTaskStore
 from tasks._runner import TaskRunner
 from tasks._tools import commit_routine

@@ -1,9 +1,9 @@
 # Agent execution regression contracts
 
 Run `just integration`. These tests connect the production `AgentRuntime`, `RunSession`,
-`AgentRunner`, SDK scopes/hooks/tool loop, subagent execution, `TaskRunner`,
+`AgentRunner`, agent core scopes/hooks/tool loop, subagent execution, `TaskRunner`,
 `TaskExecutor`, and file-backed stores. They do not mock `AgentExecutor.execute` or rewrite
-history/event behavior. They deliberately live outside the SDK unit suite's
+history/event behavior. They deliberately live outside the agent core unit suite's
 legacy compatibility fixture.
 
 The harness substitutes provider I/O, browser service I/O, tool-category

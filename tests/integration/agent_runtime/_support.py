@@ -11,12 +11,12 @@ from pathlib import Path
 from agent_runtime import AgentRuntime, AgentRunRequest
 from agents import AgentProfile
 from agents._agent_profiles import save_agent_profile
-from sdk.events import AgentEvent, get_current_agent_id
-from sdk.providers import ChatDelta, ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
+from agent_core.events import AgentEvent, get_current_agent_id
+from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
 from skills._store import SkillRecord, save_skill_record
 from skills._tool_categories import ToolCategory
-from sdk.turn import get_conversation_id
-from sdk.turn._models import _current_execution
+from agent_core.turn import get_conversation_id
+from agent_core.turn._models import _current_execution
 from tasks._file_store import FileTaskStore
 
 

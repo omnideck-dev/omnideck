@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
-from sdk.turn import ExecutionResult
-from sdk.providers import TokenUsage
-from sdk.events import FileOutputPayload
+from agent_core.turn import ExecutionResult
+from agent_core.providers import TokenUsage
+from agent_core.events import FileOutputPayload
 
-from sdk.events import AgentEvent
+from agent_core.events import AgentEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class AgentRunRequest:
     """Channel-neutral application input for work that currently becomes a turn.
 
     Channel adapters translate their native request into this type; the runner
-    translates it into the SDK's conversation and turn primitives.
+    translates it into the agent core's conversation and turn primitives.
     """
 
     conversation_id: str

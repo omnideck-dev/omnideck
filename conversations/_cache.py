@@ -6,8 +6,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sdk.context import ConversationHistory
-from sdk.context import build_transcript_view
+from agent_core.context import ConversationHistory
+from agent_core.context import build_transcript_view
 
 from ._browser_tabs import load_browser_tabs
 from ._events_log import load_events_jsonl

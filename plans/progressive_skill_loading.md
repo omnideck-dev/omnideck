@@ -45,8 +45,8 @@ can run side by side until the skill-based approach is proven.
 ContextVar so tool functions can access it mid-turn.
 
 **Files**:
-- NEW `sdk/skills/__init__.py` — public re-exports
-- NEW `sdk/skills/_tool_set.py` — `ToolSet` class + `_active_tool_set` ContextVar
+- NEW `agent_core/skills/__init__.py` — public re-exports
+- NEW `agent_core/skills/_tool_set.py` — `ToolSet` class + `_active_tool_set` ContextVar
 
 **ToolSet API**:
 ```python
@@ -73,7 +73,7 @@ _active_tool_set: ContextVar[ToolSet | None] = ContextVar("_active_tool_set", de
 def get_active_tool_set() -> ToolSet | None: ...
 ```
 
-**Why a ContextVar**: Follows the existing pattern in `sdk/events/_context.py`
+**Why a ContextVar**: Follows the existing pattern in `agent_core/events/_context.py`
 (`_current_agent_name`, `_model_options`, `_context_stack`, etc.). Tool
 functions can access the ToolSet without it being threaded through as a
 parameter.
@@ -85,7 +85,7 @@ here means every `agent_span` entry resets the ToolSet to `None`, and exit
 restores the parent's value — same pattern as the context stack:
 
 ```python
-# In sdk/events/_context.py — agent_span additions:
+# In agent_core/events/_context.py — agent_span additions:
 @contextmanager
 def agent_span(agent_name=None, instruction=None):
     stack = _context_stack.get()
@@ -122,7 +122,7 @@ Test that `agent_span` resets and restores the ToolSet ContextVar.
 `tool_set.tools` instead of the local `tools` list.
 
 **Files**:
-- EDIT `sdk/turn/_execution.py`
+- EDIT `agent_core/turn/_execution.py`
 
 **Changes to `run_turn`**:
 ```python
@@ -176,7 +176,7 @@ All existing agents work identically.
 populate at import time.
 
 **Files**:
-- NEW `sdk/skills/_registry.py` — `Skill` model, `register_skill`, `get_skill`, `list_skills`
+- NEW `agent_core/skills/_registry.py` — `Skill` model, `register_skill`, `get_skill`, `list_skills`
 
 **Skill model**:
 ```python
@@ -220,7 +220,7 @@ tool functions but register them independently.
 Each skill module follows this pattern:
 ```python
 # skills/browser.py
-from sdk.skills import Skill, register_skill
+from agent_core.skills import Skill, register_skill
 from tools.browser import open_url, browse_page, click, ...
 
 _SKILL = Skill(
@@ -254,7 +254,7 @@ Existing agents are untouched.
 ToolSet mid-turn.
 
 **Files**:
-- NEW `sdk/skills/_loader.py` — `load_skill` async function
+- NEW `agent_core/skills/_loader.py` — `load_skill` async function
 
 **Implementation**:
 ```python
@@ -317,8 +317,8 @@ composed skills. Coexists with the existing `run_sub_agent`,
 `browser_agent_tool`, etc.
 
 **Files**:
-- NEW `sdk/tools/_spawn_agent.py` — `spawn_agent` function
-- EDIT `sdk/tools/__init__.py` — re-export
+- NEW `agent_core/tools/_spawn_agent.py` — `spawn_agent` function
+- EDIT `agent_core/tools/__init__.py` — re-export
 
 **Implementation**:
 ```python
@@ -347,7 +347,7 @@ async def spawn_agent(
         skills: Skills to load (e.g. ["browser"], ["coder", "browser"]).
         agent_name: Short UPPERCASE name for the UI (e.g. DATA_ANALYST).
     """
-    from sdk.skills import get_skill
+    from agent_core.skills import get_skill
 
     # Collect tools and prompts from requested skills
     all_tools = list(_CORE_TOOLS)
@@ -441,8 +441,8 @@ in the agent registry alongside `COMPUTRON_9000`.
 
 **Agent definition** (`agents/computron_skills/agent.py`):
 ```python
-from sdk.skills import load_skill
-from sdk.tools import spawn_agent
+from agent_core.skills import load_skill
+from agent_core.tools import spawn_agent
 from tools.generation import generate_media
 from tools.custom_tools import create_custom_tool, lookup_custom_tools, run_custom_tool
 from tools.memory import forget, remember

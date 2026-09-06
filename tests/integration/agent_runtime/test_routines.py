@@ -6,8 +6,8 @@ import json
 import pytest
 
 from conversations import load_events_jsonl
-from sdk.events import AgentEvent, FileOutputPayload, publish_event
-from sdk.providers import ProviderError
+from agent_core.events import AgentEvent, FileOutputPayload, publish_event
+from agent_core.providers import ProviderError
 from tasks import TaskExecutor, TaskRunner
 from tasks._file_store import FileTaskStore
 

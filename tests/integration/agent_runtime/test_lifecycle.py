@@ -1,4 +1,4 @@
-"""Drive real runtime ownership and SDK scopes through an HTTP channel."""
+"""Drive real runtime ownership and agent core scopes through an HTTP channel."""
 
 import asyncio
 import json
@@ -7,9 +7,9 @@ import pytest
 from aiohttp import web
 
 from conversations import load_events_jsonl
-from sdk.events import get_current_agent_id
-from sdk.providers import ChatDelta, ProviderError
-from sdk.turn import get_conversation_id
+from agent_core.events import get_current_agent_id
+from agent_core.providers import ChatDelta, ProviderError
+from agent_core.turn import get_conversation_id
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 

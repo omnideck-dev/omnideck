@@ -16,10 +16,10 @@ from agents import AgentProfile, get_agent_profile
 from browser.runtime import get_browser_runtime
 from config import load_config
 from conversations import save_conversation_profile
-from sdk import AgentExecutor, default_hooks
-from sdk.context import ContextManager, ConversationHistory
-from sdk.control import StopRequestedError
-from sdk.events import (
+from agent_core import AgentExecutor, default_hooks
+from agent_core.context import ContextManager, ConversationHistory
+from agent_core.control import StopRequestedError
+from agent_core.events import (
     AgentEvent,
     ErrorPayload,
     SpawnRequestedPayload,
@@ -28,7 +28,7 @@ from sdk.events import (
     agent_span,
     publish_event,
 )
-from sdk.turn import ExecutionContext, ExecutionResult, ToolLoopError
+from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy

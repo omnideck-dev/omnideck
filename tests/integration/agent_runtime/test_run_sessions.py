@@ -7,9 +7,9 @@ import pytest
 from agent_runtime import AgentRunRequest
 from conversations import get_or_create_conversation, load_events_jsonl
 from providers._fake import FakeProvider
-from sdk.events import AgentEvent, FileOutputPayload, publish_event
-from sdk.providers import ChatResponse, TokenUsage
-from sdk.turn import get_execution_context
+from agent_core.events import AgentEvent, FileOutputPayload, publish_event
+from agent_core.providers import ChatResponse, TokenUsage
+from agent_core.turn import get_execution_context
 from tasks import TaskExecutor
 from tests.e2e._protocol import call_tool, say, spawn
 

@@ -11,11 +11,11 @@ from uuid import uuid4
 from artifacts import ArtifactsIndexWriter
 from conversations import BrowserTabsWriter, EventsLogWriter, TerminalWriter, run_conversation_exit_hooks
 from conversations._cache import conversation_lease
-from sdk.context import ConversationHistory
-from sdk.control import ExecutionControl
-from sdk.events import AgentEvent, FileOutputPayload, TurnEndPayload
-from sdk.providers import TokenUsage
-from sdk.turn import ExecutionContext, ExecutionResult, get_execution_context
+from agent_core.context import ConversationHistory
+from agent_core.control import ExecutionControl
+from agent_core.events import AgentEvent, FileOutputPayload, TurnEndPayload
+from agent_core.providers import TokenUsage
+from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_context
 
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
 
@@ -95,7 +95,7 @@ class RunSession:
                 self.history.unsubscribe(observer)
 
     def add_event(self, event: AgentEvent) -> None:
-        """Canonical SDK event destination; history fans out to writers and replay."""
+        """Canonical agent core event destination; history fans out to writers and replay."""
         if self.history is not None and self._attached:
             self.history.add_event(event)
         else:
@@ -140,7 +140,7 @@ class RunSession:
     def create_child(self, parent: ExecutionContext) -> ExecutionContext:
         self.require_parent(parent)
         parent.control.check_stop()
-        from sdk.events import get_current_agent_name
+        from agent_core.events import get_current_agent_name
 
         child = ExecutionContext(
             execution_id=f"{parent.execution_id}.agent.{uuid4().hex}",

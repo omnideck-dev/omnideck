@@ -110,7 +110,7 @@ def create_app(
     """
     from browser.runtime import get_browser_runtime
     from conversations import register_conversation_exit_hook
-    from sdk.lifecycle import register_agent_span_exit_hook
+    from agent_core.lifecycle import register_agent_span_exit_hook
 
     browser_runtime = get_browser_runtime()
     register_agent_span_exit_hook(browser_runtime.close_agent)
