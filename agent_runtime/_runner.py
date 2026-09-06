@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
-from agents import AgentProfile, build_agent, get_agent_profile
+from agents import AgentProfile, build_agent, get_agent_profile, resolve_agent_runtime_metadata
 from agents.types import Agent
 from artifacts import ArtifactsIndexWriter
 from browser.runtime import get_browser_runtime
@@ -123,7 +123,9 @@ class AgentRunner:
                 try:
                     check_stop()
                     profile = _resolve_profile(request.profile_id)
-                    active_agent = _build_agent_from_profile(profile)
+                    active_agent = await resolve_agent_runtime_metadata(
+                        _build_agent_from_profile(profile),
+                    )
                     _log_turn_start(profile)
 
                     user_content = request.message

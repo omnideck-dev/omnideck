@@ -9,6 +9,7 @@ import logging
 
 from settings import load_settings
 from sdk.providers import get_provider
+from sdk.providers._role_defaults import resolve_role_options
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,13 @@ async def generate_conversation_title(first_message: str) -> str:
             {"role": "user", "content": f"Generate a title for this conversation: {first_message}"}
         ]
 
-        # Titles are tiny — cap output and keep sampling focused.
-        options = {"num_predict": 50, "temperature": 0.3}
+        # Titles are tiny, so cap output. Sampling stays provider-native; some
+        # reasoning models reject temperature overrides entirely.
+        options, _model_info = await resolve_role_options(
+            provider,
+            title_model,
+            "title",
+        )
 
         response = await provider.chat(
             model=title_model,
@@ -92,6 +98,5 @@ def _truncate_for_title(message: str, max_length: int = 50) -> str:
     if len(clean) > max_length:
         return clean[:max_length - 3] + "..."
     return clean
-
 
 

@@ -12,6 +12,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from ._model_metadata import (
+    fallback_metadata,
+    inference_controls,
+    metadata_value,
+    thinking_configuration,
+    thinking_default,
+)
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
 logger = logging.getLogger(__name__)
@@ -33,16 +40,24 @@ def _build_ollama_kwargs(
     think: bool,
 ) -> dict[str, Any]:
     """Build kwargs dict for the Ollama chat API."""
+    clean_options = dict(options or {})
+    # Ollama exposes graded thinking as the top-level `think` string. Reuse
+    # the provider-neutral reasoning_effort profile field, but never leak it
+    # into Ollama's model `options` object.
+    thinking_level = clean_options.pop("reasoning_effort", None)
+    effective_think = thinking_level if think and thinking_level else think
+    if fallback_metadata(model).get("thinking_required") and not effective_think:
+        effective_think = True
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": _convert_messages_for_ollama(messages),
         "stream": True,
-        "think": think,
+        "think": effective_think,
     }
     if tools:
         kwargs["tools"] = tools
-    if options:
-        kwargs["options"] = options
+    if clean_options:
+        kwargs["options"] = clean_options
     return kwargs
 
 
@@ -210,7 +225,7 @@ class OllamaProvider:
         response = await self._client.list()
         models = [m for m in response.models if m.model is not None]
 
-        async def _show_details(name: str) -> tuple[list[str], int | None]:
+        async def _show_details(name: str) -> tuple[list[str] | None, int | None]:
             try:
                 show_resp = await self._client.show(name)
                 caps = list(getattr(show_resp, "capabilities", None) or [])
@@ -227,7 +242,7 @@ class OllamaProvider:
                 return caps, ctx
             except Exception:
                 logger.debug("Failed to fetch details for model '%s'", name)
-                return [], None
+                return None, None
 
         detail_lists = await asyncio.gather(
             *(_show_details(m.model) for m in models)
@@ -237,15 +252,40 @@ class OllamaProvider:
         for m, (capabilities, context_window) in zip(models, detail_lists, strict=True):
             name = m.model
             details = getattr(m, "details", None)
+            meta = fallback_metadata(name)
+            supports_images = (
+                "vision" in capabilities
+                if capabilities is not None
+                else bool(meta.get("supports_images", False))
+            )
+            supports_thinking = (
+                "thinking" in capabilities
+                if capabilities is not None
+                else bool(meta.get("supports_thinking", False))
+            )
+            thinking_control, thinking_levels, thinking_required = thinking_configuration(
+                "ollama", name, supports_thinking,
+            )
+            model_controls = inference_controls(
+                "ollama", supports_thinking, thinking_control, model_id=name,
+            )
             results.append(ModelInfo(
                 name=name,
-                context_window=context_window,
-                supports_images="vision" in capabilities,
-                supports_thinking="thinking" in capabilities,
+                context_window=metadata_value(name, "context_window", context_window),
+                max_output_tokens=meta.get("max_output_tokens"),
+                supports_images=supports_images,
+                supports_thinking=supports_thinking,
                 parameter_size=getattr(details, "parameter_size", None) if details else None,
                 quantization_level=getattr(details, "quantization_level", None) if details else None,
                 family=getattr(details, "family", None) if details else None,
-                capabilities=capabilities,
+                inference_api="ollama",
+                inference_controls=model_controls,
+                thinking_control=thinking_control,
+                thinking_levels=thinking_levels,
+                thinking_default=thinking_default(name, thinking_control, thinking_levels),
+                thinking_required=thinking_required,
+                reasoning_efforts=thinking_levels if thinking_control == "reasoning_effort" else None,
+                capabilities=capabilities or [],
                 is_cloud=name.endswith(":cloud"),
             ))
 

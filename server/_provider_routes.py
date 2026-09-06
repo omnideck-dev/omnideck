@@ -4,7 +4,7 @@ Three handlers:
 
 - ``GET /api/providers`` — list configured providers (direct + brokered).
 - ``POST /api/providers`` — add/configure a provider. For direct kinds
-  (Ollama, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
+  (Ollama, Aperture, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
   for brokered kinds creates an ``llm_<name>`` vault integration via the
   supervisor. Probes the new provider and returns its model list (503 on
   unreachable).
@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.parse
 
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -32,14 +33,14 @@ from tools.integrations._state import refresh_registered_integrations
 
 logger = logging.getLogger(__name__)
 
-# Provider catalog. The five names the rest of the app recognizes; anything
-# else gets rejected at add time.
+# Provider catalog. Anything else gets rejected at add time.
 _KNOWN_PROVIDERS: set[str] = {
     "ollama",
     "openai",
     "anthropic",
     "openrouter",
     "openai_compat",
+    "aperture",
 }
 
 # Provider name → display label. Used for the integration's ``label`` field
@@ -50,6 +51,7 @@ _PROVIDER_LABELS: dict[str, str] = {
     "anthropic": "Anthropic API",
     "openrouter": "OpenRouter",
     "openai_compat": "OpenAI-compatible",
+    "aperture": "Tailscale Aperture",
 }
 
 # Patterns that could contain credentials — scrubbed before the message
@@ -81,13 +83,31 @@ def _label(name: str) -> str:
     return _PROVIDER_LABELS.get(name, name)
 
 
+def _normalize_aperture_url(value: str) -> str:
+    """Return an Aperture gateway root, accepting common pasted URL variants."""
+    candidate = value.strip()
+    if "://" not in candidate:
+        candidate = f"http://{candidate}"
+    parsed = urllib.parse.urlparse(candidate)
+    if not parsed.netloc or not parsed.hostname:
+        raise ValueError("Enter a valid Aperture gateway URL")
+    if parsed.username or parsed.password:
+        raise ValueError("Enter an Aperture gateway URL without embedded credentials")
+    path = parsed.path.rstrip("/")
+    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ("/ui", "/v1", "/bedrock")):
+        path = ""
+    if path:
+        raise ValueError("Enter the Aperture gateway root without /v1, /bedrock, or another path")
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+
 # ── GET ──────────────────────────────────────────────────────────────────
 
 
 async def handle_list_providers(_request: web.Request) -> web.Response:
     """Return configured LLM providers.
 
-    Direct-connect providers (Ollama, no-auth OpenAI-compatible) come from
+    Direct-connect providers (Ollama, Aperture, no-auth OpenAI-compatible) come from
     ``settings.direct_providers``; brokered providers come from the
     integrations supervisor (singleton ``llm_<name>`` integrations).
 
@@ -166,13 +186,28 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             status=400,
         )
 
+    base_url = spec.base_url
+    if name == "aperture":
+        if spec.api_key:
+            return web.json_response(
+                {"error": "Aperture uses Tailscale identity; an API key is not required"},
+                status=400,
+            )
+        if not base_url:
+            return web.json_response({"error": "Aperture gateway URL is required"}, status=400)
+        try:
+            base_url = _normalize_aperture_url(base_url)
+            _validate_base_url(base_url)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
     if spec.api_key:
         # Brokered: create the llm_<name> integration in the vault.
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
-        if spec.base_url:
+        if base_url:
             # OpenAI-compat with a key needs the upstream URL stored alongside
             # the key so the broker knows where to forward.
-            auth_blob["base_url"] = spec.base_url
+            auth_blob["base_url"] = base_url
         try:
             await _supervisor_call("add", {
                 "slug": f"llm_{name}",
@@ -191,18 +226,18 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             return web.json_response({"error": _sanitize(exc.message)}, status=400)
     else:
         # Direct: write the settings.direct_providers entry.
-        if not spec.base_url:
+        if not base_url:
             return web.json_response(
                 {"error": "base_url is required when no api_key is provided"},
                 status=400,
             )
         try:
-            _validate_base_url(spec.base_url)
+            _validate_base_url(base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
         settings = load_settings()
         direct = dict(settings.get("direct_providers") or {})
-        direct[name] = {"base_url": spec.base_url}
+        direct[name] = {"base_url": base_url}
         save_settings({"direct_providers": direct})
 
     # Force the next get_provider(name) to re-build, then probe.
@@ -234,7 +269,7 @@ async def handle_add_provider(request: web.Request) -> web.Response:
                 "name": name,
                 "label": _label(name),
                 "kind": "brokered" if spec.api_key else "direct",
-                "base_url": spec.base_url if not spec.api_key else None,
+                "base_url": base_url if not spec.api_key else None,
                 "status": "connected",
             },
             "models": [m.model_dump() for m in models],
@@ -328,19 +363,29 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 
     if name in direct:
         # Direct kind — update the base_url.
+        if name == "aperture" and spec.api_key:
+            return web.json_response(
+                {"error": "Aperture uses Tailscale identity; an API key is not required"},
+                status=400,
+            )
         if not spec.base_url:
             return web.json_response(
                 {"error": "base_url is required to update a direct provider"},
                 status=400,
             )
         try:
-            _validate_base_url(spec.base_url)
+            base_url = (
+                _normalize_aperture_url(spec.base_url)
+                if name == "aperture"
+                else spec.base_url
+            )
+            _validate_base_url(base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        direct[name] = {"base_url": spec.base_url}
+        direct[name] = {"base_url": base_url}
         save_settings({"direct_providers": direct})
         kind = "direct"
-        stored_base_url: str | None = spec.base_url
+        stored_base_url: str | None = base_url
     else:
         # Brokered kind — must currently exist as an llm_<name> integration.
         integrations = await registered_integrations()

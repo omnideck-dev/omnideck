@@ -6,6 +6,7 @@ import pytest
 
 from sdk.context import ContextManager, ConversationHistory, TriggerPoint
 from sdk.agent_state import AgentState
+from sdk.providers import ChatMessage, ChatResponse, TokenUsage
 
 
 def _empty_state() -> AgentState:
@@ -100,6 +101,28 @@ async def test_after_model_publishes_event():
     assert event.payload.max_iterations == 10
     # Threshold defaults when not supplied to the manager.
     assert event.payload.compaction_threshold == 0.75
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_after_model_prefers_provider_reported_token_usage():
+    history = ConversationHistory([{"role": "user", "content": "tiny"}])
+    cm = ContextManager(
+        history=history,
+        agent_state=_empty_state(),
+        context_limit=1_050_000,
+    )
+    response = ChatResponse(
+        message=ChatMessage(role="assistant", content="done"),
+        usage=TokenUsage(prompt_tokens=12_345, completion_tokens=678),
+    )
+
+    with patch("sdk.context._manager.publish_event") as mock_pub:
+        await cm.after_model(response=response)
+
+    event = mock_pub.call_args[0][0]
+    assert event.payload.context_used == 13_023
+    assert event.payload.context_limit == 1_050_000
 
 
 @pytest.mark.asyncio

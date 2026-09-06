@@ -9,20 +9,82 @@ const ADVANCED_HELP = {
     top_p: '0.5 = focused, 0.9 = general, 1.0 = everything',
     repeat_penalty: '1.0 = off, 1.1 = general, 1.5+ = strongly discourages repetition',
     context: 'Context window in tokens. Higher = more memory, slower',
-    max_output: 'Max tokens per response. Leave empty for unlimited (required by Anthropic)',
     iterations: 'Tool-call rounds per turn. Leave empty for unlimited',
     compaction: 'How full the context window gets before old messages are summarized',
     thinking: 'Step-by-step reasoning before answering. Good for math, logic, code',
-    reasoning_effort: 'Low = faster/cheaper, medium = balanced, high = thorough reasoning',
+    reasoning_effort: 'Higher effort can improve difficult work at the cost of latency and tokens',
     reasoning_summary: 'How much of the model\'s reasoning to show. Auto lets the model decide',
     thinking_budget: 'How many tokens the model can use for reasoning before answering',
 };
 
-export default function InferenceAdvanced({ draft, provider, onChange }) {
+function formatTokens(tokens) {
+    if (!tokens) return null;
+    if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M context`;
+    if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K context`;
+    return `${tokens} context`;
+}
+
+const EFFORT_LABELS = {
+    none: 'None',
+    minimal: 'Minimal',
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra high',
+    max: 'Maximum',
+};
+
+export default function InferenceAdvanced({ draft, capabilities, onChange }) {
+    const configurableContext = capabilities.api === 'ollama';
+    const detectedDetails = [
+        capabilities.upstreamProvider,
+        capabilities.apiLabel,
+        formatTokens(capabilities.contextWindow),
+    ].filter(Boolean);
+    const maxOutputPlaceholder = capabilities.maxOutputTokens
+        ? `auto (max ${capabilities.maxOutputTokens.toLocaleString()})`
+        : capabilities.api === 'anthropic_messages' || capabilities.api === 'bedrock_model_invoke'
+            ? 'auto (16,384 typical)'
+            : 'auto';
+    const maxOutputMinimum = capabilities.api === 'ollama' ? -1 : 1;
+    const maxOutputHelp = capabilities.api === 'ollama'
+        ? 'Max tokens per response. Leave empty for the model default; -1 allows unlimited output.'
+        : 'Max tokens per response. Leave empty to use the provider default.';
+    const hasThinkingLevels = capabilities.thinkingLevels.length > 0;
+    const thinkingOptionField = capabilities.thinkingControl;
+    const defaultThinkingLevel = capabilities.thinkingDefault;
+    const thinkingUsesAutomatic = capabilities.thinkingRequired
+        || capabilities.api === 'openai_responses'
+        || capabilities.api === 'openai_chat'
+        || (capabilities.api === 'anthropic_messages'
+            && thinkingOptionField === 'reasoning_effort')
+        || (capabilities.api === 'bedrock_model_invoke'
+            && thinkingOptionField === 'reasoning_effort');
+    const idleThinkingValue = thinkingUsesAutomatic ? 'automatic' : 'off';
+    const thinkingValue = draft.think
+        ? draft[thinkingOptionField] || defaultThinkingLevel
+        : idleThinkingValue;
+    const setThinkingLevel = (value) => {
+        if (value === 'off' || value === 'automatic') {
+            onChange('think', value === 'automatic' && capabilities.thinkingRequired ? true : null);
+            onChange(thinkingOptionField, null);
+            return;
+        }
+        onChange('think', true);
+        onChange(thinkingOptionField, value);
+    };
+
     return (
         <>
             <div className={styles.sectionLabel}>Advanced Settings</div>
+            {capabilities.detected && (
+                <div className={styles.detectedCapabilities} data-testid="inference-detection">
+                    <i className="bi bi-stars" aria-hidden="true" />
+                    <span>Controls detected from {detectedDetails.join(' · ')}</span>
+                </div>
+            )}
             <div className={styles.advancedBody}>
+                    {isSupported('temperature', capabilities) && (
                     <div className={styles.advancedField}>
                         <label className={styles.fieldRow}>
                             <span className={styles.fieldLabel}>Temperature</span>
@@ -30,7 +92,8 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                         </label>
                         <span className={styles.fieldHint}>{ADVANCED_HELP.temperature}</span>
                     </div>
-                    {isSupported('top_k', provider) && (
+                    )}
+                    {isSupported('top_k', capabilities) && (
                         <div className={styles.advancedField}>
                             <label className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Top K</span>
@@ -39,6 +102,7 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                             <span className={styles.fieldHint}>{ADVANCED_HELP.top_k}</span>
                         </div>
                     )}
+                    {isSupported('top_p', capabilities) && (
                     <div className={styles.advancedField}>
                         <label className={styles.fieldRow}>
                             <span className={styles.fieldLabel}>Top P</span>
@@ -46,7 +110,8 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                         </label>
                         <span className={styles.fieldHint}>{ADVANCED_HELP.top_p}</span>
                     </div>
-                    {isSupported('repeat_penalty', provider) && (
+                    )}
+                    {isSupported('repeat_penalty', capabilities) && (
                         <div className={styles.advancedField}>
                             <label className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Repeat Penalty</span>
@@ -55,22 +120,25 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                             <span className={styles.fieldHint}>{ADVANCED_HELP.repeat_penalty}</span>
                         </div>
                     )}
-                    {isSupported('context_window', provider) && (
+                    {configurableContext && isSupported('context_window', capabilities) && (
                         <div className={styles.advancedField}>
                             <label className={styles.fieldRow}>
-                                <span className={styles.fieldLabel}>Context Window</span>
+                                <span className={styles.fieldLabel}>Runtime Context Window</span>
                                 <input className={styles.numInput} type="number" data-testid="field-context_window" value={draft.context_window ?? ''} onChange={(e) => onChange('context_window', e.target.value === '' ? null : Number(e.target.value))} min={1} placeholder="auto" />
                             </label>
-                            <span className={styles.fieldHint}>{ADVANCED_HELP.context}</span>
+                            <span className={styles.fieldHint}>Sets Ollama’s runtime context allocation. Higher values use more memory.</span>
                         </div>
                     )}
+                    {isSupported('num_predict', capabilities) && (
                     <div className={styles.advancedField}>
                         <label className={styles.fieldRow}>
                             <span className={styles.fieldLabel}>Max Output</span>
-                            <input className={styles.numInput} type="number" data-testid="field-num_predict" value={draft.num_predict ?? ''} onChange={(e) => onChange('num_predict', e.target.value === '' ? null : Number(e.target.value))} min={-1} step={1} placeholder={provider === 'anthropic' ? '16384' : 'unlimited'} />
+                            <input className={styles.numInput} type="number" data-testid="field-num_predict" value={draft.num_predict ?? ''} onChange={(e) => onChange('num_predict', e.target.value === '' ? null : Number(e.target.value))} min={maxOutputMinimum} max={capabilities.maxOutputTokens || undefined} step={1} placeholder={maxOutputPlaceholder} />
                         </label>
-                        <span className={styles.fieldHint}>{ADVANCED_HELP.max_output}</span>
+                        <span className={styles.fieldHint}>{maxOutputHelp}</span>
                     </div>
+                    )}
+                    {isSupported('max_iterations', capabilities) && (
                     <div className={styles.advancedField}>
                         <label className={styles.fieldRow}>
                             <span className={styles.fieldLabel}>Iterations</span>
@@ -78,7 +146,8 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                         </label>
                         <span className={styles.fieldHint}>{ADVANCED_HELP.iterations}</span>
                     </div>
-                    {isSupported('compaction_threshold', provider) && (
+                    )}
+                    {isSupported('compaction_threshold', capabilities) && (
                         <div className={styles.advancedField} data-testid="field-compaction_threshold">
                             <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Compaction</span>
@@ -100,7 +169,31 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                             <span className={styles.fieldHint}>{ADVANCED_HELP.compaction}</span>
                         </div>
                     )}
-                    {isSupported('think', provider) && (
+                    {isSupported('think', capabilities) && hasThinkingLevels && (
+                        <div className={styles.advancedField} data-testid="field-thinking-level">
+                            <div className={styles.fieldRow}>
+                                <span className={styles.fieldLabel}>Thinking Level</span>
+                                <Select
+                                    className={styles.selectInput}
+                                    value={thinkingValue}
+                                    onChange={setThinkingLevel}
+                                    ariaLabel="Thinking level"
+                                    testId="thinking-level-select"
+                                    options={[
+                                        thinkingUsesAutomatic
+                                            ? { value: 'automatic', label: 'Automatic' }
+                                            : { value: 'off', label: 'Off' },
+                                        ...capabilities.thinkingLevels.map((level) => ({
+                                            value: level,
+                                            label: EFFORT_LABELS[level] || level,
+                                        })),
+                                    ]}
+                                />
+                            </div>
+                            <span className={styles.fieldHint}>{ADVANCED_HELP.reasoning_effort}</span>
+                        </div>
+                    )}
+                    {isSupported('think', capabilities) && !hasThinkingLevels && (
                         <div className={styles.advancedField} data-testid="field-think">
                             <label className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Thinking</span>
@@ -112,27 +205,7 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                             <span className={styles.fieldHint}>{ADVANCED_HELP.thinking}</span>
                         </div>
                     )}
-                    {draft.think && isSupported('reasoning_effort', provider) && (
-                        <div className={styles.advancedField} data-testid="field-reasoning_effort">
-                            <div className={styles.fieldRow}>
-                                <span className={styles.fieldLabel}>Reasoning Effort</span>
-                                <Select
-                                    className={styles.selectInput}
-                                    value={draft.reasoning_effort || 'medium'}
-                                    onChange={(value) => onChange('reasoning_effort', value === 'medium' ? null : value)}
-                                    ariaLabel="Reasoning effort"
-                                    testId="reasoning-effort-select"
-                                    options={[
-                                        { value: 'low', label: 'Low' },
-                                        { value: 'medium', label: 'Medium' },
-                                        { value: 'high', label: 'High' },
-                                    ]}
-                                />
-                            </div>
-                            <span className={styles.fieldHint}>{ADVANCED_HELP.reasoning_effort}</span>
-                        </div>
-                    )}
-                    {draft.think && isSupported('reasoning_summary', provider) && (
+                    {draft.think && isSupported('reasoning_summary', capabilities) && (
                         <div className={styles.advancedField} data-testid="field-reasoning_summary">
                             <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Reasoning Summary</span>
@@ -150,26 +223,6 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                                 />
                             </div>
                             <span className={styles.fieldHint}>{ADVANCED_HELP.reasoning_summary}</span>
-                        </div>
-                    )}
-                    {draft.think && isSupported('thinking_budget', provider) && (
-                        <div className={styles.advancedField} data-testid="field-thinking_budget">
-                            <div className={styles.fieldRow}>
-                                <span className={styles.fieldLabel}>Thinking Budget</span>
-                                <Select
-                                    className={styles.selectInput}
-                                    value={draft.thinking_budget || 'standard'}
-                                    onChange={(value) => onChange('thinking_budget', value === 'standard' ? null : value)}
-                                    ariaLabel="Thinking budget"
-                                    testId="thinking-budget-select"
-                                    options={[
-                                        { value: 'minimal', label: 'Minimal (1,024 tokens)' },
-                                        { value: 'standard', label: `Standard (${Math.max(1024, Math.floor((draft.num_predict || 16384) / 2)).toLocaleString()} tokens)` },
-                                        { value: 'extended', label: `Extended (${(draft.num_predict || 16384).toLocaleString()} tokens)` },
-                                    ]}
-                                />
-                            </div>
-                            <span className={styles.fieldHint}>{ADVANCED_HELP.thinking_budget}</span>
                         </div>
                     )}
             </div>
