@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from sdk.capabilities import AgentCapability
 
 if TYPE_CHECKING:
-    from agents._agent_profiles import AgentProfile
     from sdk.skills._registry import Skill
 
 logger = logging.getLogger(__name__)
@@ -128,105 +127,4 @@ def get_active_agent_capabilities() -> "AgentCapabilities | None":
     return _active_agent_capabilities.get()
 
 
-def _base_tools(*, allow_spawn: bool, allow_load_skills: bool) -> list[Callable[..., Any]]:
-    """Return always-on tools plus the profile's toggle-gated tool pairs."""
-    from tools.misc import datetime_tool
-    from tools.scratchpad import recall_from_scratchpad, save_to_scratchpad
-    from tools.virtual_computer.describe_image import describe_image
-    from tools.virtual_computer.file_output import send_file
-    from tools.virtual_computer.play_audio import play_audio
-
-    tools: list[Callable[..., Any]] = [
-        save_to_scratchpad,
-        recall_from_scratchpad,
-        send_file,
-        play_audio,
-        describe_image,
-        datetime_tool,
-    ]
-    if allow_spawn:
-        from agents._list_profiles_tool import list_agent_profiles
-        from sdk.tools._spawn_agent import spawn_agent
-
-        tools += [spawn_agent, list_agent_profiles]
-    if allow_load_skills:
-        from sdk.skills._tools import list_available_skills, load_skill
-
-        tools += [load_skill, list_available_skills]
-    return tools
-
-
-async def build_agent_capabilities(
-    profile: AgentProfile,
-    *,
-    conversation_id: str | None = None,
-) -> AgentCapabilities:
-    """Build one run's state from agent settings, capabilities, and skills."""
-    from sdk.skills._policy import is_reserved_skill_id
-    from sdk.skills._resolve import resolve_skill
-
-    state = AgentCapabilities(
-        _base_tools(
-            allow_spawn=profile.allow_spawn,
-            allow_load_skills=profile.allow_load_skills,
-        )
-    )
-    for skill_id in profile.skills:
-        if is_reserved_skill_id(skill_id):
-            continue
-        skill = await resolve_skill(skill_id)
-        if skill is None:
-            logger.warning(
-                "profile %r references unknown skill %r; skipping",
-                profile.id,
-                skill_id,
-            )
-            continue
-        state.add(skill)
-
-    if profile.browser_profile_id is not None:
-        from tools.browser.capability import browser_capability
-
-        state.add_capability(await browser_capability())
-
-    if conversation_id is not None:
-        from conversations import load_loaded_skills
-
-        await _restore_persisted_loaded_skills(
-            state,
-            load_loaded_skills(conversation_id),
-        )
-    return state
-
-
-async def _restore_persisted_loaded_skills(
-    agent_capabilities: AgentCapabilities,
-    skill_ids: Iterable[str],
-) -> None:
-    """Resolve and restore the conversation's dynamically loaded skills."""
-    from sdk.skills._policy import is_reserved_skill_id
-    from sdk.skills._resolve import resolve_skill
-
-    for skill_id in skill_ids:
-        if is_reserved_skill_id(skill_id) or skill_id in agent_capabilities.skill_ids:
-            continue
-        skill = await resolve_skill(skill_id)
-        if skill is None:
-            logger.warning("loaded skill %r no longer resolves; skipping", skill_id)
-            continue
-        agent_capabilities.load(skill)
-
-
-def persist_loaded_skills(agent_capabilities: AgentCapabilities, conversation_id: str) -> None:
-    """Persist the conversation's dynamically loaded skill IDs."""
-    from conversations import save_loaded_skills
-
-    save_loaded_skills(conversation_id, agent_capabilities.loaded_skill_ids)
-
-
-__all__ = [
-    "AgentCapabilities",
-    "build_agent_capabilities",
-    "get_active_agent_capabilities",
-    "persist_loaded_skills",
-]
+__all__ = ["AgentCapabilities", "get_active_agent_capabilities"]

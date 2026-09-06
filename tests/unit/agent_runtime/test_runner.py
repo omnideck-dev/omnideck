@@ -11,6 +11,7 @@ import pytest
 
 from agent_runtime import ActiveRunManager, AgentRunner, AgentRunRequest, RunAttachment
 from agent_runtime import _runner as runner_module
+from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
 from conversations import load_events_jsonl
 from sdk.context import ConversationHistory
@@ -29,7 +30,7 @@ from sdk.turn import StopRequestedError, ToolLoopError
 @pytest.fixture(autouse=True)
 def _browser_runtime(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Keep agent-run tests isolated from the process Browser runtime."""
-    monkeypatch.setattr(runner_module, "get_provider", lambda _: MagicMock())
+    monkeypatch.setattr(factory_module, "get_provider", lambda _: MagicMock())
     runtime = MagicMock()
     runtime.prepare_current_agent_browser = AsyncMock()
     monkeypatch.setattr(runner_module, "get_browser_runtime", lambda: runtime)
@@ -127,7 +128,7 @@ async def test_manager_stop_before_concrete_runner_starts_skips_setup(
         profile_lookups += 1
 
     monkeypatch.setattr(
-        runner_module,
+        factory_module,
         "get_agent_profile",
         _unexpected_profile_lookup,
     )
@@ -152,7 +153,7 @@ async def test_setup_failure_is_persisted_and_ends_once(
     def _explode(_profile_id: str) -> None:
         raise RuntimeError("profile store unavailable")
 
-    monkeypatch.setattr(runner_module, "get_agent_profile", _explode)
+    monkeypatch.setattr(factory_module, "get_agent_profile", _explode)
     manager = ActiveRunManager(AgentRunner(_load_empty_history))
     info = await manager.start(_request(conversation_id))
     stream = manager.subscribe(info.run_id, after_seq=0)
@@ -174,7 +175,7 @@ async def test_tool_loop_failure_is_not_duplicated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A ToolLoopError keeps its specific error and one scope-owned turn_end."""
-    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
 
     async def _failing_execute(self, **_kwargs: Any) -> None:
         publish_event(
@@ -225,7 +226,7 @@ async def test_published_events_are_forwarded_once_and_in_order(
 
         return ExecutionResult("success")
 
-    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", _fake_tool_loop)
 
     seen = await _run("runner-event-order")
@@ -246,7 +247,7 @@ async def test_runner_prepares_browser_from_agent_profile(
 ) -> None:
     """The application runner passes the selected profile to Browser runtime."""
     profile = _profile().model_copy(update={"browser_profile_id": "empty"})
-    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: profile)
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: profile)
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", AsyncMock(return_value=ExecutionResult("success")))
 
     await _run("runner-browser-profile")
@@ -273,7 +274,7 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
         )
         raise StopRequestedError
 
-    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", _stopped_tool_loop)
 
     seen = await _run("runner-stop-order")

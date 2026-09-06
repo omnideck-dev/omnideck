@@ -47,8 +47,7 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr("agent_runtime._execution_context.load_config", lambda: config)
 
     provider = ScriptedProvider()
-    for target in ("agent_runtime._runner.get_provider", "sdk.tools._spawn_agent.get_provider", "tasks._executor.get_provider"):
-        monkeypatch.setattr(target, lambda _name: provider)
+    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _name: provider)
     monkeypatch.setattr("sdk.context._strategy.get_provider", lambda _name: provider)
     # Compaction settings are application configuration, not the strategy.
     monkeypatch.setattr("sdk.context._strategy.load_settings", lambda: {
@@ -72,12 +71,7 @@ async def harness(tmp_path, monkeypatch):
             })
 
     browser = BrowserService()
-    for target in (
-        "agent_runtime._runner.get_browser_runtime",
-        "sdk.tools._spawn_agent.get_browser_runtime",
-        "tasks._executor.get_browser_runtime",
-    ):
-        monkeypatch.setattr(target, lambda: browser)
+    monkeypatch.setattr("agent_runtime._runner.get_browser_runtime", lambda: browser)
 
     from sdk.lifecycle import register_agent_span_exit_hook
     from conversations import register_conversation_exit_hook

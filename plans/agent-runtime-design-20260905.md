@@ -209,3 +209,45 @@ Integration and E2E execution coverage uses the actual FakeProvider protocol wit
 The SDK extraction retains Agent in sdk.agent and renames the capabilities module and its callers directly. AgentExecutor.execute accepts AgentCapabilities, Provider, ExecutionContext, hooks, and max_parallel_tools; the application resolves provider and concurrency settings. ExecutionControl supplies the shared stop signal and each execution's nudge inbox. ExecutionResult returns success/stopped/error, final or partial output, finish reason, execution-local usage, and error details. Callers that require success use raise_for_status so existing agent lifecycle and task-failure handling remain consistent.
 
 The manager passes its admitted run ID through AgentRunRequest; child executors inherit that ID. Direct root callers and routine task executions allocate their own run IDs. Current turn/agent scopes still own lifecycle events and resource cleanup. AgentFactory, the unified runner setup, and AgentRuntime/RunSession ownership remain the following stages. No run_turn wrapper or AgentState alias is retained.
+
+
+**Second implementation stage**
+
+AgentFactory now translates profiles into PreparedAgent (Agent, Provider,
+AgentCapabilities, and the base system prompt). Application tool selection,
+browser capability grants, skill restoration/persistence, and memory composition
+have moved out of sdk.agent_capabilities. AgentProfile remains the saved model in
+agents; the old agents.build_agent function and SDK spawn implementation are removed.
+
+AgentRunner.execute owns one preparation/execution path for interactive roots,
+children, and routine tasks. It allocates an execution ID before preparation and
+keeps a live execution registry. Each installed spawn_agent closure binds that
+identity; invoking it from another execution or after its owner completes is
+rejected. Children get their own filtered history, capabilities, and nudge inbox,
+while retaining their parent's run ID, event destination, and stop signal. Spawn
+correlation is emitted only after successful preparation. The runner removes
+registry entries and child history subscriptions on every exit.
+
+Interactive roots opt into persisted skills and memory. Children and routine
+tasks do not. TaskExecutor now calls this shared method while retaining routine
+instruction construction, event-log/file collection, turn scope, and conversation
+cleanup. This brings routine preparation forward from stage four because routine
+agents also need a correctly bound spawn tool. Scheduling, run admission, replay,
+and session ownership remain for the AgentRuntime/RunSession stages.
+
+Execution IDs retain their existing dotted format, now allocated before
+preparation by the application and passed to agent_span. The conversation catalog
+still infers root depth from this format; changing it requires a separate reader
+migration. Parent relationships also remain explicit event fields.
+Routine lifecycle now includes the profile name, and its context-usage metadata
+reports the profile's compaction threshold consistently with chat and child
+execution. These are consequences of sharing setup; persisted event shapes and
+model-facing spawn arguments remain unchanged.
+
+Regression coverage includes cross-entry FakeProvider execution, nested ownership
+and tool-result attribution, memory/history isolation, refusal of stale or
+foreign spawn tools, and cleanup after failed/cancelled preparation. The routine
+E2E scenario now also runs browser/file work through two child levels, checks the
+runtime-generated hierarchy and persisted file result, and opens the result in
+the UI. Existing lifecycle, stop, nudge, parallel-child, compaction, skill,
+reconnect, and conversation-resume tests continue to cover the shared path.

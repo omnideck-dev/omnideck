@@ -1,8 +1,9 @@
-"""Tests for agents._agent_builder."""
+"""Tests for agent_runtime._factory."""
 
 import pytest
 
-from agents import AgentProfile, build_agent
+from agents import AgentProfile
+from agent_runtime._factory import AgentFactory
 
 
 def _make_profile(**overrides) -> AgentProfile:
@@ -24,7 +25,7 @@ class TestBuildAgent:
     def test_basic_conversion(self):
         """Profile fields flow through to the Agent."""
         p = _make_profile(temperature=0.5, top_k=40, think=True, context_window=16000)
-        agent = build_agent(p)
+        agent = AgentFactory.build_agent(p)
         assert agent.name == "TEST"
         assert agent.model == "test-model:7b"
         assert agent.think is True
@@ -36,7 +37,7 @@ class TestBuildAgent:
     def test_none_fields_omitted_from_options(self):
         """Unset profile fields don't appear in the options dict."""
         p = _make_profile()
-        agent = build_agent(p)
+        agent = AgentFactory.build_agent(p)
         assert agent.options == {}
         assert agent.max_iterations == 0
         assert agent.think is False
@@ -45,16 +46,16 @@ class TestBuildAgent:
         """Profile with no model raises RuntimeError."""
         p = _make_profile(id="child", model="")
         with pytest.raises(RuntimeError, match="not fully configured"):
-            build_agent(p)
+            AgentFactory.build_agent(p)
 
     def test_missing_provider_raises(self):
         """Profile with no provider raises RuntimeError."""
         p = _make_profile(id="child", provider="")
         with pytest.raises(RuntimeError, match="not fully configured"):
-            build_agent(p)
+            AgentFactory.build_agent(p)
 
     def test_name_override(self):
         """Explicit name takes precedence over profile name."""
         p = _make_profile()
-        agent = build_agent(p, name="CUSTOM")
+        agent = AgentFactory.build_agent(p, name="CUSTOM")
         assert agent.name == "CUSTOM"

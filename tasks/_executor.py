@@ -6,23 +6,11 @@ import logging
 from uuid import uuid4
 from typing import TYPE_CHECKING
 
-from agents import build_agent, get_agent_profile
-from browser.runtime import get_browser_runtime
-from agent_runtime._execution_context import execution_context, parallel_tool_limit
-from sdk.providers import get_provider
+from agents import get_agent_profile
+from agent_runtime import AgentRunner
 from conversations import EventsLogWriter, run_conversation_exit_hooks
-from sdk import AgentExecutor, default_hooks
-from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events._context import (
-    agent_span,
-    publish_event,
-)
-from sdk.events._models import (
-    AgentEvent,
-    FileOutputPayload,
-    UserMessagePayload,
-)
-from sdk.agent_capabilities import build_agent_capabilities
+from sdk.context import ConversationHistory
+from sdk.events import AgentEvent, FileOutputPayload
 from sdk.turn import turn_scope
 
 if TYPE_CHECKING:
@@ -38,6 +26,7 @@ class TaskExecutor:
 
     def __init__(self, store: TaskStore) -> None:
         self._store = store
+        self._runner = AgentRunner()
 
     async def run(self, task_result: TaskResult, task: Task) -> tuple[str, list[str]]:
         """Execute a task and return (result_text, file_output_paths)."""
@@ -56,13 +45,7 @@ class TaskExecutor:
 
         try:
             profile = self._profile_for(task)
-            agent_capabilities = await build_agent_capabilities(profile)
-            agent = build_agent(profile, name="TASK_AGENT")
-
-            history = ConversationHistory(
-                system_message=agent.instruction,
-                conversation_id=conversation_id,
-            )
+            history = ConversationHistory(conversation_id=conversation_id)
 
             file_paths: list[str] = []
 
@@ -77,43 +60,13 @@ class TaskExecutor:
             history.subscribe(_capture_file_output)
             try:
                 async with turn_scope(history, conversation_id=conversation_id):
-                    ctx_manager = ContextManager(
+                    result = await self._runner.execute(
+                        profile=profile,
                         history=history,
-                        agent_capabilities=agent_capabilities,
-                        context_limit=agent.context_window,
-                        agent_name=agent.name,
-                        strategies=[
-                            LLMCompactionStrategy(threshold=agent.compaction_threshold),
-                        ],
+                        message=instruction,
+                        run_id=f"run_{uuid4().hex}",
+                        name="TASK_AGENT",
                     )
-                    hooks = default_hooks(
-                        agent,
-                        max_iterations=agent.max_iterations,
-                        ctx_manager=ctx_manager,
-                    )
-                    async with agent_span(agent.name, instruction=instruction, agent_capabilities=agent_capabilities):
-                        await get_browser_runtime().prepare_current_agent_browser(
-                            agent_profile_id=profile.id,
-                            browser_profile_id=profile.browser_profile_id,
-                        )
-                        publish_event(
-                            AgentEvent(
-                                payload=UserMessagePayload(
-                                    type="user_message",
-                                    content=instruction,
-                                )
-                            )
-                        )
-                        result = await AgentExecutor().execute(
-                            history=history,
-                            agent=agent,
-                            capabilities=agent_capabilities,
-                            provider=get_provider(agent.provider),
-                            context=execution_context(run_id=f"run_{uuid4().hex}"),
-                            hooks=hooks,
-                            max_parallel_tools=parallel_tool_limit(),
-                        )
-                        result.raise_for_status()
             finally:
                 # Unsubscribe synchronously before the await so a cancellation
                 # mid-drain can't skip the unsubscribes and leak observers onto

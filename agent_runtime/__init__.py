@@ -18,6 +18,7 @@ from ._active_runs import (
     InvalidRunCursorError,
     UnknownActiveRunError,
 )
+from ._factory import AgentFactory, PreparedAgent
 from ._models import AgentRunInfo, AgentRunRequest, EventSink, RunAttachment, SequencedEvent
 from ._runner import AgentRunner, ConversationLoader
 
@@ -26,6 +27,8 @@ __all__ = [
     "ActiveRunError",
     "ActiveRunManager",
     "ActiveRunManagerClosedError",
+    "AgentFactory",
+    "PreparedAgent",
     "AgentRunInfo",
     "AgentRunRequest",
     "AgentRunner",
