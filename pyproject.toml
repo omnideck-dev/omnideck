@@ -14,7 +14,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "html2text>=2025.4.15",
     "rich>=14.3.3",
-    "anthropic>=0.52.0",
+    "anthropic[bedrock]>=0.52.0",
     "openai>=1.40.0,<2",
     "croniter>=1.3",
     "cryptography>=46.0.7",
@@ -154,4 +154,5 @@ exclude = [
 
 [tool.setuptools.package-data]
 "agent_core.skills" = ["default_skills/*.json"]
+"agent_core.providers" = ["model_metadata.json"]
 "tools.browser" = ["capability.json"]

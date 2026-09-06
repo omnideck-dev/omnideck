@@ -230,4 +230,75 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         expect(alert).toHaveTextContent("Can't disable the default agent");
         expect(alert).toHaveTextContent('Change the default agent first.');
     });
+
+    it('auto-detects GPT Responses controls for an existing Aperture profile', async () => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                models: [{
+                    name: 'bedrock/openai.gpt-5.6-luna',
+                    wire_api: 'Responses',
+                    inference_api: 'openai_responses',
+                    inference_controls: [
+                        'context_window', 'num_predict',
+                        'max_iterations', 'compaction_threshold', 'think',
+                        'reasoning_effort', 'reasoning_summary',
+                    ],
+                    reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+                    supports_thinking: true,
+                    context_window: 1_050_000,
+                    max_output_tokens: 128_000,
+                    upstream_provider: 'Amazon Bedrock',
+                }],
+            }),
+        }));
+        const user = userEvent.setup();
+
+        renderBuilder({
+            profile: _profile({
+                provider: 'aperture',
+                model: 'bedrock/openai.gpt-5.6-luna',
+            }),
+            providers: [{ name: 'aperture', label: 'Tailscale Aperture' }],
+        });
+
+        expect(await screen.findByTestId('inference-detection')).toHaveTextContent(
+            'Amazon Bedrock · Responses · 1.1M context',
+        );
+        const thinkingLevel = screen.getByTestId('field-thinking-level');
+        expect(within(thinkingLevel).getByText('Thinking Level')).toBeInTheDocument();
+        expect(screen.queryByTestId('field-reasoning_summary')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-thinking_budget')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-context_window')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-temperature')).not.toBeInTheDocument();
+        expect(screen.queryByText('Balanced')).not.toBeInTheDocument();
+        expect(screen.queryByText('Creative')).not.toBeInTheDocument();
+        expect(screen.queryByText('Precise')).not.toBeInTheDocument();
+        expect(screen.getByText('Code')).toBeInTheDocument();
+        expect(screen.getByTestId('field-compaction_threshold')).toBeInTheDocument();
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('min', '1');
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('max', '128000');
+
+        await user.click(screen.getByTestId('thinking-level-select'));
+        expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'None' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Extra high' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Maximum' })).toBeInTheDocument();
+        await user.click(screen.getByRole('option', { name: 'High' }));
+        expect(screen.getByTestId('field-reasoning_summary')).toBeInTheDocument();
+    });
+
+    it('keeps runtime context configurable for Ollama models', () => {
+        renderBuilder({
+            profile: _profile({ context_window: 32_000 }),
+            providers: [{ name: 'ollama', label: 'Ollama' }],
+        });
+
+        expect(screen.getByTestId('field-context_window')).toHaveValue(32_000);
+        expect(screen.getByText('Runtime Context Window')).toBeInTheDocument();
+        expect(screen.getByTestId('field-compaction_threshold')).toBeInTheDocument();
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('min', '-1');
+        expect(screen.getByTestId('field-num_predict')).not.toHaveAttribute('max');
+    });
 });
