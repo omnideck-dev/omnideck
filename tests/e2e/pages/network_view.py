@@ -56,7 +56,7 @@ class NetworkView:
         return self.page.get_by_test_id("network-indicator")
 
     def show_details(self) -> NetworkView:
-        trigger = self.page.get_by_role("button", name="Details", exact=False)
+        trigger = self.page.get_by_test_id("chat-title-bar").get_by_role("button", name="Details", exact=False)
         if trigger.get_attribute("aria-expanded") != "true":
             trigger.click()
         return self

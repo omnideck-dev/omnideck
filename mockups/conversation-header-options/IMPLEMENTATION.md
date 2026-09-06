@@ -53,8 +53,11 @@ paragraph was removed from the UI at the user's request.
 - verify-implementation.py exercised the real React header components in
   Chromium with sample conversation data, including close/reopen presentation,
   acknowledgement, Escape, and dark/light layouts at 1000px and 360px widths.
-- Existing container E2E navigation helpers/assertions were updated for Details;
-  the full container E2E suite was not run.
+- Real FakeProvider E2E coverage exercises Details discovery and close/reopen
+  for both Browser and Terminal, preserving browser pages and terminal output
+  without duplicate views. A spawned-agent scenario verifies resource grouping
+  and owner-specific navigation. Existing workspace and network lifecycle
+  coverage is included in the focused container run; the full suite was not run.
 
 Screenshots: implementation-1000-dark.png, implementation-360-dark.png, and
 implementation-360-light.png in screenshots/.
