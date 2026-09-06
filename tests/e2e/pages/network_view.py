@@ -52,10 +52,17 @@ class NetworkView:
 
     @property
     def indicator(self) -> Locator:
-        """Network indicator badge in the chat header; visible once sub-agents exist."""
+        """Agents row in the Details disclosure, available after agents spawn."""
         return self.page.get_by_test_id("network-indicator")
 
+    def show_details(self) -> NetworkView:
+        trigger = self.page.get_by_role("button", name="Details", exact=False)
+        if trigger.get_attribute("aria-expanded") != "true":
+            trigger.click()
+        return self
+
     def open(self) -> NetworkView:
+        self.show_details()
         self.indicator.click()
         self.page.wait_for_timeout(500)
         return self
