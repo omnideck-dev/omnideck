@@ -176,11 +176,19 @@ class ConversationHistory:
         if not self._async_obs_tasks:
             return
         pending = tuple(self._async_obs_tasks)
-        for task in pending:
-            try:
-                await asyncio.shield(task)
-            except Exception:  # pragma: no cover - handler logs already
-                logger.exception("Unhandled exception while draining observer")
+        try:
+            for task in pending:
+                try:
+                    await asyncio.shield(task)
+                except Exception:  # pragma: no cover - handler logs already
+                    logger.exception("Unhandled exception while draining observer")
+        except asyncio.CancelledError:
+            # The execution owner is shutting down. Shielding the drain must
+            # not leave detached writers running after session completion.
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            raise
 
     async def _run_async_observer(
         self, handler: Callable[[AgentEvent], Any], event: AgentEvent,
