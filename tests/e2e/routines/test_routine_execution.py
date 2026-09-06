@@ -8,16 +8,18 @@ same FakeProvider used by the rest of the hermetic E2E suite.
 from __future__ import annotations
 
 import time
+import json
 
 import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
-from tests.e2e._protocol import call_tool, open_url, say, send_file, write_file
+from tests.e2e._protocol import call_tool, open_url, say, send_file, spawn, write_file
 from tests.e2e.pages import ChatView, RoutinesView
 
 
-def test_created_routine_runs_in_background_and_persists_output(page: Page) -> None:
+@pytest.mark.parametrize("delegated", [False, True], ids=["task", "nested-children"])
+def test_created_routine_runs_in_background_and_persists_output(page: Page, delegated: bool) -> None:
     nonce = time.time_ns()
     description = f"E2E background routine {nonce}"
     task_description = f"Write routine proof {nonce}"
@@ -25,6 +27,16 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
     output_path = f"/home/computron/routine-output-{nonce}.txt"
     task_reply = f"Routine {nonce} completed"
     routine_id: str | None = None
+
+    instruction = open_url("about:blank") + write_file(output_path, output_text) + send_file(output_path)
+    if delegated:
+        instruction = spawn(
+            spawn(instruction + say("leaf proof saved"), profile="research_agent", name="LEAF")
+            + say("child proof saved"),
+            profile="research_agent",
+            name="CHILD",
+        )
+    instruction += say(task_reply)
 
     # A far-future recurring schedule keeps commit_routine from auto-queuing a
     # one-shot run. The test deliberately exercises the user's Run now action.
@@ -36,12 +48,7 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
             {
                 "key": "write-proof",
                 "description": task_description,
-                "instruction": (
-                    open_url("about:blank")
-                    + write_file(output_path, output_text)
-                    + send_file(output_path)
-                    + say(task_reply)
-                ),
+                "instruction": instruction,
                 "depends_on": [],
                 # Routines inherit Browser access from their configured agent.
                 # This task intentionally exercises a Browser call, so use the
@@ -97,6 +104,29 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page) -> N
         assert result["result"] == task_reply
         assert result["file_outputs"] == [output_path]
         assert result["conversation_id"]
+
+        # Read the actual execution log after task completion. No seeded events
+        # or intercepted response fixtures: the runtime generated this hierarchy.
+        events = json.loads(
+            container_exec(
+                "import json\nfrom conversations import load_events_jsonl\n"
+                f"print(json.dumps(load_events_jsonl({result['conversation_id']!r})))\n"
+            )
+        )
+        started = {e["agent_name"]: e for e in events if e["type"] == "agent_started"}
+        completed = [e for e in events if e["type"] == "agent_completed"]
+        assert len(started) == len(completed) == (3 if delegated else 1)
+        assert all(e["status"] == "success" for e in completed)
+        output_event = next(e for e in events if e["type"] == "file_output")
+        assert output_event["agent_id"] == started["LEAF" if delegated else "TASK_AGENT"]["agent_id"]
+        if delegated:
+            assert started["CHILD"]["parent_agent_id"] == started["TASK_AGENT"]["agent_id"]
+            assert started["LEAF"]["parent_agent_id"] == started["CHILD"]["agent_id"]
+            spawns = [e for e in events if e["type"] == "spawn_requested"]
+            assert {e["correlation_id"] for e in spawns} == {
+                started["CHILD"]["correlation_id"],
+                started["LEAF"]["correlation_id"],
+            }
 
         # The terminal task state is written only after TaskExecutor returns,
         # so its routine-owned browser context must already have been released.

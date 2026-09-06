@@ -161,9 +161,8 @@ def _events_first_test_bridge(monkeypatch):
         (_execution, "publish_event"),
         (_strategy, "publish_event"),
     ]
-    # Hook + spawn modules import publish_event eagerly when present.
+    # Hook modules import publish_event eagerly when present.
     for modname in (
-        "sdk.tools._spawn_agent",
         "sdk.hooks._nudge_hook",
         "sdk.hooks._loop_detector",
         "sdk.hooks._stop_hook",

@@ -14,7 +14,8 @@ import pytest
 
 from config import FeaturesConfig
 from integrations.permissions import Access, Capability
-from sdk.agent_capabilities import _base_tools
+from agent_runtime._factory import _base_tools
+from agent_runtime._spawn import make_spawn_tool
 from sdk.skills._tool_categories import _custom_tools_category
 from sdk.skills._tool_categories import _static_tool_categories, tool_categories
 from sdk.tools._callable_schema import callable_to_json_schema
@@ -93,7 +94,10 @@ async def test_each_category_has_metadata():
 @pytest.mark.unit
 async def test_agent_tools_have_schema_ready_google_docstrings():
     """Require agent-visible descriptions and Google-style argument docs."""
-    exposed_tools = _base_tools(allow_spawn=True, allow_load_skills=True)
+    async def invoke(*args):
+        raise AssertionError("Schema checks must not invoke children")
+
+    exposed_tools = _base_tools(allow_spawn=True, allow_load_skills=True, spawn_agent=make_spawn_tool(invoke))
     for category in (await tool_categories()).values():
         exposed_tools.extend(category.tools)
     exposed_tools.extend(_custom_tools_category().tools)

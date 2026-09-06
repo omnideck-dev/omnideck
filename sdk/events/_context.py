@@ -113,6 +113,8 @@ async def agent_span(
     agent_capabilities: AgentCapabilities | None = None,
     profile_name: str | None = None,
     correlation_id: str | None = None,
+    *,
+    execution_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Push an attribution frame for the duration of the block.
 
@@ -127,6 +129,7 @@ async def agent_span(
     execution.
 
     Args:
+        execution_id: Identity allocated by the execution owner, or generated here.
         agent_name: Human-readable agent name for event attribution.
         instruction: The instruction or user message this agent was given.
         agent_capabilities: AgentCapabilities to use for this span. A fresh empty one is
@@ -145,7 +148,7 @@ async def agent_span(
     """
     stack = _context_stack.get()
     parent_id = stack[-1][0] if stack else None
-    context_id = _make_child_context_id(agent_name)
+    context_id = execution_id or _make_child_context_id(agent_name)
     depth = len(stack)
     token = _context_stack.set((*stack, (context_id, agent_name)))
     # Borrow an existing AgentCapabilities (multi-turn agents) or create a fresh
