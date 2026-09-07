@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from functools import partial
 from collections.abc import Sequence
 from uuid import uuid4
@@ -13,7 +14,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from agents import AgentProfile, get_agent_profile
-from browser.runtime import get_browser_runtime
+from browser.runtime import BrowserRuntime
 from config import load_config
 from conversations import save_conversation_profile
 from agent_core import AgentExecutor, default_hooks
@@ -46,8 +47,11 @@ _CHILD_POLICY = RunPolicy(restore_skills=False, persist_skills=False, include_me
 class AgentRunner:
     """Execute one agent; the supplied session owns the surrounding run."""
 
-    def __init__(self, *, factory: AgentFactory | None = None) -> None:
+    def __init__(
+        self, *, factory: AgentFactory | None = None, browser_runtime: BrowserRuntime | None = None,
+    ) -> None:
         self._factory = factory if factory is not None else AgentFactory()
+        self.browser_runtime = browser_runtime if browser_runtime is not None else BrowserRuntime()
 
     async def run(self, request: AgentRunRequest, session: RunSession) -> ExecutionResult:
         """Translate accepted root input into the shared execution path."""
@@ -122,7 +126,7 @@ class AgentRunner:
                 )
                 history = child_history
                 session.subscribe(history.handle_event)
-            if history is None:
+            if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
             ctx_manager = ContextManager(
@@ -147,26 +151,30 @@ class AgentRunner:
                 correlation_id=correlation_id,
                 execution=context,
             ):
-                await get_browser_runtime().prepare_current_agent_browser(
-                    agent_profile_id=profile.id,
-                    browser_profile_id=profile.browser_profile_id,
-                )
-                publish_event(
-                    AgentEvent(
-                        payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                async with AsyncExitStack() as execution_resources:
+                    await execution_resources.enter_async_context(self.browser_runtime.execution(
+                        execution=context,
+                        execution_resources=execution_resources,
+                        conversation_resources=session.conversation.resources,
+                        agent_profile_id=profile.id,
+                        browser_profile_id=profile.browser_profile_id,
+                    ))
+                    publish_event(
+                        AgentEvent(
+                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                        )
                     )
-                )
-                parallel = load_config().parallel
-                result = await AgentExecutor().execute(
-                    history=history,
-                    agent=agent,
-                    capabilities=prepared.capabilities,
-                    provider=prepared.provider,
-                    context=context,
-                    max_parallel_tools=parallel.max_concurrent if parallel.enabled else 1,
-                    hooks=hooks,
-                )
-                result.raise_for_status()
+                    parallel = load_config().parallel
+                    result = await AgentExecutor().execute(
+                        history=history,
+                        agent=agent,
+                        capabilities=prepared.capabilities,
+                        provider=prepared.provider,
+                        context=context,
+                        max_parallel_tools=parallel.max_concurrent if parallel.enabled else 1,
+                        hooks=hooks,
+                    )
+                    result.raise_for_status()
         except asyncio.CancelledError:
             cancelled = True
             result = ExecutionResult("stopped")

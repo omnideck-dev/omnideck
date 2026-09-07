@@ -108,15 +108,14 @@ def create_app(
     Returns:
         Configured aiohttp web.Application instance.
     """
-    from browser.runtime import get_browser_runtime
-    from conversations import register_conversation_exit_hook
-    from agent_core.lifecycle import register_agent_span_exit_hook
+    from browser.runtime import BrowserRuntime
+    from server._browser_runtime import BROWSER_RUNTIME_KEY
+    from conversations import ConversationStore
 
-    browser_runtime = get_browser_runtime()
-    register_agent_span_exit_hook(browser_runtime.close_agent)
-    register_conversation_exit_hook(browser_runtime.close_conversation)
+    browser_runtime = BrowserRuntime()
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
-    app[AGENT_RUNTIME_KEY] = AgentRuntime()
+    app[BROWSER_RUNTIME_KEY] = browser_runtime
+    app[AGENT_RUNTIME_KEY] = AgentRuntime(conversations=ConversationStore(), browser_runtime=browser_runtime)
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)

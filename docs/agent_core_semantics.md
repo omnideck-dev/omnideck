@@ -15,6 +15,10 @@ rather than naming either architectural layer.
   Application callers use the public agent core exports.
 - `agent_runtime`: `AgentFactory`, `AgentRunner`, `AgentRuntime`, `RunSession`,
   `RunHandle`, configured LLM compaction, and the scratchpad hook.
+- `conversations`: `ConversationStore` owns live histories, leases, and generic
+  conversation resource scopes; persistence remains in the same package.
+- `browser`: `BrowserRuntime` assigns browser sessions to conversation or
+  execution scopes.
 - `agents`: saved `AgentProfile` configuration.
 - `providers`: configured provider selection, vision selection, and the
   application-aware FakeProvider directive protocol.
@@ -44,7 +48,9 @@ same conversation is rejected; different conversations may run concurrently.
 
 The session owns the root and live child `ExecutionContext` objects, shared stop
 signal, individual nudge inboxes, event replay, disk observers, artifact records,
-and cleanup. A conversation lease prevents cache eviction during execution.
+and cleanup. It acquires a `ConversationScope` from the runtime's injected
+`ConversationStore`; the lease prevents cache eviction during execution.
+Children share this scope but retain their own isolated working histories.
 `RunPolicy` explicitly controls skill restore/persistence, memory, agent naming,
 and cached versus run-lifetime conversation resources.
 
@@ -57,6 +63,36 @@ cleanup. Nudge delivery accepts only live execution IDs belonging to this run.
 The session emits exactly one root `turn_end` after cleanup. The runtime removes
 completed runs from its active maps. Existing handles retain their result and
 replay; later HTTP conversation resume reads persisted events.
+
+## Conversation and browser resources
+
+Application setup creates `ConversationStore`, `BrowserRuntime`, and
+`AgentRuntime` together. HTTP browser controls use that same browser instance.
+A directly constructed `AgentRuntime()` creates its own store and browser runtime;
+it does not require HTTP startup or process-global cleanup registration.
+
+`ConversationStore.acquire()` leases a scope containing history and an
+`AsyncExitStack`. Cached conversations retain the scope between runs; routine
+task conversations close on their final lease release. Eviction, archive,
+delete, and runtime shutdown await conversation resource cleanup. The store
+has no browser dependency. Resource cleanup failures propagate after the exit
+stack attempts its other callbacks.
+
+For each root or child execution, `AgentRunner` opens an execution exit stack
+inside `agent_span` and enters `BrowserRuntime.execution()` with both resource
+scopes. BrowserRuntime attaches root browser cleanup to the conversation scope
+once, and child browser cleanup to the execution scope. Registration precedes
+preparation so partial preparation failures also have an owner. Child cleanup
+finishes before `agent_completed`; run cleanup finishes before `turn_end`.
+
+Browser tools resolve the explicitly bound browser runtime through an execution
+context variable, with no process-global fallback. Nested execution restores
+the parent's binding on exit. `agent_core.agent_span` only binds context and
+emits lifecycle events; it owns no application cleanup registry.
+
+`AgentRuntime.close()` first stops and awaits runs, then closes retained
+conversation scopes, then closes the browser service and its Chromium host.
+The server entry point does not independently close browsers ahead of agents.
 
 ## Child execution
 

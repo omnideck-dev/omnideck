@@ -10,7 +10,7 @@ import pytest
 
 import conversations._store as _store
 from agent_runtime import RunSnapshot
-from conversations import ConversationResumeState
+from conversations import ConversationResumeState, ConversationStore
 from conversations._folders import create_folder, list_folders
 from conversations._store import (
     conversation_exists,
@@ -62,6 +62,7 @@ def _make_request(
     manager = active_run_manager or MagicMock()
     if active_run_manager is None:
         manager.active_for_conversation.return_value = None
+    manager.conversations = ConversationStore()
     req.app = {AGENT_RUNTIME_KEY: manager}
     return req
 
@@ -108,7 +109,7 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
         )
     )
     monkeypatch.setattr(
-        "server._conversation_routes.load_conversation_resume_state",
+        "conversations.ConversationStore.load_conversation_resume_state",
         resume,
     )
     monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: True)
@@ -127,7 +128,7 @@ async def test_resume_route_returns_404_for_unknown_conversation(monkeypatch) ->
     """A missing conversation without an active run cannot be resumed."""
     resume = AsyncMock()
     monkeypatch.setattr(
-        "server._conversation_routes.load_conversation_resume_state",
+        "conversations.ConversationStore.load_conversation_resume_state",
         resume,
     )
     monkeypatch.setattr("server._conversation_routes.conversation_exists", lambda _id: False)
@@ -158,7 +159,7 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         )
     )
     monkeypatch.setattr(
-        "server._conversation_routes.load_conversation_resume_state",
+        "conversations.ConversationStore.load_conversation_resume_state",
         resume,
     )
     manager = MagicMock()
@@ -210,7 +211,7 @@ async def test_resume_route_returns_active_run_before_first_persisted_event(
         )
     )
     monkeypatch.setattr(
-        "server._conversation_routes.load_conversation_resume_state",
+        "conversations.ConversationStore.load_conversation_resume_state",
         resume,
     )
     manager = MagicMock()
@@ -415,7 +416,7 @@ class TestArchiveRoutes:
     async def test_archive_moves_conversation(self, _conv_dir: Path, monkeypatch) -> None:
         """Archiving succeeds and the conversation leaves the active store."""
         evict = AsyncMock()
-        monkeypatch.setattr("server._conversation_routes.evict_conversation", evict)
+        monkeypatch.setattr("conversations.ConversationStore.evict_conversation", evict)
         _seed("c1")
         resp = await archive_conversation_handler(_make_request("c1", None))
         assert resp.status == 204
@@ -491,7 +492,7 @@ async def test_delete_active_conversation_409(_conv_dir: Path) -> None:
 async def test_delete_evicts_live_conversation_resources(_conv_dir: Path, monkeypatch) -> None:
     """Deleting persisted history also releases cached runtime resources."""
     evict = AsyncMock()
-    monkeypatch.setattr("server._conversation_routes.evict_conversation", evict)
+    monkeypatch.setattr("conversations.ConversationStore.evict_conversation", evict)
     _seed("c1")
 
     response = await delete_conversation_handler(_make_request("c1", None))

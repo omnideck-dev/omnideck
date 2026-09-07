@@ -10,6 +10,7 @@ from aiohttp import web
 from browser.profiles import BrowserProfile, BrowserProfileSite
 from browser.runtime import AgentBrowserBinding
 from server import _browser_profile_routes as routes
+from server._browser_runtime import BROWSER_RUNTIME_KEY
 
 
 def _request(
@@ -53,7 +54,14 @@ def _runtime(monkeypatch, *, binding_profile_id: str | None = "work"):
     runtime.agent_profiles_using_live_profile = AsyncMock(return_value=set())
     runtime.assign_profile_to_live_conversation = AsyncMock()
     runtime.user_browser_profile_id = None
-    monkeypatch.setattr(routes, "get_browser_runtime", lambda: runtime)
+    original_request = _request
+
+    def request(**kwargs):
+        result = original_request(**kwargs)
+        result.app = {BROWSER_RUNTIME_KEY: runtime}
+        return result
+
+    monkeypatch.setattr(__name__ + "._request", request)
     return runtime
 
 

@@ -16,17 +16,18 @@ from agents._agent_profiles import (
     save_agent_profile,
 )
 from browser.profile_store import EMPTY_BROWSER_PROFILE_ID
-from browser.runtime import get_browser_runtime
+from browser.profile_store import BrowserProfileStore
+from server._browser_runtime import BROWSER_RUNTIME_KEY
 from skills._policy import strip_reserved_skills
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize_browser_settings(body: dict) -> None:
+def _normalize_browser_settings(body: dict, profiles: BrowserProfileStore) -> None:
     body["skills"] = strip_reserved_skills(body.get("skills", []))
     profile_id = body.get("browser_profile_id")
     if profile_id not in (None, EMPTY_BROWSER_PROFILE_ID):
-        get_browser_runtime().profiles.get(str(profile_id))
+        profiles.get(str(profile_id))
 
 
 async def handle_list_profiles(request: web.Request) -> web.Response:
@@ -57,7 +58,7 @@ async def handle_create_profile(request: web.Request) -> web.Response:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return web.json_response({"error": "Invalid JSON"}, status=400)
     try:
-        _normalize_browser_settings(body)
+        _normalize_browser_settings(body, request.app[BROWSER_RUNTIME_KEY].profiles)
         profile = AgentProfile.model_validate(body)
         saved = save_agent_profile(profile)
         return web.json_response(saved.model_dump(), status=201)
@@ -101,7 +102,7 @@ async def handle_update_profile(request: web.Request) -> web.Response:
 
     try:
         body["id"] = profile_id
-        _normalize_browser_settings(body)
+        _normalize_browser_settings(body, request.app[BROWSER_RUNTIME_KEY].profiles)
         profile = AgentProfile.model_validate(body)
         saved = save_agent_profile(profile)
         return web.json_response(saved.model_dump())

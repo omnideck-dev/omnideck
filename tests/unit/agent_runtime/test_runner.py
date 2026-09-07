@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any
 from agent_core.turn import ExecutionResult
 from unittest.mock import AsyncMock, MagicMock
@@ -33,7 +34,17 @@ def _browser_runtime(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     monkeypatch.setattr(factory_module, "get_provider", lambda _: MagicMock())
     runtime = MagicMock()
     runtime.prepare_current_agent_browser = AsyncMock()
-    monkeypatch.setattr(runner_module, "get_browser_runtime", lambda: runtime)
+    @asynccontextmanager
+    async def execution(**kwargs):
+        await runtime.prepare_current_agent_browser(
+            agent_profile_id=kwargs["agent_profile_id"], browser_profile_id=kwargs["browser_profile_id"],
+        )
+        yield
+
+    runtime.execution = execution
+    monkeypatch.setattr("agent_runtime._runtime.BrowserRuntime", lambda: runtime)
+    monkeypatch.setattr(runner_module, "BrowserRuntime", lambda: runtime)
+    runtime.close = AsyncMock()
     return runtime
 
 
@@ -54,7 +65,7 @@ async def _load_empty_history(
 
 async def _run(conversation_id: str) -> list[AgentEvent]:
     seen: list[AgentEvent] = []
-    runtime = AgentRuntime(conversation_loader=_load_empty_history)
+    runtime = AgentRuntime()
     handle = await runtime.start(_request(conversation_id))
     seen = [record.event async for record in handle.events()]
     return seen
@@ -130,7 +141,7 @@ async def test_manager_stop_before_concrete_runner_starts_skips_setup(
         "get_agent_profile",
         _unexpected_profile_lookup,
     )
-    manager = AgentRuntime(conversation_loader=_load_empty_history)
+    manager = AgentRuntime()
 
     info = await manager.start(_request("early-stop"))
     stream = info.events(after_seq=0)
@@ -152,7 +163,7 @@ async def test_setup_failure_is_persisted_and_ends_once(
         raise RuntimeError("profile store unavailable")
 
     monkeypatch.setattr(factory_module, "get_agent_profile", _explode)
-    manager = AgentRuntime(conversation_loader=_load_empty_history)
+    manager = AgentRuntime()
     info = await manager.start(_request(conversation_id))
     stream = info.events(after_seq=0)
 

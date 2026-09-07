@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack
 from uuid import uuid4
 
 from artifacts import ArtifactsIndexWriter
-from conversations import BrowserTabsWriter, EventsLogWriter, TerminalWriter, run_conversation_exit_hooks
-from conversations._cache import conversation_lease
+from conversations import BrowserTabsWriter, ConversationScope, ConversationStore, EventsLogWriter, TerminalWriter
 from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
 from agent_core.events import AgentEvent, FileOutputPayload, TurnEndPayload
@@ -20,7 +19,6 @@ from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_con
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
 
 logger = logging.getLogger(__name__)
-ConversationLoader = Callable[[str], Awaitable[ConversationHistory]]
 
 
 class InvalidRunCursorError(ValueError):
@@ -30,11 +28,12 @@ class InvalidRunCursorError(ValueError):
 class RunSession:
     """Own one accepted run and every execution underneath its root."""
 
-    def __init__(self, request: AgentRunRequest, run_id: str, loader: ConversationLoader) -> None:
+    def __init__(self, request: AgentRunRequest, run_id: str, conversations: ConversationStore) -> None:
         self.request = request
         self.run_id = run_id
         self.conversation_id = request.conversation_id
-        self._loader = loader
+        self._conversations = conversations
+        self.conversation: ConversationScope | None = None
         self.stop_event = asyncio.Event()
         self.history: ConversationHistory | None = None
         self.records: list[SequencedEvent] = []
@@ -61,12 +60,10 @@ class RunSession:
 
     async def __aenter__(self) -> RunSession:
         try:
-            self._resources.enter_context(conversation_lease(self.conversation_id))
-            if self.request.policy.conversation_lifetime == "run":
-                self._resources.push_async_callback(run_conversation_exit_hooks, self.conversation_id)
-                self.history = ConversationHistory(conversation_id=self.conversation_id)
-            else:
-                self.history = await self._loader(self.conversation_id)
+            self.conversation = await self._resources.enter_async_context(self._conversations.acquire(
+                self.conversation_id, transient=self.request.policy.conversation_lifetime == "run",
+            ))
+            self.history = self.conversation.history
             observers = [
                 EventsLogWriter(self.conversation_id).handle_event,
                 BrowserTabsWriter(self.conversation_id).handle_event,

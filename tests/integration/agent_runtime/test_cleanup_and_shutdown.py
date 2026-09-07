@@ -8,8 +8,7 @@ from agent_core.context import ConversationHistory
 from agent_core.control import StopRequestedError
 from agent_core.turn import get_execution_context
 from agent_runtime import AgentRunRequest, AgentRuntimeClosedError, RunConflictError, RunPolicy
-from conversations import load_events_jsonl, register_conversation_exit_hook
-from conversations import _cache
+from conversations import load_events_jsonl
 from providers._fake import FakeProvider
 from tasks import TaskExecutor
 from tests.e2e._protocol import call_tool, say, spawn
@@ -34,7 +33,7 @@ def _request(conversation="cleanup", *, lifetime="cached", message=None, profile
 def _assert_released(runtime, handle):
     assert runtime.get(handle.run_id) is None
     assert runtime.active_for_conversation(handle.conversation_id) is None
-    assert not _cache._leases[handle.conversation_id]
+    assert not runtime.conversations._leases[handle.conversation_id]
     assert handle._session.executions == {}
     history = handle._session.history
     if history is not None:
@@ -70,7 +69,16 @@ async def test_completion_and_terminal_event_wait_for_session_cleanup(harness, m
             await release.wait()
             finished.set()
 
-        register_conversation_exit_hook(delayed_conversation_cleanup)
+        original_acquire = h.manager.conversations.acquire
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def acquire(*args, **kwargs):
+            async with original_acquire(*args, **kwargs) as scope:
+                scope.resources.push_async_callback(delayed_conversation_cleanup, args[0])
+                yield scope
+
+        monkeypatch.setattr(h.manager.conversations, "acquire", acquire)
 
     handle = await h.manager.start(_request(lifetime="run"))
     observed = []
@@ -117,7 +125,7 @@ async def test_session_boundary_failure_releases_resources_and_allows_next_run(h
             async def failed_load(_conversation_id):
                 raise RuntimeError(failure)
 
-            patch.setattr(h.manager, "_conversation_loader", failed_load)
+            patch.setattr(h.manager.conversations, "_load_history", failed_load)
         elif boundary == "writer_setup":
 
             def failed_writer(_conversation_id):
@@ -133,13 +141,13 @@ async def test_session_boundary_failure_releases_resources_and_allows_next_run(h
 
             patch.setattr(ConversationHistory, "drain_observers", failed_drain)
         else:
-            from agent_runtime._session import run_conversation_exit_hooks
+            evict = h.manager.conversations._evict
 
             async def failed_cleanup(conversation_id):
-                await run_conversation_exit_hooks(conversation_id)
+                await evict(conversation_id)
                 raise RuntimeError(failure)
 
-            patch.setattr("agent_runtime._session.run_conversation_exit_hooks", failed_cleanup)
+            patch.setattr(h.manager.conversations, "_evict", failed_cleanup)
 
         handle = await h.manager.start(_request(lifetime=lifetime))
         result = await asyncio.wait_for(handle.wait(), 5)
@@ -232,7 +240,7 @@ async def test_shutdown_stops_chat_and_routine_trees_and_waits_for_tools(harness
             _assert_released(h.manager, handle)
 
         assert set(h.exited_agents) == all_agent_ids and len(h.exited_agents) == 6
-        assert h.exited_conversations == [stored.conversation_id]
+        assert set(h.exited_conversations) == {stored.conversation_id, chat.conversation_id}
         assert len(tools) == 2 and exited == set(tools)
         assert all(tool.done() for tool in tools.values())
         assert cancelled == (set(tools) if mode == "forced" else set())

@@ -5,14 +5,13 @@ substituted. This directory deliberately does not inherit the agent core unit su
 legacy history/event compatibility fixture.
 """
 
-from collections import OrderedDict
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
 
 from agent_runtime import AgentRuntime, AgentRunner
 from config import load_config
-from conversations import get_or_create_conversation
 from agent_core.events import get_current_agent_id
 from agent_core.turn import get_conversation_id
 from tasks._file_store import FileTaskStore
@@ -41,9 +40,6 @@ async def harness(tmp_path, monkeypatch):
     ):
         monkeypatch.setattr(target, lambda: config)
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
-    monkeypatch.setattr("conversations._cache._conversations", OrderedDict())
-    monkeypatch.setattr("agent_core.lifecycle._hooks", [])
-    monkeypatch.setattr("conversations._lifecycle._hooks", [])
     monkeypatch.setattr("agent_runtime._runner.load_config", lambda: config)
 
     provider = ScriptedProvider()
@@ -54,7 +50,7 @@ async def harness(tmp_path, monkeypatch):
         "compaction_provider": "scripted", "compaction_model": "summary", "compaction_options": {},
     })
 
-    manager = AgentRuntime(conversation_loader=get_or_create_conversation, shutdown_timeout=0.1)
+    manager = AgentRuntime(shutdown_timeout=0.1)
     h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config)
 
     async def categories():
@@ -64,26 +60,23 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.browser.capability.tool_categories", categories)
 
     class BrowserService:
-        async def prepare_current_agent_browser(self, **kwargs):
+        def __init__(self):
+            self.conversations = set()
+
+        @asynccontextmanager
+        async def execution(self, *, execution, execution_resources, conversation_resources, **kwargs):
             h.browser_calls.append({
                 **kwargs, "agent_id": get_current_agent_id(),
                 "conversation_id": get_conversation_id(),
             })
+            execution_resources.callback(h.exited_agents.append, execution.execution_id)
+            if execution.conversation_id not in self.conversations:
+                self.conversations.add(execution.conversation_id)
+                conversation_resources.callback(self.conversations.discard, execution.conversation_id)
+                conversation_resources.callback(h.exited_conversations.append, execution.conversation_id)
+            yield
 
-    browser = BrowserService()
-    monkeypatch.setattr("agent_runtime._runner.get_browser_runtime", lambda: browser)
-
-    from agent_core.lifecycle import register_agent_span_exit_hook
-    from conversations import register_conversation_exit_hook
-
-    async def agent_exit(agent_id):
-        h.exited_agents.append(agent_id)
-
-    async def conversation_exit(conversation_id):
-        h.exited_conversations.append(conversation_id)
-
-    register_agent_span_exit_hook(agent_exit)
-    register_conversation_exit_hook(conversation_exit)
+    manager._runner = AgentRunner(browser_runtime=BrowserService())
     try:
         yield h
     finally:

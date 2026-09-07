@@ -30,14 +30,12 @@ from conversations import (
     create_folder,
     delete_conversation,
     delete_folder,
-    evict_conversation,
     folder_exists,
     generate_conversation_title,
     list_archived_conversations,
     list_conversations,
     list_folders,
     load_conversation_metadata,
-    load_conversation_resume_state,
     save_conversation_folder,
     save_conversation_pinned,
     save_conversation_title,
@@ -81,7 +79,7 @@ async def delete_conversation_handler(request: Request) -> Response:
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
-    await evict_conversation(conversation_id)
+    await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -104,7 +102,7 @@ async def archive_conversation_handler(request: Request) -> Response:
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
-    await evict_conversation(conversation_id)
+    await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -215,7 +213,7 @@ async def resume_conversation_handler(request: Request) -> Response:
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
-    resume_state = await load_conversation_resume_state(conversation_id)
+    resume_state = await request.app[AGENT_RUNTIME_KEY].conversations.load_conversation_resume_state(conversation_id)
 
     active_run = None
     if active is not None:

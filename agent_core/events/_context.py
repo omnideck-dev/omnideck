@@ -21,7 +21,6 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Protocol
 
-from agent_core.lifecycle import run_agent_span_exit_hooks
 from agent_core.control import ExecutionControl, _current_control
 
 if TYPE_CHECKING:  # Avoid runtime import cycles; only needed for typing
@@ -179,12 +178,9 @@ async def _agent_lifecycle(
         status = "error"
         raise
     finally:
-        try:
-            await run_agent_span_exit_hooks(context_id)
-        finally:
-            publish_event(AgentEvent(payload=AgentCompletedPayload(
-                type="agent_completed", agent_id=context_id, agent_name=agent_name or "", status=status,
-            )))
+        publish_event(AgentEvent(payload=AgentCompletedPayload(
+            type="agent_completed", agent_id=context_id, agent_name=agent_name or "", status=status,
+        )))
 
 
 def publish_event(event: AgentEvent) -> None:

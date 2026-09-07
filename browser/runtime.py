@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -19,7 +22,7 @@ from browser.profiles import BrowserProfile, BrowserProfileSite
 from browser.session_pool import BrowserSessionPool, BrowserStorageStateLoader
 from config import load_config
 from agent_core.events import get_current_agent_id, get_current_depth
-from agent_core.turn import get_conversation_id
+from agent_core.turn import ExecutionContext, get_conversation_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +47,64 @@ class BrowserRuntime:
 
     def __init__(
         self,
-        profiles: BrowserProfileStore,
-        sessions: BrowserSessionPool,
+        profiles: BrowserProfileStore | None = None,
+        sessions: BrowserSessionPool | None = None,
     ) -> None:
-        self.profiles = profiles
-        self.sessions = sessions
+        self.profiles = profiles if profiles is not None else BrowserProfileStore(
+            Path(load_config().settings.home_dir) / "browser" / "profiles"
+        )
+        self.sessions = sessions if sessions is not None else BrowserSessionPool()
+        self._resource_owners: dict[str, AsyncExitStack] = {}
         self._agent_bindings: dict[str, AgentBrowserBinding] = {}
         self._user_browser_profile_id: str | None = None
         self._lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def execution(
+        self,
+        *,
+        execution: ExecutionContext,
+        execution_resources: AsyncExitStack,
+        conversation_resources: AsyncExitStack,
+        agent_profile_id: str,
+        browser_profile_id: str | None,
+    ) -> AsyncIterator[None]:
+        """Bind browser tools and attach cleanup to the appropriate supplied scope.
+
+        Root browsers survive turns in the conversation scope; child browsers
+        belong to one execution. Register before preparation so partial failures
+        have the same cleanup ownership as successful preparation.
+        """
+        root = execution.parent_execution_id is None
+        key = self._conversation_key(execution.conversation_id) if root else execution.execution_id
+        resources = conversation_resources if root else execution_resources
+        owner = self._resource_owners.get(key)
+        if owner is None:
+            self._resource_owners[key] = resources
+            resources.push_async_callback(self._release_owned, key)
+        elif owner is not resources:
+            raise RuntimeError("Browser session already belongs to another resource scope")
+        token = _execution_runtime.set(self)
+        try:
+            await self.prepare_current_agent_browser(
+                agent_profile_id=agent_profile_id, browser_profile_id=browser_profile_id,
+            )
+            yield
+        finally:
+            _execution_runtime.reset(token)
+
+    async def _release_owned(self, key: str) -> None:
+        self._resource_owners.pop(key, None)
+        async with self._lock:
+            self._agent_bindings.pop(key, None)
+        # A forced stop can arrive after execution has already entered cleanup.
+        # Keep ownership until the browser release actually settles.
+        cleanup = asyncio.create_task(self.sessions.release(key))
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await cleanup
+            raise
 
     async def prepare_current_agent_browser(
         self,
@@ -134,19 +187,6 @@ class BrowserRuntime:
             if await self.sessions.get(key) is not None:
                 live_agent_profile_ids.add(agent_profile_id)
         return live_agent_profile_ids
-
-    async def close_agent(self, runtime_agent_id: str) -> None:
-        """Release an ephemeral sub-agent Browser at agent-span exit."""
-        async with self._lock:
-            self._agent_bindings.pop(runtime_agent_id, None)
-        await self.sessions.release(runtime_agent_id)
-
-    async def close_conversation(self, conversation_id: str) -> None:
-        """Release a root-agent Browser and its binding."""
-        key = self._conversation_key(conversation_id)
-        async with self._lock:
-            self._agent_bindings.pop(key, None)
-        await self.sessions.release(key)
 
     async def ensure_user_browser(self) -> Browser:
         """Open the user's Browser from Default on first use this process."""
@@ -248,6 +288,7 @@ class BrowserRuntime:
         """Close every Browser session and forget all runtime bindings."""
         async with self._lock:
             self._agent_bindings.clear()
+            self._resource_owners.clear()
             self._user_browser_profile_id = None
         await self.sessions.close()
 
@@ -307,35 +348,15 @@ class BrowserRuntime:
         return runtime_agent_id
 
 
-_runtime: BrowserRuntime | None = None
-
-
-def get_browser_runtime() -> BrowserRuntime:
-    """Return the process-owned Browser runtime."""
-    global _runtime
-    if _runtime is None:
-        profiles_dir = Path(load_config().settings.home_dir) / "browser" / "profiles"
-        _runtime = BrowserRuntime(
-            BrowserProfileStore(profiles_dir),
-            BrowserSessionPool(),
-        )
-    return _runtime
+_execution_runtime: ContextVar[BrowserRuntime | None] = ContextVar("browser_execution_runtime", default=None)
 
 
 async def get_browser() -> Browser:
-    """Return the Browser prepared for the current agent execution."""
-    return await get_browser_runtime().get_current_agent_browser()
+    """Return the browser belonging to the current bound agent execution."""
+    runtime = _execution_runtime.get()
+    if runtime is None:
+        raise RuntimeError("Browser requested outside a prepared agent execution")
+    return await runtime.get_current_agent_browser()
 
 
-async def close_browser() -> None:
-    """Close the process-owned Browser runtime."""
-    await get_browser_runtime().close()
-
-
-__all__ = [
-    "AgentBrowserBinding",
-    "BrowserRuntime",
-    "close_browser",
-    "get_browser",
-    "get_browser_runtime",
-]
+__all__ = ["AgentBrowserBinding", "BrowserRuntime", "get_browser"]

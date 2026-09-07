@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from conversations import _cache as cc
+from conversations import ConversationScope, ConversationStore
+
+cc: ConversationStore
 from conversations._store import save_conversation_profile
 from agent_core.context import ConversationHistory
 
@@ -37,18 +38,13 @@ def _seed_events_jsonl(conv_dir: Path, conv_id: str, user_content: str = "hi") -
 
 
 @pytest.fixture(autouse=True)
-async def _clear_in_memory_conversations() -> AsyncIterator[None]:
-    """Reset the module-global conversation cache between tests."""
-    cc._conversations.clear()
+async def _conversation_store() -> AsyncIterator[None]:
+    """Each test owns an independent store and its resources."""
+    global cc
+    cc = ConversationStore()
     yield
-    cc._conversations.clear()
-
-
-@pytest.fixture(autouse=True)
-def _stub_conversation_exit_hooks():
-    """Stub the eviction hook so it doesn't touch Playwright or other resources."""
-    with patch.object(cc, "run_conversation_exit_hooks", new_callable=AsyncMock):
-        yield
+    cc._leases.clear()  # A few LRU tests simulate leases directly.
+    await cc.close()
 
 
 async def test_get_conversation_cold_cache_no_disk_creates_empty() -> None:
@@ -81,7 +77,7 @@ async def test_get_conversation_warm_cache_returns_in_memory_instance(
         "conversations._store._get_conversations_dir", lambda: tmp_path,
     )
     cached = ConversationHistory(conversation_id="cid")
-    cc._conversations["cid"] = cached
+    cc._conversations["cid"] = ConversationScope(cached)
     _seed_events_jsonl(tmp_path, "cid", user_content="from-disk")
 
     conv = await cc.get_or_create_conversation("cid")
@@ -118,7 +114,7 @@ async def test_get_conversation_corrupted_history_falls_back_to_empty(tmp_path: 
 
 async def test_lru_evicts_oldest_when_cap_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:
     """Inserting beyond the cap evicts the least-recently-used entry."""
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 3)
+    monkeypatch.setattr(cc, "_max_cached", 3)
 
     await cc.get_or_create_conversation("a")
     await cc.get_or_create_conversation("b")
@@ -135,7 +131,7 @@ async def test_lru_access_promotes_to_most_recently_used(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A cache hit moves the entry to the end so it survives the next eviction."""
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 3)
+    monkeypatch.setattr(cc, "_max_cached", 3)
 
     await cc.get_or_create_conversation("a")
     await cc.get_or_create_conversation("b")
@@ -153,7 +149,7 @@ async def test_lru_access_promotes_to_most_recently_used(
 
 async def test_lru_skips_active_turn(monkeypatch: pytest.MonkeyPatch) -> None:
     """Conversations whose turn is in flight are not evicted."""
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
+    monkeypatch.setattr(cc, "_max_cached", 2)
     monkeypatch.setattr(cc, "_leases", Counter({"a": 1}))
 
     await cc.get_or_create_conversation("a")
@@ -170,7 +166,7 @@ async def test_lru_skips_active_turn(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_lru_overflow_when_all_active(monkeypatch: pytest.MonkeyPatch) -> None:
     """When every cached conv is mid-turn, the cache temporarily overflows."""
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
+    monkeypatch.setattr(cc, "_max_cached", 2)
     monkeypatch.setattr(cc, "_leases", Counter({"a": 1, "b": 1, "c": 1}))
 
     await cc.get_or_create_conversation("a")
@@ -185,7 +181,7 @@ async def test_lru_does_not_evict_just_inserted_when_others_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Just-inserted conv survives even when every existing entry is mid-turn."""
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 2)
+    monkeypatch.setattr(cc, "_max_cached", 2)
     monkeypatch.setattr(cc, "_leases", Counter({"a": 1, "b": 1}))
 
     await cc.get_or_create_conversation("a")
@@ -349,7 +345,7 @@ async def test_warm_resume_reads_complete_log_from_disk(
         )
 
     await cc.get_or_create_conversation("c-warm")
-    cc._conversations["c-warm"].seed_events([])
+    cc._conversations["c-warm"].history.seed_events([])
 
     result = await cc.load_conversation_resume_state("c-warm")
 
@@ -360,11 +356,11 @@ async def test_warm_resume_reads_complete_log_from_disk(
 
 
 async def test_nested_conversation_leases_survive_inner_exit_and_release_on_failure(monkeypatch):
-    monkeypatch.setattr(cc, "_MAX_CACHED_CONVERSATIONS", 1)
+    monkeypatch.setattr(cc, "_max_cached", 1)
     with pytest.raises(RuntimeError, match="owner failed"):
-        with cc.conversation_lease("leased"):
+        async with cc.acquire("leased"):
             await cc.get_or_create_conversation("leased")
-            with cc.conversation_lease("leased"):
+            async with cc.acquire("leased"):
                 await cc.get_or_create_conversation("other")
             await cc.get_or_create_conversation("third")
             assert "leased" in cc._conversations

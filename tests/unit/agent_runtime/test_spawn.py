@@ -8,7 +8,7 @@ import pytest
 
 from functools import partial
 from agent_runtime import AgentRunner, AgentRunRequest, RunSession
-from conversations import get_or_create_conversation
+from conversations import ConversationStore
 from agent_runtime._spawn import make_spawn_tool
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.context import ConversationHistory
@@ -21,7 +21,7 @@ def spawn_agent():
     runner = AgentRunner()
     session = RunSession(AgentRunRequest(
         conversation_id="conversation", message="test", attachments=None, profile_id="parent",
-    ), "run", get_or_create_conversation)
+    ), "run", ConversationStore())
     context = session.root_context
     with context.bind("PARENT", AgentCapabilities([])):
         yield make_spawn_tool(partial(runner._invoke_child, session, context))

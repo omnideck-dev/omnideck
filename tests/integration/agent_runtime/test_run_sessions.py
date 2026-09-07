@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from agent_runtime import AgentRunRequest
-from conversations import get_or_create_conversation, load_events_jsonl
+from conversations import load_events_jsonl
 from providers._fake import FakeProvider
 from agent_core.events import AgentEvent, FileOutputPayload, publish_event
 from agent_core.providers import ChatResponse, TokenUsage
@@ -54,7 +54,7 @@ async def test_cancelling_a_waiter_does_not_cancel_the_runtime_owned_execution(h
     assert sum(r.event.payload.type == "turn_end" for r in records) == 1
     assert h.manager.get(handle.run_id) is None
     assert handle._session.executions == {}
-    history = await get_or_create_conversation("detached")
+    history = await h.manager.conversations.get_or_create_conversation("detached")
     assert history._observers == []
 
 

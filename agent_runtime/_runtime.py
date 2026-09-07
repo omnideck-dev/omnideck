@@ -8,13 +8,14 @@ from collections.abc import AsyncGenerator
 from typing import Protocol
 from uuid import uuid4
 
-from conversations import get_or_create_conversation
+from conversations import ConversationStore
+from browser.runtime import BrowserRuntime
 from agent_core.control import StopRequestedError
 from agent_core.events import AgentEvent, ErrorPayload
 from agent_core.turn import ExecutionResult
 
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
-from ._session import ConversationLoader, RunSession
+from ._session import RunSession
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +82,19 @@ class AgentRuntime:
         self,
         runner: _RunExecutor | None = None,
         *,
-        conversation_loader: ConversationLoader = get_or_create_conversation,
+        conversations: ConversationStore | None = None,
+        browser_runtime: BrowserRuntime | None = None,
         shutdown_timeout: float = 5.0,
     ) -> None:
         from ._runner import AgentRunner
 
-        self._runner = runner if runner is not None else AgentRunner()
-        self._conversation_loader = conversation_loader
+        if isinstance(runner, AgentRunner):
+            if browser_runtime is not None and browser_runtime is not runner.browser_runtime:
+                raise ValueError("AgentRunner and AgentRuntime must share one browser runtime")
+            browser_runtime = runner.browser_runtime
+        self.conversations = conversations if conversations is not None else ConversationStore()
+        self._browser = browser_runtime if browser_runtime is not None else BrowserRuntime()
+        self._runner = runner if runner is not None else AgentRunner(browser_runtime=self._browser)
         self._shutdown_timeout = shutdown_timeout
         self._active_by_conversation: dict[str, RunSession] = {}
         self._runs_by_id: dict[str, RunSession] = {}
@@ -101,7 +108,7 @@ class AgentRuntime:
         if request.conversation_id in self._active_by_conversation:
             raise RunConflictError(f"Conversation '{request.conversation_id}' already has an active run")
         # Reserve before the first await so concurrent starts cannot both enter.
-        session = RunSession(request, f"run_{uuid4().hex}", self._conversation_loader)
+        session = RunSession(request, f"run_{uuid4().hex}", self.conversations)
         self._active_by_conversation[session.conversation_id] = session
         self._runs_by_id[session.run_id] = session
         session.task = asyncio.create_task(self._drive(session), name=f"agent-run-{session.run_id[4:12]}")
@@ -129,6 +136,11 @@ class AgentRuntime:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
+
+        try:
+            await self.conversations.close()
+        finally:
+            await self._browser.close()
 
     async def _drive(self, session: RunSession) -> RunResult:
         session.started = True
