@@ -101,6 +101,13 @@ def test_delete_running_work_stops_processes_and_prevents_late_side_effects(page
                 f"print(json.dumps([load_events_jsonl(cid) for cid in {conversations!r}]))"
             ))
             assert remaining_events == [[], []]
+            remaining_directories = json.loads(container_exec(
+                "import json; from conversations._store import _get_conversations_dir; "
+                f"print(json.dumps([cid for cid in {conversations!r} "
+                "if (_get_conversations_dir() / cid).exists() "
+                "or (_get_conversations_dir() / '_archived' / cid).exists()]))"
+            ))
+            assert remaining_directories == []
             if target == "routine":
                 assert page.request.get(f"/api/routines/{routine_id}").status == 404
                 expect(page.get_by_test_id("routines-list").get_by_text(description, exact=True)).to_be_hidden()

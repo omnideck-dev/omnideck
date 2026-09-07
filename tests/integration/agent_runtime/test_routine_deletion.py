@@ -7,10 +7,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from agent_core.turn import get_execution_context
-from conversations import load_events_jsonl
+from conversations import archive_conversation, load_events_jsonl
 from providers._fake import FakeProvider
-from server._task_routes import register_task_routes
-from tasks import TaskExecutor, TaskRunner
+from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
+from tasks import RoutineService, TaskExecutor, TaskRunner
 from tests.e2e._protocol import call_tool, say, spawn
 
 
@@ -55,8 +55,10 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
     other_run = h.store.queue_run(other.id)
     config = h.config.routines.model_copy(update={"max_concurrent": 6, "shutdown_timeout": 0})
     runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
+    service = RoutineService(h.store, runner)
     app = web.Application()
     app["task_runner"] = runner
+    app[ROUTINE_SERVICE_KEY] = service
     register_task_routes(app)
     deletion = None
     duplicate = None
@@ -75,6 +77,10 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
             original_delete = getattr(h.store, f"delete_{target}")
 
             def checked_delete(identifier):
+                # The service owns this boundary; admission stays blocked for
+                # the complete store operation, including history deletion.
+                blocked = runner._blocked_routine_ids if target == "routine" else runner._blocked_run_ids
+                assert identifier in blocked
                 if getattr(h.store, f"get_{target}")(identifier) is None:
                     return original_delete(identifier)
                 # These checks run at the exact destructive boundary, while the
@@ -102,7 +108,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
             assert h.store.get_routine(routine.id) is not None
             assert all(h.store.get_run(run.id) is not None for run in runs)
 
-            duplicate = asyncio.create_task(getattr(runner, f"delete_{target}")(
+            duplicate = asyncio.create_task(getattr(service, f"delete_{target}")(
                 routine.id if target == "routine" else runs[0].id,
             ))
             await asyncio.sleep(0)
@@ -124,7 +130,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
 
             release_cleanup.set()
             response = await asyncio.wait_for(deletion, 5)
-            assert await asyncio.wait_for(duplicate, 5) == []
+            assert await asyncio.wait_for(duplicate, 5) is None
             assert response.status == 200
             assert runner.status["active_tasks"] == len(survivors)
             assert not effects
@@ -180,9 +186,11 @@ async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, m
     run = h.store.queue_run(routine.id)
     config = h.config.routines.model_copy(update={"shutdown_timeout": 0})
     runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
+    service = RoutineService(h.store, runner)
     await runner._tick()
     await asyncio.wait_for(entered.wait(), 5)
-    deletion = asyncio.create_task(runner.delete_routine(routine.id))
+    conversation = h.store.get_task_results(run.id)[0].conversation_id
+    deletion = asyncio.create_task(service.delete_routine(routine.id))
     shutdown = None
     try:
         await asyncio.wait_for(cleaning.wait(), 5)
@@ -193,9 +201,102 @@ async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, m
         assert h.store.get_run(run.id) is not None
     finally:
         release.set()
-        conversations = await asyncio.wait_for(deletion, 5)
+        await asyncio.wait_for(deletion, 5)
         if shutdown is not None:
             await asyncio.wait_for(shutdown, 5)
-    assert len(conversations) == 1
-    assert conversations[0] in h.exited_conversations
+    assert conversation in h.exited_conversations
+    assert not load_events_jsonl(conversation)
     assert h.store.get_routine(routine.id) is None
+
+
+@pytest.mark.parametrize("target", ["routine", "run"])
+async def test_store_deletes_history_and_preserves_references_for_retry(harness, monkeypatch, target):
+    """The storage API cascades active/archived history without returning cleanup work."""
+    h = harness
+    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    h.profile()
+    routine = h.store.create_routine("persistent owner", auto_run=False)
+    h.store.create_task(routine.id, "one", say("first history"), agent_profile="leaf")
+    h.store.create_task(routine.id, "two", say("second history"), agent_profile="leaf")
+    runs = [h.store.queue_run(routine.id) for _ in range(2)]
+    executor = TaskExecutor(h.store, h.manager)
+    for run in runs:
+        for result in h.store.get_task_results(run.id):
+            await executor.run(result, h.store.get_task(result.task_id))
+    conversations = [r.conversation_id for run in runs for r in h.store.get_task_results(run.id)]
+    assert all(load_events_jsonl(c) for c in conversations)
+    assert archive_conversation(conversations[0])
+    affected = conversations if target == "routine" else conversations[:2]
+    identifier = routine.id if target == "routine" else runs[0].id
+
+    from tasks import _file_store
+
+    delete_history = _file_store.delete_conversation
+
+    def fail_second_history(conversation_id):
+        assert all(h.store.get_run(run.id) is not None for run in runs)
+        if conversation_id == affected[1]:
+            raise OSError("history storage unavailable")
+        return delete_history(conversation_id)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_file_store, "delete_conversation", fail_second_history)
+        with pytest.raises(OSError, match="history storage unavailable"):
+            getattr(h.store, f"delete_{target}")(identifier)
+    assert h.store.get_routine(routine.id) is not None
+    assert all(h.store.get_run(run.id) is not None for run in runs)
+    assert load_events_jsonl(affected[1])
+
+    # Reopening persistence proves the remaining cleanup references survived on
+    # disk. Previously deleted history is harmless when the operation retries.
+    from tasks._file_store import FileTaskStore
+    from conversations._store import _get_conversations_dir
+
+    reopened = FileTaskStore(h.store._base)
+    assert getattr(reopened, f"delete_{target}")(identifier) is None
+    for conversation in affected:
+        assert not (_get_conversations_dir() / conversation).exists()
+        assert not (_get_conversations_dir() / "_archived" / conversation).exists()
+    if target == "run":
+        assert reopened.get_routine(routine.id) is not None
+        assert reopened.get_run(runs[1].id) is not None
+        assert all(load_events_jsonl(c) for c in conversations[2:])
+    else:
+        assert reopened.get_routine(routine.id) is None
+
+
+@pytest.mark.parametrize("enabled", [False, True], ids=["disabled", "before-readiness"])
+@pytest.mark.parametrize("target", ["routine", "run"])
+async def test_http_deletion_service_is_available_without_a_started_scheduler(harness, monkeypatch, enabled, target):
+    """Startup composes the service even when the background loop cannot start yet."""
+    from server._agent_runtime import AGENT_RUNTIME_KEY
+    from server.aiohttp_app import _configure_routines
+
+    h = harness
+    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    monkeypatch.setattr("tasks.get_store", lambda: h.store)
+    monkeypatch.setattr("server.aiohttp_app.load_config", lambda: h.config)
+    h.config.routines.enabled = enabled
+    h.profile()
+    routine = h.store.create_routine("completed history", auto_run=False)
+    task = h.store.create_task(routine.id, "one", say("stored output"), agent_profile="leaf")
+    run = h.store.queue_run(routine.id)
+    await TaskExecutor(h.store, h.manager).run(h.store.get_task_results(run.id)[0], task)
+    conversation = h.store.get_task_results(run.id)[0].conversation_id
+    assert load_events_jsonl(conversation)
+    app = web.Application()
+    app[AGENT_RUNTIME_KEY] = h.manager
+    app.on_startup.append(_configure_routines)
+    register_task_routes(app)
+    async with TestClient(TestServer(app)) as client:
+        if enabled:
+            assert app["task_runner"]._loop_task is None
+            assert not app["task_runner"].status["running"]
+        else:
+            assert "task_runner" not in app
+        path = f"/api/routines/{routine.id}"
+        if target == "run":
+            path += f"/runs/{run.id}"
+        assert (await client.delete(path)).status == 200
+    assert h.store.get_run(run.id) is None
+    assert not load_events_jsonl(conversation)

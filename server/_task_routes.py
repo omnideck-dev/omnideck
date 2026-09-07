@@ -6,17 +6,11 @@ import logging
 
 from aiohttp import web
 
-from conversations import delete_conversation
-from tasks import TaskStore, get_store
+from tasks import RoutineService, TaskStore, get_store
 from tasks._models import Run
 
 logger = logging.getLogger(__name__)
-
-
-def _delete_conversation_records(conv_ids: list[str]) -> None:
-    """Delete conversation records for removed routines/runs."""
-    for cid in conv_ids:
-        delete_conversation(cid)
+ROUTINE_SERVICE_KEY = web.AppKey("routine_service", RoutineService)
 
 
 def _profile_names() -> dict[str, str]:
@@ -82,9 +76,7 @@ async def handle_get_routine(request: web.Request) -> web.Response:
 async def handle_delete_routine(request: web.Request) -> web.Response:
     """Delete a routine and all its runs/conversations."""
     routine_id = request.match_info["routine_id"]
-    runner = request.app.get("task_runner")
-    conv_ids = await runner.delete_routine(routine_id) if runner else get_store().delete_routine(routine_id)
-    _delete_conversation_records(conv_ids)
+    await request.app[ROUTINE_SERVICE_KEY].delete_routine(routine_id)
     return web.json_response({"deleted": routine_id})
 
 
@@ -124,9 +116,7 @@ async def handle_list_runs(request: web.Request) -> web.Response:
 async def handle_delete_run(request: web.Request) -> web.Response:
     """Delete a run and its conversations."""
     run_id = request.match_info["run_id"]
-    runner = request.app.get("task_runner")
-    conv_ids = await runner.delete_run(run_id) if runner else get_store().delete_run(run_id)
-    _delete_conversation_records(conv_ids)
+    await request.app[ROUTINE_SERVICE_KEY].delete_run(run_id)
     return web.json_response({"deleted": run_id})
 
 
@@ -174,4 +164,4 @@ def register_task_routes(app: web.Application) -> None:
     app.router.add_route("POST", "/api/runner/resume", handle_runner_resume)
 
 
-__all__ = ["register_task_routes"]
+__all__ = ["ROUTINE_SERVICE_KEY", "register_task_routes"]

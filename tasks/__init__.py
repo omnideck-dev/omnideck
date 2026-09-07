@@ -13,12 +13,14 @@ from tasks._executor import TaskExecutor
 from tasks._file_store import ROUTINES_SUBDIR
 from tasks._notifier import TelegramNotifier
 from tasks._runner import TaskRunner
+from tasks._service import RoutineService
 from tasks._singleton import get_store
 from tasks._store import TaskStore
 from tasks._tools import add_task, begin_routine, commit_routine, list_routines, list_tasks, trigger_routine
 
 __all__ = [
     "ROUTINES_SUBDIR",
+    "RoutineService",
     "TaskExecutor",
     "TaskRunner",
     "TaskStore",

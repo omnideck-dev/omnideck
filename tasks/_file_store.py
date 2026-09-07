@@ -8,6 +8,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from conversations import delete_conversation
 from tasks._models import Routine, Run, Task, TaskResult, _new_id, _utcnow
 from tasks._scheduler import cron_has_fired_since
 
@@ -100,22 +101,26 @@ class FileTaskStore:
             data["status"] = status
             self._write_json(path, data)
 
-    def delete_routine(self, routine_id: str) -> list[str]:
-        """Delete routine and all runs. Returns conversation_ids for cleanup."""
-        conv_ids: list[str] = []
+    def delete_routine(self, routine_id: str) -> None:
+        """Delete execution history before removing its owning routine/run records."""
         runs_dir = self._runs_dir(routine_id)
         if runs_dir.exists():
             for rp in runs_dir.glob("*.json"):
                 run_data = self._read_json(rp)
                 if run_data:
-                    for tr in run_data.get("task_results", []):
-                        if tr.get("conversation_id"):
-                            conv_ids.append(tr["conversation_id"])
+                    self._delete_execution_history(run_data)
         routine_dir = self._base / routine_id
         if routine_dir.exists():
             shutil.rmtree(routine_dir)
         self._routine_path(routine_id).unlink(missing_ok=True)
-        return conv_ids
+
+    @staticmethod
+    def _delete_execution_history(run_data: dict) -> None:
+        # Keep the owning records until history deletion succeeds, so a failed
+        # delete can be retried without losing the references to remaining data.
+        for result in run_data.get("task_results", []):
+            if conversation_id := result.get("conversation_id"):
+                delete_conversation(conversation_id)
 
 
     def create_task(
@@ -265,8 +270,8 @@ class FileTaskStore:
         self._write_json(run_path, run_data)
         return new_status
 
-    def delete_run(self, run_id: str) -> list[str]:
-        """Delete run and task_results. Returns conversation_ids for cleanup."""
+    def delete_run(self, run_id: str) -> None:
+        """Delete execution history before removing its owning run records."""
         for routine_dir in self._base.iterdir():
             if not routine_dir.is_dir():
                 continue
@@ -274,15 +279,10 @@ class FileTaskStore:
             if run_path.exists():
                 data = self._read_json(run_path)
                 if data is None:
-                    return []
-                conv_ids = [
-                    tr["conversation_id"]
-                    for tr in data.get("task_results", [])
-                    if tr.get("conversation_id")
-                ]
+                    return
+                self._delete_execution_history(data)
                 run_path.unlink()
-                return conv_ids
-        return []
+                return
 
 
     def get_task_results(self, run_id: str) -> list[TaskResult]:

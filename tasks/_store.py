@@ -36,8 +36,11 @@ class TaskStore(Protocol):
         """Update the status of a routine."""
         ...
 
-    def delete_routine(self, routine_id: str) -> list[str]:
-        """Delete routine and all runs. Returns conversation_ids for cleanup."""
+    def delete_routine(self, routine_id: str) -> None:
+        """Delete the routine, its runs, task results, and associated execution history.
+
+        Callers must stop and await live execution before deleting persistent state.
+        """
         ...
 
     def create_task(
@@ -83,8 +86,11 @@ class TaskStore(Protocol):
         """Recompute run status from task_results. Returns new status."""
         ...
 
-    def delete_run(self, run_id: str) -> list[str]:
-        """Delete run and task_results. Returns conversation_ids for cleanup."""
+    def delete_run(self, run_id: str) -> None:
+        """Delete the run, task results, and associated execution history.
+
+        Callers must stop and await live execution before deleting persistent state.
+        """
         ...
 
     def get_task_results(self, run_id: str) -> list[TaskResult]:
