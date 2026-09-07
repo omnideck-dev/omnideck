@@ -82,7 +82,9 @@ async def handle_get_routine(request: web.Request) -> web.Response:
 async def handle_delete_routine(request: web.Request) -> web.Response:
     """Delete a routine and all its runs/conversations."""
     routine_id = request.match_info["routine_id"]
-    _cleanup_conversations(get_store().delete_routine(routine_id))
+    runner = request.app.get("task_runner")
+    conv_ids = await runner.delete_routine(routine_id) if runner else get_store().delete_routine(routine_id)
+    _cleanup_conversations(conv_ids)
     return web.json_response({"deleted": routine_id})
 
 
@@ -122,7 +124,9 @@ async def handle_list_runs(request: web.Request) -> web.Response:
 async def handle_delete_run(request: web.Request) -> web.Response:
     """Delete a run and its conversations."""
     run_id = request.match_info["run_id"]
-    _cleanup_conversations(get_store().delete_run(run_id))
+    runner = request.app.get("task_runner")
+    conv_ids = await runner.delete_run(run_id) if runner else get_store().delete_run(run_id)
+    _cleanup_conversations(conv_ids)
     return web.json_response({"deleted": run_id})
 
 

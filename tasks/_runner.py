@@ -40,6 +40,11 @@ class TaskRunner:
         self._notifier = notifier
         self._running: dict[str, asyncio.Task] = {}  # result_id → asyncio.Task
         self._running_routine_ids: dict[str, str] = {}  # result_id → routine_id
+        self._deleting_routine_ids: set[str] = set()
+        self._deleting_run_ids: set[str] = set()
+        # Serialize overlapping routine/run deletes so cleanup is not cancelled
+        # a second time by another deletion of the same execution tree.
+        self._deletion_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._paused = False
         self._loop_task: asyncio.Task | None = None
@@ -62,7 +67,10 @@ class TaskRunner:
                 timeout=self._config.shutdown_timeout,
             )
             for task in pending:
-                task.cancel()
+                # A deletion may already be awaiting TaskExecutor's cleanup.
+                # Cancelling again would interrupt that ownership handoff.
+                if not task.cancelling():
+                    task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
@@ -73,6 +81,46 @@ class TaskRunner:
     def resume(self) -> None:
         """Resume the runner."""
         self._paused = False
+
+    async def delete_routine(self, routine_id: str) -> list[str]:
+        """Stop admitting a routine's work and await cancellation before deleting records."""
+        async with self._deletion_lock:
+            self._deleting_routine_ids.add(routine_id)
+            try:
+                await self._cancel_tasks([
+                    result_id for result_id, owner in self._running_routine_ids.items() if owner == routine_id
+                ])
+                return self._store.delete_routine(routine_id)
+            finally:
+                self._deleting_routine_ids.discard(routine_id)
+
+    async def delete_run(self, run_id: str) -> list[str]:
+        """Cancel only this run's tasks and await cleanup before deleting its records."""
+        async with self._deletion_lock:
+            if self._store.get_run(run_id) is None:
+                return []
+            self._deleting_run_ids.add(run_id)
+            try:
+                await self._cancel_tasks([result.id for result in self._store.get_task_results(run_id)])
+                return self._store.delete_run(run_id)
+            finally:
+                self._deleting_run_ids.discard(run_id)
+
+    async def _cancel_tasks(self, result_ids: list[str]) -> None:
+        """Await TaskExecutor's agent-tree cleanup while all storage still exists."""
+        executions = [self._running[result_id] for result_id in result_ids if result_id in self._running]
+        for execution in executions:
+            if not execution.cancelling():
+                execution.cancel()
+        if executions:
+            await asyncio.gather(*executions, return_exceptions=True)
+        self._prune_finished()
+
+    def _prune_finished(self) -> None:
+        done = [result_id for result_id, execution in self._running.items() if execution.done()]
+        for result_id in done:
+            del self._running[result_id]
+            self._running_routine_ids.pop(result_id, None)
 
     @property
     def status(self) -> dict:
@@ -105,11 +153,15 @@ class TaskRunner:
     async def _tick(self) -> None:
         """Single tick: spawn due runs, pick up ready tasks, clean up finished."""
         for routine in self._store.get_due_recurring_routines():
+            if routine.id in self._deleting_routine_ids:
+                continue
             run = self._store.queue_run(routine.id)
             self._store.stamp_last_run_spawned(routine.id)
             logger.info("Spawned run #%d for routine %s", run.run_number, routine.id)
 
         for task_result, task in self._store.get_ready_task_results():
+            if task.routine_id in self._deleting_routine_ids or task_result.run_id in self._deleting_run_ids:
+                continue
             if len(self._running) >= self._config.max_concurrent:
                 break
             if task_result.id not in self._running:
@@ -121,10 +173,7 @@ class TaskRunner:
                 )
                 self._running_routine_ids[task_result.id] = task.routine_id
 
-        done = [trid for trid, t in self._running.items() if t.done()]
-        for trid in done:
-            del self._running[trid]
-            self._running_routine_ids.pop(trid, None)
+        self._prune_finished()
 
     async def _execute(self, task_result: "TaskResult", task: "Task") -> None:
         """Execute a task, recording outcome into its result."""
