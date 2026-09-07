@@ -13,7 +13,7 @@ from tasks._models import Run
 logger = logging.getLogger(__name__)
 
 
-def _cleanup_conversations(conv_ids: list[str]) -> None:
+def _delete_conversation_records(conv_ids: list[str]) -> None:
     """Delete conversation records for removed routines/runs."""
     for cid in conv_ids:
         delete_conversation(cid)
@@ -84,7 +84,7 @@ async def handle_delete_routine(request: web.Request) -> web.Response:
     routine_id = request.match_info["routine_id"]
     runner = request.app.get("task_runner")
     conv_ids = await runner.delete_routine(routine_id) if runner else get_store().delete_routine(routine_id)
-    _cleanup_conversations(conv_ids)
+    _delete_conversation_records(conv_ids)
     return web.json_response({"deleted": routine_id})
 
 
@@ -126,7 +126,7 @@ async def handle_delete_run(request: web.Request) -> web.Response:
     run_id = request.match_info["run_id"]
     runner = request.app.get("task_runner")
     conv_ids = await runner.delete_run(run_id) if runner else get_store().delete_run(run_id)
-    _cleanup_conversations(conv_ids)
+    _delete_conversation_records(conv_ids)
     return web.json_response({"deleted": run_id})
 
 
