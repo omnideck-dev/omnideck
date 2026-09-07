@@ -388,7 +388,16 @@ class AgentExecutor:
                         async with semaphore:
                             await _run_tool_with_hooks(tc_item, capabilities.tools, hooks)
 
-                    await asyncio.gather(*[_run(tc, sem) for tc in tool_calls])
+                    # A stopped child can raise while its siblings are still
+                    # unwinding. Keep the parent scope (and its event observers)
+                    # alive until the whole batch has finished, including on
+                    # cancellation, then propagate the control/error outcome.
+                    results = await asyncio.gather(
+                        *[_run(tc, sem) for tc in tool_calls], return_exceptions=True,
+                    )
+                    for result in results:
+                        if isinstance(result, BaseException):
+                            raise result
 
                 except StopRequestedError:
                     logger.info("Agent '%s' tool loop stopped by user request", agent.name)
