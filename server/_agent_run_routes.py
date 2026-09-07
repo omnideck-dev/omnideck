@@ -22,15 +22,13 @@ from aiohttp import web
 from pydantic import BaseModel, ValidationError
 
 from agent_runtime import (
-    ActiveRunConflictError,
-    ActiveRunManagerClosedError,
+    RunConflictError,
+    AgentRuntimeClosedError,
     AgentRunRequest,
     InvalidRunCursorError,
     RunAttachment,
-    UnknownActiveRunError,
 )
-from sdk.turn import is_turn_active, queue_nudge
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._agent_runtime import AGENT_RUNTIME_KEY
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncGenerator
@@ -136,7 +134,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             for attachment in payload.data
         ]
 
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     try:
         # HTTP "chat" is now only one channel vocabulary. Translate it here so
         # run ownership and execution do not depend on chat-specific semantics.
@@ -146,7 +144,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             attachments=run_attachments,
             profile_id=payload.profile_id,
         ))
-    except ActiveRunConflictError:
+    except RunConflictError:
         return web.json_response(
             {
                 "error": (
@@ -156,7 +154,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             },
             status=409,
         )
-    except ActiveRunManagerClosedError:
+    except AgentRuntimeClosedError:
         return web.json_response(
             {"error": "Agent runtime is shutting down."},
             status=503,
@@ -165,7 +163,7 @@ async def chat_handler(request: Request) -> StreamResponse:
     # Subscribe immediately after start, without another await. Even a runner
     # that completes in one event-loop turn cannot be pruned before the initial
     # response captures its run.
-    records = manager.subscribe(info.run_id, after_seq=0)
+    records = info.events()
     return await stream_events(request, records)
 
 
@@ -178,14 +176,12 @@ async def chat_run_events_handler(request: Request) -> StreamResponse:
     except ValueError:
         return web.json_response({"error": "after must be an integer."}, status=400)
 
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
+    handle = manager.get(run_id)
+    if handle is None:
+        return web.json_response({"error": "Active run not found."}, status=404)
     try:
-        records = manager.subscribe(run_id, after_seq=after_seq)
-    except UnknownActiveRunError:
-        return web.json_response(
-            {"error": "Active run not found."},
-            status=404,
-        )
+        records = handle.events(after_seq)
     except InvalidRunCursorError as exc:
         return web.json_response({"error": str(exc)}, status=400)
     return await stream_events(request, records)
@@ -199,7 +195,9 @@ async def stop_handler(request: Request) -> Response:
             {"error": "conversation_id is required."},
             status=400,
         )
-    request.app[ACTIVE_RUN_MANAGER_KEY].request_stop(conversation_id)
+    handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
+    if handle is not None:
+        handle.stop()
     return web.json_response({"ok": True})
 
 
@@ -214,12 +212,16 @@ async def nudge_handler(request: Request) -> Response:
     text = payload.message.strip()
     if not text:
         return web.json_response({"error": "message is required."}, status=400)
-    if not is_turn_active(payload.conversation_id):
+    handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(payload.conversation_id)
+    if handle is None:
         return web.json_response(
             {"error": "No active turn for this conversation."},
             status=409,
         )
-    queue_nudge(payload.agent_id, text)
+    try:
+        handle.nudge(text, execution_id=payload.agent_id)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
     return web.json_response({"ok": True})
 
 

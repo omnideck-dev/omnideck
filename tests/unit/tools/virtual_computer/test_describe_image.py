@@ -64,6 +64,6 @@ async def test_describe_image_success(mock_env):
     (tmp_path / "test.png").write_bytes(b"fake png data")
     target = str(tmp_path / "test.png")
 
-    with patch("sdk.providers.vision_generate", _fake_vision_generate):
+    with patch("providers.vision_generate", _fake_vision_generate):
         result = await describe_image(target, "What is in this image?")
         assert result == "A test image showing a cat."

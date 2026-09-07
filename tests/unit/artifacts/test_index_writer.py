@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from artifacts import ArtifactsIndexWriter, list_artifacts
-from sdk.events._models import (
+from agent_core.events._models import (
     AgentEvent,
     FileOutputPayload,
     TerminalOutputPayload,

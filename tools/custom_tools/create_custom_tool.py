@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
-from sdk.events import AgentEvent, ToolCreatedPayload, publish_event
+from agent_core.events import AgentEvent, ToolCreatedPayload, publish_event
 
 from . import registry
 

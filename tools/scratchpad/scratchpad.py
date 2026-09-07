@@ -18,7 +18,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from config import load_config
-from sdk.turn import get_conversation_id
+from agent_core.turn import get_conversation_id
 
 logger = logging.getLogger(__name__)
 

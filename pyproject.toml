@@ -133,6 +133,9 @@ build-backend = "setuptools.build_meta"
 # Explicitly include our flat-layout top-level packages
 include = [
     "agent_runtime*",
+    "agent_core*",
+    "providers*",
+    "skills*",
     "agents*",
     "browser*",
     "config*",
@@ -150,4 +153,5 @@ exclude = [
 ]
 
 [tool.setuptools.package-data]
+"agent_core.skills" = ["default_skills/*.json"]
 "tools.browser" = ["capability.json"]

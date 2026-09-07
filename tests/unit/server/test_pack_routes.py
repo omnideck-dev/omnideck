@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agents._agent_profiles import AgentProfile, list_agent_profiles, save_agent_profile
-from sdk.skills._store import SkillRecord, list_skill_records, save_skill_record
+from skills._store import SkillRecord, list_skill_records, save_skill_record
 from server._pack_routes import (
     _slug,
     handle_export_profile,
@@ -24,7 +24,7 @@ from server._pack_routes import (
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr("agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles")
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
 def _make_request(*, match_info=None, json_body=None, query=None, raw_body=None):

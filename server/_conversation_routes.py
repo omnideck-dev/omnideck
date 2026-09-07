@@ -30,14 +30,12 @@ from conversations import (
     create_folder,
     delete_conversation,
     delete_folder,
-    evict_conversation,
     folder_exists,
     generate_conversation_title,
     list_archived_conversations,
     list_conversations,
     list_folders,
     load_conversation_metadata,
-    load_conversation_resume_state,
     save_conversation_folder,
     save_conversation_pinned,
     save_conversation_title,
@@ -45,7 +43,7 @@ from conversations import (
     unarchive_conversation,
     update_folder,
 )
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY
+from server._agent_runtime import AGENT_RUNTIME_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +70,7 @@ async def list_conversations_handler(_request: Request) -> Response:
 async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
         return web.json_response(
             {"error": "This conversation is still running. Stop it before deleting."},
@@ -81,7 +79,7 @@ async def delete_conversation_handler(request: Request) -> Response:
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
-    await evict_conversation(conversation_id)
+    await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -95,7 +93,7 @@ async def list_archived_handler(_request: Request) -> Response:
 async def archive_conversation_handler(request: Request) -> Response:
     """Archive a conversation, moving it out of the active list."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
         return web.json_response(
             {"error": "This conversation is still running. Stop it before archiving."},
@@ -104,7 +102,7 @@ async def archive_conversation_handler(request: Request) -> Response:
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
-    await evict_conversation(conversation_id)
+    await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
 
 
@@ -211,11 +209,11 @@ async def generate_title_handler(request: Request) -> Response:
 async def resume_conversation_handler(request: Request) -> Response:
     """Resume a past conversation by loading its full-fidelity history."""
     conversation_id = request.match_info["conversation_id"]
-    manager = request.app[ACTIVE_RUN_MANAGER_KEY]
+    manager = request.app[AGENT_RUNTIME_KEY]
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
-    resume_state = await load_conversation_resume_state(conversation_id)
+    resume_state = await request.app[AGENT_RUNTIME_KEY].conversations.load_conversation_resume_state(conversation_id)
 
     active_run = None
     if active is not None:
@@ -224,14 +222,14 @@ async def resume_conversation_handler(request: Request) -> Response:
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
-            sequence = manager.sequence_for_event(active.run_id, event_id)
+            sequence = active.sequence_for_event(event_id)
             if sequence is not None:
                 resume_after_seq = sequence
                 break
         active_run = {
             "run_id": active.run_id,
             "status": "running",
-            "last_seq": active.last_seq,
+            "last_seq": active.snapshot().last_seq,
             "resume_after_seq": resume_after_seq,
         }
 

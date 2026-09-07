@@ -115,7 +115,7 @@ class TaskStore(Protocol):
         """Update the status of a task result."""
         ...
 
-    def set_conversation_id(self, result_id: str, conversation_id: str) -> None:
+    def set_agent_run(self, result_id: str, *, conversation_id: str, agent_run_id: str) -> None:
         """Set the conversation ID for a task result."""
         ...
 

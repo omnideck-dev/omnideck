@@ -13,14 +13,15 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from sdk.agent import Agent
-from agent_runtime._execution_context import execution_context
-from sdk.agent_capabilities import AgentCapabilities
-from sdk.context import ConversationHistory
-from sdk.events import AgentEvent, UserMessagePayload, agent_span, publish_event
-from sdk.hooks import BudgetGuard, StopHook
-from sdk.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
-from sdk.turn import StopRequestedError, AgentExecutor, turn_scope
+from agent_core.agent import Agent
+from agent_core.turn import ExecutionContext
+from agent_core.control import ExecutionControl
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.context import ConversationHistory
+from agent_core.events import AgentEvent, UserMessagePayload, agent_span, publish_event
+from agent_core.hooks import BudgetGuard, StopHook
+from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
+from agent_core.turn import StopRequestedError, AgentExecutor, turn_scope
 from tasks._file_store import FileTaskStore
 from tasks._runner import TaskRunner
 from tasks._tools import commit_routine
@@ -49,12 +50,13 @@ async def execute(provider, tools, seen, *, hooks=None, stop=None, parallel=Fals
     history = ConversationHistory(system_message="probe", conversation_id="review-probe")
     history.subscribe(seen.append)
     capabilities = AgentCapabilities(tools)
+    context = ExecutionContext(execution_id="root.probe.1", run_id="review-probe", conversation_id="review-probe", event_sink=history, control=ExecutionControl(stop if stop is not None else asyncio.Event()))
     async with turn_scope(history, conversation_id="review-probe", stop_event=stop):
-        async with agent_span("PROBE", agent_capabilities=capabilities):
+        async with agent_span("PROBE", agent_capabilities=capabilities, execution=context):
             publish_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="go")))
             result = await AgentExecutor().execute(
                 history=history, agent=agent, capabilities=capabilities,
-                provider=provider, context=execution_context(run_id="review-probe"), hooks=hooks or [],
+                provider=provider, context=context, hooks=hooks or [],
                 max_parallel_tools=2 if parallel else 1,
             )
             result.raise_for_status()
@@ -111,7 +113,7 @@ async def cancellation_probe():
         await task
     statuses = [e.payload.status for e in seen if e.payload.type == "agent_completed"]
     iterations = [e for e in seen if e.payload.type == "iteration"]
-    assert statuses == ["success"] and not iterations
+    assert statuses == ["stopped"] and not iterations
     return {"cancelled_agent_status": statuses[0], "persistable_partial_iterations": len(iterations)}
 
 

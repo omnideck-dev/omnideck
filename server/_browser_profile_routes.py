@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents import get_agent_profile, list_agent_profiles, save_agent_profile
 from browser import BrowserProfile, summarize_browser_sites
-from browser.runtime import get_browser_runtime
+from server._browser_runtime import BROWSER_RUNTIME_KEY
 
 
 class _RequestModel(BaseModel):
@@ -74,8 +74,8 @@ def _profile_json(profile: BrowserProfile) -> web.Response:
     return web.json_response(profile.model_dump(mode="json"))
 
 
-async def handle_browser_session(_request: web.Request) -> web.Response:
-    runtime = get_browser_runtime()
+async def handle_browser_session(request: web.Request) -> web.Response:
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     await runtime.ensure_user_browser()
     return web.json_response(await runtime.summarize_user_browser())
 
@@ -84,7 +84,7 @@ async def handle_load_browser_session(request: web.Request) -> web.Response:
     body = await _validated_json(request, LoadBrowserSessionRequest)
     assert isinstance(body, LoadBrowserSessionRequest)
     try:
-        runtime = get_browser_runtime()
+        runtime = request.app[BROWSER_RUNTIME_KEY]
         await runtime.load_user_browser_profile(body.profile_id)
     except KeyError:
         return web.json_response({"error": "Browser profile not found"}, status=404)
@@ -94,7 +94,7 @@ async def handle_load_browser_session(request: web.Request) -> web.Response:
 async def handle_save_browser_session(request: web.Request) -> web.Response:
     body = await _validated_json(request, SaveBrowserStateRequest)
     assert isinstance(body, SaveBrowserStateRequest)
-    runtime = get_browser_runtime()
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     try:
         if body.profile_id:
             profile = await runtime.save_user_browser_to_existing(body.profile_id)
@@ -112,8 +112,8 @@ async def handle_save_browser_session(request: web.Request) -> web.Response:
     return _profile_json(profile)
 
 
-async def handle_preview_browser_session(_request: web.Request) -> web.Response:
-    runtime = get_browser_runtime()
+async def handle_preview_browser_session(request: web.Request) -> web.Response:
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     sites = await runtime.preview_user_browser()
     return web.json_response(
         {
@@ -123,8 +123,8 @@ async def handle_preview_browser_session(_request: web.Request) -> web.Response:
     )
 
 
-async def handle_list_browser_profiles(_request: web.Request) -> web.Response:
-    profiles = await asyncio.to_thread(get_browser_runtime().profiles.list)
+async def handle_list_browser_profiles(request: web.Request) -> web.Response:
+    profiles = await asyncio.to_thread(request.app[BROWSER_RUNTIME_KEY].profiles.list)
     return web.json_response([profile.model_dump(mode="json") for profile in profiles])
 
 
@@ -133,7 +133,7 @@ async def handle_update_browser_profile(request: web.Request) -> web.Response:
     assert isinstance(body, UpdateBrowserProfileRequest)
     try:
         profile = await asyncio.to_thread(
-            get_browser_runtime().profiles.update_metadata,
+            request.app[BROWSER_RUNTIME_KEY].profiles.update_metadata,
             request.match_info["id"],
             name=body.name,
             icon=body.icon,
@@ -153,7 +153,7 @@ async def handle_delete_browser_profile(request: web.Request) -> web.Response:
         list_agent_profiles,
         include_disabled=True,
     )
-    runtime = get_browser_runtime()
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     live_agent_profile_ids = await runtime.agent_profiles_using_live_profile(profile_id)
     agent_names = {profile.id: profile.name for profile in agent_profiles}
     assigned_profile_ids = {
@@ -191,7 +191,7 @@ async def handle_remove_browser_profile_sites(request: web.Request) -> web.Respo
     assert isinstance(body, RemoveBrowserProfileSitesRequest)
     try:
         profile = await asyncio.to_thread(
-            get_browser_runtime().profiles.remove_domains,
+            request.app[BROWSER_RUNTIME_KEY].profiles.remove_domains,
             request.match_info["id"],
             body.domains,
         )
@@ -207,7 +207,7 @@ async def handle_remove_browser_profile_sites(request: web.Request) -> web.Respo
 async def handle_clear_browser_profile_state(request: web.Request) -> web.Response:
     try:
         profile = await asyncio.to_thread(
-            get_browser_runtime().profiles.clear_state,
+            request.app[BROWSER_RUNTIME_KEY].profiles.clear_state,
             request.match_info["id"],
         )
     except KeyError:
@@ -219,7 +219,7 @@ async def handle_clear_browser_profile_state(request: web.Request) -> web.Respon
 
 async def handle_save_takeover(request: web.Request) -> web.Response:
     conversation_id = request.match_info["conversation_id"]
-    runtime = get_browser_runtime()
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     browser = await runtime.get_conversation_browser(conversation_id)
     if browser is None:
         return web.json_response({"error": "No active browser session"}, status=404)
@@ -275,7 +275,7 @@ async def handle_save_takeover(request: web.Request) -> web.Response:
 
 async def handle_preview_takeover(request: web.Request) -> web.Response:
     conversation_id = request.match_info["conversation_id"]
-    runtime = get_browser_runtime()
+    runtime = request.app[BROWSER_RUNTIME_KEY]
     browser = await runtime.get_conversation_browser(conversation_id)
     if browser is None:
         return web.json_response({"error": "No active browser session"}, status=404)

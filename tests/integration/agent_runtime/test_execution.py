@@ -9,11 +9,11 @@ from agent_runtime import RunAttachment
 from agents._agent_profiles import save_agent_profile
 from artifacts import list_artifacts
 from conversations import (
-    get_or_create_conversation, load_browser_tabs, load_events_jsonl,
+    load_browser_tabs, load_events_jsonl,
     load_loaded_skills, load_terminal,
 )
-from sdk.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
-from sdk.providers import ProviderError
+from agent_core.events import AgentEvent, BrowserScreenshotPayload, FileOutputPayload, TerminalOutputPayload, publish_event
+from agent_core.providers import ProviderError
 from tasks import TaskExecutor
 
 from ._support import assert_lifecycle, call, payloads, reply
@@ -25,7 +25,7 @@ async def invoke(h, mode):
         task = h.store.create_task(routine.id, "task", "leaf input", agent_profile="leaf")
         run = h.store.queue_run(routine.id)
         result = h.store.get_task_results(run.id)[0]
-        output, files = await TaskExecutor(h.store).run(result, task)
+        output, files = await TaskExecutor(h.store, h.manager).run(result, task)
         conversation = h.store.get_task_results(run.id)[0].conversation_id
         return load_events_jsonl(conversation), output
     if mode == "child":
@@ -97,8 +97,7 @@ async def test_attachment_and_prior_turn_survive_disk_rehydration(harness, monke
     assert path in h.provider.requests[0]["messages"][1]["content"]
 
     # Force the next turn through real JSONL hydration, not the warm object.
-    from collections import OrderedDict
-    monkeypatch.setattr("conversations._cache._conversations", OrderedDict())
+    await h.manager.conversations.evict_conversation("contract")
     second = await h.run(message="continue")
     messages = h.provider.requests[-1]["messages"]
     assert [m["content"] for m in messages if m["role"] == "assistant"] == ["first answer"]

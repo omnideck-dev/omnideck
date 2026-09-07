@@ -32,8 +32,8 @@ from agents._agent_profiles import (
     list_agent_profiles,
     save_agent_profile,
 )
-from sdk.skills._policy import grants_restricted_tool_category, is_reserved_skill_id
-from sdk.skills._store import (
+from skills._policy import grants_restricted_tool_category, is_reserved_skill_id
+from skills._store import (
     SkillRecord,
     get_skill_record,
     list_skill_records,

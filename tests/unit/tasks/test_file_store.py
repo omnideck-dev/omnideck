@@ -208,7 +208,7 @@ class TestRunLifecycle:
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
-        store.set_conversation_id(results[0].id, "conv-123")
+        store.set_agent_run(results[0].id, conversation_id="conv-123", agent_run_id="agent-run")
 
         conv_ids = store.delete_run(run.id)
         assert "conv-123" in conv_ids
@@ -264,10 +264,10 @@ class TestTaskResultMutations:
         assert updated.retry_count == 2
         assert updated.error == "err2"
 
-    def test_set_conversation_id(self, store):
+    def test_set_agent_run(self, store):
         """Set conversation ID on a task result."""
         _, _, run, tr = self._setup(store)
-        store.set_conversation_id(tr.id, "conv-abc")
+        store.set_agent_run(tr.id, conversation_id="conv-abc", agent_run_id="agent-run")
         updated = store.get_task_results(run.id)[0]
         assert updated.conversation_id == "conv-abc"
 
@@ -424,7 +424,7 @@ class TestCascadeDelete:
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
-        store.set_conversation_id(results[0].id, "conv-xyz")
+        store.set_agent_run(results[0].id, conversation_id="conv-xyz", agent_run_id="agent-run")
 
         conv_ids = store.delete_routine(routine.id)
         assert "conv-xyz" in conv_ids

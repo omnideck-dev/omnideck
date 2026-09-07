@@ -30,7 +30,7 @@ agent `usageByIteration` → frontend `aggregateUsage` → expandable agent rows
 ## Verification
 
 Run `just check`, `npm --prefix server/ui test`, and
-`uv run pytest tests/unit/sdk tests/integration/sdk tests/integration/agent_runtime`.
+`uv run pytest tests/unit/agent_core tests/integration/agent_core tests/integration/agent_runtime`.
 Provider tests exercise SDK decoding and streaming completion records without
 making billable API calls.
 

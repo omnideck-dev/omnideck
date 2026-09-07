@@ -170,7 +170,7 @@ Early environment/setup failures were resolved before recording the passing
 results above.
 
 Migration evidence is in the same directory: `migration-final.xml` (38 cases),
-`migration-sdk.xml` (128 cases), `migration-check-final.log`,
+`migration-agent_core.xml` (128 cases), `migration-check-final.log`,
 `migration-unit-all.log`, `migration-full-final.xml`, and
 `migration-preserved-cases.json`. See
 `tests/e2e/README.md` for the fixture boundary and reproduction commands.

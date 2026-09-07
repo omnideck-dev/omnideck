@@ -23,8 +23,8 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from integrations.supervisor_client import SupervisorError
-from sdk.providers import get_provider, reset_provider
-from sdk.providers._models import ProviderError
+from providers import get_provider, reset_provider
+from agent_core.providers import ProviderError
 from server._integrations_routes import _supervisor_call
 from settings import _validate_base_url, load_settings, save_settings
 from tools.integrations import registered_integrations

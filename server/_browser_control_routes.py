@@ -45,7 +45,7 @@ from aiohttp import WSMsgType, web
 
 from browser.core.browser import Browser
 from browser.core.tab import Tab
-from browser.runtime import get_browser_runtime
+from server._browser_runtime import BROWSER_RUNTIME_KEY
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable, Coroutine
@@ -802,10 +802,10 @@ async def browser_control_handler(request: Request) -> web.StreamResponse:
 
     browser: Browser | None
     if request.query.get("scope") == "user":
-        browser = await get_browser_runtime().ensure_user_browser()
+        browser = await request.app[BROWSER_RUNTIME_KEY].ensure_user_browser()
     else:
         conversation_id = request.query.get("conversation_id", "")
-        browser = await get_browser_runtime().get_conversation_browser(conversation_id) if conversation_id else None
+        browser = await request.app[BROWSER_RUNTIME_KEY].get_conversation_browser(conversation_id) if conversation_id else None
     if browser is None:
         await ws.send_json({"type": "error", "reason": "no_active_browser"})
         await ws.close()

@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from sdk.events._models import AgentEvent
+from agent_core.events import AgentEvent
 
 from ._store import _get_conv_dir
 

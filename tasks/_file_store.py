@@ -358,11 +358,11 @@ class FileTaskStore:
             lambda tr: tr.update(status=status),
         )
 
-    def set_conversation_id(self, result_id: str, conversation_id: str) -> None:
+    def set_agent_run(self, result_id: str, *, conversation_id: str, agent_run_id: str) -> None:
         """Set the conversation ID for a task result."""
         self._mutate_task_result(
             result_id,
-            lambda tr: tr.update(conversation_id=conversation_id),
+            lambda tr: tr.update(conversation_id=conversation_id, agent_run_id=agent_run_id),
         )
 
     def set_file_outputs(self, result_id: str, file_outputs: list[str]) -> None:

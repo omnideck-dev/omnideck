@@ -6,8 +6,8 @@ import json
 import pytest
 
 from conversations import load_events_jsonl
-from sdk.events import AgentEvent, FileOutputPayload, publish_event
-from sdk.providers import ProviderError
+from agent_core.events import AgentEvent, FileOutputPayload, publish_event
+from agent_core.providers import ProviderError
 from tasks import TaskExecutor, TaskRunner
 from tasks._file_store import FileTaskStore
 
@@ -55,7 +55,7 @@ async def test_routine_scheduler_executes_only_ready_tasks_and_persists_outcomes
     }])[0]
     run = h.store.queue_run(routine.id)
     config = h.config.routines.model_copy(update={"poll_interval": 0.01, "max_concurrent": 2})
-    runner = TaskRunner(h.store, TaskExecutor(h.store), config)
+    runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
     try:
         await runner.start()
         await wait_for_terminal(h.store, run.id)

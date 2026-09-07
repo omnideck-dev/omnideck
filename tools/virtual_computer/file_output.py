@@ -7,7 +7,7 @@ import mimetypes
 from pathlib import Path
 
 from config import load_config
-from sdk.events import AgentEvent, FileOutputPayload, publish_event
+from agent_core.events import AgentEvent, FileOutputPayload, publish_event
 
 logger = logging.getLogger(__name__)
 

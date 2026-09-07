@@ -32,7 +32,7 @@ def migrate(_state_dir: Path) -> None:
         # Existing install — don't plant a welcome conversation on upgrade.
         return
 
-    # Lazy import: the seeder pulls in conversations/artifacts/sdk.events,
+    # Lazy import: the seeder pulls in conversations/artifacts/agent_core.events,
     # heavier than a migration module should import at module load.
     from migrations._welcome_conversation import seed_welcome_conversation
 

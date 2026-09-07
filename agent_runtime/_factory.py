@@ -1,4 +1,4 @@
-"""Translate saved profiles and application services into SDK execution inputs."""
+"""Translate saved profiles and application services into agent core execution inputs."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents import AgentProfile, get_agent_profile
-from sdk.agent import Agent
-from sdk.agent_capabilities import AgentCapabilities
-from sdk.providers import Provider, get_provider
+from agent_core.agent import Agent
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.providers import Provider
+from providers import get_provider
 from tools.memory import load_memory
 
 logger = logging.getLogger(__name__)
@@ -74,8 +75,8 @@ class AgentFactory:
         conversation_id: str | None = None,
     ) -> AgentCapabilities:
         """Build one run's state from agent settings, capabilities, and skills."""
-        from sdk.skills._policy import is_reserved_skill_id
-        from sdk.skills._resolve import resolve_skill
+        from skills._policy import is_reserved_skill_id
+        from skills._resolve import resolve_skill
 
         state = AgentCapabilities(
             _base_tools(
@@ -180,7 +181,7 @@ def _base_tools(
 
         tools += [spawn_agent, list_agent_profiles]
     if allow_load_skills:
-        from sdk.skills._tools import list_available_skills, load_skill
+        from skills._tools import list_available_skills, load_skill
 
         tools += [load_skill, list_available_skills]
     return tools
@@ -191,8 +192,8 @@ async def _restore_persisted_loaded_skills(
     skill_ids: Iterable[str],
 ) -> None:
     """Resolve and restore the conversation's dynamically loaded skills."""
-    from sdk.skills._policy import is_reserved_skill_id
-    from sdk.skills._resolve import resolve_skill
+    from skills._policy import is_reserved_skill_id
+    from skills._resolve import resolve_skill
 
     for skill_id in skill_ids:
         if is_reserved_skill_id(skill_id) or skill_id in agent_capabilities.skill_ids:

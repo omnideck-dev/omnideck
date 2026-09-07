@@ -15,7 +15,7 @@ import mimetypes
 import uuid
 from pathlib import Path
 
-from sdk.events import (
+from agent_core.events import (
     AgentEvent,
     FileOutputPayload,
     GenerationPreviewPayload,

@@ -22,7 +22,7 @@ from packs import (
     build_skill_pack,
     import_pack,
 )
-from sdk.skills._store import (
+from skills._store import (
     SkillRecord,
     get_skill_record,
     list_skill_records,
@@ -34,7 +34,7 @@ from sdk.skills._store import (
 def _isolate(tmp_path, monkeypatch):
     """Point both stores at temp directories per test."""
     monkeypatch.setattr("agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles")
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
 def _profile(**overrides) -> AgentProfile:

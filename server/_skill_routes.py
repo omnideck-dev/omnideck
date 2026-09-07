@@ -13,8 +13,8 @@ from uuid import uuid4
 
 from aiohttp import web
 
-from sdk.skills._policy import grants_restricted_tool_category, is_reserved_skill_id
-from sdk.skills._store import (
+from skills._policy import grants_restricted_tool_category, is_reserved_skill_id
+from skills._store import (
     SkillRecord,
     delete_skill_record,
     get_skill_record,

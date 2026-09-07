@@ -128,7 +128,7 @@ _FAKE_SETTINGS = {
 
 
 async def _fake_vision_generate(prompt, image_base64, *, media_type="image/png"):
-    """Stand-in for sdk.providers.vision_generate."""
+    """Stand-in for providers.vision_generate."""
     _fake_vision_generate.called = True
     _fake_vision_generate.last_prompt = prompt
     _fake_vision_generate.last_image = image_base64
@@ -162,7 +162,7 @@ async def test_inspect_page_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("sdk.providers.vision_generate", _fake_vision_generate):
+    with patch("providers.vision_generate", _fake_vision_generate):
         answer = await inspect_page("What is in the header?", tab="1")
 
     assert answer == "Mock answer"
@@ -223,7 +223,7 @@ async def test_inspect_page_ref_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("sdk.providers.vision_generate", _fake_vision_generate):
+    with patch("providers.vision_generate", _fake_vision_generate):
         answer = await inspect_page("Describe the hero", mode="ref", ref="7", tab="1")
 
     assert answer == "Mock answer"

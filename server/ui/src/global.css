@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./assets/fonts/JetBrainsMono.woff2') format('woff2');
+}
 
 /* ═══════════════════════════════════════════════════════
    SIGNAL Design Language -- Token Definitions
