@@ -99,7 +99,8 @@ export function getAgentEventActions(event) {
                 agentId,
                 content: event.content || null,
                 thinking: event.thinking || null,
-                toolCalls: event.tool_calls.map((toolCall) => ({
+                // Live streams omit the empty list for plain-text responses.
+                toolCalls: (event.tool_calls ?? []).map((toolCall) => ({
                     name: toolCall.name,
                     arguments: toolCall.arguments || null,
                 })),

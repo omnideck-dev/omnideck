@@ -62,6 +62,21 @@ with sync_playwright() as p:
     page.evaluate(MOUNT)
     trigger = page.get_by_role("button", name="Details", exact=False)
     trigger.click()
+    # A browser pane changes conversation width without resizing the viewport
+    # or the Details button. Keep the portaled menu attached through that reflow.
+    trigger_width = trigger.bounding_box()["width"]
+    for pane_width in ["50%", "70%", "100%"]:
+        page.locator("#review-root > div > div").evaluate(
+            "(panel, width) => { panel.style.width = width; }", pane_width,
+        )
+        page.wait_for_function("""() => {
+            const panel = document.querySelector('[aria-label="Conversation details"]');
+            const trigger = document.querySelector(`[aria-controls="${panel.id}"]`);
+            const anchor = trigger.getBoundingClientRect();
+            const menu = panel.parentElement.getBoundingClientRect();
+            return Math.abs(menu.right - anchor.right) < 1 && Math.abs(menu.top - anchor.bottom - 6) < 1;
+        }""")
+        assert abs(trigger.bounding_box()["width"] - trigger_width) < 1
     page.locator("summary", has_text="Advanced").click()
     usage = page.get_by_role("region", name="Usage by agent")
     expect(usage.get_by_text("Of which cached").first).to_be_visible()
@@ -81,6 +96,18 @@ with sync_playwright() as p:
             const el = document.querySelector('[aria-label="Conversation details"]').parentElement;
             const rect = el.getBoundingClientRect();
             return rect.x >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && el.scrollWidth <= el.clientWidth;
+        }""")
+        # Agent disclosures must keep the same effective background as Details.
+        assert usage.evaluate("""region => {
+            const background = element => {
+                for (let node = element; node; node = node.parentElement) {
+                    const color = getComputedStyle(node).backgroundColor;
+                    if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return color;
+                }
+            };
+            const expected = background(region.closest('[aria-label="Conversation details"]'));
+            return [...region.querySelectorAll('details, summary, dl')]
+                .every(element => background(element) === expected);
         }""")
         page.screenshot(path=str(OUTPUT / f"usage-{width}-{theme}.png"))
     page.keyboard.press("Escape")

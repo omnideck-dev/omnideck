@@ -16,6 +16,21 @@ function event(type, fields = {}) {
 }
 
 describe('getAgentEventActions', () => {
+    it.each([undefined, null, []])('retains usage when tool calls are empty or omitted (%j)', (toolCalls) => {
+        const usage = { prompt_tokens: 862, completion_tokens: 252, cache_read_tokens: 0, reported_cost_usd: 0 };
+        const actions = getAgentEventActions(event('iteration', {
+            depth: 1, iteration_index: 0, content: 'Done', usage,
+            ...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+        }));
+        expect(actions.immediate).toEqual([{
+            type: 'RECORD_AGENT_USAGE', agentId: 'agent-1', iterationIndex: 0, totalTokens: null, usage,
+        }]);
+        expect(actions.batched).toEqual([{
+            type: 'FINALIZE_AGENT_ITERATION', agentId: 'agent-1', content: 'Done',
+            thinking: null, toolCalls: [], timestamp: TIME,
+        }]);
+    });
+
     it('passes provider reports through intact at every agent depth', () => {
         const usage = { prompt_tokens: 100, completion_tokens: 20, cache_read_tokens: 60, cache_creation_tokens: 10, reported_cost_usd: 0 };
         for (const depth of [0, 1, 2]) {

@@ -1,6 +1,10 @@
 import { act, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { AgentProvider, useAgentDispatch, useAgentState } from '../AgentState.jsx';
+import { createLiveEventDelivery } from '../../conversation/events/liveEventDelivery.js';
+import { normalizeLiveEvent } from '../../conversation/events/normalizeEvent.js';
+import { getConversationRestorePlan } from '../../conversation/events/conversationRestore.js';
+import { buildConversationDetails } from '../../conversation/details/conversationDetailsModel.js';
 
 function renderWithProvider() {
     let dispatch;
@@ -35,6 +39,46 @@ function agentStarted(agentId, { name = 'root', parentAgentId = null } = {}) {
 }
 
 describe('agent state', () => {
+    it('keeps live sub-agent usage equal to restored usage after a plain-text final response', () => {
+        const { getState, dispatch } = renderWithProvider();
+        const delivery = createLiveEventDelivery({
+            dispatch: { agent: dispatch }, requestFrame: () => 1, cancelFrame: () => {},
+        });
+        const toolUsage = { prompt_tokens: 100, completion_tokens: 20, reported_cost_usd: 0.01 };
+        const finalUsage = { prompt_tokens: 862, completion_tokens: 252, cache_read_tokens: 0, reported_cost_usd: 0 };
+        // Live transport omits default fields, including the empty tool_calls list.
+        const events = [
+            { agent_id: 'r', depth: 0, payload: { type: 'agent_started', agent_name: 'Primary' } },
+            { agent_id: 'c', depth: 1, payload: { type: 'agent_started', agent_name: 'Analyst', parent_agent_id: 'r' } },
+            { agent_id: 'c', depth: 1, payload: { type: 'iteration', iteration_index: 0, usage: toolUsage,
+                tool_calls: [{ name: 'shell', arguments: { cmd: 'pwd' } }] } },
+            { agent_id: 'c', depth: 1, payload: { type: 'iteration', iteration_index: 1, content: 'Done', usage: finalUsage } },
+            { agent_id: 'c', depth: 1, payload: { type: 'agent_completed', status: 'success' } },
+        ].map((envelope, index) => normalizeLiveEvent({
+            ...envelope, id: `event-${index}`, timestamp: '2026-09-07T15:00:00Z',
+        }));
+        events.forEach((event) => delivery.deliver(event));
+        // Usage is immediate, independent of the animation-frame activity queue.
+        expect(getState().agents.c.usageByIteration).toEqual({ 0: toolUsage, 1: finalUsage });
+        const details = () => buildConversationDetails({ ...getState(), conversationId: 'conv' });
+        expect(details().usage.total.value).toBe(1234);
+        expect(details().usage.cost.value).toBe(0.01);
+        expect(details().usage.cost.reportedCalls).toBe(2);
+        expect(details().agentUsage.find((agent) => agent.id === 'c').usage.total.value).toBe(1234);
+        delivery.flush();
+        expect(getState().agents.c.activityLog).toContainEqual(expect.objectContaining({ type: 'content', content: 'Done' }));
+        const liveUsage = getState().agents.c.usageByIteration;
+        // Replayed iteration delivery must not double-count usage.
+        delivery.deliver(events[3]);
+        delivery.flush();
+        expect(details().usage.total.value).toBe(1234);
+
+        dispatch({ type: 'RESET' });
+        const storedEvents = events.map((event) => event.type === 'iteration' ? { ...event, tool_calls: event.tool_calls ?? [] } : event);
+        getConversationRestorePlan({ events: storedEvents }).agentActions.forEach(dispatch);
+        expect(getState().agents.c.usageByIteration).toEqual(liveUsage);
+    });
+
     it('retains per-call breakdowns through duplicate delivery and later turns', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(agentStarted('r1'));
