@@ -31,8 +31,7 @@ def default_hooks(
     hooks.append(LoggingHook(agent))
     hooks.append(LoadedSkillHook())
     context_window = getattr(agent, "context_window", 0) or 0
-    if context_window > 0:
-        hooks.append(ToolResultCapHook(context_window))
+    hooks.append(ToolResultCapHook(context_window))
     if ctx_manager is not None:
         hooks.append(ContextHook(ctx_manager, max_iterations=max_iterations))
     return hooks
