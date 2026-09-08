@@ -171,6 +171,8 @@ _REQUIRED_SKILL: dict[str, str] = {
     "run_bash_cmd": "coder",
     "write_file": "coder",
     "read_file": "coder",
+    "find_files": "coder",
+    "search_text": "coder",
     "replace_in_file": "coder",
     # Routine-planning tools. Keeping these behind the real skill load lets
     # deterministic E2E prompts exercise the same load_skill -> tool path as a

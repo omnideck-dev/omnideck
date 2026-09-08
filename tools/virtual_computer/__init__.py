@@ -32,8 +32,6 @@ from .models import (
     DirectoryReadResult,
     DirEntry,
     FileReadResult,
-    GrepMatch,
-    GrepResult,
     InsertTextResult,
     MakeDirsResult,
     MoveCopyResult,
@@ -50,7 +48,7 @@ from .patching import apply_text_patch, apply_unified_diff
 from .play_audio import play_audio
 from .read_ops import head, read_file, tail
 from .run_bash_cmd import BashCmdResult, run_bash_cmd
-from .search_ops import grep
+from .search_ops import find_files, search_text
 from .stat_ops import exists, is_dir, is_file
 
 __all__ = [
@@ -59,8 +57,6 @@ __all__ = [
     "DirEntry",
     "DirectoryReadResult",
     "FileReadResult",
-    "GrepMatch",
-    "GrepResult",
     "InsertTextResult",
     "MakeDirsResult",
     "MoveCopyResult",
@@ -78,7 +74,8 @@ __all__ = [
     "copy_path",
     "describe_image",
     "exists",
-    "grep",
+    "find_files",
+    "search_text",
     "head",
     "insert_text",
     "install_packages",

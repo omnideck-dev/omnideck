@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra test
 
+      - name: Ensure ripgrep is available
+        run: command -v rg || bash .github/scripts/install-apt-packages.sh ripgrep
+
       - name: Run unit tests
         run: just unit
 
@@ -49,6 +52,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra test
+
+      - name: Ensure ripgrep is available
+        run: command -v rg || bash .github/scripts/install-apt-packages.sh ripgrep
 
       # Browser.start selects the Chrome channel on x86_64. The pinned hosted
       # runner already includes Google Chrome and Xvfb, so avoid reinstalling
