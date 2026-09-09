@@ -5,6 +5,21 @@ import pytest
 from tools.virtual_computer import find_files, search_text
 
 
+@pytest.mark.parametrize("tool", [find_files, search_text])
+def test_ollama_sdk_can_serialize_search_tools(tool):
+    """Exercise the real SDK conversion used after loading the coder skill."""
+    from ollama._utils import convert_function_to_tool
+
+    schema = convert_function_to_tool(tool).model_dump()
+    assert schema["function"]["name"] == tool.__name__
+    properties = schema["function"]["parameters"]["properties"]
+    assert properties["pattern"]["type"] == "string"
+    assert properties["max_results"]["type"] == "integer"
+    if tool is search_text:
+        assert properties["output"]["type"] == "string"
+        assert properties["regex"]["type"] == "boolean"
+
+
 @pytest.fixture
 def tree(tmp_path):
     files = {
