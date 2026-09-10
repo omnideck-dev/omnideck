@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+from utils.ripgrep import executable_path
+
 _SEARCH_TIMEOUT_SECONDS = 10.0
 _MAX_OUTPUT_BYTES = 1024 * 1024
 _MAX_RECORD_BYTES = 1024 * 1024
@@ -73,7 +75,7 @@ class _SearchResult:
 
 def _scope(path: str, include: list[str] | None, exclude: list[str] | None) -> tuple[Path, list[str]]:
     root = Path(path).absolute()
-    args = ["rg", "--no-config", "--engine=default", "--hidden", "--no-ignore", "--color=never", "--threads=1", "--line-buffered", "--crlf"]
+    args = ["--no-config", "--engine=default", "--hidden", "--no-ignore", "--color=never", "--threads=1", "--line-buffered", "--crlf"]
     # Retain the previous root-relative glob scope, including dotfiles and
     # ignored files. Explicit file searches historically bypassed glob filters.
     if not root.is_file():
@@ -136,7 +138,7 @@ async def _run(args: list[str], root: Path, mode: _Mode, limit: int) -> str:
     args += ["--", root.name if root.is_file() else "."]
     try:
         process = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
+            executable_path(), *args, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except OSError as exc:

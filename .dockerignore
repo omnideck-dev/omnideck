@@ -12,3 +12,6 @@ htmlcov
 logs
 playwright-report
 test-results
+
+# Downloaded host binaries must never overwrite the target-platform binary.
+.cache/

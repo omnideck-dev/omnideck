@@ -10,3 +10,6 @@ inspection with existing tools. File search now uses find_files for filenames
 and search_text for contents, backed by ripgrep with bounded output and a
 cancellable deadline. Searches report incomplete results explicitly and retain
 case-insensitive regex matching, two context lines, and hidden/ignored file scope.
+
+Search now uses a checksum-verified, pinned official ripgrep binary shared by
+container builds, CI, and local setup, independent of system PATH or apt versions.

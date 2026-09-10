@@ -157,3 +157,29 @@ Run `just` (no args) to see all available recipes. Key ones:
 | `just tool-docs` | Verify agent tool schema documentation |
 | `just format` | Auto-format with ruff |
 | `just check` | Fast non-mutating agent quality gate |
+
+### Pinned search executable
+
+The search tools use the official ripgrep release pinned in
+`config/ripgrep.json`, not whichever `rg` is on your system PATH. Run
+`just setup-ripgrep` (also included in `just setup`) before running local tests.
+It downloads and verifies the archive and installs the executable and license
+notices into `.cache/bin/ripgrep/<version>/<platform>/` in this checkout.
+No sudo, system package installation, or PATH changes are needed. Tests and
+normal execution never download dependencies; a missing or invalid binary
+returns an instruction to run setup.
+
+The container build and Python CI jobs use the same installer and manifest.
+The container also exposes a `rg` symlink for shell commands, pointing to the
+same pinned executable; local setup does not modify PATH.
+Linux x86-64/ARM64 and macOS x86-64/ARM64 are supported. The search tools resolve
+an absolute path from the application location, independent of the current
+working directory, and verify the executable checksum before use. Docker build
+contexts and source synchronization exclude `.cache` so a host binary cannot
+overwrite a container's platform-specific installation.
+
+To upgrade, update the version and official release archive URL, archive SHA-256,
+archive directory name, and extracted executable SHA-256 for every platform in
+the manifest. Run setup again and the search tests, integration tests, and
+container E2Es. This pins ripgrep; other image dependencies have separate version
+policies.

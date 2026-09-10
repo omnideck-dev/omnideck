@@ -51,8 +51,6 @@ RUN apt-get update && \
       # Build tools & CLI
       software-properties-common curl gnupg2 xz-utils ca-certificates jq \
       build-essential git sudo unzip wget gosu file \
-      # Search
-      ripgrep \
       # X virtual framebuffer + D-Bus. Playwright needs an X display even when
       # the viewable desktop is disabled, and the entrypoint launches dbus
       # unconditionally. tini reaps zombies as PID 1.
@@ -195,6 +193,11 @@ RUN chmod 755 /opt/desktop/a11y_tree.py && \
 
 # ── App dependencies (cached unless manifests change) ────────────────────────
 WORKDIR /opt/omnideck
+# Install the same verified search executable used by local development and CI.
+COPY config/ripgrep.json config/ripgrep.json
+COPY utils/ripgrep.py utils/ripgrep.py
+RUN python3.12 utils/ripgrep.py && \
+    ln -s "$(python3.12 utils/ripgrep.py --check)" /usr/local/bin/rg
 COPY pyproject.toml uv.lock ./
 RUN uv pip install --system --no-cache -e . 2>/dev/null || true
 
