@@ -144,20 +144,32 @@ so authors must mark incompatible changes explicitly. Automation cannot infer
 compatibility reliably from prose or code. Promote to 1.0 intentionally using
 the manual release process and version input.
 
-Before any write, the workflow requires successful main push CI for the exact
-source SHA and resolves its tested `main-<sha>` image digest. It then generates
-notes from the already-reviewed fragments, consumes only app fragments, and
-commits those files plus `docs/releases/app-vX.Y.Z.json` directly to main with
-the repository's `GITHUB_TOKEN`. The record pins the source SHA and previous
-version. A concurrent main push aborts preparation; it is never force-pushed.
-The image is promoted by digest without rebuilding.
+Before preparation, the workflow requires successful main push CI for the exact
+source SHA and resolves its tested `main-<sha>` image digest. It generates notes
+from reviewed fragments, consumes only app fragments, and commits those files
+plus `docs/releases/app-vX.Y.Z.json` to a dedicated release branch. The record
+pins the source SHA and previous version.
 
-This is an explicit automatic exception to the manual release-preparation PR:
-only generated release metadata is committed by the bot. The existing reviewed
-app source must already have passed CI. Bot pushes do not start another CI
-run, so the notes commit is intentionally not the image source. Future branch
-rules must permit this metadata push, or the workflow will fail without
-publishing; it does not bypass protection or require a personal token.
+The bot opens a release-preparation PR with `GITHUB_TOKEN`, explicitly dispatches
+CI and release-note policy on that branch, waits for both runs to succeed, and
+merges normally. It never bypasses branch rules, manufactures status checks,
+or force-pushes. If main advances while the checks run, preparation stops and
+must be rerun with a fresh plan. An identical preparation branch/PR is reused
+on retry. The image is then promoted by digest without rebuilding.
+
+**Required setup:** the organization and repository Actions settings must allow
+GitHub Actions to create pull requests (the UI option is “Allow GitHub Actions
+to create and approve pull requests”). The workflow creates PRs but does not
+approve reviews. If the organization disables the option, an organization admin
+must enable it before unattended releases can work. Required human reviews, if
+added later, will also prevent unattended merging; the workflow does not bypass
+them. Today the normal required status checks remain in force.
+
+Explicit workflow dispatch is used because a PR opened by `GITHUB_TOKEN` does
+not reliably trigger the ordinary PR workflows. Both dispatched workflows run
+the real tests on the exact preparation SHA; the release-note workflow also
+fetches and validates the PR metadata. Bot merges do not start another push CI
+run, so the notes commit is intentionally not the published image source.
 
 If notes were committed but publication failed, the next blank-version run
 resumes that exact version and source, even if more changes have since merged.

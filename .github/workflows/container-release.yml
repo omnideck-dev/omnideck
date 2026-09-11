@@ -22,21 +22,22 @@ concurrency:
 
 permissions:
   contents: write
-  actions: read
+  actions: write
+  pull-requests: write
   packages: write
 
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
-          # The bot pushes only generated notes and their source record. App
-          # code is promoted from an earlier, already-tested main commit.
+          # The bot pushes a release preparation branch and merges a checked
+          # PR. App code comes from an earlier, already-tested main commit.
           persist-credentials: true
 
       - uses: actions/setup-node@v6
@@ -94,20 +95,21 @@ jobs:
           [[ "$source_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           echo "digest=$source_digest" >> "$GITHUB_OUTPUT"
 
-      - name: Commit generated release notes
+      - name: Prepare and merge release notes PR
         if: steps.plan.outputs.prepare == 'true' && !inputs.dry_run
         env:
           VERSION: ${{ steps.plan.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # A concurrent main push makes this fast-forward push fail. Replan
-          # on rerun; never overwrite code or silently change the release source.
+          # Main changes during preparation stop publication and require a
+          # fresh plan; branch rules and the required checks remain in force.
           node scripts/weekly-app-release.mjs prepare "$RUNNER_TEMP/app-release.json"
           node scripts/release-notes.mjs check-consumed --target app
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "chore(release): prepare app ${VERSION}"
-          git push origin HEAD:refs/heads/main
+          node .github/scripts/prepare-app-release-pr.mjs "$RUNNER_TEMP/app-release.json"
 
       - name: Promote tested image
         if: steps.plan.outputs.skip != 'true' && !inputs.dry_run
