@@ -61,6 +61,12 @@ The required fields are:
 - `area`: a lowercase kebab-case product or repository area
 - body: plain, user-facing prose describing the outcome
 
+Optional `bump: patch|minor|major` metadata can raise the automatic app version
+bump. Mark incompatible changes with `bump: major` or a Conventional Commit
+breaking marker. `added` requires at least minor; `removed` requires a breaking
+bump. During 0.x, breaking changes advance the minor version. See the
+[Friday release policy](APP_RELEASING.md#automatic-friday-releases).
+
 Write what changed for the reader and why it matters. Avoid build systems,
 test environments, commit hashes, internal refactors, and qualification detail
 unless the repository's users must act on them. Include upgrade or migration
@@ -128,7 +134,9 @@ App versions are the plain `X.Y.Z` tags on
 `ghcr.io/omnideck-dev/omnideck`. Before running **Release container**, merge a
 reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it
 incorporates. The workflow refuses to promote the image if the file is missing
-or any `target: app` fragments remain.
+or any `target: app` fragments remain in the selected release snapshot. The
+[Friday workflow](APP_RELEASING.md#automatic-friday-releases) can automatically
+aggregate reviewed fragments and commit the release metadata.
 
 The checked-in Markdown is the published app changelog. The desktop update
 notice and Settings link the detected version directly to

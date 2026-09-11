@@ -33,7 +33,7 @@ jobs:
           node-version: 24
 
       - name: Test release-note tooling
-        run: node --test tests/release-notes.test.mjs
+        run: node --test tests/release-notes.test.mjs tests/weekly-app-release.test.mjs
 
       - name: Validate stored fragments
         run: node scripts/release-notes.mjs validate-fragments
