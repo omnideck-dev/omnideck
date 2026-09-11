@@ -1,4 +1,4 @@
-"""Unit tests for the lazy-load retry behavior in ``tools.integrations._state``.
+"""Unit tests for supervisor-backed state refresh and retry behavior.
 
 The cache loads on first read by spawning a future that calls
 ``refresh_registered_integrations``. If that first call fails — typically
@@ -101,6 +101,26 @@ async def test_ensure_loaded_caches_successful_empty_result(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_registered_integrations_refreshes_completed_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normal tool resolution refreshes state even after a successful load."""
+    call_count = 0
+
+    async def _empty_supervisor(_path: str):
+        nonlocal call_count
+        call_count += 1
+        return _FakeReader(b'{"id": 1, "result": {"integrations": []}}'), _FakeWriter()
+
+    monkeypatch.setattr(asyncio, "open_unix_connection", _empty_supervisor)
+
+    await _state.registered_integrations()
+    await _state.registered_integrations()
+    assert call_count == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_ensure_loaded_clears_future_on_supervisor_error_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -114,6 +134,23 @@ async def test_ensure_loaded_clears_future_on_supervisor_error_response(
     monkeypatch.setattr(asyncio, "open_unix_connection", _supervisor_errors)
 
     await _state._ensure_loaded()
+    assert _state._load_future is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_refresh_fails_closed_on_malformed_supervisor_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _malformed(*_args, **_kwargs):
+        return {"connections": [None]}
+
+    _state.mark_added("existing", "gmail", frozenset({"email.messages.search"}))
+    monkeypatch.setattr(_state.supervisor_client, "call", _malformed)
+
+    await _state.refresh_registered_integrations()
+
+    assert _state._registered == {}
     assert _state._load_future is None
 
 

@@ -12,8 +12,8 @@ people; this file is the index an agent greps **before** building UI.
    use the tokens below. They auto-swap for dark mode via `[data-theme="dark"]`.
    Exact control geometry documented by the showcase (for example the 32px input
    height) may be copied when no component owns it.
-3. **No generic primitive exists for some patterns** (Input and Cards). For
-   those, replicate the documented CSS class **into your component's
+3. **No generic primitive exists for some patterns** (Input, Cards, Empty State,
+   Form Section). For those, replicate the documented CSS class **into your component's
    `.module.css`** (copy the spec from the showcase / an existing component) — that's
    the house pattern, not a deviation.
 4. **If you must deviate, say so in a comment** explaining why (the concept, not a
@@ -33,8 +33,9 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 | Icon picker popover | `IconPickerPopover` | `primitives/IconPickerPopover.jsx` | Curated Bootstrap icon selection shared by folders and profile identity controls. Anchor it with `anchorRef` or `anchorRect`; supply `icons`, `current`, `onPick`, and `onClose`. |
 | Select / dropdown | `Select` | `primitives/Select.jsx` | Canonical application-rendered select-only combobox. Pass `options`, `value`, `onChange`, and an accessible label. Native `<select>` is prohibited because host-rendered menus cannot satisfy the shared visual contract. |
 | Two-click destructive | `ConfirmButton` | `primitives/ConfirmButton.jsx` | delete/disconnect where a modal is overkill; arms on first click, fires on second |
-| Search field | `SearchInput` | `primitives/SearchInput.jsx` | `value`, `onChange(string)`, `placeholder`, `ariaLabel`, `testId`, `clearable`, `className`. Canonical `.input` + leading glyph + focus glow |
+| Search field | `SearchInput` | `primitives/SearchInput.jsx` | `value`, `onChange(string)`, `placeholder`, `ariaLabel`, `testId`, `clearable`, `disabled`, `className`. Canonical `.input` + leading glyph + focus glow |
 | Ordinary dropdown | `Select` | `primitives/Select.jsx` | Canonical body-font, 32px select-only combobox. Consumers may specialize font size and width, but not family or height. Supports keyboard navigation, typeahead, portaled viewport-aware menus, and full-label hover text. |
+| Brand tabs | `BrandTabs` | `primitives/BrandTabs.jsx` | §14 uppercase primary tabs within a panel or settings page; `tabs=[{id,label,count?,disabled?,panelId?}]`, `activeTab`, `onTabChange`, `ariaLabel`, `idBase`. `idBase` links each tab to its tabpanel. Distinct from `LibraryHeader` and desktop `TabStrip` |
 | View tabs + scoped search | `LibraryHeader` | `primitives/LibraryHeader.jsx` | §27: in-content view switch (`views=[{id,label,count}]`, `activeView`, `onViewChange`, `searchValue`, `onSearchChange`, `actions`) |
 | Inline feedback message | `Callout` | `primitives/Callout.jsx` | §11 feedback (info/success/warning/danger banners) |
 | Modal scaffold | `Modal` | `primitives/Modal.jsx` | scrim + centered panel with Esc/backdrop dismiss + dialog semantics; pass `onClose`, `children`, optional `width`/`labelledBy`/`testId`. Caller supplies the contents. **New** — older modals still roll their own (not yet retrofitted) |
@@ -59,10 +60,10 @@ pattern; consider extracting a primitive when 3 or more copies exist.
 | Text input | `Inputs` | `.input` spec (or use `SearchInput` if it's a search) |
 | Modal / dialog | `Modal / Dialog` | prefer the new `Modal` primitive for new modals. The older ones still roll their own scrim+panel (`var(--scrim)` + `var(--z-modal)` panel, `--elevated`/`--border`/`--shadow-lg`/`--radius-lg`) — see AddProviderModal; not yet retrofitted |
 | Data table | `Tables` | use the **`SortableTable` primitive** (sticky `--canvas` header, click-to-sort columns, `--border-subtle` row separators). Caller sorts the rows + owns the sort state |
+| Contained collection picker | `Collection Picker` | Search/bulk-action toolbar and rows share `--elevated`, separated by a border. Do not inset a `--canvas` strip inside a raised collection. Keep the toolbar outside the row scroller. No shared collection-toolbar primitive yet; use `SearchInput` and the feature's picker component. |
 | Card | `Cards` / `Display Card` / `File Output Card` | `--elevated` + `--border` + `--radius-lg`; hover lift + `--shadow-lg` |
 | Empty state | `Empty State` | centered icon + message, `--text-tertiary` |
 | Chip / tag | `Chip / Tag` | small pill (prefer `Badge` for status/tags) |
-| Brand tabs | `Tabs` (§14) | uppercase brand tab bar (distinct from `LibraryHeader`'s mixed-case view tabs) |
 | Section / form section | `Sections` / `Form Section` / `Settings Row` | settings layout scaffolding |
 
 ## Token cheatsheet (`global.css`)
@@ -71,7 +72,7 @@ All values come in light ("Blueprint", default) and dark ("Terminal", `[data-the
 Use the variable, never the literal.
 
 - **Surfaces (depth):** `--canvas` (page) · `--surface` (raised) · `--elevated` (cards/menus)
-- **Text:** `--text-primary` · `--text-secondary` · `--text-tertiary`
+- **Text:** `--text-primary` · `--text-secondary` · `--text-tertiary` · `--text-on-accent`
 - **Borders:** `--border` · `--border-subtle` · `--border-strong`
 - **Accent:** `--accent` · `--accent-hover` · `--accent-muted` (tint bg) · `--accent-glow` (focus ring)
 - **Status:** `--success`/`--success-muted` · `--warning`/`--warning-muted` · `--danger`/`--danger-muted` · `--scrim` (modal backdrop)

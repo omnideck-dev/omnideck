@@ -21,7 +21,7 @@ from integrations.brokers.http_broker._verbs import (
     _INLINE_BODY_CAP,
     VerbDispatcher,
 )
-from integrations.permissions import Access, Capability
+from integrations.operations import OPERATIONS_BY_GROUP
 
 
 class _StubResponse:
@@ -98,7 +98,7 @@ class _StubSession:
 
 def _make_dispatcher(
     *,
-    permissions: dict[Capability, Access] | None = None,
+    operation_grants: frozenset[str] | None = None,
     base_url: str = "https://api.example.com",
     header_name: str = "Authorization",
     header_template: str = "Bearer {token}",
@@ -108,14 +108,14 @@ def _make_dispatcher(
     session: _StubSession | None = None,
 ) -> tuple[VerbDispatcher, _StubSession]:
     sess = session or _StubSession()
-    perms = permissions if permissions is not None else {Capability.HTTP: Access.READ_WRITE}
+    grants = operation_grants if operation_grants is not None else OPERATIONS_BY_GROUP["http"]
     dispatcher = VerbDispatcher(
         session=sess,  # type: ignore[arg-type]
         base_url=base_url,
         header_name=header_name,
         header_template=header_template,
         token=token,
-        permissions=perms,
+        operation_grants=grants,
         downloads_dir=downloads_dir,
         inline_cap=inline_cap,
     )
@@ -128,7 +128,7 @@ async def test_unknown_verb_rejected(tmp_path: Path) -> None:
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("nope", {})
     assert excinfo.value.code == "BAD_REQUEST"
-    assert "unknown verb" in excinfo.value.message
+    assert "unknown operation" in excinfo.value.message
 
 
 @pytest.mark.asyncio
@@ -142,7 +142,7 @@ async def test_get_inlines_json_response(tmp_path: Path) -> None:
     )
 
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/items"},
+        "http.request", {"method": "GET", "path": "/items"},
     )
 
     assert result == {
@@ -160,49 +160,46 @@ async def test_get_inlines_json_response(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_read_permission_blocks_post(tmp_path: Path) -> None:
-    """``http:read`` lets GET through but PERMISSION_DENIED on POST."""
+async def test_http_grant_allows_post(tmp_path: Path) -> None:
+    """The selected generic request operation permits every supported method."""
     dispatcher, sess = _make_dispatcher(
         downloads_dir=tmp_path,
-        permissions={Capability.HTTP: Access.READ},
+        operation_grants=frozenset({"http.request"}),
     )
+    sess.next_response = _StubResponse(status=201, headers={}, payload=b"")
 
-    with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch(
-            "http_request", {"method": "POST", "path": "/items"},
-        )
-
-    assert excinfo.value.code == "PERMISSION_DENIED"
-    assert "http:read_write" in excinfo.value.message
-    # And the session was never called — gate fires before the upstream.
-    assert sess.last_call is None
+    result = await dispatcher.dispatch(
+        "http.request", {"method": "POST", "path": "/items"},
+    )
+    assert result["status"] == 201
+    assert sess.last_call is not None
+    assert sess.last_call["method"] == "POST"
 
 
 @pytest.mark.asyncio
-async def test_off_capability_blocks_get(tmp_path: Path) -> None:
+async def test_absent_operation_grant_blocks_get(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(
         downloads_dir=tmp_path,
-        permissions={Capability.HTTP: Access.OFF},
+        operation_grants=frozenset(),
     )
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request", {"method": "GET", "path": "/items"},
+            "http.request", {"method": "GET", "path": "/items"},
         )
     assert excinfo.value.code == "PERMISSION_DENIED"
 
 
 @pytest.mark.asyncio
-async def test_read_permission_allows_head_and_options(tmp_path: Path) -> None:
-    """HEAD and OPTIONS are read-side methods; ``http:read`` covers them."""
+async def test_operation_grant_allows_head_and_options(tmp_path: Path) -> None:
     dispatcher, sess = _make_dispatcher(
         downloads_dir=tmp_path,
-        permissions={Capability.HTTP: Access.READ},
+        operation_grants=frozenset({"http.request"}),
     )
     sess.next_response = _StubResponse(status=204, headers={}, payload=b"")
 
     for method in ("HEAD", "OPTIONS"):
         result = await dispatcher.dispatch(
-            "http_request", {"method": method, "path": "/x"},
+            "http.request", {"method": method, "path": "/x"},
         )
         assert result["status"] == 204
 
@@ -211,7 +208,7 @@ async def test_read_permission_allows_head_and_options(tmp_path: Path) -> None:
 async def test_method_case_normalized(tmp_path: Path) -> None:
     dispatcher, sess = _make_dispatcher(downloads_dir=tmp_path)
     sess.next_response = _StubResponse(status=200, headers={"Content-Type": "text/plain"}, payload=b"ok")
-    await dispatcher.dispatch("http_request", {"method": "get", "path": "/"})
+    await dispatcher.dispatch("http.request", {"method": "get", "path": "/"})
     assert sess.last_call is not None
     assert sess.last_call["method"] == "GET"
 
@@ -221,7 +218,7 @@ async def test_unknown_method_rejected(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request", {"method": "TRACE", "path": "/"},
+            "http.request", {"method": "TRACE", "path": "/"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
     assert "TRACE" in excinfo.value.message
@@ -234,7 +231,7 @@ async def test_path_resolving_to_different_host_rejected(tmp_path: Path) -> None
     dispatcher, sess = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request", {"method": "GET", "path": "//attacker.com/steal"},
+            "http.request", {"method": "GET", "path": "//attacker.com/steal"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
     assert "off the integration's base URL" in excinfo.value.message
@@ -246,7 +243,7 @@ async def test_absolute_url_to_different_host_rejected(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request",
+            "http.request",
             {"method": "GET", "path": "https://attacker.com/steal"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
@@ -260,7 +257,7 @@ async def test_scheme_downgrade_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request",
+            "http.request",
             {"method": "GET", "path": "http://api.example.com/x"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
@@ -277,7 +274,7 @@ async def test_relative_path_resolves_against_base(tmp_path: Path) -> None:
         payload=b"ok",
     )
     await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "users/42"},
+        "http.request", {"method": "GET", "path": "users/42"},
     )
     # urljoin against trailing-slash base keeps the v1 prefix.
     assert sess.last_call is not None
@@ -296,7 +293,7 @@ async def test_auth_header_attached_and_user_authorization_stripped(
     )
 
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "GET",
             "path": "/x",
@@ -327,7 +324,7 @@ async def test_custom_header_name_and_template(tmp_path: Path) -> None:
         status=200, headers={"Content-Type": "text/plain"}, payload=b"x",
     )
     await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/x"},
+        "http.request", {"method": "GET", "path": "/x"},
     )
     assert sess.last_call is not None
     assert sess.last_call["headers"]["X-Api-Key"] == "raw-key"
@@ -342,7 +339,7 @@ async def test_user_x_api_key_stripped(tmp_path: Path) -> None:
         status=200, headers={"Content-Type": "text/plain"}, payload=b"x",
     )
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "GET",
             "path": "/x",
@@ -360,7 +357,7 @@ async def test_query_dict_with_list_repeats_keys(tmp_path: Path) -> None:
         status=200, headers={"Content-Type": "text/plain"}, payload=b"x",
     )
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "GET",
             "path": "/x",
@@ -379,7 +376,7 @@ async def test_body_dict_json_encoded(tmp_path: Path) -> None:
     )
 
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "POST",
             "path": "/items",
@@ -398,7 +395,7 @@ async def test_body_string_text_plain(tmp_path: Path) -> None:
     sess.next_response = _StubResponse(status=200, headers={"Content-Type": "text/plain"}, payload=b"ok")
 
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {"method": "POST", "path": "/x", "body": "hello"},
     )
     assert sess.last_call is not None
@@ -412,7 +409,7 @@ async def test_user_content_type_overrides_body_default(tmp_path: Path) -> None:
     sess.next_response = _StubResponse(status=200, headers={"Content-Type": "text/plain"}, payload=b"x")
 
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "POST",
             "path": "/x",
@@ -431,7 +428,7 @@ async def test_body_b64_decoded_with_octet_stream_default(tmp_path: Path) -> Non
 
     payload = b"\x89PNG fake"
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "PUT",
             "path": "/upload",
@@ -449,7 +446,7 @@ async def test_body_b64_with_explicit_content_type(tmp_path: Path) -> None:
     sess.next_response = _StubResponse(status=200, headers={"Content-Type": "text/plain"}, payload=b"x")
 
     await dispatcher.dispatch(
-        "http_request",
+        "http.request",
         {
             "method": "PUT",
             "path": "/upload",
@@ -466,7 +463,7 @@ async def test_body_and_body_b64_mutually_exclusive(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request",
+            "http.request",
             {
                 "method": "POST",
                 "path": "/x",
@@ -483,7 +480,7 @@ async def test_invalid_base64_rejected(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request",
+            "http.request",
             {"method": "POST", "path": "/x", "body_b64": "!!!not-b64!!!"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
@@ -498,7 +495,7 @@ async def test_binary_response_spills_to_disk(tmp_path: Path) -> None:
     )
 
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/avatar.png"},
+        "http.request", {"method": "GET", "path": "/avatar.png"},
     )
 
     assert result["body"] is None
@@ -523,7 +520,7 @@ async def test_large_json_response_spills(tmp_path: Path) -> None:
     )
 
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/big"},
+        "http.request", {"method": "GET", "path": "/big"},
     )
 
     assert result["body"] is None
@@ -540,7 +537,7 @@ async def test_text_response_inlined(tmp_path: Path) -> None:
         payload=b"hello world",
     )
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/hi"},
+        "http.request", {"method": "GET", "path": "/hi"},
     )
     assert result["body"] == "hello world"
     assert result["body_path"] is None
@@ -562,7 +559,7 @@ async def test_redirect_returned_not_followed(tmp_path: Path) -> None:
     )
 
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/items"},
+        "http.request", {"method": "GET", "path": "/items"},
     )
 
     assert result["status"] == 302
@@ -581,7 +578,7 @@ async def test_response_set_cookie_stripped(tmp_path: Path) -> None:
         payload=b"ok",
     )
     result = await dispatcher.dispatch(
-        "http_request", {"method": "GET", "path": "/x"},
+        "http.request", {"method": "GET", "path": "/x"},
     )
     assert "Set-Cookie" not in result["headers"]
     assert "set-cookie" not in result["headers"]
@@ -593,7 +590,7 @@ async def test_aiohttp_client_error_maps_to_upstream_error(tmp_path: Path) -> No
     sess.raise_on_request = aiohttp.ClientError("boom")
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "http_request", {"method": "GET", "path": "/x"},
+            "http.request", {"method": "GET", "path": "/x"},
         )
     assert excinfo.value.code == "UPSTREAM_ERROR"
 
@@ -602,7 +599,7 @@ async def test_aiohttp_client_error_maps_to_upstream_error(tmp_path: Path) -> No
 async def test_missing_method_rejected(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("http_request", {"path": "/x"})
+        await dispatcher.dispatch("http.request", {"path": "/x"})
     assert excinfo.value.code == "BAD_REQUEST"
     assert "'method'" in excinfo.value.message
 
@@ -611,7 +608,7 @@ async def test_missing_method_rejected(tmp_path: Path) -> None:
 async def test_missing_path_rejected(tmp_path: Path) -> None:
     dispatcher, _ = _make_dispatcher(downloads_dir=tmp_path)
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("http_request", {"method": "GET"})
+        await dispatcher.dispatch("http.request", {"method": "GET"})
     assert excinfo.value.code == "BAD_REQUEST"
     assert "'path'" in excinfo.value.message
 
@@ -625,6 +622,6 @@ async def test_bad_base_url_rejected_at_construction(tmp_path: Path) -> None:
             header_name="Authorization",
             header_template="Bearer {token}",
             token="x",  # noqa: S106
-            permissions={Capability.HTTP: Access.READ_WRITE},
+            operation_grants=OPERATIONS_BY_GROUP["http"],
             downloads_dir=tmp_path,
         )

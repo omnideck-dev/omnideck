@@ -11,6 +11,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.drive._format import format_size
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,9 @@ async def upload_drive_file(
 
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "upload_drive_file",
+            "drive.files.upload",
             {
                 "name": upload_name,
                 "data_b64": base64.b64encode(content).decode("ascii"),
@@ -57,8 +58,8 @@ async def upload_drive_file(
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "upload_drive_file(%r, %r) failed: %s", integration_id, file_path, exc,

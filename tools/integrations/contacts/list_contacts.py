@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.contacts._format import format_contact
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,9 @@ async def list_contacts(integration_id: str, limit: int = 50) -> str:
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "list_contacts",
+            "contacts.people.list",
             {"limit": limit},
             app_sock_path=app_sock,
         )

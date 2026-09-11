@@ -5,11 +5,11 @@ Three handlers:
 - ``GET /api/providers`` — list configured providers (direct + brokered).
 - ``POST /api/providers`` — add/configure a provider. For direct kinds
   (Ollama, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
-  for brokered kinds creates an ``llm_<name>`` vault integration via the
+  for brokered kinds creates an ``llm_<name>`` model-provider connection via the
   supervisor. Probes the new provider and returns its model list (503 on
   unreachable).
 - ``DELETE /api/providers/{name}`` — remove. Drops the settings entry for
-  a direct provider or asks the supervisor to remove the integration for
+  a direct provider or asks the supervisor to remove the brokered connection for
   a brokered one.
 """
 
@@ -27,8 +27,6 @@ from providers import get_provider, reset_provider
 from agent_core.providers import ProviderError
 from server._integrations_routes import _supervisor_call
 from settings import _validate_base_url, load_settings, save_settings
-from tools.integrations import registered_integrations
-from tools.integrations._state import refresh_registered_integrations
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +79,12 @@ def _label(name: str) -> str:
     return _PROVIDER_LABELS.get(name, name)
 
 
+async def _brokered_provider_connections() -> list[dict[str, object]]:
+    """Read model-provider records from their supervisor domain."""
+    result = await _supervisor_call("list", {"kind": "model_provider"})
+    return list(result.get("connections") or result.get("integrations") or [])
+
+
 # ── GET ──────────────────────────────────────────────────────────────────
 
 
@@ -88,12 +92,8 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
     """Return configured LLM providers.
 
     Direct-connect providers (Ollama, no-auth OpenAI-compatible) come from
-    ``settings.direct_providers``; brokered providers come from the
-    integrations supervisor (singleton ``llm_<name>`` integrations).
-
-    The supervisor is the source of truth for brokered integrations; the
-    app-side cache can lag a mutation done through this same module, so
-    refresh it before reading. One extra RPC per Providers-page load.
+    ``settings.direct_providers``; brokered providers come from singleton
+    ``llm_<name>`` model-provider connections in the supervisor.
     """
     settings = load_settings()
 
@@ -108,20 +108,32 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
             "status": "configured",
         })
 
-    await refresh_registered_integrations()
-    integrations = await registered_integrations()
-    for ri in integrations.values():
-        if not ri.slug.startswith("llm_"):
+    brokered_available = True
+    try:
+        connections = await _brokered_provider_connections()
+    except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
+        # Direct providers remain usable even when the broker supervisor is
+        # temporarily down. The response flag lets a future UI surface the
+        # partial view without turning the whole Providers page into a 500.
+        logger.warning("brokered providers unavailable while listing: %s", exc)
+        connections = []
+        brokered_available = False
+    for connection in connections:
+        slug = connection.get("slug")
+        if not isinstance(slug, str) or not slug.startswith("llm_"):
             continue
-        name = ri.slug.removeprefix("llm_")
+        name = slug.removeprefix("llm_")
         providers.append({
             "name": name,
             "label": _label(name),
             "kind": "brokered",
-            "status": ri.state,
+            "status": connection.get("state") or "running",
         })
 
-    return web.json_response({"providers": providers})
+    return web.json_response({
+        "providers": providers,
+        "brokered_available": brokered_available,
+    })
 
 
 # ── POST ─────────────────────────────────────────────────────────────────
@@ -176,10 +188,9 @@ async def handle_add_provider(request: web.Request) -> web.Response:
         try:
             await _supervisor_call("add", {
                 "slug": f"llm_{name}",
+                "kind": "model_provider",
                 "label": _label(name),
                 "auth_blob": auth_blob,
-                "permissions": {},
-                "write_allowed": False,
             })
         except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
             logger.warning("supervisor unreachable for provider add: %s", exc)
@@ -266,12 +277,19 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
         reset_provider(name)
         return web.json_response({"ok": True})
 
-    integrations = await registered_integrations()
+    try:
+        integrations = await _brokered_provider_connections()
+    except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
+        logger.warning("supervisor unreachable for provider remove lookup: %s", exc)
+        return web.json_response(
+            {"error": "Integrations service isn't running."},
+            status=503,
+        )
     target_slug = f"llm_{name}"
-    for ri in integrations.values():
-        if ri.slug == target_slug:
+    for connection in integrations:
+        if connection.get("slug") == target_slug:
             try:
-                await _supervisor_call("remove", {"id": ri.id})
+                await _supervisor_call("remove", {"id": connection.get("id")})
             except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
                 logger.warning("supervisor unreachable for provider remove: %s", exc)
                 return web.json_response(
@@ -303,10 +321,9 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 
     For a direct provider, rewrites its ``settings.direct_providers``
     entry (and validates the new URL). For a brokered one, the supervisor
-    has no auth_blob-aware update verb yet, so the change is implemented
-    as remove + add server-side — keeping the operation atomic from the
-    client's perspective. Either way the cache is dropped and a probe is
-    run; the response shape matches ``POST /api/providers``.
+    transactionally replaces its credentials and process while retaining the
+    previous connection on failure. Either way the cache is dropped and a
+    probe is run; the response shape matches ``POST /api/providers``.
     """
     name = request.match_info["name"]
     if name not in _KNOWN_PROVIDERS:
@@ -343,9 +360,19 @@ async def handle_update_provider(request: web.Request) -> web.Response:
         stored_base_url: str | None = spec.base_url
     else:
         # Brokered kind — must currently exist as an llm_<name> integration.
-        integrations = await registered_integrations()
+        try:
+            integrations = await _brokered_provider_connections()
+        except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
+            logger.warning("supervisor unreachable for provider update lookup: %s", exc)
+            return web.json_response(
+                {"error": "Integrations service isn't running."},
+                status=503,
+            )
         target_slug = f"llm_{name}"
-        existing = next((ri for ri in integrations.values() if ri.slug == target_slug), None)
+        existing = next(
+            (connection for connection in integrations if connection.get("slug") == target_slug),
+            None,
+        )
         if existing is None:
             return web.json_response(
                 {"error": f"Provider {name!r} is not configured"},
@@ -359,17 +386,14 @@ async def handle_update_provider(request: web.Request) -> web.Response:
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
         if spec.base_url:
             auth_blob["base_url"] = spec.base_url
-        # Atomic-ish: remove, then add with the new auth_blob. The supervisor
-        # doesn't currently expose an auth_blob-aware update verb; revisit
-        # when it does.
+        # Credential replacement is transactional in the supervisor. If the
+        # replacement broker cannot start, the prior encrypted credentials
+        # and live broker are restored before this request fails.
         try:
-            await _supervisor_call("remove", {"id": existing.id})
-            await _supervisor_call("add", {
-                "slug": target_slug,
-                "label": _label(name),
+            await _supervisor_call("reconnect", {
+                "id": existing.get("id"),
+                "kind": "model_provider",
                 "auth_blob": auth_blob,
-                "permissions": {},
-                "write_allowed": False,
             })
         except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
             logger.warning("supervisor unreachable for provider update: %s", exc)

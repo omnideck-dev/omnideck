@@ -1,4 +1,4 @@
-"""Public client for calling broker verbs from app-server code.
+"""Public client for invoking canonical integration operations from app-server code.
 
 Tool handlers import ``call`` from here (or from ``integrations``, which
 re-exports). Everything in this sub-package except the symbols listed below

@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.drive._format import format_size
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,9 @@ async def get_drive_file_metadata(integration_id: str, file_id: str) -> str:
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "get_drive_file_metadata",
+            "drive.files.get_metadata",
             {"file_id": file_id},
             app_sock_path=app_sock,
         )

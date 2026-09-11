@@ -1,6 +1,6 @@
 """Verb dispatcher for the generic HTTP broker.
 
-The whole surface is one verb, ``http_request``. The handler is where the
+The whole surface is one verb, ``http.request``. The handler is where the
 safety properties live:
 
 - The path is resolved against ``BASE_URL`` and the resulting host must match
@@ -24,7 +24,7 @@ import json
 import logging
 import mimetypes
 import secrets
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -33,12 +33,14 @@ import aiohttp
 
 from integrations._perms import ATTACHMENT_FILE_MODE
 from integrations._rpc import RpcError
-from integrations.permissions import Access, Capability, Permissions
+from integrations.brokers._common._dispatch import (
+    OperationHandler,
+    dispatch_granted_operation,
+)
+from integrations.operation_grants import OperationGrants
 
 logger = logging.getLogger(__name__)
 
-# HTTP methods that don't change server state — only these are allowed
-# when the integration was granted ``http:read`` rather than ``http:rw``.
 _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # Every HTTP method the broker accepts. The broker doesn't invent novel
@@ -97,19 +99,8 @@ _MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 # bounded so a stuck upstream doesn't hang the whole broker.
 _DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
 
-_VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
-    # Static gate: every dispatch needs at least http:read. The handler
-    # promotes to http:read_write when the HTTP method is mutating —
-    # method-level access depends on the request, not the verb name.
-    "http_request": (Capability.HTTP, Access.READ),
-}
-
-
-_Handler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
 class VerbDispatcher:
-    """Route ``http_request`` RPC calls into the aiohttp session."""
+    """Route ``http.request`` RPC calls into the aiohttp session."""
 
     def __init__(
         self,
@@ -119,7 +110,7 @@ class VerbDispatcher:
         header_name: str,
         header_template: str,
         token: str,
-        permissions: Permissions,
+        operation_grants: OperationGrants,
         downloads_dir: Path,
         inline_cap: int = _INLINE_BODY_CAP,
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
@@ -138,55 +129,28 @@ class VerbDispatcher:
         self._header_name = header_name
         self._header_template = header_template
         self._token = token
-        self._permissions = permissions
+        self._operation_grants = operation_grants
         self._downloads_dir = downloads_dir
         self._inline_cap = inline_cap
         self._max_response_bytes = max_response_bytes
         self._timeout = aiohttp.ClientTimeout(total=request_timeout_seconds)
 
-        # Handler registry — keyed by verb name. Stays a one-entry dict for
-        # now; the shape matches the other brokers so adding a future verb
-        # (e.g. streaming) drops in cleanly.
-        self._handlers: dict[str, _Handler] = {
-            "http_request": self._handle_http_request,
+        # Keyed by the same canonical IDs used by callers and persisted grants.
+        self._handlers: dict[str, OperationHandler] = {
+            "http.request": self._handle_http_request,
         }
 
-    async def dispatch(self, verb: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point invoked by the RPC layer for every incoming frame."""
-        requirement = _VERB_REQUIREMENT.get(verb)
-        if requirement is None:
-            msg = f"unknown verb: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-
-        cap, min_access = requirement
-        granted = self._permissions.get(cap, Access.OFF)
-        if granted < min_access:
-            msg = (
-                f"verb {verb!r} requires {cap.value}:{min_access.name.lower()}, "
-                f"but this integration has {cap.value}:{granted.name.lower()}"
-            )
-            raise RpcError("PERMISSION_DENIED", msg)
-
-        handler = self._handlers.get(verb)
-        if handler is None:
-            msg = f"verb not implemented: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-
-        return await handler(args)
+        return await dispatch_granted_operation(
+            operation_id,
+            args,
+            operation_grants=self._operation_grants,
+            handlers=self._handlers,
+        )
 
     async def _handle_http_request(self, args: dict[str, Any]) -> dict[str, Any]:
         method = _require_method(args)
-
-        # Dispatcher already enforced http:read; mutating methods need
-        # the http:rw upgrade on top of that.
-        if method not in _READ_METHODS:
-            granted = self._permissions.get(Capability.HTTP, Access.OFF)
-            if granted < Access.READ_WRITE:
-                msg = (
-                    f"method {method!r} requires http:read_write, "
-                    f"but this integration has http:{granted.name.lower()}"
-                )
-                raise RpcError("PERMISSION_DENIED", msg)
 
         url = self._resolve_url(_require_str(args, "path"))
         query = _coerce_query(args.get("query"))

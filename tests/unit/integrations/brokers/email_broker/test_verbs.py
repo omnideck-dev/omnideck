@@ -23,7 +23,20 @@ from integrations.calendar_refs import (
     encode_event_ref,
     encode_series_ref,
 )
-from integrations.permissions import Access, Capability
+from integrations.operations import OPERATIONS_BY_GROUP
+
+EMAIL_READ_GRANTS = frozenset({
+    "email.mailboxes.list",
+    "email.messages.list",
+    "email.messages.search",
+    "email.messages.get",
+    "email.attachments.download",
+})
+CALENDAR_READ_GRANTS = frozenset({
+    "calendar.calendars.list",
+    "calendar.events.list",
+    "calendar.events.search",
+})
 
 
 class _StubImapClient:
@@ -168,11 +181,11 @@ async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Pa
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
-    result = await dispatcher.dispatch("create_event", {
+    result = await dispatcher.dispatch("calendar.events.create", {
         "calendar_ref": "https://caldav.icloud.com/123/calendars/home/",
         "summary": "Project review",
         "start": "2026-07-15T09:00:00-05:00",
@@ -206,12 +219,12 @@ async def test_dispatch_create_event_requires_calendar_write_access(tmp_path: Pa
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ},
+        operation_grants=CALENDAR_READ_GRANTS,
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("create_event", {
+        await dispatcher.dispatch("calendar.events.create", {
             "calendar_ref": "https://caldav.example/home/",
             "summary": "Denied",
             "start": "2026-07-15",
@@ -227,11 +240,11 @@ async def test_dispatch_create_recurring_event_returns_series_ref(tmp_path: Path
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
-    result = await dispatcher.dispatch("create_event", {
+    result = await dispatcher.dispatch("calendar.events.create", {
         "calendar_ref": "https://caldav.example/home/",
         "summary": "Weekly review",
         "start": "2026-07-16T09:00:00-05:00",
@@ -252,7 +265,7 @@ async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path:
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
@@ -263,7 +276,7 @@ async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path:
         recurrence_id="2026-07-22T09:00:00-05:00",
         href="https://caldav.example/home/icloud-event-123.ics",
     )
-    result = await dispatcher.dispatch("update_event", {
+    result = await dispatcher.dispatch("calendar.events.update", {
         "event_ref": event_ref,
         "summary": "Updated review",
         "attendees": [],
@@ -291,12 +304,12 @@ async def test_dispatch_update_event_rejects_empty_update(tmp_path: Path) -> Non
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("update_event", {
+        await dispatcher.dispatch("calendar.events.update", {
             "event_ref": encode_event_ref(
                 provider="caldav",
                 calendar_ref="https://caldav.example/home/",
@@ -313,7 +326,7 @@ async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
 
@@ -324,7 +337,7 @@ async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
         recurrence_id="2026-07-22T09:00:00-05:00",
         href="https://caldav.example/home/icloud-event-123.ics",
     )
-    result = await dispatcher.dispatch("delete_event", {"event_ref": event_ref})
+    result = await dispatcher.dispatch("calendar.events.delete", {"event_ref": event_ref})
 
     assert result == {"deleted": True}
     assert caldav.delete_calls == [(
@@ -339,7 +352,7 @@ async def test_dispatch_series_verbs_target_master(tmp_path: Path) -> None:
     caldav = _StubCalDav()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=None, caldav=caldav,
-        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        operation_grants=OPERATIONS_BY_GROUP["calendar"],
         attachments_dir=tmp_path,
     )  # type: ignore[arg-type]
     series_ref = encode_series_ref(
@@ -350,14 +363,14 @@ async def test_dispatch_series_verbs_target_master(tmp_path: Path) -> None:
     )
 
     result = await dispatcher.dispatch(
-        "update_event_series", {
+        "calendar.series.update", {
             "series_ref": series_ref,
             "summary": "All reviews",
             "recurrence_rule": "FREQ=WEEKLY;COUNT=8",
             "time_zone": "America/Chicago",
         },
     )
-    deleted = await dispatcher.dispatch("delete_event_series", {"series_ref": series_ref})
+    deleted = await dispatcher.dispatch("calendar.series.delete", {"series_ref": series_ref})
 
     assert result["series_ref"] == series_ref
     assert deleted == {"deleted": True}
@@ -384,9 +397,9 @@ async def test_dispatch_list_mailboxes_calls_session_and_wraps_result(tmp_path: 
     expects.
     """
     imap = _StubImapClient()
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=EMAIL_READ_GRANTS, attachments_dir=tmp_path)  # type: ignore[arg-type]
 
-    result = await dispatcher.dispatch("list_mailboxes", {})
+    result = await dispatcher.dispatch("email.mailboxes.list", {})
 
     assert imap.list_mailboxes_calls == 1
     assert result == {
@@ -399,16 +412,14 @@ async def test_dispatch_list_mailboxes_calls_session_and_wraps_result(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_dispatch_unknown_verb_raises_bad_request(tmp_path: Path) -> None:
-    """A verb that isn't in ``_VERB_REQUIREMENT`` is a typo or a client bug —
-    the response distinguishes it from "declared but not yet implemented" below.
-    """
-    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    """A verb absent from the canonical registry is a typo or client bug."""
+    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch("does_not_exist", {})
 
     assert excinfo.value.code == "BAD_REQUEST"
-    assert excinfo.value.message == "unknown verb: does_not_exist"
+    assert excinfo.value.message == "unknown operation: does_not_exist"
 
 
 @pytest.mark.asyncio
@@ -418,18 +429,18 @@ async def test_dispatch_write_verb_denied_when_access_insufficient(tmp_path: Pat
     gate; a bash-run-capable agent bypassing the app-server registry still
     hits it.
 
-    We use ``send_message`` because it requires ``email:rw`` in the verb table
+    We use ``email.messages.send`` because it requires ``email:rw`` in the verb table
     and doesn't have a handler when smtp is None — proving the gate fires
     before handler lookup, not after.
     """
     imap = _StubImapClient()
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=EMAIL_READ_GRANTS, attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("send_message", {"to": "a@b"})
+        await dispatcher.dispatch("email.messages.send", {"to": "a@b"})
 
     assert excinfo.value.code == "PERMISSION_DENIED"
-    assert "email:read" in excinfo.value.message
+    assert "email.messages.send" in excinfo.value.message
     # And the client was not called — the gate fires before handler dispatch.
     assert imap.list_mailboxes_calls == 0
 
@@ -437,30 +448,30 @@ async def test_dispatch_write_verb_denied_when_access_insufficient(tmp_path: Pat
 @pytest.mark.asyncio
 async def test_dispatch_write_verb_allowed_falls_through_to_not_implemented(tmp_path: Path) -> None:
     """When permissions grant email:rw and SMTP isn't configured,
-    ``send_message`` is declared but unhandled and returns
-    ``BAD_REQUEST "verb not implemented"``. Proves the gate passes and
+    ``email.messages.send`` is declared but unhandled and returns
+    ``BAD_REQUEST "operation not implemented"``. Proves the gate passes and
     handler lookup is reached for the SMTP-less case.
     """
-    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
-        await dispatcher.dispatch("send_message", {"to": ["a@b"]})
+        await dispatcher.dispatch("email.messages.send", {"to": ["a@b"]})
 
     assert excinfo.value.code == "BAD_REQUEST"
-    assert excinfo.value.message == "verb not implemented: send_message"
+    assert excinfo.value.message == "operation not implemented: email.messages.send"
 
 
 @pytest.mark.asyncio
 async def test_dispatch_send_message_calls_smtp_and_returns_message_id(tmp_path: Path) -> None:
-    """Happy path: ``send_message`` with email:rw permissions and an SMTP
+    """Happy path: ``email.messages.send`` with email:rw permissions and an SMTP
     client wired drives the SMTP call and returns the assigned Message-ID.
     """
     imap = _StubImapClient()
     smtp = _StubSmtp()
-    dispatcher = VerbDispatcher(imap=imap, smtp=smtp, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=smtp, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch(
-        "send_message",
+        "email.messages.send",
         {"to": ["a@b.com"], "subject": "hi", "body": "hello"},
     )
 
@@ -474,11 +485,11 @@ async def test_dispatch_send_message_calls_smtp_and_returns_message_id(tmp_path:
 async def test_dispatch_send_message_rejects_missing_to(tmp_path: Path) -> None:
     """``to`` is required and must be a non-empty array of strings."""
     smtp = _StubSmtp()
-    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=smtp, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=_StubImapClient(), smtp=smtp, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "send_message", {"subject": "hi", "body": "hello"},
+            "email.messages.send", {"subject": "hi", "body": "hello"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
     assert "'to'" in excinfo.value.message
@@ -494,12 +505,12 @@ async def test_dispatch_send_message_decodes_attachments_and_passes_bytes(
     smtp = _StubSmtp()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=smtp,
-        permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
 
     payload = b"\x89PNG fake png"
     await dispatcher.dispatch(
-        "send_message",
+        "email.messages.send",
         {
             "to": ["a@b.com"],
             "subject": "hi",
@@ -523,11 +534,11 @@ async def test_dispatch_send_message_rejects_invalid_base64(tmp_path: Path) -> N
     smtp = _StubSmtp()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=smtp,
-        permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "send_message",
+            "email.messages.send",
             {
                 "to": ["a@b.com"], "subject": "x", "body": "y",
                 "attachments": [
@@ -549,11 +560,11 @@ async def test_dispatch_send_message_rejects_missing_attachment_fields(
     smtp = _StubSmtp()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=smtp,
-        permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "send_message",
+            "email.messages.send",
             {
                 "to": ["a@b.com"], "subject": "x", "body": "y",
                 "attachments": [
@@ -577,13 +588,13 @@ async def test_dispatch_send_message_rejects_total_size_over_cap(
     smtp = _StubSmtp()
     dispatcher = VerbDispatcher(
         imap=_StubImapClient(), smtp=smtp,
-        permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
     # 31MB of zeros — one byte over the cap. b64 of 0x00*N is "AAAA..."
     big = base64.b64encode(b"\x00" * (31 * 1024 * 1024)).decode("ascii")
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "send_message",
+            "email.messages.send",
             {
                 "to": ["a@b.com"], "subject": "x", "body": "y",
                 "attachments": [
@@ -600,16 +611,16 @@ async def test_dispatch_send_message_rejects_total_size_over_cap(
 
 @pytest.mark.asyncio
 async def test_dispatch_move_messages_calls_imap_and_returns_ack(tmp_path: Path) -> None:
-    """Happy path: ``move_messages`` with email:rw permissions calls
+    """Happy path: ``email.messages.move`` with email:rw permissions calls
     ``ImapClient.move_messages`` with the args from the frame and returns
     a thin ack. We don't surface a count because IMAP doesn't reliably
     report which UIDs actually moved.
     """
     imap = _StubImapClient()
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     result = await dispatcher.dispatch(
-        "move_messages",
+        "email.messages.move",
         {"folder": "INBOX", "uids": ["42", "43", "44"], "dest_folder": "Trash"},
     )
 
@@ -624,11 +635,11 @@ async def test_dispatch_move_messages_translates_lookup_error_to_not_found(tmp_p
     """
     imap = _StubImapClient()
     imap.move_raises = LookupError("no such mailbox")
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "move_messages",
+            "email.messages.move",
             {"folder": "INBOX", "uids": ["999"], "dest_folder": "Nowhere"},
         )
     assert excinfo.value.code == "NOT_FOUND"
@@ -641,11 +652,11 @@ async def test_dispatch_move_messages_rejects_empty_uids(tmp_path: Path) -> None
     caller sees a clear "you didn't pass anything" error rather than a
     silent no-op."""
     imap = _StubImapClient()
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "move_messages",
+            "email.messages.move",
             {"folder": "INBOX", "uids": [], "dest_folder": "Trash"},
         )
     assert excinfo.value.code == "BAD_REQUEST"
@@ -657,11 +668,11 @@ async def test_dispatch_move_messages_rejects_oversize_batch(tmp_path: Path) -> 
     """200-uid cap is enforced at the verb layer so the broker never
     builds a wire frame the server might reject with a parse error."""
     imap = _StubImapClient()
-    dispatcher = VerbDispatcher(imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ_WRITE}, attachments_dir=tmp_path)  # type: ignore[arg-type]
+    dispatcher = VerbDispatcher(imap=imap, smtp=None, operation_grants=OPERATIONS_BY_GROUP["email"], attachments_dir=tmp_path)  # type: ignore[arg-type]
 
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "move_messages",
+            "email.messages.move",
             {
                 "folder": "INBOX",
                 "uids": [str(i) for i in range(201)],
@@ -682,11 +693,11 @@ async def test_dispatch_fetch_attachment_writes_bytes_to_dir(tmp_path: Path) -> 
     imap.attachment_filename = "photo.png"
     imap.attachment_mime_type = "image/png"
     dispatcher = VerbDispatcher(
-        imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        imap=imap, smtp=None, operation_grants=EMAIL_READ_GRANTS, attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
 
     result = await dispatcher.dispatch(
-        "fetch_attachment",
+        "email.attachments.download",
         {"folder": "INBOX", "uid": "1", "attachment_id": "2"},
     )
 
@@ -715,17 +726,17 @@ async def test_dispatch_fetch_attachment_dedupes_on_filename_collision(
     imap.attachment_filename = "doc.txt"
     imap.attachment_mime_type = "text/plain"
     dispatcher = VerbDispatcher(
-        imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        imap=imap, smtp=None, operation_grants=EMAIL_READ_GRANTS, attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
 
     first = await dispatcher.dispatch(
-        "fetch_attachment",
+        "email.attachments.download",
         {"folder": "INBOX", "uid": "1", "attachment_id": "2"},
     )
     # Replace the canned bytes for the second call.
     imap.attachment_payload = b"second"
     second = await dispatcher.dispatch(
-        "fetch_attachment",
+        "email.attachments.download",
         {"folder": "INBOX", "uid": "2", "attachment_id": "2"},
     )
 
@@ -748,11 +759,11 @@ async def test_dispatch_fetch_attachment_translates_lookup_error_to_not_found(
     imap = _StubImapClient()
     imap.attachment_raises = LookupError("no attachment 99")
     dispatcher = VerbDispatcher(
-        imap=imap, smtp=None, permissions={Capability.EMAIL: Access.READ}, attachments_dir=tmp_path,  # type: ignore[arg-type]
+        imap=imap, smtp=None, operation_grants=EMAIL_READ_GRANTS, attachments_dir=tmp_path,  # type: ignore[arg-type]
     )
     with pytest.raises(RpcError) as excinfo:
         await dispatcher.dispatch(
-            "fetch_attachment",
+            "email.attachments.download",
             {"folder": "INBOX", "uid": "1", "attachment_id": "99"},
         )
     assert excinfo.value.code == "NOT_FOUND"

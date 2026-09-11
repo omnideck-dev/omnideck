@@ -18,7 +18,11 @@ from aiohttp import web
 
 from config import load_config
 from integrations import supervisor_client
-from integrations.permissions import permissions_from_dict
+from integrations.catalog import (
+    integration_catalog,
+    model_provider_catalog,
+)
+from integrations.operations import operation_descriptors
 from integrations.supervisor_client import SupervisorError
 from server._integrations_http import error_response
 from tools.integrations import mark_added, mark_removed
@@ -47,6 +51,22 @@ def _derive_suffix_from_email(auth_blob: dict[str, Any] | None) -> str | None:
     return _sanitize_suffix(email.split("@", 1)[0])
 
 
+def _derive_connection_suffix(
+    auth_blob: dict[str, Any] | None,
+    label: str | None,
+) -> str | None:
+    """Derive a stable local ID suffix without requiring an auth schema.
+
+    Existing email integrations retain their historical email-local-part IDs.
+    Integrations with other credential shapes fall back to their user-visible
+    label, which keeps MCP, environment-variable, and future brokers out of
+    provider-specific branches in this generic route.
+    """
+    return _derive_suffix_from_email(auth_blob) or (
+        _sanitize_suffix(label) if isinstance(label, str) else None
+    )
+
+
 def _sanitize_suffix(raw: str) -> str | None:
     """Reduce arbitrary text to the supervisor's ``[a-z0-9_-]`` suffix set.
 
@@ -60,25 +80,25 @@ def _sanitize_suffix(raw: str) -> str | None:
 
 
 async def _supervisor_call(verb: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Call a supervisor verb with a 60s timeout.
+    """Call a supervisor verb with a 90s timeout.
 
-    The supervisor's slowest verbs (``add`` / ``update`` permissions) wait
-    on a 30s broker READY handshake plus SIGTERM grace, so 60s gives headroom
-    for the worst legit case while bounding hangs if the supervisor itself is
-    wedged. ``TimeoutError`` is an ``OSError`` subclass on 3.11+, so route
+    A transactional replacement can wait on a 30s broker READY handshake and,
+    on failure, another 30s handshake while restoring the prior broker. Ninety
+    seconds gives that rollback headroom while still bounding a wedged
+    supervisor. ``TimeoutError`` is an ``OSError`` subclass on 3.11+, so route
     handlers catch it through the ``except OSError`` arm and return a 503.
     """
     app_sock = load_config().integrations.app_sock_path
     return await asyncio.wait_for(
         supervisor_client.call(verb, args, app_sock_path=app_sock),
-        timeout=60.0,
+        timeout=90.0,
     )
 
 
 async def handle_list_integrations(_request: web.Request) -> web.Response:
     """``GET /api/integrations`` — non-secret metadata for every active integration."""
     try:
-        result = await _supervisor_call("list", {})
+        result = await _supervisor_call("list", {"kind": "integration"})
     except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
         logger.warning("supervisor unreachable for list: %s", exc)
         return web.json_response(
@@ -90,6 +110,34 @@ async def handle_list_integrations(_request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def handle_integration_catalog(_request: web.Request) -> web.Response:
+    """Return the safe, authoritative native integration catalog projection."""
+    entries = []
+    for entry in integration_catalog().values():
+        operation_ids = entry.operations | frozenset().union(*entry.scope_operations.values())
+        public_entry = {
+            "id": entry.slug,
+            "title": entry.title,
+            "description": entry.description,
+            "category": entry.category,
+            "kind": entry.kind,
+            "operations": operation_descriptors(operation_ids),
+        }
+        operation_groups = [
+            {
+                "id": group.id,
+                "title": group.title,
+                "operation_ids": sorted(group.operation_ids & operation_ids),
+            }
+            for group in entry.operation_groups
+            if group.operation_ids & operation_ids
+        ]
+        if operation_groups:
+            public_entry["operation_groups"] = operation_groups
+        entries.append(public_entry)
+    return web.json_response({"integrations": entries})
+
+
 async def handle_add_integration(request: web.Request) -> web.Response:
     """``POST /api/integrations`` — register a new integration.
 
@@ -99,12 +147,13 @@ async def handle_add_integration(request: web.Request) -> web.Response:
           "slug": "icloud",
           "label": "iCloud — Larry",
           "auth_blob": {"email": "...", "password": "..."},
-          "permissions": {"email": "rw", "calendar": "r"}
+          "operation_grants": ["email.messages.search", "email.messages.send"]
         }
 
-    The integration ID's user-suffix is derived from ``auth_blob['email']``
-    by this handler before forwarding to the supervisor; clients don't
-    pick it.
+    The integration ID's local suffix is derived by this handler before
+    forwarding to the supervisor; clients do not pick it. Existing email
+    credentials use their local part for compatibility, while every other
+    credential shape falls back to the connection label.
 
     On success: ``201 Created`` with ``{id, socket}`` (the broker's UDS path,
     for debugging — callers normally don't touch it directly).
@@ -124,32 +173,25 @@ async def handle_add_integration(request: web.Request) -> web.Response:
             status=400,
         )
 
-    # user_suffix is derived from auth_blob.email — clients never set it.
-    # Keeps integration IDs deterministic and out of the user's mental model.
-    # LLM integrations are singletons — no suffix, so the ID is just the slug
-    # and the socket path matches what the provider factory expects.
+    # Keep integration IDs deterministic and out of the user's mental model.
+    # Email remains the compatibility-preferred hint, but it is not a generic
+    # integration requirement.
     slug = body.get("slug", "")
-    if slug.startswith("llm_"):
-        # LLM integrations have no per-capability permissions (no email, calendar,
-        # etc.) but the supervisor's add verb requires the field as a dict.
-        if "permissions" not in body:
-            body["permissions"] = {}
-    elif slug == "http":
-        # http integrations have no email — derive the suffix from the label
-        # so the ID stays out of the user's mental model, same as the
-        # email-local-part derivation does for the credential providers.
-        label = body.get("label")
-        derived = _sanitize_suffix(label) if isinstance(label, str) else None
-        if not derived:
-            return error_response(
-                "BAD_REQUEST", "A label is required to name this integration.",
-            )
-        body["user_suffix"] = derived
-    else:
-        derived = _derive_suffix_from_email(body.get("auth_blob"))
-        if not derived:
-            return error_response("BAD_REQUEST", "Email address is required.")
-        body["user_suffix"] = derived
+    if slug in model_provider_catalog():
+        return error_response(
+            "BAD_REQUEST", "Model providers must be configured through the Providers API.",
+        )
+    body["kind"] = "integration"
+    label = body.get("label")
+    derived = _derive_connection_suffix(
+        body.get("auth_blob"),
+        label if isinstance(label, str) else None,
+    )
+    if not derived:
+        return error_response(
+            "BAD_REQUEST", "A label is required to name this integration.",
+        )
+    body["user_suffix"] = derived
 
     try:
         result = await _supervisor_call("add", body)
@@ -165,18 +207,18 @@ async def handle_add_integration(request: web.Request) -> web.Response:
     # Update the app-server's tool-visibility cache so the agent sees the new
     # integration's tools on the next turn without a supervisor round-trip.
     # The supervisor's add response carries everything the cache needs (id,
-    # slug, capabilities). Missing id/slug is a supervisor bug — surface it
+    # slug, operation grants). Missing id/slug is a supervisor bug — surface it
     # as 502 rather than returning 201 with a corrupted cache.
     integration_id = result.get("id")
     slug = result.get("slug")
     if not (isinstance(integration_id, str) and isinstance(slug, str)):
         logger.error("supervisor add response missing id/slug: %r", result)
         return error_response("UPSTREAM", "Something went wrong on our end. Try again.")
-    perms_result = result.get("permissions")
+    grants_result = result.get("operation_grants")
     mark_added(
         integration_id,
         slug,
-        permissions_from_dict(perms_result) if isinstance(perms_result, dict) else {},
+        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
         result.get("state") or "running",
     )
 
@@ -186,11 +228,11 @@ async def handle_add_integration(request: web.Request) -> web.Response:
 async def handle_update_integration(request: web.Request) -> web.Response:
     """``PATCH /api/integrations/{id}`` — update mutable fields on an integration.
 
-    Body fields (each optional, at least one required): ``permissions``
-    (dict of ``{capability: access_str}``) and ``label`` (non-empty string).
-    Changing ``permissions`` triggers a broker respawn so the new
-    ``PERMISSIONS`` env takes effect (brief downtime ~SIGTERM grace + READY
-    handshake). Updating ``label`` is meta-only — no respawn.
+    Body fields (each optional, at least one required): ``operation_grants``
+    (array of canonical operation IDs) and ``label`` (non-empty string).
+    The deprecated ``permissions`` object is also accepted for older clients,
+    but cannot be combined with ``operation_grants``. Grant changes respawn the
+    broker; updating ``label`` is metadata-only.
 
     On success: ``200 OK`` with the updated record. On unknown id: ``404``.
     """
@@ -216,15 +258,25 @@ async def handle_update_integration(request: web.Request) -> web.Response:
         )
 
     rpc_args: dict[str, Any] = {"id": integration_id}
+    if "operation_grants" in body and "permissions" in body:
+        return error_response(
+            "BAD_REQUEST", "Choose individual tools or legacy permissions, not both.",
+        )
+    if "operation_grants" in body:
+        if not isinstance(body["operation_grants"], list) or any(
+            not isinstance(item, str) for item in body["operation_grants"]
+        ):
+            return error_response("BAD_REQUEST", "Selected tools must be an array of IDs.")
+        rpc_args["operation_grants"] = body["operation_grants"]
     if "permissions" in body:
         if not isinstance(body["permissions"], dict):
             return error_response("BAD_REQUEST", "Permissions must be an object.")
         rpc_args["permissions"] = body["permissions"]
     if "label" in body:
-        if not isinstance(body["label"], str) or not body["label"]:
+        if not isinstance(body["label"], str) or not body["label"].strip():
             return error_response("BAD_REQUEST", "Label can't be empty.")
         rpc_args["label"] = body["label"]
-    if "permissions" not in rpc_args and "label" not in rpc_args:
+    if not ({"operation_grants", "permissions", "label"} & rpc_args.keys()):
         return error_response("BAD_REQUEST", "Nothing to update.")
 
     try:
@@ -238,11 +290,11 @@ async def handle_update_integration(request: web.Request) -> web.Response:
     except SupervisorError as exc:
         return error_response(exc.code, exc.message)
 
-    perms_result = result.get("permissions")
+    grants_result = result.get("operation_grants")
     mark_added(
         integration_id,
         result.get("slug") or "",
-        permissions_from_dict(perms_result) if isinstance(perms_result, dict) else {},
+        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
         result.get("state") or "running",
     )
     return web.json_response(result)
@@ -280,12 +332,52 @@ async def handle_remove_integration(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
 
+async def handle_reconnect_integration(request: web.Request) -> web.Response:
+    """Replace one integration's credentials without changing its identity."""
+    integration_id = request.match_info.get("id", "")
+    if not integration_id:
+        return error_response("BAD_REQUEST", "Couldn't tell which integration to reconnect.")
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return error_response("BAD_REQUEST", "Couldn't read that request. Refresh and try again.")
+    if not isinstance(body, dict) or not isinstance(body.get("auth_blob"), dict):
+        return error_response("BAD_REQUEST", "Connection credentials are required.")
+    try:
+        result = await _supervisor_call("reconnect", {
+            "id": integration_id,
+            "kind": "integration",
+            "auth_blob": body["auth_blob"],
+        })
+    except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
+        logger.warning("supervisor unreachable for reconnect: %s", exc)
+        return web.json_response(
+            {"error": {"code": "UNAVAILABLE", "message": "Integrations service isn't running."}},
+            status=503,
+        )
+    except SupervisorError as exc:
+        return error_response(exc.code, exc.message)
+
+    grants_result = result.get("operation_grants")
+    mark_added(
+        integration_id,
+        result.get("slug") or "",
+        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
+        result.get("state") or "running",
+    )
+    return web.json_response(result)
+
+
 def register_integrations_routes(app: web.Application) -> None:
     """Register ``/api/integrations`` CRUD routes on the application."""
     app.router.add_route("GET", "/api/integrations", handle_list_integrations)
+    app.router.add_route("GET", "/api/integrations/catalog", handle_integration_catalog)
     app.router.add_route("POST", "/api/integrations", handle_add_integration)
     app.router.add_route(
         "PATCH", "/api/integrations/{id}", handle_update_integration,
+    )
+    app.router.add_route(
+        "POST", "/api/integrations/{id}/reconnect", handle_reconnect_integration,
     )
     app.router.add_route(
         "DELETE", "/api/integrations/{id}", handle_remove_integration,

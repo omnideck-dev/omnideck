@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,9 @@ async def list_events(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "list_events",
+            "calendar.events.list",
             {
                 "calendar_ref": calendar_ref,
                 "days_forward": days_forward,

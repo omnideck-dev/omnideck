@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +30,16 @@ async def create_drive_folder(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "create_drive_folder",
+            "drive.folders.create",
             {"name": name, "parent_id": parent_id},
             app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "create_drive_folder(%r, %r) failed: %s", integration_id, name, exc,

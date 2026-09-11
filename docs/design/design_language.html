@@ -2028,6 +2028,35 @@ body {
 }
 .dl-table tr:hover td { background: var(--border-subtle); }
 
+/* Contained collections use one surface for controls and rows. */
+.dl-collection {
+  max-width: 640px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.dl-collection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--elevated);
+  border-bottom: 1px solid var(--border);
+}
+.dl-collection-toolbar .input { flex: 1; min-width: 160px; background: var(--elevated); }
+.dl-collection-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  color: var(--text-primary);
+  font-size: inherit;
+}
+.dl-collection-row + .dl-collection-row { border-top: 1px solid var(--border-subtle); }
+.dl-collection-row input { accent-color: var(--accent); }
+
 /* ── Progress Bar ────────────────────────────────────── */
 .progressbar {
   height: 6px;
@@ -3739,6 +3768,28 @@ body {
           <tr><td>Write results.json</td><td>fs</td><td><span class="badge badge-info" style="font-size:9px">DONE</span></td><td>1.4s</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Collection Picker -->
+    <div class="subsection">
+      <div class="subsection-label">Collection Picker</div>
+      <p class="section-desc">
+        A contained collection keeps its search/bulk-action toolbar and rows on the same
+        <code>--elevated</code> surface. Separate them with a border, not a darker
+        <code>--canvas</code> band. Keep the toolbar outside the row scroller so items
+        cannot scroll behind it. This is distinct from a page-level table header.
+        The application reuses <code>SearchInput</code> and its feature-owned picker;
+        there is not yet a shared collection-toolbar primitive.
+      </p>
+      <div class="dl-collection">
+        <div class="dl-collection-toolbar">
+          <input class="input" type="search" placeholder="Search tools" aria-label="Search tools">
+          <button class="btn btn-outline" type="button">Enable all</button>
+          <button class="btn btn-outline" type="button">Clear</button>
+        </div>
+        <label class="dl-collection-row"><input type="checkbox" checked> List email folders</label>
+        <label class="dl-collection-row"><input type="checkbox"> Send email</label>
+      </div>
     </div>
 
     <!-- File Output Card -->

@@ -2,12 +2,16 @@
 
 ## What an integration is
 
-An *integration* is a credentialed connection to an external service the agent can read from and (optionally) write to. v1 supports two:
+An *integration* is a credentialed connection to an external service. Each
+connection has an explicit set of canonical operations, and the user chooses
+which of those operations omnideck may expose as agent tools.
 
-| Provider | Capabilities | Auth |
+| Provider | Operations | Auth |
 |---|---|---|
 | iCloud | Email (IMAP + SMTP) + Calendar (CalDAV) | App-specific password |
 | Gmail | Email (IMAP + SMTP) | App-specific password |
+| Google Workspace | Gmail, Calendar, Drive, Contacts | Desktop OAuth |
+| Custom HTTP API | One authenticated HTTP request operation | Static token |
 
 Each integration becomes one or more agent tools — `list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`, etc. The tools take an explicit `integration_id` argument (e.g. `"icloud_personal"` or `"gmail_work"`), so the agent picks which account to operate on per call.
 
@@ -34,15 +38,15 @@ Three OS users at runtime:
 
 | User | UID | Owns |
 |---|---|---|
-| `computron` | 1000 | The aiohttp app, the agent, the browser tools, all user-uploaded files |
+| `omnideck` | 1000 | The aiohttp app, the agent, the browser tools, all user-uploaded files |
 | `broker` | 1001 | The supervisor, every broker subprocess, the encrypted vault, runtime sockets |
 | `root` | 0 | Container init only — drops to the two above via `gosu` in `entrypoint.sh` |
 
-`computron` is in the `broker` group, so it can `connect()` to the broker sockets at `/run/cvault/`. It can't read the vault directory (`/var/lib/computron/vault`, mode `0700` `broker:broker`).
+`omnideck` is in the `broker` group, so it can `connect()` to the broker sockets at `/run/cvault/`. It can't read the vault directory (`/var/lib/omnideck/vault`, mode `0700` `broker:broker`).
 
 The supervisor runs as a long-lived process that owns:
 
-- The encrypted credential store under `/var/lib/computron/vault/`.
+- The encrypted credential store under `/var/lib/omnideck/vault/`.
 - One **broker subprocess per integration**. Brokers are independent processes that hold the decrypted credential in their own memory and connect directly to the upstream provider (Gmail's IMAP, iCloud's CalDAV, etc.).
 - The `app.sock` UDS at `/run/cvault/app.sock`. The aiohttp app talks to this when the user adds, edits, or removes an integration.
 
@@ -50,7 +54,7 @@ The supervisor runs as a long-lived process that owns:
 ┌─────────────────────────────────────────────────────────────┐
 │ container                                                   │
 │                                                             │
-│  computron (UID 1000)              broker (UID 1001)        │
+│  omnideck (UID 1000)               broker (UID 1001)        │
 │  ────────────────────              ──────────────────       │
 │  aiohttp app                       supervisor               │
 │   │ (HTTP routes,                   │ (vault, spawn,        │
@@ -66,7 +70,7 @@ The supervisor runs as a long-lived process that owns:
 │   │   /run/cvault/<id>.sock         │      ↓                │
 │   │                                 │   imap.gmail.com      │
 │                                                             │
-│  /var/lib/computron/vault/ (mode 0700 broker:broker)        │
+│  /var/lib/omnideck/vault/ (mode 0700 broker:broker)         │
 │  /run/cvault/                       (mode 0750 broker:broker)
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -75,17 +79,27 @@ The agent never has read access to a credential — its UID can't open the vault
 
 ---
 
-## Permissions model
+## Operation grants
 
-Every integration has a `write_allowed` flag. Default: **off**. Writes mean anything that mutates upstream state — `send_email`, `move_email`, and calendar create/update/delete operations.
+Every callable integration action has a stable canonical operation ID, such
+as `email.messages.search`, `calendar.events.create`, or `http.request`. A
+connection stores the exact operation IDs granted to the agent; new
+connections begin with no grants until setup reaches the tool-selection step.
 
-**Two layers** enforce this:
+Two layers apply the same policy:
 
-1. **Broker-side gate (the real security boundary).** The supervisor passes `WRITE_ALLOWED=true|false` in the broker's env at spawn. The broker refuses write-tagged verbs locally with `WRITE_DENIED` when the flag is false — the request never reaches upstream. An agent that bypasses `broker_client` and connects directly to the broker's UDS still gets refused.
+1. **Broker-side gate (the security boundary).** The supervisor passes the
+   exact operation grants to the broker at spawn. The shared broker dispatcher
+   accepts canonical operation IDs directly in the RPC `verb` field and returns
+   `PERMISSION_DENIED` unless that ID is granted. This applies even to a caller
+   that reaches a broker socket directly.
+2. **App-server projection (tool discovery).** Agent tool adapters are built
+   only for granted operations on running connections. This keeps unavailable
+   operations out of the model's tool list; it does not replace the broker gate.
 
-2. **App-server-side gate (UX).** Write tools are hidden from the agent's tool registry when `write_allowed=false`; `broker_client.call()` short-circuits denied writes with `IntegrationWriteDenied` before a wire round-trip.
-
-Toggling `write_allowed` requires respawning the broker (the env-var is read at startup). The supervisor handles this transparently: the integration goes `running → respawning → running` for ~1–3 seconds. The user's credential is reused; no reconnect prompt.
+Changing grants respawns the broker so the new immutable process environment
+takes effect. Legacy capability/read-write fields remain only at migration and
+older-client compatibility boundaries; runtime authorization does not use them.
 
 ---
 
@@ -94,9 +108,9 @@ Toggling `write_allowed` requires respawning the broker (the env-var is read at 
 Per-integration files in the vault directory:
 
 ```
-/var/lib/computron/vault/
+/var/lib/omnideck/vault/
 ├── master.key                        # 32-byte AES-256 key, mode 0600
-├── icloud_personal.meta              # plaintext JSON: id, slug, label, write_allowed, timestamps
+├── icloud_personal.meta              # plaintext JSON: id, slug, label, operation grants, timestamps
 ├── icloud_personal.enc               # AES-256-GCM(plaintext_blob, key=master, aad=integration_id)
 ├── gmail_work.meta
 └── gmail_work.enc
@@ -111,7 +125,7 @@ The plaintext blob is a JSON object the auth plugin defines — for `app_passwor
 - A version byte at the start (`0x01`) reserves room for future format changes.
 - The master key is a 32-byte CSPRNG output, written once to `master.key` on first supervisor boot. **It does not rotate** in v1 — see [follow-ups](../plans/integrations-followups.md) for the planned rotation command.
 
-The master key is on local disk at mode `0600 broker:broker`. If an attacker can read that file *and* the `.enc` blobs, they have your credentials. Treat the `/var/lib/computron/vault/` volume the same way you'd treat a password-manager backup.
+The master key is on local disk at mode `0600 broker:broker`. If an attacker can read that file *and* the `.enc` blobs, they have your credentials. Treat the `/var/lib/omnideck/vault/` volume the same way you'd treat a password-manager backup.
 
 ---
 
@@ -121,14 +135,15 @@ Each integration has a state visible in the UI. Transitions are driven by broker
 
 | State | Meaning | UI affordance |
 |---|---|---|
-| `pending` | Just added; broker is starting; verify in flight | Spinner |
 | `running` | Broker up, upstream auth ok | Green dot, label `connected` |
-| `auth_failed` | Broker exited with code 77 — upstream rejected the credential | Red dot, "Credentials were rejected. Delete and re-add to refresh." |
-| `broken` | Broker exited non-77 three times in a row before READY | Red dot, "Couldn't reach this integration. Delete and re-add." |
+| `auth_failed` | Broker exited with code 77 — upstream rejected the credential | Red status and reconnect action |
+| `broken` | Broker exited non-77 three times in a row before READY | Red status and reconnect action |
 
 Auto-restart policy:
 
-- **`auth_failed`** is sticky. The supervisor stops respawning. Recovery is delete-and-re-add (you generate a fresh app password and reconnect).
+- **`auth_failed`** is sticky. The supervisor stops respawning. Recovery uses
+  reconnect, which atomically verifies and replaces credentials while retaining
+  grants that are still available under the new authorization.
 - **Generic crashes** (anything except exit 77) trigger exponential backoff respawn: 1s → 2s → 4s → 8s → 16s, capped at 30s. After three consecutive failures the integration flips to `broken` and respawn stops.
 - **Idle drops** (the IMAP/CalDAV connection getting closed by the server after ~10–30 minutes of inactivity) are handled inside the broker — the next verb call catches `imaplib.IMAP4.abort` / `requests.exceptions.ConnectionError`, re-LOGINs, and retries once. The state stays `running` throughout.
 
@@ -138,9 +153,17 @@ Auto-restart policy:
 
 All UI actions live under **Settings → Integrations** in the app.
 
-**Add** opens a wizard: pick provider → see the explainer + deep-link to the provider's app-passwords page → paste email + password → submit. The supervisor encrypts the blob to `<id>.enc.tmp`, spawns the broker, and renames to `<id>.enc` only after the broker prints `READY\n`. If the credential is bad, the temp file is deleted and the UI gets back an `AUTH` Callout ("iCloud rejected the password — generate a fresh one and paste it again").
+**Add** opens a modal flow: choose an integration → connect and verify it →
+select individual tools → review. The connection is created with zero operation
+grants before tool selection; cancelling the unfinished flow removes that
+setup-owned connection. OAuth connections use the same post-connection tool
+selection and review steps as app-password and token integrations.
 
-**Edit** uses a master-detail layout: list on the left, detail pane on the right. You can change the **label** (cosmetic — meta-only update, no broker respawn) and the **Allow writes** toggle (env change → broker respawn). Save is disabled until something differs from the server state.
+**Edit** uses a master-detail layout: list on the left, detail pane on the
+right. The Overview, Tools, and Connection tabs separate metadata, exact agent
+tool grants, and credential recovery. Label changes are metadata-only; grant
+changes respawn the broker. Save is disabled until something differs from the
+server state.
 
 **Delete** is one-click + browser confirm. Removes both `.meta` and `.enc`, SIGTERMs the broker, and deletes the per-broker socket file.
 
@@ -152,26 +175,31 @@ The wizard does **not** support renaming the integration ID after the fact — o
 
 | Path | Owner | Mode | Purpose |
 |---|---|---|---|
-| `/var/lib/computron/vault/` | `broker:broker` | `0700` | Encrypted credential store + master key |
-| `/var/lib/computron/vault/master.key` | `broker:broker` | `0600` | AES-256 master key |
-| `/var/lib/computron/vault/<id>.meta` | `broker:broker` | `0640` | Plaintext metadata (label, write_allowed, slug) |
-| `/var/lib/computron/vault/<id>.enc` | `broker:broker` | `0640` | Encrypted credential blob |
+| `/var/lib/omnideck/vault/` | `broker:broker` | `0700` | Encrypted credential store + master key |
+| `/var/lib/omnideck/vault/master.key` | `broker:broker` | `0600` | AES-256 master key |
+| `/var/lib/omnideck/vault/<id>.meta` | `broker:broker` | `0640` | Plaintext metadata (label, operation grants, slug) |
+| `/var/lib/omnideck/vault/<id>.enc` | `broker:broker` | `0640` | Encrypted credential blob |
 | `/run/cvault/` | `broker:broker` | `0750` | tmpfs — runtime sockets |
-| `/run/cvault/app.sock` | `broker:broker` | `0660` | Supervisor RPC; computron group can connect |
+| `/run/cvault/app.sock` | `broker:broker` | `0660` | Supervisor RPC; omnideck group can connect |
 | `/run/cvault/<id>.sock` | `broker:broker` | `0660` | Per-broker verb dispatch socket |
 | `/run/cvault/attachments/` | `broker:broker` | `2770` | Side channel for fetched email attachments |
 
-The `attachments/` directory uses setgid + sticky bits so both `broker` (writer) and `computron` (reader, downloads dir owner) can play nice without either being able to delete the other's files.
+The `attachments/` directory uses setgid + sticky bits so both `broker` (writer) and `omnideck` (reader, downloads dir owner) can play nice without either being able to delete the other's files.
 
 ---
 
 ## Troubleshooting
 
 **Integration shows `auth failed` shortly after add.**
-The credential was wrong, expired, or revoked. Generate a fresh app password (the wizard includes a deep-link to your provider's app-passwords page) and re-add the integration. Existing app passwords are not editable in place — delete and re-add.
+The credential was wrong, expired, or revoked. Use Reconnect from the
+connection tab. App-password providers ask for a replacement password; OAuth
+providers run authorization again.
 
 **Integration shows `not running` (`broken` state).**
-The broker crashed three times in a row before completing its initial handshake. Check `docker logs <container>` for `[email_broker[<id>]]` entries — common causes are network egress blocked (firewall, DNS), the upstream provider being down, or a TLS handshake failure. Delete and re-add once the underlying issue is resolved.
+The broker crashed three times in a row before completing its initial
+handshake. Check `docker logs <container>` for the broker's connection ID;
+common causes are blocked network egress, provider downtime, or TLS failure.
+Reconnect after the underlying issue is resolved.
 
 **Integrations tab shows "Integrations unavailable" with a Try again button.**
 The aiohttp app can't reach the supervisor. The supervisor process probably crashed or isn't running. In dev mode (`DEV_MODE=true`), the entrypoint respawns it automatically; in prod mode the container will exit and Docker's restart policy takes over. If it persists, check `docker logs` for `[supervisor]` errors.
@@ -186,11 +214,13 @@ The broker reconnects automatically when the upstream server drops an idle conne
 **What it defends against:**
 
 - **Agent prompt-injection or runaway tool calls reading credentials.** The agent (UID 1000) cannot open the vault directory (mode `0700`, owned by UID 1001). Even an agent with `bash-run` cannot read `master.key` or any `.enc` blob. The credential only exists in plaintext in the broker process's memory.
-- **An agent bypassing `broker_client` to connect directly to a broker's UDS.** The broker enforces `WRITE_ALLOWED` at verb dispatch — the request is rejected before reaching upstream regardless of which client called it.
+- **An agent bypassing `broker_client` to connect directly to a broker's UDS.** The broker enforces exact operation grants at verb dispatch, before reaching upstream, regardless of which client called it.
 - **Credentials leaking into argv.** Credentials are passed via env, never argv. The broker `os.environ.pop("EMAIL_PASS", None)`s the password into client-object state immediately after reading it, so a `cat /proc/<pid>/environ` from another UID won't find it.
 - **Default-private new files.** The supervisor and brokers install `umask 0077` at startup (per `integrations/_perms.py`), so any file or directory they create without an explicit mode lands at owner-only by default. Sockets that genuinely need group access get an explicit `chmod 0660` after bind.
 - **Credentials leaking via core dumps.** The supervisor and brokers call `setrlimit(RLIMIT_CORE, (0, 0))` at startup, so a crash can't write the process's memory to a core file where another UID might read it.
-- **A malicious app server respawn somehow setting `WRITE_ALLOWED=true`.** The supervisor is the only thing that spawns brokers; the app server has no broker-spawn surface.
+- **A malicious caller trying an ungranted broker verb.** The supervisor is the
+  only process that spawns brokers, and the broker independently enforces the
+  exact grants it received at spawn.
 
 **What it does NOT defend against (explicit non-goals for v1):**
 
@@ -209,13 +239,28 @@ The broker reconnects automatically when the upstream server drops an idle conne
 | Supervisor (vault, lifecycle, RPC) | `integrations/supervisor/` |
 | Email broker (IMAP + SMTP + CalDAV) | `integrations/brokers/email_broker/` |
 | Wire framing + ready signal + exit codes | `integrations/_rpc.py`, `integrations/brokers/_common/` |
-| Provider catalog | `integrations/supervisor/_catalog.py` (currently inline; moves to `config/integrations_catalog/*.json` per [follow-ups](../plans/integrations-followups.md)) |
+| Integration and model-provider catalogs | `integrations/catalog/` |
+| Broker launch contracts | `integrations/drivers.py` |
+| Canonical operation registry | `integrations/operations.py` |
+| Application/SDK boundary | `integrations/service.py` |
 | App-server HTTP routes | `server/_integrations_routes.py` |
 | Agent-side broker client | `integrations/broker_client/` |
 | Agent tool wrappers | `tools/integrations/` |
-| React UI | `server/ui/src/components/integrations/` |
+| React UI | `server/ui/src/features/integrations/` |
 
-Tests live in `tests/integrations/`, `tests/tools/integrations/`, and `e2e/settings/test_integrations.py`.
+The catalog package owns preset types, built-in definitions, and validation.
+It depends on the shared driver contracts and operation registry, not on the
+supervisor. Server routes and the supervisor consume its public API; the
+supervisor remains responsible for connection state, credentials, and processes.
+
+Isolated tests live under `tests/unit/integrations/`,
+`tests/unit/tools/integrations/`, and `tests/unit/server/`. Tests exercising
+real HTTP/Unix sockets, broker subprocesses, OAuth token exchange, and vault
+lifecycle live under `tests/integration/integrations/`; run them with
+`uv run pytest tests/integration/integrations/` or as part of `just integration`.
+Browser setup/edit/recovery tests live under `tests/e2e/settings/` and run
+through `just e2e`. See the [integration test guide](../tests/integration/integrations/README.md)
+for the boundaries and local fake services.
 
 ---
 

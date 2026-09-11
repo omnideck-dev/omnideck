@@ -7,19 +7,8 @@ Bridges two layers with different vocabularies:
 - The client layer (``_imap_client``, ``_smtp_client``) speaks email: typed
   method calls, typed returns.
 
-The dispatcher:
-
-1. Looks up each verb's ``"read"`` / ``"write"`` tag.
-2. Refuses write verbs when ``WRITE_ALLOWED=false``. This is the load-bearing
-   permission gate — an agent bypassing the app server by connecting straight
-   to the broker's UDS still hits this check.
-3. Finds the handler for the verb and calls it with the args dict; the handler
-   in turn calls the client's typed method and packages the result.
-
-Verbs present in ``_VERB_TYPE`` but absent from ``_handlers`` are "declared but
-not implemented" — they return ``BAD_REQUEST`` until we wire them up. That lets
-the walking-skeleton broker declare its intended surface area while only a
-subset works.
+The shared broker dispatcher resolves canonical operation IDs and applies the
+exact grant allowlist before this module's email-specific handler is invoked.
 """
 
 from __future__ import annotations
@@ -28,12 +17,15 @@ import base64
 import binascii
 import mimetypes
 import secrets
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from integrations._perms import ATTACHMENT_FILE_MODE
 from integrations._rpc import RpcError
+from integrations.brokers._common._dispatch import (
+    OperationHandler,
+    dispatch_granted_operation,
+)
 from integrations.brokers.email_broker._caldav_client import CalDavClient
 from integrations.brokers.email_broker._imap_client import ImapClient
 from integrations.brokers.email_broker._smtp_client import SmtpClient
@@ -46,7 +38,7 @@ from integrations.calendar_refs import (
     encode_event_ref,
     encode_series_ref,
 )
-from integrations.permissions import Access, Capability, Permissions
+from integrations.operation_grants import OperationGrants
 
 # Total raw byte cap across all outbound attachments in one send. Above this
 # we refuse rather than try — provider SMTP limits land near 25MB and we want
@@ -54,31 +46,6 @@ from integrations.permissions import Access, Capability, Permissions
 # all the way to the SMTP server only to bounce. 30MB leaves headroom over
 # the strictest providers without inviting OOM-shaped payloads.
 _MAX_OUTBOUND_ATTACHMENT_BYTES = 30 * 1024 * 1024
-
-# Per-verb: (capability, minimum_access_required).
-_VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
-    # Email
-    "list_mailboxes": (Capability.EMAIL, Access.READ),
-    "list_messages": (Capability.EMAIL, Access.READ),
-    "search_messages": (Capability.EMAIL, Access.READ),
-    "fetch_message": (Capability.EMAIL, Access.READ),
-    "fetch_attachment": (Capability.EMAIL, Access.READ),
-    "move_messages": (Capability.EMAIL, Access.READ_WRITE),
-    "send_message": (Capability.EMAIL, Access.READ_WRITE),
-    # Calendar (CalDAV)
-    "list_calendars": (Capability.CALENDAR, Access.READ),
-    "list_events": (Capability.CALENDAR, Access.READ),
-    "search_events": (Capability.CALENDAR, Access.READ),
-    "create_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "update_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "update_event_series": (Capability.CALENDAR, Access.READ_WRITE),
-    "delete_event_series": (Capability.CALENDAR, Access.READ_WRITE),
-}
-
-
-_Handler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
 
 class VerbDispatcher:
     """Route one RPC verb call to the right client method."""
@@ -91,69 +58,52 @@ class VerbDispatcher:
         # implemented" so the gate decision and the missing-config decision
         # are visibly distinct.
         smtp: SmtpClient | None,
-        # caldav is None for catalog entries that don't declare the
-        # calendar capability; calendar verbs return "not implemented" then.
+        # caldav is None for catalog entries without calendar operations;
+        # those handlers return "not implemented".
         caldav: CalDavClient | None = None,
         *,
-        permissions: Permissions,
+        operation_grants: OperationGrants,
         attachments_dir: Path,
     ) -> None:
         self._imap = imap
         self._smtp = smtp
         self._caldav = caldav
-        self._permissions = permissions
+        self._operation_grants = operation_grants
         self._attachments_dir = attachments_dir
 
-        # Handler registry — grows as verbs land. Everything in
-        # ``_VERB_REQUIREMENT`` that lacks a handler here falls through to
-        # "not implemented."
-        self._handlers: dict[str, _Handler] = {
-            "list_mailboxes": self._handle_list_mailboxes,
-            "list_messages": self._handle_list_messages,
-            "search_messages": self._handle_search_messages,
-            "fetch_message": self._handle_fetch_message,
-            "fetch_attachment": self._handle_fetch_attachment,
-            "move_messages": self._handle_move_messages,
+        self._handlers: dict[str, OperationHandler] = {
+            "email.mailboxes.list": self._handle_list_mailboxes,
+            "email.messages.list": self._handle_list_messages,
+            "email.messages.search": self._handle_search_messages,
+            "email.messages.get": self._handle_fetch_message,
+            "email.attachments.download": self._handle_fetch_attachment,
+            "email.messages.move": self._handle_move_messages,
         }
         if smtp is not None:
-            self._handlers["send_message"] = self._handle_send_message
+            self._handlers["email.messages.send"] = self._handle_send_message
         if caldav is not None:
-            self._handlers["list_calendars"] = self._handle_list_calendars
-            self._handlers["list_events"] = self._handle_list_events
-            self._handlers["search_events"] = self._handle_search_events
-            self._handlers["create_event"] = self._handle_create_event
-            self._handlers["update_event"] = self._handle_update_event
-            self._handlers["delete_event"] = self._handle_delete_event
-            self._handlers["update_event_series"] = self._handle_update_event_series
-            self._handlers["delete_event_series"] = self._handle_delete_event_series
+            self._handlers["calendar.calendars.list"] = self._handle_list_calendars
+            self._handlers["calendar.events.list"] = self._handle_list_events
+            self._handlers["calendar.events.search"] = self._handle_search_events
+            self._handlers["calendar.events.create"] = self._handle_create_event
+            self._handlers["calendar.events.update"] = self._handle_update_event
+            self._handlers["calendar.events.delete"] = self._handle_delete_event
+            self._handlers["calendar.series.update"] = self._handle_update_event_series
+            self._handlers["calendar.series.delete"] = self._handle_delete_event_series
 
-    async def dispatch(self, verb: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point called by the RPC layer for every incoming frame."""
-        requirement = _VERB_REQUIREMENT.get(verb)
-        if requirement is None:
-            msg = f"unknown verb: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-
-        cap, min_access = requirement
-        granted = self._permissions.get(cap, Access.OFF)
-        if granted < min_access:
-            msg = (
-                f"verb {verb!r} requires {cap.value}:{min_access.name.lower()}, "
-                f"but this integration has {cap.value}:{granted.name.lower()}"
-            )
-            raise RpcError("PERMISSION_DENIED", msg)
-
-        handler = self._handlers.get(verb)
-        if handler is None:
-            msg = f"verb not implemented: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-
-        return await handler(args)
+        return await dispatch_granted_operation(
+            operation_id,
+            args,
+            operation_grants=self._operation_grants,
+            handlers=self._handlers,
+        )
 
     # --- handlers -----------------------------------------------------------
 
     async def _handle_list_mailboxes(self, _args: dict[str, Any]) -> dict[str, Any]:
-        """``list_mailboxes`` takes no args; returns ``{"mailboxes": [...]}``.
+        """``email.mailboxes.list`` takes no args; returns ``{"mailboxes": [...]}``.
 
         The client returns typed :class:`Mailbox` instances; we serialize via
         ``.model_dump()`` here because this is the wire boundary — the dict
@@ -260,7 +210,7 @@ class VerbDispatcher:
         return {"sent": True, "message_id": message_id}
 
     async def _handle_list_calendars(self, _args: dict[str, Any]) -> dict[str, Any]:
-        """``list_calendars`` takes no args; returns ``{"calendars": [...]}``."""
+        """``calendar.calendars.list`` takes no args; returns ``{"calendars": [...]}``."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         calendars = await self._caldav.list_calendars()
@@ -303,7 +253,7 @@ class VerbDispatcher:
         }
 
     async def _handle_create_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        """``create_event`` creates a VEVENT and returns its server representation."""
+        """``calendar.events.create`` creates a VEVENT and returns its server representation."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         calendar_ref = _require_str(args, "calendar_ref")
@@ -327,7 +277,7 @@ class VerbDispatcher:
         return {"event": _wire_event(event, calendar_ref)}
 
     async def _handle_update_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        """``update_event`` changes only the supplied VEVENT fields."""
+        """``calendar.events.update`` changes only the supplied VEVENT fields."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         event_ref = _require_str(args, "event_ref")
@@ -348,7 +298,7 @@ class VerbDispatcher:
         return {"event": _wire_event(event, target.calendar_ref)}
 
     async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
-        """``delete_event`` permanently removes a VEVENT."""
+        """``calendar.events.delete`` permanently removes a VEVENT."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         event_ref = _require_str(args, "event_ref")
@@ -524,7 +474,7 @@ def _require_str_list(args: dict[str, Any], key: str) -> list[str]:
 
 
 def _parse_outbound_attachments(value: Any) -> list[OutboundAttachment]:
-    """Validate the optional ``attachments`` arg on ``send_message``.
+    """Validate the optional ``attachments`` arg on ``email.messages.send``.
 
     Each item must be an object with ``filename`` (non-empty str),
     ``mime_type`` (non-empty str), and ``data_b64`` (str). Bytes are decoded

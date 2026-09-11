@@ -10,7 +10,7 @@ through the ``broker_client`` submodule::
     from integrations import broker_client
 
     result = await broker_client.call(
-        "gmail_personal", "list_mailboxes", {}, app_sock_path=...,
+        "gmail_personal", "email.mailboxes.list", {}, app_sock_path=...,
     )
 
     try:
@@ -24,6 +24,10 @@ gives external code one clear namespace per surface and matches the
 
 Internal modules inside this package continue to import from their defining
 submodule, not through this facade.
+
+Preset definitions are exposed by ``integrations.catalog``; shared broker
+launch contracts live in ``integrations.drivers``. Neither depends on
+supervisor lifecycle or persistence.
 """
 
 from integrations import broker_client, supervisor_client

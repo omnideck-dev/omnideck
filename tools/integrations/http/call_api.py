@@ -11,6 +11,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,15 @@ async def call_api(
 
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
-            integration_id, "http_request", rpc_args, app_sock_path=app_sock,
+        result = await invoke_operation(
+            integration_id, "http.request", rpc_args, app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
+    except broker_client.IntegrationPermissionDenied:
         return (
             f"Method {method.upper()!r} is not permitted: "
-            f"integration {integration_id!r} is read-only."
+            f"tool access is disabled for {integration_id!r}."
         )
     except broker_client.IntegrationError as exc:
         logger.warning(

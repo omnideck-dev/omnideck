@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._format import format_envelope
 from tools.integrations._messages import auth_failed_message
 
@@ -37,9 +38,9 @@ async def search_email(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "search_messages",
+            "email.messages.search",
             {"folder": folder, "query": query, "limit": limit},
             app_sock_path=app_sock,
         )

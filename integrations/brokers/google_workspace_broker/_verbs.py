@@ -6,7 +6,6 @@ import base64
 import logging
 import mimetypes
 import secrets
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
 
 from integrations._rpc import RpcError
+from integrations.brokers._common._dispatch import (
+    OperationHandler,
+    dispatch_granted_operation,
+)
 from integrations.brokers.google_workspace_broker._calendar_client import CalendarClient
 from integrations.brokers.google_workspace_broker._contacts_client import ContactsClient
 from integrations.brokers.google_workspace_broker._drive_client import DriveClient, _run_sync
@@ -26,49 +29,9 @@ from integrations.calendar_refs import (
     encode_event_ref,
     encode_series_ref,
 )
-from integrations.permissions import Access, Capability, Permissions
+from integrations.operation_grants import OperationGrants
 
 logger = logging.getLogger(__name__)
-
-
-_VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
-    # Drive (read)
-    "list_drive_files": (Capability.DRIVE, Access.READ),
-    "search_drive_files": (Capability.DRIVE, Access.READ),
-    "get_drive_file_metadata": (Capability.DRIVE, Access.READ),
-    "export_drive_file": (Capability.DRIVE, Access.READ),
-    # Drive (write)
-    "upload_drive_file": (Capability.DRIVE, Access.READ_WRITE),
-    "create_drive_folder": (Capability.DRIVE, Access.READ_WRITE),
-    "update_drive_file": (Capability.DRIVE, Access.READ_WRITE),
-    "trash_drive_file": (Capability.DRIVE, Access.READ_WRITE),
-    "share_drive_file": (Capability.DRIVE, Access.READ_WRITE),
-    # Calendar (read)
-    "list_calendars": (Capability.CALENDAR, Access.READ),
-    "list_events": (Capability.CALENDAR, Access.READ),
-    "search_events": (Capability.CALENDAR, Access.READ),
-    # Calendar (write)
-    "create_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "update_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
-    "update_event_series": (Capability.CALENDAR, Access.READ_WRITE),
-    "delete_event_series": (Capability.CALENDAR, Access.READ_WRITE),
-    # Email (Gmail, read)
-    "list_mailboxes": (Capability.EMAIL, Access.READ),
-    "list_messages": (Capability.EMAIL, Access.READ),
-    "search_messages": (Capability.EMAIL, Access.READ),
-    "fetch_message": (Capability.EMAIL, Access.READ),
-    "fetch_attachment": (Capability.EMAIL, Access.READ),
-    # Email (Gmail, write)
-    "send_message": (Capability.EMAIL, Access.READ_WRITE),
-    "move_messages": (Capability.EMAIL, Access.READ_WRITE),
-    # Contacts
-    "list_contacts": (Capability.CONTACTS, Access.READ),
-    "search_contacts": (Capability.CONTACTS, Access.READ),
-}
-
-
-_Handler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class VerbDispatcher:
@@ -78,11 +41,11 @@ class VerbDispatcher:
         self,
         creds: Credentials,
         *,
-        permissions: Permissions,
+        operation_grants: OperationGrants,
         downloads_dir: Path,
     ) -> None:
         self._creds = creds
-        self._permissions = permissions
+        self._operation_grants = operation_grants
         self._downloads_dir = downloads_dir
 
         self._drive: DriveClient | None = None
@@ -109,59 +72,46 @@ class VerbDispatcher:
         if "https://www.googleapis.com/auth/contacts.readonly" in scopes:
             self._contacts = ContactsClient(creds)
 
-        self._handlers: dict[str, _Handler] = {}
+        self._handlers: dict[str, OperationHandler] = {}
         if self._drive is not None:
-            self._handlers["list_drive_files"] = self._handle_list_drive_files
-            self._handlers["search_drive_files"] = self._handle_search_drive_files
-            self._handlers["get_drive_file_metadata"] = self._handle_get_drive_file_metadata
-            self._handlers["export_drive_file"] = self._handle_export_drive_file
-            self._handlers["upload_drive_file"] = self._handle_upload_drive_file
-            self._handlers["create_drive_folder"] = self._handle_create_drive_folder
-            self._handlers["update_drive_file"] = self._handle_update_drive_file
-            self._handlers["trash_drive_file"] = self._handle_trash_drive_file
-            self._handlers["share_drive_file"] = self._handle_share_drive_file
+            self._handlers["drive.files.list"] = self._handle_list_drive_files
+            self._handlers["drive.files.search"] = self._handle_search_drive_files
+            self._handlers["drive.files.get_metadata"] = self._handle_get_drive_file_metadata
+            self._handlers["drive.files.export"] = self._handle_export_drive_file
+            self._handlers["drive.files.upload"] = self._handle_upload_drive_file
+            self._handlers["drive.folders.create"] = self._handle_create_drive_folder
+            self._handlers["drive.files.update"] = self._handle_update_drive_file
+            self._handlers["drive.files.trash"] = self._handle_trash_drive_file
+            self._handlers["drive.files.share"] = self._handle_share_drive_file
         if self._calendar is not None:
-            self._handlers["list_calendars"] = self._handle_list_calendars
-            self._handlers["list_events"] = self._handle_list_events
-            self._handlers["search_events"] = self._handle_search_events
-            self._handlers["create_event"] = self._handle_create_event
-            self._handlers["update_event"] = self._handle_update_event
-            self._handlers["delete_event"] = self._handle_delete_event
-            self._handlers["update_event_series"] = self._handle_update_event_series
-            self._handlers["delete_event_series"] = self._handle_delete_event_series
+            self._handlers["calendar.calendars.list"] = self._handle_list_calendars
+            self._handlers["calendar.events.list"] = self._handle_list_events
+            self._handlers["calendar.events.search"] = self._handle_search_events
+            self._handlers["calendar.events.create"] = self._handle_create_event
+            self._handlers["calendar.events.update"] = self._handle_update_event
+            self._handlers["calendar.events.delete"] = self._handle_delete_event
+            self._handlers["calendar.series.update"] = self._handle_update_event_series
+            self._handlers["calendar.series.delete"] = self._handle_delete_event_series
         if self._gmail is not None:
-            self._handlers["list_mailboxes"] = self._handle_list_mailboxes
-            self._handlers["list_messages"] = self._handle_list_messages
-            self._handlers["search_messages"] = self._handle_search_messages
-            self._handlers["fetch_message"] = self._handle_fetch_message
-            self._handlers["fetch_attachment"] = self._handle_fetch_attachment
-            self._handlers["send_message"] = self._handle_send_message
-            self._handlers["move_messages"] = self._handle_move_messages
+            self._handlers["email.mailboxes.list"] = self._handle_list_mailboxes
+            self._handlers["email.messages.list"] = self._handle_list_messages
+            self._handlers["email.messages.search"] = self._handle_search_messages
+            self._handlers["email.messages.get"] = self._handle_fetch_message
+            self._handlers["email.attachments.download"] = self._handle_fetch_attachment
+            self._handlers["email.messages.send"] = self._handle_send_message
+            self._handlers["email.messages.move"] = self._handle_move_messages
         if self._contacts is not None:
-            self._handlers["list_contacts"] = self._handle_list_contacts
-            self._handlers["search_contacts"] = self._handle_search_contacts
+            self._handlers["contacts.people.list"] = self._handle_list_contacts
+            self._handlers["contacts.people.search"] = self._handle_search_contacts
 
-    async def dispatch(self, verb: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point called by the RPC layer for every incoming frame."""
-        requirement = _VERB_REQUIREMENT.get(verb)
-        if requirement is None:
-            msg = f"unknown verb: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-
-        cap, min_access = requirement
-        granted = self._permissions.get(cap, Access.OFF)
-        if granted < min_access:
-            msg = (
-                f"verb {verb!r} requires {cap.value}:{min_access.name.lower()}, "
-                f"but this integration has {cap.value}:{granted.name.lower()}"
-            )
-            raise RpcError("PERMISSION_DENIED", msg)
-
-        handler = self._handlers.get(verb)
-        if handler is None:
-            msg = f"verb not implemented: {verb}"
-            raise RpcError("BAD_REQUEST", msg)
-        return await handler(args)
+        return await dispatch_granted_operation(
+            operation_id,
+            args,
+            operation_grants=self._operation_grants,
+            handlers=self._handlers,
+        )
 
     # --- Drive handlers ------------------------------------------------------
 

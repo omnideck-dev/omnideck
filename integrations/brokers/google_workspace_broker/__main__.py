@@ -9,7 +9,7 @@ Exit codes (see :mod:`integrations.brokers._common._exit_codes`):
 
 - 0: clean shutdown.
 - 77: refresh token rejected by Google. The supervisor flips state to
-  ``auth_failed`` and stops respawning; recovery is delete + re-add.
+  ``auth_failed`` and stops respawning; recovery uses reconnect.
 - 1: anything else (env-parse failure, network unreachable, internal error).
   Supervisor backoff applies.
 """
@@ -34,7 +34,7 @@ from integrations._rpc import serve_rpc
 from integrations.brokers._common._exit_codes import AUTH_FAIL, CLEAN_SHUTDOWN, GENERIC_ERROR
 from integrations.brokers._common._ready import print_ready
 from integrations.brokers.google_workspace_broker._verbs import VerbDispatcher
-from integrations.permissions import permissions_from_env
+from integrations.operation_grants import operation_grants_from_env
 
 logger = logging.getLogger("google_workspace_broker")
 
@@ -64,7 +64,7 @@ _OAUTH_ENV_VARS = (
 async def _run() -> int:
     integration_id = env_required("INTEGRATION_ID")
     socket_path = Path(env_required("BROKER_SOCKET"))
-    permissions = permissions_from_env(env_required("PERMISSIONS"))
+    operation_grants = operation_grants_from_env(env_required("OPERATION_GRANTS"))
 
     expires_raw = int(env_required("OAUTH_EXPIRES_AT"))
     creds = Credentials(
@@ -114,7 +114,7 @@ async def _run() -> int:
 
     downloads_dir = Path(env_required("DOWNLOADS_DIR"))
     dispatcher = VerbDispatcher(
-        creds, permissions=permissions, downloads_dir=downloads_dir,
+        creds, operation_grants=operation_grants, downloads_dir=downloads_dir,
     )
 
     async def handler(verb: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -122,8 +122,8 @@ async def _run() -> int:
 
     server = await serve_rpc(socket_path, handler)
     log.info(
-        "listening on %s (permissions=%s, scopes=%s)",
-        socket_path, permissions, " ".join(creds.scopes or ()),
+        "listening on %s (operation_grants=%s, scopes=%s)",
+        socket_path, sorted(operation_grants), " ".join(creds.scopes or ()),
     )
 
     # READY sentinel: the supervisor watches stdout for this exact line and

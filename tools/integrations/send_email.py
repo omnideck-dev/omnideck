@@ -11,6 +11,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
@@ -51,9 +52,9 @@ async def send_email(
 
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "send_message",
+            "email.messages.send",
             args,
             app_sock_path=app_sock,
         )
@@ -61,8 +62,8 @@ async def send_email(
         return f"Integration {integration_id!r} is not connected."
     except broker_client.IntegrationAuthFailed:
         return auth_failed_message(integration_id)
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "send_email(%r, to=%r) failed: %s", integration_id, to, exc,

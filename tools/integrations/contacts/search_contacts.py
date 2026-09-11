@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.contacts._format import format_contact
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,9 @@ async def search_contacts(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "search_contacts",
+            "contacts.people.search",
             {"query": query, "limit": limit},
             app_sock_path=app_sock,
         )

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from integrations._perms import VAULT_FILE_MODE
 from integrations.supervisor._crypto import decrypt_secrets, encrypt_secrets
-from integrations.supervisor.types import IntegrationMeta
+from integrations.supervisor.types import ConnectionMeta
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,11 @@ def creds_dir(vault_dir: Path) -> Path:
 def meta_path(vault_dir: Path, integration_id: str) -> Path:
     """Path to ``<id>.meta`` inside the creds dir."""
     return creds_dir(vault_dir) / f"{integration_id}.meta"
+
+
+def meta_backup_path(vault_dir: Path, integration_id: str) -> Path:
+    """One-time backup retained when legacy metadata is migrated to v3."""
+    return creds_dir(vault_dir) / f"{integration_id}.meta.pre-v3.bak"
 
 
 def enc_path(vault_dir: Path, integration_id: str) -> Path:
@@ -64,10 +69,18 @@ def _atomic_write(path: Path, data: bytes, *, mode: int = VAULT_FILE_MODE) -> No
     tmp.rename(path)
 
 
-def write_meta(vault_dir: Path, meta: IntegrationMeta) -> None:
+def write_meta(vault_dir: Path, meta: ConnectionMeta) -> None:
     """Atomically write the ``.meta`` file for ``meta.id``."""
     data = meta.model_dump_json().encode("utf-8")
     _atomic_write(meta_path(vault_dir, meta.id), data)
+
+
+def backup_meta_before_v3(vault_dir: Path, integration_id: str) -> Path:
+    """Persist the original metadata once before an in-place v3 migration."""
+    backup = meta_backup_path(vault_dir, integration_id)
+    if not backup.exists():
+        _atomic_write(backup, meta_path(vault_dir, integration_id).read_bytes())
+    return backup
 
 
 def read_raw_meta(vault_dir: Path, integration_id: str) -> dict:
@@ -109,6 +122,7 @@ def delete_integration(vault_dir: Path, integration_id: str) -> None:
     """
     meta_path(vault_dir, integration_id).unlink(missing_ok=True)
     enc_path(vault_dir, integration_id).unlink(missing_ok=True)
+    meta_backup_path(vault_dir, integration_id).unlink(missing_ok=True)
 
 
 def list_integration_ids(vault_dir: Path) -> list[str]:
@@ -124,5 +138,4 @@ def list_integration_ids(vault_dir: Path) -> list[str]:
     meta_ids = {p.stem for p in cdir.glob("*.meta")}
     enc_ids = {p.stem for p in cdir.glob("*.enc")}
     return sorted(meta_ids & enc_ids)
-
 

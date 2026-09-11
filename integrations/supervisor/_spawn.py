@@ -13,9 +13,10 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from integrations.permissions import Permissions, permissions_to_env
-from integrations.supervisor._catalog import CatalogEntry
+from integrations.catalog import CatalogEntry
+from integrations.operation_grants import OperationGrants, operation_grants_to_env
 from integrations.supervisor.types import HostPath
 
 logger = logging.getLogger(__name__)
@@ -49,15 +50,15 @@ async def spawn_broker(
     *,
     entry: CatalogEntry,
     integration_id: str,
-    secret_bundle: dict,
-    permissions: Permissions,
+    secret_bundle: dict[str, Any],
+    operation_grants: OperationGrants,
     sockets_dir: Path,
     host_paths: dict[str, HostPath],
 ) -> BrokerHandle:
     """Spawn the broker for ``integration_id`` from its catalog entry.
 
-    Combines the entry's static env, the credential-to-env mapping, the
-    per-spawn ``INTEGRATION_ID`` / ``BROKER_SOCKET`` / ``PERMISSIONS`` vars,
+    Combines the entry's driver config, credential bindings, the per-spawn
+    ``INTEGRATION_ID`` / ``BROKER_SOCKET`` / ``OPERATION_GRANTS`` vars,
     and any host-path bindings the entry declares (each role looked up in
     ``host_paths`` and injected as the binding's env_var). Awaits ``READY\\n``
     on the subprocess's stdout before returning.
@@ -69,13 +70,17 @@ async def spawn_broker(
     # and whatever else Python needs to resolve. Our explicit overrides win on
     # conflict. When we harden the container, swap to a curated allow-list.
     env: dict[str, str] = dict(os.environ)
-    env.update(entry.static_env)
-    for blob_key, env_name in entry.env_injection.items():
+    env.update(entry.driver_config)
+    for blob_key, env_name in entry.driver.env_injection.items():
         if blob_key not in secret_bundle:
             msg = f"env_injection references missing auth field: {blob_key!r}"
             raise BrokerSpawnError(msg)
-        env[env_name] = secret_bundle[blob_key]
-    for binding in entry.host_paths:
+        value = secret_bundle[blob_key]
+        if not isinstance(value, str):
+            msg = f"auth field {blob_key!r} must be a string"
+            raise BrokerSpawnError(msg)
+        env[env_name] = value
+    for binding in entry.driver.host_paths:
         spec = host_paths.get(binding.role)
         if spec is None:
             # Catalog references a role the supervisor doesn't know about.
@@ -86,7 +91,7 @@ async def spawn_broker(
         env[binding.env_var] = str(spec.path)
     env["INTEGRATION_ID"] = integration_id
     env["BROKER_SOCKET"] = str(socket_path)
-    env["PERMISSIONS"] = permissions_to_env(permissions)
+    env["OPERATION_GRANTS"] = operation_grants_to_env(operation_grants)
 
     logger.info("spawning broker for %s at %s", integration_id, socket_path)
 
@@ -94,12 +99,15 @@ async def spawn_broker(
     # host's stderr (docker logs, journald, etc.) without a forwarding hop.
     # The broker's own log format already prefixes ``[email_broker[<id>]]``
     # so per-integration filtering still works.
-    proc = await asyncio.create_subprocess_exec(
-        *entry.command,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.DEVNULL,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *entry.driver.command,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+    except (OSError, TypeError) as exc:
+        raise BrokerSpawnError(f"could not start broker process: {exc}") from exc
 
     try:
         await asyncio.wait_for(_wait_for_ready(proc), timeout=_READY_TIMEOUT_SECONDS)

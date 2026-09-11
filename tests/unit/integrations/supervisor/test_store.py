@@ -7,10 +7,12 @@ from pathlib import Path
 
 from integrations.supervisor._crypto import load_or_init_master_key
 from integrations.supervisor._store import (
+    backup_meta_before_v3,
     delete_integration,
     enc_path,
     list_integration_ids,
     meta_path,
+    meta_backup_path,
     read_raw_meta,
     read_secrets,
     write_meta,
@@ -71,17 +73,32 @@ def test_write_is_atomic_no_tmp_left_behind(tmp_path: Path) -> None:
     assert tmps == []
 
 
+def test_pre_v3_backup_is_one_time_and_preserves_original_bytes(tmp_path: Path) -> None:
+    meta = _meta()
+    write_meta(tmp_path, meta)
+    original = meta_path(tmp_path, meta.id).read_bytes()
+    backup_meta_before_v3(tmp_path, meta.id)
+
+    changed = meta.model_copy(update={"label": "Changed"})
+    write_meta(tmp_path, changed)
+    backup_meta_before_v3(tmp_path, meta.id)
+
+    assert meta_backup_path(tmp_path, meta.id).read_bytes() == original
+
+
 def test_delete_removes_both_files(tmp_path: Path) -> None:
     """delete_integration unlinks .meta and .enc together."""
     key = load_or_init_master_key(tmp_path)
     meta = _meta()
     write_meta(tmp_path, meta)
+    backup_meta_before_v3(tmp_path, meta.id)
     write_secrets(tmp_path, meta.id, key, {"password": "x"})
 
     delete_integration(tmp_path, meta.id)
 
     assert not meta_path(tmp_path, meta.id).exists()
     assert not enc_path(tmp_path, meta.id).exists()
+    assert not meta_backup_path(tmp_path, meta.id).exists()
 
 
 def test_delete_is_idempotent(tmp_path: Path) -> None:

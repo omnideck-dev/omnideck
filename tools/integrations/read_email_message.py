@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._format import format_size
 from tools.integrations._messages import auth_failed_message
 
@@ -29,9 +30,9 @@ async def read_email_message(integration_id: str, folder: str, uid: str) -> str:
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "fetch_message",
+            "email.messages.get",
             {"folder": folder, "uid": uid},
             app_sock_path=app_sock,
         )

@@ -1,26 +1,15 @@
-"""Pydantic models for the supervisor's on-disk and in-memory shapes.
-
-Imports only stdlib, pydantic, and the permissions leaf module — so this
-module can be imported from anywhere in the supervisor without introducing
-a cycle.
-"""
+"""Pydantic models for brokered-connection metadata and host paths."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, field_serializer, field_validator
 
-from integrations.permissions import (
-    Access,
-    Capability,
-    Permissions,
-    permissions_from_dict,
-    permissions_to_dict,
-)
+from integrations.operation_grants import OperationGrants
 
 
 @dataclass(frozen=True)
@@ -41,59 +30,51 @@ class HostPath:
     mode: int
 
 
-@dataclass(frozen=True)
-class HostPathBinding:
-    """Catalog-side opt-in: this integration's broker wants ``role`` at ``env_var``.
+class BrokeredConnectionMeta(BaseModel):
+    """Common non-secret metadata for anything using a broker process."""
 
-    ``role`` names a key in the supervisor's host-path registry (validated at
-    boot). ``env_var`` is the env-var name the broker subprocess expects the
-    resolved path under. ``mode`` records whether the broker reads or writes
-    — informational today, a hook for future enforcement.
-    """
-
-    role: str
-    env_var: str
-    mode: Literal["read", "write"]
-
-
-class IntegrationMeta(BaseModel):
-    """Non-secret metadata for one installed integration.
-
-    Lives as plaintext JSON at ``<vault>/creds/<id>.meta`` next to the encrypted
-    ``<id>.enc`` (which holds the secret bundle). Keeping the non-secret fields
-    plaintext lets the supervisor list integrations, toggle permissions, and
-    rebuild its registry on restart without touching the master key.
-
-    Attributes:
-        version: Schema version for forward-compat. Bump when field layout
-            changes in a way that needs migration.
-        id: Stable identity, formatted ``<slug>_<user_suffix>``, ``[a-z0-9_-]+``
-            up to 64 chars. Not editable after creation.
-        slug: Catalog entry slug (e.g. ``"gmail"``, ``"icloud"``). Selects the
-            broker binary and any provider-specific config the catalog ships.
-        label: Human-readable label shown in the UI. User-editable.
-        permissions: Per-capability access level. The broker enforces these at
-            verb dispatch — an agent bypassing the app server's tool registry
-            and connecting directly to a broker's UDS still gets refused.
-        added_at: When the integration was first added.
-        updated_at: Last time the metadata or the encrypted blob was rewritten.
-    """
-
-    version: int = 2
+    version: Literal[3] = 3
     id: str
     slug: str
     label: str
-    permissions: Permissions = {}
+    kind: Literal["integration", "model_provider"]
     added_at: datetime
     updated_at: datetime
 
-    @field_validator("permissions", mode="before")
-    @classmethod
-    def _parse_permissions(cls, v: Any) -> Permissions:
-        if isinstance(v, dict) and v and isinstance(next(iter(v.values())), str):
-            return permissions_from_dict(v)
-        return v
 
-    @field_serializer("permissions")
-    def _serialize_permissions(self, perms: Permissions) -> dict[str, str]:
-        return permissions_to_dict(perms)
+class IntegrationMeta(BrokeredConnectionMeta):
+    """A configured tool integration and its explicit agent grants."""
+
+    kind: Literal["integration"] = "integration"
+    agent_operation_grants: OperationGrants = frozenset()
+
+    @field_validator("agent_operation_grants", mode="before")
+    @classmethod
+    def _parse_operation_grants(cls, value: Any) -> OperationGrants:
+        if value is None:
+            return frozenset()
+        if isinstance(value, (list, set, frozenset, tuple)) and all(
+            isinstance(item, str) for item in value
+        ):
+            return frozenset(value)
+        raise ValueError("agent_operation_grants must be an array of strings")
+
+    @field_serializer("agent_operation_grants")
+    def _serialize_operation_grants(self, grants: OperationGrants) -> list[str]:
+        return sorted(grants)
+
+
+class ModelProviderMeta(BrokeredConnectionMeta):
+    """A brokered LLM provider; it deliberately has no operation grants."""
+
+    kind: Literal["model_provider"] = "model_provider"
+
+
+ConnectionMeta: TypeAlias = IntegrationMeta | ModelProviderMeta
+
+
+def connection_meta_from_dict(raw: dict[str, Any]) -> ConnectionMeta:
+    """Validate version-3 metadata using its explicit domain discriminator."""
+    if raw.get("kind") == "model_provider":
+        return ModelProviderMeta.model_validate(raw)
+    return IntegrationMeta.model_validate(raw)

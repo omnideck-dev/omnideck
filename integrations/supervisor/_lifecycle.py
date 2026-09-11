@@ -19,8 +19,12 @@ import logging
 from pathlib import Path
 
 from integrations._rpc import serve_rpc
+from integrations.catalog import (
+    CatalogEntry,
+    validate_catalog,
+    validate_host_path_bindings,
+)
 from integrations.supervisor._app_sock import AppSockHandler
-from integrations.supervisor._catalog import CatalogEntry, validate_host_path_bindings
 from integrations.supervisor._crypto import load_or_init_master_key
 from integrations.supervisor._manager import BrokerManager, ReconcileError
 from integrations.supervisor._registry import Registry
@@ -81,6 +85,7 @@ class Supervisor:
         # Catalog/registry agreement is checked up front so a typo in a
         # catalog entry's host_paths fails the boot rather than the first
         # spawn for that slug.
+        validate_catalog(self.catalog)
         validate_host_path_bindings(self.catalog, self.host_paths)
 
         self.vault_dir.mkdir(parents=True, exist_ok=True)
@@ -111,9 +116,9 @@ class Supervisor:
 
         Spawns concurrently so a slow upstream login on one integration
         doesn't delay others. Per-integration failures are logged and
-        skipped — a single broken integration shouldn't keep the
-        supervisor (or its siblings) from coming up. Skipped integrations
-        remain on disk; the user can re-add them through the normal flow.
+        isolated — a single broken connection shouldn't keep the supervisor
+        (or its siblings) from coming up. Connections whose broker cannot
+        start remain in the registry as degraded records for reconnect/remove.
         """
         manager = self._manager
         if manager is None:

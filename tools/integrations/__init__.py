@@ -11,14 +11,14 @@ from tools.integrations._state import (
     mark_removed,
     registered_integrations,
 )
-from tools.integrations._tool_resolution import CapabilityTools, integration_tools_by_capability
+from tools.integrations._tool_resolution import OperationTools, integration_tools_by_category
 from tools.integrations.types import RegisteredIntegration
 
 __all__ = [
-    "CapabilityTools",
+    "OperationTools",
     "RegisteredIntegration",
     "cache_loaded",
-    "integration_tools_by_capability",
+    "integration_tools_by_category",
     "mark_added",
     "mark_removed",
     "registered_integrations",

@@ -6,9 +6,8 @@ differently:
 
 - ``IntegrationAuthFailed`` — the broker told us the upstream rejected our
   credentials. The user needs to reconnect the integration.
-- ``IntegrationPermissionDenied`` — the broker refused a verb because the
-  integration's per-capability permission is too low. The user needs to
-  adjust permissions in Settings.
+- ``IntegrationPermissionDenied`` — the broker refused an operation because
+  it is not in this consumer's explicit allowlist.
 
 Other broker error codes (``NETWORK`` / ``UPSTREAM`` / ``BAD_REQUEST``) land
 on the base ``IntegrationError`` for now. Promote them to dedicated subclasses
@@ -40,12 +39,11 @@ class IntegrationAuthFailed(IntegrationError):
 
 
 class IntegrationPermissionDenied(IntegrationError):
-    """The broker refused a verb due to insufficient permissions.
-
-    The integration's per-capability access level doesn't meet the
-    verb's requirement. Tool handlers should surface this with a hint
-    that the user can adjust permissions in Settings.
-    """
+    """The broker refused an operation that was not explicitly granted."""
 
 
+# Deprecated source-compatible name for clients built against the former
+# read/write permission model. New code should catch
+# ``IntegrationPermissionDenied``; both names refer to the same class so old
+# callers continue to behave correctly during the compatibility window.
 IntegrationWriteDenied = IntegrationPermissionDenied

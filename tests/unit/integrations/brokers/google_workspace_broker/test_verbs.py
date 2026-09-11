@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+from google.oauth2.credentials import Credentials
 
-from integrations.brokers.google_workspace_broker import _gmail_client
+from integrations.brokers.google_workspace_broker import _gmail_client, _verbs
 from integrations.brokers.google_workspace_broker._gmail_client import (
     _decode_base64url,
     _extract_text_body,
@@ -14,6 +17,29 @@ from integrations.brokers.google_workspace_broker._gmail_client import (
 )
 from integrations.brokers.google_workspace_broker._verbs import _flatten_contact, _wire_event
 from integrations.calendar_refs import decode_event_ref, decode_series_ref
+from integrations.operations import OPERATIONS_BY_GROUP
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("group", "scope", "client_name"),
+    [
+        ("email", "gmail.modify", "GmailClient"),
+        ("calendar", "calendar.events", "CalendarClient"),
+        ("drive", "drive.file", "DriveClient"),
+        ("contacts", "contacts.readonly", "ContactsClient"),
+    ],
+)
+def test_dispatch_registers_canonical_ids_for_available_services(
+    group: str, scope: str, client_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(_verbs, client_name, Mock())
+    credentials = Credentials(token="test", scopes=[f"https://www.googleapis.com/auth/{scope}"])
+    dispatcher = _verbs.VerbDispatcher(
+        credentials, operation_grants=OPERATIONS_BY_GROUP[group], downloads_dir=tmp_path,
+    )
+
+    assert set(dispatcher._handlers) == OPERATIONS_BY_GROUP[group]
 
 
 @pytest.mark.unit

@@ -334,7 +334,7 @@ class ImapClient:
         already decoded from any Content-Transfer-Encoding (base64, qp,
         etc.) so callers can write them straight to disk.
 
-        For walking-skeleton scope this re-fetches the full message and
+        The current implementation re-fetches the full message and
         extracts the named part client-side. A future optimization could
         use IMAP partial fetch (``BODY.PEEK[N]``) to pull just the part —
         worth doing once we hit attachments large enough that the full-

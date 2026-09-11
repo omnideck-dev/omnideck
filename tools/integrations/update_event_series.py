@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,13 @@ async def update_event_series(
 
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
-            integration_id, "update_event_series", args, app_sock_path=app_sock,
+        result = await invoke_operation(
+            integration_id, "calendar.series.update", args, app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning("update_event_series(%r) failed: %s", integration_id, exc)
         return f"Failed to update event series via {integration_id!r}: {exc}"

@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.list_events import _format_event
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,9 @@ async def search_events(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "search_events",
+            "calendar.events.search",
             {
                 "calendar_ref": calendar_ref,
                 "query": query,

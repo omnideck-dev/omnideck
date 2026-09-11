@@ -341,6 +341,7 @@ e2e *args:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
+        -e OMNIDECK_ENABLE_TEST_INTEGRATIONS=1 \
         "${env_args[@]}" \
         -v "$state/home:/home/omnideck:rw,z" \
         -v "$state/state:/var/lib/omnideck:rw,z" \
@@ -365,7 +366,9 @@ e2e *args:
         -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
-    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
+    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" \
+        OMNIDECK_CONTAINER_ENGINE="$engine" PYTHONPATH=. \
+        uv run pytest ${targets:-tests/e2e/}
 
 
 # =============================================================================

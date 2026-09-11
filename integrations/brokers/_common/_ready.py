@@ -2,7 +2,7 @@
 
 The broker prints ``READY\\n`` to stdout as its very first line of output after
 successfully connecting upstream. The supervisor reads stdout line-by-line and
-transitions the integration from ``pending`` to ``active`` on this line.
+transitions the integration from ``pending`` to ``running`` on this line.
 
 Brokers must not write to stdout before calling this function; any pre-READY
 noise would be mistaken for the ready signal or for upstream data.

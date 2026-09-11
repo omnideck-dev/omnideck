@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,16 @@ async def delete_event(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        await broker_client.call(
+        await invoke_operation(
             integration_id,
-            "delete_event",
+            "calendar.events.delete",
             {"event_ref": event_ref},
             app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "delete_event(%r, %r) failed: %s", integration_id, event_ref, exc,

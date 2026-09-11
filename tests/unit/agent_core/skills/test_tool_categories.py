@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 
 from config import FeaturesConfig
-from integrations.permissions import Access, Capability
 from agent_runtime._factory import _base_tools
 from agent_runtime._spawn import make_spawn_tool
 from skills._tool_categories import _custom_tools_category
@@ -66,9 +65,15 @@ def _set_flags(monkeypatch, **overrides):
     _static_tool_categories.cache_clear()
 
 
-def _connect(monkeypatch, cap, access=Access.READ):
+def _connect(monkeypatch, *operation_ids):
     async def _get():
-        return {"acct-1": RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access})}
+        return {
+            "acct-1": RegisteredIntegration(
+                id="acct-1",
+                slug="acct",
+                operation_grants=frozenset(operation_ids),
+            ),
+        }
 
     monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _get)
 
@@ -101,9 +106,7 @@ async def test_agent_tools_have_schema_ready_google_docstrings():
     for category in (await tool_categories()).values():
         exposed_tools.extend(category.tools)
     exposed_tools.extend(_custom_tools_category().tools)
-    for tiers in _BUILDERS.values():
-        for builders in tiers.values():
-            exposed_tools.extend(build(["example"]) for build in builders)
+    exposed_tools.extend(build(["example"]) for build in _BUILDERS.values())
 
     errors: list[str] = []
     for tool in {tool.__name__: tool for tool in exposed_tools}.values():
@@ -173,7 +176,7 @@ async def test_integration_category_empty_when_disconnected():
 
 @pytest.mark.unit
 async def test_integration_category_resolves_when_connected(monkeypatch):
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
+    _connect(monkeypatch, "email.messages.search")
     email = (await tool_categories())["email"]
     names = _names(email.tools)
     assert "search_email" in names
@@ -185,7 +188,7 @@ async def test_connected_flag_tracks_integration_state(monkeypatch):
     cats = await tool_categories()
     assert cats["coding"].connected is None  # static: no connection concept
     assert cats["email"].connected is False  # integration, nothing connected
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
+    _connect(monkeypatch, "email.messages.search")
     assert (await tool_categories())["email"].connected is True
 
 

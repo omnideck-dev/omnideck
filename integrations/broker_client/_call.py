@@ -1,19 +1,19 @@
-"""The ``call()`` entry point — how app-server code invokes broker verbs.
+"""The ``call()`` entry point — how app-server code invokes integration operations.
 
 Two RPC hops in one call:
 
 1. Resolve: ask the supervisor's ``app.sock`` for the broker's UDS path given
    an integration id.
-2. Invoke: open the broker's UDS, send the verb frame, read the response.
+2. Invoke: send the canonical operation ID in the broker RPC's ``verb`` field.
 
 Each hop uses the same length-prefixed JSON framing the supervisor and
 brokers serve. Errors from either hop are mapped to the exception hierarchy
 in ``_errors.py``.
 
-Walking-skeleton shape: no resolve-cache, no connection pool, one UDS
-connection per ``call()`` invocation. That matches what the existing tests
-use and keeps the first pass small; a caching layer slots in later without
-touching callers.
+The client intentionally resolves on every invocation and uses one UDS
+connection per hop. The supervisor's runtime state can change asynchronously
+(credential failure, crash recovery, removal), so avoiding a socket cache keeps
+the resolve response authoritative and prevents calls through stale paths.
 """
 
 from __future__ import annotations
@@ -33,18 +33,18 @@ from integrations.broker_client._errors import (
 
 async def call(
     integration_id: str,
-    verb: str,
+    operation_id: str,
     args: dict[str, Any],
     *,
     app_sock_path: Path | str,
 ) -> Any:
-    """Invoke ``verb`` on the broker for ``integration_id``.
+    """Invoke ``operation_id`` on the broker for ``integration_id``.
 
     Args:
         integration_id: The integration the tool handler is operating on
             (e.g. ``"gmail_personal"``).
-        verb: The broker verb to call (e.g. ``"list_mailboxes"``).
-        args: Arguments for the verb; passed through verbatim to the broker.
+        operation_id: Canonical operation ID (e.g. ``"email.mailboxes.list"``).
+        args: Arguments for the operation; passed through verbatim to the broker.
         app_sock_path: Path to the supervisor's ``app.sock``. Required —
             the caller knows where it lives (env var in production, fixture
             in tests).
@@ -56,7 +56,7 @@ async def call(
     Raises:
         IntegrationNotConnected: supervisor doesn't know about this integration.
         IntegrationAuthFailed: broker returned ``AUTH``.
-        IntegrationWriteDenied: broker returned ``WRITE_DENIED``.
+        IntegrationPermissionDenied: broker returned ``PERMISSION_DENIED``.
         IntegrationError: any other protocol-level or broker-side failure.
     """
     # --- Hop 1: resolve integration_id -> broker socket via the supervisor.
@@ -72,6 +72,14 @@ async def call(
             raise IntegrationNotConnected(
                 f"integration {integration_id!r}: {message or 'not registered'}",
             )
+        if code == "AUTH":
+            raise IntegrationAuthFailed(
+                f"integration {integration_id!r}: {message or 'credentials rejected'}",
+            )
+        if code == "UNAVAILABLE":
+            raise IntegrationError(
+                f"integration {integration_id!r}: {message or 'not running'}",
+            )
         # The supervisor raised something else — treat as a generic integration
         # error; callers can special-case later if we start growing varieties.
         raise IntegrationError(
@@ -83,18 +91,18 @@ async def call(
     # --- Hop 2: call the broker directly.
     broker_response = await _rpc_one_shot(
         broker_socket,
-        {"id": 1, "verb": verb, "args": args},
+        {"id": 1, "verb": operation_id, "args": args},
     )
     if "error" in broker_response:
         error = broker_response["error"]
         code = error.get("code", "")
         message = error.get("message", "")
         if code == "AUTH":
-            raise IntegrationAuthFailed(f"{integration_id} {verb}: {message}")
+            raise IntegrationAuthFailed(f"{integration_id} {operation_id}: {message}")
         if code == "PERMISSION_DENIED":
-            raise IntegrationPermissionDenied(f"{integration_id} {verb}: {message}")
+            raise IntegrationPermissionDenied(f"{integration_id} {operation_id}: {message}")
         raise IntegrationError(
-            f"{integration_id} {verb} -> {code}: {message}",
+            f"{integration_id} {operation_id} -> {code}: {message}",
         )
 
     return broker_response["result"]
@@ -108,7 +116,12 @@ async def _rpc_one_shot(
     Wraps the framing helpers in ``integrations._rpc`` so the two hops above
     aren't repeating the same 8 lines of connection plumbing.
     """
-    reader, writer = await asyncio.open_unix_connection(str(socket_path))
+    try:
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+    except OSError as exc:
+        raise IntegrationError(
+            f"could not connect to integration service at {socket_path}: {exc}",
+        ) from exc
     try:
         await write_frame(writer, frame)
         try:

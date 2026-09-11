@@ -389,11 +389,11 @@ async def test_send_email_reports_permission_denied(monkeypatch: pytest.MonkeyPa
     generic upstream failure so the caller knows the fix is to grant write
     permissions, not to retry.
     """
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await send_email(
         "icloud_personal", to=["a@b.com"], subject="s", body="b",
     )
-    assert out == "Writes are disabled for 'icloud_personal'."
+    assert out == "Tool access is disabled for 'icloud_personal'."
 
 
 @pytest.mark.unit
@@ -524,7 +524,7 @@ async def test_move_email_passes_args_through(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(broker_client, "call", _capture)
     await move_email("icloud_personal", "INBOX", ["42", "43"], "Trash")
-    assert captured["verb"] == "move_messages"
+    assert captured["verb"] == "email.messages.move"
     assert captured["args"] == {
         "folder": "INBOX", "uids": ["42", "43"], "dest_folder": "Trash",
     }
@@ -541,9 +541,9 @@ async def test_move_email_reports_not_connected(monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_move_email_reports_permission_denied(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await move_email("icloud_personal", "INBOX", ["42"], "Archive")
-    assert out == "Writes are disabled for 'icloud_personal'."
+    assert out == "Tool access is disabled for 'icloud_personal'."
 
 
 @pytest.mark.unit

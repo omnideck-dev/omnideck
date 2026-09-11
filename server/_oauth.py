@@ -3,12 +3,13 @@
 Drives Google's loopback redirect flow on behalf of an Add wizard. Lives
 in the app server (not the supervisor) because the OAuth handshake is
 pure HTTP plumbing — building authorize URLs, catching redirects,
-exchanging codes for tokens,
+exchanging codes for tokens.
 
 Lifecycle:
 
-1. UI POSTs ``/api/integrations/oauth/start`` with client_id,
-   client_secret, scopes, slug, user_suffix, label, permissions.
+1. UI POSTs ``/api/integrations/oauth/start`` with client credentials, scopes,
+   slug, label, and zero operation grants. New connections also supply a user
+   suffix; reconnects already have a stable integration ID and omit it.
 2. Route handler computes ``redirect_uri`` from the request host and
    calls :meth:`OAuthIntegrationManager.start`. The flow builds an authorize URL with
    a fresh ``state`` token, registers a :class:`PendingOAuthIntegration`, returns
@@ -56,9 +57,18 @@ _TOKEN_URI = "https://oauth2.googleapis.com/token"
 # Google's authorize URLs. Keeps stale records from accumulating when
 # the user closes the popup without authorizing.
 _PENDING_TTL_SECONDS = 600
+_TOKEN_EXCHANGE_TIMEOUT_SECONDS = 60
+
+# Terminal states must outlive the setup UI's cleanup request, especially when
+# success and cancellation cross in flight. They do not need to remain for the
+# lifetime of the app server, though; prune them after a generous grace period.
+_TERMINAL_RETENTION_SECONDS = 60 * 60
 
 
-PendingStatus = Literal["pending", "success", "denied", "expired", "error"]
+PendingStatus = Literal[
+    "pending", "exchanging", "committing", "success", "denied", "expired",
+    "cancelled", "error",
+]
 
 
 @dataclass
@@ -79,10 +89,12 @@ class PendingOAuthIntegration:
 
     state: str
     slug: str
-    user_suffix: str
+    user_suffix: str | None
     label: str
     scopes: list[str]
+    operation_grants_raw: list[str] | None
     permissions_raw: dict[str, str]
+    reconnect_id: str | None
     redirect_uri: str
     authorize_url: str
     expires_at: float
@@ -104,12 +116,14 @@ class OAuthIntegrationManager:
         self,
         *,
         slug: str,
-        user_suffix: str,
+        user_suffix: str | None,
         label: str,
         client_id: str,
         client_secret: str,
         scopes: list[str],
+        operation_grants_raw: list[str] | None,
         permissions_raw: dict[str, str],
+        reconnect_id: str | None,
         redirect_uri: str,
     ) -> PendingOAuthIntegration:
         """Build the Google authorize URL and register a pending record.
@@ -119,6 +133,7 @@ class OAuthIntegrationManager:
         collision sneaks through, the supervisor's ``add`` verb still
         rejects it at the end — worse UX, but functionally safe.
         """
+        self._expire_and_prune()
         if not client_id or not client_secret:
             msg = "client_id and client_secret are required"
             raise ValueError(msg)
@@ -167,7 +182,12 @@ class OAuthIntegrationManager:
             user_suffix=user_suffix,
             label=label,
             scopes=list(scopes),
+            operation_grants_raw=(
+                list(operation_grants_raw)
+                if operation_grants_raw is not None else None
+            ),
             permissions_raw=dict(permissions_raw),
+            reconnect_id=reconnect_id,
             redirect_uri=redirect_uri,
             authorize_url=authorize_url,
             expires_at=now + _PENDING_TTL_SECONDS,
@@ -189,11 +209,10 @@ class OAuthIntegrationManager:
         ``expired`` so the UI sees a terminal state instead of polling
         forever after the user closed the popup without authorizing.
         """
+        self._expire_and_prune()
         pending = self._pending.get(state)
         if pending is None:
             return None
-        if pending.status == "pending" and time.time() >= pending.expires_at:
-            self._mark_terminal(state, "expired")
         return pending
 
     async def fetch_tokens(
@@ -230,27 +249,101 @@ class OAuthIntegrationManager:
             )
             return None
 
+        # Claim the provider exchange before yielding to the worker thread.
+        # OAuth authorization codes are single-use; without this transition,
+        # duplicate browser callbacks could exchange the same code concurrently.
+        pending.status = "exchanging"
+
         # ``flow.fetch_token`` is synchronous (POSTs to Google's token
         # endpoint via requests). Run it on the default executor so the
         # event loop stays responsive while Google takes its time.
         try:
-            await asyncio.to_thread(pending.flow.fetch_token, code=code)
+            await asyncio.wait_for(
+                asyncio.to_thread(pending.flow.fetch_token, code=code),
+                timeout=_TOKEN_EXCHANGE_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("Google token exchange timed out")
+            self._mark_error_if_status(
+                state,
+                "exchanging",
+                "UPSTREAM",
+                "The provider took too long to complete authorization.",
+            )
+            return None
         except OAuth2Error as exc:
             logger.warning("Google token exchange failed: %s", exc)
-            self._mark_error(state, "AUTH", str(exc))
+            self._mark_error_if_status(state, "exchanging", "AUTH", str(exc))
             return None
         except Exception as exc:  # noqa: BLE001
             logger.warning("token exchange unexpected error: %s", exc)
-            self._mark_error(state, "UPSTREAM", str(exc))
+            self._mark_error_if_status(state, "exchanging", "UPSTREAM", str(exc))
             return None
 
-        return self._build_auth_blob(pending.flow, fallback_scopes=pending.scopes)
+        # The setup modal can be dismissed while Google's token exchange is
+        # running in a worker thread. Honor that cancellation before the
+        # callback route gets a chance to persist the connection.
+        current = self._pending.get(state)
+        if current is None or current.status != "exchanging":
+            return None
+
+        try:
+            return self._build_auth_blob(
+                pending.flow,
+                fallback_scopes=pending.scopes,
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.warning("provider returned an incomplete token response: %s", exc)
+            self._mark_error_if_status(
+                state,
+                "exchanging",
+                "AUTH",
+                "The provider did not return reusable credentials. Try authorizing again.",
+            )
+            return None
+
+    def cancel(self, state: str) -> PendingOAuthIntegration | None:
+        """Cancel a setup-owned OAuth flow and retain its terminal record.
+
+        Keeping the record lets a late provider callback see that setup was
+        cancelled instead of creating an integration after the modal closed.
+        A completed flow retains its ``integration_id`` so the UI can delete
+        a connection that won the completion/cancellation race.
+        """
+        self._expire_and_prune()
+        pending = self._pending.get(state)
+        if pending is None:
+            return None
+        # Once the callback has started the supervisor transaction, it must
+        # run to completion or perform its own rollback. Reporting a local
+        # cancellation here would let a reconnect commit while the UI says it
+        # was discarded.
+        if pending.status == "committing":
+            return pending
+        if pending.status not in {"denied", "expired", "error"}:
+            self._mark_terminal(state, "cancelled")
+        return pending
+
+    def begin_commit(self, state: str) -> bool:
+        """Claim a pending flow before mutating supervisor-owned state.
+
+        Returns ``False`` when cancellation or another terminal transition
+        won the race. A committing flow cannot subsequently be cancelled by
+        the UI; the supervisor transaction determines success or rollback.
+        """
+        pending = self._pending.get(state)
+        if pending is None or pending.status != "exchanging":
+            return False
+        pending.status = "committing"
+        return True
 
     def mark_success(self, state: str, integration_id: str) -> None:
         """Called after the supervisor's ``add`` succeeded. Caller passes
         the new integration_id so :meth:`status` can return it."""
         pending = self._pending.get(state)
         if pending is None:
+            return
+        if pending.status != "committing":
             return
         pending.status = "success"
         pending.integration_id = integration_id
@@ -264,27 +357,32 @@ class OAuthIntegrationManager:
         """Called when the post-fetch step (supervisor add, etc.) fails."""
         self._mark_error(state, code, message)
 
-    def stop_all(self) -> None:
-        """Drop every pending flow. Currently unused — included for
-        symmetry with the supervisor's lifecycle module shape."""
-        self._pending.clear()
-
     # -- internals -----------------------------------------------------
 
     @staticmethod
     def _build_auth_blob(flow: Flow, *, fallback_scopes: list[str]) -> dict:
         """Convert ``Credentials`` to the auth_blob shape the supervisor's ``add`` verb expects."""
         creds = flow.credentials
-        # creds.expiry is a naive datetime that google-auth treats as UTC.
-        # .timestamp() would interpret it as local time, so pin to UTC.
+        # google-auth commonly returns a naive UTC datetime but can also
+        # provide an aware value. Normalize both without changing the instant.
+        expiry = creds.expiry
+        if expiry is not None:
+            expiry = (
+                expiry.replace(tzinfo=UTC)
+                if expiry.tzinfo is None
+                else expiry.astimezone(UTC)
+            )
         expires_at = (
-            int(creds.expiry.replace(tzinfo=UTC).timestamp())
-            if creds.expiry is not None else 0
+            int(expiry.timestamp())
+            if expiry is not None else 0
         )
-        scopes_str = (
-            " ".join(creds.scopes) if creds.scopes else " ".join(fallback_scopes)
-        )
-        return {
+        # google-auth keeps requested scopes in ``scopes`` and the token
+        # endpoint's actual consent result in ``granted_scopes``. Only fall
+        # back when that result is absent, never when it is explicitly empty.
+        granted_scopes = getattr(creds, "granted_scopes", None)
+        scopes = granted_scopes if granted_scopes is not None else (creds.scopes or fallback_scopes)
+        scopes_str = scopes if isinstance(scopes, str) else " ".join(scopes)
+        auth_blob = {
             "client_id": creds.client_id,
             "client_secret": creds.client_secret,
             "access_token": creds.token,
@@ -293,6 +391,16 @@ class OAuthIntegrationManager:
             "scopes": scopes_str,
             "expires_at": str(expires_at),
         }
+        missing = [
+            key
+            for key, value in auth_blob.items()
+            if not isinstance(value, str) or not value
+        ]
+        if missing:
+            raise ValueError(
+                f"token response missing string fields: {', '.join(sorted(missing))}",
+            )
+        return auth_blob
 
     def _mark_terminal(self, state: str, status: PendingStatus) -> None:
         pending = self._pending.get(state)
@@ -310,6 +418,34 @@ class OAuthIntegrationManager:
         pending.error_code = code
         pending.error_message = message
         pending.completed_at = time.time()
+
+    def _mark_error_if_status(
+        self,
+        state: str,
+        expected: PendingStatus,
+        code: str,
+        message: str,
+    ) -> None:
+        """Record an exchange error unless cancellation already won the race."""
+        pending = self._pending.get(state)
+        if pending is not None and pending.status == expected:
+            self._mark_error(state, code, message)
+
+    def _expire_and_prune(self) -> None:
+        """Expire abandoned flows and discard old terminal records."""
+        now = time.time()
+        for state, pending in self._pending.items():
+            if pending.status == "pending" and now >= pending.expires_at:
+                self._mark_terminal(state, "expired")
+
+        cutoff = now - _TERMINAL_RETENTION_SECONDS
+        stale = [
+            state
+            for state, pending in self._pending.items()
+            if pending.completed_at is not None and pending.completed_at < cutoff
+        ]
+        for state in stale:
+            del self._pending[state]
 
 
 __all__ = ["OAuthIntegrationManager", "PendingOAuthIntegration"]

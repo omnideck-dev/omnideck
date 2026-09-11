@@ -1,0 +1,532 @@
+.modal {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 72px);
+    padding: 0;
+    overflow: hidden;
+    background: var(--elevated);
+    border-color: var(--border-strong);
+}
+
+.modalHeader {
+    display: flex;
+    align-items: center;
+    min-height: 54px;
+    padding: 0 var(--sp-4) 0 var(--sp-5);
+    border-bottom: 1px solid var(--border);
+}
+
+.modalTitle {
+    color: var(--text-primary);
+    font: 600 12px var(--font-brand);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.closeButton {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-left: auto;
+    color: var(--text-tertiary);
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.closeButton:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface);
+}
+
+.closeButton:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.progress {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 0 var(--sp-5);
+    background: var(--elevated);
+    border-bottom: 1px solid var(--border);
+}
+
+.progressStep {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    color: var(--text-tertiary);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.progressStep + .progressStep::before {
+    width: 40px;
+    height: 1px;
+    margin: 0 11px;
+    background: var(--border-strong);
+    content: '';
+}
+
+.progressNumber {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    color: var(--text-tertiary);
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    font: 600 9px var(--font-brand);
+}
+
+.progressStepActive {
+    color: var(--text-primary);
+}
+
+.progressStepActive .progressNumber {
+    color: var(--accent);
+    background: var(--accent-muted);
+    border-color: var(--accent);
+}
+
+.progressStepDone .progressNumber {
+    color: var(--canvas);
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.stepContent,
+.stepPage {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.flowError {
+    flex: 0 0 auto;
+    padding: var(--sp-3) var(--sp-5) 0;
+}
+
+.modalBody {
+    min-height: 0;
+    padding: var(--sp-5);
+    overflow-y: auto;
+}
+
+.toolsBody {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.pageIntro {
+    margin-bottom: var(--sp-5);
+}
+
+.pageIntro h1 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.pageIntro p {
+    max-width: 650px;
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.catalogSections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+}
+
+.catalogCategory {
+    margin-bottom: var(--sp-2);
+    color: var(--text-tertiary);
+    font: 600 10px var(--font-brand);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.catalogGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+}
+
+.catalogCard {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-height: 72px;
+    padding: var(--sp-3);
+    color: inherit;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.catalogCard:hover,
+.catalogCardSelected {
+    background: var(--accent-muted);
+    border-color: var(--accent);
+}
+
+.catalogCardSelected {
+    box-shadow: var(--shadow-glow);
+}
+
+.catalogIcon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    color: var(--accent);
+    background: var(--accent-muted);
+    border-radius: var(--radius-md);
+    font-size: 18px;
+}
+
+.catalogCopy {
+    min-width: 0;
+    flex: 1;
+}
+
+.catalogTitle,
+.catalogDescription {
+    display: block;
+}
+
+.catalogTitle {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.catalogDescription {
+    margin-top: 4px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.catalogCard > i {
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+.credentialCallout {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-3);
+    color: var(--text-secondary);
+    background: linear-gradient(110deg, var(--success-muted), transparent);
+    border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+    border-radius: var(--radius-lg);
+}
+
+.credentialIcon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    color: var(--success);
+    background: var(--success-muted);
+    border-radius: 50%;
+    font-size: 16px;
+}
+
+.credentialCopy strong,
+.credentialCopy span {
+    display: block;
+}
+
+.credentialCopy strong {
+    margin: 1px 0 3px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.credentialCopy span {
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.connectionCard {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.connectionCard > a,
+.connectionCard > details,
+.connectionCard > div,
+.connectionCard > section,
+.wideField {
+    grid-column: 1 / -1;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fieldLabel {
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.fieldHint {
+    color: var(--text-tertiary);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.fieldPair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-3);
+}
+
+.input {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    color: var(--text-primary);
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font: 12px var(--font-body);
+    outline: none;
+}
+
+.input:focus {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-glow);
+}
+
+.mono {
+    font-family: var(--font-code);
+}
+
+.externalLink {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-3);
+    color: var(--accent);
+    background: var(--accent-muted);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-size: 11px;
+    text-decoration: none;
+}
+
+.externalLink:hover {
+    border-color: var(--accent);
+}
+
+.externalLink small {
+    color: var(--text-tertiary);
+}
+
+.waiting {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.waiting strong,
+.waiting span {
+    display: block;
+}
+
+.waiting strong {
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.waiting div > span {
+    margin-top: 3px;
+    color: var(--text-tertiary);
+    font-size: 10px;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.reviewGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-3);
+}
+
+.reviewCard {
+    padding: var(--sp-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.reviewCard h2 {
+    margin: 0 0 var(--sp-3);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.reviewTools {
+    grid-column: 1 / -1;
+}
+
+.reviewTitleRow {
+    display: flex;
+    align-items: flex-start;
+}
+
+.reviewTitleRow h2 {
+    flex: 1;
+}
+
+.reviewTitleRow button {
+    color: var(--accent);
+    background: transparent;
+    border: 0;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.reviewTitleRow button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.reviewRow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: 4px 0;
+    font-size: 11px;
+}
+
+.reviewRow span {
+    color: var(--text-tertiary);
+}
+
+.reviewRow strong {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reviewOperationList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.reviewOperationList li {
+    padding: 4px 7px;
+    color: var(--text-secondary);
+    background: var(--canvas);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+}
+
+.noTools {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+.stepFooter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    min-height: 62px;
+    padding: 0 var(--sp-5);
+    background: var(--elevated);
+    border-top: 1px solid var(--border);
+}
+
+.footerActions {
+    display: flex;
+    gap: var(--sp-2);
+    margin-left: auto;
+}
+
+@media (max-width: 720px) {
+    .modal {
+        max-height: calc(100vh - 32px);
+    }
+
+    .progressStep + .progressStep::before {
+        width: 16px;
+        margin: 0 6px;
+    }
+
+    .progressStep > :last-child {
+        display: none;
+    }
+
+    .catalogGrid,
+    .connectionCard,
+    .fieldPair,
+    .reviewGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .connectionCard > *,
+    .reviewTools {
+        grid-column: 1;
+    }
+}

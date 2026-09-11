@@ -37,7 +37,7 @@ _provider_cache: dict[str, Provider] = {}
 def _proxy_socket_path(provider: str) -> Path:
     """Return the broker socket path for the given provider.
 
-    LLM integrations are singletons — no suffix — so the integration ID
+    Brokered model providers are singletons — no suffix — so the connection ID
     is just ``llm_{provider}`` and the socket is ``llm_{provider}.sock``.
     """
     sockets_dir = Path(load_config().integrations.sockets_dir)

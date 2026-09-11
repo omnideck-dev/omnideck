@@ -1,7 +1,7 @@
-"""Capability and access-level enums for the integrations permission model.
+"""Deprecated v1/v2 permission wire format.
 
-No internal dependencies — importable from any layer (supervisor, brokers,
-tool gating, server routes).
+Only metadata migration and older-client compatibility projections may import
+this module. Runtime authorization uses explicit canonical operation IDs.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ class Capability(StrEnum):
     CALENDAR = "calendar"
     DRIVE = "drive"
     CONTACTS = "contacts"
-    LLM_PROXY = "llm_proxy"
     HTTP = "http"
 
 
@@ -24,8 +23,7 @@ class Access(IntEnum):
     """How much access the user grants for one capability.
 
     IntEnum so comparisons work naturally: ``Access.READ_WRITE > Access.READ``.
-    Serialized to/from short strings at wire boundaries (meta JSON, env vars,
-    RPC frames) via :func:`access_to_str` / :func:`access_from_str`.
+    Serialized to/from short strings at the deprecated HTTP/RPC boundary.
     """
 
     OFF = 0
@@ -74,28 +72,6 @@ def permissions_from_dict(d: dict[str, str]) -> Permissions:
     """
     perms: Permissions = {}
     for cap_str, access_str in d.items():
-        try:
-            cap = Capability(cap_str)
-        except ValueError:
-            continue
-        perms[cap] = access_from_str(access_str)
-    return perms
-
-
-def permissions_to_env(perms: Permissions) -> str:
-    """Encode as an env-var value: ``email:rw,calendar:r,...``."""
-    return ",".join(
-        f"{cap.value}:{access_to_str(access)}" for cap, access in sorted(perms.items(), key=lambda p: p[0].value)
-    )
-
-
-def permissions_from_env(s: str) -> Permissions:
-    """Decode from env-var form. Empty string → empty dict."""
-    if not s:
-        return {}
-    perms: Permissions = {}
-    for pair in s.split(","):
-        cap_str, _, access_str = pair.partition(":")
         try:
             cap = Capability(cap_str)
         except ValueError:

@@ -8,6 +8,7 @@ from typing import Any
 
 from config import load_config
 from integrations import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +64,13 @@ async def create_event(
     if time_zone:
         args["time_zone"] = time_zone
     try:
-        result = await broker_client.call(
-            integration_id, "create_event", args, app_sock_path=app_sock,
+        result = await invoke_operation(
+            integration_id, "calendar.events.create", args, app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "create_event(%r, %r) failed: %s", integration_id, calendar_ref, exc,

@@ -36,7 +36,7 @@ from integrations.brokers.email_broker._caldav_client import CalDavAuthError, Ca
 from integrations.brokers.email_broker._imap_client import ImapAuthError, ImapClient
 from integrations.brokers.email_broker._smtp_client import SmtpAuthError, SmtpClient
 from integrations.brokers.email_broker._verbs import VerbDispatcher
-from integrations.permissions import permissions_from_env
+from integrations.operation_grants import operation_grants_from_env
 
 logger = logging.getLogger("email_broker")
 
@@ -56,7 +56,7 @@ async def _run() -> int:
     imap_port = int(env_required("IMAP_PORT"))
     user = env_required("EMAIL_USER")
     password = env_required("EMAIL_PASS")
-    permissions = permissions_from_env(env_required("PERMISSIONS"))
+    operation_grants = operation_grants_from_env(env_required("OPERATION_GRANTS"))
     attachments_dir = Path(env_required("ATTACHMENTS_DIR"))
 
     # Wipe the password from the process environ once we've captured it into
@@ -139,7 +139,7 @@ async def _run() -> int:
         imap=imap,
         smtp=smtp_client,
         caldav=caldav_client,
-        permissions=permissions,
+        operation_grants=operation_grants,
         attachments_dir=attachments_dir,
     )
 
@@ -148,12 +148,12 @@ async def _run() -> int:
 
     server = await serve_rpc(socket_path, handler)
     log.info(
-        "listening on %s (permissions=%s, host=%s:%d)",
-        socket_path, permissions, imap_host, imap_port,
+        "listening on %s (operation_grants=%s, host=%s:%d)",
+        socket_path, sorted(operation_grants), imap_host, imap_port,
     )
 
     # READY sentinel: the supervisor watches stdout for this exact line and
-    # flips the integration from ``pending`` to ``active`` on seeing it.
+    # marks the integration ``running`` on seeing it.
     print_ready()
 
     async with server:

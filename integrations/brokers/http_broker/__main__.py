@@ -2,7 +2,7 @@
 
 The supervisor spawns this with the integration's base URL, auth header
 config, and token in the environment. The broker holds an aiohttp session
-in memory and serves a single ``http_request`` RPC over a Unix Domain
+in memory and serves a single ``http.request`` RPC over a Unix Domain
 Socket. There is no startup credential validation — a bad token surfaces
 on the first agent call as an upstream 401.
 
@@ -29,7 +29,7 @@ from integrations._rpc import serve_rpc
 from integrations.brokers._common._exit_codes import CLEAN_SHUTDOWN
 from integrations.brokers._common._ready import print_ready
 from integrations.brokers.http_broker._verbs import VerbDispatcher
-from integrations.permissions import permissions_from_env
+from integrations.operation_grants import operation_grants_from_env
 
 logger = logging.getLogger("http_broker")
 
@@ -50,7 +50,7 @@ async def _run() -> int:
     header_template = (
         os.environ.get("AUTH_HEADER_TEMPLATE") or _DEFAULT_HEADER_TEMPLATE
     )
-    permissions = permissions_from_env(env_required("PERMISSIONS"))
+    operation_grants = operation_grants_from_env(env_required("OPERATION_GRANTS"))
     downloads_dir = Path(env_required("DOWNLOADS_DIR"))
 
     # Drop the token from os.environ once we've captured it. Best-effort
@@ -73,7 +73,7 @@ async def _run() -> int:
             header_name=header_name,
             header_template=header_template,
             token=token,
-            permissions=permissions,
+            operation_grants=operation_grants,
             downloads_dir=downloads_dir,
         )
 
@@ -82,8 +82,8 @@ async def _run() -> int:
 
         server = await serve_rpc(socket_path, handler)
         log.info(
-            "listening on %s (base_url=%s, permissions=%s)",
-            socket_path, base_url, permissions,
+            "listening on %s (base_url=%s, operation_grants=%s)",
+            socket_path, base_url, sorted(operation_grants),
         )
         print_ready()
 

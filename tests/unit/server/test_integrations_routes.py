@@ -1,6 +1,6 @@
 """Unit tests for ``server._integrations_routes``.
 
-Covers the pure helpers (``_derive_suffix_from_email``) and the route
+Covers the pure suffix helpers and the route
 handler logic for LLM vs. non-LLM integrations — the add handler's
 suffix derivation, permissions injection, and supervisor call arguments.
 """
@@ -12,7 +12,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server._integrations_routes import _derive_suffix_from_email, handle_add_integration
+from server._integrations_routes import (
+    _derive_connection_suffix,
+    _derive_suffix_from_email,
+    handle_add_integration,
+    handle_integration_catalog,
+    handle_list_integrations,
+    handle_reconnect_integration,
+    handle_update_integration,
+)
 
 
 # ── email-based suffix derivation ────────────────────────────────────────────
@@ -92,7 +100,7 @@ def test_derive_suffix_returns_none_when_auth_blob_is_not_a_dict() -> None:
     assert _derive_suffix_from_email("not a dict") is None  # type: ignore[arg-type]
 
 
-# ── handle_add_integration — LLM providers ──────────────────────────────────
+# ── handle_add_integration — domain separation ──────────────────────────────
 
 
 def _make_add_request(body: dict) -> MagicMock:
@@ -118,83 +126,35 @@ def _supervisor_ok(integration_id: str, slug: str) -> dict:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_llm_add_no_suffix_no_email_required() -> None:
-    """LLM integrations don't require email and don't set user_suffix."""
-    body = {"slug": "llm_openai", "label": "OpenAI", "auth_blob": {"api_key": "sk-test"}}
-    captured_args = {}
-
-    async def fake_supervisor_call(verb, args):
-        captured_args.update(args)
-        return _supervisor_ok("llm_openai", "llm_openai")
-
-    with (
-        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
-    ):
-        resp = await handle_add_integration(_make_add_request(body))
-
-    assert resp.status == 201
-    assert "user_suffix" not in captured_args
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_llm_add_injects_empty_permissions() -> None:
-    """LLM integrations get permissions={} injected when the client omits it."""
-    body = {"slug": "llm_anthropic", "label": "Anthropic", "auth_blob": {"api_key": "sk-test"}}
-    captured_args = {}
-
-    async def fake_supervisor_call(verb, args):
-        captured_args.update(args)
-        return _supervisor_ok("llm_anthropic", "llm_anthropic")
-
-    with (
-        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
-    ):
-        resp = await handle_add_integration(_make_add_request(body))
-
-    assert resp.status == 201
-    assert captured_args["permissions"] == {}
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_llm_add_preserves_explicit_permissions() -> None:
-    """If the client sends permissions for an LLM integration, don't overwrite."""
-    body = {
-        "slug": "llm_openai",
-        "label": "OpenAI",
-        "auth_blob": {"api_key": "sk-test"},
-        "permissions": {"llm_proxy": "rw"},
-    }
-    captured_args = {}
-
-    async def fake_supervisor_call(verb, args):
-        captured_args.update(args)
-        return _supervisor_ok("llm_openai", "llm_openai")
-
-    with (
-        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
-    ):
-        resp = await handle_add_integration(_make_add_request(body))
-
-    assert resp.status == 201
-    assert captured_args["permissions"] == {"llm_proxy": "rw"}
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_non_llm_add_requires_email() -> None:
-    """Non-LLM integrations without an email in auth_blob get 400."""
-    body = {"slug": "icloud", "label": "iCloud", "auth_blob": {"password": "secret"}}
-
+@pytest.mark.parametrize("slug", ["llm_openai", "llm_anthropic", "llm_openrouter"])
+async def test_model_provider_is_rejected_by_integrations_api(slug: str) -> None:
+    body = {"slug": slug, "label": "Provider", "auth_blob": {"api_key": "sk-test"}}
     resp = await handle_add_integration(_make_add_request(body))
-
     assert resp.status == 400
     data = json.loads(resp.body)
-    assert "email" in data["error"]["message"].lower()
+    assert "providers api" in data["error"]["message"].lower()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_non_email_integration_derives_suffix_from_label() -> None:
+    """Generic integrations do not need to invent an email identity."""
+    body = {"slug": "test", "label": "Local Test", "auth_blob": {"token": "secret"}}
+    captured_args = {}
+
+    async def fake_supervisor_call(verb, args):
+        captured_args.update(args)
+        return _supervisor_ok("test_local-test", "test")
+
+    with (
+        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
+        patch("server._integrations_routes.mark_added"),
+    ):
+        resp = await handle_add_integration(_make_add_request(body))
+
+    assert resp.status == 201
+    assert captured_args["user_suffix"] == "local-test"
+    assert _derive_connection_suffix(body["auth_blob"], body["label"]) == "local-test"
 
 
 @pytest.mark.unit
@@ -221,3 +181,105 @@ async def test_non_llm_add_derives_suffix_from_email() -> None:
 
     assert resp.status == 201
     assert captured_args["user_suffix"] == "alice"
+    assert captured_args["kind"] == "integration"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_list_requests_only_integration_domain() -> None:
+    async def fake_supervisor_call(verb, args):
+        assert verb == "list"
+        assert args == {"kind": "integration"}
+        return {"connections": [], "integrations": []}
+
+    with patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call):
+        response = await handle_list_integrations(MagicMock())
+    assert response.status == 200
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_accepts_operation_ids_and_rejects_mixed_legacy_policy() -> None:
+    request = MagicMock()
+    request.match_info = {"id": "gmail_alice"}
+    request.json = AsyncMock(return_value={
+        "operation_grants": ["email.messages.search"],
+        "permissions": {"email": "r"},
+    })
+    response = await handle_update_integration(request)
+    assert response.status == 400
+
+    captured = {}
+    request.json = AsyncMock(return_value={
+        "operation_grants": ["email.messages.search"],
+    })
+
+    async def fake_supervisor_call(verb, args):
+        captured.update(args)
+        return _supervisor_ok("gmail_alice", "gmail") | {
+            "operation_grants": ["email.messages.search"],
+            "available_operation_ids": ["email.messages.search"],
+        }
+
+    with (
+        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
+        patch("server._integrations_routes.mark_added"),
+    ):
+        response = await handle_update_integration(request)
+    assert response.status == 200
+    assert captured["operation_grants"] == ["email.messages.search"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_reconnect_forwards_only_the_existing_id_and_new_credentials() -> None:
+    request = MagicMock()
+    request.match_info = {"id": "gmail_alice"}
+    request.json = AsyncMock(return_value={
+        "auth_blob": {"email": "alice@example.com", "password": "new-secret"},
+    })
+    captured = {}
+
+    async def fake_supervisor_call(verb, args):
+        assert verb == "reconnect"
+        captured.update(args)
+        return _supervisor_ok("gmail_alice", "gmail") | {
+            "operation_grants": ["email.messages.search"],
+            "available_operation_ids": ["email.messages.search"],
+        }
+
+    with (
+        patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
+        patch("server._integrations_routes.mark_added"),
+    ):
+        response = await handle_reconnect_integration(request)
+
+    assert response.status == 200
+    assert captured == {
+        "id": "gmail_alice",
+        "kind": "integration",
+        "auth_blob": {"email": "alice@example.com", "password": "new-secret"},
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_catalog_projection_does_not_expose_driver_commands_or_secret_bindings() -> None:
+    response = await handle_integration_catalog(MagicMock())
+    payload = json.loads(response.body)
+    assert payload["integrations"]
+    assert all("driver" not in entry for entry in payload["integrations"])
+    assert all("env_injection" not in entry for entry in payload["integrations"])
+    assert all(entry["description"] for entry in payload["integrations"])
+    assert all(entry["category"] for entry in payload["integrations"])
+    assert any(
+        operation["id"] == "http.request"
+        for entry in payload["integrations"]
+        for operation in entry["operations"]
+    )
+    google = next(entry for entry in payload["integrations"] if entry["id"] == "google_workspace")
+    assert {group["id"] for group in google["operation_groups"]} == {
+        "email", "calendar", "drive", "contacts",
+    }
+    http = next(entry for entry in payload["integrations"] if entry["id"] == "http")
+    assert "operation_groups" not in http

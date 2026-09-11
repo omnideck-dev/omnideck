@@ -9,7 +9,7 @@ tiny and ensure a consistent contract with the supervisor:
   ``error`` state with backoff restart.
 - Boolean flags are parsed fail-closed. Only the literal string ``"true"``
   (case-insensitive) is truthy, so a typo or missing flag defaults to the safe
-  side (e.g. ``WRITE_ALLOWED`` defaults to no writes).
+  side when a default is genuinely safe.
 """
 
 from __future__ import annotations

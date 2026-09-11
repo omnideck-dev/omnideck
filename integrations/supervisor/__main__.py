@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 from integrations._perms import PROCESS_UMASK, disable_core_dumps
-from integrations.supervisor._catalog import DEFAULT_CATALOG
+from integrations.catalog import DEFAULT_CATALOG
 from integrations.supervisor._lifecycle import Supervisor
 from integrations.supervisor.types import HostPath
 
