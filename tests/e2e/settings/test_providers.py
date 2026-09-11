@@ -35,7 +35,7 @@ def test_catalog_excludes_already_configured_provider(page: Page):
 
     expect(page.get_by_test_id("provider-catalog-card-ollama")).to_have_count(0)
     # The four others should all still be available.
-    for name in ("openai_compat", "anthropic", "openai", "openrouter"):
+    for name in ("aperture", "openai_compat", "anthropic", "openai", "openrouter"):
         expect(page.get_by_test_id(f"provider-catalog-card-{name}")).to_be_visible()
 
 

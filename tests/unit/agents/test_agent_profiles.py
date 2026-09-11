@@ -242,6 +242,28 @@ class TestApplyLLMConfigToProfiles:
         assert updated.model == "claude-x"
         assert updated.provider == "anthropic"
 
+    def test_cloud_setup_does_not_persist_fixed_context_capacity(self):
+        save_agent_profile(_make_profile(id="a", name="A", model="", context_window=32_000))
+
+        apply_llm_config_to_profiles(
+            "bedrock/openai.gpt-5.6-sol",
+            provider="aperture",
+            context_window=1_050_000,
+        )
+
+        assert get_agent_profile("a").context_window is None
+
+    def test_ollama_setup_persists_runtime_context_allocation(self):
+        save_agent_profile(_make_profile(id="a", name="A", model="", context_window=32_000))
+
+        apply_llm_config_to_profiles(
+            "qwen3:8b",
+            provider="ollama",
+            context_window=64_000,
+        )
+
+        assert get_agent_profile("a").context_window == 64_000
+
     def test_provider_omitted_leaves_existing(self):
         """Without a provider arg, the profile's provider is left as-is."""
         save_agent_profile(_make_profile(id="a", name="A", model="", provider="ollama"))

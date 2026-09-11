@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppData } from '../contexts/AppData.jsx';
 import styles from './SystemSettings.module.css';
 import ModelPicker from './ModelPicker.jsx';
@@ -6,13 +6,14 @@ import PackageIcon from './icons/PackageIcon';
 import EyeIcon from './icons/EyeIcon';
 import CompactionIcon from './icons/CompactionIcon';
 import ToggleSwitch from './ToggleSwitch.jsx';
-import ChevronRightIcon from './icons/ChevronRightIcon';
 import WrenchIcon from './icons/WrenchIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon';
 import SparkleIcon from './icons/SparkleIcon';
 import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
 import Select from './primitives/Select.jsx';
 import { useIsHosted } from '../features/app/OmnideckHost.jsx';
+import SpecializedModelOptions, { ModelDefaultsSummary } from './SpecializedModelOptions.jsx';
+import { resolveInferenceCapabilities, sanitizeInferenceOptions } from './inference';
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -21,6 +22,8 @@ export default function SystemSettings() {
     const [settings, setSettings] = useState({ default_agent: 'omnideck' });
     const [loading, setLoading] = useState(true);
     const [visionAdvancedOpen, setVisionAdvancedOpen] = useState(false);
+    const [compactionAdvancedOpen, setCompactionAdvancedOpen] = useState(false);
+    const [resolvedModels, setResolvedModels] = useState({});
     // Omnideck run from the command line, or opened in a plain browser, has no
     // installer behind it: there is nothing for these settings to act on, and
     // updating is done with the command line tool instead.
@@ -46,19 +49,19 @@ export default function SystemSettings() {
         init();
     }, []);
 
-    const updateSetting = useCallback(async (key, value) => {
-        const previousValue = settings[key];
-        setSettings((prev) => ({ ...prev, [key]: value }));
+    const updateSettings = useCallback(async (patch) => {
+        const previousValues = Object.fromEntries(Object.keys(patch).map((key) => [key, settings[key]]));
+        setSettings((prev) => ({ ...prev, ...patch }));
         try {
             const res = await fetch('/api/settings', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [key]: value }),
+                body: JSON.stringify(patch),
             });
             if (res.ok) {
                 const updated = await res.json();
                 setSettings(updated);
-                if (key === 'custom_apps_enabled' || key === 'custom_tools_enabled') {
+                if ('custom_apps_enabled' in patch || 'custom_tools_enabled' in patch) {
                     await refreshFeatures();
                 }
                 return;
@@ -66,29 +69,63 @@ export default function SystemSettings() {
         } catch {
             // Restore the server-backed value below.
         }
-        setSettings((prev) => ({ ...prev, [key]: previousValue }));
+        setSettings((prev) => ({ ...prev, ...previousValues }));
     }, [refreshFeatures, settings]);
 
-    // Update a (provider, model) pair atomically so they always stay in sync.
-    const updateProviderModel = useCallback(async (providerKey, modelKey, provider, model) => {
-        setSettings((prev) => ({ ...prev, [providerKey]: provider || '', [modelKey]: model || '' }));
-        try {
-            const res = await fetch('/api/settings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [providerKey]: provider || '', [modelKey]: model || '' }),
-            });
-            if (res.ok) {
-                const updated = await res.json();
-                setSettings(updated);
-            }
-        } catch {
-            // silent
-        }
-    }, []);
+    const updateSetting = useCallback((key, value) => updateSettings({ [key]: value }), [updateSettings]);
 
-    // The provider name driving the vision_options field-visibility logic.
-    const visionProvider = settings.vision_provider || (providers[0]?.name ?? '');
+    // Update a (provider, model) pair atomically so they always stay in sync.
+    const updateProviderModel = useCallback((role, provider, model, info) => {
+        const capabilities = resolveInferenceCapabilities(provider, info);
+        const patch = {
+            [`${role}_provider`]: provider || '',
+            [`${role}_model`]: model || '',
+        };
+        if (role === 'vision') {
+            patch.vision_options = sanitizeInferenceOptions(
+                settings.vision_options,
+                capabilities,
+                { allowContext: capabilities.api === 'ollama' },
+            );
+            if (capabilities.thinkingRequired) patch.vision_think = true;
+            else if (!capabilities.controls.includes('think')) patch.vision_think = false;
+        } else if (role === 'compaction') {
+            patch.compaction_options = sanitizeInferenceOptions(
+                settings.compaction_options,
+                capabilities,
+                { allowContext: capabilities.api === 'ollama' },
+            );
+        }
+        setResolvedModels((prev) => ({ ...prev, [role]: { provider, model, info } }));
+        updateSettings(patch);
+    }, [settings.compaction_options, settings.vision_options, updateSettings]);
+
+    const handleModelResolved = useCallback((role, provider, model, info) => {
+        setResolvedModels((prev) => ({ ...prev, [role]: { provider, model, info } }));
+    }, []);
+    const handleVisionResolved = useCallback(
+        (provider, model, info) => handleModelResolved('vision', provider, model, info),
+        [handleModelResolved],
+    );
+    const handleCompactionResolved = useCallback(
+        (provider, model, info) => handleModelResolved('compaction', provider, model, info),
+        [handleModelResolved],
+    );
+    const handleTitleResolved = useCallback(
+        (provider, model, info) => handleModelResolved('title', provider, model, info),
+        [handleModelResolved],
+    );
+
+    const roleCapabilities = useMemo(() => Object.fromEntries(
+        ['vision', 'compaction', 'title'].map((role) => {
+            const provider = settings[`${role}_provider`] || providers[0]?.name || 'ollama';
+            const resolved = resolvedModels[role];
+            const info = resolved?.provider === provider && resolved?.model === settings[`${role}_model`]
+                ? resolved.info
+                : null;
+            return [role, resolveInferenceCapabilities(provider, info)];
+        }),
+    ), [providers, resolvedModels, settings]);
 
     if (loading) return null;
 
@@ -225,69 +262,22 @@ export default function SystemSettings() {
                                 providers={providers}
                                 selectedProvider={settings.vision_provider || null}
                                 selectedModel={settings.vision_model || null}
-                                onSelect={(p, m) => updateProviderModel('vision_provider', 'vision_model', p, m)}
+                                onSelect={(p, m, info) => updateProviderModel('vision', p, m, info)}
+                                onModelResolved={handleVisionResolved}
                                 placeholder="Choose a vision model…"
                                 capability="vision"
                                 inline
                             />
                         </div>
-                        <span className={styles.modelRecommendation}>Tested with Qwen3.5.</span>
-
-                        <button
-                            type="button"
-                            className={`${styles.groupDisclosure} ${visionAdvancedOpen ? styles.groupDisclosureOpen : ''}`}
-                            onClick={() => setVisionAdvancedOpen((v) => !v)}
-                            aria-expanded={visionAdvancedOpen}
-                            data-testid="vision-advanced-toggle"
-                        >
-                            <ChevronRightIcon className={styles.chev} />
-                            Advanced inference
-                        </button>
-
-                        {visionAdvancedOpen && (
-                            <div className={styles.groupBody} data-testid="vision-advanced-panel">
-                                <label className={styles.groupRow} data-testid="vision-think-toggle">
-                                    <div className={styles.settingInfo}>
-                                        <span className={styles.settingTitle}>Thinking</span>
-                                        <span className={styles.settingDesc}>Step-by-step reasoning before answering. Slower but more accurate.</span>
-                                    </div>
-                                    <ToggleSwitch
-                                        checked={!!settings.vision_think}
-                                        onChange={(e) => updateSetting('vision_think', e.target.checked)}
-                                        aria-label="Thinking"
-                                    />
-                                </label>
-                                {[
-                                    { key: 'temperature', label: 'Temperature', desc: '0.0 = deterministic, 0.7 = general, 1.0+ = creative.', step: 0.1 },
-                                    { key: 'top_k', label: 'Top K', desc: '10 = factual, 40 = general, 100+ = creative.', providers: ['ollama', 'anthropic'] },
-                                    { key: 'top_p', label: 'Top P', desc: '0.5 = focused, 0.9 = general, 1.0 = everything.', step: 0.05 },
-                                    { key: 'num_ctx', label: 'Context Window', desc: 'Maximum context window in tokens.', providers: ['ollama'] },
-                                    { key: 'num_predict', label: 'Max Output (num_predict)', desc: 'Tokens the model can generate per call.' },
-                                ].filter(({ providers }) => !providers || providers.includes(visionProvider)).map(({ key, label, desc, step }) => (
-                                    <div key={key} className={styles.groupRow}>
-                                        <div className={styles.settingInfo}>
-                                            <span className={styles.settingTitle}>{label}</span>
-                                            <span className={styles.settingDesc}>{desc}</span>
-                                        </div>
-                                        <input
-                                            className={styles.numberInput}
-                                            type="number"
-                                            step={step ?? 1}
-                                            value={settings.vision_options?.[key] ?? ''}
-                                            data-testid={`vision-option-${key}`}
-                                            onChange={(e) => {
-                                                const raw = e.target.value;
-                                                const num = raw === '' ? null : Number(raw);
-                                                updateSetting('vision_options', {
-                                                    ...(settings.vision_options || {}),
-                                                    [key]: num,
-                                                });
-                                            }}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <SpecializedModelOptions
+                            role="vision"
+                            capabilities={roleCapabilities.vision}
+                            options={settings.vision_options}
+                            think={!!settings.vision_think}
+                            open={visionAdvancedOpen}
+                            onToggle={() => setVisionAdvancedOpen((value) => !value)}
+                            onPatch={updateSettings}
+                        />
                     </div>
                 </section>
 
@@ -307,12 +297,20 @@ export default function SystemSettings() {
                                 providers={providers}
                                 selectedProvider={settings.compaction_provider || null}
                                 selectedModel={settings.compaction_model || null}
-                                onSelect={(p, m) => updateProviderModel('compaction_provider', 'compaction_model', p, m)}
+                                onSelect={(p, m, info) => updateProviderModel('compaction', p, m, info)}
+                                onModelResolved={handleCompactionResolved}
                                 placeholder="Choose a compaction model…"
                                 inline
                             />
                         </div>
-                        <span className={styles.modelRecommendation}>Recommended: kimi-k2.5.</span>
+                        <SpecializedModelOptions
+                            role="compaction"
+                            capabilities={roleCapabilities.compaction}
+                            options={settings.compaction_options}
+                            open={compactionAdvancedOpen}
+                            onToggle={() => setCompactionAdvancedOpen((value) => !value)}
+                            onPatch={updateSettings}
+                        />
                     </div>
                 </section>
 
@@ -332,11 +330,13 @@ export default function SystemSettings() {
                                 providers={providers}
                                 selectedProvider={settings.title_provider || null}
                                 selectedModel={settings.title_model || null}
-                                onSelect={(p, m) => updateProviderModel('title_provider', 'title_model', p, m)}
+                                onSelect={(p, m, info) => updateProviderModel('title', p, m, info)}
+                                onModelResolved={handleTitleResolved}
                                 placeholder="Choose a title model…"
                                 inline
                             />
                         </div>
+                        <ModelDefaultsSummary capabilities={roleCapabilities.title} role="title" />
                     </div>
                 </section>
             </div>
