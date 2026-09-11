@@ -5,6 +5,12 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   merge_group:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Release preparation PR to validate
+        required: true
+        type: number
   push:
     branches: [main]
 
@@ -41,3 +47,14 @@ jobs:
       - name: Validate pull request metadata
         if: github.event_name == 'pull_request'
         run: node scripts/release-notes.mjs validate-pr
+
+      - name: Validate dispatched release PR metadata
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pull_request_number }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '{pull_request: .}' > "$RUNNER_TEMP/release-pr-event.json"
+          test "$(jq -r .pull_request.head.sha "$RUNNER_TEMP/release-pr-event.json")" = "$(git rev-parse HEAD)"
+          test "$(jq -r .pull_request.base.ref "$RUNNER_TEMP/release-pr-event.json")" = main
+          GITHUB_EVENT_PATH="$RUNNER_TEMP/release-pr-event.json" node scripts/release-notes.mjs validate-pr

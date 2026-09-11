@@ -137,3 +137,17 @@ test('breaking commits on a merged branch are included even with a plain merge t
   f.git('checkout', '-q', 'main'); f.git('merge', '--no-ff', '-qm', 'Merge feature branch', 'feature');
   assert.equal(f.plan({ preOneBreaking: 'major' }).version, '1.0.0');
 });
+
+
+test('PR automation waits for newly dispatched checks on the exact branch and SHA', async () => {
+  const { dispatchedRun, assertUnchangedMain } = await import('../.github/scripts/prepare-app-release-pr.mjs');
+  const selection = { afterId: 10, sha: 'abc', branch: 'release/auto-app-0.3.1-abc' };
+  const run = { id: 11, head_sha: 'abc', head_branch: selection.branch, event: 'workflow_dispatch' };
+  assert.equal(dispatchedRun([{ ...run, id: 10 }], selection), undefined);
+  assert.equal(dispatchedRun([{ ...run, event: 'pull_request' }], selection), undefined);
+  assert.equal(dispatchedRun([{ ...run, head_sha: 'old' }], selection), undefined);
+  assert.equal(dispatchedRun([{ ...run, head_branch: 'other' }], selection), undefined);
+  assert.equal(dispatchedRun([run], selection), run);
+  assertUnchangedMain('abc', 'abc');
+  assert.throws(() => assertUnchangedMain('abc', 'def'), /Main advanced/);
+});
