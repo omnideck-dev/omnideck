@@ -1,177 +1,388 @@
-"""Real ripgrep contract tests for agent search scope, formats, and limits."""
+"""Unit tests for search_ops.grep."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import tempfile
 
 import pytest
 
-from tools.virtual_computer import find_files, search_text
+from tools.virtual_computer.search_ops import grep
+from tools.virtual_computer.file_ops import write_file, make_dirs
 
 
-@pytest.mark.parametrize("tool", [find_files, search_text])
-def test_ollama_sdk_can_serialize_search_tools(tool):
-    """Exercise the real SDK conversion used after loading the coder skill."""
-    from ollama._utils import convert_function_to_tool
-
-    schema = convert_function_to_tool(tool).model_dump()
-    assert schema["function"]["name"] == tool.__name__
-    properties = schema["function"]["parameters"]["properties"]
-    assert properties["pattern"]["type"] == "string"
-    assert properties["max_results"]["type"] == "integer"
-    if tool is search_text:
-        assert properties["output"]["type"] == "string"
-        assert properties["regex"]["type"] == "boolean"
-
-
-@pytest.fixture
-def tree(tmp_path):
-    files = {
-        "root.py": "before\nHello needle\nafter\n",
-        "src/app.py": "hello NEEDLE\nhello again\n",
-        "src/inner/leaf.py": "hello needle\n",
-        "src/readme.md": "hello markdown\n",
-        ".hidden": "hello hidden\n",
-        "ignored.txt": "hello ignored\n",
-        ".gitignore": "ignored.txt\n",
-        ".git/config": "hello excluded\n",
-        "node_modules/pkg/index.js": "hello excluded\n",
-        "__pycache__/cache.py": "hello excluded\n",
-        "package.lock": "hello excluded\n",
-    }
-    for name, text in files.items():
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-    return tmp_path
+@pytest.mark.unit
+async def test_grep_literal_and_regex_and_globs() -> None:
+    with tempfile.TemporaryDirectory() as tmp_home:
+        src = str(Path(tmp_home) / "src")
+        make_dirs(src)
+        write_file(str(Path(src) / "a.txt"), "hello world\nHello again\n")
+        write_file(str(Path(src) / "b.md"), "hello md\n")
+        # literal, case-insensitive default
+        r1 = await grep("hello", path=tmp_home, include_globs=["src/*.txt"], regex=False)
+        assert r1.success and len(r1.matches) == 2
+        # literal, case-sensitive
+        r1_cs = await grep("hello", path=tmp_home, include_globs=["src/*.txt"], regex=False, case_sensitive=True)
+        assert r1_cs.success and len(r1_cs.matches) == 1
+        # regex, case sensitive
+        r2 = await grep("^Hello", path=tmp_home, include_globs=["src/*"], regex=True, case_sensitive=True)
+        assert r2.success and any(m.line.startswith("Hello") for m in r2.matches)
 
 
-async def test_defaults_include_context_regex_and_case_insensitive_matches(tree):
-    result = await search_text("hello|missing", str(tree / "root.py"))
-    assert "root.py:2: Hello needle" in result
-    assert "root.py-1- before" in result and "root.py-3- after" in result
-    assert "Search complete" in result
-    assert "Returned 1 matching lines" in result
+@pytest.mark.unit
+async def test_grep_truncates_on_max_results() -> None:
+    with tempfile.TemporaryDirectory() as tmp_home:
+        write_file(str(Path(tmp_home) / "many.txt"), "\n".join(["hit" for _ in range(50)]))
+        r = await grep("hit", path=tmp_home, regex=False, max_results=10)
+        assert r.success and r.truncated and len(r.matches) == 10
 
 
-async def test_literal_case_and_anchors(tree):
-    assert "Returned 0 matching lines" in await search_text("hello", str(tree / "root.py"), case_sensitive=True)
-    assert "Returned 0 matching lines" in await search_text("hello|missing", str(tree), regex=False)
-    assert "root.py:2:" in await search_text("^Hello needle$", str(tree), case_sensitive=True)
+@pytest.mark.unit
+async def test_grep_anchors() -> None:
+    """Anchors are interpreted per-line since we search line-by-line."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        write_file(str(Path(tmp_home) / "anch.txt"), "alpha\nbeta\nGamma\n")
+        r = await grep(r"^beta$", path=tmp_home, regex=True, case_sensitive=True)
+        assert r.success and len(r.matches) == 1
+        m = r.matches[0]
+        assert m.line == "beta" and m.line_number == 2
 
 
-@pytest.mark.parametrize("pattern,expected", [
-    ("*.py", {"root.py"}),
-    ("**/*.py", {"root.py", "src/app.py", "src/inner/leaf.py"}),
-    ("src/*.py", {"src/app.py"}),
-    ("src/**/*.py", {"src/app.py", "src/inner/leaf.py"}),
-])
-async def test_root_relative_globs_for_both_tools(tree, pattern, expected):
-    found = await find_files(pattern, str(tree))
-    searched = await search_text("hello", str(tree), include_globs=[pattern], output="files")
-    assert set(found.split("\n\n", 1)[1].splitlines()) == expected
-    assert set(searched.split("\n\n", 1)[1].splitlines()) == expected
+@pytest.mark.unit
+async def test_grep_exclude_globs() -> None:
+    with tempfile.TemporaryDirectory() as tmp_home:
+        src = str(Path(tmp_home) / "src")
+        make_dirs(src)
+        write_file(str(Path(src) / "a.txt"), "hello world\n")
+        write_file(str(Path(src) / "b.md"), "hello md\n")
+        # Include both files, but exclude markdown; expect only .txt match
+        r = await grep("hello", path=tmp_home, include_globs=["src/*"], exclude_globs=["**/*.md"], regex=False)
+        assert r.success
+        assert all(m.file_path.endswith("a.txt") for m in r.matches)
 
 
-async def test_scope_includes_hidden_and_ignored_but_keeps_default_exclusions(tree):
-    result = await search_text("hello", str(tree), output="files")
-    assert ".hidden" in result and "ignored.txt" in result
-    for name in (".git/config", "node_modules", "__pycache__", "package.lock"):
-        assert name not in result
-    found = await find_files("**/*", str(tree))
-    assert ".hidden" in found and "ignored.txt" in found
-    assert ".git/config" not in found and "package.lock" not in found
+@pytest.mark.unit
+async def test_grep_default_excludes() -> None:
+    """Test that default excludes are always applied."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        # Create files in directories that should be excluded by default
+        make_dirs(str(Path(tmp_home) / ".git" / "objects"))
+        make_dirs(str(Path(tmp_home) / "node_modules" / "package"))
+        make_dirs(str(Path(tmp_home) / "__pycache__"))
+        make_dirs(str(Path(tmp_home) / "src"))
+
+        write_file(str(Path(tmp_home) / ".git" / "config"), "test content\n")
+        write_file(str(Path(tmp_home) / ".git" / "objects" / "abc123"), "test content\n")
+        write_file(str(Path(tmp_home) / "node_modules" / "package" / "index.js"), "test content\n")
+        write_file(str(Path(tmp_home) / "__pycache__" / "module.pyc"), "test content\n")
+        write_file(str(Path(tmp_home) / "package.lock"), "test content\n")
+        write_file(str(Path(tmp_home) / "src" / "main.py"), "test content\n")
+
+        # Search without any exclude_globs - should only find src/main.py
+        r = await grep("test content", path=tmp_home, regex=False)
+        assert r.success
+        assert len(r.matches) == 1
+        assert r.matches[0].file_path.endswith("src/main.py")
+
+        # Search with custom exclude_globs - should still exclude defaults
+        r = await grep("test content", path=tmp_home, exclude_globs=["src/*"], regex=False)
+        assert r.success
+        assert len(r.matches) == 0  # All files excluded (src/* + defaults)
 
 
-async def test_excludes_win_and_explicit_files_bypass_globs(tree):
-    result = await search_text("hello", str(tree), include_globs=["**/*.py"], exclude_globs=["src/**"], output="files")
-    assert result.split("\n\n", 1)[1] == "root.py"
-    result = await search_text("hello", str(tree / "package.lock"), exclude_globs=["**/*"])
-    assert "package.lock:1:" in result
+@pytest.mark.unit
+async def test_grep_result_fields_success_case() -> None:
+    """Test that all GrepResult fields are populated correctly in success case."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        src = str(Path(tmp_home) / "src")
+        make_dirs(src)
+        write_file(str(Path(src) / "test1.py"), "import os\nfrom sys import path\n# comment\n")
+        write_file(str(Path(src) / "test2.py"), "import json\nprint('hello')\n")
+
+        # Search for 'import' - should find 3 matches
+        result = await grep("import", path=tmp_home, regex=False)
+
+        # Verify GrepResult fields
+        assert result.success is True
+        assert result.error is None
+        assert result.truncated is False
+        assert result.searched_files == 2  # Should have searched 2 files
+        assert len(result.matches) == 3  # 3 occurrences of "import"
+
+        # Verify GrepMatch fields for first match
+        match1 = result.matches[0]
+        assert isinstance(match1.file_path, str)
+        assert match1.file_path.endswith("test1.py") or match1.file_path.endswith("test2.py")
+        assert isinstance(match1.line_number, int)
+        assert match1.line_number >= 1
+        assert isinstance(match1.line, str)
+        assert "import" in match1.line
 
 
-async def test_empty_globs_do_not_filter(tree):
-    assert await search_text("hello", str(tree), include_globs=[], exclude_globs=[]) == await search_text("hello", str(tree))
+@pytest.mark.unit
+async def test_grep_result_fields_truncated_case() -> None:
+    """Test GrepResult fields when results are truncated."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        # Create file with many matches
+        content = "\n".join([f"line {i} with target word" for i in range(20)])
+        write_file(str(Path(tmp_home) / "many_matches.txt"), content)
+
+        # Search with low max_results to trigger truncation
+        result = await grep("target", path=tmp_home, regex=False, max_results=5)
+
+        # Verify truncation fields
+        assert result.success is True
+        assert result.error is None
+        assert result.truncated is True  # Should be truncated
+        assert result.searched_files == 1
+        assert len(result.matches) == 5  # Limited by max_results
+
+        # Verify all matches contain the target text
+        for match in result.matches:
+            assert "target" in match.line
 
 
-async def test_counts_are_matching_lines_and_filenames_are_not_content_search(tree):
-    result = await search_text("hello", str(tree), output="count", include_globs=["src/**/*.py"])
-    assert "src/app.py: 2" in result and "src/inner/leaf.py: 1" in result
-    assert "Returned 0 files" in await find_files("**/*needle*", str(tree))
-    assert "Returned 3 files" in await search_text("needle", str(tree), output="files")
+@pytest.mark.unit
+async def test_grep_result_fields_no_matches() -> None:
+    """Test GrepResult fields when no matches are found."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        write_file(str(Path(tmp_home) / "empty_search.txt"), "nothing to find here\n")
+
+        result = await grep("nonexistent", path=tmp_home, regex=False)
+
+        # Verify fields for no-match case
+        assert result.success is True
+        assert result.error is None
+        assert result.truncated is False
+        assert result.searched_files == 1
+        assert len(result.matches) == 0
 
 
-@pytest.mark.parametrize("output", ["matches", "files", "count"])
-async def test_limits_and_exact_limit_completeness(tree, output):
-    result = await search_text("hello", str(tree), output=output, max_results=1, context=0)
-    assert "Search incomplete: result_limit" in result
-    result = await search_text("hello", str(tree / "root.py"), output=output, max_results=1)
-    assert "Search complete" in result
-    assert "result_limit" in await find_files("**/*", str(tree), max_results=1)
+@pytest.mark.unit
+async def test_grep_result_fields_error_case() -> None:
+    """Test GrepResult fields when path does not exist."""
+    result = await grep("test", path="/nonexistent/path/that/does/not/exist", regex=False)
+
+    # Verify error case fields
+    assert result.success is False
+    assert result.error is not None
+    assert "path not found" in result.error
+    assert result.truncated is False
+    assert result.searched_files == 0
+    assert len(result.matches) == 0
 
 
-async def test_context_30_is_supported_and_counted_separately(tmp_path):
+@pytest.mark.unit
+async def test_grep_case_insensitive_matching() -> None:
+    """Case-insensitive search finds all case variants on a line."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        write_file(str(Path(tmp_home) / "case_test.txt"), "Hello WORLD hello\n")
+
+        result = await grep("hello", path=tmp_home, regex=False, case_sensitive=False)
+
+        assert result.success
+        # One match per line (not per occurrence)
+        assert len(result.matches) == 1
+        assert "Hello" in result.matches[0].line
+
+
+@pytest.mark.unit
+async def test_grep_searched_files_count_with_excludes() -> None:
+    """Test that searched_files count is accurate when files are excluded."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        # Create files in both included and excluded directories
+        make_dirs(str(Path(tmp_home) / "src"))
+        make_dirs(str(Path(tmp_home) / "__pycache__"))  # Should be excluded by default
+
+        write_file(str(Path(tmp_home) / "src" / "main.py"), "test content\n")
+        write_file(str(Path(tmp_home) / "src" / "utils.py"), "test content\n")
+        write_file(str(Path(tmp_home) / "__pycache__" / "module.pyc"), "test content\n")  # Should be excluded
+        write_file(str(Path(tmp_home) / "regular.txt"), "test content\n")
+
+        result = await grep("test", path=tmp_home, regex=False)
+
+        # Should only count files that were actually searched (not excluded)
+        assert result.success
+        assert result.searched_files == 3  # src/main.py, src/utils.py, regular.txt
+        assert len(result.matches) == 3    # One match per non-excluded file
+
+
+@pytest.mark.unit
+async def test_grep_match_line_contains_full_line() -> None:
+    """Test that GrepMatch.line contains the entire line, not just the matched portion."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        # Create file with lines containing matches surrounded by other content
+        content = """    def function_name(arg1, arg2):
+        return some_value + another_value
+    # This is a comment with function inside
+if __name__ == "__main__":
+    print("Hello World")"""
+        write_file(str(Path(tmp_home) / "test_lines.py"), content)
+
+        # Search for 'function' - should find 2 matches
+        result = await grep("function", path=tmp_home, regex=False)
+
+        assert result.success
+        assert len(result.matches) == 2
+
+        # First match should be in the function definition line
+        match1 = result.matches[0]
+        assert match1.line == "    def function_name(arg1, arg2):"
+        assert match1.line_number == 1
+
+        # Second match should be in the comment line
+        match2 = result.matches[1]
+        assert match2.line == "    # This is a comment with function inside"
+        assert match2.line_number == 3
+
+        # Full line context is preserved, not just the match
+        assert "def " in match1.line and "(arg1, arg2):" in match1.line
+        assert "# This is a comment" in match2.line and " inside" in match2.line
+
+
+@pytest.mark.unit
+async def test_grep_double_star_glob_include_and_exclude() -> None:
+    """Verify that the pattern 'src/**/*.js' works for include and exclude globs."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        make_dirs(str(Path(tmp_home) / "src"))
+        make_dirs(str(Path(tmp_home) / "src" / "utils"))
+        make_dirs(str(Path(tmp_home) / "src" / "utils" / "deeper"))
+        write_file(str(Path(tmp_home) / "src" / "app.js"), "console.log('top');\n")
+        write_file(str(Path(tmp_home) / "src" / "utils" / "helper.js"), "console.log('nested1');\n")
+        write_file(str(Path(tmp_home) / "src" / "utils" / "deeper" / "more.js"), "console.log('nested2');\n")
+        write_file(str(Path(tmp_home) / "src" / "readme.md"), "console in docs\n")
+
+        # Include: top-level and nested JS files should be searched and matched
+        r_inc = await grep("console", path=tmp_home, regex=False, include_globs=["src/**/*.js"])
+        assert r_inc.success
+        inc_files = {m.file_path for m in r_inc.matches}
+        assert any(p.endswith("src/app.js") for p in inc_files)
+        assert any(p.endswith("src/utils/helper.js") for p in inc_files)
+        assert any(p.endswith("src/utils/deeper/more.js") for p in inc_files)
+        assert r_inc.searched_files == 3  # three JS files searched
+        assert len(r_inc.matches) == 3    # one match per JS file
+
+        # Exclude: all JS files (top-level and nested) should be excluded; md remains
+        r_exc = await grep("console", path=tmp_home, regex=False, exclude_globs=["src/**/*.js"])
+        assert r_exc.success
+        exc_files = {m.file_path for m in r_exc.matches}
+        assert any(p.endswith("src/readme.md") for p in exc_files)
+        assert not any(p.endswith(".js") for p in exc_files)
+
+
+@pytest.mark.unit
+async def test_glob_single_star_does_not_cross_dirs() -> None:
+    """Verify that a single '*' does not match across directory separators."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        make_dirs(str(Path(tmp_home) / "src"))
+        make_dirs(str(Path(tmp_home) / "src" / "nested"))
+        write_file(str(Path(tmp_home) / "src" / "app.py"), "hit\n")
+        write_file(str(Path(tmp_home) / "src" / "nested" / "mod.py"), "hit nested\n")
+
+        r = await grep("hit", path=tmp_home, regex=False, include_globs=["src/*.py"])
+        assert r.success
+        files = {m.file_path for m in r.matches}
+        assert any(p.endswith("src/app.py") for p in files)
+        assert not any(p.endswith("src/nested/mod.py") for p in files)
+        assert r.searched_files == 1
+        assert len(r.matches) == 1
+
+
+@pytest.mark.unit
+async def test_glob_py_patterns_root_vs_any_depth() -> None:
+    """Verify that *.py matches only workspace root, and **/*.py matches any depth."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        make_dirs(str(Path(tmp_home) / "src" / "inner"))
+        write_file(str(Path(tmp_home) / "root.py"), "print('root hit')\n")
+        write_file(str(Path(tmp_home) / "src" / "inner" / "file.py"), "print('nested hit')\n")
+
+        # Root-only: should search only root.py
+        r_root = await grep("hit", path=tmp_home, regex=False, include_globs=["*.py"])
+        assert r_root.success
+        assert r_root.searched_files == 1
+        assert len(r_root.matches) == 1
+        assert any(m.file_path.endswith("root.py") for m in r_root.matches)
+
+        # Any-depth: should search both root.py and nested file.py
+        r_any = await grep("hit", path=tmp_home, regex=False, include_globs=["**/*.py"])
+        assert r_any.success
+        assert r_any.searched_files == 2
+        files_any = {m.file_path for m in r_any.matches}
+        assert any(p.endswith("root.py") for p in files_any)
+        assert any(p.endswith("src/inner/file.py") for p in files_any)
+
+
+@pytest.mark.unit
+async def test_glob_py_patterns_exclude_root_vs_any_depth() -> None:
+    """Complementary test: exclude root-only vs any-depth .py files."""
+    with tempfile.TemporaryDirectory() as tmp_home:
+        make_dirs(str(Path(tmp_home) / "src" / "inner"))
+        write_file(str(Path(tmp_home) / "root.py"), "print('root hit')\n")
+        write_file(str(Path(tmp_home) / "src" / "inner" / "file.py"), "print('nested hit')\n")
+        write_file(str(Path(tmp_home) / "readme.md"), "root doc\n")
+
+        # Exclude only root-level .py; nested .py should remain searchable
+        r_ex_root = await grep("hit", path=tmp_home, regex=False, exclude_globs=["*.py"])
+        assert r_ex_root.success
+        files_root = {m.file_path for m in r_ex_root.matches}
+        # root.py excluded, nested .py searched
+        assert any(p.endswith("src/inner/file.py") for p in files_root)
+        assert not any(p.endswith("root.py") for p in files_root)
+
+        # Exclude any .py at any depth; only non-.py files remain
+        r_ex_any = await grep("doc|hit", path=tmp_home, regex=True, exclude_globs=["**/*.py"])
+        assert r_ex_any.success
+        files_any = {m.file_path for m in r_ex_any.matches}
+        assert any(p.endswith("readme.md") for p in files_any)
+        assert not any(p.endswith(".py") for p in files_any)
+
+
+async def test_grep_bounds_dense_lines_context_and_total_output(tmp_path):
+    source = tmp_path / "dense.txt"
+    source.write_text(("prefix" + "x" * 20000 + "NEEDLE" + "😄" * 20000 + "\n") * 200)
+    result = await grep("NEEDLE", path=str(source), context=20, max_results=None)
+    assert result.success and result.truncated and result.notice
+    assert len(result.model_dump_json().encode()) < 1024 * 1024 + 1024
+    assert result.matches and all("NEEDLE" in match.line for match in result.matches)
+
+
+@pytest.mark.parametrize("args", [{"pattern": "["}, {"pattern": "x", "context": 1000000}])
+async def test_grep_returns_actionable_validation_errors(args, tmp_path):
+    result = await grep(path=str(tmp_path), **args)
+    assert not result.success and result.error
+
+
+async def test_grep_marks_file_prefix_search_as_incomplete(tmp_path):
+    source = tmp_path / "large.txt"
+    source.write_text("early\n" + "x" * (9 * 1024 * 1024) + "\nlate")
+    result = await grep("early|late", path=str(source), context=0)
+    assert result.success and result.truncated
+    assert "8 MiB" in result.notice
+    assert [match.line for match in result.matches] == ["early"]
+
+
+async def test_grep_does_not_treat_file_budget_boundary_as_end_of_line(tmp_path):
+    source = tmp_path / "large.txt"
+    source.write_text("x" * (9 * 1024 * 1024))
+    result = await grep("x$", path=str(source), context=0)
+    assert result.truncated and not result.matches
+
+
+async def test_grep_preserves_complete_line_when_late_match_fits_budget(tmp_path):
+    source = tmp_path / "fits.txt"
+    line = "x" * 3000 + "needle"
+    source.write_text(line)
+    result = await grep("needle", path=str(source), context=0)
+    assert not result.truncated
+    assert result.matches[0].line == line
+
+
+async def test_grep_preserves_thirty_lines_of_context(tmp_path):
     source = tmp_path / "context.txt"
-    source.write_text("\n".join([f"before{i}" for i in range(30)] + ["needle"] + [f"after{i}" for i in range(30)]))
-    result = await search_text("needle", str(source), context=30, max_results=1)
-    assert "before0" in result and "after29" in result
-    assert "Returned 1 matching lines. Search complete" in result
-
-
-@pytest.mark.parametrize("pattern", ["[", "(?<=hello)needle", r"(hello)\1"])
-async def test_invalid_or_unsupported_regex_is_actionable(tree, pattern):
-    result = await search_text(pattern, str(tree))
-    assert "Search incomplete: error" in result and "regex=false" in result
-
-
-async def test_missing_path_and_no_matches_are_distinct(tree):
-    assert "Path not found" in await search_text("hello", str(tree / "missing"))
-    assert "Returned 0 matching lines. Search complete" in await search_text("not-found", str(tree))
-
-
-async def test_large_file_can_be_searched_beyond_old_prefix_limit(tmp_path):
-    source = tmp_path / "large.txt"
-    source.write_text("x" * (9 * 1024 * 1024) + "\nlate-needle\n")
-    result = await search_text("late-needle", str(source), context=0)
-    assert "large.txt:2: late-needle" in result and "Search complete" in result
-
-
-async def test_large_lines_and_accumulation_are_bounded(tmp_path, monkeypatch):
-    from tools.virtual_computer import search_ops
-    source = tmp_path / "large.txt"
-    source.write_text("needle " + "x" * (2 * 1024 * 1024))
-    result = await search_text("needle", str(source))
-    assert len(result) < 1000 and "output_limit" in result
-    source.write_text(("needle " + "x" * 1000 + "\n") * 200)
-    monkeypatch.setattr(search_ops, "_MAX_OUTPUT_BYTES", 4000)
-    result = await search_text("needle", str(source), max_results=10000)
-    assert len(result.encode()) < 4500 and "output_limit" in result
-
-
-async def test_long_line_excerpt_contains_late_match_and_preserves_normal_lines(tmp_path):
-    source = tmp_path / "lines.txt"
-    source.write_text("x" * 3000 + "needle\n" + "y" * 10000 + "needle\n")
-    result = await search_text("needle", str(source), context=0)
-    assert "lines.txt:1: " + "x" * 3000 + "needle" in result
-    assert "lines.txt:2: [excerpt]" in result and result.count("needle") == 2
-
-
-@pytest.mark.parametrize("mode", ["matches", "files", "count"])
-async def test_unusual_filenames_and_option_like_patterns(tmp_path, mode):
-    source = tmp_path / "a\nb:c.txt"
-    source.write_text("--needle\n")
-    result = await search_text("--needle", str(tmp_path), output=mode, regex=False)
-    assert '"a\\nb:c.txt"' in result and "Search complete" in result
-    assert '"a\\nb:c.txt"' in await find_files("**/*.txt", str(tmp_path))
-
-
-async def test_directory_glob_and_crlf_anchors(tree):
-    assert "src/app.py" in await find_files("src", str(tree))
-    assert "root.py" not in (await search_text("hello", str(tree), include_globs=["src"], output="files")).split("\n\n", 1)[1]
-    (tree / "windows.txt").write_bytes(b"before\r\nhello\r\nafter\r\n")
-    result = await search_text("^hello$", str(tree / "windows.txt"))
-    assert "windows.txt:2: hello" in result and "Search complete" in result
-
-
-async def test_user_ripgrep_config_cannot_override_engine_or_scope(tree, tmp_path, monkeypatch):
-    config = tmp_path / "rg-config"
-    config.write_text("--pcre2\n--glob=!*.py\n")
-    monkeypatch.setenv("RIPGREP_CONFIG_PATH", str(config))
-    assert "root.py" in await find_files("**/*.py", str(tree))
-    assert "Search incomplete: error" in await search_text("(?<=hello) needle", str(tree))
+    before = [f"before {i}" for i in range(30)]
+    after = [f"after {i}" for i in range(30)]
+    source.write_text("\n".join([*before, "needle", *after]))
+    result = await grep("needle", path=str(source), context=30)
+    assert result.success and not result.truncated
+    assert result.matches[0].context_before == before
+    assert result.matches[0].context_after == after

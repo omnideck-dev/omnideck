@@ -31,9 +31,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra test
 
-      - name: Install pinned ripgrep
-        run: just setup-ripgrep
-
       - name: Run unit tests
         run: just unit
 
@@ -52,9 +49,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra test
-
-      - name: Install pinned ripgrep
-        run: just setup-ripgrep
 
       # Browser.start selects the Chrome channel on x86_64. The pinned hosted
       # runner already includes Google Chrome and Xvfb, so avoid reinstalling

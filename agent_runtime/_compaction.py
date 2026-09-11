@@ -42,9 +42,7 @@ _TOOL_RESULT_CAPS: dict[str, int] = {
     # file contents, so the tool result is supplementary context. 1500 chars
     # captures the module docstring, imports, and first class definition.
     "read_file": 1500,
-    "grep": 1500,  # Historical conversations.
-    "search_text": 1500,
-    "find_files": 800,
+    "grep": 1500,
     "run_bash_cmd": 1500,
     "list_dir": 800,
     "apply_text_patch": 400,
@@ -701,8 +699,6 @@ _TOOL_ARG_KEYS: dict[str, list[str]] = {
     "click": ["ref"],
     "fill_field": ["ref"],
     "grep": ["pattern", "query"],
-    "search_text": ["pattern", "path"],
-    "find_files": ["pattern", "path"],
     "list_dir": ["path"],
     "generate_image": ["prompt"],
     "describe_image": ["path", "image_path"],

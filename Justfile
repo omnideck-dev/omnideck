@@ -40,7 +40,6 @@ setup home_dir=`echo "$HOME/.omnideck"`:
     echo "📚 Installing Python deps..."
     uv sync --all-extras
     uv pip install -e .
-    just setup-ripgrep
 
     if command -v node >/dev/null && command -v npm >/dev/null; then
         echo "🎨 Installing UI deps..."
@@ -56,10 +55,6 @@ setup home_dir=`echo "$HOME/.omnideck"`:
     echo ""
     echo "🎉 Ready. Build the image:  just build"
     echo "   Then start developing:   just dev"
-
-# Install the exact project-owned search executable (no sudo or PATH changes).
-setup-ripgrep:
-    uv run python utils/ripgrep.py
 
 # Re-sync Python deps after pulling or editing pyproject.toml
 sync:
@@ -186,7 +181,6 @@ logs:
 
 # Run unit tests (tests/unit/)
 unit:
-    uv run python utils/ripgrep.py --check
     PYTHONPATH=. uv run pytest tests/unit/
 
 # Run browser-tools tests (real headed Chrome against local fixture pages)
@@ -209,7 +203,6 @@ test-file file:
 
 # Run local integration tests. Tests needing an external app opt in via OMNIDECK_URL.
 integration:
-    uv run python utils/ripgrep.py --check
     PYTHONPATH=. uv run pytest tests/integration/
 
 # Coverage report
@@ -480,7 +473,6 @@ _sync-src ctr:
     tar \
         --mode='u+rwX,go+rX' \
         --exclude='.git' \
-        --exclude='.cache' \
         --exclude='.venv' \
         --exclude='.pytest_cache' \
         --exclude='.ruff_cache' \

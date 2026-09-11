@@ -20,6 +20,3 @@ docs/
 .github/
 .vscode/
 DEVELOPMENT.md
-
-# Downloaded host binaries must never overwrite the target-platform binary.
-.cache/

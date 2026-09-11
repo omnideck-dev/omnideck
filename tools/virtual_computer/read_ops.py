@@ -41,7 +41,7 @@ def read_file(path: str, start: int | None = None, end: int | None = None) -> Re
 
     Content is returned with embedded line numbers (``cat -n`` style).
     Files over 2000 lines are automatically truncated when no range is given.
-    Use ``start``/``end`` or ``search_text`` to read specific sections of large files.
+    Use ``start``/``end`` or ``grep`` to read specific sections of large files.
 
     Args:
         path: File path (relative or absolute).

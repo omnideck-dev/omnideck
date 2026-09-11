@@ -106,8 +106,7 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
     from tools.memory import forget, load_memory, remember
     from tools.virtual_computer import (
         apply_text_patch,
-        find_files,
-        search_text,
+        grep,
         install_packages,
         list_dir,
         read_file,
@@ -147,7 +146,7 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             "coding",
             "Coding & Files",
             "Read, edit, and run code on the virtual computer.",
-            [read_file, find_files, search_text, list_dir, write_file, apply_text_patch, replace_in_file, run_bash_cmd, install_packages],
+            [read_file, grep, list_dir, write_file, apply_text_patch, replace_in_file, run_bash_cmd, install_packages],
         ),
         "browser": ToolCategory(
             "browser",

@@ -243,7 +243,7 @@ flowchart LR
 
 | Cap | Tools |
 |---|---|
-| 1500 chars | `read_file`, `search_text`, historical `grep`, `run_bash_cmd` |
+| 1500 chars | `read_file`, `grep`, `run_bash_cmd` |
 | 800 chars | `list_dir`, `read_page` |
 | 500 chars | `open_url`, `browse_page` |
 | 400 chars | `apply_text_patch`, `replace_in_file`, `scroll_page` |

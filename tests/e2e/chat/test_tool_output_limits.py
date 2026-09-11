@@ -13,7 +13,7 @@ from tests.e2e._runtime import agent_profile, delete_conversation, resume
 from tests.e2e.pages import ChatView
 
 
-@pytest.mark.parametrize("tool", ["search_text", "read_file", "run_bash_cmd"])
+@pytest.mark.parametrize("tool", ["grep", "read_file", "run_bash_cmd"])
 def test_oversized_output_can_be_inspected_and_chat_continues_after_reload(page: Page, tool):
     source = f"/tmp/e2e-output-{uuid4().hex}.txt"
     captured = {}
@@ -31,7 +31,7 @@ def test_oversized_output_can_be_inspected_and_chat_continues_after_reload(page:
             # Generate large data with a real tool; the prompt itself stays small.
             create = bash(f"python3 -c \"from pathlib import Path; Path('{source}').write_text(('needle ' + 'abcdef0123456789' * 100 + '\\n') * 200)\"")
             args = {"path": source}
-            if tool == "search_text":
+            if tool == "grep":
                 args.update(pattern="needle", context=0)
             elif tool == "run_bash_cmd":
                 args = {"cmd": f"cat {source}"}
@@ -54,10 +54,10 @@ def test_oversized_output_can_be_inspected_and_chat_continues_after_reload(page:
 
             page.reload()
             expect(page.get_by_test_id("entry-content").last).to_contain_text("large output handled")
-            chat.send(call_tool("search_text", path=path, pattern="needle", context=0, max_results=1) + say("saved output inspected")).wait_streaming(20_000)
+            chat.send(call_tool("grep", path=path, pattern="needle", context=0) + say("saved output inspected")).wait_streaming(20_000)
             expect(page.get_by_test_id("entry-content").last).to_contain_text("saved output inspected")
             latest = resume(conversation)
-            inspection = [e["content"] for e in latest["events"] if e["type"] == "tool_result" and e["tool_name"] == "search_text"][-1]
+            inspection = [e["content"] for e in latest["events"] if e["type"] == "tool_result" and e["tool_name"] == "grep"][-1]
             assert "needle" in inspection and "temporary file:" not in inspection
             chat.send(say("next turn still works")).wait_streaming()
             expect(page.get_by_test_id("entry-content").last).to_contain_text("next turn still works")
@@ -68,58 +68,28 @@ def test_oversized_output_can_be_inspected_and_chat_continues_after_reload(page:
             container_exec(f"from pathlib import Path; [Path(p).unlink(missing_ok=True) for p in {list(saved_paths | {source})!r}]")
 
 
-
-def test_file_discovery_and_search_modes_use_real_tools_and_survive_reload(page: Page):
-    root = f"/tmp/e2e-search-{uuid4().hex}"
+def test_grep_timeout_keeps_app_responsive_and_next_turn_works(page: Page):
+    source = f"/tmp/e2e-regex-{uuid4().hex}.txt"
     captured = {}
     page.on("request", lambda request: captured.update(request.post_data_json)
             if request.method == "POST" and request.url.endswith("/api/chat") else None)
-    files = {
-        "main.py": "before\nHello needle\nafter\n",
-        "nested/other.py": "hello needle\nhello again\n",
-        ".hidden.txt": "hello hidden\n",
-        "ignored.txt": "hello ignored\n",
-        ".gitignore": "ignored.txt\n",
-        "node_modules/skip.py": "hello excluded\n",
-    }
-    import shlex
-    script = (
-        f"from pathlib import Path; root = Path({root!r}); "
-        f"[( (root / name).parent.mkdir(parents=True, exist_ok=True), "
-        f"(root / name).write_text(text)) for name, text in {files!r}.items()]"
-    )
     try:
         chat = ChatView(page).goto().new_conversation()
-        chat.send(
-            bash("python3 -c " + shlex.quote(script))
-            + call_tool("find_files", pattern="**/*.py", path=root)
-            + call_tool("search_text", pattern="hello|absent", path=root + "/main.py")
-            + call_tool("search_text", pattern="hello", path=root, output="files")
-            + call_tool("search_text", pattern="hello", path=root, output="count")
-            + call_tool("search_text", pattern="(?<=hello) needle", path=root)
-            + say("file search checks done")
-        ).wait_streaming(20_000)
-        expect(page.get_by_test_id("entry-content").last).to_contain_text("file search checks done")
-        conversation = captured["conversation_id"]
-        events = resume(conversation)["events"]
-        results = [e for e in events if e["type"] == "tool_result"]
-        found = next(e["content"] for e in results if e["tool_name"] == "find_files")
-        assert "main.py" in found and "nested/other.py" in found and "skip.py" not in found
-        searched = [e["content"] for e in results if e["tool_name"] == "search_text"]
-        assert len(searched) == 4
-        assert "main.py:2: Hello needle" in searched[0] and "main.py-1- before" in searched[0]
-        assert ".hidden.txt" in searched[1] and "ignored.txt" in searched[1]
-        assert "nested/other.py: 2" in searched[2]
-        assert "Search incomplete: error" in searched[3] and "regex=false" in searched[3]
-        page.reload()
-        expect(page.get_by_test_id("entry-content").last).to_contain_text("file search checks done")
-        chat.send(call_tool("search_text", pattern="hello|absent", path=root, regex=False) + say("literal retry done")).wait_streaming()
-        expect(page.get_by_test_id("entry-content").last).to_contain_text("literal retry done")
-        latest = resume(conversation)["events"]
-        last_result = [e["content"] for e in latest if e["type"] == "tool_result"][-1]
-        assert "Returned 0 matching lines. Search complete" in last_result
-        assert all(e["status"] == "success" for e in latest if e["type"] == "agent_completed")
+        chat.send(bash(f"python3 -c \"from pathlib import Path; Path('{source}').write_text('aaaa\\n' + 'a' * 100 + '!\\n')\"")
+                  + call_tool("grep", path=source, pattern="(a+)+$", context=0) + say("search limit handled"))
+        expect(chat.stop_button).to_be_visible()
+        # A normal HTTP request must not wait for the blocking regex to finish.
+        response = page.request.get("/api/settings", timeout=2000)
+        assert response.ok
+        chat.wait_streaming(20_000)
+        expect(page.get_by_test_id("entry-content").last).to_contain_text("search limit handled")
+        snapshot = resume(captured["conversation_id"])
+        result = next(e["content"] for e in snapshot["events"] if e["type"] == "tool_result" and e["tool_name"] == "grep")
+        assert "Search stopped after 10 seconds" in result
+        assert "aaaa" in result and "incomplete" in result
+        chat.send(say("recovered after timeout")).wait_streaming()
+        expect(page.get_by_test_id("entry-content").last).to_contain_text("recovered after timeout")
     finally:
         if captured.get("conversation_id"):
             delete_conversation(captured["conversation_id"])
-        container_exec(f"import shutil; shutil.rmtree({root!r}, ignore_errors=True)")
+        container_exec(f"from pathlib import Path; Path({source!r}).unlink(missing_ok=True)")

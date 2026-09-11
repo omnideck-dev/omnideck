@@ -14,6 +14,8 @@ __all__ = [
     "DirEntry",
     "DirectoryReadResult",
     "FileReadResult",
+    "GrepMatch",
+    "GrepResult",
     "InsertTextResult",
     "MakeDirsResult",
     "MoveCopyResult",
@@ -204,6 +206,44 @@ class ReadTextResult(BaseModel):
     total_lines: int | None = None
     truncated: bool = False
     error: str | None = None
+
+
+class GrepMatch(BaseModel):
+    """Represents a single match found during grep search.
+
+    Attributes:
+        file_path: Path to the file containing the match.
+        line_number: Line number where the match was found (1-based).
+        line: Matching line, or a bounded excerpt when search limits apply.
+        context_before: Lines immediately before the match (when context requested).
+        context_after: Lines immediately after the match (when context requested).
+    """
+
+    file_path: str
+    line_number: int
+    line: str
+    context_before: list[str] | None = None
+    context_after: list[str] | None = None
+
+
+class GrepResult(BaseModel):
+    """Result model for grep search operations across multiple files.
+
+    Attributes:
+        success: Whether the grep search completed successfully.
+        matches: List of matches found during the search.
+        truncated: Whether results were truncated due to limits.
+        searched_files: Number of files searched.
+        notice: Explanation and retry guidance when search is incomplete.
+        error: Error message if the operation failed, None otherwise.
+    """
+
+    success: bool
+    matches: list[GrepMatch]
+    truncated: bool = False
+    searched_files: int = 0
+    error: str | None = None
+    notice: str | None = None
 
 
 class ReplaceInFileResult(BaseModel):
