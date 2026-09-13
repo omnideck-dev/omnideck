@@ -18,15 +18,18 @@ class _Request:
 
 
 class _Files:
-    def __init__(self) -> None:
+    def __init__(self, list_responses: list[dict[str, Any]] | None = None) -> None:
         self.list_calls: list[dict[str, Any]] = []
         self.get_calls: list[dict[str, Any]] = []
         self.get_media_calls: list[dict[str, Any]] = []
         self.create_calls: list[dict[str, Any]] = []
         self.update_calls: list[dict[str, Any]] = []
+        self._list_responses = list(list_responses) if list_responses is not None else None
 
     def list(self, **kwargs: Any) -> _Request:
         self.list_calls.append(kwargs)
+        if self._list_responses is not None:
+            return _Request(self._list_responses.pop(0))
         return _Request({"files": [{"id": "file-1", "name": "Q3 Plan"}]})
 
     def get(self, **kwargs: Any) -> _Request:
@@ -56,8 +59,8 @@ class _Permissions:
 
 
 class _Service:
-    def __init__(self) -> None:
-        self.file_api = _Files()
+    def __init__(self, list_responses: list[dict[str, Any]] | None = None) -> None:
+        self.file_api = _Files(list_responses)
         self.permission_api = _Permissions()
 
     def files(self) -> _Files:
@@ -67,9 +70,12 @@ class _Service:
         return self.permission_api
 
 
-def _client(monkeypatch: pytest.MonkeyPatch) -> tuple[DriveClient, _Service]:
+def _client(
+    monkeypatch: pytest.MonkeyPatch,
+    list_responses: list[dict[str, Any]] | None = None,
+) -> tuple[DriveClient, _Service]:
     client = DriveClient.__new__(DriveClient)
-    service = _Service()
+    service = _Service(list_responses)
     monkeypatch.setattr(client, "_service", lambda: service)
     return client, service
 
@@ -88,7 +94,8 @@ def test_list_files_requests_shared_drive_content(monkeypatch: pytest.MonkeyPatc
     _assert_shared_drive_flags(call)
     assert call["includeItemsFromAllDrives"] is True
     assert call["corpora"] == "allDrives"
-    assert result[0]["id"] == "file-1"
+    assert result["files"][0]["id"] == "file-1"
+    assert result["incomplete"] is False
 
 
 def test_search_files_requests_shared_drive_content(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,6 +108,71 @@ def test_search_files_requests_shared_drive_content(monkeypatch: pytest.MonkeyPa
     _assert_shared_drive_flags(call)
     assert call["includeItemsFromAllDrives"] is True
     assert call["corpora"] == "allDrives"
+
+
+def test_list_files_requests_incomplete_search_indicator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fields mask must ask Google whether the allDrives search was incomplete."""
+    client, service = _client(monkeypatch)
+
+    client.list_files("folder-1")
+
+    assert "incompleteSearch" in service.file_api.list_calls[0]["fields"]
+
+
+def test_list_files_reports_incomplete_search_without_next_page_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Google can return files=[] and incompleteSearch=true with no nextPageToken.
+
+    That combination means some Shared Drives were skipped, not that the
+    folder is actually empty — callers must be able to tell the difference.
+    """
+    client, service = _client(
+        monkeypatch, list_responses=[{"files": [], "incompleteSearch": True}],
+    )
+
+    result = client.list_files("folder-1")
+
+    assert result["files"] == []
+    assert result["incomplete"] is True
+
+
+def test_search_files_reports_incomplete_search_without_next_page_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same incomplete-search gap applies to search, not just folder listing."""
+    client, service = _client(
+        monkeypatch, list_responses=[{"files": [], "incompleteSearch": True}],
+    )
+
+    result = client.search_files("name contains 'plan'")
+
+    assert result["files"] == []
+    assert result["incomplete"] is True
+
+
+def test_list_files_reports_incomplete_search_flagged_on_a_later_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A drive can be skipped on any page, not just the first or last."""
+    client, service = _client(
+        monkeypatch,
+        list_responses=[
+            {
+                "files": [{"id": "file-1", "name": "Q3 Plan"}],
+                "nextPageToken": "page-2",
+                "incompleteSearch": False,
+            },
+            {"files": [{"id": "file-2", "name": "Q4 Plan"}], "incompleteSearch": True},
+        ],
+    )
+
+    result = client.list_files("folder-1", limit=10)
+
+    assert [f["id"] for f in result["files"]] == ["file-1", "file-2"]
+    assert result["incomplete"] is True
 
 
 class _FakeDownloader:
