@@ -26,6 +26,9 @@ describe('ChatPanel draft handling', () => {
     beforeEach(() => {
         // ProfileSelector fetches profiles on mount; an empty list renders nothing.
         globalThis.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve([]) }));
+        // ChatInput now persists drafts per conversationId; both tests below
+        // reuse 'conv-a', so start each from a clean slate.
+        localStorage.clear();
     });
 
     it('discards unsent text when the active conversation changes', async () => {

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import ChatInput from '../ChatInput.jsx';
 
@@ -252,6 +252,48 @@ describe('ChatInput', () => {
         await user.click(screen.getByLabelText('Send message'));
 
         expect(screen.queryByTestId('attachment-image')).not.toBeInTheDocument();
+    });
+
+    describe('draft persistence', () => {
+        beforeEach(() => {
+            localStorage.clear();
+        });
+
+        it('saves typed text to local storage under the conversation id', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} conversationId="convo-1" />);
+
+            await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'unsent draft');
+
+            expect(localStorage.getItem('omnideck_chat_draft_v1:convo-1')).toBe('unsent draft');
+        });
+
+        it('restores a saved draft when remounted for the same conversation', () => {
+            localStorage.setItem('omnideck_chat_draft_v1:convo-1', 'still here');
+
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} conversationId="convo-1" />);
+
+            expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('still here');
+        });
+
+        it('does not leak a draft into a different conversation', () => {
+            localStorage.setItem('omnideck_chat_draft_v1:convo-1', 'convo one text');
+
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} conversationId="convo-2" />);
+
+            expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
+        });
+
+        it('clears the persisted draft once the message is sent', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} conversationId="convo-1" />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, 'Hello');
+            await user.click(screen.getByLabelText('Send message'));
+
+            expect(localStorage.getItem('omnideck_chat_draft_v1:convo-1')).toBeNull();
+        });
     });
 
     describe('attachment prop', () => {
