@@ -25,7 +25,13 @@ _GOOGLE_DOC_EXPORTS: dict[str, tuple[str, str]] = {
 
 
 class DriveClient:
-    """Thin wrapper around the Drive v3 API."""
+    """Thin wrapper around the Drive v3 API.
+
+    Every call below passes ``supportsAllDrives=True`` — without it, Google
+    silently excludes (or rejects) Shared Drive items instead of erroring,
+    so a new method added here needs it too or Shared Drive support quietly
+    regresses for just that one operation.
+    """
 
     def __init__(self, creds: Credentials) -> None:
         self._creds = creds
@@ -52,6 +58,9 @@ class DriveClient:
                     pageSize=page_size,
                     pageToken=page_token,
                     orderBy="folder,modifiedTime desc",
+                    corpora="allDrives",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -79,6 +88,9 @@ class DriveClient:
                     fields=_LIST_FIELDS,
                     pageSize=page_size,
                     pageToken=page_token,
+                    corpora="allDrives",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -92,7 +104,7 @@ class DriveClient:
         """Get metadata for a single file."""
         return (
             self._service().files()
-            .get(fileId=file_id, fields=_FILE_FIELDS)
+            .get(fileId=file_id, fields=_FILE_FIELDS, supportsAllDrives=True)
             .execute()
         )
 
@@ -124,7 +136,9 @@ class DriveClient:
             return content, export_name, export_mime
 
         buf = io.BytesIO()
-        request = self._service().files().get_media(fileId=file_id)
+        request = self._service().files().get_media(
+            fileId=file_id, supportsAllDrives=True,
+        )
         downloader = MediaIoBaseDownload(buf, request)
         done = False
         while not done:
@@ -145,7 +159,12 @@ class DriveClient:
         media = MediaInMemoryUpload(content, mimetype=mime_type, resumable=True)
         return (
             self._service().files()
-            .create(body=file_metadata, media_body=media, fields=_FILE_FIELDS)
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields=_FILE_FIELDS,
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
@@ -163,7 +182,7 @@ class DriveClient:
             file_metadata["parents"] = [parent_id]
         return (
             self._service().files()
-            .create(body=file_metadata, fields=_FILE_FIELDS)
+            .create(body=file_metadata, fields=_FILE_FIELDS, supportsAllDrives=True)
             .execute()
         )
 
@@ -178,7 +197,11 @@ class DriveClient:
         body: dict[str, Any] = {}
         if name is not None:
             body["name"] = name
-        kwargs: dict[str, Any] = {"fileId": file_id, "fields": _FILE_FIELDS}
+        kwargs: dict[str, Any] = {
+            "fileId": file_id,
+            "fields": _FILE_FIELDS,
+            "supportsAllDrives": True,
+        }
         if body:
             kwargs["body"] = body
         if content is not None:
@@ -192,7 +215,12 @@ class DriveClient:
         """Move a file to the trash. Returns the updated file resource."""
         return (
             self._service().files()
-            .update(fileId=file_id, body={"trashed": True}, fields=_FILE_FIELDS)
+            .update(
+                fileId=file_id,
+                body={"trashed": True},
+                fields=_FILE_FIELDS,
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
@@ -223,6 +251,7 @@ class DriveClient:
                 fileId=file_id,
                 body=permission,
                 fields="id, role, type, emailAddress",
+                supportsAllDrives=True,
             )
             .execute()
         )
