@@ -51,6 +51,23 @@ def _lookup_openai_model(model_id: str) -> tuple[int, int, bool, bool] | None:
     return None
 
 
+def _accepts_sampling_params(model_id: str, think: bool) -> bool:
+    """Whether `temperature` / `top_p` may be sent for this request.
+
+    Reasoning models reject sampling params outright. On /v1/responses a request
+    is also rejected whenever a `reasoning` block is present, including on models
+    that accept `temperature` on its own, so `think` has to gate them too.
+    Unknown models (custom base_url deployments) keep the old behaviour.
+    """
+    if think:
+        return False
+    info = _lookup_openai_model(model_id)
+    if info is None:
+        return True
+    supports_thinking = info[3]
+    return not supports_thinking
+
+
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 # Response status → normalized done_reason
@@ -120,10 +137,11 @@ class OpenAIResponsesProvider(BaseAPIProvider):
         max_tokens = opts.get("num_predict") or opts.get("max_tokens")
         if max_tokens:
             kwargs["max_output_tokens"] = max_tokens
-        if opts.get("temperature") is not None:
-            kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_p") is not None:
-            kwargs["top_p"] = opts["top_p"]
+        if _accepts_sampling_params(model, think):
+            if opts.get("temperature") is not None:
+                kwargs["temperature"] = opts["temperature"]
+            if opts.get("top_p") is not None:
+                kwargs["top_p"] = opts["top_p"]
         if tools:
             kwargs["tools"] = _convert_tools(tools)
         if think:
