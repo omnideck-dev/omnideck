@@ -61,9 +61,9 @@ by all agents, in this order:
 - **Purpose:** Rebuilds the skill section of the system message before each model call so newly loaded skills appear immediately.
 
 ### ToolResultCapHook
-- **File:** `agent_core/hooks/_result_cap.py` (43 lines)
+- **File:** `agent_core/hooks/_result_cap.py`
 - **Methods:** `after_tool`
-- **Purpose:** Replaces tool results that exceed the model's context window (`num_ctx * 4` characters) with an error message telling the agent to retry with a narrower request.
+- **Purpose:** Bounds inline tool output using a conservative UTF-8 byte allowance (one quarter of the configured context token count, capped at 64 KiB; 16 KiB when unknown). Oversized results are saved verbatim to private temporary files before event publication. History receives a short preview and absolute path; agents can inspect sections with existing file/search/shell tools. Files are temporary scratch data, not conversation attachments. A failed write returns retry guidance rather than publishing oversized output.
 
 ### ContextHook
 - **File:** `agent_core/hooks/_context_hook.py` (29 lines)
