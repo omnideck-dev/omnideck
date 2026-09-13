@@ -374,6 +374,30 @@ describe('ConversationsPanel — delete', () => {
         await waitFor(() => expect(screen.queryByTestId('archived-item')).not.toBeInTheDocument());
         expect(localStorage.getItem('omnideck_chat_draft_v1:a1')).toBeNull();
     });
+
+    it('deletes the conversation even when the draft-storage getter throws', async () => {
+        const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+        Object.defineProperty(globalThis, 'localStorage', {
+            configurable: true,
+            get() {
+                throw new DOMException('Storage access blocked', 'SecurityError');
+            },
+        });
+        try {
+            const user = userEvent.setup();
+            render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+            await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+            const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+            const deleteButton = within(menu).getByTestId('recent-menu-delete');
+            await user.click(deleteButton); // arm
+            await user.click(deleteButton); // confirm
+
+            await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        } finally {
+            Object.defineProperty(globalThis, 'localStorage', descriptor);
+        }
+    });
 });
 
 describe('ConversationsPanel — archive', () => {

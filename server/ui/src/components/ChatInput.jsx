@@ -6,6 +6,7 @@ import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
 const LINE_HEIGHT_PX = 20;
@@ -19,39 +20,8 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-const DRAFT_KEY_PREFIX = 'omnideck_chat_draft_v1:';
-
-/** Read a conversation's unsent draft text, if any was saved on this browser. */
-function _loadDraft(conversationId) {
-    if (typeof localStorage === 'undefined' || !conversationId) return '';
-    try {
-        return localStorage.getItem(DRAFT_KEY_PREFIX + conversationId) || '';
-    } catch {
-        return '';
-    }
-}
-
-/** Save (or clear, once empty) a conversation's unsent draft text. */
-function _saveDraft(conversationId, text) {
-    if (typeof localStorage === 'undefined' || !conversationId) return;
-    try {
-        if (text) {
-            localStorage.setItem(DRAFT_KEY_PREFIX + conversationId, text);
-        } else {
-            localStorage.removeItem(DRAFT_KEY_PREFIX + conversationId);
-        }
-    } catch {
-        // Storage unavailable/full — draft persistence is best-effort.
-    }
-}
-
-/** Remove a conversation's persisted draft — call when it's permanently deleted. */
-export function clearChatDraft(conversationId) {
-    _saveDraft(conversationId, '');
-}
-
 function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
-    const [message, setMessage] = useState(() => _loadDraft(conversationId));
+    const [message, setMessage] = useState(() => loadChatDraft(conversationId));
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
@@ -122,7 +92,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // (nothing anchors it across a reload), so this only survives a hard
     // refresh once the conversation has been sent at least once — by design.
     useEffect(() => {
-        _saveDraft(conversationId, message);
+        saveChatDraft(conversationId, message);
     }, [conversationId, message]);
 
     // Each entry: { base64, content_type, filename, preview } where preview is a

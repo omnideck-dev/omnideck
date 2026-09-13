@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import ChatInput from '../ChatInput.jsx';
 
@@ -293,6 +293,36 @@ describe('ChatInput', () => {
             await user.click(screen.getByLabelText('Send message'));
 
             expect(localStorage.getItem('omnideck_chat_draft_v1:convo-1')).toBeNull();
+        });
+
+        describe('with a throwing storage getter', () => {
+            let descriptor;
+
+            beforeEach(() => {
+                descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+                Object.defineProperty(globalThis, 'localStorage', {
+                    configurable: true,
+                    get() {
+                        throw new DOMException('Storage access blocked', 'SecurityError');
+                    },
+                });
+            });
+
+            afterEach(() => {
+                Object.defineProperty(globalThis, 'localStorage', descriptor);
+            });
+
+            it('mounts and accepts input without throwing', async () => {
+                const user = userEvent.setup();
+                expect(() => render(
+                    <ChatInput onSend={vi.fn()} isStreaming={false} conversationId="convo-1" />,
+                )).not.toThrow();
+
+                const textarea = screen.getByPlaceholderText('Message Omnideck…');
+                expect(textarea.value).toBe('');
+                await expect(user.type(textarea, 'still works')).resolves.not.toThrow();
+                expect(textarea.value).toBe('still works');
+            });
         });
     });
 

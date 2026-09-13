@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
 import { useToast } from './ToastProvider.jsx';
-import { clearChatDraft } from './ChatInput.jsx';
+import { clearChatDraft } from '../utils/chatDraftStorage.js';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
