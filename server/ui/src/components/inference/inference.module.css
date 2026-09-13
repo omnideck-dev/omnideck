@@ -18,6 +18,24 @@
     margin-bottom: var(--sp-2);
 }
 
+.detectedCapabilities {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: calc(-1 * var(--sp-1)) 0 var(--sp-3);
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.detectedCapabilities i {
+    color: var(--accent);
+}
+
 /* ---- Preset buttons ---- */
 .presetGrid {
     display: flex;

@@ -16,6 +16,18 @@ from tools.memory import load_memory
 
 logger = logging.getLogger(__name__)
 
+_OPTION_CONTROLS = {
+    "num_ctx": "context_window",
+    "num_predict": "num_predict",
+    "temperature": "temperature",
+    "top_k": "top_k",
+    "top_p": "top_p",
+    "repeat_penalty": "repeat_penalty",
+    "reasoning_effort": "reasoning_effort",
+    "reasoning_summary": "reasoning_summary",
+    "thinking_budget": "thinking_budget",
+}
+
 
 @dataclass(frozen=True)
 class PreparedAgent:
@@ -52,6 +64,8 @@ class AgentFactory:
         include_memory: bool = False,
     ) -> PreparedAgent:
         agent = self.build_agent(profile, name=name)
+        provider = get_provider(agent.provider)
+        agent = await self.resolve_runtime_metadata(agent, provider)
         capabilities = await self.build_capabilities(
             profile,
             spawn_agent=spawn_agent,
@@ -65,7 +79,7 @@ class AgentFactory:
             instruction = (
                 f"\n── Memory (persisted across sessions) ──────────────────────────\n{lines}\n{sep}\n" + instruction
             )
-        return PreparedAgent(profile, agent, capabilities, get_provider(agent.provider), instruction)
+        return PreparedAgent(profile, agent, capabilities, provider, instruction)
 
     async def build_capabilities(
         self,
@@ -132,7 +146,9 @@ class AgentFactory:
             raise RuntimeError(msg)
 
         raw_options: dict[str, Any] = {
-            "num_ctx": profile.context_window,
+            # num_ctx allocates an Ollama runtime context. Cloud and gateway
+            # models have a fixed capacity that is resolved from model metadata.
+            "num_ctx": profile.context_window if profile.provider == "ollama" else None,
             "num_predict": profile.num_predict,
             "temperature": profile.temperature,
             "top_k": profile.top_k,
@@ -156,6 +172,60 @@ class AgentFactory:
             compaction_threshold=profile.compaction_threshold or 0.75,
             max_iterations=profile.max_iterations or 0,
         )
+
+    @staticmethod
+    async def resolve_runtime_metadata(agent: Agent, provider: Provider) -> Agent:
+        """Apply live model capabilities to one execution without persisting them.
+
+        Profiles retain user choices, while fixed cloud context capacity and
+        accepted inference parameters belong to the selected model. Resolve
+        those properties through the provider's cached model catalog for every
+        root, child, and routine execution prepared by this factory.
+        """
+        try:
+            models = await provider.list_models()
+        except Exception:
+            logger.debug(
+                "Could not resolve runtime metadata for %s/%s; using profile fallbacks",
+                agent.provider,
+                agent.model,
+                exc_info=True,
+            )
+            return agent
+
+        model_info = next((candidate for candidate in models if candidate.name == agent.model), None)
+        if model_info is None:
+            logger.debug("Model metadata not found for %s/%s", agent.provider, agent.model)
+            return agent
+
+        context_window = agent.context_window
+        if model_info.context_window and (
+            agent.provider != "ollama" or model_info.is_cloud or context_window <= 0
+        ):
+            context_window = model_info.context_window
+
+        options = dict(agent.options)
+        if model_info.inference_controls is not None:
+            supported = set(model_info.inference_controls)
+            options = {
+                key: value
+                for key, value in options.items()
+                if _OPTION_CONTROLS.get(key) in supported
+            }
+        if (
+            model_info.thinking_levels
+            and isinstance(options.get("reasoning_effort"), str)
+            and options["reasoning_effort"] not in model_info.thinking_levels
+        ):
+            options.pop("reasoning_effort")
+
+        return agent.model_copy(update={
+            "context_window": context_window,
+            "options": options,
+            "think": model_info.thinking_required or (
+                agent.think and model_info.supports_thinking
+            ),
+        })
 
 
 def _base_tools(
