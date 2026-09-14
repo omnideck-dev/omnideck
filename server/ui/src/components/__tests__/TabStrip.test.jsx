@@ -187,6 +187,92 @@ test('opens the active tab action menu from one compact overflow button', () => 
         .not.toBeInTheDocument();
 });
 
+test('active tab with menu actions shows both the menu and close buttons inline', () => {
+    render(
+        <TabStrip
+            tabs={TABS.map((tab) => ({
+                ...tab,
+                menuActions: [{
+                    id: 'reload',
+                    label: 'Reload',
+                    icon: 'bi-arrow-clockwise',
+                    execute: vi.fn(),
+                    disabled: false,
+                }],
+            }))}
+            activeTab="one"
+            onTabChange={vi.fn()}
+            onCloseTab={vi.fn()}
+        />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Actions for One tab' }))
+        .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close One tab' }))
+        .toBeInTheDocument();
+});
+
+test('inactive tab with menu actions renders both buttons for hover reveal, closes without activating', () => {
+    const onTabChange = vi.fn();
+    const onCloseTab = vi.fn();
+    render(
+        <TabStrip
+            tabs={TABS.map((tab) => ({
+                ...tab,
+                menuActions: [{
+                    id: 'reload',
+                    label: 'Reload',
+                    icon: 'bi-arrow-clockwise',
+                    execute: vi.fn(),
+                    disabled: false,
+                }],
+            }))}
+            activeTab="one"
+            onTabChange={onTabChange}
+            onCloseTab={onCloseTab}
+        />,
+    );
+
+    // Inactive tab ("two") still exposes both controls in the DOM so a CSS
+    // hover overlay can reveal them without a re-render on mouse enter.
+    expect(screen.getByRole('button', { name: 'Actions for Two tab' }))
+        .toBeInTheDocument();
+    const closeTwo = screen.getByRole('button', { name: 'Close Two tab' });
+    expect(closeTwo).toBeInTheDocument();
+
+    fireEvent.click(closeTwo);
+    expect(onCloseTab).toHaveBeenCalledWith('two');
+    expect(onTabChange).not.toHaveBeenCalled();
+});
+
+test('moving the active tab moves the inline button styling with it', () => {
+    const props = {
+        tabs: TABS.map((tab) => ({
+            ...tab,
+            menuActions: [{
+                id: 'reload',
+                label: 'Reload',
+                icon: 'bi-arrow-clockwise',
+                execute: vi.fn(),
+                disabled: false,
+            }],
+        })),
+        onTabChange: vi.fn(),
+        onCloseTab: vi.fn(),
+    };
+    const { rerender } = render(<TabStrip {...props} activeTab="one" />);
+
+    const closeOne = () => screen.getByRole('button', { name: 'Close One tab' });
+    const closeTwo = () => screen.getByRole('button', { name: 'Close Two tab' });
+    expect(closeOne().parentElement.className).toMatch(/tabActionsInline/);
+    expect(closeTwo().parentElement.className).toMatch(/tabActionsOverlay/);
+
+    rerender(<TabStrip {...props} activeTab="two" />);
+
+    expect(closeOne().parentElement.className).toMatch(/tabActionsOverlay/);
+    expect(closeTwo().parentElement.className).toMatch(/tabActionsInline/);
+});
+
 test('opens the tab context menu from the keyboard', () => {
     render(
         <TabStrip

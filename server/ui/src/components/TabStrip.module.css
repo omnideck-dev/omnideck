@@ -65,9 +65,15 @@
 
 /* Individual tab */
 .tab {
+    position: relative;
     display: flex;
     align-items: center;
     flex: 0 0 auto;
+    /* Without a floor, a short label (e.g. "Agents") sizes to ~80px — not
+       enough room for the ~68px hover overlay to coexist with any visible
+       label text, so hovering blanks out the name entirely. This keeps
+       enough of the icon + label legible under the overlay. */
+    min-width: 140px;
     height: var(--header-height);
     background: transparent;
     border-bottom: 2px solid transparent;
@@ -99,6 +105,47 @@
 .tabActive {
     border-bottom-color: var(--accent);
     color: var(--text-primary);
+}
+
+/* Wraps the "⋯" + "×" buttons on a tab that has menu actions. */
+.tabActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+/* Active tab: part of the flex flow, so the tab widens to fit both buttons. */
+.tabActionsInline {
+    padding-right: 6px;
+}
+
+/* Inactive tab: floats over the tab's right edge on hover instead of
+   reserving space, so inactive tabs keep a constant width. The gradient
+   fades the overlay in from its left edge to read as floating chrome.
+   pointer-events stays none on this wrapper even while visible — the
+   padding/fade area has no button in it, and on a narrow tab that dead
+   zone can cover most of the tab, blocking the "select this tab" click
+   underneath. Only the buttons themselves (below) re-enable pointer-events. */
+.tabActionsOverlay {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    padding: 0 6px 0 20px;
+    background: linear-gradient(to right, transparent, var(--border-subtle) 12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.tab:hover .tabActionsOverlay {
+    opacity: 1;
+}
+
+.tab:hover .tabActionsOverlay .tabMenuButton,
+.tab:hover .tabActionsOverlay .tabClose {
+    pointer-events: auto;
 }
 
 .tabMenuButton {
@@ -141,9 +188,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    font-size: 11px;
+    width: 22px;
+    height: 22px;
+    font-size: 16px;
     color: var(--text-tertiary);
     border-radius: 3px;
     margin: 0 6px 0 2px;
