@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from config import load_config
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from aiohttp.web_request import Request
     from aiohttp.web_response import StreamResponse
@@ -16,6 +18,24 @@ logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 UI_DIST_DIR = Path(__file__).parent / "ui" / "dist"
+
+
+def _custom_css_path() -> Path:
+    return Path(load_config().settings.home_dir) / "custom.css"
+
+
+def _ensure_custom_css() -> None:
+    """Ship a blank custom.css on disk so users have a stable place for overrides."""
+    path = _custom_css_path()
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+
+
+async def custom_css_handler(_request: Request) -> StreamResponse:
+    """Serve the user's editable custom.css, creating it blank if missing."""
+    _ensure_custom_css()
+    return web.FileResponse(_custom_css_path(), headers={"Cache-Control": "no-cache"})
 
 
 async def index_handler(_request: Request) -> StreamResponse:
@@ -34,6 +54,8 @@ async def index_handler(_request: Request) -> StreamResponse:
 def register_ui_routes(app: web.Application) -> None:
     """Register the SPA entry point and static asset directories."""
     app.router.add_route("GET", "/", index_handler)
+    app.router.add_route("GET", "/custom.css", custom_css_handler)
+    _ensure_custom_css()
     if UI_DIST_DIR.exists():
         app.router.add_static("/assets", UI_DIST_DIR / "assets", show_index=False)
     if STATIC_DIR.exists():

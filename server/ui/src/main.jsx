@@ -9,6 +9,14 @@ import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
 
+// Appended (not imported) so it lands after the bundled core styles in the
+// document — later <link> tags win the cascade on equal specificity, letting
+// user overrides in custom.css take effect without touching core CSS.
+const customStylesLink = document.createElement('link');
+customStylesLink.rel = 'stylesheet';
+customStylesLink.href = '/custom.css';
+document.head.appendChild(customStylesLink);
+
 // Patch fetch so mutating application requests carry the CSRF header.
 // The server requires X-Requested-With: XMLHttpRequest on POST/PUT/DELETE.
 // Same-origin JS can set this freely; cross-origin JS cannot because the
