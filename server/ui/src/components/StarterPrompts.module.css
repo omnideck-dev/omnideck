@@ -18,10 +18,15 @@
 }
 
 .heading {
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--text-secondary);
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
     margin: 0;
+}
+
+.accentWord {
+    color: var(--accent);
 }
 
 .subheading {
@@ -34,8 +39,8 @@
 .grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    max-width: 440px;
+    gap: 14px;
+    max-width: 640px;
     width: 100%;
 }
 
@@ -43,20 +48,21 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
-    padding: 14px;
-    background: var(--surface);
+    gap: 6px;
+    padding: 16px;
+    background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     cursor: pointer;
     text-align: left;
-    transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
-    box-shadow: none;
+    transition: transform 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+    box-shadow: var(--shadow-sm);
 }
 
 .card:hover {
+    transform: translateY(-2px);
     border-color: var(--border-strong);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
 }
 
 .card:active {
@@ -69,22 +75,27 @@
 }
 
 .icon {
-    font-size: 18px;
+    width: 34px;
+    height: 34px;
+    font-size: 16px;
     color: var(--accent);
-    line-height: 1;
-    display: block;
+    background: var(--accent-muted);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-bottom: 2px;
 }
 
 .title {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .text {
-    font-size: 11px;
-    color: var(--text-tertiary);
+    font-size: 13px;
+    color: var(--text-secondary);
     line-height: 1.4;
 }
 

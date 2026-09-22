@@ -93,7 +93,9 @@ test('with no routines, shows an empty state whose example opens a pre-seeded ch
 
     const cards = await screen.findAllByTestId('starter-prompt');
     expect(cards).toHaveLength(4);
-    expect(screen.getByText('No routines yet')).toBeInTheDocument();
+    // The heading splits "yet" into its own accent-colored span, so match by
+    // accessible name (which flattens child text) rather than getByText.
+    expect(screen.getByRole('heading', { name: 'No routines yet' })).toBeInTheDocument();
 
     fireEvent.click(cards[0]);
     // Seeded text must instruct the agent to *create a routine*, not run the task once.
