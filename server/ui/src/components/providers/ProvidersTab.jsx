@@ -245,22 +245,42 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
     const meta = _meta(provider.name);
     const view = _statusView(status);
     const isDirect = provider.kind === 'direct';
+    // Brokered openai-compat stores a user-supplied upstream URL with the key;
+    // cloud brokered kinds use fixed catalog URLs and only rotate the key.
+    const showBrokeredBaseUrl = !isDirect && provider.name === 'openai_compat';
 
-    const [field, setField] = useState(provider.base_url || '');
-    // When the selected provider changes, reset the input.
-    useEffect(() => { setField(provider.base_url || ''); }, [provider.name, provider.base_url]);
+    const [baseUrl, setBaseUrl] = useState(provider.base_url || '');
+    const [apiKey, setApiKey] = useState('');
+    // When the selected provider changes, reset the inputs.
+    useEffect(() => {
+        setBaseUrl(provider.base_url || '');
+        setApiKey('');
+    }, [provider.name, provider.base_url]);
 
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState(null);
 
+    const canSave = isDirect
+        ? !!baseUrl.trim()
+        : showBrokeredBaseUrl
+            ? !!apiKey.trim() && !!baseUrl.trim()
+            : !!apiKey.trim();
+
     const handleSave = useCallback(async () => {
-        if (!field) return;
+        if (!canSave) return;
         setSaving(true);
         setSaveError(null);
         try {
-            const body = isDirect ? { base_url: field } : { api_key: field };
+            let body;
+            if (isDirect) {
+                body = { base_url: baseUrl.trim() };
+            } else if (showBrokeredBaseUrl) {
+                body = { api_key: apiKey.trim(), base_url: baseUrl.trim() };
+            } else {
+                body = { api_key: apiKey.trim() };
+            }
             const resp = await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -272,13 +292,13 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                 return;
             }
             onSaved?.(data);
-            if (!isDirect) setField(''); // clear the key field on success
+            if (!isDirect) setApiKey(''); // clear the key field on success
         } catch (err) {
             setSaveError(err?.message || 'Request failed');
         } finally {
             setSaving(false);
         }
-    }, [field, isDirect, provider.name, onSaved]);
+    }, [canSave, isDirect, showBrokeredBaseUrl, baseUrl, apiKey, provider.name, onSaved]);
 
     const handleTest = useCallback(async () => {
         setTesting(true);
@@ -319,34 +339,61 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                 </div>
             </div>
 
-            <div className={styles.detailSection}>
-                <div className={styles.detailSectionLabel}>
-                    {isDirect ? 'Base URL' : 'API Key'}
+            {(isDirect || showBrokeredBaseUrl) && (
+                <div className={styles.detailSection}>
+                    <div className={styles.detailSectionLabel}>Base URL</div>
+                    <div className={styles.inputRow}>
+                        <input
+                            type="text"
+                            className={`${styles.input} ${styles.inputMono}`}
+                            value={baseUrl}
+                            onChange={(e) => setBaseUrl(e.target.value)}
+                            placeholder="http://host:port/v1"
+                            autoComplete="off"
+                            data-testid="provider-base-url-input"
+                        />
+                        {isDirect && (
+                            <Button variant="filled" onClick={handleSave} disabled={saving || !canSave}>
+                                {saving ? 'Saving…' : 'Save'}
+                            </Button>
+                        )}
+                    </div>
+                    {showBrokeredBaseUrl && (
+                        <div className={styles.formHint}>
+                            Upstream OpenAI-compatible endpoint. Correct a mistyped URL here without re-adding.
+                        </div>
+                    )}
                 </div>
-                <div className={styles.inputRow}>
-                    <input
-                        type={isDirect ? 'text' : 'password'}
-                        className={`${styles.input} ${styles.inputMono}`}
-                        value={field}
-                        onChange={(e) => setField(e.target.value)}
-                        placeholder={isDirect ? 'http://host:port' : 'Paste a new key to replace the current one'}
-                        autoComplete={isDirect ? 'off' : 'new-password'}
-                    />
-                    <Button variant="filled" onClick={handleSave} disabled={saving || !field}>
-                        {saving ? 'Saving…' : 'Save'}
-                    </Button>
-                </div>
-                {!isDirect && (
+            )}
+
+            {!isDirect && (
+                <div className={styles.detailSection}>
+                    <div className={styles.detailSectionLabel}>API Key</div>
+                    <div className={styles.inputRow}>
+                        <input
+                            type="password"
+                            className={`${styles.input} ${styles.inputMono}`}
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            placeholder="Paste a new key to replace the current one"
+                            autoComplete="new-password"
+                            data-testid="provider-api-key-input"
+                        />
+                        <Button variant="filled" onClick={handleSave} disabled={saving || !canSave}>
+                            {saving ? 'Saving…' : 'Save'}
+                        </Button>
+                    </div>
                     <div className={styles.formHint}>
                         Stored encrypted in the vault. Saving restarts the broker.
                     </div>
-                )}
-                {saveError && (
-                    <div className={`${styles.resultChip} ${styles.resultChipErr}`}>
-                        <i className="bi bi-x-circle-fill" /> {saveError}
-                    </div>
-                )}
-            </div>
+                </div>
+            )}
+
+            {saveError && (
+                <div className={`${styles.resultChip} ${styles.resultChipErr}`}>
+                    <i className="bi bi-x-circle-fill" /> {saveError}
+                </div>
+            )}
 
             <div className={styles.detailSection}>
                 <div className={styles.detailSectionLabel}>Connection</div>
