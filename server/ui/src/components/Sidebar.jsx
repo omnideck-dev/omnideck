@@ -86,7 +86,7 @@ function _persistNavigationOrder(order) {
 
 /**
  * Left navigation rail. Collapses to an icon-only strip or expands to
- * show labels, the OMNIDECK wordmark, pinned Apps, and conversations.
+ * show labels, the omnideck wordmark, pinned Apps, and conversations.
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({
@@ -165,7 +165,7 @@ export default function Sidebar({
             data-collapsed={collapsed}
         >
             <div className={styles.brand}>
-                {!collapsed && <span className={styles.wordmark}>OMNIDECK</span>}
+                {!collapsed && <span className={styles.wordmark}>omnideck</span>}
                 <button
                     className={styles.iconBtn}
                     onClick={toggleCollapsed}

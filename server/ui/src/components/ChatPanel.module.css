@@ -4,8 +4,9 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    /* Positioning context for the expand-in-place composer, which fills the
-       chat area below the title bar (offset by --titlebar-height). */
+    /* Positioning context for the expand-in-place composer, which floats
+       over the bottom ~80% of this panel (never above the title bar,
+       offset by --titlebar-height) rather than filling it. */
     position: relative;
 }
 
