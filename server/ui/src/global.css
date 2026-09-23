@@ -6,6 +6,14 @@
   src: url('./assets/fonts/JetBrainsMono.woff2') format('woff2');
 }
 
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/Inter.woff2') format('woff2');
+}
+
 /* ═══════════════════════════════════════════════════════
    SIGNAL Design Language -- Token Definitions
    ═══════════════════════════════════════════════════════ */
@@ -75,10 +83,10 @@
   --flyout-width: 270px;
 
   /* ── Radius scale ── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 999px;
 
   /* ── Spacing (4px base) ── */
@@ -93,8 +101,8 @@
   --sp-12: 48px;
 
   /* ── Font stacks ── */
-  --font-brand: 'Roboto Mono', 'Consolas', monospace;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-brand: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
 
   /* ── Type scale ── */
