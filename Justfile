@@ -388,7 +388,7 @@ tool-docs:
 
 # Verify the shared release-note contract and any outstanding fragments
 release-note-policy:
-    node --test tests/release-notes.test.mjs
+    node --test tests/release-notes.test.mjs tests/weekly-app-release.test.mjs
     node scripts/release-notes.mjs validate-fragments
 
 # Verify CI event routing, bounded package setup, and hosted browser reuse

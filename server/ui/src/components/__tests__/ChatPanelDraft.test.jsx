@@ -26,9 +26,12 @@ describe('ChatPanel draft handling', () => {
     beforeEach(() => {
         // ProfileSelector fetches profiles on mount; an empty list renders nothing.
         globalThis.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve([]) }));
+        // ChatInput now persists drafts per conversationId; both tests below
+        // reuse 'conv-a', so start each from a clean slate.
+        localStorage.clear();
     });
 
-    it('discards unsent text when the active conversation changes', async () => {
+    it('swaps to the new conversation\'s own draft (empty) when the active conversation changes', async () => {
         const user = userEvent.setup();
         const { rerender } = renderPanel({ conversationId: 'conv-a' });
 
@@ -42,6 +45,32 @@ describe('ChatPanel draft handling', () => {
         );
 
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
+    });
+
+    it('restores each conversation\'s own draft across an A → B → A switch', async () => {
+        const user = userEvent.setup();
+        const { rerender } = renderPanel({ conversationId: 'conv-a' });
+
+        await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for A');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-b" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
+        await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for B');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-a" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for A');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-b" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for B');
     });
 
     it('keeps the text while the conversation stays the same', async () => {

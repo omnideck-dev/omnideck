@@ -53,10 +53,13 @@ export function parseFragment(text, source = '<fragment>') {
   }
 
   const unknown = Object.keys(metadata).filter(
-    (key) => !['target', 'type', 'area'].includes(key),
+    (key) => !['target', 'type', 'area', 'bump'].includes(key),
   );
   if (unknown.length) {
     throw new Error(`${source}: unsupported field(s): ${unknown.join(', ')}`);
+  }
+  if (metadata.bump && !['patch', 'minor', 'major'].includes(metadata.bump)) {
+    throw new Error(`${source}: bump must be patch, minor, or major`);
   }
   if (!RELEASE_NOTE_TYPES.includes(metadata.type)) {
     throw new Error(
@@ -86,6 +89,7 @@ export function parseFragment(text, source = '<fragment>') {
     area: metadata.area,
     body,
     source,
+    ...(metadata.bump ? { bump: metadata.bump } : {}),
   };
 }
 
