@@ -1,9 +1,10 @@
 """Tests for ``brokers/email_broker/_caldav_client.py`` — CalDAV client logic.
 
 Covers calendar writes (create/update/delete, recurrence, timezones) and the
-connection layer: reconnect-on-stale-connection behavior, and the explicit
-timeout that keeps iCloud's slow CalDAV REPORT (event search + expansion)
-from hitting niquests' 30-second default read timeout.
+connection layer: reconnect-on-stale-connection behavior, and the scoped
+timeout override that keeps iCloud's slow CalDAV REPORT (event search +
+expansion) from hitting niquests' 30-second default read timeout without
+raising the timeout for every other operation.
 """
 
 from __future__ import annotations
@@ -21,7 +22,9 @@ from icalendar import Event as ICalendarEvent
 
 from integrations.brokers.email_broker._caldav_client import (
     CalDavClient,
+    _REPORT_TIMEOUT,
     _STALE_CONN_ERRORS,
+    _report_timeout,
 )
 
 
@@ -67,9 +70,16 @@ class _StubCalendar:
         self.search_calls: list[dict[str, Any]] = []
         self.search_hits: list[_StubResource] = []
         self.reject_uid_report = False
+        # Set by _StubDavClient.calendar() so search() can record the
+        # client's timeout at call time — lets tests confirm a REPORT
+        # search runs under _report_timeout's widened value.
+        self.dav_client: _StubDavClient | None = None
+        self.search_timeouts: list[int | None] = []
 
     def search(self, **kwargs: Any) -> list[_StubResource]:
         self.search_calls.append(kwargs)
+        if self.dav_client is not None:
+            self.search_timeouts.append(self.dav_client.timeout)
         return self.search_hits
 
     def add_event(self, **properties: Any) -> Any:
@@ -112,9 +122,11 @@ class _StubDavClient:
     def __init__(self, calendar: _StubCalendar) -> None:
         self.stub_calendar = calendar
         self.urls: list[str] = []
+        self.timeout: int | None = None
 
     def calendar(self, *, url: str) -> _StubCalendar:
         self.urls.append(url)
+        self.stub_calendar.dav_client = self
         return self.stub_calendar
 
 
@@ -161,6 +173,37 @@ async def test_search_events_rejects_empty_query() -> None:
         await client.search_events(
             "https://caldav.example/home/", "  ", 365, 0, 50,
         )
+
+
+@pytest.mark.asyncio
+async def test_search_events_report_runs_under_widened_timeout() -> None:
+    """The multi-field REPORT loop must run with the widened timeout, and
+    the client must be back to its normal timeout once the call returns —
+    so the next operation under the shared lock isn't stuck at 120s too."""
+    calendar = _StubCalendar()
+    calendar.search_hits = [_event_resource()]
+    client = _connected_client(calendar)
+
+    await client.search_events(calendar.url, "dentist", 365, 0, 50)
+
+    assert calendar.search_timeouts == [_REPORT_TIMEOUT] * 3
+    assert client._client.timeout is None
+
+
+@pytest.mark.asyncio
+async def test_list_events_report_runs_under_widened_timeout() -> None:
+    """``list_events``'s REPORT must run with the widened timeout too, and
+    restore the client's timeout afterward for the same reason."""
+    calendar = _StubCalendar()
+    calendar.search_hits = [_event_resource()]
+    client = _connected_client(calendar)
+
+    name, events = await client.list_events(calendar.url, days_forward=365, days_back=0, limit=50)
+
+    assert name == "Home"
+    assert [event.summary for event in events] == ["Project review"]
+    assert calendar.search_timeouts == [_REPORT_TIMEOUT]
+    assert client._client.timeout is None
 
 
 @pytest.mark.asyncio
@@ -547,50 +590,22 @@ class TestStaleConnErrors:
         assert urllib3.exceptions.ProtocolError in _STALE_CONN_ERRORS
 
 
-# ── _blocking_connect passes explicit timeout ─────────────────────────────
+# ── _blocking_connect leaves niquests' per-method default alone ───────────
 
 
 class TestBlockingConnectTimeout:
-    """``_blocking_connect`` must pass an explicit ``timeout`` to
-    ``DAVClient`` so niquests doesn't fall back to its 30-second default
-    for read operations (PROPFIND, REPORT)."""
+    """``_blocking_connect`` must NOT pin ``DAVClient`` to a flat timeout.
+
+    niquests already picks a sensible default per HTTP method when
+    ``timeout`` is ``None``: 30s for reads, 120s for writes. Overriding
+    that with a flat value would let a light PROPFIND read (e.g.
+    ``list_calendars``) hang for up to 120s instead of failing fast at
+    30s — holding the account's shared connection lock the whole time.
+    The longer timeout REPORT searches need is applied narrowly via
+    ``_report_timeout`` instead."""
 
     @patch("integrations.brokers.email_broker._caldav_client.caldav")
-    def test_davclient_receives_explicit_timeout(self, mock_caldav: MagicMock) -> None:
-        """The ``DAVClient`` constructor must be called with a ``timeout``
-        keyword argument that is greater than niquests' 30-second default.
-        Without it, iCloud REPORT responses that take 30–60 seconds time out."""
-        mock_client = MagicMock()
-        mock_principal = MagicMock()
-        mock_caldav.DAVClient.return_value = mock_client
-        mock_client.principal.return_value = mock_principal
-
-        client = CalDavClient(
-            url="https://caldav.icloud.com",
-            username="user",
-            password="pass",
-        )
-        client._blocking_connect()
-
-        # DAVClient must have been called with a timeout kwarg.
-        call_kwargs = mock_caldav.DAVClient.call_args
-        assert "timeout" in call_kwargs.kwargs, (
-            "DAVClient must receive an explicit timeout= parameter; "
-            "without it niquests defaults to 30s for reads, which is too "
-            "short for iCloud's CalDAV REPORT."
-        )
-        timeout_value = call_kwargs.kwargs["timeout"]
-        assert isinstance(timeout_value, int)
-        assert timeout_value > 30, (
-            f"timeout={timeout_value} must be greater than niquests' "
-            "30-second default read timeout to allow slow REPORT responses."
-        )
-
-    @patch("integrations.brokers.email_broker._caldav_client.caldav")
-    def test_davclient_timeout_is_120(self, mock_caldav: MagicMock) -> None:
-        """The specific timeout value should be 120 seconds — generous
-        enough for iCloud's slowest REPORT responses while still bounding
-        the wait so a truly hung server doesn't block indefinitely."""
+    def test_davclient_receives_no_explicit_timeout(self, mock_caldav: MagicMock) -> None:
         mock_client = MagicMock()
         mock_caldav.DAVClient.return_value = mock_client
         mock_client.principal.return_value = MagicMock()
@@ -602,7 +617,47 @@ class TestBlockingConnectTimeout:
         )
         client._blocking_connect()
 
-        assert mock_caldav.DAVClient.call_args.kwargs["timeout"] == 120
+        call_kwargs = mock_caldav.DAVClient.call_args.kwargs
+        assert "timeout" not in call_kwargs, (
+            "DAVClient must not receive a flat timeout= override; that "
+            "would replace niquests' 30s-read/120s-write per-method "
+            "defaults with a single value for every operation."
+        )
+
+
+# ── _report_timeout scopes the longer timeout to a single REPORT call ─────
+
+
+class TestReportTimeout:
+    """``_report_timeout`` widens the client's timeout only for its block."""
+
+    def test_widens_timeout_inside_the_block(self) -> None:
+        client = MagicMock()
+        client.timeout = None
+
+        with _report_timeout(client):
+            assert client.timeout == _REPORT_TIMEOUT
+
+    def test_restores_previous_timeout_after_the_block(self) -> None:
+        client = MagicMock()
+        client.timeout = None
+
+        with _report_timeout(client):
+            pass
+
+        assert client.timeout is None
+
+    def test_restores_previous_timeout_even_on_exception(self) -> None:
+        """A failed REPORT must not leave the client pinned at 120s for
+        whatever operation runs next under the shared connection lock."""
+        client = MagicMock()
+        client.timeout = None
+
+        with pytest.raises(ValueError, match="boom"), _report_timeout(client):
+            assert client.timeout == _REPORT_TIMEOUT
+            raise ValueError("boom")
+
+        assert client.timeout is None
 
 
 # ── _with_reconnect does NOT retry on timeout ──────────────────────────────

@@ -56,6 +56,31 @@ _STALE_CONN_ERRORS: tuple[type[BaseException], ...] = (
     urllib3.exceptions.ProtocolError,
 )
 
+# niquests picks a default timeout per HTTP method when DAVClient.timeout is
+# None: 30s for reads (GET/PROPFIND/REPORT), 120s for writes (POST/PUT/
+# DELETE/PATCH). That 30s is plenty for light reads like list_calendars, but
+# too short for iCloud's event-search REPORT (query + recurrence expansion),
+# which can take 30-60s. Rather than raising the client-wide default — which
+# would let a hung light read hold the shared connection lock for 120s
+# instead of failing fast at 30s — callers doing a REPORT search scope the
+# longer timeout to just that call via ``_report_timeout``.
+_REPORT_TIMEOUT = 120
+
+
+@contextlib.contextmanager
+def _report_timeout(client: caldav.DAVClient):
+    """Temporarily widen ``client``'s timeout for a REPORT-heavy search call.
+
+    Caller must hold ``self._lock`` — nothing else may be touching
+    ``client.timeout`` while this is in effect.
+    """
+    previous = client.timeout
+    client.timeout = _REPORT_TIMEOUT
+    try:
+        yield
+    finally:
+        client.timeout = previous
+
 
 class CalDavAuthError(Exception):
     """Server rejected the credential. The broker's entry code maps this to exit(77)."""
@@ -111,12 +136,6 @@ class CalDavClient:
             url=self._url,
             username=self._username,
             password=self._password,
-            # caldav delegates to niquests, which enforces a 30-second
-            # default read timeout when ``timeout`` is None. That is too
-            # short for iCloud's CalDAV REPORT (event search + expansion),
-            # which can take 30–60 seconds. Pass an explicit, generous
-            # timeout so slow REPORT responses are not cut off.
-            timeout=120,
         )
         # Resolving the principal exercises the auth path; if creds are
         # rejected this is where it surfaces.
@@ -194,9 +213,10 @@ class CalDavClient:
                 # servers that support it. Either way, each recurrence is
                 # materialized into its own VEVENT so the parser doesn't
                 # need to walk RRULEs.
-                hits = list(cal.search(
-                    start=start, end=end, event=True, expand=True,
-                ))
+                with _report_timeout(client):
+                    hits = list(cal.search(
+                        start=start, end=end, event=True, expand=True,
+                    ))
                 return name, hits
 
             name, raw = await asyncio.to_thread(self._with_reconnect, _op)
@@ -245,14 +265,15 @@ class CalDavClient:
                 # CalDAV property filters are combined with AND. Run one
                 # server-side substring query per useful text field to get OR
                 # semantics, then merge the occurrence-expanded results.
-                for field in ("summary", "description", "location"):
-                    hits.extend(cal.search(
-                        start=start,
-                        end=end,
-                        event=True,
-                        expand=True,
-                        **{field: query},
-                    ))
+                with _report_timeout(client):
+                    for field in ("summary", "description", "location"):
+                        hits.extend(cal.search(
+                            start=start,
+                            end=end,
+                            event=True,
+                            expand=True,
+                            **{field: query},
+                        ))
                 return name, hits
 
             name, raw = await asyncio.to_thread(self._with_reconnect, _op)
