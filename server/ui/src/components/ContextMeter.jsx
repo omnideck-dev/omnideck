@@ -1,17 +1,11 @@
 import styles from './ContextMeter.module.css';
+import { formatTokens } from '../utils/agentUtils.js';
 
 // Fallback when an event predates the compaction_threshold field.
 const DEFAULT_THRESHOLD = 0.75;
 // Fraction of the threshold at which the meter shifts to its warning
 // colour — i.e. compaction is getting close but hasn't fired yet.
 const WARN_FRACTION = 0.8;
-
-function _formatTokens(n) {
-    if (n == null) return '0';
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-    return String(n);
-}
 
 /**
  * Compact context-window meter: a slim bar with a tick at the agent's
@@ -29,8 +23,8 @@ export default function ContextMeter({ contextUsage }) {
         : fill >= threshold * WARN_FRACTION ? 'med'
         : 'low';
 
-    const used = _formatTokens(contextUsage.context_used);
-    const limit = _formatTokens(contextUsage.context_limit);
+    const used = formatTokens(contextUsage.context_used) ?? '0';
+    const limit = formatTokens(contextUsage.context_limit) ?? '0';
     const compactionAt = Math.round(contextUsage.context_limit * threshold);
 
     return (

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign in</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 24px auto; }
+    .cf-turnstile { width: 300px; height: 65px; border: 1px solid #ccc; }
+    label { display: block; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <!--
+    A normal content page that embeds a Turnstile widget inside a real form.
+    The widget carries the ".cf-turnstile" / "cf-turnstile-response" markers of
+    a developer-integrated embed, but none of the managed interstitial's
+    scaffolding, so it must NOT be mistaken for a full-page block: the form
+    stays the page view and no challenge banner appears.
+  -->
+  <h1>Sign in to your account</h1>
+  <p>
+    Welcome back. Enter your credentials below to access your dashboard,
+    billing history, saved reports, and account preferences. Signing in keeps
+    your session active across devices and lets you pick up exactly where you
+    left off. If you have forgotten your password you can reset it from the
+    link at the bottom of this form, and if you do not yet have an account you
+    can create one for free in under a minute. We take security seriously:
+    every sign-in is protected, your data is encrypted in transit and at rest,
+    and we never share your information with third parties without consent.
+    Read our terms of service and privacy policy for the full details of how
+    your account information is stored, processed, and protected over time.
+  </p>
+  <form>
+    <label for="user">Email address</label>
+    <input id="user" type="email">
+    <label for="pass">Password</label>
+    <input id="pass" type="password">
+    <div class="cf-turnstile" data-sitekey="0x0000">
+      <input type="hidden" name="cf-turnstile-response" value="">
+    </div>
+    <button id="signin" type="submit">Sign in</button>
+  </form>
+  <p><a href="/reset">Forgot your password?</a></p>
+</body>
+</html>

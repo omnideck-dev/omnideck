@@ -40,6 +40,8 @@ class HumanTypingConfig(BaseModel):
 class HumanPointerConfig(BaseModel):
     """Pointer movement simulation configuration."""
 
+    move_duration_min_ms: int = 120
+    move_duration_max_ms: int = 240
     hover_min_ms: int = 80
     hover_max_ms: int = 160
     click_hold_min_ms: int = 25
@@ -67,11 +69,18 @@ class BrowserToolsConfig(BaseModel):
 class BrowserWaitConfig(BaseModel):
     """Configuration controlling browser wait/settle timeouts."""
 
-    network_idle_timeout_ms: int = 3000
+    load_timeout_ms: int = 3000
     font_timeout_ms: int = 1000
     dom_mutation_timeout_ms: int = 1500
     dom_quiet_window_ms: int = 150
     animation_timeout_ms: int = 1000
+    # How long to wait after a nav-capable action for a navigation to start.
+    # Some sites dispatch a click's navigation request a beat after the click
+    # returns — e.g. a JS click handler that runs before setting location
+    # (measured ~500ms on nasa.gov, same-origin and cross-origin alike).
+    # Without this, the observation can snapshot the old page. Only paid by
+    # nav-capable actions that don't end up navigating.
+    post_action_nav_grace_ms: int = 800
 
 
 # Note: BrowserWaitConfig is referenced as a forward-ref above to avoid
@@ -100,7 +109,6 @@ class FeaturesConfig(BaseModel):
     music_generation: bool = False
     desktop: bool = False
     visual_grounding: bool = False
-    custom_tools: bool = False
 
 
 class VirtualComputerConfig(BaseModel):
@@ -117,7 +125,7 @@ class ParallelConfig(BaseModel):
 
 
 class NotificationsConfig(BaseModel):
-    """Telegram push notification settings for goal run completion/failure."""
+    """Telegram push notification settings for routine run completion/failure."""
 
     enabled: bool = False
     on_run_completed: bool = True
@@ -126,15 +134,15 @@ class NotificationsConfig(BaseModel):
     max_attachment_size_mb: int = 50
 
 
-class GoalsConfig(BaseModel):
+class RoutinesConfig(BaseModel):
     """Configuration for the autonomous task engine."""
 
     enabled: bool = True
-    goals_dir: str = ""  # empty = ~/.computron_9000/goals/
+    routines_dir: str = ""
     poll_interval: int = 5
     max_concurrent: int = 2
     shutdown_timeout: int = 60
-    timezone: str = "UTC"  # Default timezone for goals (IANA name)
+    timezone: str = "UTC"  # Default timezone for routines (IANA name)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
 
@@ -161,7 +169,7 @@ class AppConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    goals: GoalsConfig = Field(default_factory=GoalsConfig)
+    routines: RoutinesConfig = Field(default_factory=RoutinesConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
 
 
@@ -174,8 +182,14 @@ load_dotenv()
 
 
 _YAML_BOOLEANS = {
-    "true": True, "yes": True, "on": True, "1": True,
-    "false": False, "no": False, "off": False, "0": False,
+    "true": True,
+    "yes": True,
+    "on": True,
+    "1": True,
+    "false": False,
+    "no": False,
+    "off": False,
+    "0": False,
 }
 
 

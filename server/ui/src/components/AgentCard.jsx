@@ -1,14 +1,7 @@
 import React, { memo } from 'react';
-import { formatElapsed } from '../utils/agentUtils.js';
+import { formatElapsed, formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
 import styles from './AgentCard.module.css';
-
-function formatAgentName(name) {
-    if (!name) return 'Agent';
-    return name
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 /**
  * One card in the agent network graph. Shows the agent's name, status,
@@ -17,7 +10,7 @@ function formatAgentName(name) {
  *
  * Memoized — only re-renders when something visible changes.
  */
-function AgentCard({ agent, onClick }) {
+function AgentCard({ agent, workspace, onClick }) {
     const toolCallCount = agent.activityLog
         ? agent.activityLog.filter((e) => e.type === 'tool_call').length
         : 0;
@@ -42,8 +35,8 @@ function AgentCard({ agent, onClick }) {
                 // at a glance.  Top of the stack is whichever tab most
                 // recently got a new snapshot — that's what the agent was
                 // last doing.
-                const tabs = agent.browserTabs || {};
-                const lastKey = agent.lastBrowserTabId;
+                const tabs = workspace?.browserTabs || {};
+                const lastKey = workspace?.lastBrowserTabId;
                 const withScreens = Object.entries(tabs).filter(([, s]) => s?.screenshot);
                 // Pull the most-recently-updated tab to the front; siblings
                 // sit behind it in tab-id order so the back of the stack is
@@ -115,13 +108,9 @@ export default memo(AgentCard, (prev, next) => {
     const a = prev.agent, b = next.agent;
     return (
         a.status === b.status &&
-        a.activeTool === b.activeTool &&
         a.childIds.length === b.childIds.length &&
-        a.browserTabs === b.browserTabs &&
-        a.lastBrowserTabId === b.lastBrowserTabId &&
+        prev.workspace === next.workspace &&
         a.startedAt === b.startedAt &&
         a.activityLog.length === b.activityLog.length
     );
 });
-
-export { formatAgentName };

@@ -53,11 +53,10 @@ def test_text_file_has_source_only(file_types_page: Page):
 
 
 def test_text_file_renders_content(file_types_page: Page):
-    """Text file should render readable content in a pre block."""
-    content = ChatView(file_types_page).preview.content
-    pre = content.locator("pre")
-    expect(pre).to_be_visible()
-    expect(pre).to_contain_text("hello")
+    """Text file should render readable content in the source editor."""
+    editor = ChatView(file_types_page).preview.file.editor
+    expect(editor).to_be_visible()
+    expect(editor).to_contain_text("hello")
 
 
 # ── Markdown file ───────────────────────────────────────────────────
@@ -73,13 +72,13 @@ def test_markdown_file_has_toggle(file_types_page: Page):
 
 
 def test_markdown_source_shows_raw(file_types_page: Page):
-    """Source mode shows raw markdown in a pre block."""
+    """Source mode shows raw markdown in the editor."""
     chat = ChatView(file_types_page)
     chat.preview.file.view_source()
 
-    pre = chat.preview.content.locator("pre")
-    expect(pre).to_be_visible()
-    text = pre.text_content() or ""
+    editor = chat.preview.file.editor
+    expect(editor).to_be_visible()
+    text = editor.text_content() or ""
     assert "#" in text or "-" in text or "*" in text, (
         f"Expected raw markdown syntax, got: {text[:200]}"
     )
@@ -116,13 +115,13 @@ def test_html_preview_shows_iframe(file_types_page: Page):
 
 
 def test_html_source_shows_raw(file_types_page: Page):
-    """HTML source mode shows raw HTML in a pre block."""
+    """HTML source mode shows raw HTML in the editor."""
     chat = ChatView(file_types_page)
     chat.preview.file.view_source()
 
-    pre = chat.preview.content.locator("pre")
-    expect(pre).to_be_visible()
-    text = pre.text_content() or ""
+    editor = chat.preview.file.editor
+    expect(editor).to_be_visible()
+    text = editor.text_content() or ""
     assert "<" in text, f"Expected raw HTML tags, got: {text[:200]}"
 
 

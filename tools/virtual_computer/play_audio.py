@@ -7,7 +7,7 @@ import logging
 import mimetypes
 from pathlib import Path
 
-from sdk.events import AgentEvent, AudioPlaybackPayload, publish_event
+from agent_core.events import AgentEvent, AudioPlaybackPayload, publish_event
 
 logger = logging.getLogger(__name__)
 

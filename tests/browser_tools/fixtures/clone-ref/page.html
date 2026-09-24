@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Clone ref</title>
+</head>
+<body>
+  <button id="dup" type="button">Duplicate me</button>
+  <div id="sink" style="display:none"></div>
+  <script>
+    document.getElementById('dup').addEventListener('click', function () {
+      document.getElementById('sink').appendChild(this.cloneNode(true));
+    });
+  </script>
+</body>
+</html>

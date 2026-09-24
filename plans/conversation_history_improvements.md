@@ -17,8 +17,8 @@
    - No `agent_name` — sub-agent compactions are orphaned, indistinguishable from main agent
    - No `options` — no record of `num_ctx`, `num_predict`, `temperature`, etc. so can't tell which summarizer config produced which record
    - **Fix**: Add three fields to `SummaryRecord` model (`conversations/_models.py`), all with empty defaults for backward compat with existing persisted JSON. In `apply()`, read `conversation_id` and `agent_name` from existing ContextVars rather than threading through constructors:
-     - `_conversation_id` ContextVar in `sdk/loop/_turn.py:51` (renamed in Step 0) — set in `turn_scope()`, inherited by sub-agents automatically. Expose a public `get_conversation_id()` getter.
-     - `_context_stack` ContextVar in `sdk/events/_context.py:41` — stack of `(context_id, agent_name)` frames, pushed by `agent_span()`. Top of stack has the current agent name. Expose a public getter.
+     - `_conversation_id` ContextVar in `agent_core/loop/_turn.py:51` (renamed in Step 0) — set in `turn_scope()`, inherited by sub-agents automatically. Expose a public `get_conversation_id()` getter.
+     - `_context_stack` ContextVar in `agent_core/events/_context.py:41` — stack of `(context_id, agent_name)` frames, pushed by `agent_span()`. Top of stack has the current agent name. Expose a public getter.
      - `_resolve_model(load_config())` in `apply()` captures the resolved options dict.
      - No constructor changes or call-site changes needed — the strategy reads context at apply time.
 
@@ -33,7 +33,7 @@ The codebase inconsistently uses `session_id` and `conversation_id` for the same
 #### Python backend
 - `server/aiohttp_app.py` — `ChatRequest.session_id` field, query params in `stop_handler`/`delete_history_handler`, all local usages
 - `server/message_handler.py` — `_DEFAULT_SESSION_ID` → `_DEFAULT_CONVERSATION_ID`, `_sessions` → `_conversations`, `_get_session()` → `_get_conversation()`, `reset_message_history(session_id=)` → `reset_message_history(conversation_id=)`, `handle_user_message(session_id=)` → `handle_user_message(conversation_id=)`, eliminate `conv_id = session_id or "default"` intermediary
-- `sdk/loop/_turn.py` — `_DEFAULT_SESSION_ID` → `_DEFAULT_CONVERSATION_ID`, `_active_sessions` → `_active_conversations`, `_session_id` ContextVar → `_conversation_id` (string name too), `request_stop(session_id=)` → `request_stop(conversation_id=)`, `is_turn_active(session_id=)` → `is_turn_active(conversation_id=)`, `queue_nudge(session_id,)` → `queue_nudge(conversation_id,)`, `turn_scope(session_id=)` → `turn_scope(conversation_id=)`
+- `agent_core/loop/_turn.py` — `_DEFAULT_SESSION_ID` → `_DEFAULT_CONVERSATION_ID`, `_active_sessions` → `_active_conversations`, `_session_id` ContextVar → `_conversation_id` (string name too), `request_stop(session_id=)` → `request_stop(conversation_id=)`, `is_turn_active(session_id=)` → `is_turn_active(conversation_id=)`, `queue_nudge(session_id,)` → `queue_nudge(conversation_id,)`, `turn_scope(session_id=)` → `turn_scope(conversation_id=)`
 
 #### Frontend
 - `server/ui/src/hooks/useStreamingChat.js` — `sessionIdRef` → `conversationIdRef`, `sessionId` param → `conversationId`, `body.session_id` → `body.conversation_id`, URL query params `session_id=` → `conversation_id=`
@@ -46,10 +46,10 @@ The codebase inconsistently uses `session_id` and `conversation_id` for the same
 ### Step 1: Summary role `user` -> `assistant` (+ serialization fix)
 
 #### 1a. Change role in inserted summary
-- `sdk/context/_strategy.py:213-216` — change `"role": "user"` → `"role": "assistant"` in `history.insert()`
+- `agent_core/context/_strategy.py:213-216` — change `"role": "user"` → `"role": "assistant"` in `history.insert()`
 
 #### 1b. Fix `_serialize_messages()` — summary skip must be role-agnostic
-- `sdk/context/_strategy.py:389-422`
+- `agent_core/context/_strategy.py:389-422`
 - The `_SUMMARY_PREFIX` skip logic (lines 417-419) only fires for `role == "user"`. After changing summary role to `assistant`, this skip won't fire — the summary text will be serialized into the next compaction's input alongside the prior summary from `_extract_prior_summary()`, causing double-inclusion.
 - **Fix**: Move the `_SUMMARY_PREFIX` check to the top of the loop, before role branching. This also handles migration — old conversations with `role: "user"` summaries are still skipped.
 
@@ -69,11 +69,11 @@ The codebase inconsistently uses `session_id` and `conversation_id` for the same
 - Defaults ensure backward compat with existing persisted records
 
 #### 3b. Expose public getters for ContextVars
-- `sdk/loop/_turn.py` — add `get_conversation_id() -> str | None` that returns `_conversation_id.get()` (renamed in Step 0); export from `sdk/loop/__init__.py`
-- `sdk/events/_context.py` — add `get_current_agent_name() -> str | None` that reads top of `_context_stack`; export from `sdk/events/__init__.py`
+- `agent_core/loop/_turn.py` — add `get_conversation_id() -> str | None` that returns `_conversation_id.get()` (renamed in Step 0); export from `agent_core/loop/__init__.py`
+- `agent_core/events/_context.py` — add `get_current_agent_name() -> str | None` that reads top of `_context_stack`; export from `agent_core/events/__init__.py`
 
 #### 3c. Read context + capture options in `apply()`
-- `sdk/context/_strategy.py` in `apply()` — after successful summarization:
+- `agent_core/context/_strategy.py` in `apply()` — after successful summarization:
   - Call `get_conversation_id()` for `conversation_id` (falls back to `""` if None)
   - Call `get_current_agent_name()` for `agent_name` (falls back to `""` if None)
   - Call `_resolve_model(load_config())` to capture resolved options dict
@@ -81,7 +81,7 @@ The codebase inconsistently uses `session_id` and `conversation_id` for the same
 - No constructor changes, no call-site changes — `SummarizeStrategy()` instantiation stays as-is everywhere
 
 ### Step 4: Tests
-- `tests/sdk/context/test_strategy.py` (deleted — needs recreation)
+- `tests/agent_core/context/test_strategy.py` (deleted — needs recreation)
 - Summary inserted as assistant role
 - Turn alternation correct after compaction
 - `_serialize_messages` skips summary regardless of role (new `assistant` + legacy `user`)
@@ -95,7 +95,7 @@ The codebase inconsistently uses `session_id` and `conversation_id` for the same
 Currently during streaming, `agent_name` and `depth` come from SSE events. Saved history is raw LLM dicts without these fields, so resumed conversations lose agent labels.
 
 #### 5a. Stamp `agent_name` on assistant messages when appended to history
-- `sdk/loop/_tool_loop.py:241` — add `"agent_name"` to `assistant_message` dict, read from `get_current_agent_name()` (exposed in Step 3b)
+- `agent_core/loop/_tool_loop.py:241` — add `"agent_name"` to `assistant_message` dict, read from `get_current_agent_name()` (exposed in Step 3b)
 - This metadata is inert to the LLM (it ignores unknown fields) but persists through save/load
 
 #### 5b. Read `agent_name` in `_historyToMessages()`

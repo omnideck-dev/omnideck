@@ -1,0 +1,95 @@
+.container {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.header,
+.subnavigation {
+    height: var(--header-height);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-family: var(--font-brand);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.02em;
+}
+
+.title {
+    font-family: var(--font-brand);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.count {
+    font-family: var(--font-code);
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.legend {
+    display: flex;
+    gap: var(--sp-3);
+    margin-left: auto;
+    font-family: var(--font-code);
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.legendItem {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legendDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.running { background: var(--success); }
+.complete { background: var(--accent); }
+.error { background: var(--danger); }
+
+.breadcrumb {
+    font-family: var(--font-brand);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.04em;
+}
+
+.breadcrumbCurrent {
+    color: var(--text-secondary);
+}
+
+.breadcrumbLink {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+
+.breadcrumbLink:hover {
+    color: var(--text-secondary);
+}
+
+.content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}

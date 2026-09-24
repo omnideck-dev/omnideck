@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ModelPicker from './ModelPicker.jsx';
+import Select from './primitives/Select.jsx';
 import styles from './SetupWizard.module.css';
 
 const STEPS = ['Welcome', 'Provider', 'Main Model', 'Vision Model', 'Ready'];
@@ -16,9 +17,6 @@ const PROVIDER_LABELS = {
     openai_compat: 'OpenAI-compatible',
 };
 
-// Defaults pre-filled in the connect step; the server still requires the
-// URL be present in the request body.
-const OLLAMA_DEFAULT_URL = 'http://host.docker.internal:11434';
 const OPENAI_COMPAT_DEFAULT_URL = 'http://localhost:1234/v1';
 
 function ProgressBar({ currentStep }) {
@@ -105,6 +103,7 @@ export default function SetupWizard({ onComplete }) {
     const [providerApiKey, setProviderApiKey] = useState('');
     const [providerError, setProviderError] = useState(null);
     const [providerSaving, setProviderSaving] = useState(false);
+    const [ollamaHost, setOllamaHost] = useState('');
 
     // Model step state. The ModelPicker handles its own list fetching;
     // we just track which model is picked and its metadata (for context_window).
@@ -162,7 +161,27 @@ export default function SetupWizard({ onComplete }) {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
 
+        fetch('/api/setup/defaults')
+            .then((res) => (res.ok ? res.json() : {}))
+            .then((data) => {
+                if (cancelled) return;
+                const envHost = typeof data.ollama_host === 'string' ? data.ollama_host.trim() : '';
+                setOllamaHost(envHost);
+            })
+            .catch(() => {
+                if (!cancelled) setOllamaHost('');
+            });
+
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        if (selectedProvider !== PROVIDER_OLLAMA || !ollamaHost) return;
+        setProviderUrl((current) => current.trim() ? current : ollamaHost);
+    }, [selectedProvider, ollamaHost]);
 
     // ── Provider step: create+probe via POST /api/providers ─────────
     // One server-side call. The server picks the storage (direct settings
@@ -175,7 +194,13 @@ export default function SetupWizard({ onComplete }) {
 
         const body = { name: resolvedProviderName };
         if (selectedProvider === PROVIDER_OLLAMA) {
-            body.base_url = providerUrl.trim() || OLLAMA_DEFAULT_URL;
+            const ollamaUrl = providerUrl.trim();
+            if (!ollamaUrl) {
+                setProviderError('Enter your Ollama server URL to continue.');
+                setProviderSaving(false);
+                return;
+            }
+            body.base_url = ollamaUrl;
         } else if (selectedProvider === PROVIDER_OPENAI_COMPAT) {
             body.base_url = providerUrl.trim() || OPENAI_COMPAT_DEFAULT_URL;
             if (providerApiKey.trim()) body.api_key = providerApiKey.trim();
@@ -191,12 +216,21 @@ export default function SetupWizard({ onComplete }) {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setProviderError(data.message || data.error || `Failed to connect (${res.status})`);
+                const message = data.message || data.error || `Failed to connect (${res.status})`;
+                if (selectedProvider === PROVIDER_OLLAMA && body.base_url && !message.includes(body.base_url)) {
+                    setProviderError(`${message} Tried ${body.base_url}.`);
+                } else {
+                    setProviderError(message);
+                }
                 return;
             }
             setStep((s) => s + 1);
         } catch (err) {
-            setProviderError(err.message);
+            if (selectedProvider === PROVIDER_OLLAMA && body.base_url) {
+                setProviderError(`${err.message} Tried ${body.base_url}.`);
+            } else {
+                setProviderError(err.message);
+            }
         } finally {
             setProviderSaving(false);
         }
@@ -223,7 +257,10 @@ export default function SetupWizard({ onComplete }) {
                 setSaving(false);
                 return;
             }
-            onComplete();
+            // The completion response includes optional first-run domain
+            // identities. SetupGate decides how application startup uses them.
+            const data = await res.json().catch(() => ({}));
+            onComplete(data);
         } catch (err) {
             setError(`Connection error: ${err.message}`);
             setSaving(false);
@@ -348,12 +385,13 @@ export default function SetupWizard({ onComplete }) {
                                         className={styles.fieldInput}
                                         value={providerUrl}
                                         onChange={(e) => setProviderUrl(e.target.value)}
-                                        placeholder="http://host.docker.internal:11434"
+                                        placeholder={ollamaHost || 'Enter your Ollama server URL'}
                                         aria-describedby="ollama-url-hint"
                                     />
                                     <div id="ollama-url-hint" className={styles.fieldHint}>
-                                        macOS/Windows: use <code>host.docker.internal</code>.
-                                        Linux: start with <code>--network=host</code> and use <code>localhost</code>.
+                                        {ollamaHost
+                                            ? 'Detected automatically.'
+                                            : 'Enter the address of your Ollama server.'}
                                     </div>
                                 </div>
                             </div>
@@ -398,19 +436,21 @@ export default function SetupWizard({ onComplete }) {
                         {selectedProvider === PROVIDER_CLOUD && (
                             <div className={styles.providerFields}>
                                 <div className={styles.field}>
-                                    <label htmlFor="cloud-provider" className={styles.fieldLabel}>
+                                    <label id="cloud-provider-label" htmlFor="cloud-provider" className={styles.fieldLabel}>
                                         Provider
                                     </label>
-                                    <select
+                                    <Select
                                         id="cloud-provider"
                                         className={styles.cloudSelect}
                                         value={cloudProvider}
-                                        onChange={(e) => setCloudProvider(e.target.value)}
-                                    >
-                                        <option value="anthropic">Anthropic</option>
-                                        <option value="openai">OpenAI</option>
-                                        <option value="openrouter">OpenRouter</option>
-                                    </select>
+                                        onChange={setCloudProvider}
+                                        ariaLabelledBy="cloud-provider-label"
+                                        options={[
+                                            { value: 'anthropic', label: 'Anthropic' },
+                                            { value: 'openai', label: 'OpenAI' },
+                                            { value: 'openrouter', label: 'OpenRouter' },
+                                        ]}
+                                    />
                                 </div>
                                 <div className={styles.field}>
                                     <label htmlFor="cloud-key" className={styles.fieldLabel}>

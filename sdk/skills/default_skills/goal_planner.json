@@ -1,9 +1,0 @@
-{
-  "id": "goal_planner",
-  "name": "goal_planner",
-  "description": "Create and manage autonomous goals with scheduled tasks",
-  "prompt": "Build goals using: begin_goal \u2192 add_task (once per task) \u2192 commit_goal.\n\nEach add_task call returns the updated draft \u2014 pass it into the next call.\nBy default each task depends on the previous one (sequential). Pass\ndepends_on=[] to run a task in parallel with no dependencies.\n\nCompleted dependency results are automatically appended to a task's\ninstruction at execution time \u2014 do not use template syntax like {{key}}.\n\nAGENT PROFILES \u2014 each task can specify an agent_profile to configure\nthe executing agent's model, skills, system prompt, and inference params:\n- \"code_expert\": coder skill, low temp, thinking enabled\n- \"research_agent\": browser + coder skills, medium temp\n- \"creative_writer\": high temp, top_p sampling\n- Omit agent_profile for the default Omnideck agent\n\nTask instructions must be fully self-contained \u2014 include all URLs, file\npaths, criteria, and output expectations. The executing agent has no\nother context.\n\nUse list_goals to see existing goals and list_tasks to inspect a goal's\ntasks. Use trigger_goal to manually run or re-run a goal.\n",
-  "tool_categories": [
-    "planning"
-  ]
-}

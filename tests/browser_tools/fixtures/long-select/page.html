@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Long select</title>
+</head>
+<body>
+  <h1>Long select</h1>
+  <label for="item">Item</label>
+  <select id="item">
+    <option value="">Choose an item</option>
+  </select>
+  <p id="result">Nothing selected</p>
+  <script>
+    const select = document.getElementById('item');
+    for (let index = 1; index <= 35; index += 1) {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = `Item ${index}`;
+      select.appendChild(option);
+    }
+    select.addEventListener('change', () => {
+      document.getElementById('result').textContent = `Selected ${select.options[select.selectedIndex].text}`;
+    });
+  </script>
+</body>
+</html>

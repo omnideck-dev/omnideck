@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Press and hold</title>
+</head>
+<body>
+  <h1>Press and hold</h1>
+  <button id="hold" type="button">Hold me</button>
+  <div id="out">idle</div>
+  <script>
+    // Reveal content only if the button was held down for long enough.
+    var t0 = 0;
+    var btn = document.getElementById('hold');
+    btn.addEventListener('mousedown', function () { t0 = Date.now(); });
+    btn.addEventListener('mouseup', function () {
+      if (t0 && Date.now() - t0 >= 500) {
+        document.getElementById('out').textContent = 'Held long enough';
+      }
+    });
+  </script>
+</body>
+</html>

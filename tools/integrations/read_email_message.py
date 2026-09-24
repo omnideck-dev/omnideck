@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def read_email_message(integration_id: str, folder: str, uid: str) -> str:
-    """Fetch and format one message's envelope + plain-text body.
+    """Fetch and format one message's envelope + readable body.
 
     Args:
         integration_id: Identifier of the email integration.
@@ -24,7 +24,7 @@ async def read_email_message(integration_id: str, folder: str, uid: str) -> str:
             ``search_email`` (the value in ``[brackets]`` in their output).
 
     Returns:
-        Plain text — a header block followed by the body, or a short error
+        A header block followed by the text/Markdown body, or a short error
         notice if the UID isn't found.
     """
     app_sock = load_config().integrations.app_sock_path
@@ -76,7 +76,7 @@ def build_read_email_message_tool(integration_ids: Iterable[str]) -> Callable[..
 
     _read_email_message.__name__ = read_email_message.__name__
     _read_email_message.__doc__ = (
-        "Read one message's envelope + plain-text body. If the message has "
+        "Read one message's envelope + best readable body. If the message has "
         "attachments, the header block lists them with an id you pass to "
         "``download_email_attachment`` to pull the bytes onto disk. Valid "
         f"integration IDs: {ids_line}.\n\n"
@@ -85,7 +85,7 @@ def build_read_email_message_tool(integration_ids: Iterable[str]) -> Callable[..
         "    folder: Mailbox the message lives in (same value used in list_email_messages).\n"
         "    uid: IMAP UID of the message — the value shown in [brackets] by list_email_messages or search_email.\n\n"
         "Returns:\n"
-        "    Plain text — a header block (From/To/Date/Subject, plus an "
-        "Attachments list when present) followed by the body.\n"
+        "    A header block (From/To/Date/Subject, plus an Attachments list "
+        "when present) followed by the text/Markdown body.\n"
     )
     return _read_email_message

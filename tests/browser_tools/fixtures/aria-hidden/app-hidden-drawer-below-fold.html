@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>App hidden, drawer below fold</title>
+<style>html,body{margin:0}</style></head>
+<body>
+  <!-- Target / Airbnb shape, measured from the live sites: the app container is
+       marked aria-hidden while a drawer is open, and the drawer is rendered into
+       a sibling wrapper that has no height of its own (its overlay is fixed) and
+       therefore sits below the fold, past the end of a tall page. Dropping the
+       aria-hidden background is correct; pruning the wrapper is not, and doing
+       both returned an empty page. -->
+  <div id="__next" aria-hidden="true">
+    <h1>Product page</h1>
+    <a href="/">Home</a>
+    <button>Add to cart</button>
+    <div style="height:2400px">Tall product content</div>
+  </div>
+
+  <div class="ModalDrawer">
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4)">
+      <div role="dialog" aria-modal="true"
+           style="position:absolute;top:0;right:0;width:375px;height:100%;background:#fff">
+        <h2>Added to cart</h2>
+        <button>View cart</button>
+        <button>Continue shopping</button>
+      </div>
+    </div>
+  </div>
+</body></html>

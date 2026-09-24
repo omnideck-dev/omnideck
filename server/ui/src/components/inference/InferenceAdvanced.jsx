@@ -1,5 +1,6 @@
 import styles from './inference.module.css';
 import ToggleSwitch from '../ToggleSwitch.jsx';
+import Select from '../primitives/Select.jsx';
 import { isSupported } from './inferenceConstants.js';
 
 const ADVANCED_HELP = {
@@ -79,21 +80,23 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                     </div>
                     {isSupported('compaction_threshold', provider) && (
                         <div className={styles.advancedField} data-testid="field-compaction_threshold">
-                            <label className={styles.fieldRow}>
+                            <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Compaction</span>
-                                <select
+                                <Select
                                     className={styles.selectInput}
                                     value={draft.compaction_threshold ?? 0.75}
-                                    onChange={(e) => onChange('compaction_threshold', e.target.value === '0.75' ? null : Number(e.target.value))}
-                                    data-testid="compaction-threshold-select"
-                                >
-                                    <option value={0.5}>50% — Aggressive</option>
-                                    <option value={0.65}>65% — Early</option>
-                                    <option value={0.75}>75% — Standard</option>
-                                    <option value={0.85}>85% — Late</option>
-                                    <option value={0.9}>90% — Maximum</option>
-                                </select>
-                            </label>
+                                    onChange={(value) => onChange('compaction_threshold', value === 0.75 ? null : Number(value))}
+                                    ariaLabel="Compaction"
+                                    testId="compaction-threshold-select"
+                                    options={[
+                                        { value: 0.5, label: '50% — Aggressive' },
+                                        { value: 0.65, label: '65% — Early' },
+                                        { value: 0.75, label: '75% — Standard' },
+                                        { value: 0.85, label: '85% — Late' },
+                                        { value: 0.9, label: '90% — Maximum' },
+                                    ]}
+                                />
+                            </div>
                             <span className={styles.fieldHint}>{ADVANCED_HELP.compaction}</span>
                         </div>
                     )}
@@ -111,55 +114,61 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                     )}
                     {draft.think && isSupported('reasoning_effort', provider) && (
                         <div className={styles.advancedField} data-testid="field-reasoning_effort">
-                            <label className={styles.fieldRow}>
+                            <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Reasoning Effort</span>
-                                <select
+                                <Select
                                     className={styles.selectInput}
                                     value={draft.reasoning_effort || 'medium'}
-                                    onChange={(e) => onChange('reasoning_effort', e.target.value === 'medium' ? null : e.target.value)}
-                                    data-testid="reasoning-effort-select"
-                                >
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
-                                </select>
-                            </label>
+                                    onChange={(value) => onChange('reasoning_effort', value === 'medium' ? null : value)}
+                                    ariaLabel="Reasoning effort"
+                                    testId="reasoning-effort-select"
+                                    options={[
+                                        { value: 'low', label: 'Low' },
+                                        { value: 'medium', label: 'Medium' },
+                                        { value: 'high', label: 'High' },
+                                    ]}
+                                />
+                            </div>
                             <span className={styles.fieldHint}>{ADVANCED_HELP.reasoning_effort}</span>
                         </div>
                     )}
                     {draft.think && isSupported('reasoning_summary', provider) && (
                         <div className={styles.advancedField} data-testid="field-reasoning_summary">
-                            <label className={styles.fieldRow}>
+                            <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Reasoning Summary</span>
-                                <select
+                                <Select
                                     className={styles.selectInput}
                                     value={draft.reasoning_summary || 'auto'}
-                                    onChange={(e) => onChange('reasoning_summary', e.target.value === 'auto' ? null : e.target.value)}
-                                    data-testid="reasoning-summary-select"
-                                >
-                                    <option value="auto">Auto</option>
-                                    <option value="concise">Concise</option>
-                                    <option value="detailed">Detailed</option>
-                                </select>
-                            </label>
+                                    onChange={(value) => onChange('reasoning_summary', value === 'auto' ? null : value)}
+                                    ariaLabel="Reasoning summary"
+                                    testId="reasoning-summary-select"
+                                    options={[
+                                        { value: 'auto', label: 'Auto' },
+                                        { value: 'concise', label: 'Concise' },
+                                        { value: 'detailed', label: 'Detailed' },
+                                    ]}
+                                />
+                            </div>
                             <span className={styles.fieldHint}>{ADVANCED_HELP.reasoning_summary}</span>
                         </div>
                     )}
                     {draft.think && isSupported('thinking_budget', provider) && (
                         <div className={styles.advancedField} data-testid="field-thinking_budget">
-                            <label className={styles.fieldRow}>
+                            <div className={styles.fieldRow}>
                                 <span className={styles.fieldLabel}>Thinking Budget</span>
-                                <select
+                                <Select
                                     className={styles.selectInput}
                                     value={draft.thinking_budget || 'standard'}
-                                    onChange={(e) => onChange('thinking_budget', e.target.value === 'standard' ? null : e.target.value)}
-                                    data-testid="thinking-budget-select"
-                                >
-                                    <option value="minimal">Minimal (1,024 tokens)</option>
-                                    <option value="standard">Standard ({Math.max(1024, Math.floor((draft.num_predict || 16384) / 2)).toLocaleString()} tokens)</option>
-                                    <option value="extended">Extended ({(draft.num_predict || 16384).toLocaleString()} tokens)</option>
-                                </select>
-                            </label>
+                                    onChange={(value) => onChange('thinking_budget', value === 'standard' ? null : value)}
+                                    ariaLabel="Thinking budget"
+                                    testId="thinking-budget-select"
+                                    options={[
+                                        { value: 'minimal', label: 'Minimal (1,024 tokens)' },
+                                        { value: 'standard', label: `Standard (${Math.max(1024, Math.floor((draft.num_predict || 16384) / 2)).toLocaleString()} tokens)` },
+                                        { value: 'extended', label: `Extended (${(draft.num_predict || 16384).toLocaleString()} tokens)` },
+                                    ]}
+                                />
+                            </div>
                             <span className={styles.fieldHint}>{ADVANCED_HELP.thinking_budget}</span>
                         </div>
                     )}

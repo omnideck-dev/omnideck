@@ -9,7 +9,9 @@ import os
 
 import pytest
 
-BASE_URL = os.environ.get("COMPUTRON_URL", "http://localhost:8080")
+from tests.e2e._api import ApiClient
+
+BASE_URL = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
 # Auto-completes the setup wizard before any test runs. Lives in a
 # sibling module so the autouse fixture's implementation isn't crammed
@@ -19,7 +21,7 @@ pytest_plugins = ["tests.e2e._setup"]
 
 # Fail fast while iterating. Playwright defaults to 30s for actions like
 # click/scroll_into_view; with the in-process fake there's no model latency, so
-# a locator that never resolves means a real failure — surface it in seconds
+# a locator that never resolves means a real failure — view it in seconds
 # instead of hanging. Tests that need longer pass an explicit timeout.
 DEFAULT_TIMEOUT_MS = 5_000
 
@@ -34,6 +36,15 @@ def browser_context_args():
 
 
 @pytest.fixture(autouse=True)
-def _fast_action_timeout(page):
-    """Lower the default action timeout for tests using the standard page."""
+def _fast_action_timeout(request: pytest.FixtureRequest) -> None:
+    """Lower the action timeout without forcing API tests to create a page."""
+    if "page" not in request.fixturenames:
+        return
+    page = request.getfixturevalue("page")
     page.set_default_timeout(DEFAULT_TIMEOUT_MS)
+
+
+@pytest.fixture
+def api_client() -> ApiClient:
+    """Return an HTTP-only client for the running E2E application."""
+    return ApiClient(BASE_URL)

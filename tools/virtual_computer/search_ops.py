@@ -155,6 +155,7 @@ def grep(
         searched = 0
 
         # Single file: search it directly, skip glob filtering
+        file_iter: Iterable[Path]
         if root_abs.is_file():
             file_iter = iter([root_abs])
         else:

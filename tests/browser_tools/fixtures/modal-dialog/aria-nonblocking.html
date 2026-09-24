@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Non-blocking ARIA dialog</title>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    main {
+      padding: 24px;
+    }
+
+    .page-content {
+      height: 3200px;
+    }
+
+    #consent {
+      background: white;
+      border: 2px solid black;
+      box-sizing: border-box;
+      inset: 0;
+      padding: 24px;
+      position: fixed;
+      z-index: 10;
+    }
+
+    body.banner #consent {
+      inset: auto 0 0;
+      height: 300px;
+    }
+
+    body.app-shell {
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    body.app-shell main {
+      box-sizing: border-box;
+      height: 100vh;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <!-- An unrelated inert template is not evidence that the live page is blocked. -->
+  <div inert hidden>
+    <button type="button">Hidden template action</button>
+  </div>
+
+  <main>
+    <h1>News</h1>
+    <button id="background-action" type="button">Background action</button>
+    <p id="background-status"></p>
+    <p>The document continues below the viewport.</p>
+    <div class="page-content"></div>
+  </main>
+
+  <div id="consent" role="dialog" aria-modal="true" aria-label="Privacy choices">
+    <h2>Privacy choices</h2>
+    <button id="accept-consent" type="button">Accept and continue</button>
+  </div>
+
+  <script>
+    const layout = new URLSearchParams(location.search).get('layout');
+    if (layout === 'banner') document.body.classList.add('banner');
+    if (layout === 'app-shell') document.body.classList.add('banner', 'app-shell');
+    document.getElementById('background-action').addEventListener('click', () => {
+      document.getElementById('background-status').textContent = 'Background activated';
+    });
+    document.getElementById('accept-consent').addEventListener('click', () => {
+      document.getElementById('consent').remove();
+    });
+  </script>
+</body>
+</html>

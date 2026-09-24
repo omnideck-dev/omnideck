@@ -137,7 +137,7 @@ class IntegrationsTab:
         return self.page.get_by_test_id(f"integrations-row-{integration_id}")
 
     def open_detail(self, integration_id: str) -> None:
-        """Click a row to open its detail pane."""
+        """Click a row to open its detail tab group."""
         self.row(integration_id).click()
 
     def label_input(self, integration_id: str) -> Locator:

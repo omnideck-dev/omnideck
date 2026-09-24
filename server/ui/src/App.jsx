@@ -1,19 +1,21 @@
-import { useState, useEffect } from 'react';
+import AppStateProviders from './features/app/AppStateProviders.jsx';
+import SetupGate from './features/app/SetupGate.jsx';
+import { AppSettingsProvider } from './features/app/AppSettings.jsx';
+import { OmnideckHostProvider } from './features/app/OmnideckHost.jsx';
+import DesktopDownloadFeedback from './components/DesktopDownloadFeedback.jsx';
+import Desktop from './features/desktop/Desktop.jsx';
 
-import DesktopApp from './DesktopApp.jsx';
-
-function App() {
-    const [dark, setDark] = useState(false);
-
-    useEffect(() => {
-        setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }, []);
-
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    }, [dark]);
-
-    return <DesktopApp dark={dark} onToggleTheme={() => setDark((d) => !d)} />;
+export default function App() {
+    return (
+        <OmnideckHostProvider>
+            <DesktopDownloadFeedback />
+            <AppSettingsProvider>
+                <SetupGate>
+                    <AppStateProviders>
+                        <Desktop />
+                    </AppStateProviders>
+                </SetupGate>
+            </AppSettingsProvider>
+        </OmnideckHostProvider>
+    );
 }
-
-export default App;

@@ -10,11 +10,11 @@ A deep evaluation of the event and context system used by Computron 9000. Read-o
 
 The event/context system is a **two-layer architecture**:
 
-1. **Events layer** (`sdk/events/`) — A pub/sub system for streaming real-time UI updates (screenshots, terminal output, context usage, etc.) from tool/agent code to the frontend via JSONL-over-HTTP.
+1. **Events layer** (`agent_core/events/`) — A pub/sub system for streaming real-time UI updates (screenshots, terminal output, context usage, etc.) from tool/agent code to the frontend via JSONL-over-HTTP.
 
-2. **Context layer** (`sdk/context/`) — Manages conversation history, token tracking, and context window compaction (summarization) to keep conversations within model limits.
+2. **Context layer** (`agent_core/context/`) — Manages conversation history, token tracking, and context window compaction (summarization) to keep conversations within model limits.
 
-These two layers are bridged by the **tool loop** (`sdk/loop/`) and **hooks** (`sdk/hooks/`), which orchestrate the LLM call cycle and wire events/context together.
+These two layers are bridged by the **tool loop** (`agent_core/loop/`) and **hooks** (`agent_core/hooks/`), which orchestrate the LLM call cycle and wire events/context together.
 
 ---
 

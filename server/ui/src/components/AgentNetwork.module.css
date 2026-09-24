@@ -5,62 +5,6 @@
     overflow: hidden;
 }
 
-/* Crumb bar — full-width, matches the activity view header style. */
-.header {
-    height: var(--header-height);
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: 0 var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    letter-spacing: 0.02em;
-}
-
-.title {
-    font-family: var(--font-brand);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-}
-
-.count {
-    font-family: var(--font-code);
-    font-size: 11px;
-    color: var(--text-tertiary);
-}
-
-.legend {
-    display: flex;
-    gap: var(--sp-3);
-    margin-left: auto;
-    font-family: var(--font-code);
-    font-size: 11px;
-    color: var(--text-tertiary);
-}
-
-.legendItem {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.legendDot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-}
-
-.legendDot.running { background: var(--success); }
-.legendDot.complete { background: var(--accent); }
-.legendDot.success { background: var(--accent); }
-.legendDot.error { background: var(--danger); }
-
 .graphArea {
     flex: 1;
     overflow: auto;

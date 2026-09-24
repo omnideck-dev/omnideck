@@ -1,22 +1,7 @@
-/* Image attachment — rounded square thumbnail */
-.image {
-  position: relative;
-  width: 60px;
-  height: 60px;
-  border-radius: var(--radius-lg);
-  flex-shrink: 0;
-}
-.image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-}
-
-/* File attachment — horizontal card: icon tile + name + meta */
-.file {
+/* One card per attachment — a 36px tile (image thumbnail or type-tinted icon)
+   followed by the filename and a TYPE · size line. Every attachment type uses
+   this same shape so mixed uploads line up at one height. */
+.card {
   position: relative;
   display: flex;
   align-items: center;
@@ -30,7 +15,7 @@
   border-radius: var(--radius-lg);
 }
 
-.icon {
+.tile {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
@@ -38,6 +23,13 @@
   place-items: center;
   font-size: 16px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .tintPdf { background: var(--danger-muted); color: var(--danger); }
 .tintCode { background: var(--success-muted); color: var(--success); }
@@ -49,47 +41,38 @@
   min-width: 0;
   line-height: 1.3;
 }
+
+/* Middle truncation: the stem ellipsizes, the tail (extension) is always kept. */
 .name {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
+}
+.nameStem {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.nameTail {
+  flex: 0 0 auto;
+  white-space: pre;
+}
+
 .sub {
   font-family: var(--font-code);
   font-size: 10px;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Remove control — floating circle on the image's corner */
-.removeImage {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  background: var(--elevated);
-  border: 1px solid var(--border-strong);
-  color: var(--text-secondary);
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  padding: 0;
-  cursor: pointer;
-}
-.removeImage:hover {
-  background: var(--danger-muted);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-/* Remove control — inline on the file card's right edge.
+/* Remove control — inline on the card's right edge.
    Centred via a fixed top (card 52px, button 20px) rather than a
    transform, so the global button:active translate doesn't clobber it. */
-.removeFile {
+.remove {
   position: absolute;
   top: 16px;
   right: 6px;
@@ -105,7 +88,7 @@
   padding: 0;
   cursor: pointer;
 }
-.removeFile:hover {
+.remove:hover {
   background: var(--danger-muted);
   color: var(--danger);
 }

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sdk.providers._models import ModelInfo, ProviderError
+from agent_core.providers._models import ModelInfo, ProviderError
 from server._model_routes import handle_list_models, handle_refresh_models
 
 

@@ -80,6 +80,14 @@ export default function useAgentProfiles() {
         return duplicated;
     }, []);
 
+    // Add profiles the server already created (e.g. from a pack import) to the
+    // list, so it updates without a full refetch.
+    const addProfiles = useCallback((records) => {
+        if (!records?.length) return;
+        setProfiles(prev => [...prev, ...records]);
+        setRevision(r => r + 1);
+    }, []);
+
     return {
         profiles,
         selectedProfileId,
@@ -88,6 +96,7 @@ export default function useAgentProfiles() {
         updateProfile,
         deleteProfile,
         duplicateProfile,
+        addProfiles,
         loading,
         refresh,
         revision,

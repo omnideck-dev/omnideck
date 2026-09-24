@@ -35,13 +35,18 @@ def resumed(browser, browser_context_args):
     chat.send(say(cw2)).wait_streaming()
 
     # Sanity: confirm the live render produced what we'll later expect to
-    # come back. Tool calls are hidden inline and surfaced via the per-turn
+    # come back. Tool calls are hidden inline and viewd via the per-turn
     # activity footer, so check that footer instead of bare tool-name text.
     assert page.get_by_text(cw1).count() >= 1, "cw1 missing before switch"
     assert page.get_by_test_id("activity-toggle").count() >= 1, (
         "activity footer missing before switch — tool calls did not register"
     )
     assert page.get_by_text(cw2).count() >= 1, "cw2 missing before switch"
+
+    # Capture this conversation's id (the newest summary) so we can resume it
+    # by identity rather than by list position — a pinned conversation could
+    # otherwise sit above it in the sidebar.
+    conv_id = page.request.get("/api/conversations/sessions").json()[0]["conversation_id"]
 
     # Switch to a fresh conversation; message bubbles should be cleared.
     # Codeword text may persist in the sidebar's recent-conversations label,
@@ -51,9 +56,8 @@ def resumed(browser, browser_context_args):
     expect(page.get_by_test_id("message-assistant")).to_have_count(0)
     expect(page.get_by_test_id("activity-toggle")).to_have_count(0)
 
-    # Resume the prior conversation. Topmost row = most recent
-    # (sorted by started_at in conversations/_store.py).
-    RecentConversations(page).open_top()
+    # Resume the prior conversation by id, regardless of its row position.
+    RecentConversations(page).open_by_id(conv_id)
 
     # Wait until the first restored user message bubble is visible
     # before yielding. Scoped to message-user so we don't false-match
@@ -78,7 +82,7 @@ def test_turn_one_user_message_restored(resumed):
 
 
 def test_turn_one_tool_call_badge_restored(resumed):
-    """Turn 1's assistant tool_call is surfaced via the activity footer."""
+    """Turn 1's assistant tool_call is viewd via the activity footer."""
     assistant = resumed["page"].get_by_test_id("message-assistant").first
     toggle = assistant.get_by_test_id("activity-toggle")
     expect(toggle).to_be_visible()

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sdk.skills import ToolCategory
+from skills import ToolCategory
 from server._tool_category_routes import handle_list_tool_categories
 
 

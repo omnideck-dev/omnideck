@@ -129,9 +129,9 @@ class TestMessageFormatting:
     """Test notification message formatting."""
 
     def test_format_run_completed(self):
-        """Success message includes goal name, stats, output, and file count."""
+        """Success message includes routine name, stats, output, and file count."""
         msg = format_run_completed(
-            goal_description="Find Pop-Tarts prices",
+            routine_description="Find Pop-Tarts prices",
             run_number=2,
             duration="47s",
             total_tasks=3,
@@ -148,7 +148,7 @@ class TestMessageFormatting:
     def test_format_run_completed_no_files(self):
         """Success message omits file line when no files."""
         msg = format_run_completed(
-            goal_description="Test",
+            routine_description="Test",
             run_number=1,
             duration="5s",
             total_tasks=1,
@@ -161,7 +161,7 @@ class TestMessageFormatting:
     def test_format_run_failed(self):
         """Failure message includes error details."""
         msg = format_run_failed(
-            goal_description="Scrape data",
+            routine_description="Scrape data",
             run_number=1,
             duration="12s",
             total_tasks=3,

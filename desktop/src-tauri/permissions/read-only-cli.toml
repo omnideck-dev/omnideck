@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "read-only-cli"
+description = "Allows the bundled local setup UI to drive the typed omnideck lifecycle."
+commands.allow = ["bootstrap", "begin_setup", "open_app", "run_action"]

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Select from './primitives/Select.jsx';
 import styles from './ProfileSelector.module.css';
 
 export default function ProfileSelector({ selectedId, onChange, disabled, refreshSignal, onSelectedProfile }) {
@@ -33,18 +34,16 @@ export default function ProfileSelector({ selectedId, onChange, disabled, refres
     if (profiles.length === 0) return null;
 
     return (
-        <select
+        <Select
             className={styles.select}
             value={selectedId}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={onChange}
             disabled={disabled}
-            aria-label="Agent profile"
-        >
-            {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                    {p.name}
-                </option>
-            ))}
-        </select>
+            ariaLabel="Agent profile"
+            options={profiles.map((profile) => ({
+                value: profile.id,
+                label: profile.name,
+            }))}
+        />
     );
 }

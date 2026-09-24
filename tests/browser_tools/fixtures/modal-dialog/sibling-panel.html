@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Custom modal with sibling panel</title>
+  <style>
+    body {
+      min-height: 2400px;
+      overflow: hidden;
+    }
+
+    #checkout-backdrop {
+      background: rgb(0 0 0 / 55%);
+      inset: 0;
+      position: fixed;
+      z-index: 100;
+    }
+
+    #checkout-modal {
+      background: white;
+      height: 300px;
+      inset: 0;
+      margin: auto;
+      padding: 24px;
+      position: fixed;
+      width: 420px;
+      z-index: 101;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Checkout</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <div id="checkout-backdrop"></div>
+  <section id="checkout-modal">
+    <h2>Confirm purchase</h2>
+    <button id="checkout-close" type="button">Close</button>
+    <button type="button">Confirm</button>
+  </section>
+
+  <script>
+    document.getElementById('checkout-close').addEventListener('click', () => {
+      document.getElementById('checkout-backdrop').remove();
+      document.getElementById('checkout-modal').remove();
+      document.body.style.overflow = 'auto';
+    });
+  </script>
+</body>
+</html>

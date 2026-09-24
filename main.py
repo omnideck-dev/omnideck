@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 
 from logging_config import setup_logging
 from server.aiohttp_app import create_app
-from tools.browser.core.browser import close_browser
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,9 @@ def main() -> None:
     setup_logging()
     app = create_app()
 
-    async def _close_browser(_app: aiohttp.web.Application) -> None:  # pragma: no cover
-        await close_browser()
-
     async def _shutdown_executor(_app: aiohttp.web.Application) -> None:  # pragma: no cover
         import asyncio
+
         loop = asyncio.get_running_loop()
         try:
             await asyncio.wait_for(loop.shutdown_default_executor(), timeout=5.0)
@@ -44,7 +41,6 @@ def main() -> None:
             logger.warning("Executor threads did not finish within 5s; forcing exit")
             os._exit(0)
 
-    app.on_shutdown.append(_close_browser)
     app.on_cleanup.append(_shutdown_executor)
     logger.info("Starting server on port %s", PORT)
     aiohttp.web.run_app(app, port=PORT)

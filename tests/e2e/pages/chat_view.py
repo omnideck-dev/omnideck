@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Locator, Page
 
-from .preview_panel import PreviewPanel
+from .preview_panel import PreviewTabGroup
 
 # Ceiling for a turn to finish streaming. With the in-process fake there's no
 # model latency, so this only needs to cover the real tool work a turn does
@@ -18,7 +18,7 @@ class ChatView:
 
     def __init__(self, page: Page):
         self.page = page
-        self.preview = PreviewPanel(page)
+        self.preview = PreviewTabGroup(page)
 
     def goto(self) -> "ChatView":
         # The initial SPA bundle load can exceed the 5s default action timeout
@@ -32,15 +32,43 @@ class ChatView:
         textarea.press("Enter")
         return self
 
+    @property
+    def composer(self) -> Locator:
+        """The message composer textarea."""
+        return self.page.locator("textarea").first
+
+    @property
+    def expand_button(self) -> Locator:
+        """Corner expand/collapse control — present once the textarea grows."""
+        return self.page.get_by_test_id("composer-expand-btn")
+
     def wait_streaming(self, timeout: int = _DEFAULT_TURN_TIMEOUT) -> "ChatView":
-        """Wait until the assistant finishes streaming (Stop button disappears)."""
-        stop_btn = self.page.locator("button[title='Stop generation']")
+        """Wait until the assistant finishes streaming (Stop button disappears).
+
+        Keyed on the button's testid, not its title — the title flips to
+        'Stopping…' once a stop is requested, while the testid is stable
+        for the button's whole lifetime.
+        """
+        stop_btn = self.page.get_by_test_id("chat-stop-btn")
+        # Best-effort: catch the button while streaming is in flight so the
+        # hidden-wait below can't pass prematurely (button hidden only because
+        # the request hasn't started yet). Streaming starts near-instantly with
+        # MOCK_LLM and route mocks, so a short budget is enough — and when a
+        # test mocks /api/chat to return the whole stream in one shot, the
+        # button cycles faster than Playwright can observe "visible", so this
+        # wait will miss. A short timeout keeps that miss cheap (~1s) instead of
+        # stalling the full 10s before falling through to the hidden-wait.
         try:
-            stop_btn.wait_for(state="visible", timeout=10_000)
+            stop_btn.wait_for(state="visible", timeout=2_000)
         except Exception:
             pass
         stop_btn.wait_for(state="hidden", timeout=timeout)
         return self
+
+    @property
+    def stop_button(self):
+        """The stop-generation button (visible only while streaming)."""
+        return self.page.get_by_test_id("chat-stop-btn")
 
     def new_conversation(self) -> "ChatView":
         self.page.get_by_test_id("sidebar-new-chat").click()

@@ -8,6 +8,9 @@ import styles from './ModelPicker.module.css';
 const _modelsCache = new Map();
 // In-flight fetches per provider — dedupes concurrent requests.
 const _inFlight = new Map();
+// Mounted pickers subscribe to invalidations so refreshing one open picker
+// also updates another open picker showing the same provider.
+const _cacheListeners = new Set();
 
 async function _fetchModels(provider) {
     if (_modelsCache.has(provider)) return _modelsCache.get(provider);
@@ -33,6 +36,7 @@ async function _fetchModels(provider) {
 export function invalidateModelCache(provider) {
     if (provider) _modelsCache.delete(provider);
     else _modelsCache.clear();
+    _cacheListeners.forEach((listener) => listener(provider || null));
 }
 
 function _formatCtx(tokens) {
@@ -87,6 +91,7 @@ export default function ModelPicker({
     const [models, setModels] = useState(() => _modelsCache.get(initialTab) || []);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [cacheRevision, setCacheRevision] = useState(0);
 
     const wrapperRef = useRef(null);
     const triggerRef = useRef(null);
@@ -100,20 +105,26 @@ export default function ModelPicker({
     const updatePopoverPos = useCallback(() => {
         if (!inline || !triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
-        // Cap height to whatever fits below the trigger (leaving a small
-        // margin so the popover doesn't kiss the viewport edge). Without
-        // this, a trigger near the bottom of the panel would push the
-        // popover off-screen — and a fixed-position popover can't be
-        // scrolled into view by callers (including Playwright tests).
+        // Prefer opening below, but flip above when a trigger near the bottom
+        // has more useful space there. A fixed-position popover cannot be
+        // scrolled into view with its trigger, so it must fit the viewport on
+        // its own (including at increased browser zoom).
         const margin = 8;
-        const maxHeight = Math.min(400, Math.max(120, window.innerHeight - rect.bottom - margin));
+        const spaceBelow = window.innerHeight - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const placement = spaceBelow < 120 && spaceAbove > spaceBelow ? 'above' : 'below';
+        const available = placement === 'above' ? spaceAbove : spaceBelow;
+        const maxHeight = Math.min(400, Math.max(120, available));
         setPopoverPos({
             left: rect.left,
-            // -1 so the popover's top border overlaps the trigger's bottom
-            // border, making them look joined as one control.
-            top: rect.bottom - 1,
             width: rect.width,
             maxHeight,
+            placement,
+            // Overlap the shared border by one pixel so trigger and popover
+            // read as one control in either direction.
+            anchor: placement === 'above'
+                ? window.innerHeight - rect.top - 1
+                : rect.bottom - 1,
         });
     }, [inline]);
 
@@ -136,7 +147,21 @@ export default function ModelPicker({
         if (!open && selectedProvider) setActiveTab(selectedProvider);
     }, [selectedProvider, open]);
 
-    // Fetch models for the active tab whenever it changes (or the popover opens).
+    // Observe explicit cache invalidations. Closed pickers can wait until their
+    // next open; open pickers should immediately re-query the provider they are
+    // currently displaying.
+    useEffect(() => {
+        const onCacheInvalidated = (provider) => {
+            if (!provider || provider === activeTab) {
+                setCacheRevision((revision) => revision + 1);
+            }
+        };
+        _cacheListeners.add(onCacheInvalidated);
+        return () => _cacheListeners.delete(onCacheInvalidated);
+    }, [activeTab]);
+
+    // Fetch models for the active tab whenever it changes, the popover opens,
+    // or an explicit refresh invalidates the active provider.
     useEffect(() => {
         if (!open || !activeTab) return;
         const cached = _modelsCache.get(activeTab);
@@ -153,7 +178,7 @@ export default function ModelPicker({
             .then((m) => { if (!cancelled) { setModels(m); setLoading(false); } })
             .catch((err) => { if (!cancelled) { setError(err.message || 'error'); setLoading(false); } });
         return () => { cancelled = true; };
-    }, [activeTab, open]);
+    }, [activeTab, cacheRevision, open]);
 
     // Close on click-outside / escape. The portaled popover lives outside
     // wrapperRef, so we check both wrapperRef (trigger) and popoverRef
@@ -209,6 +234,11 @@ export default function ModelPicker({
         setOpen(false);
     }, [onSelect, activeTab]);
 
+    const handleRefresh = useCallback(() => {
+        if (!activeTab || loading) return;
+        invalidateModelCache(activeTab);
+    }, [activeTab, loading]);
+
     const triggerLabel = (() => {
         if (selectedModel) return null; // structured render below
         if (!provs.length) return 'No providers configured';
@@ -218,15 +248,17 @@ export default function ModelPicker({
     const popoverStyle = inline && popoverPos ? {
         position: 'fixed',
         left: `${popoverPos.left}px`,
-        top: `${popoverPos.top}px`,
         width: `${popoverPos.width}px`,
         maxHeight: `${popoverPos.maxHeight}px`,
+        ...(popoverPos.placement === 'above'
+            ? { top: 'auto', bottom: `${popoverPos.anchor}px` }
+            : { top: `${popoverPos.anchor}px` }),
     } : undefined;
 
     const popoverNode = open ? (
         <div
             ref={popoverRef}
-            className={`${styles.popover} ${inline ? styles.popoverInline : ''}`}
+            className={`${styles.popover} ${inline ? styles.popoverInline : ''} ${popoverPos?.placement === 'above' ? styles.popoverAbove : ''}`}
             role="listbox"
             data-testid="model-picker-popover"
             style={popoverStyle}
@@ -258,6 +290,17 @@ export default function ModelPicker({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                 />
+                <button
+                    type="button"
+                    className={styles.refreshButton}
+                    onClick={handleRefresh}
+                    disabled={loading || !activeTab}
+                    aria-label={`Refresh ${activeTab} models`}
+                    title={`Refresh models from ${activeTab}`}
+                    data-testid="model-picker-refresh"
+                >
+                    <i className={`bi bi-arrow-clockwise ${loading ? styles.refreshIconLoading : ''}`} />
+                </button>
             </div>
 
             <div className={styles.list}>
@@ -301,7 +344,7 @@ export default function ModelPicker({
             <button
                 ref={triggerRef}
                 type="button"
-                className={`${styles.trigger} ${open ? styles.triggerOpen : ''} ${selectedModel ? '' : styles.triggerEmpty} ${inline ? styles.triggerInline : ''}`}
+                className={`${styles.trigger} ${open ? styles.triggerOpen : ''} ${selectedModel ? '' : styles.triggerEmpty} ${inline ? styles.triggerInline : ''} ${popoverPos?.placement === 'above' ? styles.triggerOpenAbove : ''}`}
                 onClick={handleOpenToggle}
                 disabled={!provs.length}
                 aria-haspopup="listbox"

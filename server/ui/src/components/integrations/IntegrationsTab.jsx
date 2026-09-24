@@ -271,7 +271,7 @@ function EmptyState({ onAdd }) {
             <div className={styles.emptyIcon}><i className="bi bi-plug" /></div>
             <div className={styles.emptyHeading}>Connect your first integration</div>
             <div className={styles.emptyDesc}>
-                Give Omnideck access to your email and calendar. Credentials stay
+                Give Omnideck access to your email, calendar, drive, contacts, and APIs. Credentials stay
                 encrypted in your own vault — the agent never sees them directly.
             </div>
             <Button

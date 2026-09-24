@@ -30,14 +30,22 @@ import mimetypes
 import secrets
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from integrations._perms import ATTACHMENT_FILE_MODE
 from integrations._rpc import RpcError
 from integrations.brokers.email_broker._caldav_client import CalDavClient
 from integrations.brokers.email_broker._imap_client import ImapClient
 from integrations.brokers.email_broker._smtp_client import SmtpClient
-from integrations.brokers.email_broker.types import OutboundAttachment
+from integrations.brokers.email_broker.types import Calendar, Event, OutboundAttachment
+from integrations.calendar_refs import (
+    CalendarTarget,
+    InvalidCalendarRef,
+    decode_event_ref,
+    decode_series_ref,
+    encode_event_ref,
+    encode_series_ref,
+)
 from integrations.permissions import Access, Capability, Permissions
 
 # Total raw byte cap across all outbound attachments in one send. Above this
@@ -60,8 +68,12 @@ _VERB_REQUIREMENT: dict[str, tuple[Capability, Access]] = {
     # Calendar (CalDAV)
     "list_calendars": (Capability.CALENDAR, Access.READ),
     "list_events": (Capability.CALENDAR, Access.READ),
+    "search_events": (Capability.CALENDAR, Access.READ),
     "create_event": (Capability.CALENDAR, Access.READ_WRITE),
+    "update_event": (Capability.CALENDAR, Access.READ_WRITE),
     "delete_event": (Capability.CALENDAR, Access.READ_WRITE),
+    "update_event_series": (Capability.CALENDAR, Access.READ_WRITE),
+    "delete_event_series": (Capability.CALENDAR, Access.READ_WRITE),
 }
 
 
@@ -108,6 +120,12 @@ class VerbDispatcher:
         if caldav is not None:
             self._handlers["list_calendars"] = self._handle_list_calendars
             self._handlers["list_events"] = self._handle_list_events
+            self._handlers["search_events"] = self._handle_search_events
+            self._handlers["create_event"] = self._handle_create_event
+            self._handlers["update_event"] = self._handle_update_event
+            self._handlers["delete_event"] = self._handle_delete_event
+            self._handlers["update_event_series"] = self._handle_update_event_series
+            self._handlers["delete_event_series"] = self._handle_delete_event_series
 
     async def dispatch(self, verb: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point called by the RPC layer for every incoming frame."""
@@ -246,23 +264,210 @@ class VerbDispatcher:
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
         calendars = await self._caldav.list_calendars()
-        return {"calendars": [c.model_dump() for c in calendars]}
+        return {"calendars": [_wire_calendar(c) for c in calendars]}
 
     async def _handle_list_events(self, args: dict[str, Any]) -> dict[str, Any]:
-        """``list_events {calendar_url, days_forward, days_back, limit}`` → ``{calendar_name, events: [...]}``."""
+        """List expanded occurrences identified by opaque mutation references."""
         if self._caldav is None:
             raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
-        calendar_url = _require_str(args, "calendar_url")
+        calendar_ref = _require_str(args, "calendar_ref")
         days_forward = _require_int(args, "days_forward", default=30)
         days_back = _require_int(args, "days_back", default=0)
         limit = _require_int(args, "limit", default=50)
         name, events = await self._caldav.list_events(
-            calendar_url, days_forward, days_back, limit,
+            calendar_ref, days_forward, days_back, limit,
         )
         return {
             "calendar_name": name,
-            "events": [e.model_dump() for e in events],
+            "events": [_wire_event(e, calendar_ref) for e in events],
         }
+
+    async def _handle_search_events(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Search expanded occurrences identified by opaque mutation refs."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_ref = _require_str(args, "calendar_ref")
+        query = _require_str(args, "query")
+        days_forward = _require_int(args, "days_forward", default=365)
+        days_back = _require_int(args, "days_back", default=0)
+        limit = _require_int(args, "limit", default=50)
+        try:
+            name, events = await self._caldav.search_events(
+                calendar_ref, query, days_forward, days_back, limit,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        return {
+            "calendar_name": name,
+            "events": [_wire_event(e, calendar_ref) for e in events],
+        }
+
+    async def _handle_create_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``create_event`` creates a VEVENT and returns its server representation."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        calendar_ref = _require_str(args, "calendar_ref")
+        summary = _require_str(args, "summary")
+        start = _require_str(args, "start")
+        end = _require_str(args, "end")
+        description = _optional_str(args, "description")
+        location = _optional_str(args, "location")
+        attendees = _optional_str_list(args, "attendees")
+        recurrence_rule = _optional_str(args, "recurrence_rule") or None
+        time_zone = _optional_str(args, "time_zone") or None
+        try:
+            event = await self._caldav.create_event(
+                calendar_ref, summary, start, end,
+                description, location, attendees,
+                recurrence_rule=recurrence_rule,
+                time_zone=time_zone,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        return {"event": _wire_event(event, calendar_ref)}
+
+    async def _handle_update_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``update_event`` changes only the supplied VEVENT fields."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        event_ref = _require_str(args, "event_ref")
+        target = _decode_event_target(event_ref)
+        changes = _calendar_changes(args)
+        try:
+            event = await self._caldav.update_event(
+                target.calendar_ref,
+                target.event_id,
+                recurrence_id=target.recurrence_id,
+                href=target.href,
+                **changes,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"event": _wire_event(event, target.calendar_ref)}
+
+    async def _handle_delete_event(self, args: dict[str, Any]) -> dict[str, Any]:
+        """``delete_event`` permanently removes a VEVENT."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        event_ref = _require_str(args, "event_ref")
+        target = _decode_event_target(event_ref)
+        try:
+            await self._caldav.delete_event(
+                target.calendar_ref,
+                target.event_id,
+                recurrence_id=target.recurrence_id,
+                href=target.href,
+            )
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"deleted": True}
+
+    async def _handle_update_event_series(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Update every occurrence in a recurring series via its master."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        series_ref = _require_str(args, "series_ref")
+        target = _decode_series_target(series_ref)
+        changes = _calendar_changes(args, include_recurrence=True)
+        try:
+            event = await self._caldav.update_event_series(
+                target.calendar_ref,
+                target.event_id,
+                href=target.href,
+                **changes,
+            )
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", str(exc)) from exc
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"event": _wire_event(event, target.calendar_ref), "series_ref": series_ref}
+
+    async def _handle_delete_event_series(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Permanently delete every occurrence in a recurring series."""
+        if self._caldav is None:
+            raise RpcError("BAD_REQUEST", "calendar not configured for this integration")
+        series_ref = _require_str(args, "series_ref")
+        target = _decode_series_target(series_ref)
+        try:
+            await self._caldav.delete_event_series(
+                target.calendar_ref, target.event_id, href=target.href,
+            )
+        except LookupError as exc:
+            raise RpcError("NOT_FOUND", str(exc)) from exc
+        return {"deleted": True}
+
+
+def _wire_calendar(calendar: Calendar) -> dict[str, str]:
+    return {"name": calendar.name, "calendar_ref": calendar.url}
+
+
+def _wire_event(event: Event, calendar_ref: str) -> dict[str, Any]:
+    """Hide CalDAV routing details behind exact-occurrence and series refs."""
+    result: dict[str, Any] = {
+        "event_ref": encode_event_ref(
+            provider="caldav",
+            calendar_ref=calendar_ref,
+            event_id=event.uid,
+            recurrence_id=event.recurrence_id or None,
+            href=event.href or None,
+        ),
+        "summary": event.summary,
+        "start": event.start,
+        "end": event.end,
+        "location": event.location,
+        "description": event.description,
+        "is_recurring": event.recurring,
+    }
+    if event.recurring:
+        result["series_ref"] = encode_series_ref(
+            provider="caldav",
+            calendar_ref=calendar_ref,
+            event_id=event.uid,
+            href=event.href or None,
+        )
+    return result
+
+
+def _decode_event_target(value: str) -> CalendarTarget:
+    try:
+        return decode_event_ref(value, provider="caldav")
+    except InvalidCalendarRef as exc:
+        raise RpcError("BAD_REQUEST", str(exc)) from exc
+
+
+def _decode_series_target(value: str) -> CalendarTarget:
+    try:
+        return decode_series_ref(value, provider="caldav")
+    except InvalidCalendarRef as exc:
+        raise RpcError("BAD_REQUEST", str(exc)) from exc
+
+
+def _calendar_changes(
+    args: dict[str, Any], *, include_recurrence: bool = False,
+) -> dict[str, Any]:
+    changes = {
+        "summary": _optional_update_str(args, "summary"),
+        "start": _optional_update_str(args, "start"),
+        "end": _optional_update_str(args, "end"),
+        "description": _optional_update_str(args, "description"),
+        "location": _optional_update_str(args, "location"),
+        "attendees": _optional_str_list(args, "attendees"),
+    }
+    if include_recurrence:
+        changes["recurrence_rule"] = _optional_update_str(args, "recurrence_rule")
+        changes["time_zone"] = _optional_update_str(args, "time_zone")
+        if any(
+            isinstance(changes[field], str) and "T" in changes[field]
+            for field in ("start", "end")
+        ) and changes["time_zone"] is None:
+            raise RpcError(
+                "BAD_REQUEST", "time_zone is required when changing a timed recurring series",
+            )
+    if not any(value is not None for value in changes.values()):
+        raise RpcError("BAD_REQUEST", "update requires at least one field to change")
+    return changes
 
 
 def _require_str(args: dict[str, Any], key: str) -> str:
@@ -277,6 +482,35 @@ def _require_int(args: dict[str, Any], key: str, *, default: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise RpcError("BAD_REQUEST", f"{key!r} must be an integer")
     return value
+
+
+def _optional_str(args: dict[str, Any], key: str) -> str:
+    value = args.get(key, "")
+    if not isinstance(value, str):
+        raise RpcError("BAD_REQUEST", f"{key!r} must be a string")
+    return value
+
+
+def _optional_update_str(args: dict[str, Any], key: str) -> str | None:
+    if key not in args:
+        return None
+    value = args[key]
+    if not isinstance(value, str):
+        raise RpcError("BAD_REQUEST", f"{key!r} must be a string")
+    return value
+
+
+def _optional_str_list(args: dict[str, Any], key: str) -> list[str] | None:
+    value = args.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise RpcError(
+            "BAD_REQUEST", f"{key!r} must be an array of non-empty strings",
+        )
+    return list(value)
 
 
 def _require_str_list(args: dict[str, Any], key: str) -> list[str]:

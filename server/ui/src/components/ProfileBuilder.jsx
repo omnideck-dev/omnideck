@@ -5,7 +5,12 @@ import ToggleSwitch from './ToggleSwitch.jsx';
 import Button from './primitives/Button.jsx';
 import Callout from './primitives/Callout.jsx';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
+import Popover from './primitives/Popover.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
+import Select from './primitives/Select.jsx';
+import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
+import { EMPTY_BROWSER_PROFILE } from '../features/browser/browserProfileConstants.js';
+import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
 
@@ -15,6 +20,7 @@ const HELP_SECTIONS = [
     { title: 'Model', body: 'The model to use when this profile is active.' },
     { title: 'System Prompt', body: 'Instructions prepended to every conversation. Controls the agent\'s personality, constraints, and behavior. Supports markdown.' },
     { title: 'Skills', body: 'Toggle which tool groups the agent can access. Disabled skills are not available during inference.' },
+    { title: 'Browser', body: 'Grant Browser access and choose the saved profile this agent starts from.' },
     { title: 'Inference Preset', body: 'Quick presets that set temperature, sampling, and thinking for common workloads. Selecting a preset fills in the advanced values.' },
     { title: 'Temperature', body: '0.0 = deterministic, 0.7 = general use, 1.0+ = creative. Controls randomness in token selection.' },
     { title: 'Top K', body: 'Limits sampling to the K most probable tokens. 10 = factual, 40 = general, 100+ = creative.' },
@@ -35,6 +41,8 @@ export default function ProfileBuilder({
     onSave,
     onDelete,
     onDuplicate,
+    onExport,
+    onDirtyChange,
     providers,
     skills,
     categories,
@@ -45,6 +53,7 @@ export default function ProfileBuilder({
     const [saveError, setSaveError] = useState(null);
     const [showPicker, setShowPicker] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
+    const { profiles: browserProfiles } = useBrowserProfilesCatalog();
 
     useEffect(() => {
         setSaveError(null);
@@ -54,6 +63,16 @@ export default function ProfileBuilder({
             setDraft(null);
         }
     }, [profile]);
+
+    // Unsaved-changes signal for the parent's navigation guard. There's no
+    // Revert button, so the parent warns before discarding edits on leave.
+    const isDirty = useMemo(() => (
+        !!draft && !!profile && JSON.stringify(draft) !== JSON.stringify(profile)
+    ), [draft, profile]);
+    useEffect(() => {
+        onDirtyChange?.(isDirty);
+        return () => onDirtyChange?.(false);
+    }, [isDirty, onDirtyChange]);
 
     // Inference-option support (think, top_k, num_ctx, etc.) depends on which
     // provider this profile points at, not on any global default.
@@ -77,21 +96,7 @@ export default function ProfileBuilder({
         [catById],
     );
 
-    // Dismiss the add-skill popover on outside click or Escape.
-    const pickerRef = useRef(null);
-    useEffect(() => {
-        if (!showPicker) return undefined;
-        const onPointerDown = (e) => {
-            if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false);
-        };
-        const onKeyDown = (e) => { if (e.key === 'Escape') setShowPicker(false); };
-        document.addEventListener('mousedown', onPointerDown);
-        document.addEventListener('keydown', onKeyDown);
-        return () => {
-            document.removeEventListener('mousedown', onPointerDown);
-            document.removeEventListener('keydown', onKeyDown);
-        };
-    }, [showPicker]);
+    const skillPickerTriggerRef = useRef(null);
 
     const update = useCallback((field, value) => {
         setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -126,12 +131,6 @@ export default function ProfileBuilder({
             };
         });
     }, []);
-
-    const handleRevert = useCallback(() => {
-        if (profile) {
-            setDraft(_cloneProfile(profile));
-        }
-    }, [profile]);
 
     const handleSave = useCallback(async () => {
         // A model is required to create a profile, but editing an existing
@@ -172,11 +171,17 @@ export default function ProfileBuilder({
                             onConfirm={() => onDelete?.(profile.id)}
                         />
                         <div className={styles.actionsRight}>
+                            {!draft._unsaved && (
+                                <Button
+                                    onClick={() => onExport?.(profile.id)}
+                                    title="Export this agent"
+                                    data-testid="profile-export"
+                                >
+                                    <i className="bi bi-download" /> Export
+                                </Button>
+                            )}
                             <Button onClick={() => onDuplicate?.(profile.id)}>
                                 Duplicate
-                            </Button>
-                            <Button onClick={handleRevert}>
-                                Revert
                             </Button>
                             <Button
                                 variant="filled"
@@ -286,7 +291,7 @@ export default function ProfileBuilder({
                     <section className={styles.section}>
                         <div className={styles.sectionLabel}>Skills</div>
                         <div className={styles.skillHelp}>Skills this profile loads. Each grants its tool categories to the agent.</div>
-                        <div className={styles.pickWrap} ref={pickerRef}>
+                        <div className={styles.pickWrap}>
                             <div className={styles.attached}>
                                 {(draft.skills || []).map((id) => {
                                     const rec = skillById.get(id);
@@ -306,16 +311,30 @@ export default function ProfileBuilder({
                                     );
                                 })}
                                 <button
+                                    ref={skillPickerTriggerRef}
                                     type="button"
                                     className={styles.addSkillBtn}
                                     onClick={() => setShowPicker((v) => !v)}
+                                    aria-expanded={showPicker}
+                                    aria-haspopup="dialog"
                                     data-testid="profile-add-skill"
                                 >
                                     <i className="bi bi-plus-lg" /> Add skill
                                 </button>
                             </div>
                             {showPicker && (
-                                <div className={styles.skPopover} data-testid="profile-skill-picker">
+                                <Popover
+                                    anchorRef={skillPickerTriggerRef}
+                                    onClose={() => setShowPicker(false)}
+                                    align="start"
+                                    width={380}
+                                    maxHeight={340}
+                                    flipThreshold={160}
+                                    className={styles.skPopover}
+                                    role="dialog"
+                                    ariaLabel="Add skills"
+                                    testId="profile-skill-picker"
+                                >
                                     <div className={styles.skPopHead}>
                                         <SearchInput
                                             value={skillSearch}
@@ -361,12 +380,63 @@ export default function ProfileBuilder({
                                             );
                                         })}
                                     </div>
-                                </div>
+                                </Popover>
                             )}
                         </div>
                     </section>
 
-                    {/* 5. Autonomy */}
+                    {/* 5. Browser */}
+                    <section className={styles.section} data-testid="profile-browser-settings">
+                        <div className={styles.sectionLabel}>Browser</div>
+                        <label className={styles.browserAccessRow}>
+                            <ToggleSwitch
+                                checked={draft.browser_profile_id !== null}
+                                onChange={(event) => {
+                                    const enabled = event.target.checked;
+                                    setDraft((current) => current ? {
+                                        ...current,
+                                        browser_profile_id: enabled
+                                            ? (current.browser_profile_id || 'default')
+                                            : null,
+                                    } : current);
+                                }}
+                                aria-label="Allow Browser access"
+                            />
+                            <span className={styles.autoText}>
+                                <span className={styles.autoLabel}>Allow Browser access</span>
+                                <span className={styles.autoHelp}>The agent can open websites in its own isolated Browser session.</span>
+                            </span>
+                        </label>
+                        {draft.browser_profile_id !== null && (
+                            <div className={styles.browserProfileField}>
+                                <label id="agent-browser-profile-label">Starting profile</label>
+                                <Select
+                                    options={[
+                                        { value: EMPTY_BROWSER_PROFILE, label: 'Empty' },
+                                        ...browserProfiles.map((item) => ({
+                                            value: item.id,
+                                            label: item.name,
+                                        })),
+                                    ]}
+                                    value={draft.browser_profile_id}
+                                    onChange={(value) => update('browser_profile_id', value)}
+                                    ariaLabelledBy="agent-browser-profile-label"
+                                    className={styles.browserProfileSelect}
+                                    testId="agent-browser-profile-select"
+                                />
+                                <div className={styles.browserProfileHint}>
+                                    {draft.browser_profile_id !== EMPTY_BROWSER_PROFILE ? (
+                                        <>
+                                            <BrowserProfileIcon icon={browserProfiles.find((item) => item.id === draft.browser_profile_id)?.icon} />
+                                            The agent gets an isolated copy of this saved profile.
+                                        </>
+                                    ) : 'Empty starts without saved cookies or site data.'}
+                                </div>
+                            </div>
+                        )}
+                    </section>
+
+                    {/* 6. Autonomy */}
                     <section className={styles.section}>
                         <div className={styles.sectionLabel}>Autonomy</div>
                         <label className={styles.autoRow}>
@@ -411,20 +481,20 @@ export default function ProfileBuilder({
 }
 
 function DeleteConflictCallout({ conflict, onDismiss }) {
-    const goals = useMemo(() => {
+    const routines = useMemo(() => {
         const seen = new Set();
         const rows = [];
         for (const u of conflict.usage || []) {
-            if (seen.has(u.goal_id)) continue;
-            seen.add(u.goal_id);
-            rows.push({ id: u.goal_id, description: u.goal_description });
+            if (seen.has(u.routine_id)) continue;
+            seen.add(u.routine_id);
+            rows.push({ id: u.routine_id, description: u.routine_description });
         }
         return rows;
     }, [conflict.usage]);
 
-    const description = goals.length === 1
-        ? 'Remove this profile from the goal below, then try again.'
-        : `Remove this profile from the ${goals.length} goals below, then try again.`;
+    const description = routines.length === 1
+        ? 'Remove this profile from the routine below, then try again.'
+        : `Remove this profile from the ${routines.length} routines below, then try again.`;
 
     return (
         <Callout
@@ -434,8 +504,8 @@ function DeleteConflictCallout({ conflict, onDismiss }) {
             onDismiss={onDismiss}
         >
             <Callout.List>
-                {goals.map(g => (
-                    <Callout.Item key={g.id} kind="goal">{g.description}</Callout.Item>
+                {routines.map(g => (
+                    <Callout.Item key={g.id} kind="routine">{g.description}</Callout.Item>
                 ))}
             </Callout.List>
         </Callout>

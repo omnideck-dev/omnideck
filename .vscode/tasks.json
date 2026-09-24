@@ -12,7 +12,7 @@
             "group": "test"
         },
         {
-            "label": "start computron container (virtual computer)",
+            "label": "start omnideck container (virtual computer)",
             "type": "shell",
             "command": "just",
             "args": [

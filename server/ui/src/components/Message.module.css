@@ -1,5 +1,5 @@
 .message {
-  margin-bottom: var(--sp-1);
+  margin-bottom: var(--sp-3);
   display: flex;
 }
 
@@ -209,3 +209,8 @@
 
 .toolName { color: var(--text-primary); font-weight: 500; }
 .toolArgs { color: var(--text-tertiary); }
+
+/* Turn-level error block — same vertical rhythm as .message. */
+.turnError {
+  margin-bottom: var(--sp-3);
+}

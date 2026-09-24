@@ -21,6 +21,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // User-editable theme override, served by the backend (server/_ui_routes.py)
+      '/custom.css': {
+        target: backendTarget,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   test: {

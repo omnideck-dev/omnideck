@@ -65,7 +65,9 @@
 .list::-webkit-scrollbar-track { background: transparent; }
 
 .item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
     padding: 0.5rem 0.75rem;
     cursor: pointer;
     border-bottom: 1px solid var(--border);
@@ -89,6 +91,19 @@
     flex-direction: column;
     gap: 0.15rem;
     min-width: 0;
+    flex: 1;
+}
+
+/* Row export affordance — quiet until the row is hovered or focused within. */
+.exportBtn {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.item:hover .exportBtn,
+.item:focus-within .exportBtn {
+    opacity: 1;
 }
 
 .name {

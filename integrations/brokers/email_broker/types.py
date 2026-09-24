@@ -61,8 +61,7 @@ class Attachment(BaseModel):
 
     filename: str = ""
     """Original filename from ``Content-Disposition`` / ``Content-Type``
-    ``name=`` param. Empty if neither was set, which usually also means
-    the part wouldn't be classified as an attachment in the first place."""
+    ``name=`` param. Empty when an explicitly attached part has no name."""
 
     mime_type: str = ""
     """The part's MIME type (``application/pdf``, ``image/jpeg``, etc.)."""
@@ -75,11 +74,10 @@ class Attachment(BaseModel):
 class Message(BaseModel):
     """Full message body + envelope.
 
-    ``body_text`` is the best-effort plain-text rendering (MIME multipart
-    falls back to the ``text/plain`` part, or to a stripped ``text/html``
-    part when no plain alternative exists). ``attachments`` lists every
-    MIME part that carries a filename — agents pull the bytes out via the
-    separate ``fetch_attachment`` verb.
+    ``body_text`` is the best readable MIME representation. HTML is rendered
+    as Markdown, multipart alternatives honor the sender's preference, and
+    related resources are omitted. ``attachments`` contains downloadable
+    parts; agents pull their bytes via the separate ``fetch_attachment`` verb.
     """
 
     header: MessageHeader
@@ -94,8 +92,7 @@ class Calendar(BaseModel):
     """Display name of the calendar (e.g. ``"Home"``, ``"Work"``)."""
 
     url: str
-    """Server URL for the collection — opaque identifier the agent passes
-    back into ``list_events`` to scope a query."""
+    """Server URL for the collection, wrapped as calendar_ref at the wire boundary."""
 
 
 class Event(BaseModel):
@@ -123,6 +120,15 @@ class Event(BaseModel):
 
     description: str = ""
     """Free-form description / body."""
+
+    recurrence_id: str = ""
+    """Provider recurrence key for this occurrence; never exposed directly to agents."""
+
+    recurring: bool = False
+    """Whether this record belongs to a recurring series."""
+
+    href: str = ""
+    """CalDAV resource URL used internally to avoid UID-only REPORTs."""
 
 
 # (filename, mime_type, raw bytes). The verb layer is the one that knows

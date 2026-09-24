@@ -1,5 +1,6 @@
 import Button from '../../primitives/Button.jsx';
 import Callout from '../../primitives/Callout.jsx';
+import Select from '../../primitives/Select.jsx';
 import styles from './add-wizard.module.css';
 import { errorCopy } from './providers.js';
 import { Stepper } from './SharedSteps.jsx';
@@ -126,18 +127,20 @@ export function CredentialsStep({ provider, token, setToken, form, setForm, erro
                     <div className={styles.permStack}>
                         <div className={styles.permRow}>
                             <span className={styles.permLabel}>HTTP</span>
-                            <select
+                            <Select
                                 className={styles.accessSelect}
                                 value={form.permissions.http || 'r'}
-                                onChange={(e) => setForm(f => ({
+                                onChange={(value) => setForm(f => ({
                                     ...f,
-                                    permissions: { ...f.permissions, http: e.target.value },
+                                    permissions: { ...f.permissions, http: value },
                                 }))}
-                                data-testid="wizard-perm-http"
-                            >
-                                <option value="r">Read only (GET, HEAD)</option>
-                                <option value="rw">Read + Write (all methods)</option>
-                            </select>
+                                ariaLabel="HTTP permission"
+                                testId="wizard-perm-http"
+                                options={[
+                                    { value: 'r', label: 'Read only (GET, HEAD)' },
+                                    { value: 'rw', label: 'Read + Write (all methods)' },
+                                ]}
+                            />
                         </div>
                     </div>
                     <Callout

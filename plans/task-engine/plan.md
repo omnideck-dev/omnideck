@@ -709,10 +709,10 @@ import logging
 
 from agents.types import Agent, LLMOptions
 from config import load_config
-from sdk.context import ConversationHistory
-from sdk.events._context import agent_span, set_model_options
-from sdk.hooks import default_hooks, PersistenceHook
-from sdk.turn import run_turn, turn_scope
+from agent_core.context import ConversationHistory
+from agent_core.events._context import agent_span, set_model_options
+from agent_core.hooks import default_hooks, PersistenceHook
+from agent_core.turn import run_turn, turn_scope
 from server.message_handler import _AGENT_REGISTRY, _TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -1451,7 +1451,7 @@ dependencies = [
 2. **`tasks/_scheduler.py`** — `cron_has_fired_since(cron_expr, anchor_dt) -> bool` using `croniter`
 3. **`tasks/_store.py`** — `TaskStore` protocol
 4. **`tasks/_file_store.py`** — `FileTaskStore` implementation (depends on `_models`, `_scheduler`)
-5. **`tasks/_executor.py`** — `TaskExecutor` (depends on `_store`, `agents.types`, `sdk.turn`, `sdk.hooks`)
+5. **`tasks/_executor.py`** — `TaskExecutor` (depends on `_store`, `agents.types`, `agent_core.turn`, `agent_core.hooks`)
 6. **`tasks/_runner.py`** — `TaskRunner` (depends on `_store`, `_executor`)
 7. **`tasks/_tools.py`** — Planning tools (depends on `_store`)
 8. **`tasks/__init__.py`** — Re-exports: `init_store`, `get_store`

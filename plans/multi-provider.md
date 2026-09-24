@@ -27,7 +27,7 @@ One `llm_provider` + `llm_base_url` in `settings.json`, shared by everything. `c
 
 ### Provider registry
 
-`sdk/providers/__init__.py` keeps a `_provider_cache: dict[str, Provider]` keyed by provider name (one cached instance per name; `reset_provider(name=None)` clears one or all).
+`agent_core/providers/__init__.py` keeps a `_provider_cache: dict[str, Provider]` keyed by provider name (one cached instance per name; `reset_provider(name=None)` clears one or all).
 
 `get_provider(name)` resolves in order:
 1. `name` is in `direct_providers` settings → direct connection to its `base_url`.
@@ -48,8 +48,8 @@ Vision, compaction, and title generation each carry their own provider + model i
 
 | Utility | Settings keys | Reader |
 |---|---|---|
-| Vision | `vision_provider`, `vision_model`, `vision_think`, `vision_options` | `sdk/providers/_vision.py` → `get_provider(settings["vision_provider"])` |
-| Compaction | `compaction_provider`, `compaction_model`, `compaction_options` | `sdk/context/_strategy.py._resolve_model` → `(provider, model, options)` from settings |
+| Vision | `vision_provider`, `vision_model`, `vision_think`, `vision_options` | `agent_core/providers/_vision.py` → `get_provider(settings["vision_provider"])` |
+| Compaction | `compaction_provider`, `compaction_model`, `compaction_options` | `agent_core/context/_strategy.py._resolve_model` → `(provider, model, options)` from settings |
 | Title generation | `title_provider`, `title_model` | `conversations/_title_generation.py` → `get_provider(settings["title_provider"])` |
 
 Compaction and title both call `provider.chat(..., think=False)` — no `think` setting for either. Title's inference options are a fixed `{num_predict: 50, temperature: 0.3}` in the code; there's no `title_options` setting. `compaction_threshold` stays a per-profile field.
@@ -98,7 +98,7 @@ Backend plumbing: `_provider_cache` dict + `get_provider(name)` / `reset_provide
 
 No default provider; provider storage; `config.yaml` cleanup. Includes what earlier drafts split into Steps 2/3/6:
 
-- `LLMConfig` moved out of `config/` into `sdk/providers/_models.py`.
+- `LLMConfig` moved out of `config/` into `agent_core/providers/_models.py`.
 - `config.yaml` loses the `llm:` and `summary:` blocks; `config/` loses `LLMConfig`, `SummaryConfig`, `_ModelOptions`, and `AppConfig.llm` / `AppConfig.summary`; the `${LLM_HOST}` / `${LLM_API_KEY}` env wiring is gone.
 - `settings.json` gains `direct_providers`, `vision_provider`, `compaction_provider`, `compaction_options`, `title_provider`, `title_model`; loses `llm_provider` / `llm_base_url`; `direct_providers` base URLs are validated (http/https, not a metadata IP).
 - `get_default_provider()` removed; `get_provider(name)` resolves direct → broker socket → error.

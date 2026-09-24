@@ -2,8 +2,16 @@
   padding: 14px 18px 18px;
 }
 
+.offlineNotice {
+  max-width: 760px;
+  margin: 0 auto var(--sp-2);
+}
+
 /* ── Composer card ───────────────────────────────────── */
 .inputArea {
+  /* Positioning context for the corner expand button, so the button stays
+     pinned to the card's top-right corner regardless of the attachment tray. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
@@ -11,7 +19,7 @@
   margin: 0 auto;
   padding: 6px 6px 6px 14px;
   background: var(--elevated);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
   transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
@@ -22,10 +30,16 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
+/* Groups the textarea with the corner expand button. In expanded mode this is
+   the flex child that stretches to fill the card. */
+.textareaWrapper {
+  min-width: 0;
+}
+
 .customInput {
   min-height: 44px;
-  max-height: 200px;
-  overflow-y: auto;
+  /* max-height is enforced in JS (MAX_AUTO_HEIGHT_PX = 172px / 8 rows). */
+  overflow-y: hidden;
   width: 100%;
   box-sizing: border-box;
   padding: 8px 4px 4px 0;
@@ -34,8 +48,46 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 13.5px;
+  /* Pinned to match LINE_HEIGHT_PX in JS (13.5 * 1.48 ≈ 20px per row). */
+  line-height: 1.48;
   outline: none;
   resize: none;
+}
+
+/* Extra right padding clears space for the corner expand/collapse button. */
+.customInput.grown {
+  padding-right: 30px;
+}
+
+/* Expand / collapse — a subtle ghost affordance in the corner, matching the
+   other icon buttons. Shown only once the textarea has grown or expanded. */
+.expandButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.expandButton:hover {
+  background: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+.expandButton:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .customInput::placeholder {
@@ -123,4 +175,49 @@
   flex-wrap: wrap;
   gap: var(--sp-2);
   padding: 8px 8px 2px 0;
+}
+
+/* ── Expand in place ─────────────────────────────────────
+   The composer grows tall and floats over the chat transcript rather than
+   taking over the whole panel — same width and horizontal position as the
+   collapsed composer (.inputArea keeps its own max-width/margin), just
+   anchored to the bottom of the panel at roughly 80% of its height. `top`
+   is clamped to at least --titlebar-height so this can never creep above
+   the title bar on a very short panel. The wrapper itself stays transparent
+   and click-through outside the card so the transcript underneath is still
+   visible and scrollable. */
+.expandedWrapper {
+  position: absolute;
+  top: max(var(--titlebar-height), 20%);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+/* In expanded mode the card and textarea stretch to fill the wrapper.
+ * .inputArea's own `margin: 0 auto` centers it in normal block layout
+ * (collapsed mode), but that same auto margin disables flex stretch once
+ * it's a flex item here — align-self: center takes over that centering job
+ * so the width: 100% (clamped by .inputArea's own max-width) actually applies. */
+.expandedWrapper .inputArea {
+  flex: 1;
+  min-height: 0;
+  align-self: center;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.expandedWrapper .textareaWrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.customInput.expandedInput {
+  flex: 1;
+  overflow-y: auto;
 }

@@ -27,25 +27,17 @@ import imaplib
 import logging
 import re
 
-import html2text
-
+from integrations.brokers._email._mime import (
+    MimePart,
+    is_attachment,
+    render_email_body,
+)
 from integrations.brokers.email_broker.types import Attachment, Mailbox, Message, MessageHeader
 
 logger = logging.getLogger(__name__)
 
 # Header fields we ask the IMAP server for when listing or searching.
 _HEADER_FIELDS = "FROM TO SUBJECT DATE"
-
-# Email-specific HTML→Markdown rendering. Tuned for what the agent wants out
-# of an email body: real paragraphs, real links, no image data-URIs, no
-# fragment anchors.
-_html2md = html2text.HTML2Text()
-_html2md.body_width = 0  # no hard-wrap; let paragraphs flow
-_html2md.ignore_images = True  # alt text only, never [![...](data:...)]
-_html2md.unicode_snob = True  # real unicode chars, not &amp; / &nbsp;
-_html2md.protect_links = True  # don't auto-shorten or rewrap link URLs
-_html2md.skip_internal_links = True  # in-page anchors are noise in email
-
 
 class ImapAuthError(Exception):
     """IMAP LOGIN was rejected. The broker's entry code maps this to exit(77)."""
@@ -572,25 +564,22 @@ def _walk_with_paths(
 
 
 def _extract_attachments(msg: _email.message.Message) -> list[Attachment]:
-    """Return :class:`Attachment` records for every part with a filename.
+    """Return :class:`Attachment` records for downloadable MIME parts.
 
-    A "filename" comes from either ``Content-Disposition: attachment;
-    filename=...`` or the ``name=`` parameter of ``Content-Type`` —
-    Python's ``email.Message.get_filename`` covers both. Parts without a
-    filename (the body's text/plain or text/html alternatives, inline
-    images that aren't given names) are not surfaced as attachments.
+    Explicitly inline related resources are omitted even when they have a
+    filename, preventing logos and tracking images from cluttering the
+    agent-facing attachment list.
     """
     out: list[Attachment] = []
     for part_path, part in _walk_with_paths(msg):
-        filename = part.get_filename()
-        if not filename:
+        if not is_attachment(part.get_content_disposition(), part.get_filename()):
             continue
         payload = part.get_payload(decode=True)
         size = len(payload) if isinstance(payload, bytes) else 0
         out.append(
             Attachment(
                 id=part_path,
-                filename=filename,
+                filename=part.get_filename() or "",
                 mime_type=part.get_content_type(),
                 size=size,
             ),
@@ -599,50 +588,32 @@ def _extract_attachments(msg: _email.message.Message) -> list[Attachment]:
 
 
 def _extract_body_text(msg: _email.message.Message) -> str:
-    """Best-effort text rendering of a possibly-multipart message.
-
-    Prefers ``text/plain`` parts; falls back to a Markdown rendering of
-    ``text/html`` when the message is HTML-only. Never raises — on exotic
-    encodings it returns whatever decodes, or an empty string.
-    """
-    if msg.is_multipart():
-        plain = _find_part(msg, "text/plain")
-        if plain is not None:
-            return _decode_part_payload(plain)
-        html = _find_part(msg, "text/html")
-        if html is not None:
-            return _html_to_markdown(_decode_part_payload(html))
-        return ""
-    content_type = msg.get_content_type()
-    payload = _decode_part_payload(msg)
-    if content_type == "text/html":
-        return _html_to_markdown(payload)
-    return payload
+    """Render the best readable body from an IMAP message MIME tree."""
+    return render_email_body(_message_to_mime_part(msg))
 
 
-def _find_part(msg: _email.message.Message, content_type: str) -> _email.message.Message | None:
-    for part in msg.walk():
-        if part.get_content_type() == content_type and not part.is_multipart():
-            return part
-    return None
-
-
-def _decode_part_payload(part: _email.message.Message) -> str:
-    raw = part.get_payload(decode=True) or b""
-    if not isinstance(raw, bytes):
-        return ""
-    charset = part.get_content_charset() or "utf-8"
-    try:
-        return raw.decode(charset, errors="replace")
-    except LookupError:
-        return raw.decode("utf-8", errors="replace")
-
-
-def _html_to_markdown(text: str) -> str:
-    """Render an HTML email body to Markdown via :mod:`html2text`.
-
-    Tuned for the agent's reading needs: links survive (``[text](url)``),
-    paragraphs/lists/headings retain structure, ``<style>`` and ``<script>``
-    contents are dropped, and HTML entities are unescaped.
-    """
-    return _html2md.handle(text).strip()
+def _message_to_mime_part(msg: _email.message.Message) -> MimePart:
+    """Adapt a stdlib email message to the provider-neutral MIME model."""
+    payload = msg.get_payload()
+    children = (
+        tuple(
+            _message_to_mime_part(child)
+            for child in payload
+            if isinstance(child, _email.message.Message)
+        )
+        if isinstance(payload, list)
+        else ()
+    )
+    decoded = msg.get_payload(decode=True) if not children else None
+    body = decoded if isinstance(decoded, bytes) else None
+    related_start = msg.get_param("start", header="content-type")
+    return MimePart(
+        content_type=msg.get_content_type(),
+        body=body,
+        charset=msg.get_content_charset(),
+        disposition=msg.get_content_disposition(),
+        filename=msg.get_filename(),
+        content_id=msg.get("Content-ID"),
+        related_start=related_start if isinstance(related_start, str) else None,
+        children=children,
+    )

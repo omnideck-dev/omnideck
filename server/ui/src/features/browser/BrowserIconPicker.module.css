@@ -1,0 +1,30 @@
+.root {
+    position: relative;
+    display: inline-flex;
+}
+
+.trigger {
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--accent-muted);
+    color: var(--accent);
+}
+
+.md {
+    width: var(--sp-8);
+    height: var(--sp-8);
+    font-size: var(--font-size-ui);
+}
+
+.lg {
+    width: var(--sp-10);
+    height: var(--sp-10);
+    font-size: var(--font-size-heading);
+}
+
+.trigger:hover,
+.trigger[aria-expanded='true'] {
+    border-color: var(--accent);
+}

@@ -36,11 +36,16 @@
         width: 100%;
         max-width: none;
         min-width: auto;
-        height: 40%;
+        height: auto;
+        min-height: 120px;
+        max-height: 40%;
+        flex-shrink: 1;
         border-right: none;
         border-bottom: 1px solid var(--border);
     }
     .detail {
-        height: 60%;
+        min-height: 0;
+        height: auto;
+        flex: 1;
     }
 }

@@ -7,7 +7,7 @@
 - Write tests for new features/bugs; descriptive names, Google-style docstrings; place in `tests/` mirroring source structure
 - Add `@pytest.mark.unit` for unit tests, `@pytest.mark.integration` for integration tests
 - Always run `backend - run unit tests` after changes to backend code.
-- Only run and `backend - run quality checks` when asked.
+- Run `just check` before handing off code changes.
 - Include new deps in pyproject.toml
 - Use Pydantic for data validation; ensure JSON-serializable API responses
 - Private and internal fields, methods, functions, constants, types and modules should all be named with a single leading underscore

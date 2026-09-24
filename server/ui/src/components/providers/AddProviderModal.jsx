@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
+import Modal from '../primitives/Modal.jsx';
 import styles from './AddProviderModal.module.css';
 
 // The picker catalog. Order is intentional: local first, then a generic
@@ -19,10 +20,6 @@ const CATALOG = [
       sub: 'Many providers, one API' },
 ];
 
-// Default base URL pre-filled in the form when the user picks a direct
-// provider — the same one the wizard uses.
-const _OLLAMA_DEFAULT_URL = 'http://host.docker.internal:11434';
-
 /**
  * Two-step modal: pick a provider from the catalog, then fill its
  * config form. Submitting POSTs to /api/providers — the server creates
@@ -38,33 +35,30 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
         setStep('configure');
     }, []);
 
-    // Esc closes whichever step is showing.
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [onClose]);
-
     return (
-        <div className={styles.scrim} onClick={onClose} data-testid="add-provider-modal">
-            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-                {step === 'catalog' && (
-                    <CatalogStep
-                        existingNames={existingNames}
-                        onClose={onClose}
-                        onPick={handlePickAndContinue}
-                    />
-                )}
-                {step === 'configure' && picked && (
-                    <ConfigureStep
-                        entry={picked}
-                        onBack={() => setStep('catalog')}
-                        onClose={onClose}
-                        onAdded={onAdded}
-                    />
-                )}
-            </div>
-        </div>
+        <Modal
+            onClose={onClose}
+            width={560}
+            labelledBy="add-provider-title"
+            className={styles.modal}
+            testId="add-provider-modal"
+        >
+            {step === 'catalog' && (
+                <CatalogStep
+                    existingNames={existingNames}
+                    onClose={onClose}
+                    onPick={handlePickAndContinue}
+                />
+            )}
+            {step === 'configure' && picked && (
+                <ConfigureStep
+                    entry={picked}
+                    onBack={() => setStep('catalog')}
+                    onClose={onClose}
+                    onAdded={onAdded}
+                />
+            )}
+        </Modal>
     );
 }
 
@@ -77,7 +71,7 @@ function CatalogStep({ existingNames, onClose, onPick }) {
     return (
         <>
             <div className={styles.header}>
-                <div className={styles.title}>Add a provider</div>
+                <div id="add-provider-title" className={styles.title}>Add a provider</div>
                 <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />
                 </button>
@@ -142,7 +136,8 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
     const isCompat = entry.name === 'openai_compat';
     const isCloud = !isOllama && !isCompat;
 
-    const [baseUrl, setBaseUrl] = useState(isOllama ? _OLLAMA_DEFAULT_URL : '');
+    const [baseUrl, setBaseUrl] = useState('');
+    const [ollamaHost, setOllamaHost] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
@@ -154,6 +149,23 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
         if (isCloud) keyRef.current?.focus();
         else urlRef.current?.focus();
     }, [isCloud]);
+
+    // Prefill the Ollama URL from the host detected at install time, so the
+    // user doesn't have to guess it from their container runtime.
+    useEffect(() => {
+        if (!isOllama) return;
+        let cancelled = false;
+        fetch('/api/setup/defaults')
+            .then((res) => (res.ok ? res.json() : {}))
+            .then((data) => {
+                if (cancelled) return;
+                const envHost = typeof data.ollama_host === 'string' ? data.ollama_host.trim() : '';
+                setOllamaHost(envHost);
+                if (envHost) setBaseUrl((current) => current.trim() ? current : envHost);
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [isOllama]);
 
     const canSubmit = (() => {
         if (isOllama) return !!baseUrl.trim();
@@ -176,12 +188,18 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
             });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
-                setError(data.message || data.error || `HTTP ${resp.status}`);
+                const message = data.message || data.error || `HTTP ${resp.status}`;
+                setError(
+                    isOllama && body.base_url && !message.includes(body.base_url)
+                        ? `${message} Tried ${body.base_url}.`
+                        : message,
+                );
                 return;
             }
             onAdded?.(data.provider);
         } catch (err) {
-            setError(err?.message || 'Request failed');
+            const message = err?.message || 'Request failed';
+            setError(isOllama && body.base_url ? `${message} Tried ${body.base_url}.` : message);
         } finally {
             setSubmitting(false);
         }
@@ -194,7 +212,9 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                     <button type="button" className={styles.iconBtn} onClick={onBack} aria-label="Back">
                         <i className="bi bi-arrow-left" />
                     </button>
-                    <div className={styles.title}>Configure {entry.label}</div>
+                    <div id="add-provider-title" className={styles.title}>
+                        Configure {entry.label}
+                    </div>
                 </div>
                 <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />
@@ -220,13 +240,13 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                             className={`${styles.input} ${styles.inputMono}`}
                             type="text"
                             value={baseUrl}
-                            placeholder={isOllama ? _OLLAMA_DEFAULT_URL : 'http://host:port/v1'}
+                            placeholder={isOllama ? (ollamaHost || 'Enter your Ollama server URL') : 'http://host:port/v1'}
                             onChange={(e) => setBaseUrl(e.target.value)}
                             autoComplete="off"
                         />
                         <div className={styles.formHint}>
                             {isOllama
-                                ? 'Where your Ollama server is running.'
+                                ? (ollamaHost ? 'Detected automatically.' : 'Enter the address of your Ollama server.')
                                 : 'The OpenAI-compatible endpoint URL (include /v1 if your server uses it).'}
                         </div>
                     </div>

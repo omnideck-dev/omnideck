@@ -1,0 +1,20 @@
+.scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    display: grid;
+    place-items: center;
+    padding: var(--sp-4);
+    z-index: var(--z-modal);
+}
+
+.modal {
+    width: 420px;
+    max-width: 100%;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-5);
+    outline: none;
+}

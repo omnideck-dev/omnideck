@@ -60,10 +60,32 @@
 
 .right {
     display: inline-flex;
+    min-width: 0;
+    flex: 1;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--sp-3);
 }
 
 .searchBox {
+    min-width: 0;
+    flex: 0 1 260px;
     width: 260px;
+}
+
+@media (max-width: 640px) {
+    .header {
+        flex-wrap: wrap;
+        padding: 0 var(--sp-4) var(--sp-2);
+    }
+
+    .right {
+        width: 100%;
+    }
+
+    .searchBox {
+        min-width: 0;
+        flex: 1;
+        width: auto;
+    }
 }

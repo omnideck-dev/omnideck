@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Drag</title>
+</head>
+<body>
+  <h1>Drag</h1>
+  <button id="src" type="button">Drag source</button>
+  <button id="dst" type="button">Drop target</button>
+  <div id="out">idle</div>
+  <script>
+    // Mouse-based drag (the tool moves the real pointer, not HTML5 DnD):
+    // mousedown on the source, mouseup on the target = a drop.
+    var dragging = false;
+    document.getElementById('src').addEventListener('mousedown', function () {
+      dragging = true;
+    });
+    document.getElementById('dst').addEventListener('mouseup', function () {
+      if (dragging) document.getElementById('out').textContent = 'Dropped on target';
+    });
+    document.addEventListener('mouseup', function () { dragging = false; });
+  </script>
+</body>
+</html>

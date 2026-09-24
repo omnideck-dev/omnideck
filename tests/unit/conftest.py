@@ -3,7 +3,7 @@
 This file ensures that a local .env file is loaded before tests run so that
 environment-variable-driven configuration works consistently in tests.
 It also redirects conversation persistence to a temp directory so tests
-never write to the real ~/.computron_9000/conversations/ location.
+never write to the real ~/.omnideck/conversations/ location.
 """
 
 from __future__ import annotations

@@ -7,14 +7,14 @@ so asserting via the API proves disk persistence.
 
 from playwright.sync_api import Page
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def test_create_profile_persists_all_settings(page: Page):
     """Create a new profile via the UI, set every field, save, and verify via API."""
-    settings = SettingsPage(page).goto()
-    settings.profiles.new()
-    builder = settings.builder
+    agents = AgentsPage(page).goto()
+    agents.profiles.new()
+    builder = agents.builder
 
     # --- Identity ---
     builder.name_input.fill("")
@@ -48,7 +48,8 @@ def test_create_profile_persists_all_settings(page: Page):
     builder.field("context_window").fill("16000")
     builder.field("num_predict").fill("4096")
     builder.field("max_iterations").fill("25")
-    page.get_by_test_id("compaction-threshold-select").select_option("0.85")
+    page.get_by_test_id("compaction-threshold-select").click()
+    page.locator('[role="option"][data-value="0.85"]').click()
     page.locator("label", has_text="Thinking").click()
 
     # --- Save ---
@@ -99,11 +100,11 @@ def test_new_button_does_not_persist_until_save(page: Page):
     """Clicking + New opens the builder without writing anything to disk."""
     before = {p["id"] for p in page.request.get("/api/profiles").json()}
 
-    settings = SettingsPage(page).goto()
-    settings.profiles.new()
+    agents = AgentsPage(page).goto()
+    agents.profiles.new()
 
-    # Discard the draft by selecting an existing profile.
-    page.locator("[data-testid^='profile-item-']").first.click()
+    # Discard the draft by navigating back to the list without saving.
+    agents.back()
 
     after = {p["id"] for p in page.request.get("/api/profiles").json()}
     assert before == after, "A profile was persisted without clicking Save"

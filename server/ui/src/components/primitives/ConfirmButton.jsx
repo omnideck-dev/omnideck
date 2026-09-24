@@ -27,6 +27,7 @@ export default function ConfirmButton({
     confirmClassName,
     disabled = false,
     title,
+    'aria-label': ariaLabel,
     'data-testid': testid,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -69,6 +70,7 @@ export default function ConfirmButton({
             onClick={handleClick}
             disabled={disabled || busy}
             title={confirming ? 'Click again to confirm' : title}
+            aria-label={confirming ? confirmLabel : ariaLabel}
             data-testid={testid}
         >
             {icon && <i className={`bi ${icon}`} />}

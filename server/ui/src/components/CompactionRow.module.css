@@ -1,0 +1,80 @@
+/* Rail-native compaction marker for the agent activity view. Sits on the
+ * activity rail (marker drawn by ActivityRail); collapsed it's a single
+ * mono line, expanding to a stats panel + summary blocks. */
+.row {
+  opacity: 0.7;
+  transition: opacity 0.15s var(--ease);
+}
+.row:hover,
+.row[open] { opacity: 1; }
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px 0;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-code);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.summary::-webkit-details-marker { display: none; }
+
+.label {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.meta { color: var(--text-tertiary); }
+.savings { color: var(--accent, var(--text-secondary)); }
+
+.chev {
+  font-size: 8px;
+  margin-left: auto;
+  transition: transform 0.15s var(--ease);
+}
+.row[open] .chev { transform: rotate(90deg); }
+
+.panel {
+  margin: var(--sp-2) 0 var(--sp-2);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 4px var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.stats dt { color: var(--text-tertiary); }
+.stats dd { margin: 0; color: var(--text-primary); }
+.arrow { margin: 0 6px; color: var(--text-tertiary); }
+
+.blockLabel {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+.blockContent {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}

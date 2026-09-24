@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scroll chrome</title>
+  <style>
+    #sticky   { position: sticky; top: 0; background: #eee; }
+    #fixedbar { position: fixed; top: 0; right: 0; background: #ddd; }
+    #dialog   { position: fixed; top: 60px; left: 60px; background: #fff; border: 1px solid #000; }
+    /* Large fixed overlay (>50% of the viewport); pointer-events:none so it
+       doesn't intercept the scroll. */
+    #overlay  { position: fixed; inset: 2%; width: 96vw; height: 96vh;
+                background: rgba(0,0,0,0.05); pointer-events: none; }
+    #spacer   { height: 3000px; }
+  </style>
+</head>
+<body>
+  <nav id="sticky"><button type="button">Sticky button</button></nav>
+  <div id="fixedbar"><button type="button">Fixed bar button</button></div>
+  <div id="dialog" role="dialog" aria-label="Dialog"><button type="button">Dialog button</button></div>
+  <div id="overlay"><button type="button">Overlay button</button></div>
+  <h1>Top content</h1>
+  <div id="spacer"></div>
+</body>
+</html>

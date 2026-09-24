@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sdk.skills._store import SkillRecord, save_skill_record
+from skills._store import SkillRecord, save_skill_record
 from server._skill_routes import (
     handle_create_skill,
     handle_delete_skill,
@@ -23,7 +23,7 @@ from server._skill_routes import (
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
     """Point the skill store at a temp directory."""
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
 def _make_request(*, match_info=None, json_body=None, query=None):
@@ -116,8 +116,8 @@ async def test_update_unknown_returns_404():
 @pytest.mark.unit
 async def test_update_duplicate_name_rejected():
     save_skill_record(SkillRecord(id="coder", name="Coder"))
-    save_skill_record(SkillRecord(id="browser", name="Browser"))
-    req = _make_request(match_info={"id": "browser"}, json_body={"name": "Coder"})
+    save_skill_record(SkillRecord(id="analyst", name="Analyst"))
+    req = _make_request(match_info={"id": "analyst"}, json_body={"name": "Coder"})
     resp = await handle_update_skill(req)
     assert resp.status == 400
 

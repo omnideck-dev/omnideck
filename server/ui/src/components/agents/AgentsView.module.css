@@ -1,0 +1,200 @@
+.view {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--canvas);
+}
+
+/* list mode: the list owns the whole view until an agent is opened */
+.listPane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* single toolbar: title + count, search, sort, new */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.title {
+    flex: 0 0 auto;
+    font-size: 15px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
+.title .bi {
+    color: var(--accent);
+}
+
+.count {
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.search {
+    flex: 1;
+    min-width: 120px;
+}
+
+.scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 240px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--sp-8);
+}
+
+.empty .bi {
+    font-size: 34px;
+    opacity: 0.5;
+}
+
+/* sort control (toolbar) — canonical SIGNAL .select */
+.sortCtl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.select {
+    --select-width: 128px;
+}
+
+/* table cell classes — the table chrome lives in the SortableTable primitive */
+.aname {
+    font-weight: 500;
+}
+
+.nameCell {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+}
+
+.avatar {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    line-height: 1;
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+.nameText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.nameLine {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.descLine {
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 42ch;
+}
+
+.model {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.skills {
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.muted {
+    color: var(--text-tertiary);
+}
+
+/* row delete — a shrink-to-fit cell, right-aligned, revealed on row hover */
+.acts {
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.actWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+/* detail mode: full-width editor with a back nav in the header */
+.detailHead {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.detailBody {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+}
+
+/* unsaved-changes dialog — chrome comes from the Modal primitive; these
+   style only the contents (mirrors the delete-confirm dialog). */
+.dialogTitle {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: var(--sp-2);
+}
+
+.dialogBody {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.dialogActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    margin-top: var(--sp-5);
+}

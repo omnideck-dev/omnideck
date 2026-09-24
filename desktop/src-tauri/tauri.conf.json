@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "omnideck",
+  "mainBinaryName": "omnideck-desktop",
+  "version": "0.1.0-beta.11",
+  "identifier": "dev.omnideck.desktop",
+  "build": {
+    "beforeBundleCommand": "node scripts/prepare-icon-assets.mjs",
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "capabilities": ["setup-local", "hosted-desktop"],
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "Private AI agents running on your computer",
+    "longDescription": "omnideck runs a private agent workspace in a local Podman environment.",
+    "externalBin": ["binaries/omnideck-cli"],
+    "useLocalToolsDir": true,
+    "macOS": {
+      "hardenedRuntime": true,
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": {
+          "width": 716,
+          "height": 458
+        },
+        "appPosition": {
+          "x": 208,
+          "y": 204
+        },
+        "applicationFolderPosition": {
+          "x": 508,
+          "y": 204
+        }
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

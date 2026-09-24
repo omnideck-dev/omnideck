@@ -1,20 +1,16 @@
 # CLAUDE.md
 
-## Project Overview
-
-Computron 9000 is an AI assistant platform with a Python/aiohttp backend and React frontend. It uses Ollama for LLM inference, Podman for sandboxed code execution, and Playwright for browser automation.
-
 ## Commands
 
 ### Image (rebuild only when container/Dockerfile changes)
-- `just build` — Build the container image `computron_9000:latest`
+- `just build` — Build the container image `omnideck:latest`
 - `just publish` — Tag and push to GHCR
 
 ### Dev loop (the container owns the runtime; source is synced in at each step)
 - `just dev` — Start dev container (if needed), sync source, build UI, launch app on :8080
 - `just restart-app` — Sync latest Python source, bounce the app
 - `just rebuild-ui` — Sync latest UI source, rebuild dist/
-- `just stop` — Stop the dev container (state at `~/.computron_9000/` persists)
+- `just stop` — Stop the dev container (state at `~/.omnideck/` persists)
 - `just shell` — Bash inside the dev container
 - `just logs` — Tail app + inference logs
 
@@ -25,11 +21,12 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - `just test-file <path>` — Run tests for a specific file
 - `just test-ui` — Run Vitest UI tests
 
-### Quality (only run when asked)
-- `just lint` — Lint with ruff (`uv run ruff check .`)
-- `just typecheck` — Type check with mypy (`uv run mypy .`)
+### Quality
+- `just lint` — High-signal Python and React correctness lint
+- `just typecheck` — Type check production Python and the typed React event boundary
+- `just tool-docs` — Verify agent tool schema documentation
 - `just format` — Auto-format with ruff (`uv run ruff check --fix . && uv run ruff format .`)
-- `just check` — Run all quality checks (lint + typecheck + format-check)
+- `just check` — Run the fast, non-mutating agent quality gate before handoff
 
 ## Python Conventions
 
@@ -37,6 +34,7 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - Use module-level logger (`logger = logging.getLogger(__name__)`)
 - Write plain-language comments. Keep them short by default — verbose only when the code is genuinely complicated or confusing. If something would make a reader stop and think, add a comment.
 - Tool functions that the LLM invokes must have Google-style docstrings — these are the LLM's documentation for when and how to use the tool.
+- Don't use `dict[str, Any]` for a dict with a known shape. Use a Pydantic model if it crosses a trust boundary (untrusted JSON, LLM args, HTTP bodies) and needs validation, a `TypedDict` if it's a dict you own and don't validate. Plain `dict[str, Any]` only when the shape is genuinely dynamic.
 - Leading-underscore naming follows the **"private module, public-within-package"** split. The underscore on a module filename is the "internal to this project" signal; symbols inside that module use the underscore only when they're *also* module-local:
   - **Modules (files) and packages (directories)** that are internal to their parent package: leading underscore on the name (`_rpc.py`, `_common/`).
   - **Symbols inside an internal module** (functions, classes, constants, type aliases): leading underscore only when they're used solely inside the module that defines them. Symbols imported by other modules in the same package do not carry the underscore — the containing module's underscore is the "internal" signal. Example: `brokers/_common/_env.py` exports `env_required` (no underscore) because `brokers/email_broker/__main__.py` imports it; `brokers/_common/_rpc.py` keeps `_encode_frame` underscored because it's only used inside `_rpc.py`.
@@ -64,15 +62,8 @@ Computron 9000 is an AI assistant platform with a Python/aiohttp backend and Rea
 - Write tests for new features/bugs; descriptive names
 - Place tests in `tests/` mirroring source structure
 - Only run tests when instructed or before committing.
-- Only run quality checks when asked
+- Run `just check` before handing off code changes
 - NEVER PATCH AROUND TEST FAILURES
   - Do not introduce logic changes that bypass failing tests.
   - Do not add "if" guards, mocks, or fallback logic just to quiet tests.
   - Missing stubs or incomplete fakes are testing bugs, not production logic problems.
-
-## Frontend Conventions (server/ui/)
-
-- React 18 with JSX (not TypeScript)
-- Vite for bundling, Vitest for testing
-- CSS Modules for styling (`*.module.css` per component)
-- Function components with hooks (no class components)

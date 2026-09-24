@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Just a moment...</title>
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    #challenge-stage { padding: 24px; }
+  </style>
+</head>
+<body>
+  <!--
+    Full-page Cloudflare interstitial, reproduced by its DOM markers (the "Just
+    a moment" title and #challenge-stage scaffold). There is deliberately no
+    solvable checkbox: the real managed challenge renders none the automated
+    browser can click, so the fixture must not either. Detection leads the page
+    view with a banner that routes the agent to fetch_url — that detect →
+    banner → fetch workflow is what this fixture exercises.
+  -->
+  <div id="challenge-stage">
+    <h2>Verify you are human</h2>
+    <p>example.test needs to review the security of your connection before proceeding.</p>
+  </div>
+</body>
+</html>

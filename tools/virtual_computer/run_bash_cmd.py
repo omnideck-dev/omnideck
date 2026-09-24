@@ -13,7 +13,7 @@ import uuid
 from pydantic import BaseModel
 
 from config import load_config
-from sdk.events import AgentEvent, TerminalOutputPayload, publish_event
+from agent_core.events import AgentEvent, TerminalOutputPayload, publish_event
 from tools.virtual_computer._policy import is_allowed_command as _is_allowed_command
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Many buttons</title>
+</head>
+<body>
+  <h1>Many buttons</h1>
+  <div id="c"></div>
+  <script>
+    // 500 buttons — the annotated page view easily exceeds the 8000-char budget.
+    var c = document.getElementById('c');
+    for (var i = 1; i <= 500; i++) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Button ' + i;
+      c.appendChild(b);
+    }
+  </script>
+</body>
+</html>

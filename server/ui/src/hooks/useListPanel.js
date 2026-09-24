@@ -26,7 +26,11 @@ export default function useListPanel(endpoint, {
     const [collapsed, setCollapsed] = useState(startCollapsed);
     const [deleting, setDeleting] = useState(null);
     const [newItemIds, setNewItemIds] = useState(new Set());
-    const prevIdsRef = useRef(new Set());
+    // null on first load — we only highlight genuinely new items on subsequent
+    // refreshes, not everything visible on initial mount.
+    const prevIdsRef = useRef(null);
+    const requestIdRef = useRef(0);
+    const lastEndpointRef = useRef(endpoint);
     // Pending "clear highlight" timer. Tracked so we can cancel it on unmount
     // (or before scheduling the next one) — otherwise a late fire lands on an
     // unmounted component.
@@ -41,27 +45,45 @@ export default function useListPanel(endpoint, {
     onFetchedRef.current = onFetched;
 
     const fetchItems = useCallback(async () => {
+        const requestId = requestIdRef.current + 1;
+        requestIdRef.current = requestId;
+        if (lastEndpointRef.current !== endpoint) {
+            // A changed endpoint represents a different list scope (for
+            // example, all artifacts versus one conversation). Do not show or
+            // highlight rows carried over from the previous scope.
+            lastEndpointRef.current = endpoint;
+            prevIdsRef.current = null;
+            setItems([]);
+            setNewItemIds(new Set());
+        }
+        setLoading(true);
         try {
             const resp = await fetch(endpoint);
-            if (resp.ok) {
+            if (resp.ok && requestId === requestIdRef.current) {
                 const data = await resp.json();
                 const fresh = transformRef.current(data);
                 const currentGetId = getIdRef.current;
                 const freshIds = new Set(fresh.map(currentGetId));
-                const added = fresh.filter((item) => !prevIdsRef.current.has(currentGetId(item))).map(currentGetId);
-                prevIdsRef.current = freshIds;
-                if (added.length > 0) {
-                    setNewItemIds(new Set(added));
-                    clearTimeout(highlightTimerRef.current);
-                    highlightTimerRef.current = setTimeout(() => setNewItemIds(new Set()), 700);
+                if (prevIdsRef.current !== null) {
+                    const added = fresh
+                        .filter((item) => !prevIdsRef.current.has(currentGetId(item)))
+                        .map(currentGetId);
+                    if (added.length > 0) {
+                        setNewItemIds(new Set(added));
+                        clearTimeout(highlightTimerRef.current);
+                        highlightTimerRef.current = setTimeout(() => setNewItemIds(new Set()), 700);
+                    }
                 }
+                prevIdsRef.current = freshIds;
                 setItems(fresh);
                 if (onFetchedRef.current) onFetchedRef.current(data);
             }
         } catch (_) {
             // ignore
         } finally {
-            setLoading(false);
+            // A slower response for an obsolete filter must not clear the
+            // loading state owned by the current request.
+            if (requestId === requestIdRef.current) setLoading(false);
         }
     }, [endpoint]);
 
@@ -75,9 +97,22 @@ export default function useListPanel(endpoint, {
             const resp = await fetch(deleteEndpoint, { method: 'DELETE' });
             if (resp.ok || resp.status === 404) {
                 setItems((prev) => prev.filter(matchFn));
+                return { ok: true, status: resp.status };
             }
+            let message = `Delete failed with status ${resp.status}.`;
+            try {
+                const body = await resp.json();
+                if (body?.error) message = body.error;
+            } catch (_) {
+                // Keep the status-based fallback for non-JSON error responses.
+            }
+            return { ok: false, status: resp.status, message };
         } catch (_) {
-            // ignore
+            return {
+                ok: false,
+                status: 0,
+                message: 'Could not reach the server. The item was not deleted.',
+            };
         } finally {
             setDeleting(null);
         }

@@ -1,0 +1,1 @@
+"""Internal browser-domain implementation."""
