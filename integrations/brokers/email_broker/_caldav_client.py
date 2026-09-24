@@ -128,7 +128,7 @@ class CalDavClient:
 
         Caller must hold ``self._lock`` and must have awaited ``connect()``
         first. iCloud closes idle DAV sessions after ~10-30 minutes; the
-        next request fails with a requests/urllib3 connection error. We
+        next request fails with a niquests/urllib3 connection error. We
         rebuild the DAVClient + principal and retry once. A second failure
         propagates.
 
