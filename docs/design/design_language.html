@@ -54,6 +54,14 @@
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
 
+  /* ── Type scale ── */
+  --font-size-label: 10px;
+  --font-size-caption: 11px;
+  --font-size-small: 12px;
+  --font-size-body: 13px;
+  --font-size-ui: 14px;
+  --font-size-heading: 18px;
+
   /* ── Z-index scale ── */
   --z-sticky: 10;
   --z-flyout: 100;
@@ -467,6 +475,20 @@ body {
   color: var(--danger);
 }
 .btn-danger:hover { background: rgba(220,38,38,0.15); }
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border: 2px solid var(--border);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: btn-spin 800ms linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
 
 .btn-icon {
   width: 28px;
@@ -935,23 +957,6 @@ body {
   color: var(--text-secondary);
   margin-bottom: 5px;
 }
-
-.flyout-select {
-  width: 100%;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--canvas);
-  color: var(--text-primary);
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 150ms var(--ease);
-}
-.flyout-select:focus { border-color: var(--accent); }
-
-[data-theme="dark"] .flyout-select { background: var(--elevated); }
 
 .flyout-slider-row {
   display: flex;
@@ -2126,6 +2131,9 @@ body {
 
 /* ── Select ──────────────────────────────────────────── */
 .select {
+  display: inline-flex;
+  align-items: center;
+  min-width: 240px;
   height: 32px;
   padding: 0 28px 0 10px;
   border: 1px solid var(--border);
@@ -2135,12 +2143,16 @@ body {
   font-size: 13px;
   font-family: var(--font-body);
   cursor: pointer;
-  appearance: none;
+  text-align: left;
+  box-shadow: none;
+  outline: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none'/></svg>");
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
 [data-theme="dark"] .select { background-color: var(--surface); }
+.select:hover { border-color: var(--border-strong); background-color: var(--elevated); }
+.select:focus-visible { border-color: var(--accent); box-shadow: var(--shadow-glow); }
 
 /* ── File Output Card ────────────────────────────────── */
 .file-card {
@@ -2374,7 +2386,7 @@ body {
 }
 .dl-split-list {
   width: 35%;
-  min-width: 220px; max-width: 380px;
+  min-width: 280px; max-width: 420px;
   background: var(--canvas);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
@@ -3197,7 +3209,7 @@ body {
           <div class="signal-tabs">
             <button class="signal-tab active">Chat</button>
             <button class="signal-tab">Network</button>
-            <button class="signal-tab">Goals</button>
+            <button class="signal-tab">Routines</button>
           </div>
         </div>
 
@@ -3313,7 +3325,7 @@ body {
             <td><code>--success</code></td>
             <td><span class="vocab-dot" style="background:var(--success);box-shadow:0 0 6px var(--success-muted)"></span><span style="color:var(--text-tertiary)">solid + glow</span></td>
             <td><code>--success-muted</code></td>
-            <td>Connected integrations, enabled goals, healthy services</td>
+            <td>Connected integrations, enabled routines, healthy services</td>
           </tr>
           <tr>
             <td><span class="vocab-state">Running</span></td>
@@ -3388,6 +3400,7 @@ body {
         <button class="btn btn-ghost">Ghost</button>
         <button class="btn btn-danger">Danger</button>
         <button class="btn btn-filled" disabled style="opacity:0.5;cursor:not-allowed">Disabled</button>
+        <button class="btn btn-filled" disabled aria-busy="true" style="opacity:0.5;cursor:not-allowed"><span class="btn-spinner" aria-hidden="true"></span>Loading&hellip;</button>
       </div>
       <div class="component-row" style="margin-top:4px">
         <button class="btn-icon" title="Settings"><i class="bi bi-gear"></i></button>
@@ -3403,6 +3416,7 @@ body {
         // <code>.btn-outline</code> &mdash; the default for everything that isn&apos;t the primary CTA. Cancel, Back, Retry, Configure. A real, peer choice the user might pick.<br>
         // <code>.btn-ghost</code> &mdash; tertiary / quiet. Use when the button stands alone or genuinely shouldn&apos;t compete for attention (a solo Skip, a hover-revealed row action). Reads as "an escape hatch."<br>
         // <code>.btn-danger</code> &mdash; destructive (Delete, Disconnect, Remove). Use anywhere the action can&apos;t be cheaply undone.<br>
+        // <strong style="color:var(--text-secondary)">Async actions:</strong> keep the action in place, replace its contents with a spinner and concise progress label, and disable it until the operation settles. In React, use <code>&lt;Button loading loadingLabel="Saving&hellip;"&gt;</code>; do not recreate the spinner locally.<br>
         // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> if two buttons live in the same action row, neither should be <code>ghost</code>. Use <code>filled</code> for the one primary CTA, <code>outline</code> for the rest, <code>danger</code> for destructive. Reach for <code>ghost</code> only when the button is alone or you specifically want it to feel almost-not-there.<br>
         // Counter-example: a wizard footer of <code>[Back] [Cancel] [Save]</code>. All three are peer choices &mdash; render Back &amp; Cancel as <code>outline</code> and Save as <code>filled</code>. A <code>ghost</code> Cancel sitting next to outline Back reads as disabled, especially in dark mode.
       </div>
@@ -3426,7 +3440,7 @@ body {
       <div class="component-row">
         <input class="input" placeholder="Search...">
         <input class="input" value="llama3:70b">
-        <select class="select"><option>llama3:70b</option><option>llama3:8b</option><option>mistral:7b</option></select>
+        <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model">llama3:70b</button>
       </div>
       <div class="component-row" style="max-width: 400px">
         <textarea class="textarea" placeholder="Enter your message..." rows="3"></textarea>
@@ -3651,7 +3665,7 @@ body {
             <div class="desc">The model used when no agent specifies one.</div>
           </div>
           <div class="control">
-            <select class="select" style="width:140px;height:30px;font-size:12px"><option>llama3:70b</option></select>
+            <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:140px;min-width:140px;height:30px;font-size:12px">llama3:70b</button>
           </div>
         </div>
         <div class="settings-row">
@@ -3798,7 +3812,7 @@ body {
     <div class="subsection">
       <div class="subsection-label">Empty State</div>
       <div class="empty-state">
-        <div class="empty-state-heading">No goals yet</div>
+        <div class="empty-state-heading">No routines yet</div>
         <div class="empty-state-desc">Create one in chat or use the <code class="inline-code">+ NEW</code> button to get started.</div>
       </div>
     </div>
@@ -3854,7 +3868,7 @@ body {
           <i class="bi bi-info-circle toast-icon"></i>
           <div class="toast-info">
             <div class="toast-title">Run scheduled</div>
-            <div class="toast-msg">Goal will execute at the next cron tick.</div>
+            <div class="toast-msg">Routine will execute at the next cron tick.</div>
           </div>
           <button class="toast-close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -3922,7 +3936,7 @@ body {
             <i class="bi bi-exclamation-circle callout-icon"></i>
             <div class="callout-body">
               <div class="callout-title">Can&apos;t delete &mdash; profile is in use</div>
-              <div class="callout-desc">Used by <strong>14 task(s)</strong> across 4 goals. Showing the first 6.</div>
+              <div class="callout-desc">Used by <strong>14 task(s)</strong> across 4 routines. Showing the first 6.</div>
             </div>
             <button class="callout-close" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
           </div>
@@ -4110,7 +4124,7 @@ body {
       <div class="m-sidebar" style="height:280px;border-radius:var(--radius-lg);border:1px solid var(--border)">
         <button class="m-sidebar-icon active" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon" title="Agent Network"><i class="bi bi-diagram-3"></i></button>
-        <button class="m-sidebar-icon" title="Goals"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
         <button class="m-sidebar-icon" title="Memory"><i class="bi bi-database"></i></button>
         <div class="m-sidebar-sep"></div>
         <button class="m-sidebar-icon" title="Conversations"><i class="bi bi-clock-history"></i></button>
@@ -4137,7 +4151,7 @@ body {
     <div class="section-title">14. Tabs</div>
     <div class="section-desc">
       Standalone horizontal tab bar pattern, used for switching between content modes within a panel
-      (Settings tabs, Goal Detail tabs, etc.). Active tab shows the Signal Line: 2px accent bottom
+      (Settings tabs, Routine Detail tabs, etc.). Active tab shows the Signal Line: 2px accent bottom
       border. Brand monospace, uppercase, <code>0.06em</code> letter-spacing.
     </div>
 
@@ -4231,7 +4245,7 @@ body {
       <div class="flyout-sidebar-mini">
         <button class="m-sidebar-icon" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon active" title="Settings"><i class="bi bi-gear"></i></button>
-        <button class="m-sidebar-icon" title="Goals"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
       </div>
       <div class="flyout-panel">
         <div class="flyout-header">
@@ -4241,11 +4255,7 @@ body {
         <div class="flyout-body">
           <div class="flyout-field">
             <label class="flyout-label">Model</label>
-            <select class="flyout-select">
-              <option>llama3:70b</option>
-              <option>llama3:8b</option>
-              <option>mistral:7b</option>
-            </select>
+            <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:100%;min-width:0;height:30px;font-size:12px">llama3:70b</button>
           </div>
 
           <div class="flyout-field">
@@ -4288,7 +4298,7 @@ body {
   <div class="section">
     <div class="section-title">17. Split Panel &amp; Split Handle</div>
     <div class="section-desc">
-      Master-detail layout — list on the left, detail on the right. Used for Goals, Profiles,
+      Master-detail layout — list on the left, detail on the right. Used for Routines, Profiles,
       Conversations, and any browse-and-edit interface. The list panel uses the Signal Line on the
       active item (see List Item in §10). For resizable splits (chat + preview), a draggable
       <strong>Split Handle</strong> sits between the columns and respects <code>--split-min</code>
@@ -4378,11 +4388,7 @@ body {
           <div class="fs-row-desc">The model used when no agent specifies one.</div>
         </div>
         <div class="fs-row-control">
-          <select class="input" style="width:160px;height:30px;font-size:12px">
-            <option>llama3:70b</option>
-            <option>llama3:8b</option>
-            <option>mistral:7b</option>
-          </select>
+          <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Model" style="width:160px;min-width:160px;height:30px;font-size:12px">llama3:70b</button>
         </div>
       </div>
       <div class="fs-row">
@@ -4494,7 +4500,7 @@ body {
   <div class="section">
     <div class="section-title">20. Sectioned Detail Page</div>
     <div class="section-desc">
-      The sectioned detail pattern is a header-tabs-content layout used for entity detail views (Goal Detail,
+      The sectioned detail pattern is a header-tabs-content layout used for entity detail views (Routine Detail,
       Run Detail, Profile Detail, Conversation Detail). Header has a title row and a meta row in monospace.
       Below: tabs, then a content area of stacked labeled blocks.
     </div>
@@ -4821,11 +4827,7 @@ body {
       <textarea class="m-chat-textarea" placeholder="Send a message..." rows="2" style="background:transparent;border:none;resize:none">Scrape the API reference from docs.example.com</textarea>
       <div class="m-chat-actions">
         <button class="btn-icon" title="Attach file"><i class="bi bi-paperclip"></i></button>
-        <select class="select" style="height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">
-          <option>ollama-agent</option>
-          <option>browser-agent</option>
-          <option>coder-agent</option>
-        </select>
+        <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Agent" style="min-width:140px;height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">ollama-agent</button>
         <span class="spacer"></span>
         <button class="btn-icon" title="Stop" style="color:var(--danger)"><i class="bi bi-stop-circle"></i></button>
         <button class="btn-icon" title="Send" style="color:var(--accent)"><i class="bi bi-send"></i></button>
@@ -4837,7 +4839,7 @@ body {
       wrapper on <code>--surface</code> with 1px border, <code>--radius-lg</code>;
       <code>focus-within</code> applies <code>--accent</code> border + <code>--shadow-glow</code>.
       Textarea is transparent, no border. Button bar uses <code>padding: --sp-1 --sp-2</code>.
-      Profile selector is brand-font, 11px, 26px height.
+      Profile selector uses the body font at 12px and the shared 32px select height.
     </div>
   </div>
 
@@ -4951,7 +4953,7 @@ body {
       <div class="icon-grid">
         <div class="icon-row"><span class="glyph"><i class="bi bi-chat"></i></span><div class="icon-info"><span class="icon-name">bi-chat</span><span class="icon-usage">Chat sidebar tab</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-diagram-3"></i></span><div class="icon-info"><span class="icon-name">bi-diagram-3</span><span class="icon-usage">Agent Network view</span></div></div>
-        <div class="icon-row"><span class="glyph"><i class="bi bi-bullseye"></i></span><div class="icon-info"><span class="icon-name">bi-bullseye</span><span class="icon-usage">Goals sidebar tab</span></div></div>
+        <div class="icon-row"><span class="glyph"><i class="bi bi-bullseye"></i></span><div class="icon-info"><span class="icon-name">bi-bullseye</span><span class="icon-usage">Routines sidebar tab</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-clock-history"></i></span><div class="icon-info"><span class="icon-name">bi-clock-history</span><span class="icon-usage">Conversations</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-wrench"></i></span><div class="icon-info"><span class="icon-name">bi-wrench</span><span class="icon-usage">Custom Tools</span></div></div>
         <div class="icon-row"><span class="glyph"><i class="bi bi-database"></i></span><div class="icon-info"><span class="icon-name">bi-database</span><span class="icon-usage">Memory</span></div></div>

@@ -1,5 +1,6 @@
 import Button from '../../primitives/Button.jsx';
 import Callout from '../../primitives/Callout.jsx';
+import Select from '../../primitives/Select.jsx';
 import styles from './add-wizard.module.css';
 import { errorCopy } from './providers.js';
 import { Stepper } from './SharedSteps.jsx';
@@ -123,21 +124,23 @@ export function CredentialsStep({ provider, form, setForm, error, onBack, onCanc
                                 <span className={styles.permLabel}>
                                     {CAP_LABELS[cap] || cap}
                                 </span>
-                                <select
+                                <Select
                                     className={styles.accessSelect}
                                     value={form.permissions[cap] || 'r'}
-                                    onChange={(e) => setForm(f => ({
+                                    onChange={(value) => setForm(f => ({
                                         ...f,
                                         permissions: {
                                             ...f.permissions,
-                                            [cap]: e.target.value,
+                                            [cap]: value,
                                         },
                                     }))}
-                                    data-testid={`wizard-perm-${cap}`}
-                                >
-                                    <option value="r">Read only</option>
-                                    <option value="rw">Read + Write</option>
-                                </select>
+                                    ariaLabel={`${CAP_LABELS[cap] || cap} permission`}
+                                    testId={`wizard-perm-${cap}`}
+                                    options={[
+                                        { value: 'r', label: 'Read only' },
+                                        { value: 'rw', label: 'Read + Write' },
+                                    ]}
+                                />
                             </div>
                         ))}
                     </div>

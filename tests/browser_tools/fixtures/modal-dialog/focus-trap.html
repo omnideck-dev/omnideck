@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Focus-trapped ARIA modal</title>
+  <style>
+    #focus-surface {
+      align-items: center;
+      background: rgb(0 0 0 / 55%);
+      display: flex;
+      inset: 0;
+      justify-content: center;
+      position: fixed;
+      z-index: 20;
+    }
+
+    #focus-dialog {
+      background: white;
+      padding: 28px;
+      width: 420px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Projects</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <div id="focus-surface">
+    <section id="focus-dialog" role="dialog" aria-modal="true" aria-label="Name required">
+      <h2>Name this project</h2>
+      <input aria-label="Project name">
+      <button id="finish-dialog" type="button">Done</button>
+    </section>
+  </div>
+
+  <script>
+    const dialog = document.getElementById('focus-dialog');
+    const firstControl = dialog.querySelector('input');
+    const lastControl = document.getElementById('finish-dialog');
+    const trapFocus = (event) => {
+      if (event.key !== 'Tab') return;
+      event.preventDefault();
+      (document.activeElement === firstControl ? lastControl : firstControl).focus();
+    };
+    document.addEventListener('keydown', trapFocus);
+    firstControl.focus();
+    lastControl.addEventListener('click', () => {
+      document.removeEventListener('keydown', trapFocus);
+      document.getElementById('focus-surface').remove();
+    });
+  </script>
+</body>
+</html>

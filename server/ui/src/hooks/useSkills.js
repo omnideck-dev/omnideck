@@ -54,5 +54,12 @@ export default function useSkills() {
         return { ok: res.ok };
     }, []);
 
-    return { skills, loading, refresh, createSkill, updateSkill, deleteSkill };
+    // Add skills the server already created (e.g. from a pack import) without a
+    // refetch.
+    const addSkills = useCallback((records) => {
+        if (!records?.length) return;
+        setSkills((prev) => [...prev, ...records]);
+    }, []);
+
+    return { skills, loading, refresh, createSkill, updateSkill, deleteSkill, addSkills };
 }

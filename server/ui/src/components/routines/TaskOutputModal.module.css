@@ -1,0 +1,102 @@
+.modal {
+    max-height: 80vh;
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.headerInfo {
+    min-width: 0;
+}
+
+.headerTitle {
+    font-family: var(--font-brand);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.headerSubtitle {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.headerActions {
+    display: flex;
+    gap: 8px;
+}
+
+.copyBtn {
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.copyBtn:hover {
+    background: var(--accent-muted);
+}
+
+.closeBtn {
+    font-size: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.closeBtn:hover {
+    background: var(--surface);
+    border-color: var(--border-strong);
+}
+
+.content {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+    background: var(--border-subtle);
+}

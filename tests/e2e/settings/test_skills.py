@@ -8,10 +8,24 @@ duplicate-name guard) and the Tool Categories catalog.
 import json
 import textwrap
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._helpers import container_exec
 from tests.e2e.pages import SettingsPage
+
+
+@pytest.fixture(autouse=True)
+def _restore_skill_store():
+    """Snapshot the skill store before each test and restore it after.
+
+    _seed_skills() wipes and replaces the whole store, so without this a
+    later e2e test relying on the real default skills (e.g. the coder
+    skill's file tools) would run against this module's minimal seeds.
+    """
+    saved = _read_skills()
+    yield
+    _seed_skills(saved)
 
 
 def _seed_skills(skills: list[dict]) -> None:
@@ -130,7 +144,7 @@ def test_delete_removes_row_and_record(page: Page):
 
 
 def test_duplicate_name_is_rejected(page: Page):
-    """Saving a new skill with an existing name surfaces an error and doesn't persist."""
+    """Saving a new skill with an existing name views an error and doesn't persist."""
     _seed_skills([_skill("coder", name="Coder", tool_categories=["coding"])])
 
     skills = SettingsPage(page).goto_skills().skills

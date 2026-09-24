@@ -16,7 +16,7 @@ function isIntegration(category) {
     return category.connected !== null && category.connected !== undefined;
 }
 
-export default function SkillBuilder({ skill, categories, onSave, onDelete }) {
+export default function SkillBuilder({ skill, categories, onSave, onDelete, onExport }) {
     const [draft, setDraft] = useState(null);
     const [saveError, setSaveError] = useState(null);
 
@@ -74,6 +74,15 @@ export default function SkillBuilder({ skill, categories, onSave, onDelete }) {
                         onConfirm={() => onDelete?.(skill.id)}
                     />
                     <div className={styles.actionsRight}>
+                        {!draft._unsaved && (
+                            <Button
+                                onClick={() => onExport?.(skill.id)}
+                                title="Export this skill"
+                                data-testid="skill-export"
+                            >
+                                <i className="bi bi-download" /> Export
+                            </Button>
+                        )}
                         <Button onClick={handleRevert}>Revert</Button>
                         <Button variant="filled" onClick={handleSave}>Save</Button>
                     </div>

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Explicit roles</title>
+</head>
+<body>
+  <h1>Search</h1>
+  <!-- role="form" is invalid on an <input> (as on wiby.me) — the field must
+       still be found and fillable. -->
+  <input type="text" role="form" aria-label="Main search form">
+  <!-- a valid interactive explicit role must be preserved. -->
+  <input type="text" role="searchbox" aria-label="Valid search">
+  <input type="submit" value="Search">
+</body>
+</html>

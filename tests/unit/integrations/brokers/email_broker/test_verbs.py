@@ -17,7 +17,12 @@ import pytest
 
 from integrations._rpc import RpcError
 from integrations.brokers.email_broker._verbs import VerbDispatcher
-from integrations.brokers.email_broker.types import Mailbox, OutboundAttachment
+from integrations.brokers.email_broker.types import Event, Mailbox, OutboundAttachment
+from integrations.calendar_refs import (
+    decode_event_ref,
+    encode_event_ref,
+    encode_series_ref,
+)
 from integrations.permissions import Access, Capability
 
 
@@ -87,6 +92,289 @@ class _StubSmtp:
             "attachments": list(attachments),
         })
         return "<stub@id>"
+
+
+class _StubCalDav:
+    """Drop-in for ``CalDavClient`` recording event creation calls."""
+
+    def __init__(self) -> None:
+        self.create_calls: list[tuple] = []
+        self.update_calls: list[tuple] = []
+        self.delete_calls: list[tuple[str, str]] = []
+
+    async def create_event(
+        self,
+        calendar_url: str,
+        summary: str,
+        start: str,
+        end: str,
+        description: str,
+        location: str,
+        attendees: list[str] | None,
+        recurrence_rule: str | None = None,
+        time_zone: str | None = None,
+    ) -> Event:
+        self.create_calls.append((
+            calendar_url, summary, start, end,
+            description, location, attendees, recurrence_rule, time_zone,
+        ))
+        return Event(
+            uid="icloud-event-123", summary=summary, start=start, end=end,
+            description=description, location=location,
+            recurring=recurrence_rule is not None,
+            href="https://caldav.example/home/icloud-event-123.ics",
+        )
+
+    async def update_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        recurrence_id: str | None = None,
+        href: str | None = None,
+        **changes: object,
+    ) -> Event:
+        self.update_calls.append((calendar_url, event_id, recurrence_id, href, changes))
+        return Event(
+            uid=event_id,
+            summary=str(changes.get("summary") or "Existing event"),
+            recurrence_id=recurrence_id or "",
+            recurring=recurrence_id is not None,
+            href=href or "",
+        )
+
+    async def delete_event(
+        self,
+        calendar_url: str,
+        event_id: str,
+        recurrence_id: str | None = None,
+        href: str | None = None,
+    ) -> None:
+        self.delete_calls.append((calendar_url, event_id, recurrence_id, href))
+
+    async def update_event_series(
+        self, calendar_url: str, event_id: str, href: str | None = None, **changes: object,
+    ) -> Event:
+        self.update_calls.append((calendar_url, event_id, None, href, changes))
+        return Event(uid=event_id, summary=str(changes.get("summary") or "Series"), recurring=True, href=href or "")
+
+    async def delete_event_series(
+        self, calendar_url: str, event_id: str, href: str | None = None,
+    ) -> None:
+        self.delete_calls.append((calendar_url, event_id, None, href))
+
+
+@pytest.mark.asyncio
+async def test_dispatch_create_event_calls_caldav_and_returns_event(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    result = await dispatcher.dispatch("create_event", {
+        "calendar_ref": "https://caldav.icloud.com/123/calendars/home/",
+        "summary": "Project review",
+        "start": "2026-07-15T09:00:00-05:00",
+        "end": "2026-07-15T10:00:00-05:00",
+        "description": "Review the release",
+        "location": "Room 4",
+        "attendees": ["alice@example.com"],
+    })
+
+    assert result["event"]["summary"] == "Project review"
+    assert result["event"]["is_recurring"] is False
+    assert "uid" not in result["event"]
+    target = decode_event_ref(result["event"]["event_ref"], provider="caldav")
+    assert target.event_id == "icloud-event-123"
+    assert target.href == "https://caldav.example/home/icloud-event-123.ics"
+    assert caldav.create_calls == [(
+        "https://caldav.icloud.com/123/calendars/home/",
+        "Project review",
+        "2026-07-15T09:00:00-05:00",
+        "2026-07-15T10:00:00-05:00",
+        "Review the release",
+        "Room 4",
+        ["alice@example.com"],
+        None,
+        None,
+    )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_create_event_requires_calendar_write_access(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(RpcError) as excinfo:
+        await dispatcher.dispatch("create_event", {
+            "calendar_ref": "https://caldav.example/home/",
+            "summary": "Denied",
+            "start": "2026-07-15",
+            "end": "2026-07-16",
+        })
+
+    assert excinfo.value.code == "PERMISSION_DENIED"
+    assert caldav.create_calls == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_create_recurring_event_returns_series_ref(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    result = await dispatcher.dispatch("create_event", {
+        "calendar_ref": "https://caldav.example/home/",
+        "summary": "Weekly review",
+        "start": "2026-07-16T09:00:00-05:00",
+        "end": "2026-07-16T09:30:00-05:00",
+        "recurrence_rule": "FREQ=WEEKLY;COUNT=4",
+        "time_zone": "America/Chicago",
+    })
+
+    assert result["event"]["is_recurring"] is True
+    assert result["event"]["series_ref"]
+    assert caldav.create_calls[-1][-2:] == (
+        "FREQ=WEEKLY;COUNT=4", "America/Chicago",
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_update_event_calls_caldav_with_supplied_fields(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    event_ref = encode_event_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
+    result = await dispatcher.dispatch("update_event", {
+        "event_ref": event_ref,
+        "summary": "Updated review",
+        "attendees": [],
+    })
+
+    assert result["event"]["summary"] == "Updated review"
+    assert caldav.update_calls == [(
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        "2026-07-22T09:00:00-05:00",
+        "https://caldav.example/home/icloud-event-123.ics",
+        {
+            "summary": "Updated review",
+            "start": None,
+            "end": None,
+            "description": None,
+            "location": None,
+            "attendees": [],
+        },
+    )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_update_event_rejects_empty_update(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(RpcError) as excinfo:
+        await dispatcher.dispatch("update_event", {
+            "event_ref": encode_event_ref(
+                provider="caldav",
+                calendar_ref="https://caldav.example/home/",
+                event_id="icloud-event-123",
+            ),
+        })
+
+    assert excinfo.value.code == "BAD_REQUEST"
+    assert caldav.update_calls == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_delete_event_calls_caldav(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+
+    event_ref = encode_event_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        recurrence_id="2026-07-22T09:00:00-05:00",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
+    result = await dispatcher.dispatch("delete_event", {"event_ref": event_ref})
+
+    assert result == {"deleted": True}
+    assert caldav.delete_calls == [(
+        "https://caldav.example/home/", "icloud-event-123",
+        "2026-07-22T09:00:00-05:00",
+        "https://caldav.example/home/icloud-event-123.ics",
+    )]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_series_verbs_target_master(tmp_path: Path) -> None:
+    caldav = _StubCalDav()
+    dispatcher = VerbDispatcher(
+        imap=_StubImapClient(), smtp=None, caldav=caldav,
+        permissions={Capability.CALENDAR: Access.READ_WRITE},
+        attachments_dir=tmp_path,
+    )  # type: ignore[arg-type]
+    series_ref = encode_series_ref(
+        provider="caldav",
+        calendar_ref="https://caldav.example/home/",
+        event_id="icloud-event-123",
+        href="https://caldav.example/home/icloud-event-123.ics",
+    )
+
+    result = await dispatcher.dispatch(
+        "update_event_series", {
+            "series_ref": series_ref,
+            "summary": "All reviews",
+            "recurrence_rule": "FREQ=WEEKLY;COUNT=8",
+            "time_zone": "America/Chicago",
+        },
+    )
+    deleted = await dispatcher.dispatch("delete_event_series", {"series_ref": series_ref})
+
+    assert result["series_ref"] == series_ref
+    assert deleted == {"deleted": True}
+    assert caldav.update_calls[-1][:4] == (
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        None,
+        "https://caldav.example/home/icloud-event-123.ics",
+    )
+    assert caldav.update_calls[-1][4]["recurrence_rule"] == "FREQ=WEEKLY;COUNT=8"
+    assert caldav.update_calls[-1][4]["time_zone"] == "America/Chicago"
+    assert caldav.delete_calls[-1] == (
+        "https://caldav.example/home/",
+        "icloud-event-123",
+        None,
+        "https://caldav.example/home/icloud-event-123.ics",
+    )
 
 
 @pytest.mark.asyncio

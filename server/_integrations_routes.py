@@ -2,7 +2,7 @@
 
 No auth layer on these routes today: the app server + supervisor run in the
 same container, and the supervisor's ``app.sock`` is already group-gated to
-the ``computron`` UID at the filesystem level. HTTP-level auth is a separate
+the ``omnideck`` UID at the filesystem level. HTTP-level auth is a separate
 concern handled by the frontend.
 """
 

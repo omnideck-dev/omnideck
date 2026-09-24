@@ -98,8 +98,8 @@ def test_remove_and_re_add_ollama(page: Page):
     page.get_by_test_id("provider-catalog-card-ollama").click()
     page.get_by_test_id("provider-catalog-continue-btn").click()
 
-    # The configure step pre-fills the default URL. Override to localhost so
-    # it matches the wizard's setup (the e2e container uses --network=host).
+    # No Ollama host is detected in the e2e container, so the field starts
+    # empty; enter localhost (the e2e container uses --network=host).
     url_input = page.locator("#provider-url")
     url_input.fill("http://localhost:11434")
     page.get_by_test_id("provider-configure-submit-btn").click()

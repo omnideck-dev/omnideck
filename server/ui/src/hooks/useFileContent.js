@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 
 import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js';
 import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
+import { bytesDownload, triggerDownload } from '../utils/downloads.js';
 
 // How often to re-check a disk-backed file for changes while its preview is open.
 const POLL_INTERVAL_MS = 4000;
@@ -22,6 +23,9 @@ export default function useFileContent(item) {
     const { filename, content_type, content, path } = item || {};
 
     const [fetchedText, setFetchedText] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
     const [viewMode, setViewMode] = useState(() =>
         hasPreviewToggle(content_type, filename) ? 'preview' : 'source'
     );
@@ -46,7 +50,9 @@ export default function useFileContent(item) {
 
     const isImage = isImageFile(content_type, filename);
     const isPdf = isPdfFile(content_type, filename);
-    const isHtml = content_type === 'text/html';
+    // Fall back to the extension like every other type check, so a file
+    // restored from its path alone (no content_type) still renders as HTML.
+    const isHtml = content_type === 'text/html' || (!!filename && /\.html?$/i.test(filename));
     const isMarkdown =
         content_type === 'text/markdown' ||
         content_type === 'text/x-markdown' ||
@@ -59,6 +65,44 @@ export default function useFileContent(item) {
         if (content) return _decodeText(content);
         return fetchedText;
     }, [content, fetchedText, isImage, isPdf]);
+
+    // The source view is an edit view: `draft` is the editable buffer. It mirrors
+    // the on-disk text until the user types, and re-syncs whenever the text
+    // changes underneath it (file switch, external refresh, or a save reload).
+    useEffect(() => {
+        setDraft(text);
+        setSaveError(null);
+    }, [text]);
+
+    // Save is offered only for real disk-backed files (a path with no inline
+    // base64). Inline snapshots have nowhere to write back to.
+    const canSave = !isImage && !isPdf && !!path && !content;
+    const isDirty = draft != null && draft !== text;
+
+    const save = useCallback(async () => {
+        if (!canSave || draft == null) return false;
+        setSaving(true);
+        setSaveError(null);
+        try {
+            const res = await fetch(path, {
+                method: 'PUT',
+                headers: { 'Content-Type': content_type || 'text/plain; charset=utf-8' },
+                body: draft,
+            });
+            if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+            // Re-baseline the disk watcher and reload the just-written bytes as
+            // the canonical text, so the dirty flag clears and our own write
+            // doesn't trip the "changed on disk" prompt.
+            if (watchKey) fileWatch.refresh(watchKey);
+            else setFetchedText(draft);
+            return true;
+        } catch (err) {
+            setSaveError(err.message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    }, [canSave, draft, path, content_type, watchKey]);
 
     // Fetch remote text content (not for images or PDFs). Re-runs on refresh.
     useEffect(() => {
@@ -81,10 +125,13 @@ export default function useFileContent(item) {
 
     // Auto-refresh whenever the watcher marks the file stale. The refresh()
     // call bumps the version (which re-triggers the fetch effect) and clears
-    // the stale flag in one step.
+    // the stale flag in one step. Skipped while the draft is dirty so an
+    // in-progress edit is never silently overwritten — refresh() is still
+    // available via the manual Reload button, and this effect retries on its
+    // own once the draft is saved or reverted (isDirty flips back to false).
     useEffect(() => {
-        if (stale && watchKey) fileWatch.refresh(watchKey);
-    }, [stale, watchKey]);
+        if (stale && watchKey && !isDirty) fileWatch.refresh(watchKey);
+    }, [stale, watchKey, isDirty]);
 
     useEffect(() => {
         if (!watchKey) return;
@@ -166,26 +213,34 @@ export default function useFileContent(item) {
     }, [text]);
 
     const handleDownload = useCallback(() => {
-        const link = document.createElement('a');
-        if (text) {
-            const blob = new Blob([text], { type: content_type || 'text/plain' });
-            link.href = URL.createObjectURL(blob);
+        // Prefer the same-origin file route even when its text is already in
+        // memory. Native webviews can stream that response directly to their
+        // download manager; turning it back into a blob is less portable. A
+        // regular browser keeps its existing text-blob behavior.
+        const nativeHost = typeof window !== 'undefined' && !!window.omnideckHost;
+        if (path && nativeHost) {
+            triggerDownload(path, filename || 'file');
+        } else if (text) {
+            bytesDownload(text, content_type || 'text/plain', filename || 'file');
         } else if (path) {
-            link.href = path;
+            triggerDownload(path, filename || 'file');
         } else if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
             for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-            const blob = new Blob([bytes], { type: content_type || 'application/octet-stream' });
-            link.href = URL.createObjectURL(blob);
+            bytesDownload(bytes, content_type, filename || 'file');
         }
-        link.download = filename || 'file';
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 100);
     }, [text, content, content_type, path, filename]);
 
     return {
         text,
+        draft,
+        setDraft,
+        isDirty,
+        canSave,
+        save,
+        saving,
+        saveError,
         viewMode,
         setViewMode,
         isHtml,

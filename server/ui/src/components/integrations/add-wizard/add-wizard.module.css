@@ -1,30 +1,11 @@
-/* ── Backdrop + modal shell ──────────────────────────────── */
-.backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    backdrop-filter: blur(2px);
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 32px;
-    animation: fadeIn 150ms var(--ease-out);
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
+/* ── Modal shell ─────────────────────────────────────────── */
 .modal {
-    width: 100%;
-    max-width: 620px;
     max-height: calc(100vh - 64px);
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
+    padding: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -715,25 +696,8 @@
 
 .accessSelect {
     flex-shrink: 0;
-    height: 30px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--canvas);
-    color: var(--text-primary);
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-    transition: border-color 150ms var(--ease);
-}
-
-.accessSelect:focus {
-    border-color: var(--accent);
-}
-
-.accessSelect:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
+    --select-width: 190px;
+    --select-font-size: 12px;
 }
 
 /* Buttons: footer Cancel / Back / Next / Save / etc. now render via the

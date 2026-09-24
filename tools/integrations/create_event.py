@@ -1,4 +1,4 @@
-"""Agent tool: create an event on a Google Calendar."""
+"""Agent tool: create an event on a connected calendar."""
 
 from __future__ import annotations
 
@@ -14,33 +14,40 @@ logger = logging.getLogger(__name__)
 
 async def create_event(
     integration_id: str,
-    calendar_url: str,
+    calendar_ref: str,
     summary: str,
     start: str,
     end: str,
     description: str = "",
     location: str = "",
     attendees: list[str] | None = None,
+    recurrence_rule: str = "",
+    time_zone: str = "",
 ) -> str:
     """Create a new event on a calendar.
 
     Args:
         integration_id: Identifier of the calendar integration.
-        calendar_url: URL of the calendar (from ``list_calendars``).
+        calendar_ref: Opaque calendar reference from ``list_calendars``.
         summary: Event title.
         start: Start time — RFC 3339 datetime (e.g. ``2026-05-10T09:00:00-05:00``)
             or a date string (``2026-05-10``) for all-day events.
         end: End time — same format as start.
         description: Optional event description or notes.
         location: Optional location string.
-        attendees: Optional list of email addresses to invite.
+        attendees: Optional list of attendee email addresses. The calendar
+            provider is asked to deliver invitations.
+        recurrence_rule: Optional RFC 5545 recurrence rule, such as
+            ``FREQ=WEEKLY;COUNT=4``. Omit for a one-time event.
+        time_zone: IANA time zone such as ``America/Chicago``. Required for
+            recurring timed events; omit for recurring all-day events.
 
     Returns:
-        A confirmation with the event ID and summary, or an error notice.
+        A confirmation with the opaque event_ref and summary, or an error notice.
     """
     app_sock = load_config().integrations.app_sock_path
     args: dict[str, Any] = {
-        "calendar_id": calendar_url,
+        "calendar_ref": calendar_ref,
         "summary": summary,
         "start": start,
         "end": end,
@@ -51,6 +58,10 @@ async def create_event(
         args["location"] = location
     if attendees:
         args["attendees"] = attendees
+    if recurrence_rule:
+        args["recurrence_rule"] = recurrence_rule
+    if time_zone:
+        args["time_zone"] = time_zone
     try:
         result = await broker_client.call(
             integration_id, "create_event", args, app_sock_path=app_sock,
@@ -61,15 +72,17 @@ async def create_event(
         return f"Writes are disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
-            "create_event(%r, %r) failed: %s", integration_id, calendar_url, exc,
+            "create_event(%r, %r) failed: %s", integration_id, calendar_ref, exc,
         )
         return f"Failed to create event via {integration_id!r}: {exc}"
 
     event = result.get("event", {})
-    event_id = event.get("uid", "")
+    event_ref = event.get("event_ref", "")
+    series_ref = event.get("series_ref", "")
     title = event.get("summary", summary)
     start_str = event.get("start", start)
-    return f"Created event '{title}' at {start_str} (event ID: {event_id})."
+    series_tag = f" [series_ref: {series_ref}]" if series_ref else ""
+    return f"Created event '{title}' at {start_str} [event_ref: {event_ref}]{series_tag}."
 
 
 def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
@@ -79,34 +92,39 @@ def build_create_event_tool(integration_ids: Iterable[str]) -> Callable[..., Any
 
     async def _create_event(
         integration_id: str,
-        calendar_url: str,
+        calendar_ref: str,
         summary: str,
         start: str,
         end: str,
         description: str = "",
         location: str = "",
         attendees: list[str] | None = None,
+        recurrence_rule: str = "",
+        time_zone: str = "",
     ) -> str:
         return await create_event(
-            integration_id, calendar_url, summary, start, end,
-            description, location, attendees,
+            integration_id, calendar_ref, summary, start, end,
+            description, location, attendees, recurrence_rule, time_zone,
         )
 
     _create_event.__name__ = create_event.__name__
     _create_event.__doc__ = (
-        "Create a new event on a Google Calendar. Use list_calendars first to "
-        "get the calendar URL. "
+        "Create a new event on a connected calendar. Use list_calendars first to "
+        "get calendar_ref. "
         f"Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"
         "    integration_id: Which integration the calendar belongs to.\n"
-        "    calendar_url: URL of the calendar (from list_calendars).\n"
+        "    calendar_ref: Opaque calendar reference from list_calendars.\n"
         "    summary: Event title.\n"
         "    start: RFC 3339 datetime (2026-05-10T09:00:00-05:00) or date (2026-05-10) for all-day.\n"
         "    end: End time, same format as start.\n"
         "    description: Optional event description.\n"
         "    location: Optional location string.\n"
-        "    attendees: Optional list of email addresses to invite.\n\n"
+        "    attendees: Optional attendee email addresses; the provider is asked to send invitations.\n"
+        "    recurrence_rule: Optional RFC 5545 rule without RRULE: prefix, "
+        "for example FREQ=WEEKLY;COUNT=4.\n"
+        "    time_zone: IANA zone such as America/Chicago; required for recurring timed events.\n\n"
         "Returns:\n"
-        "    Plain text — a confirmation with event ID, or an error notice.\n"
+        "    Plain text — a confirmation with event_ref and, for recurring events, series_ref.\n"
     )
     return _create_event

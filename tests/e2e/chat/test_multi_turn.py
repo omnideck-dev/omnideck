@@ -1,7 +1,7 @@
-"""E2E tests for multi-turn conversation state.
+"""E2E tests for output that accumulates within one conversation.
 
-Verifies that preview state persists across turns, accumulates correctly,
-and clears on new conversation.
+Execution data accumulates across turns, while manually opened artifact tabs
+remain open until explicitly closed.
 """
 
 from playwright.sync_api import Page, expect
@@ -10,7 +10,7 @@ from tests.e2e._protocol import bash, say, send_file, write_file
 from tests.e2e.pages import ChatView
 
 
-def test_terminal_persists_across_turns(page: Page):
+def test_terminal_accumulates_across_turns(page: Page):
     """Terminal output from turn 1 should still be visible in turn 2."""
     chat = ChatView(page).goto().new_conversation()
 
@@ -31,7 +31,7 @@ def test_terminal_persists_across_turns(page: Page):
     )
 
 
-def test_file_tabs_persist_across_turns(page: Page):
+def test_open_artifact_persists_across_turns(page: Page):
     """File preview tabs from turn 1 should still be visible after turn 2."""
     chat = ChatView(page).goto().new_conversation()
 
@@ -56,34 +56,3 @@ def test_file_tabs_persist_across_turns(page: Page):
         f"File tabs should persist across turns, expected {file_tab_count} "
         f"but got {chat.preview.file_tabs.count()}"
     )
-
-
-def test_new_conversation_clears_previews(page: Page):
-    """Starting a new conversation should clear all preview tabs."""
-    chat = ChatView(page).goto().new_conversation()
-
-    chat.send(bash('echo "before-reset"')).wait_streaming()
-    expect(chat.preview.root).to_be_visible()
-
-    chat.new_conversation()
-
-    expect(chat.preview.root).not_to_be_visible()
-    expect(chat.preview.split_handle).not_to_be_visible()
-
-
-def test_new_conversation_allows_fresh_previews(page: Page):
-    """After clearing, new previews should appear from fresh messages."""
-    chat = ChatView(page).goto().new_conversation()
-
-    chat.send(bash('echo "old"')).wait_streaming()
-
-    chat.new_conversation()
-
-    chat.send(bash('echo "fresh"')).wait_streaming()
-
-    if chat.preview.terminal_tab.is_visible():
-        chat.preview.select_tab(chat.preview.terminal_tab)
-        text = chat.preview.content.text_content() or ""
-        assert "old" not in text, (
-            f"New conversation terminal contains old content: {text[:300]}"
-        )

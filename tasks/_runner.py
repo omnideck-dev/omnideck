@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config import GoalsConfig
+    from config import RoutinesConfig
     from tasks._executor import TaskExecutor
+    from tasks._models import Task, TaskResult
     from tasks._notifier import TelegramNotifier
     from tasks._store import TaskStore
 
@@ -30,7 +33,7 @@ class TaskRunner:
         self,
         store: TaskStore,
         executor: TaskExecutor,
-        config: GoalsConfig,
+        config: RoutinesConfig,
         notifier: TelegramNotifier | None = None,
     ) -> None:
         self._store = store
@@ -38,7 +41,13 @@ class TaskRunner:
         self._config = config
         self._notifier = notifier
         self._running: dict[str, asyncio.Task] = {}  # result_id → asyncio.Task
-        self._running_goal_ids: dict[str, str] = {}  # result_id → goal_id
+        self._running_routine_ids: dict[str, str] = {}  # result_id → routine_id
+        self._running_run_ids: dict[str, str] = {}  # result_id → run_id
+        self._blocked_routine_ids: set[str] = set()
+        self._blocked_run_ids: set[str] = set()
+        # Serialize overlapping routine/run deletes so cleanup is not cancelled
+        # a second time by another deletion of the same execution tree.
+        self._execution_control_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._paused = False
         self._loop_task: asyncio.Task | None = None
@@ -56,10 +65,17 @@ class TaskRunner:
             self._loop_task.cancel()
         if self._running:
             logger.info("Waiting for %d running tasks", len(self._running))
-            await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 self._running.values(),
                 timeout=self._config.shutdown_timeout,
             )
+            for task in pending:
+                # A deletion may already be awaiting TaskExecutor's cleanup.
+                # Cancelling again would interrupt that ownership handoff.
+                if not task.cancelling():
+                    task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
     def pause(self) -> None:
         """Pause the runner — stop picking up new tasks."""
@@ -69,15 +85,59 @@ class TaskRunner:
         """Resume the runner."""
         self._paused = False
 
+    @asynccontextmanager
+    async def stop_routine(self, routine_id: str) -> AsyncIterator[None]:
+        """Cancel and await owned work; keep admission blocked until the caller exits."""
+        async with self._execution_control_lock:
+            self._blocked_routine_ids.add(routine_id)
+            try:
+                await self._cancel_tasks([
+                    result_id for result_id, owner in self._running_routine_ids.items() if owner == routine_id
+                ])
+                yield
+            finally:
+                self._blocked_routine_ids.discard(routine_id)
+
+    @asynccontextmanager
+    async def stop_run(self, run_id: str) -> AsyncIterator[None]:
+        """Cancel and await this run's work; block its admission until the caller exits."""
+        async with self._execution_control_lock:
+            self._blocked_run_ids.add(run_id)
+            try:
+                await self._cancel_tasks([
+                    result_id for result_id, owner in self._running_run_ids.items() if owner == run_id
+                ])
+                yield
+            finally:
+                self._blocked_run_ids.discard(run_id)
+
+    async def _cancel_tasks(self, result_ids: list[str]) -> None:
+        """Await TaskExecutor's agent-tree cleanup while all storage still exists."""
+        executions = [self._running[result_id] for result_id in result_ids if result_id in self._running]
+        for execution in executions:
+            if not execution.cancelling():
+                execution.cancel()
+        if executions:
+            await asyncio.gather(*executions, return_exceptions=True)
+        self._prune_finished()
+
+    def _prune_finished(self) -> None:
+        done = [result_id for result_id, execution in self._running.items() if execution.done()]
+        for result_id in done:
+            del self._running[result_id]
+            self._running_routine_ids.pop(result_id, None)
+            self._running_run_ids.pop(result_id, None)
+
     @property
     def status(self) -> dict:
         """Return current runner status for the API."""
         return {
-            "running": not self._paused and not self._stop_event.is_set(),
+            "running": self._loop_task is not None and not self._loop_task.done()
+            and not self._paused and not self._stop_event.is_set(),
             "paused": self._paused,
             "active_tasks": len(self._running),
             "max_concurrent": self._config.max_concurrent,
-            "running_goal_ids": list(set(self._running_goal_ids.values())),
+            "running_routine_ids": list(set(self._running_routine_ids.values())),
         }
 
     async def _poll_loop(self) -> None:
@@ -99,12 +159,16 @@ class TaskRunner:
 
     async def _tick(self) -> None:
         """Single tick: spawn due runs, pick up ready tasks, clean up finished."""
-        for goal in self._store.get_due_recurring_goals():
-            run = self._store.queue_run(goal.id)
-            self._store.stamp_last_run_spawned(goal.id)
-            logger.info("Spawned run #%d for goal %s", run.run_number, goal.id)
+        for routine in self._store.get_due_recurring_routines():
+            if routine.id in self._blocked_routine_ids:
+                continue
+            run = self._store.queue_run(routine.id)
+            self._store.stamp_last_run_spawned(routine.id)
+            logger.info("Spawned run #%d for routine %s", run.run_number, routine.id)
 
         for task_result, task in self._store.get_ready_task_results():
+            if task.routine_id in self._blocked_routine_ids or task_result.run_id in self._blocked_run_ids:
+                continue
             if len(self._running) >= self._config.max_concurrent:
                 break
             if task_result.id not in self._running:
@@ -114,12 +178,10 @@ class TaskRunner:
                     self._execute(task_result, task),
                     name=f"task-exec-{task_result.id[:8]}",
                 )
-                self._running_goal_ids[task_result.id] = task.goal_id
+                self._running_routine_ids[task_result.id] = task.routine_id
+                self._running_run_ids[task_result.id] = task_result.run_id
 
-        done = [trid for trid, t in self._running.items() if t.done()]
-        for trid in done:
-            del self._running[trid]
-            self._running_goal_ids.pop(trid, None)
+        self._prune_finished()
 
     async def _execute(self, task_result: "TaskResult", task: "Task") -> None:
         """Execute a task, recording outcome into its result."""
@@ -161,12 +223,12 @@ class TaskRunner:
         run = self._store.get_run(run_id)
         if not run:
             return
-        goal = self._store.get_goal(run.goal_id)
-        if not goal:
+        routine = self._store.get_routine(run.routine_id)
+        if not routine:
             return
 
         results = self._store.get_task_results(run_id)
-        tasks = {t.id: t for t in self._store.list_tasks(run.goal_id)}
+        tasks = {t.id: t for t in self._store.list_tasks(run.routine_id)}
         completed_count = sum(1 for r in results if r.status == "completed")
         total_count = len(results)
 
@@ -197,7 +259,7 @@ class TaskRunner:
                     last_result = r.result
                     break
             message = format_run_completed(
-                goal_description=goal.description,
+                routine_description=routine.description,
                 run_number=run.run_number,
                 duration=duration,
                 total_tasks=total_count,
@@ -216,7 +278,7 @@ class TaskRunner:
                     error = r.error or ""
                     break
             message = format_run_failed(
-                goal_description=goal.description,
+                routine_description=routine.description,
                 run_number=run.run_number,
                 duration=duration,
                 total_tasks=total_count,

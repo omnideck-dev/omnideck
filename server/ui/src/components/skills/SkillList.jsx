@@ -1,3 +1,4 @@
+import IconButton from '../primitives/IconButton.jsx';
 import styles from './SkillList.module.css';
 
 function metaText(skill, categories) {
@@ -9,7 +10,7 @@ function metaText(skill, categories) {
     return `${granted.length} ${catWord} · ${toolCount} ${toolWord}`;
 }
 
-function SkillItem({ skill, categories, selected, onSelect }) {
+function SkillItem({ skill, categories, selected, onSelect, onExport }) {
     return (
         <li
             className={`${styles.item} ${selected ? styles.itemActive : ''}`}
@@ -26,11 +27,20 @@ function SkillItem({ skill, categories, selected, onSelect }) {
                     <span className={styles.metaText}>{metaText(skill, categories)}</span>
                 </div>
             </div>
+            <IconButton
+                className={styles.exportBtn}
+                title="Export skill"
+                aria-label={`Export ${skill.name}`}
+                data-testid={`skill-export-${skill.id}`}
+                onClick={(e) => { e.stopPropagation(); onExport?.(skill.id); }}
+            >
+                <i className="bi bi-download" />
+            </IconButton>
         </li>
     );
 }
 
-export default function SkillList({ skills, categories, selectedId, onSelect, onNew }) {
+export default function SkillList({ skills, categories, selectedId, onSelect, onNew, onExport }) {
     return (
         <div className={styles.panel}>
             <div className={styles.header}>
@@ -45,6 +55,7 @@ export default function SkillList({ skills, categories, selectedId, onSelect, on
                         categories={categories}
                         selected={selectedId === skill.id}
                         onSelect={onSelect}
+                        onExport={onExport}
                     />
                 ))}
             </div>

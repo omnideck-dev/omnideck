@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Collapsed wrapper, fixed content</title>
+  <style>
+    html, body { margin: 0; }
+    /* Like Figma's signup: a full-width wrapper with height 0 whose child is
+       taken out of flow, so the wrapper reports scrollHeight 0. The walk used
+       to stop at the wrapper and never reach the visible controls. */
+    #react-page { height: 0; width: 100%; }
+    .panel { position: fixed; inset: 0; }
+  </style>
+</head>
+<body>
+  <div id="react-page">
+    <div class="panel">
+      <a href="/">Logo</a>
+      <button>Continue with Google</button>
+      <input type="email" placeholder="Work email">
+      <button>Continue with email</button>
+    </div>
+  </div>
+</body>
+</html>

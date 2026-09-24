@@ -1,4 +1,4 @@
-"""Planning tools for goal and task creation."""
+"""Planning tools for routine and task creation."""
 
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -13,18 +13,18 @@ from tasks._models import _new_id
 from tasks._singleton import get_store
 
 
-async def begin_goal(
+async def begin_routine(
     description: str,
     cron: str | None = None,
     timezone: str | None = None,
 ) -> dict[str, Any] | str:
-    """Begin building a new goal draft.
+    """Begin building a new routine draft.
 
-    Returns a draft dict to pass to add_task and commit_goal.
+    Returns a draft dict to pass to add_task and commit_routine.
 
     Args:
-        description: What this goal accomplishes.
-        cron: Optional cron expression for recurring goals (e.g. '0 10 * * *').
+        description: What this routine accomplishes.
+        cron: Optional cron expression for recurring routines (e.g. '0 10 * * *').
         timezone: IANA timezone name (e.g. 'America/Chicago'). Defaults to UTC.
     """
     if not description or not description.strip():
@@ -55,13 +55,13 @@ async def add_task(
     agent_profile: str,
     depends_on: list[str] | None = None,
 ) -> dict[str, Any] | str:
-    """Add a task to a goal draft and return the updated draft.
+    """Add a task to a routine draft and return the updated draft.
 
     Omit depends_on to automatically depend on the previous task (sequential).
     Pass depends_on=[] to run immediately with no dependencies (parallel).
 
     Args:
-        draft: Current goal draft from begin_goal or a previous add_task.
+        draft: Current routine draft from begin_routine or a previous add_task.
         key: Unique short identifier for this task (e.g. 'fetch_data').
         description: Short human-readable description.
         instruction: Full self-contained agent prompt.
@@ -71,7 +71,7 @@ async def add_task(
             previous task. Pass [] for no dependencies (parallel execution).
     """
     if not isinstance(draft, dict) or "tasks" not in draft:
-        return "Error: invalid draft. Start with begin_goal."
+        return "Error: invalid draft. Start with begin_routine."
     if not key or not key.strip():
         return "Error: key is required."
     key = key.strip()
@@ -114,11 +114,11 @@ async def add_task(
     return {**draft, "tasks": [*draft["tasks"], task]}
 
 
-async def commit_goal(draft: dict[str, Any]) -> str:
-    """Validate and save a completed goal draft to disk.
+async def commit_routine(draft: dict[str, Any]) -> str:
+    """Validate and save a completed routine draft to disk.
 
     Args:
-        draft: The goal draft built with begin_goal and add_task.
+        draft: The routine draft built with begin_routine and add_task.
     """
     if not isinstance(draft, dict):
         return "Error: invalid draft."
@@ -175,7 +175,7 @@ async def commit_goal(draft: dict[str, Any]) -> str:
             )
 
     store = get_store()
-    goal = store.create_goal(
+    routine = store.create_routine(
         description=description.strip(),
         cron=cron,
         timezone=timezone,
@@ -198,10 +198,10 @@ async def commit_goal(draft: dict[str, Any]) -> str:
         }
         task_defs.append(task_def)
 
-    created_tasks = store.create_tasks(goal_id=goal.id, task_defs=task_defs)
+    created_tasks = store.create_tasks(routine_id=routine.id, task_defs=task_defs)
 
     if not cron:
-        store.queue_run(goal.id)
+        store.queue_run(routine.id)
 
     lines = []
     keys = [str(t["key"]).strip() for t in tasks]
@@ -212,54 +212,54 @@ async def commit_goal(draft: dict[str, Any]) -> str:
         lines.append(f"  - [{key}] {task.description} (id={task.id}{profile_note}{deps_note})")
 
     task_lines = "\n".join(lines)
-    tz_note = f", timezone={goal.timezone}" if goal.timezone else ""
-    return f"Created goal '{goal.description}' (id={goal.id}{tz_note}) with {len(created_tasks)} task(s):\n{task_lines}"
+    tz_note = f", timezone={routine.timezone}" if routine.timezone else ""
+    return f"Created routine '{routine.description}' (id={routine.id}{tz_note}) with {len(created_tasks)} task(s):\n{task_lines}"
 
 
-async def list_goals(status: str | None = None) -> str:
-    """List goals, optionally filtered by status.
+async def list_routines(status: str | None = None) -> str:
+    """List routines, optionally filtered by status.
 
     Args:
-        status: Filter by goal status ('active' or 'paused'). Omit for all.
+        status: Filter by routine status ('active' or 'paused'). Omit for all.
     """
     store = get_store()
-    goals = store.list_goals(status=status)
-    if not goals:
-        return "No goals found."
-    lines = [f"- {g.description} (id={g.id}, status={g.status}, cron={g.cron}, timezone={g.timezone})" for g in goals]
+    routines = store.list_routines(status=status)
+    if not routines:
+        return "No routines found."
+    lines = [f"- {g.description} (id={g.id}, status={g.status}, cron={g.cron}, timezone={g.timezone})" for g in routines]
     return "\n".join(lines)
 
 
-async def list_tasks(goal_id: str) -> str:
-    """List task definitions for a goal.
+async def list_tasks(routine_id: str) -> str:
+    """List task definitions for a routine.
 
     Args:
-        goal_id: The goal to list tasks for.
+        routine_id: The routine to list tasks for.
     """
-    if not goal_id or not goal_id.strip():
-        return "Error: goal_id is required."
+    if not routine_id or not routine_id.strip():
+        return "Error: routine_id is required."
     store = get_store()
-    tasks = store.list_tasks(goal_id)
+    tasks = store.list_tasks(routine_id)
     if not tasks:
-        return "No tasks found for this goal."
+        return "No tasks found for this routine."
     lines = [f"- {t.description} (id={t.id}, profile={t.agent_profile}, depends_on={t.depends_on})" for t in tasks]
     return "\n".join(lines)
 
 
-async def trigger_goal(goal_id: str) -> str:
-    """Manually trigger a new run for a goal, regardless of its cron schedule.
+async def trigger_routine(routine_id: str) -> str:
+    """Manually trigger a new run for a routine, regardless of its cron schedule.
 
     Args:
-        goal_id: The goal to trigger.
+        routine_id: The routine to trigger.
     """
-    if not goal_id or not goal_id.strip():
-        return "Error: goal_id is required."
+    if not routine_id or not routine_id.strip():
+        return "Error: routine_id is required."
     store = get_store()
-    goal = store.get_goal(goal_id)
-    if not goal:
-        return f"Error: Goal '{goal_id}' not found."
-    run = store.queue_run(goal_id)
-    return f"Triggered run #{run.run_number} (id={run.id}) for goal '{goal.description}'."
+    routine = store.get_routine(routine_id)
+    if not routine:
+        return f"Error: Routine '{routine_id}' not found."
+    run = store.queue_run(routine_id)
+    return f"Triggered run #{run.run_number} (id={run.id}) for routine '{routine.description}'."
 
 
-__all__ = ["add_task", "begin_goal", "commit_goal", "list_goals", "list_tasks", "trigger_goal"]
+__all__ = ["add_task", "begin_routine", "commit_routine", "list_routines", "list_tasks", "trigger_routine"]

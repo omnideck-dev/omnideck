@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Snapshot error</title></head>
+<body>
+  <h1>Readable fallback content</h1>
+  <p>The page remains readable even when its computed-style API is broken.</p>
+
+  <script>
+    window.getComputedStyle = () => {
+      throw new Error('fixture snapshot failure');
+    };
+  </script>
+</body>
+</html>

@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ContextMeter from './ContextMeter.jsx';
-import { formatAgentName } from './AgentCard.jsx';
+import { formatAgentName } from '../utils/agentUtils.js';
 import StatusDot from './StatusDot.jsx';
-import { useAgentState } from '../hooks/useAgentState.jsx';
+import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
 /**
@@ -15,10 +15,7 @@ import styles from './ChatPanel.module.css';
  * When sub-agents have been spawned, a network indicator appears in the
  * title bar so the user can navigate to the full agent network view.
  */
-export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkActivated, networkAgentCount, networkRunningCount, onOpenNetwork, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
-    const [draft, setDraft] = useState('');
-    const clearDraft = useCallback(() => setDraft(''), []);
-
+export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
     // The title bar reflects the root agent; read it straight from the agent
     // tree rather than receiving it as a prop.
     const agentState = useAgentState();
@@ -26,39 +23,52 @@ export default function ChatPanel({ messages, onSend, onStop, isStreaming, stopR
 
     // A turn is one user message and its response. Title falls back to the
     // agent name until the live conversation title is wired up.
-    const turnCount = messages.filter((m) => m.role === 'user').length;
+    const turnCount = Array.isArray(turns) ? turns.length : 0;
     const title = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat';
 
     return (
         <div className={styles.panel}>
             <div className={styles.titleBar} data-testid="chat-title-bar">
-                <span className={styles.title} data-testid="chat-title">{title}</span>
-                {turnCount > 0 && (
-                    <span className={styles.turns} data-testid="chat-turns">
-                        {turnCount} turn{turnCount !== 1 ? 's' : ''}
-                    </span>
-                )}
-                <ContextMeter contextUsage={rootAgent?.contextUsage} />
-                <span className={styles.spacer} />
-                {networkActivated && (
+                <div className={styles.left}>
+                    <span className={styles.title} data-testid="chat-title">{title}</span>
+                    {turnCount > 0 && (
+                        <span className={styles.turns} data-testid="chat-turns">
+                            {turnCount} turn{turnCount !== 1 ? 's' : ''}
+                        </span>
+                    )}
+                    <ContextMeter contextUsage={rootAgent?.contextUsage} />
+                </div>
+                <button
+                    className={styles.artifactsBtn}
+                    onClick={onOpenArtifacts}
+                    title="Files produced in this conversation"
+                    data-testid="conversation-artifacts-trigger"
+                >
+                    <i className="bi bi-collection" />
+                    <span>Artifacts</span>
+                </button>
+                {networkAgentCount > 0 && (
                     <button className={styles.networkBtn} onClick={onOpenNetwork} title="Open agent network view" data-testid="network-indicator">
                         <StatusDot status={networkRunningCount > 0 ? 'running' : 'complete'} />
                         <span>{networkAgentCount} agent{networkAgentCount !== 1 ? 's' : ''}</span>
                     </button>
                 )}
             </div>
-            <ChatMessages messages={messages} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={setDraft} />
-            {/* Keyed by conversation so switching chats remounts the input,
-                discarding any unsent text instead of carrying it over. */}
+            <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
+            {/* Keyed by conversation so switching chats remounts the input —
+                its own unsent-draft state is restored from local storage per
+                conversationId rather than carried over from the old chat. */}
             <ChatInput
                 key={conversationId}
+                conversationId={conversationId}
                 onSend={onSend}
                 onStop={onStop}
                 isStreaming={isStreaming}
+                isOffline={isOffline}
                 stopRequested={stopRequested}
                 attachment={attachment}
                 draft={draft}
-                onDraftConsumed={clearDraft}
+                onDraftConsumed={() => onDraftChange('')}
                 selectedProfileId={selectedProfileId}
                 onProfileChange={onProfileChange}
                 profileRefreshSignal={profileRefreshSignal}

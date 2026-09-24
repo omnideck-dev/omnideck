@@ -9,79 +9,48 @@ static file serving through aiohttp's built-in static route helpers.
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiohttp import web
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import AsyncIterator, Awaitable, Callable
+    from collections.abc import Awaitable, Callable
 
     from aiohttp.web_request import Request
-    from aiohttp.web_response import Response, StreamResponse
+    from aiohttp.web_response import StreamResponse
 
-import asyncio
-
-from agents.types import Data
+from agent_runtime import AgentRuntime
 from config import load_config
-from sdk.turn import is_turn_active, queue_nudge, request_stop
+from server._agent_run_routes import register_agent_run_routes
+from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
+from server._browser_profile_routes import register_browser_profile_routes
+from server._container_file_routes import register_container_file_routes
 from server._conversation_routes import register_conversation_routes
+from server._custom_app_routes import register_custom_app_routes
+from server._custom_tool_routes import register_custom_tool_routes
+from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
+from server._memory_routes import register_memory_routes
 from server._model_routes import register_model_routes
+from server._pack_routes import register_pack_routes
 from server._profile_routes import register_profile_routes
-from server._skill_routes import register_skill_routes
-from server._tool_category_routes import register_tool_category_routes
 from server._provider_routes import register_provider_routes
 from server._settings_routes import register_settings_routes
 from server._setup_routes import register_setup_routes
-from server._task_routes import register_task_routes
-from server.message_handler import handle_user_message
-from tools.custom_tools.registry import delete_tool, list_tools
-from tools.desktop._exec import DesktopExecError
-from tools.desktop._lifecycle import start_desktop
-from tools.memory import forget as forget_memory
-from tools.memory import load_memory, set_key_hidden
+from server._skill_routes import register_skill_routes
+from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
+from server._tool_category_routes import register_tool_category_routes
+from server._ui_routes import register_ui_routes
 
 logger = logging.getLogger(__name__)
-
-STATIC_DIR = Path(__file__).parent / "static"
-UI_DIST_DIR = Path(__file__).parent / "ui" / "dist"
-
-# ---------------------------------------------------------------------------
-# Pydantic request models
-# ---------------------------------------------------------------------------
-
-
-class Attachment(BaseModel):
-    """Represents a single attachment sent with a chat request."""
-
-    base64: str
-    content_type: str
-    filename: str | None = None
-
-
-class ChatRequest(BaseModel):
-    """Request model for chat API with optional attachments."""
-
-    message: str
-    data: list[Attachment] | None = None
-    profile_id: str | None = None
-    conversation_id: str | None = None
-
-
-class NudgeRequest(BaseModel):
-    """Request model for nudging a running agent."""
-
-    message: str
-    conversation_id: str
-    agent_id: str
-
 
 # ---------------------------------------------------------------------------
 # Middleware
@@ -109,9 +78,8 @@ async def cors_and_error_middleware(
     # CSRF: mutating requests must carry X-Requested-With: XMLHttpRequest.
     # Same-origin JS can always set this header; cross-origin JS cannot because
     # the server does not list it in Access-Control-Allow-Headers.
-    if request.method in _CSRF_METHODS:
-        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
-            return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
+    if request.method in _CSRF_METHODS and request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
     try:
         resp: StreamResponse = await handler(request)
     except ValidationError as exc:  # pragma: no cover - handled uniformly
@@ -124,230 +92,14 @@ async def cors_and_error_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Streaming helper
-# ---------------------------------------------------------------------------
-
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from sdk.events import AgentEvent
-
-
-async def stream_events(
-    request: Request,
-    events: AsyncIterator[AgentEvent],  # iterator of AgentEvent
-) -> StreamResponse:
-    """Stream JSONL events to the client.
-
-    Args:
-        request: Incoming aiohttp request.
-        events: Async iterator yielding `AgentEvent` instances produced by
-            `handle_user_message`.
-
-    Returns:
-        StreamResponse prepared and fully written (EOF sent).
-    """
-    resp = web.StreamResponse(
-        status=200,
-        reason="OK",
-        headers={
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Transfer-Encoding": "chunked",
-        },
-    )
-    await resp.prepare(request)
-
-    try:
-        async for event in events:
-            data_out = event.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
-            await resp.write((json.dumps(data_out) + "\n").encode("utf-8"))
-    except ConnectionResetError:
-        logger.debug("Client disconnected during event stream")
-    except Exception:  # pragma: no cover - defensive logging
-        logger.exception("Error while streaming events")
-        try:
-            error_data = {"error": "Server error", "payload": {"type": "turn_end"}}
-            await resp.write((json.dumps(error_data) + "\n").encode("utf-8"))
-        except ConnectionResetError:
-            pass
-    finally:
-        try:
-            await resp.write_eof()
-        except ConnectionResetError:
-            pass
-    return resp
-
-
-# ---------------------------------------------------------------------------
-# Handlers
-# ---------------------------------------------------------------------------
-
-
-async def chat_handler(request: Request) -> StreamResponse:
-    """Process chat messages and stream incremental model output."""
-    raw_body = await request.text()
-    try:
-        payload = ChatRequest.model_validate_json(raw_body)
-    except ValidationError as ve:
-        logger.warning("Invalid chat request: %s", ve)
-        raise
-    user_query = payload.message.strip()
-    if not user_query:
-        return web.json_response({"error": "Message field is required."}, status=400)
-    if not payload.conversation_id:
-        return web.json_response(
-            {"error": "conversation_id is required."}, status=400,
-        )
-
-    data_objs: list[Data] | None = None
-    if payload.data:
-        data_objs = [
-            Data(base64_encoded=a.base64, content_type=a.content_type, filename=a.filename) for a in payload.data
-        ]
-    return await stream_events(
-        request,
-        handle_user_message(
-            user_query,
-            data_objs,
-            profile_id=payload.profile_id,
-            conversation_id=payload.conversation_id,
-        ),
-    )
-
-
-async def nudge_handler(request: Request) -> Response:
-    """Send a nudge message to a running agent."""
-    raw_body = await request.text()
-    try:
-        payload = NudgeRequest.model_validate_json(raw_body)
-    except ValidationError as ve:
-        logger.warning("Invalid nudge request: %s", ve)
-        raise
-    text = payload.message.strip()
-    if not text:
-        return web.json_response({"error": "message is required."}, status=400)
-    if not is_turn_active(payload.conversation_id):
-        return web.json_response(
-            {"error": "No active turn for this conversation."}, status=409,
-        )
-    queue_nudge(payload.agent_id, text)
-    return web.json_response({"ok": True})
-
-
-async def container_file_handler(request: Request) -> StreamResponse:
-    """Serve files from the container's home directory via the host volume mount."""
-    path = request.match_info.get("path", "")
-    cfg = load_config()
-    host_home = Path(cfg.virtual_computer.home_dir).resolve()
-    host_path = (host_home / path).resolve()
-
-    if not host_path.is_relative_to(host_home):
-        return web.Response(status=403, text="Forbidden")
-    if not host_path.is_file():
-        return web.Response(status=404, text="Not found")
-
-    return web.FileResponse(host_path)
-
-
-async def index_handler(_request: Request) -> StreamResponse:
-    """Serve the main UI index file."""
-    index_path = UI_DIST_DIR / "index.html"
-    if not index_path.is_file():
-        logger.warning("UI index not found: %s", index_path)
-        return web.Response(text="<h1>File not found</h1>", content_type="text/html", status=404)
-    return web.FileResponse(index_path)
-
-
-async def stop_handler(request: Request) -> Response:
-    """Interrupt the active agent conversation turn."""
-    conversation_id = request.query.get("conversation_id")
-    if not conversation_id:
-        return web.json_response(
-            {"error": "conversation_id is required."}, status=400,
-        )
-    request_stop(conversation_id=conversation_id)
-    return web.json_response({"ok": True})
-
-
-async def list_custom_tools_handler(_request: Request) -> Response:
-    """Return all custom tool definitions as JSON."""
-    tools = list_tools()
-    data = [
-        {
-            "id": t.id,
-            "name": t.name,
-            "description": t.description,
-            "type": t.type,
-            "language": t.language,
-            "tags": t.tags,
-            "created_at": t.created_at,
-        }
-        for t in tools
-    ]
-    return web.json_response(data)
-
-
-async def delete_custom_tool_handler(request: Request) -> Response:
-    """Delete a custom tool by name."""
-    name = request.match_info["name"]
-    found = delete_tool(name)
-    if not found:
-        return web.json_response({"error": f"Tool '{name}' not found"}, status=404)
-    return web.Response(status=204)
-
-
-async def list_memory_handler(_request: Request) -> Response:
-    """Return all stored memories and the set of hidden keys."""
-    entries = load_memory()
-    return web.json_response(
-        {
-            "entries": {k: e.value for k, e in entries.items()},
-            "hidden": sorted(k for k, e in entries.items() if e.hidden),
-        }
-    )
-
-
-async def delete_memory_handler(request: Request) -> Response:
-    """Delete a memory entry by key."""
-    key = request.match_info["key"]
-    result = await forget_memory(key)
-    if result.get("status") == "not_found":
-        return web.json_response({"error": f"Memory key '{key}' not found"}, status=404)
-    return web.Response(status=204)
-
-
-async def set_memory_hidden_handler(request: Request) -> Response:
-    """Set the hidden flag for a memory entry."""
-    key = request.match_info["key"]
-    if key not in load_memory():
-        return web.json_response({"error": f"Memory key '{key}' not found"}, status=404)
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return web.json_response({"error": "Invalid JSON body"}, status=400)
-    set_key_hidden(key, bool(body.get("hidden", False)))
-    return web.Response(status=204)
-
-
-async def desktop_start_handler(_request: Request) -> Response:
-    """Start the desktop environment and return its status."""
-    try:
-        await start_desktop()
-        return web.json_response({"running": True})
-    except DesktopExecError as exc:
-        return web.json_response(
-            {"running": False, "error": str(exc)},
-            status=503,
-        )
-
-
-# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
 
-def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
+def create_app(
+    *,
+    client_max_size: int = 50 * 1024**2,
+) -> web.Application:
     """Create and configure the aiohttp application.
 
     Args:
@@ -356,20 +108,27 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     Returns:
         Configured aiohttp web.Application instance.
     """
-    app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
+    from browser.runtime import BrowserRuntime
+    from server._browser_runtime import BROWSER_RUNTIME_KEY
+    from conversations import ConversationStore
 
-    # API routes
-    app.router.add_route("POST", "/api/chat", chat_handler)
-    app.router.add_route("POST", "/api/chat/stop", stop_handler)
-    app.router.add_route("POST", "/api/nudge", nudge_handler)
-    app.router.add_route("GET", "/api/custom-tools", list_custom_tools_handler)
-    app.router.add_route("DELETE", "/api/custom-tools/{name}", delete_custom_tool_handler)
-    app.router.add_route("GET", "/api/memory", list_memory_handler)
-    app.router.add_route("DELETE", "/api/memory/{key}", delete_memory_handler)
-    app.router.add_route("POST", "/api/memory/{key}/hidden", set_memory_hidden_handler)
+    browser_runtime = BrowserRuntime()
+    app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
+    app[BROWSER_RUNTIME_KEY] = browser_runtime
+    app[AGENT_RUNTIME_KEY] = AgentRuntime(conversations=ConversationStore(), browser_runtime=browser_runtime)
+
+    # Agent-run HTTP channel adapter
+    register_agent_run_routes(app)
+
+    # Custom tools and memory
+    register_custom_tool_routes(app)
+    register_memory_routes(app)
 
     # Feature flags
     register_feature_routes(app)
+
+    # Experimental Custom Apps
+    register_custom_app_routes(app)
 
     # Models + agents + providers
     register_model_routes(app)
@@ -381,6 +140,9 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     # Editable skills
     register_skill_routes(app)
 
+    # Sharing: export/import for profiles and skills
+    register_pack_routes(app)
+
     # Tool-category catalog
     register_tool_category_routes(app)
 
@@ -391,13 +153,17 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     register_setup_routes(app)
 
     # Desktop API
-    app.router.add_route("POST", "/api/desktop/start", desktop_start_handler)
+    register_desktop_routes(app)
 
     # Browser takeover side channel (WebSocket)
     register_browser_control_routes(app)
+    register_browser_profile_routes(app)
 
     # Conversation sessions API
     register_conversation_routes(app)
+
+    # Artifacts hub API
+    register_artifacts_routes(app)
 
     # Task engine routes
     register_task_routes(app)
@@ -408,22 +174,15 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
 
     # Container file serving — lets the frontend (and agent-authored HTML) reference
     # container files by their real path instead of base64-encoding them.
-    cfg = load_config()
-    container_prefix = cfg.virtual_computer.home_dir
-    app.router.add_route("GET", f"{container_prefix}/{{path:.*}}", container_file_handler)
-    # HEAD lets the preview poll a file's Last-Modified/ETag without transferring the body.
-    app.router.add_route("HEAD", f"{container_prefix}/{{path:.*}}", container_file_handler)
+    register_container_file_routes(app)
 
     # UI routes
-    app.router.add_route("GET", "/", index_handler)
-    if UI_DIST_DIR.exists():
-        app.router.add_static("/assets", UI_DIST_DIR / "assets", show_index=False)
-    if STATIC_DIR.exists():
-        app.router.add_static("/static", STATIC_DIR, show_index=False)
+    register_ui_routes(app)
 
     # Phase 1: Data migrations — synchronous, must complete before anything
     # else reads state.  No user interaction needed.
     app.on_startup.append(_run_data_migrations)
+    app.on_startup.append(_configure_routines)
 
     # Phase 2: Readiness signals — each contributor hook calls
     # ``register_ready_contributor`` and signals its event when its
@@ -445,8 +204,14 @@ def create_app(*, client_max_size: int = 10 * 1024**2) -> web.Application:
     # ``app["ready"]`` and then initializes everything that needed to wait.
     app.on_startup.append(_start_deferred_subsystems)
     app.on_cleanup.append(_stop_deferred_subsystems)
+    app.on_cleanup.append(_stop_active_run_manager)
 
     return app
+
+
+async def _stop_active_run_manager(app: web.Application) -> None:
+    """Gracefully stop process-owned agent runs during server shutdown."""
+    await app[AGENT_RUNTIME_KEY].close()
 
 
 async def _run_data_migrations(_app: web.Application) -> None:
@@ -528,7 +293,8 @@ async def _init_integrations_signal(app: web.Application) -> None:
 
     # Store the task on the app so the GC doesn't drop it before it completes.
     app["_integrations_load"] = asyncio.create_task(
-        _load_with_retry(), name="integrations-load-gate",
+        _load_with_retry(),
+        name="integrations-load-gate",
     )
 
 
@@ -565,7 +331,9 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
                 logger.info("Deferred subsystems waiting for readiness")
             await app["ready"].wait()
             logger.info("Ready — starting deferred subsystems")
-            await _init_task_runner(app)
+            runner = app.get("task_runner")
+            if runner:
+                await runner.start()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -574,26 +342,27 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
     app["_deferred_init"] = asyncio.create_task(_deferred(), name="deferred-init")
 
 
-async def _init_task_runner(app: web.Application) -> None:
-    """Initialize and start the task runner."""
+async def _configure_routines(app: web.Application) -> None:
+    """Compose routine services before requests; defer execution until readiness."""
+    from tasks import RoutineService, TaskExecutor, TaskRunner, TelegramNotifier, get_store
+
     config = load_config()
-    if not config.goals.enabled:
+    store = get_store()
+    if not config.routines.enabled:
+        app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner=None)
         return
 
-    from tasks import TaskExecutor, TaskRunner, TelegramNotifier, get_store
-
-    store = get_store()
-    executor = TaskExecutor(store)
+    executor = TaskExecutor(store, app[AGENT_RUNTIME_KEY])
 
     notifier = None
-    if config.goals.notifications.enabled:
-        notifier = TelegramNotifier(config.goals.notifications)
+    if config.routines.notifications.enabled:
+        notifier = TelegramNotifier(config.routines.notifications)
         if not notifier.enabled:
             notifier = None
 
-    runner = TaskRunner(store, executor, config.goals, notifier=notifier)
+    runner = TaskRunner(store, executor, config.routines, notifier=notifier)
     app["task_runner"] = runner
-    await runner.start()
+    app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner)
 
 
 async def _stop_deferred_subsystems(app: web.Application) -> None:
@@ -606,4 +375,4 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
         await runner.stop()
 
 
-__all__ = ["create_app"]
+__all__ = ["AGENT_RUNTIME_KEY", "create_app"]

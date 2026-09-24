@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Transparent modal backdrop</title>
+  <style>
+    #click-catcher {
+      inset: 0;
+      opacity: 0;
+      position: fixed;
+      z-index: 30;
+    }
+
+    #notice-card {
+      background: white;
+      border: 2px solid black;
+      inset: 30% 32%;
+      padding: 24px;
+      position: fixed;
+      z-index: 31;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Reports</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <div id="click-catcher"></div>
+  <section id="notice-card">
+    <h2>Export ready</h2>
+    <button id="return-to-report" type="button">Return to report</button>
+  </section>
+
+  <script>
+    document.getElementById('return-to-report').addEventListener('click', () => {
+      document.getElementById('click-catcher').remove();
+      document.getElementById('notice-card').remove();
+    });
+  </script>
+</body>
+</html>

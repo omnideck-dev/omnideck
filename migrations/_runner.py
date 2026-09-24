@@ -13,6 +13,15 @@ from migrations._003_vision_settings import migrate as _003_vision_settings
 from migrations._004_rename_num_ctx import migrate as _004_rename_num_ctx
 from migrations._005_multi_provider import migrate as _005_multi_provider
 from migrations._006_install_default_skills import migrate as _006_install_default_skills
+from migrations._007_events_first import migrate as _007_events_first
+from migrations._008_scrub_browser_screenshots import migrate as _008_scrub_browser_screenshots
+from migrations._009_terminal_sidecar import migrate as _009_terminal_sidecar
+from migrations._010_backfill_artifacts_index import migrate as _010_backfill_artifacts_index
+from migrations._011_seed_welcome_conversation import migrate as _011_seed_welcome_conversation
+from migrations._012_computron_path_rename import migrate as _012_computron_path_rename
+from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
+from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
+from migrations._015_browser_profiles import migrate as _015_browser_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +37,15 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("004_rename_num_ctx", _004_rename_num_ctx),
     ("005_multi_provider", _005_multi_provider),
     ("006_install_default_skills", _006_install_default_skills),
+    ("007_events_first", _007_events_first),
+    ("008_scrub_browser_screenshots", _008_scrub_browser_screenshots),
+    ("009_terminal_sidecar", _009_terminal_sidecar),
+    ("010_backfill_artifacts_index", _010_backfill_artifacts_index),
+    ("011_seed_welcome_conversation", _011_seed_welcome_conversation),
+    ("012_computron_path_rename", _012_computron_path_rename),
+    ("013_goals_to_routines", _013_goals_to_routines),
+    ("014_software_updates_setting", _014_software_updates_setting),
+    ("015_browser_profiles", _015_browser_profiles),
 ]
 
 

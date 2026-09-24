@@ -36,7 +36,7 @@ async def call(
     verb: str,
     args: dict[str, Any],
     *,
-    app_sock_path: Path,
+    app_sock_path: Path | str,
 ) -> Any:
     """Invoke ``verb`` on the broker for ``integration_id``.
 
@@ -101,7 +101,7 @@ async def call(
 
 
 async def _rpc_one_shot(
-    socket_path: Path, frame: dict[str, Any],
+    socket_path: Path | str, frame: dict[str, Any],
 ) -> dict[str, Any]:
     """Open a UDS, send one frame, read one frame, close.
 

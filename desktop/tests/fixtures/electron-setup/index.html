@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
+    />
+    <title>omnideck</title>
+    <link rel="stylesheet" href="./setup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="window">
+        <aside class="setup-panel" aria-live="polite">
+          <div class="identity">
+            <div class="mark" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <p class="brand">omnideck</p>
+          </div>
+
+          <div class="status">
+            <!-- Neutral until the first state arrives. The window is shown
+                 before the environment has been checked, so committing to
+                 "Welcome" here would flash first-run copy at people who are
+                 only reopening the app. -->
+            <p id="eyebrow" class="eyebrow">STARTING</p>
+            <h1 id="title">Starting omnideck</h1>
+            <p id="detail" class="detail">Checking your environment…</p>
+
+            <!-- The single line describing what setup is doing right now. -->
+            <p id="activity" class="activity" aria-live="polite" hidden></p>
+
+            <div id="progress-context" class="progress-context" hidden>
+              <span id="progress-step"></span>
+              <strong id="progress-value"></strong>
+            </div>
+
+            <!-- Shown only after a failure: which step it reached, and which
+                 one stopped it. -->
+            <section id="doctor-panel" class="doctor-panel" hidden>
+              <div class="doctor-heading">
+                <span>DIAGNOSTICS</span>
+                <strong id="doctor-result">Issue found</strong>
+              </div>
+              <div id="diagnostic-list" class="diagnostic-list"></div>
+              <details>
+                <summary>Technical details</summary>
+                <pre id="technical-output"></pre>
+              </details>
+            </section>
+
+            <div id="progress-wrap" class="progress-wrap" hidden>
+              <div
+                class="progress-track"
+                role="progressbar"
+                aria-label="Setup progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div id="progress" class="progress"></div>
+              </div>
+            </div>
+
+            <div id="spinner" class="spinner" aria-label="Working"></div>
+
+            <button id="primary" class="primary" type="button" hidden>
+              Set up omnideck
+            </button>
+            <button id="secondary" class="secondary" type="button" hidden></button>
+            <p id="action-error" class="action-error" role="alert" hidden></p>
+          </div>
+
+          <!-- Hidden until a state says a wait is actually happening. -->
+          <p id="footnote" class="footnote" hidden>
+            Setup can take several minutes. You can play Agent Dash while you
+            wait.
+          </p>
+        </aside>
+
+        <section class="game-panel" aria-labelledby="game-title">
+          <header class="game-header">
+            <div>
+              <p class="game-kicker">WHILE YOU WAIT</p>
+              <h2 id="game-title">Agent Dash</h2>
+            </div>
+            <div class="scoreboard" aria-live="polite">
+              <span>SCORE <strong id="score">0000</strong></span>
+              <span>BEST <strong id="best">0000</strong></span>
+            </div>
+          </header>
+
+          <div class="game-frame">
+            <canvas
+              id="agent-dash"
+              width="720"
+              height="360"
+              tabindex="0"
+              role="img"
+              aria-label="Agent Dash. Press Space, W, or the Up arrow, or click to jump over obstacles and collect cards."
+            ></canvas>
+            <div id="game-overlay" class="game-overlay">
+              <p id="game-message">Start setup to begin the run</p>
+              <span id="game-hint">Space / ↑ / click to jump</span>
+            </div>
+          </div>
+
+          <p class="game-help">
+            Jump the busywork. Collect the glowing cards.
+          </p>
+        </section>
+      </section>
+    </main>
+    <script src="./agent-dash.js"></script>
+    <script src="./setup.js"></script>
+  </body>
+</html>

@@ -48,6 +48,19 @@ class SkillsTab:
         self.name_input.wait_for(state="visible")
         return self
 
+    def export_row(self, skill_id: str) -> None:
+        """Click the row's export button (triggers a download)."""
+        self.item(skill_id).get_by_test_id(f"skill-export-{skill_id}").click()
+
+    def export_editor(self) -> None:
+        """Click the editor's Export button (triggers a download)."""
+        self.page.get_by_test_id("skill-export").click()
+
+    def import_file(self, path: str) -> "SkillsTab":
+        """Feed a pack file to the hidden import input (no OS dialog)."""
+        self.page.get_by_test_id("skills-import-input").set_input_files(path)
+        return self
+
     # ── Skill editor ──────────────────────────────────────────────
     @property
     def name_input(self) -> Locator:

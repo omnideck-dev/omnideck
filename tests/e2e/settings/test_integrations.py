@@ -7,7 +7,7 @@ flow isn't covered here. What we do cover end-to-end:
 - Add modal lifecycle (open, navigate to credentials step, validate
   empty-form submit gating, cancel).
 - Unavailable state (chmod the supervisor's app.sock so the route
-  hits PermissionError → UI surfaces the "Integrations unavailable"
+  hits PermissionError → UI views the "Integrations unavailable"
   empty state with a Retry button).
 
 Manual testing covers the AUTH / UPSTREAM / connected paths against

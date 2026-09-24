@@ -1,0 +1,46 @@
+/* Scrim + panel chrome now come from the Modal primitive; this file styles
+   only the dialog's own contents. */
+.title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.body {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: var(--sp-4);
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.check input {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--danger);
+}
+
+.path {
+    font-family: var(--font-code);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin: 6px 0 0 23px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    margin-top: var(--sp-5);
+}

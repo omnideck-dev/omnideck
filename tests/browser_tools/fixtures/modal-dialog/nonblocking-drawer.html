@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Nonblocking ARIA drawer</title>
+  <style>
+    main {
+      min-height: 1800px;
+      padding: 24px;
+      text-align: right;
+    }
+
+    #drawer {
+      background: white;
+      border-right: 2px solid black;
+      box-shadow: 10px 0 30px rgb(0 0 0 / 20%);
+      inset: 0 auto 0 0;
+      padding: 24px;
+      position: fixed;
+      width: 65vw;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Inventory</h1>
+    <button id="background-action" type="button">Background action</button>
+    <p id="background-status"></p>
+  </main>
+
+  <aside id="drawer" role="dialog" aria-modal="true" aria-label="Filters">
+    <h2>Filters</h2>
+    <button type="button">Apply filters</button>
+  </aside>
+
+  <script>
+    document.getElementById('background-action').addEventListener('click', () => {
+      document.getElementById('background-status').textContent = 'Background activated';
+    });
+  </script>
+</body>
+</html>

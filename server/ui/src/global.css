@@ -1,4 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('./assets/fonts/JetBrainsMono.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/Inter.woff2') format('woff2');
+}
 
 /* ═══════════════════════════════════════════════════════
    SIGNAL Design Language -- Token Definitions
@@ -69,10 +83,10 @@
   --flyout-width: 270px;
 
   /* ── Radius scale ── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 999px;
 
   /* ── Spacing (4px base) ── */
@@ -87,13 +101,22 @@
   --sp-12: 48px;
 
   /* ── Font stacks ── */
-  --font-brand: 'Roboto Mono', 'Consolas', monospace;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-brand: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+
+  /* ── Type scale ── */
+  --font-size-label: 10px;
+  --font-size-caption: 11px;
+  --font-size-small: 12px;
+  --font-size-body: 13px;
+  --font-size-ui: 14px;
+  --font-size-heading: 18px;
 
   /* ── Z-index scale ── */
   --z-sticky: 10;
   --z-flyout: 100;
+  --z-fullscreen: 500;
   --z-toast: 1000;
   --z-modal: 9999;
   --z-wizard: 10000;
@@ -167,6 +190,7 @@ html, body {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   background: var(--canvas);
   font-family: var(--font-body);

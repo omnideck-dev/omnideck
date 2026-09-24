@@ -1,0 +1,187 @@
+:root {
+  --mockup-toolbar-height: 116px;
+}
+
+.mockup-body {
+  background: var(--canvas);
+}
+
+.mockup-toolbar {
+  position: fixed;
+  z-index: 20;
+  inset: 0 0 auto;
+  min-height: var(--mockup-toolbar-height);
+  padding: 14px clamp(16px, 3vw, 36px) 12px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--elevated) 96%, transparent);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+.mockup-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.mockup-heading {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 188px;
+}
+
+.mockup-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 500 10px/1.2 var(--font-brand);
+  letter-spacing: 0.12em;
+}
+
+.mockup-heading strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mockup-os,
+.mockup-actions,
+.mockup-stage-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mockup-actions {
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.mockup-toolbar button {
+  width: auto;
+  min-height: 32px;
+  padding: 7px 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+
+.mockup-toolbar button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+  border-color: var(--border-strong);
+}
+
+.mockup-toolbar button[aria-selected='true'],
+.mockup-toolbar button[aria-current='step'],
+.mockup-toolbar .mockup-accent {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mockup-toolbar .mockup-danger:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-muted);
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--border));
+}
+
+.mockup-stage-nav {
+  max-width: 100%;
+  margin-top: 11px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.mockup-stage-nav button {
+  min-height: 28px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.mockup-app {
+  position: fixed;
+  inset: var(--mockup-toolbar-height) 0 0;
+}
+
+.mockup-app .shell {
+  height: 100%;
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.mockup-app .window {
+  min-height: min(660px, 100%);
+}
+
+.progress-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -6px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.progress-context[hidden] {
+  display: none;
+}
+
+.progress-context strong {
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.mockup-toast {
+  position: fixed;
+  z-index: 30;
+  right: 22px;
+  bottom: 22px;
+  max-width: 360px;
+  padding: 12px 16px;
+  color: var(--text-primary);
+  background: var(--elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 1120px) {
+  :root {
+    --mockup-toolbar-height: 158px;
+  }
+
+  .mockup-toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .mockup-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    order: 3;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --mockup-toolbar-height: 174px;
+  }
+
+  .mockup-heading {
+    min-width: 0;
+  }
+}

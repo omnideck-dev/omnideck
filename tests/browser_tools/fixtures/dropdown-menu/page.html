@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Dropdown menu</title></head>
+<body>
+  <h1>Menu</h1>
+  <button type="button">Open menu</button>
+  <!-- The open dropdown renders inside a zero-size positioning anchor (the
+       Floating UI / Popper "reference" pattern): the anchor's own box is 0x0,
+       but the menu is absolutely positioned at a visible spot. The walker must
+       recurse through the boxless anchor (vpPos 'clipped') to surface items. -->
+  <div style="position:relative; width:0; height:0">
+    <ul style="position:absolute; top:30px; left:0; list-style:none; padding:0; margin:0">
+      <li><button type="button">Profile</button></li>
+      <li><button type="button">Settings</button></li>
+      <li><button type="button">Log out</button></li>
+    </ul>
+  </div>
+</body>
+</html>

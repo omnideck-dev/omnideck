@@ -90,8 +90,8 @@
     margin-left: auto;
 }
 
-/* Action-bar buttons: Delete / Duplicate / Revert / Save now render
- * via the Button primitive — see ./primitives/Button.jsx. */
+/* Action-bar buttons: Delete / Duplicate / Save render via the Button
+ * and ConfirmButton primitives. */
 
 /* ---- Form body ---- */
 .formBody {
@@ -219,6 +219,40 @@
     color: var(--warning);
 }
 
+/* ---- Browser access ---- */
+.browserAccessRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    cursor: pointer;
+}
+
+.browserProfileField {
+    margin: var(--sp-3) 0 0 var(--sp-10);
+    max-width: 440px;
+}
+
+.browserProfileField > label {
+    display: block;
+    margin-bottom: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-small);
+    font-weight: 600;
+}
+
+.browserProfileSelect {
+    --select-width: min(100%, 320px);
+}
+
+.browserProfileHint {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
+    margin-top: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-caption);
+}
+
 
 /* ---- System prompt textarea ---- */
 .promptTextarea {
@@ -316,19 +350,16 @@
 .addSkillBtn:hover { border-color: var(--accent); color: var(--accent); }
 
 .skPopover {
-    position: absolute;
-    z-index: 20;
-    margin-top: 0.4rem;
-    width: 380px;
-    max-width: 100%;
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 .skPopHead { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--border-subtle); }
-.skPopList { max-height: 280px; overflow-y: auto; }
+.skPopList { flex: 1; min-height: 0; max-height: 280px; overflow-y: auto; }
 .skPopEmpty { padding: 1rem; text-align: center; font-size: 0.75rem; color: var(--text-tertiary); font-style: italic; }
 .skPopRow {
     display: flex;
@@ -380,4 +411,3 @@
 .autoText { display: flex; flex-direction: column; gap: 0.1rem; }
 .autoLabel { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
 .autoHelp { font-size: 0.7rem; color: var(--text-primary); opacity: 0.6; line-height: 1.4; }
-

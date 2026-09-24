@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Continuously updating</title></head>
+<body>
+  <h1>Live status</h1>
+  <p id="status">Update 0</p>
+
+  <script>
+    let update = 0;
+    setInterval(() => {
+      update += 1;
+      document.getElementById('status').textContent = `Update ${update}`;
+    }, 25);
+  </script>
+</body>
+</html>

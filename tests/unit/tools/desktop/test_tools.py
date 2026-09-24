@@ -92,7 +92,7 @@ def _mock_vision_deps():
     with (
         patch("settings.load_settings", return_value=fake_settings),
         patch("tools.desktop._tools.capture_screenshot", new_callable=AsyncMock) as mock_capture,
-        patch("sdk.providers.vision_generate", _fake_vision_generate),
+        patch("providers.vision_generate", _fake_vision_generate),
     ):
         mock_capture.return_value = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         yield {"capture": mock_capture}
@@ -111,7 +111,7 @@ async def test_describe_screen_returns_vision_response(_mock_vision_deps):
 @pytest.mark.asyncio
 async def test_describe_screen_no_vision_model():
     """describe_screen() returns error when no vision model configured."""
-    from sdk.providers import ProviderError
+    from agent_core.providers import ProviderError
 
     fake_settings = {"vision_model": "", "vision_options": {}, "vision_think": False}
 
@@ -122,7 +122,7 @@ async def test_describe_screen_no_vision_model():
         patch("tools.desktop._tools.ensure_desktop_running", new_callable=AsyncMock),
         patch("settings.load_settings", return_value=fake_settings),
         patch("tools.desktop._tools.capture_screenshot", new_callable=AsyncMock) as mock_capture,
-        patch("sdk.providers.vision_generate", _raises_no_model),
+        patch("providers.vision_generate", _raises_no_model),
     ):
         mock_capture.return_value = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         result = await describe_screen()
@@ -143,7 +143,7 @@ async def test_describe_screen_capture_failure(_mock_vision_deps):
 @pytest.mark.asyncio
 async def test_describe_screen_vision_model_failure():
     """describe_screen() returns error when vision model fails."""
-    from sdk.providers import ProviderError
+    from agent_core.providers import ProviderError
 
     fake_settings = {
         "vision_model": "qwen3.5:4b",
@@ -157,7 +157,7 @@ async def test_describe_screen_vision_model_failure():
     with (
         patch("settings.load_settings", return_value=fake_settings),
         patch("tools.desktop._tools.capture_screenshot", new_callable=AsyncMock) as mock_capture,
-        patch("sdk.providers.vision_generate", _failing_vision),
+        patch("providers.vision_generate", _failing_vision),
     ):
         mock_capture.return_value = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         result = await describe_screen()
@@ -181,7 +181,7 @@ async def test_describe_screen_empty_response():
     with (
         patch("settings.load_settings", return_value=fake_settings),
         patch("tools.desktop._tools.capture_screenshot", new_callable=AsyncMock) as mock_capture,
-        patch("sdk.providers.vision_generate", _empty_vision),
+        patch("providers.vision_generate", _empty_vision),
     ):
         mock_capture.return_value = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         result = await describe_screen()

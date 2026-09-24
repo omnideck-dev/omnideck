@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Selected option</title>
+</head>
+<body>
+  <h1>Selected option</h1>
+  <label for="fruit">Fruit</label>
+  <select id="fruit">
+    <option value="apple" selected>Apple</option>
+    <option value="banana">Banana</option>
+  </select>
+  <p id="result">Selected Apple</p>
+  <script>
+    const select = document.getElementById('fruit');
+    select.addEventListener('change', () => {
+      document.getElementById('result').textContent = `Selected ${select.options[select.selectedIndex].text}`;
+    });
+  </script>
+</body>
+</html>

@@ -4,7 +4,7 @@ import re
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def test_profile_ui_reflects_saved_state(page: Page):
@@ -33,9 +33,9 @@ def test_profile_ui_reflects_saved_state(page: Page):
     })
 
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
-        builder = settings.builder
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
+        builder = agents.builder
 
         # --- Identity ---
         expect(builder.name_input).to_have_value("UI State Test")
@@ -72,7 +72,7 @@ def test_profile_ui_reflects_saved_state(page: Page):
         expect(builder.field("top_p")).to_have_value("")
         expect(builder.field("repeat_penalty")).to_have_value("")
         expect(builder.field("context_window")).to_have_value("32000")
-        expect(page.get_by_test_id("compaction-threshold-select")).to_have_value("0.75")
+        expect(page.get_by_test_id("compaction-threshold-select")).to_have_attribute("data-value", "0.75")
         expect(builder.field("num_predict")).to_have_value("2048")
         expect(builder.field("max_iterations")).to_have_value("10")
         expect(builder.thinking_switch).to_be_checked()

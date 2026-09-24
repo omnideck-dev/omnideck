@@ -1,8 +1,29 @@
+# syntax=docker/dockerfile:1
+
+# ── UI builder stage ─────────────────────────────────────────────────────────
+# Builds the React/Vite frontend into static assets. Node and the heavy
+# dev-dependency tree live only in this stage — the runtime image ships no
+# Node and no node_modules; just the built dist/ is copied across.
+FROM docker.io/node:20-bookworm-slim AS ui-builder
+WORKDIR /ui
+COPY server/ui/package.json server/ui/package-lock.json ./
+RUN npm ci
+COPY server/ui/ ./
+RUN npm run build
+
+# ── Runtime stage ────────────────────────────────────────────────────────────
 FROM docker.io/ubuntu:22.04
 
 # ── BuildKit arch detection ──────────────────────────────────────────────────
 # TARGETARCH is injected by BuildKit: amd64, arm64, arm/v7, etc.
 ARG TARGETARCH
+ARG OMNIDECK_VERSION=development
+
+LABEL org.opencontainers.image.title="omnideck" \
+      org.opencontainers.image.description="Private omnideck application runtime" \
+      org.opencontainers.image.source="https://github.com/omnideck-dev/omnideck" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${OMNIDECK_VERSION}"
 
 # ── Environment ───────────────────────────────────────────────────────────────
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -16,7 +37,11 @@ RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
     echo "Etc/UTC" > /etc/timezone
 
 # ── System packages ──────────────────────────────────────────────────────────
-# Single apt layer — one update, one clean.
+# Single apt layer — one update, one clean. Deliberately lean: heavy media,
+# GPU, and desktop-environment stacks are NOT baked in. The feature-gated tools
+# that need them (image/music generation, visual grounding, viewable desktop)
+# install their dependencies on demand when the feature is toggled on.
+#
 # NOTE: python3-pip is deliberately omitted.  We bootstrap pip via ensurepip
 # for Python 3.12.  The system python3-pip drags in 3.10-era packages (PIL,
 # blinker, …) into /usr/lib/python3/dist-packages/ which 3.12 then picks up,
@@ -26,30 +51,22 @@ RUN apt-get update && \
       # Build tools & CLI
       software-properties-common curl gnupg2 xz-utils ca-certificates jq \
       build-essential git sudo unzip wget gosu file \
-      # Media
-      ffmpeg imagemagick espeak-ng \
       # Search
-      ripgrep && \
+      ripgrep \
+      # X virtual framebuffer + D-Bus. Playwright needs an X display even when
+      # the viewable desktop is disabled, and the entrypoint launches dbus
+      # unconditionally. tini reaps zombies as PID 1.
+      xvfb dbus-x11 tini \
+      # Fonts so the browser renders text (it runs headful under Xvfb)
+      fonts-dejavu-core && \
     # Python 3.12 via deadsnakes PPA
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
       python3.12 python3.12-venv python3.12-dev && \
-    # Desktop environment + VNC
-    apt-get install -y --no-install-recommends \
-      xfce4 xfce4-terminal mousepad dbus-x11 \
-      xvfb x11vnc websockify novnc \
-      xdotool xclip scrot wmctrl tini \
-      # Accessibility (used by a11y_tree.py under system Python 3.10)
-      python3-pyatspi at-spi2-core libatk-adaptor \
-      # Theme + fonts
-      elementary-xfce-icon-theme \
-      greybird-gtk-theme \
-      xcursor-themes dmz-cursor-theme \
-      fonts-dejavu-core && \
     # Clean up system Python packages that leak into 3.12's import path.
     # These are 3.10-compiled C extensions — they segfault or ImportError
-    # when loaded by 3.12.  We install proper versions via pip below.
+    # when loaded by 3.12.
     rm -rf /usr/lib/python3/dist-packages/PIL \
            /usr/lib/python3/dist-packages/Pillow* \
            /usr/lib/python3/dist-packages/blinker* && \
@@ -65,23 +82,6 @@ RUN mkdir -p /etc/apt/keyrings && \
     apt-get update && \
     apt-get install -y --no-install-recommends gh && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# ── Node.js LTS ───────────────────────────────────────────────────────────────
-# Node distributes: linux-x64 (amd64), linux-arm64 (arm64), linux-armv7l (arm/v7).
-RUN set -eux; \
-    LTS_VERSION=$(curl -fsSL https://nodejs.org/dist/index.json | \
-      jq -r '[.[] | select(.lts != false)][0].version' | sed 's/^v//'); \
-    case "${TARGETARCH}" in \
-      amd64)  NODE_ARCH="x64" ;; \
-      arm64)  NODE_ARCH="arm64" ;; \
-      arm)    NODE_ARCH="armv7l" ;; \
-      *)      echo "ERROR: unsupported arch: ${TARGETARCH}"; exit 1 ;; \
-    esac; \
-    curl -fsSLO "https://nodejs.org/dist/v${LTS_VERSION}/node-v${LTS_VERSION}-linux-${NODE_ARCH}.tar.xz"; \
-    tar -xJf "node-v${LTS_VERSION}-linux-${NODE_ARCH}.tar.xz" -C /usr/local --strip-components=1 --no-same-owner; \
-    rm "node-v${LTS_VERSION}-linux-${NODE_ARCH}.tar.xz"; \
-    ln -sf /usr/local/bin/node /usr/local/bin/nodejs; \
-    node -v && npm -v
 
 # ── uv (fast Python package installer) ───────────────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
@@ -123,135 +123,40 @@ RUN case "${TARGETARCH}" in \
         ;; \
     esac
 
-# ── PyTorch ────────────────────────────────────────────────────────────────────
-# amd64 → CUDA-enabled (NVIDIA GPU).  arm64 → CPU-only (Apple Silicon, Raspberry Pi).
-# ~2.5 GB on amd64, ~800 MB on arm64.  Separate layer, rarely changes.
-RUN case "${TARGETARCH}" in \
-      amd64) \
-        python3.12 -m pip install --no-cache-dir \
-          torch torchaudio torchvision \
-        ;; \
-      arm64) \
-        python3.12 -m pip install --no-cache-dir \
-          torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu \
-        ;; \
-      *) \
-        python3.12 -m pip install --no-cache-dir \
-          torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu \
-        ;; \
-    esac
-
-# ── Agent packages (general) ─────────────────────────────────────────────────
-# Pre-installed so the agent can import them immediately without pip install.
-RUN python3.12 -m pip install --no-cache-dir \
-      # HTTP / scraping
-      requests httpx beautifulsoup4 lxml \
-      # Images / vision
-      pillow opencv-python-headless \
-      # Data / math
-      pandas numpy scipy sympy scikit-learn \
-      # Visualisation
-      matplotlib seaborn plotly \
-      # Office documents
-      openpyxl xlsxwriter tabulate \
-      pypdf pymupdf python-docx python-pptx \
-      # Config / templating
-      pyyaml toml jinja2 \
-      # Audio
-      soundfile \
-      # TTS
-      edge-tts kokoro-onnx \
-      # Testing
-      pytest \
-      # Web servers (agent can build quick prototypes)
-      flask flask-socketio blinker
-
-# ── Image generation (Flux via diffusers) — amd64/CUDA only ───────────────────
-RUN case "${TARGETARCH}" in \
-      amd64) \
-        python3.12 -m pip install --no-cache-dir \
-          git+https://github.com/huggingface/diffusers.git \
-          "transformers>=4.51.0,<4.58.0" accelerate safetensors sentencepiece protobuf \
-          "huggingface_hub[cli]" bitsandbytes ftfy \
-        ;; \
-      arm64) \
-        echo "Skipping diffusers/Flux on arm64 (CPU-only)" \
-        ;; \
-      *) \
-        echo "ERROR: unsupported arch for diffusers: ${TARGETARCH}"; exit 1 \
-        ;; \
-    esac
-
-# ── Music generation (ACE-Step 1.5) — amd64/CUDA only ─────────────────────────
-RUN case "${TARGETARCH}" in \
-      amd64) \
-        git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git /tmp/ace-step-1.5 && \
-        python3.12 -m pip install --no-cache-dir /tmp/ace-step-1.5/acestep/third_parts/nano-vllm && \
-        python3.12 -m pip install --no-cache-dir --no-deps /tmp/ace-step-1.5 && \
-        python3.12 -m pip install --no-cache-dir \
-          einops "vector-quantize-pytorch>=1.27.15" "torchcodec>=0.9.1" \
-          "torchao>=0.16.0,<0.17.0" numba loguru diskcache modelscope \
-          "peft>=0.18.0" lycoris-lora && \
-        rm -rf /tmp/ace-step-1.5 \
-        ;; \
-      arm64) \
-        echo "Skipping ACE-Step on arm64 (CPU-only)" \
-        ;; \
-      *) \
-        echo "ERROR: unsupported arch for ACE-Step: ${TARGETARCH}"; exit 1 \
-        ;; \
-    esac
-
-# ── Pre-downloaded models ────────────────────────────────────────────────────
-# Baked in so the agent never fetches at runtime.
-
-# TAESD — fast image preview decoding (~10 MB).  amd64/CUDA only.
-RUN case "${TARGETARCH}" in \
-      amd64) \
-        python3.12 -c "from diffusers import AutoencoderTiny; AutoencoderTiny.from_pretrained('madebyollin/taef1')" \
-        ;; \
-      arm64) \
-        echo "Skipping TAESD on arm64 (no diffusers)" \
-        ;; \
-      *) \
-        echo "ERROR: unsupported arch for TAESD: ${TARGETARCH}"; exit 1 \
-        ;; \
-    esac
-
-# Kokoro TTS — int8 ONNX voice model (~88 MB)
-RUN mkdir -p /opt/kokoro && \
-    wget -q -O /opt/kokoro/kokoro-v1.0.int8.onnx \
-      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx && \
-    wget -q -O /opt/kokoro/voices-v1.0.bin \
-      https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin && \
-    chmod -R 755 /opt/kokoro
-
 # ── Users & permissions ──────────────────────────────────────────────────────
 # Two-user trust split for credential isolation:
-#   computron (UID 1000) — runs the app server, agent tools, and desktop.
-#   broker    (UID 1001) — runs the integrations supervisor and the broker
-#                          subprocesses it spawns. Owns the credential vault
-#                          (mode 0700) so computron can't read decrypted creds.
-# computron is in the broker group ONLY so it can connect to /run/cvault/app.sock
+#   omnideck (UID 1000) — runs the app server, agent tools, and desktop.
+#   broker   (UID 1001) — runs the integrations supervisor and the broker
+#                         subprocesses it spawns. Owns the credential vault
+#                         (mode 0700) so omnideck can't read decrypted creds.
+# omnideck is in the broker group ONLY so it can connect to /run/cvault/app.sock
 # (mode 0660 broker:broker) — the entry point that admin RPCs ride.
 RUN groupadd --gid 1001 broker && \
     useradd --uid 1001 --gid 1001 --no-create-home --shell /usr/sbin/nologin broker && \
-    useradd --create-home --shell /bin/bash --uid 1000 computron && \
-    usermod -aG broker computron && \
-    passwd -d computron && \
-    mkdir -p /var/lib/computron && \
-    chown computron:computron /var/lib/computron && \
-    chmod 755 /var/lib/computron && \
-    chown -R computron:computron /home/computron && \
-    mkdir -p /home/computron/Desktop && \
-    mkdir -p /home/computron/downloads && \
-    # Sudoers: computron can install packages as root
-    echo "computron ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/local/bin/pip, /usr/local/bin/npm" \
-      > /etc/sudoers.d/computron && \
-    chmod 440 /etc/sudoers.d/computron
+    useradd --create-home --shell /bin/bash --uid 1000 omnideck && \
+    usermod -aG broker omnideck && \
+    passwd -d omnideck && \
+    mkdir -p /var/lib/omnideck && \
+    chown omnideck:omnideck /var/lib/omnideck && \
+    chmod 755 /var/lib/omnideck && \
+    chown -R omnideck:omnideck /home/omnideck && \
+    mkdir -p /home/omnideck/Desktop && \
+    mkdir -p /home/omnideck/downloads && \
+    # Sudoers: omnideck can install packages as root
+    echo "omnideck ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/local/bin/pip, /usr/local/bin/npm" \
+      > /etc/sudoers.d/omnideck && \
+    chmod 440 /etc/sudoers.d/omnideck && \
+    # Safety shims: anything still referencing the old computron paths
+    # resolves to the renamed locations. /opt/omnideck is created later in
+    # the build; a briefly dangling symlink is fine.
+    ln -s /home/omnideck /home/computron && \
+    ln -s /var/lib/omnideck /var/lib/computron && \
+    ln -s /opt/omnideck /opt/computron
 
 # ── Xfce config ──────────────────────────────────────────────────────────────
-RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
+# Written ahead of time so the viewable desktop works immediately if its
+# packages are installed on demand. Harmless when the desktop is disabled.
+RUN mkdir -p /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xsettings" version="1.0">\n\
   <property name="Net" type="empty">\n\
@@ -261,14 +166,14 @@ RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
     <property name="CursorSize" type="int" value="24"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xfwm4" version="1.0">\n\
   <property name="general" type="empty">\n\
     <property name="theme" type="string" value="Greybird"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
     printf '<?xml version="1.0" encoding="UTF-8"?>\n\
 <channel name="xfce4-power-manager" version="1.0">\n\
   <property name="xfce4-power-manager" type="empty">\n\
@@ -278,8 +183,8 @@ RUN mkdir -p /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml && \
     <property name="dpms-on-ac-off" type="uint" value="0"/>\n\
   </property>\n\
 </channel>\n' \
-      > /home/computron/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml && \
-    chown -R computron:computron /home/computron/.config && \
+      > /home/omnideck/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml && \
+    chown -R omnideck:omnideck /home/omnideck/.config && \
     printf 'export DISPLAY=:99\n' > /etc/profile.d/display.sh && \
     chmod 644 /etc/profile.d/display.sh
 
@@ -289,17 +194,16 @@ RUN chmod 755 /opt/desktop/a11y_tree.py && \
     mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # ── App dependencies (cached unless manifests change) ────────────────────────
-WORKDIR /opt/computron
+WORKDIR /opt/omnideck
 COPY pyproject.toml uv.lock ./
 RUN uv pip install --system --no-cache -e . 2>/dev/null || true
 
-COPY server/ui/package.json server/ui/package-lock.json server/ui/
-RUN cd server/ui && npm ci
-
 # ── App source ───────────────────────────────────────────────────────────────
-COPY --chmod=755 . /opt/computron/
+COPY --chmod=755 . /opt/omnideck/
 RUN uv pip install --system --no-cache -e .
-RUN cd server/ui && npm run build
+
+# Prebuilt UI assets from the ui-builder stage (no node_modules in this image).
+COPY --from=ui-builder /ui/dist /opt/omnideck/server/ui/dist
 
 # ── Entrypoint (late COPY so edits don't bust app/UI cache) ─────────────────
 COPY container/entrypoint.sh /opt/entrypoint.sh

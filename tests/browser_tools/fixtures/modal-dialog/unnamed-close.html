@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Unnamed modal close</title>
+</head>
+<body>
+  <main>
+    <h1>Article</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <dialog id="payment-dialog">
+    <h2>Subscribe to continue</h2>
+    <button id="payment-popup-close" class="zone-close" type="button">
+      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16">
+        <path d="M2 2l12 12M14 2L2 14"></path>
+      </svg>
+    </button>
+  </dialog>
+
+  <script>
+    const dialog = document.getElementById('payment-dialog');
+    document.getElementById('payment-popup-close').addEventListener('click', () => {
+      dialog.close();
+    });
+    dialog.showModal();
+  </script>
+</body>
+</html>

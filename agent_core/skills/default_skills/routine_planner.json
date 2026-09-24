@@ -1,0 +1,9 @@
+{
+  "id": "routine_planner",
+  "name": "routine_planner",
+  "description": "Create and manage autonomous routines with scheduled tasks",
+  "prompt": "Build routines using: begin_routine \u2192 add_task (once per task) \u2192 commit_routine.\n\nEach add_task call returns the updated draft \u2014 pass it into the next call.\nBy default each task depends on the previous one (sequential). Pass\ndepends_on=[] to run a task in parallel with no dependencies.\n\nCompleted dependency results are automatically appended to a task's\ninstruction at execution time \u2014 do not use template syntax like {{key}}.\n\nAGENT PROFILES \u2014 each task can specify an agent_profile to configure\nthe executing agent's model, skills, system prompt, and inference params:\n- \"code_expert\": coder skill, low temp, thinking enabled\n- \"research_agent\": browser + coder skills, medium temp\n- \"creative_writer\": high temp, top_p sampling\n- Omit agent_profile for the default Omnideck agent\n\nTask instructions must be fully self-contained \u2014 include all URLs, file\npaths, criteria, and output expectations. The executing agent has no\nother context.\n\nUse list_routines to see existing routines and list_tasks to inspect a routine's\ntasks. Use trigger_routine to manually run or re-run a routine.\n",
+  "tool_categories": [
+    "planning"
+  ]
+}

@@ -7,12 +7,29 @@ should have persisted actually did.
 
 from playwright.sync_api import Page, expect
 
+from tests.e2e.pages import RecentConversations
+
 
 def test_app_loads_after_setup(page: Page):
     """After setup, the chat UI should load without showing the wizard."""
     page.goto("/")
-    expect(page.get_by_text("Welcome to Omnideck")).not_to_be_visible()
+    # By role: the seeded welcome conversation's sidebar title reads the same,
+    # so a plain text match would find it and fail here.
+    expect(page.get_by_role("heading", name="Welcome to Omnideck")).not_to_be_visible()
     expect(page.locator("textarea")).to_be_visible()
+
+
+def test_welcome_conversation_seeded(page: Page):
+    """A first-time install seeds a welcome conversation, so the sidebar has
+    something waiting after setup rather than being empty. The e2e container is
+    always a fresh install; upgrades never seed it.
+    """
+    page.goto("/")
+    # Match the stable conversation id, not the user-facing title, so the check
+    # doesn't hinge on copy.
+    welcome = RecentConversations(page).item_by_id("welcome-to-omnideck")
+    expect(welcome.root).to_be_visible()
+    assert "Welcome to Omnideck" in welcome.title
 
 
 def test_settings_setup_complete(page: Page):

@@ -54,14 +54,29 @@ describe('Message markdown image handling', () => {
 
 describe('Message user attachments', () => {
     it('renders an image attachment as a thumbnail chip', () => {
-        render(<Message role="user" content="look at this" images={[DATA_URL_PNG]} />);
+        render(<Message role="user" content="look at this"
+            attachments={[{ src: DATA_URL_PNG, content_type: 'image/png', filename: 'shot.png' }]} />);
         expect(screen.getByTestId('attachment-image')).toHaveAttribute('src', DATA_URL_PNG);
     });
 
     it('renders a file attachment as a file card', () => {
-        render(<Message role="user" content="" files={[{ filename: 'report.pdf' }]} />);
+        render(<Message role="user" content=""
+            attachments={[{ filename: 'report.pdf', content_type: 'application/pdf' }]} />);
         expect(screen.getByTestId('attachment-file')).toBeInTheDocument();
-        expect(screen.getByText('report.pdf')).toBeInTheDocument();
+        expect(screen.getByTitle('report.pdf')).toBeInTheDocument();
+    });
+
+    it('preserves upload order across mixed images and files', () => {
+        render(<Message role="user" content=""
+            attachments={[
+                { filename: 'a.txt', content_type: 'text/plain' },
+                { src: DATA_URL_PNG, content_type: 'image/png', filename: 'b.png' },
+                { filename: 'c.json', content_type: 'application/json' },
+            ]} />);
+        const titles = screen.getAllByTestId('message-user')[0]
+            .querySelectorAll('[title]');
+        expect([...titles].map((el) => el.getAttribute('title')))
+            .toEqual(['a.txt', 'b.png', 'c.json']);
     });
 
     it('renders no attachment row when there are none', () => {
@@ -157,13 +172,39 @@ describe('Message ephemeral status and activity footer', () => {
         expect(eph).toHaveTextContent('Thinking…');
     });
 
-    it('shows ephemeral with tool name when last entry is a tool_call', () => {
+    it('shows "Calling X…" when the last entry is a tool_call', () => {
+        // The "Calling X…" indicator is driven by the last entry in the
+        // entries list, not by matching tool_call ids against tool_result
+        // events. This makes it immune to React batching.
         const entries = [
-            { type: 'content', content: 'about to look', timestamp: 1 },
-            { type: 'tool_call', name: 'run_bash_cmd', arguments: { cmd: 'ls' }, timestamp: 2 },
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd',
+              arguments: { cmd: 'ls' }, timestamp: 2 },
         ];
-        render(<Message role="assistant" entries={entries} streaming />);
-        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Calling run_bash_cmd…');
+        render(
+            <Message role="assistant" entries={entries} streaming />,
+        );
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
+            'Calling run_bash_cmd…',
+        );
+    });
+
+    it('keeps "Calling X…" after the tool result arrives (no batching skip)', () => {
+        // The lastEntry approach shows "Calling X…" as long as the most
+        // recent entry is a tool_call, even if the tool_result has already
+        // landed. This is intentional: the old approach (matching against
+        // tool_results) caused "Calling X…" to never render when the
+        // result arrived in the same React batch as the iteration event.
+        const entries = [
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd', timestamp: 2 },
+        ];
+        render(
+            <Message role="assistant" entries={entries} streaming />,
+        );
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent(
+            'Calling run_bash_cmd…',
+        );
     });
 
     it('shows Thinking… ephemeral row when streaming with no entries yet', () => {
@@ -187,6 +228,34 @@ describe('Message ephemeral status and activity footer', () => {
         ];
         render(<Message role="assistant" entries={entries} streaming />);
         expect(screen.queryByTestId('ephemeral-status')).not.toBeInTheDocument();
+    });
+
+    it('shows "Working…" when a streaming turn stalls on finished content', () => {
+        // Content is done but the turn keeps streaming silently — e.g. the
+        // model is streaming a large tool call whose arguments emit no content
+        // tokens. The ephemeral row reappears so the bubble isn't left frozen.
+        const entries = [
+            { type: 'thinking', thinking: 'planning', timestamp: 1 },
+            { type: 'content', content: 'Now let me write the file:', timestamp: 2 },
+        ];
+        render(<Message role="assistant" entries={entries} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Working…');
+    });
+
+    it('says "Thinking…" (not "Working…") when a stall has no content yet', () => {
+        // A stall reported before any content streamed is still the initial
+        // wait, so the label stays "Thinking…".
+        render(<Message role="assistant" entries={[]} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Thinking…');
+    });
+
+    it('prefers "Calling X…" over "Working…" when a tool_call is the last entry', () => {
+        const entries = [
+            { type: 'content', content: 'let me check', timestamp: 1 },
+            { type: 'tool_call', name: 'run_bash_cmd', timestamp: 2 },
+        ];
+        render(<Message role="assistant" entries={entries} streaming stalled />);
+        expect(screen.getByTestId('ephemeral-status')).toHaveTextContent('Calling run_bash_cmd…');
     });
 
     it('hides thinking and raw tool_call entries from the inline body', () => {

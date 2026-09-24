@@ -26,14 +26,34 @@ def say(text: str) -> str:
     return f"<<SAY>>{text}<<END>>"
 
 
-def call_tool(name: str, **args: object) -> str:
-    """Agent invokes tool *name* with keyword *args* (a generic escape hatch).
+def model_script(*responses: dict) -> str:
+    """Script model messages, including thinking/content before real tool calls.
+
+    Each response uses ChatMessage fields. Non-final responses must call a tool
+    so the real agent core loop continues. No runtime event or tool result is supplied.
+    """
+    body = json.dumps(responses).replace("<", "\\u003c")
+    return f"<<MODEL>>{body}<<END>>"
+
+
+def model_tool(tool_name: str, **arguments: object) -> dict:
+    """One model-requested tool call for a model_script response."""
+    return {"function": {"name": tool_name, "arguments": arguments}}
+
+
+def call_tool(tool_name: str, **args: object) -> str:
+    """Agent invokes *tool_name* with keyword *args* (a generic escape hatch).
 
     Use for any agent tool that has no dedicated directive, e.g.
     ``call_tool("close_tab", tab=2)`` or ``call_tool("goto", url="...", tab=1)``.
     Skill-gated tools (e.g. browser tools) are loaded automatically before use.
     """
-    return f"<<TOOL {name}>>{json.dumps(args)}<<END>>"
+    # A tool argument can itself contain directives, as routine task
+    # instructions do. Escape '<' inside the JSON body so the outer directive
+    # parser cannot mistake a nested <<END>> for this call's terminator. JSON
+    # decoding restores the original text before the real tool is invoked.
+    body = json.dumps(args).replace("<", "\\u003c")
+    return f"<<TOOL {tool_name}>>{body}<<END>>"
 
 
 def bash(cmd: str) -> str:
@@ -66,9 +86,39 @@ def parallel(*directives: str) -> str:
     return "<<PARALLEL>>" + "".join(directives) + "<<ENDPARALLEL>>"
 
 
-def spawn(body: str, profile: str = "") -> str:
-    """Agent spawns a sub-agent (profile defaults to the default profile).
-
-    *body* is itself a directive sequence the sub-agent runs.
+def fail(message: str = "fake failure") -> str:
+    """Agent raises after any preceding tool directives, ending with an
+    ``error`` status. Use inside a ``spawn`` body to make a sub-agent
+    fail, or at the top level to fail the root turn.
     """
-    return f"<<SPAWN {profile}>>{body}<<ENDSPAWN>>"
+    return f"<<FAIL>>{message}<<END>>"
+
+
+def slow() -> str:
+    """Marker: the assistant's text reply streams with a small per-chunk
+    delay, opening a window to interact mid-stream (e.g. click Stop).
+    Compose outside other directives: ``slow() + say(long_text)``.
+    """
+    return "<<SLOW>>"
+
+
+def provider_fail(message: str = "provider error", *, mid: bool = False) -> str:
+    """The provider itself raises, modeling a real ProviderError (e.g. a 429).
+
+    With ``mid=False`` (default) it fails before any output streams — the
+    turn never produces content. With ``mid=True`` it streams a little first,
+    then fails partway through, leaving a partial in-flight iteration.
+    """
+    return f"<<PROVIDERFAIL{' mid' if mid else ''}>>{message}<<END>>"
+
+
+def spawn(body: str, profile: str = "", name: str = "") -> str:
+    """Agent spawns a sub-agent.
+
+    *body* is itself a directive sequence the sub-agent runs. *profile*
+    defaults to the default profile. *name* sets the sub-agent's display
+    name in the UI (defaults to ``SUBAGENT``) — pass it when a test
+    needs to tell sibling sub-agents apart in the network view.
+    """
+    arg = f"{profile}|{name}" if name else profile
+    return f"<<SPAWN {arg}>>{body}<<ENDSPAWN>>"

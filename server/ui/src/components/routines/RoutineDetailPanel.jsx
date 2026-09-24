@@ -1,0 +1,377 @@
+import { useState } from 'react';
+import { formatCron, formatTime, formatTimeUntil, formatDuration } from './routineUtils.jsx';
+import TaskOutputModal from './TaskOutputModal.jsx';
+import Button from '../primitives/Button.jsx';
+import ConfirmButton from '../primitives/ConfirmButton.jsx';
+import StatusDot from '../StatusDot.jsx';
+import styles from './RoutineDetailPanel.module.css';
+
+/**
+ * Helper function to calculate next run from cron expression.
+ * Supports basic cron patterns (minute hour * * *)
+ */
+function getNextRun(cron) {
+    if (!cron) return null;
+
+    const now = new Date();
+    const next = new Date(now);
+
+    const parts = cron.split(' ');
+    if (parts.length >= 5) {
+        const minute = parts[0];
+        const hour = parts[1];
+
+        if (minute !== '*' && hour !== '*') {
+            next.setHours(parseInt(hour), parseInt(minute), 0, 0);
+            if (next <= now) {
+                next.setDate(next.getDate() + 1);
+            }
+            return next;
+        }
+    }
+    return null;
+}
+
+function routineDotStatus(status, isRunning) {
+    if (isRunning || status === 'running') return 'running';
+    if (status === 'active') return 'ready';
+    if (status === 'completed') return 'complete';
+    if (status === 'failed') return 'error';
+    return 'idle';
+}
+
+function statusLabel(status, isRunning) {
+    if (isRunning) return 'RUNNING';
+    if (status === 'paused') return 'PAUSED';
+    if (status === 'failed') return 'ERROR';
+    if (status === 'completed') return 'COMPLETE';
+    if (status === 'active') return 'ACTIVE ROUTINE';
+    return String(status || '').toUpperCase();
+}
+
+/**
+ * Right panel showing routine detail.
+ * Layout: actions bar + sticky heading (title + schedule) + tabs (RECENT RUNS / TASKS) + tab content.
+ */
+export default function RoutineDetailPanel({
+    routine,
+    detail,
+    isLoading,
+    onDeleteRoutine,
+    onDeleteRun,
+    onPauseRoutine,
+    onResumeRoutine,
+    onTriggerRoutine,
+}) {
+    const [activeTab, setActiveTab] = useState('runs');
+    const [selectedOutput, setSelectedOutput] = useState(null);
+
+    if (!routine) {
+        return (
+            <div className={styles.empty}>
+                <div className={styles.emptyText}>Select a routine to view details</div>
+            </div>
+        );
+    }
+
+    const isPaused = routine.status === 'paused';
+    const nextRun = getNextRun(routine.cron);
+
+    const handleRunNow = () => onTriggerRoutine(routine.id);
+
+    const handlePauseResume = () => {
+        if (isPaused) onResumeRoutine(routine.id);
+        else onPauseRoutine(routine.id);
+    };
+
+    const runs = detail?.runs || [];
+    const tasks = detail?.tasks || [];
+
+    return (
+        <div className={styles.container}>
+            {/* Actions bar */}
+            <div className={styles.actionsBar}>
+                <span className={styles.activeLabel}>
+                    <StatusDot status={routineDotStatus(routine.status, routine.is_running)} />
+                    {statusLabel(routine.status, routine.is_running)}
+                </span>
+                <div className={styles.actionsRight}>
+                    <Button
+                        onClick={handlePauseResume}
+                        disabled={isLoading}
+                    >
+                        {isPaused
+                            ? <><i className="bi bi-play-fill" /> Resume</>
+                            : <><i className="bi bi-pause-fill" /> Pause</>
+                        }
+                    </Button>
+                    <Button
+                        variant="filled"
+                        onClick={handleRunNow}
+                        disabled={isLoading}
+                    >
+                        <i className="bi bi-play-fill" /> Run now
+                    </Button>
+                    <ConfirmButton
+                        label="Delete"
+                        confirmLabel="Confirm?"
+                        busyLabel="Deleting…"
+                        icon="bi-trash3"
+                        title="Delete this routine"
+                        onConfirm={() => onDeleteRoutine(routine.id)}
+                        disabled={isLoading}
+                    />
+                </div>
+            </div>
+
+            {/* Heading block */}
+            <div className={styles.headingBlock}>
+                <h2 className={styles.title}>{routine.description}</h2>
+                {routine.cron && (
+                    <div className={styles.schedule}>
+                        <span className={styles.cronChip}>{formatCron(routine.cron)}</span>
+                        {routine.timezone && <span className={styles.timezone}>{routine.timezone}</span>}
+                        {nextRun && <span className={styles.nextRun}>Next: {formatTimeUntil(nextRun)}</span>}
+                    </div>
+                )}
+            </div>
+
+            {/* Tabs */}
+            <div className={styles.tabs}>
+                <button
+                    className={`${styles.tab} ${activeTab === 'runs' ? styles.tabActive : ''}`}
+                    onClick={() => setActiveTab('runs')}
+                >
+                    Recent Runs
+                    <span className={styles.tabCount}>{runs.length}</span>
+                </button>
+                <button
+                    className={`${styles.tab} ${activeTab === 'tasks' ? styles.tabActive : ''}`}
+                    onClick={() => setActiveTab('tasks')}
+                >
+                    Tasks
+                    <span className={styles.tabCount}>{tasks.length}</span>
+                </button>
+            </div>
+
+            {/* Tab content */}
+            <div className={styles.tabContent}>
+                {activeTab === 'runs' && (
+                    <RunsTab
+                        runs={runs}
+                        tasks={tasks}
+                        routineId={routine.id}
+                        onViewOutput={setSelectedOutput}
+                        onDeleteRun={onDeleteRun}
+                    />
+                )}
+                {activeTab === 'tasks' && (
+                    <TasksTab tasks={tasks} />
+                )}
+            </div>
+
+            {/* Output Modal */}
+            {selectedOutput && (
+                <TaskOutputModal
+                    output={selectedOutput.output}
+                    taskName={selectedOutput.taskName}
+                    runNumber={selectedOutput.runNumber}
+                    onClose={() => setSelectedOutput(null)}
+                />
+            )}
+        </div>
+    );
+}
+
+function RunsTab({ runs, tasks, routineId, onViewOutput, onDeleteRun }) {
+    const [expandedRunId, setExpandedRunId] = useState(null);
+    const taskMap = Object.fromEntries(tasks.map(t => [t.id, t]));
+
+    if (runs.length === 0) {
+        return <div className={styles.emptyTab}>No runs yet</div>;
+    }
+
+    return (
+        <div className={styles.rowList}>
+            {runs.map(run => (
+                <RunRow
+                    key={run.id}
+                    run={run}
+                    taskMap={taskMap}
+                    isExpanded={run.id === expandedRunId}
+                    onToggle={() => setExpandedRunId(run.id === expandedRunId ? null : run.id)}
+                    onViewOutput={onViewOutput}
+                    onDelete={() => onDeleteRun(routineId, run.id)}
+                />
+            ))}
+        </div>
+    );
+}
+
+function RunRow({ run, taskMap, isExpanded, onToggle, onViewOutput, onDelete }) {
+    const completedCount = run.task_results?.filter(tr => tr.status === 'completed').length || 0;
+    const totalCount = run.task_results?.length || 0;
+    const duration = formatDuration(run.started_at, run.completed_at);
+
+    const badgeClass =
+        run.status === 'completed' ? styles.rowBadgeComplete
+        : run.status === 'failed' ? styles.rowBadgeError
+        : styles.rowBadgeReady;
+    const badgeLabel =
+        run.status === 'completed' ? 'COMPLETE'
+        : run.status === 'failed' ? 'FAILED'
+        : String(run.status || '').toUpperCase();
+    return (
+        <div className={styles.row}>
+            <div className={styles.rowHead} onClick={onToggle}>
+                <span className={styles.chevron}>
+                    <i className={`bi bi-chevron-${isExpanded ? 'down' : 'right'}`} />
+                </span>
+                <StatusDot status={run.status} />
+                <div className={styles.rowMain}>
+                    <span className={styles.rowTitle}>Run #{run.run_number}</span>
+                    <span className={styles.rowMeta}>
+                        {formatTime(run.created_at)}
+                        {duration && ` · ${duration}`}
+                        {' · '}
+                        {completedCount}/{totalCount} tasks
+                    </span>
+                </div>
+                <span className={`${styles.rowBadge} ${badgeClass}`}>{badgeLabel}</span>
+                {/* Stop the row's expand/collapse from firing on either confirm click. */}
+                <span onClick={(e) => e.stopPropagation()}>
+                    <ConfirmButton
+                        icon="bi-trash3"
+                        confirmLabel="Confirm?"
+                        title="Delete run"
+                        className={styles.rowDeleteBtn}
+                        onConfirm={onDelete}
+                    />
+                </span>
+            </div>
+
+            {isExpanded && run.task_results && (
+                <div className={styles.rowBody}>
+                    <table className={styles.resultsTable}>
+                        <thead>
+                            <tr>
+                                <th>Task</th>
+                                <th>Agent</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {run.task_results.map(taskResult => {
+                                const task = taskMap[taskResult.task_id];
+                                const taskDuration = formatDuration(taskResult.started_at, taskResult.completed_at);
+                                const hasOutput = taskResult.result || taskResult.error;
+                                return (
+                                    <tr key={taskResult.id}>
+                                        <td>{task?.description || taskResult.task_id}</td>
+                                        <td>
+                                            <span className={`${styles.rowBadge} ${styles.rowBadgeAgent}`}>
+                                                {task?.agent_profile_name || '—'}
+                                            </span>
+                                        </td>
+                                        <td><StatusDot status={taskResult.status} /></td>
+                                        <td>{taskDuration || <span className={styles.skipped}>—</span>}</td>
+                                        <td>
+                                            {hasOutput && (
+                                                <button
+                                                    className={styles.viewOutputBtn}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onViewOutput({
+                                                            output: taskResult.result || taskResult.error,
+                                                            taskName: task?.description || taskResult.task_id,
+                                                            runNumber: run.run_number,
+                                                        });
+                                                    }}
+                                                >
+                                                    View output
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function TasksTab({ tasks }) {
+    const [expandedTaskId, setExpandedTaskId] = useState(null);
+    const taskMap = Object.fromEntries(tasks.map(t => [t.id, t]));
+
+    if (tasks.length === 0) {
+        return <div className={styles.emptyTab}>No task definitions</div>;
+    }
+
+    return (
+        <div className={styles.rowList}>
+            {tasks.map((task, index) => (
+                <TaskRow
+                    key={task.id}
+                    task={task}
+                    index={index}
+                    taskMap={taskMap}
+                    isExpanded={task.id === expandedTaskId}
+                    onToggle={() => setExpandedTaskId(task.id === expandedTaskId ? null : task.id)}
+                />
+            ))}
+        </div>
+    );
+}
+
+function TaskRow({ task, index, taskMap, isExpanded, onToggle }) {
+    return (
+        <div className={styles.row}>
+            <div className={styles.rowHead} onClick={onToggle}>
+                <span className={styles.chevron}>
+                    <i className={`bi bi-chevron-${isExpanded ? 'down' : 'right'}`} />
+                </span>
+                <span className={styles.num}>{String(index + 1).padStart(2, '0')}</span>
+                <div className={styles.rowMain}>
+                    <span className={styles.rowTitle}>{task.description}</span>
+                    <span className={styles.rowMeta}>
+                        agent: {task.agent_profile_name || task.agent_profile || '—'}
+                        {task.depends_on?.length > 0 && ` · depends on ${task.depends_on.length}`}
+                    </span>
+                </div>
+                <span className={`${styles.rowBadge} ${styles.rowBadgeReady}`}>READY</span>
+            </div>
+
+            {isExpanded && (
+                <div className={styles.rowBody}>
+                    <div className={styles.detailSection}>
+                        <div className={styles.detailLabel}>Instruction</div>
+                        <div className={styles.detailContent}>{task.instruction}</div>
+                    </div>
+
+                    {task.depends_on?.length > 0 && (
+                        <div className={styles.detailSection}>
+                            <div className={styles.detailLabel}>Depends on</div>
+                            <div className={styles.detailContent}>
+                                {task.depends_on.map(depId => (
+                                    <div key={depId} className={styles.dependency}>
+                                        → {taskMap[depId]?.description || depId}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={styles.detailMeta}>
+                        <span><strong>Max retries:</strong> {task.max_retries}</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

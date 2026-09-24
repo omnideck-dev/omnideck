@@ -1,0 +1,83 @@
+"""Use real profiles, skills, hooks, scopes, history, runners, and disk writers.
+
+Only provider I/O, browser I/O, category discovery, and storage locations are
+substituted. This directory deliberately does not inherit the agent core unit suite's
+legacy history/event compatibility fixture.
+"""
+
+from contextlib import asynccontextmanager
+
+import pytest
+import pytest_asyncio
+
+from agent_runtime import AgentRuntime, AgentRunner
+from config import load_config
+from agent_core.events import get_current_agent_id
+from agent_core.turn import get_conversation_id
+from tasks._file_store import FileTaskStore
+
+from ._support import Harness, ScriptedProvider
+
+
+@pytest_asyncio.fixture
+async def harness(tmp_path, monkeypatch):
+    config = load_config().model_copy(deep=True)
+    config.settings.home_dir = str(tmp_path / "state")
+    config.virtual_computer.home_dir = str(tmp_path / "home")
+    config.parallel.enabled = False
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # Patch imported config bindings at the infrastructure edges; resolution,
+    # parsing, skill composition, and all disk serialization still run.
+    for target in (
+        "agents._agent_profiles.load_config",
+        "skills._store.load_config",
+        "tools.memory.memory.load_config",
+        "tools.virtual_computer.receive_file.load_config",
+        "tools.scratchpad.scratchpad.load_config",
+        "artifacts._store.load_config",
+    ):
+        monkeypatch.setattr(target, lambda: config)
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
+    monkeypatch.setattr("agent_runtime._runner.load_config", lambda: config)
+
+    provider = ScriptedProvider()
+    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _name: provider)
+    monkeypatch.setattr("agent_runtime._compaction.get_provider", lambda _name: provider)
+    # Compaction settings are application configuration, not the strategy.
+    monkeypatch.setattr("agent_runtime._compaction.load_settings", lambda: {
+        "compaction_provider": "scripted", "compaction_model": "summary", "compaction_options": {},
+    })
+
+    manager = AgentRuntime(shutdown_timeout=0.1)
+    h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config)
+
+    async def categories():
+        return h.categories
+
+    monkeypatch.setattr("skills._resolve.tool_categories", categories)
+    monkeypatch.setattr("tools.browser.capability.tool_categories", categories)
+
+    class BrowserService:
+        def __init__(self):
+            self.conversations = set()
+
+        @asynccontextmanager
+        async def execution(self, *, execution, execution_resources, conversation_resources, **kwargs):
+            h.browser_calls.append({
+                **kwargs, "agent_id": get_current_agent_id(),
+                "conversation_id": get_conversation_id(),
+            })
+            execution_resources.callback(h.exited_agents.append, execution.execution_id)
+            if execution.conversation_id not in self.conversations:
+                self.conversations.add(execution.conversation_id)
+                conversation_resources.callback(self.conversations.discard, execution.conversation_id)
+                conversation_resources.callback(h.exited_conversations.append, execution.conversation_id)
+            yield
+
+    manager._runner = AgentRunner(browser_runtime=BrowserService())
+    try:
+        yield h
+    finally:
+        await manager.close()

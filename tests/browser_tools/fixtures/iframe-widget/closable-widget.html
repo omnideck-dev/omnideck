@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Widget</title>
+</head>
+<body>
+  <!--
+    Same controls as widget.html, plus a Close button that removes this iframe
+    from its (same-origin) parent. Used to drive the in-page dominant-frame
+    branch in both directions: opening this widget makes it the dominant frame,
+    closing it removes the frame and drops the view back to the host page.
+  -->
+  <label for="email">Email address</label>
+  <input id="email" type="email">
+  <label><input id="terms" type="checkbox"> Accept terms</label>
+  <button id="continue" type="button">Continue</button>
+  <button id="close" type="button">Close widget</button>
+  <script>
+    document.getElementById('close').addEventListener('click', function () {
+      // Defer the removal so the click fully completes before this document's
+      // own frame detaches from the host.
+      setTimeout(function () {
+        var frame = window.parent.document.getElementById('frame');
+        if (frame) frame.remove();
+      }, 0);
+    });
+  </script>
+</body>
+</html>

@@ -20,6 +20,8 @@ htmlcov/
 .pytest_cache/
 test-results/
 playwright-report/
+artifacts/desktop-hardware/
+artifacts/desktop-release-contract/
 
 # Type checking and linting caches
 .mypy_cache/
@@ -27,6 +29,7 @@ playwright-report/
 
 # Runtime caches (created when source is mounted in container-dev)
 .cache/
+.pnpm-store/
 
 # Data migration state
 .migrations.json
@@ -45,11 +48,19 @@ logs/
 # OS generated files
 .DS_Store
 
+# Desktop shell dependencies and build products
+desktop/node_modules/
+desktop/dist/
+desktop/build/runtime/
+
 # Environment variables
 .env
 
 # Developer config override
 config.dev.yaml
+
+# Scratch design references, not project source
+/TEMP/
 
 # Node projects
 node_modules/

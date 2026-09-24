@@ -1,5 +1,6 @@
 import Button from '../../primitives/Button.jsx';
 import Callout from '../../primitives/Callout.jsx';
+import Select from '../../primitives/Select.jsx';
 import styles from './add-wizard.module.css';
 import { errorCopy } from './providers.js';
 import { Stepper } from './SharedSteps.jsx';
@@ -63,21 +64,21 @@ export function OauthCapabilitiesStep({
                                         <div className={styles.radioDesc}>{g.description}</div>
                                     </div>
                                 </label>
-                                <select
+                                <Select
                                     className={styles.accessSelect}
                                     value={oauth.access[g.id] || 'r'}
-                                    onChange={(e) => setOauth(o => ({
+                                    onChange={(value) => setOauth(o => ({
                                         ...o,
-                                        access: { ...o.access, [g.id]: e.target.value },
+                                        access: { ...o.access, [g.id]: value },
                                     }))}
                                     disabled={!oauth.capabilities[g.id] || !g.writeScopes?.length}
-                                    data-testid={`oauth-access-${g.id}`}
-                                >
-                                    <option value="r">Read only</option>
-                                    <option value="rw" disabled={!g.writeScopes?.length}>
-                                        Read + Write
-                                    </option>
-                                </select>
+                                    ariaLabel={`${g.label} permission`}
+                                    testId={`oauth-access-${g.id}`}
+                                    options={[
+                                        { value: 'r', label: 'Read only' },
+                                        { value: 'rw', label: 'Read + Write', disabled: !g.writeScopes?.length },
+                                    ]}
+                                />
                             </div>
                         ))}
                     </div>

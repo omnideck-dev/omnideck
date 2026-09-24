@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sub-agent workspace discovery — Omnideck mockup</title>
+<style>
+:root {
+  --canvas: #f8f9fb;
+  --surface: #eef0f5;
+  --elevated: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.08);
+  --success: #16a34a;
+  --success-muted: rgba(22, 163, 74, 0.08);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.08);
+  --danger: #dc2626;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-brand: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --header-height: 36px;
+}
+
+[data-theme="dark"] {
+  --canvas: #0c0e14;
+  --surface: #151821;
+  --elevated: #1e2130;
+  --text-primary: #e8ecf4;
+  --text-secondary: #a4aec2;
+  --text-tertiary: #677087;
+  --border: #252a3a;
+  --border-subtle: #1a1e2a;
+  --border-strong: #363d52;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-muted: rgba(59, 130, 246, 0.14);
+  --success: #4ade80;
+  --success-muted: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-muted: rgba(251, 191, 36, 0.12);
+  --danger: #f87171;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-width: 940px;
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mock-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 58px;
+  padding: 10px 16px;
+  background: var(--elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.mock-title {
+  min-width: 244px;
+}
+
+.eyebrow {
+  margin: 0 0 2px;
+  color: var(--text-tertiary);
+  font: 600 9px/1.2 var(--font-brand);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mock-title h1 {
+  margin: 0;
+  font: 600 14px/1.25 var(--font-brand);
+  letter-spacing: 0.02em;
+}
+
+.option-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.option-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.option-button:hover {
+  color: var(--text-primary);
+}
+
+.option-button.active {
+  color: var(--text-primary);
+  background: var(--elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.option-number {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-secondary);
+  font: 600 9px/1 var(--font-code);
+}
+
+.option-button.active .option-number {
+  color: white;
+  background: var(--accent);
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.header-action {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.header-action:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.option-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 43px;
+  padding: 7px 16px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.summary-name {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.summary-tradeoff {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.mock-app {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 5px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.brand-mark,
+.rail-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  font-size: 15px;
+}
+
+.brand-mark {
+  margin-bottom: 5px;
+  color: white;
+  background: var(--accent);
+  font: 700 13px/1 var(--font-brand);
+}
+
+.rail-button:hover,
+.rail-button.active {
+  color: var(--text-primary);
+  background: var(--elevated);
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+.desktop {
+  display: grid;
+  grid-template-columns: minmax(420px, 54fr) 5px minmax(380px, 46fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+.split-handle {
+  position: relative;
+  background: var(--border);
+}
+
+.split-handle::after {
+  position: absolute;
+  inset: 0 -3px;
+  content: "";
+}
+
+.pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--elevated);
+}
+
+.tab-bar {
+  display: flex;
+  min-height: var(--header-height);
+  overflow-x: auto;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+
+.tab {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: var(--header-height);
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: var(--border-subtle);
+}
+
+.tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.tab-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 9px 0 11px;
+}
+
+.tab-icon {
+  display: grid;
+  width: 16px;
+  place-items: center;
+  flex: none;
+  font-size: 12px;
+}
+
+.tab-label {
+  max-width: 145px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.tab-origin-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.tab-close {
+  width: 24px;
+  color: var(--text-tertiary);
+  opacity: 0;
+}
+
+.tab:hover .tab-close,
+.tab.active .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  color: var(--text-primary);
+  background: var(--accent-muted);
+}
+
+.pane-content {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.option-view {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.option-view.active {
+  display: flex;
+}
+
+.conversation-header,
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--border);
+  background: var(--elevated);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font: 10px/1 var(--font-brand);
+  letter-spacing: 0.03em;
+}
+
+.crumb-current {
+  color: var(--text-secondary);
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 23px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--canvas);
+  font-size: 10px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-muted);
+}
+
+.network-stage {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  padding: 30px 24px 24px;
+  background:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.network-tree {
+  position: relative;
+  width: min(680px, 100%);
+  min-height: 390px;
+  margin: 0 auto;
+}
+
+.connector {
+  position: absolute;
+  left: 50%;
+  top: 104px;
+  width: 68%;
+  height: 68px;
+  transform: translateX(-50%);
+  border-top: 1px solid var(--border-strong);
+}
+
+.connector::before,
+.connector::after {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 48px;
+  background: var(--border-strong);
+  content: "";
+}
+
+.connector::before {
+  left: 0;
+}
+
+.connector::after {
+  right: 0;
+}
+
+.root-card,
+.agent-card {
+  position: absolute;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.root-card {
+  top: 0;
+  left: 50%;
+  width: 188px;
+  transform: translateX(-50%);
+  border-color: rgba(37, 99, 235, 0.45);
+}
+
+.agent-card {
+  top: 152px;
+  width: 190px;
+}
+
+.agent-one {
+  left: 0;
+}
+
+.agent-two {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.agent-three {
+  right: 0;
+}
+
+.agent-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-avatar {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  flex: none;
+  border-radius: 6px;
+  color: var(--accent);
+  background: var(--accent-muted);
+  font: 700 9px/1 var(--font-brand);
+}
+
+.agent-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-state {
+  color: var(--success);
+  font: 9px/1 var(--font-code);
+}
+
+.agent-state.complete {
+  color: var(--text-tertiary);
+}
+
+.agent-task {
+  min-height: 31px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.resource-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.resource-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 0 7px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 9px;
+}
+
+.resource-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.resource-chip .new-mark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.resource-chip.opened .new-mark {
+  background: var(--text-tertiary);
+}
+
+.chat-stream {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 24px 28px 90px;
+  background: var(--canvas);
+}
+
+.message {
+  max-width: 82%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: var(--accent-muted);
+  border-color: rgba(37, 99, 235, 0.18);
+  color: var(--text-primary);
+}
+
+.message-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-tertiary);
+  font: 600 9px/1 var(--font-brand);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.workspace-picker-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  font-size: 10px;
+}
+
+.workspace-picker-button:hover,
+.workspace-picker-button.active {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.count-badge {
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: white;
+  background: var(--accent);
+  font: 600 8px/1 var(--font-code);
+}
+
+.workspace-popover {
+  position: absolute;
+  z-index: 20;
+  top: 48px;
+  right: 14px;
+  width: 330px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.workspace-popover[hidden] {
+  display: none;
+}
+
+.popover-heading {
+  padding: 12px 13px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.popover-title {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.popover-subtitle {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.popover-agent {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.popover-agent:last-child {
+  border-bottom: 0;
+}
+
+.popover-agent-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.popover-agent-heading span:last-child {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font: 9px/1 var(--font-code);
+}
+
+.resource-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 5px 7px;
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.resource-row:hover {
+  background: var(--surface);
+}
+
+.resource-row-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  flex: none;
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: var(--accent-muted);
+  font-size: 12px;
+}
+
+.resource-row-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.resource-row-title {
+  display: block;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.resource-row-meta {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 8px/1.2 var(--font-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open-arrow {
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.activity-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 188px;
+  flex: 1;
+  min-height: 0;
+}
+
+.activity-stream {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 15px;
+  background: var(--canvas);
+}
+
+.activity-item {
+  position: relative;
+  margin-left: 8px;
+  padding: 0 0 18px 20px;
+  border-left: 1px solid var(--border);
+}
+
+.activity-item::before {
+  position: absolute;
+  top: 2px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+.activity-time {
+  margin-bottom: 4px;
+  color: var(--text-tertiary);
+  font: 8px/1 var(--font-code);
+}
+
+.activity-copy {
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.activity-command {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--surface);
+  font: 9px/1.4 var(--font-code);
+}
+
+.agent-resource-panel {
+  overflow-y: auto;
+  padding: 11px;
+  border-left: 1px solid var(--border);
+  background: var(--elevated);
+}
+
+.panel-label {
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font: 650 9px/1.2 var(--font-brand);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel-help {
+  margin-bottom: 11px;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.resource-card-button {
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  text-align: left;
+}
+
+.resource-card-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.resource-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.resource-card-head .live-dot {
+  margin-left: auto;
+}
+
+.resource-card-preview {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 8px/1.45 var(--font-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-surface {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.surface-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--elevated);
+}
+
+.surface-provenance {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 9px/1 var(--font-brand);
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surface-provenance strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.surface-toolbar .status-pill {
+  margin-left: auto;
+}
+
+.artifact-sheet {
+  width: min(680px, calc(100% - 48px));
+  margin: 24px auto;
+  padding: 26px 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.artifact-sheet h2 {
+  margin: 0 0 7px;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+
+.artifact-sheet .artifact-meta {
+  margin-bottom: 22px;
+  color: var(--text-tertiary);
+  font: 9px/1 var(--font-code);
+}
+
+.artifact-sheet h3 {
+  margin: 20px 0 8px;
+  font-size: 13px;
+}
+
+.artifact-sheet p,
+.artifact-sheet li {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.browser-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin: 10px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+}
+
+.browser-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.traffic-lights {
+  display: flex;
+  gap: 4px;
+}
+
+.traffic-lights span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.address {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  background: var(--elevated);
+  font: 8px/1 var(--font-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webpage {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px;
+  color: #263047;
+  background: #f7f2e8;
+}
+
+.webpage-kicker {
+  color: #7a6041;
+  font: 700 9px/1 var(--font-code);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.webpage h2 {
+  max-width: 440px;
+  margin: 10px 0;
+  font-family: Georgia, serif;
+  font-size: 25px;
+  line-height: 1.1;
+}
+
+.webpage p {
+  max-width: 500px;
+  color: #5d6070;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.webpage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.webpage-card {
+  min-height: 74px;
+  padding: 11px;
+  border: 1px solid rgba(64, 52, 37, 0.15);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.webpage-card strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+}
+
+.webpage-card span {
+  color: #74727b;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.terminal {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  color: #c8cdd8;
+  background: #111318;
+  font: 10px/1.65 var(--font-code);
+}
+
+.terminal .prompt {
+  color: #4ade80;
+}
+
+.terminal .muted {
+  color: #677087;
+}
+
+.terminal .accent {
+  color: #82aaff;
+}
+
+.empty-pane {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 30px;
+  color: var(--text-tertiary);
+  text-align: center;
+  font-size: 11px;
+}
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 100;
+  max-width: 360px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background: var(--elevated);
+  box-shadow: var(--shadow-md);
+  font-size: 11px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  pointer-events: none;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-height: 720px) {
+  .network-stage {
+    padding-top: 18px;
+  }
+
+  .network-tree {
+    min-height: 320px;
+    transform: scale(0.92);
+    transform-origin: top center;
+  }
+}
+</style>
+</head>
+<body>
+<header class="mock-header">
+  <div class="mock-title">
+    <p class="eyebrow">Omnideck interaction study</p>
+    <h1>Discovering sub-agent workspace output</h1>
+  </div>
+  <nav class="option-switcher" aria-label="Mockup options">
+    <button class="option-button active" data-option="cards">
+      <span class="option-number">1</span>
+      Agent cards
+    </button>
+    <button class="option-button" data-option="picker">
+      <span class="option-number">2</span>
+      Workspace picker
+    </button>
+    <button class="option-button" data-option="activity">
+      <span class="option-number">3</span>
+      Agent activity
+    </button>
+  </nav>
+  <div class="header-actions">
+    <button class="header-action" id="resetMockup" title="Reset opened tabs" aria-label="Reset opened tabs">↺</button>
+    <button class="header-action" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </div>
+</header>
+
+<div class="option-summary">
+  <span class="summary-name" id="summaryName">Option 1 · Resources on agent cards</span>
+  <span id="summaryCopy">Workspace availability is visible directly in the network overview.</span>
+  <span class="summary-tradeoff" id="summaryTradeoff">Fastest scanning · busiest graph</span>
+</div>
+
+<main class="mock-app">
+  <aside class="sidebar" aria-label="Application navigation">
+    <div class="brand-mark">O</div>
+    <button class="rail-button active" title="Conversations">◫</button>
+    <button class="rail-button" title="Agent profiles">◎</button>
+    <button class="rail-button" title="Artifacts">◇</button>
+    <button class="rail-button" title="Custom Apps">▦</button>
+    <div class="rail-spacer"></div>
+    <button class="rail-button" title="Settings">⚙</button>
+  </aside>
+
+  <section class="desktop" aria-label="Two-region desktop">
+    <section class="pane" aria-label="Conversation region">
+      <div class="tab-bar">
+        <div class="tab active">
+          <button class="tab-main">
+            <span class="tab-icon">✦</span>
+            <span class="tab-label">Vendor research</span>
+          </button>
+          <button class="tab-close" title="Close conversation">×</button>
+        </div>
+      </div>
+
+      <div class="pane-content">
+        <section class="option-view active" data-view="cards">
+          <div class="conversation-header">
+            <div class="crumbs">
+              <span>Chat</span><span>›</span><span class="crumb-current">Agent Network</span>
+            </div>
+            <div class="header-spacer"></div>
+            <span class="status-pill"><span class="live-dot"></span> 4 agents active</span>
+          </div>
+          <div class="network-stage">
+            <div class="network-tree">
+              <div class="connector"></div>
+              <article class="root-card">
+                <div class="agent-title-row">
+                  <span class="agent-avatar">RT</span>
+                  <span class="agent-name">Root agent</span>
+                  <span class="agent-state">working</span>
+                </div>
+                <p class="agent-task">Coordinates the vendor comparison and final recommendation.</p>
+                <div class="resource-chips">
+                  <span class="resource-chip opened"><span>◎</span> Browser <span class="new-mark"></span></span>
+                </div>
+              </article>
+
+              <article class="agent-card agent-one">
+                <div class="agent-title-row">
+                  <span class="agent-avatar">WR</span>
+                  <span class="agent-name">Web researcher</span>
+                  <span class="agent-state">working</span>
+                </div>
+                <p class="agent-task">Checking product pages and current enterprise pricing.</p>
+                <div class="resource-chips">
+                  <button class="resource-chip" data-open-resource="research-browser">
+                    <span>◎</span> Browser <span class="new-mark"></span>
+                  </button>
+                  <button class="resource-chip" data-open-resource="research-terminal">
+                    <span>⌁</span> Terminal <span class="new-mark"></span>
+                  </button>
+                </div>
+              </article>
+
+              <article class="agent-card agent-two">
+                <div class="agent-title-row">
+                  <span class="agent-avatar">DA</span>
+                  <span class="agent-name">Data analyst</span>
+                  <span class="agent-state complete">complete</span>
+                </div>
+                <p class="agent-task">Normalized pricing tiers and calculated annual totals.</p>
+                <div class="resource-chips">
+                  <button class="resource-chip" data-open-resource="analyst-terminal">
+                    <span>⌁</span> Terminal <span class="new-mark"></span>
+                  </button>
+                </div>
+              </article>
+
+              <article class="agent-card agent-three">
+                <div class="agent-title-row">
+                  <span class="agent-avatar">SW</span>
+                  <span class="agent-name">Summary writer</span>
+                  <span class="agent-state">working</span>
+                </div>
+                <p class="agent-task">Drafting the decision memo from collected findings.</p>
+                <div class="resource-chips">
+                  <span class="resource-chip"><span>–</span> No live workspace</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="option-view" data-view="picker">
+          <div class="conversation-header">
+            <div class="crumbs">
+              <span class="crumb-current">Vendor research</span>
+            </div>
+            <div class="header-spacer"></div>
+            <button class="workspace-picker-button active" id="workspacePickerButton" aria-expanded="true">
+              <span>⌘</span>
+              Workspace activity
+              <span class="count-badge">3</span>
+            </button>
+          </div>
+          <div class="chat-stream">
+            <article class="message user">
+              <span class="message-label">You</span>
+              Compare the enterprise plans for the three vendors and call out any hidden implementation costs.
+            </article>
+            <article class="message">
+              <span class="message-label">Root agent</span>
+              I’ve delegated current pricing research and normalization. I’m reviewing implementation requirements while those agents work.
+            </article>
+            <article class="message">
+              <span class="message-label">Root agent · working</span>
+              The pricing structures are not directly comparable, so I’m aligning them around the same usage assumptions.
+            </article>
+          </div>
+          <aside class="workspace-popover" id="workspacePopover">
+            <div class="popover-heading">
+              <div class="popover-title">Sub-agent workspace activity</div>
+              <div class="popover-subtitle">Available in this conversation · nothing opens automatically</div>
+            </div>
+            <div class="popover-agent">
+              <div class="popover-agent-heading">
+                <span class="live-dot"></span>
+                Web researcher
+                <span>2 available</span>
+              </div>
+              <button class="resource-row" data-open-resource="research-browser">
+                <span class="resource-row-icon">◎</span>
+                <span class="resource-row-copy">
+                  <span class="resource-row-title">Browser</span>
+                  <span class="resource-row-meta">omnideck.io/pricing · updated now</span>
+                </span>
+                <span class="open-arrow">›</span>
+              </button>
+              <button class="resource-row" data-open-resource="research-terminal">
+                <span class="resource-row-icon">⌁</span>
+                <span class="resource-row-copy">
+                  <span class="resource-row-title">Terminal</span>
+                  <span class="resource-row-meta">curl + jq · updated 12s ago</span>
+                </span>
+                <span class="open-arrow">›</span>
+              </button>
+            </div>
+            <div class="popover-agent">
+              <div class="popover-agent-heading">
+                <span class="live-dot" style="background:var(--text-tertiary);box-shadow:none"></span>
+                Data analyst
+                <span>1 available</span>
+              </div>
+              <button class="resource-row" data-open-resource="analyst-terminal">
+                <span class="resource-row-icon">⌁</span>
+                <span class="resource-row-copy">
+                  <span class="resource-row-title">Terminal</span>
+                  <span class="resource-row-meta">pricing-model.py · completed</span>
+                </span>
+                <span class="open-arrow">›</span>
+              </button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="option-view" data-view="activity">
+          <div class="agent-header">
+            <div class="crumbs">
+              <span>Chat</span><span>›</span><span>Network</span><span>›</span>
+              <span class="crumb-current">Web researcher</span>
+            </div>
+            <div class="header-spacer"></div>
+            <span class="status-pill"><span class="live-dot"></span> working</span>
+          </div>
+          <div class="activity-layout">
+            <div class="activity-stream">
+              <div class="activity-item">
+                <div class="activity-time">10:42:06</div>
+                <div class="activity-copy">Opened the current pricing page and identified separate platform and usage charges.</div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-time">10:42:18</div>
+                <div class="activity-copy">Queried embedded pricing data for enterprise plan limits.</div>
+                <div class="activity-command">$ curl -s https://example.test/pricing | jq '.enterprise'</div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-time">10:42:31</div>
+                <div class="activity-copy">Comparing the support SLA and onboarding requirements against the other vendors.</div>
+              </div>
+            </div>
+            <aside class="agent-resource-panel">
+              <div class="panel-label">Workspace</div>
+              <div class="panel-help">Live resources produced by this agent. Open one as a transient tab.</div>
+              <button class="resource-card-button" data-open-resource="research-browser">
+                <span class="resource-card-head">◎ Browser <span class="live-dot"></span></span>
+                <span class="resource-card-preview">omnideck.io/pricing</span>
+              </button>
+              <button class="resource-card-button" data-open-resource="research-terminal">
+                <span class="resource-card-head">⌁ Terminal <span class="live-dot"></span></span>
+                <span class="resource-card-preview">curl -s … | jq</span>
+              </button>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <div class="split-handle" title="Drag to resize"></div>
+
+    <section class="pane" aria-label="Companion region">
+      <div class="tab-bar" id="rightTabBar"></div>
+      <div class="pane-content" id="rightPaneContent"></div>
+    </section>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const optionDetails = {
+  cards: {
+    name: "Option 1 · Resources on agent cards",
+    copy: "Workspace availability is visible directly in the network overview.",
+    tradeoff: "Fastest scanning · busiest graph",
+  },
+  picker: {
+    name: "Option 2 · Conversation workspace picker",
+    copy: "A conversation-level control collects new resources from every sub-agent.",
+    tradeoff: "Available everywhere · one extra layer",
+  },
+  activity: {
+    name: "Option 3 · Resources inside agent activity",
+    copy: "Workspace resources appear only after the user drills into their producing agent.",
+    tradeoff: "Strongest context · requires drill-down",
+  },
+};
+
+const resources = {
+  artifact: {
+    id: "artifact",
+    label: "Market brief.md",
+    icon: "◇",
+    kind: "artifact",
+    durable: true,
+    agent: "Root agent",
+  },
+  "root-browser": {
+    id: "root-browser",
+    label: "Root · Browser",
+    icon: "◎",
+    kind: "browser",
+    transient: true,
+    auto: true,
+    agent: "Root agent",
+    url: "vendor-a.example/enterprise",
+  },
+  "research-browser": {
+    id: "research-browser",
+    label: "Researcher · Browser",
+    icon: "◎",
+    kind: "browser",
+    transient: true,
+    agent: "Web researcher",
+    url: "omnideck.io/pricing",
+  },
+  "research-terminal": {
+    id: "research-terminal",
+    label: "Researcher · Terminal",
+    icon: "⌁",
+    kind: "terminal",
+    transient: true,
+    agent: "Web researcher",
+  },
+  "analyst-terminal": {
+    id: "analyst-terminal",
+    label: "Analyst · Terminal",
+    icon: "⌁",
+    kind: "terminal",
+    transient: true,
+    agent: "Data analyst",
+  },
+};
+
+let openRightTabs = ["artifact", "root-browser"];
+let activeRightTab = "artifact";
+let toastTimer;
+
+const rightTabBar = document.getElementById("rightTabBar");
+const rightPaneContent = document.getElementById("rightPaneContent");
+const toast = document.getElementById("toast");
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add("visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), 2200);
+}
+
+function markResourceOpened(resourceId) {
+  document.querySelectorAll(`[data-open-resource="${resourceId}"]`).forEach((element) => {
+    element.classList.add("opened");
+  });
+}
+
+function openResource(resourceId) {
+  const resource = resources[resourceId];
+  if (!resource) return;
+  if (!openRightTabs.includes(resourceId)) openRightTabs.push(resourceId);
+  activeRightTab = resourceId;
+  markResourceOpened(resourceId);
+  renderRightPane();
+  showToast(`${resource.label} opened in the opposite tab region`);
+}
+
+function closeRightTab(resourceId) {
+  const closingIndex = openRightTabs.indexOf(resourceId);
+  openRightTabs = openRightTabs.filter((id) => id !== resourceId);
+  if (activeRightTab === resourceId) {
+    activeRightTab = openRightTabs[Math.max(0, closingIndex - 1)] || openRightTabs[0] || null;
+  }
+  renderRightPane();
+}
+
+function renderTab(resourceId) {
+  const resource = resources[resourceId];
+  const active = resourceId === activeRightTab;
+  const unread = resource.auto && !active;
+  return `
+    <div class="tab ${active ? "active" : ""}" data-tab-id="${resourceId}">
+      <button class="tab-main" data-select-tab="${resourceId}" title="${resource.label}">
+        <span class="tab-icon">${resource.icon}</span>
+        <span class="tab-label">${resource.label}</span>
+        ${unread ? '<span class="tab-origin-dot" title="Auto-opened root workspace output"></span>' : ""}
+      </button>
+      <button class="tab-close" data-close-tab="${resourceId}" title="Close ${resource.label}">×</button>
+    </div>
+  `;
+}
+
+function artifactSurface() {
+  return `
+    <div class="right-surface">
+      <div class="surface-toolbar">
+        <div class="surface-provenance"><strong>Artifact</strong> · Vendor research · Root agent</div>
+        <span class="status-pill">Durable surface</span>
+      </div>
+      <div style="flex:1;overflow:auto;background:var(--canvas)">
+        <article class="artifact-sheet">
+          <h2>Enterprise vendor comparison</h2>
+          <div class="artifact-meta">MARKET-BRIEF.MD · UPDATED 10:41</div>
+          <p>Initial assessment of platform pricing, implementation effort, and enterprise support across the shortlisted vendors.</p>
+          <h3>Current findings</h3>
+          <ul>
+            <li>Vendor A has the lowest platform fee but charges separately for onboarding.</li>
+            <li>Vendor B bundles support, with usage pricing above the expected volume.</li>
+            <li>Vendor C requires a longer implementation window but offers the strongest SLA.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  `;
+}
+
+function browserSurface(resource) {
+  return `
+    <div class="right-surface">
+      <div class="surface-toolbar">
+        <div class="surface-provenance"><strong>Vendor research</strong> · ${resource.agent} · Browser</div>
+        <span class="status-pill"><span class="live-dot"></span> live transient</span>
+      </div>
+      <div class="browser-frame">
+        <div class="browser-chrome">
+          <span class="traffic-lights"><span></span><span></span><span></span></span>
+          <span class="address">https://${resource.url}</span>
+          <span style="color:var(--text-tertiary);font-size:12px">↻</span>
+        </div>
+        <div class="webpage">
+          <div class="webpage-kicker">Enterprise platform</div>
+          <h2>Infrastructure that scales with your team</h2>
+          <p>Flexible deployment, dedicated support, and usage-based pricing for organizations running mission-critical workloads.</p>
+          <div class="webpage-grid">
+            <div class="webpage-card"><strong>99.99% SLA</strong><span>Backed by enterprise support and incident response.</span></div>
+            <div class="webpage-card"><strong>Custom limits</strong><span>Capacity planned around your annual commitment.</span></div>
+            <div class="webpage-card"><strong>Guided launch</strong><span>Implementation services priced separately.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function terminalSurface(resource) {
+  const analyst = resource.id === "analyst-terminal";
+  return `
+    <div class="right-surface">
+      <div class="surface-toolbar">
+        <div class="surface-provenance"><strong>Vendor research</strong> · ${resource.agent} · Terminal</div>
+        <span class="status-pill">${analyst ? "completed" : '<span class="live-dot"></span> live transient'}</span>
+      </div>
+      <div class="terminal">
+        <div><span class="prompt">agent@workspace</span>:<span class="accent">~/research</span>$ ${analyst ? "python pricing-model.py" : "curl -s https://omnideck.io/pricing | jq '.enterprise'"}</div>
+        <div class="muted">${analyst ? "Loading vendor-pricing.csv…" : "{"}</div>
+        ${analyst
+          ? '<div>Vendor A&nbsp;&nbsp; annual=$148,000&nbsp;&nbsp; onboarding=$24,000</div><div>Vendor B&nbsp;&nbsp; annual=$163,500&nbsp;&nbsp; onboarding=included</div><div>Vendor C&nbsp;&nbsp; annual=$171,000&nbsp;&nbsp; onboarding=$12,000</div><br><div class="muted">Model written to ./out/normalized-pricing.json</div>'
+          : '<div>&nbsp;&nbsp;"platform_fee": "contact_sales",</div><div>&nbsp;&nbsp;"support": "included",</div><div>&nbsp;&nbsp;"implementation": "separate_sow",</div><div>&nbsp;&nbsp;"sla": "99.99%"</div><div class="muted">}</div><br><div><span class="prompt">agent@workspace</span>:<span class="accent">~/research</span>$ <span style="opacity:.65">▌</span></div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderRightPane() {
+  rightTabBar.innerHTML = openRightTabs.map(renderTab).join("");
+  const activeResource = resources[activeRightTab];
+  if (!activeResource) {
+    rightPaneContent.innerHTML = '<div class="empty-pane">This tab region is empty.<br />A surface can be opened or moved here.</div>';
+    return;
+  }
+  if (activeResource.kind === "artifact") {
+    rightPaneContent.innerHTML = artifactSurface();
+  } else if (activeResource.kind === "browser") {
+    rightPaneContent.innerHTML = browserSurface(activeResource);
+  } else {
+    rightPaneContent.innerHTML = terminalSurface(activeResource);
+  }
+}
+
+function selectOption(optionId) {
+  document.querySelectorAll(".option-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.option === optionId);
+  });
+  document.querySelectorAll(".option-view").forEach((view) => {
+    view.classList.toggle("active", view.dataset.view === optionId);
+  });
+  const detail = optionDetails[optionId];
+  document.getElementById("summaryName").textContent = detail.name;
+  document.getElementById("summaryCopy").textContent = detail.copy;
+  document.getElementById("summaryTradeoff").textContent = detail.tradeoff;
+}
+
+document.addEventListener("click", (event) => {
+  const optionButton = event.target.closest("[data-option]");
+  if (optionButton) {
+    selectOption(optionButton.dataset.option);
+    return;
+  }
+
+  const resourceButton = event.target.closest("[data-open-resource]");
+  if (resourceButton) {
+    openResource(resourceButton.dataset.openResource);
+    return;
+  }
+
+  const tabButton = event.target.closest("[data-select-tab]");
+  if (tabButton) {
+    activeRightTab = tabButton.dataset.selectTab;
+    renderRightPane();
+    return;
+  }
+
+  const closeButton = event.target.closest("[data-close-tab]");
+  if (closeButton) {
+    closeRightTab(closeButton.dataset.closeTab);
+  }
+});
+
+document.getElementById("workspacePickerButton").addEventListener("click", () => {
+  const popover = document.getElementById("workspacePopover");
+  const button = document.getElementById("workspacePickerButton");
+  popover.hidden = !popover.hidden;
+  button.classList.toggle("active", !popover.hidden);
+  button.setAttribute("aria-expanded", String(!popover.hidden));
+});
+
+document.getElementById("themeToggle").addEventListener("click", () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+});
+
+document.getElementById("resetMockup").addEventListener("click", () => {
+  openRightTabs = ["artifact", "root-browser"];
+  activeRightTab = "artifact";
+  document.querySelectorAll("[data-open-resource]").forEach((element) => element.classList.remove("opened"));
+  renderRightPane();
+  showToast("Tabs reset: durable artifact active, root browser waiting in the background");
+});
+
+renderRightPane();
+</script>
+</body>
+</html>

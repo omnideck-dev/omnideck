@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ARIA-hidden modal background</title>
+  <style>
+    #application[aria-hidden="true"] {
+      pointer-events: none;
+    }
+
+    #notice {
+      background: white;
+      border: 2px solid black;
+      inset: 25% 30%;
+      padding: 24px;
+      position: fixed;
+      z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <main id="application" aria-hidden="true">
+    <h1>Orders</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <section id="notice" role="dialog" aria-label="Delivery notice">
+    <h2>Delivery address required</h2>
+    <button id="dismiss-notice" type="button">Continue</button>
+  </section>
+
+  <script>
+    document.getElementById('dismiss-notice').addEventListener('click', () => {
+      document.getElementById('notice').remove();
+      document.getElementById('application').removeAttribute('aria-hidden');
+    });
+  </script>
+</body>
+</html>

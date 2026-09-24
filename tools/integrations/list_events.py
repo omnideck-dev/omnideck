@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def list_events(
     integration_id: str,
-    calendar_url: str,
+    calendar_ref: str,
     days_forward: int = 30,
     days_back: int = 0,
     limit: int = 50,
@@ -26,7 +26,7 @@ async def list_events(
 
     Args:
         integration_id: Identifier of the calendar integration.
-        calendar_url: URL of the calendar (from ``list_calendars``).
+        calendar_ref: Opaque calendar reference from ``list_calendars``.
         days_forward: How many days into the future to include (1-365,
             default 30).
         days_back: How many days into the past to include (0-365, default 0
@@ -42,7 +42,7 @@ async def list_events(
             integration_id,
             "list_events",
             {
-                "calendar_url": calendar_url,
+                "calendar_ref": calendar_ref,
                 "days_forward": days_forward,
                 "days_back": days_back,
                 "limit": limit,
@@ -53,14 +53,14 @@ async def list_events(
         return f"Integration {integration_id!r} is not connected."
     except broker_client.IntegrationError as exc:
         logger.warning(
-            "list_events(%r, %r) failed: %s", integration_id, calendar_url, exc,
+            "list_events(%r, %r) failed: %s", integration_id, calendar_ref, exc,
         )
         return f"Failed to list events for {integration_id!r}: {exc}"
 
     events = result.get("events", [])
     # Prefer the human-readable calendar name; fall back to the URL if the
     # broker didn't supply one (older broker / unparsed response).
-    label = result.get("calendar_name") or calendar_url
+    label = result.get("calendar_name") or calendar_ref
     if not events:
         return f"No events on {label!r} in this range."
     lines = [_format_event(e) for e in events]
@@ -68,13 +68,16 @@ async def list_events(
 
 
 def _format_event(e: dict[str, Any]) -> str:
-    uid = e.get("uid") or ""
+    event_ref = e.get("event_ref") or ""
+    series_ref = e.get("series_ref") or ""
     start = e.get("start") or "(no start)"
     summary = e.get("summary") or "(no title)"
     location = e.get("location") or ""
     suffix = f"  @ {location}" if location else ""
-    id_tag = f"  [id: {uid}]" if uid else ""
-    return f"- {start}  {summary}{suffix}{id_tag}"
+    recurring_tag = "  [recurring]" if e.get("is_recurring") else ""
+    event_tag = f"  [event_ref: {event_ref}]" if event_ref else ""
+    series_tag = f"  [series_ref: {series_ref}]" if series_ref else ""
+    return f"- {start}  {summary}{suffix}{recurring_tag}{event_tag}{series_tag}"
 
 
 def build_list_events_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:
@@ -84,13 +87,13 @@ def build_list_events_tool(integration_ids: Iterable[str]) -> Callable[..., Any]
 
     async def _list_events(
         integration_id: str,
-        calendar_url: str,
+        calendar_ref: str,
         days_forward: int = 30,
         days_back: int = 0,
         limit: int = 50,
     ) -> str:
         return await list_events(
-            integration_id, calendar_url, days_forward, days_back, limit,
+            integration_id, calendar_ref, days_forward, days_back, limit,
         )
 
     _list_events.__name__ = list_events.__name__
@@ -98,18 +101,18 @@ def build_list_events_tool(integration_ids: Iterable[str]) -> Callable[..., Any]
         "List events on a calendar over a date range centered on today. "
         "Recurring events are expanded — a weekly meeting in a 30-day "
         "window appears as ~4 lines. The output header carries the "
-        "calendar's display name; the agent passes the URL in to scope "
+        "calendar's display name; the agent passes calendar_ref in to scope "
         f"the query. Valid integration IDs: {ids_line}.\n\n"
         "Args:\n"
         "    integration_id: Which integration the calendar belongs to.\n"
-        "    calendar_url: URL of the calendar — call list_calendars first to discover.\n"
+        "    calendar_ref: Opaque calendar reference from list_calendars.\n"
         "    days_forward: Days into the future to include (1-365, default 30).\n"
         "    days_back: Days into the past to include (0-365, default 0).\n"
         "    limit: Maximum events to return (1-200, default 50).\n\n"
         "Returns:\n"
         "    Plain text — one event per line as "
-        '"- start  summary [@ location]  [id: event_id]", '
-        "or a short empty/error notice. The event ID can be passed to "
-        "update_event or delete_event.\n"
+        '"- start  summary [@ location] [recurring] [event_ref: ...] [series_ref: ...]", '
+        "or a short empty/error notice. event_ref targets exactly that occurrence; "
+        "series_ref is present only for recurring events and targets the whole series.\n"
     )
     return _list_events

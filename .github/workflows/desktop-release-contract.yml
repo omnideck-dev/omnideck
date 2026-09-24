@@ -1,0 +1,67 @@
+name: Test a published desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing desktop release tag, for example v0.1.0-alpha.8"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: desktop-release-contract-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Download published packages and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p download
+          gh release download "${RELEASE_VERSION}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir download
+
+      - name: Verify published attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while IFS= read -r -d '' package; do
+            gh attestation verify "${package}" --repo "${GITHUB_REPOSITORY}"
+          done < <(find download -maxdepth 1 -type f ! -name '*.sha256' -print0)
+
+      - name: Verify published release contract
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node desktop/tests/releasecontract/verify-release.mjs \
+            --directory download \
+            --version "${RELEASE_VERSION}" \
+            --report artifacts/desktop-release-contract/report.json
+
+      - name: Upload release contract report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-desktop-release-contract-${{ inputs.version }}-${{ github.run_id }}
+          path: artifacts/desktop-release-contract/
+          if-no-files-found: warn

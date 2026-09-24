@@ -1,0 +1,5 @@
+.popover {
+    position: fixed;
+    z-index: var(--z-tooltip);
+    box-sizing: border-box;
+}

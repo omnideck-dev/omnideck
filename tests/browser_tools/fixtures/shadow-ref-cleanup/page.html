@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Shadow ref cleanup</title></head>
+<body>
+  <button id="switch">Switch actions</button>
+  <first-widget></first-widget>
+  <second-widget></second-widget>
+  <p id="result"></p>
+
+  <script>
+    const firstRoot = document.querySelector('first-widget').attachShadow({ mode: 'open' });
+    firstRoot.innerHTML = '<button id="first">First action</button>';
+
+    const secondRoot = document.querySelector('second-widget').attachShadow({ mode: 'open' });
+    secondRoot.innerHTML = '<button id="second" style="display:none">Second action</button>';
+    secondRoot.querySelector('button').addEventListener('click', () => {
+      document.querySelector('#result').textContent = 'Second action clicked';
+    });
+
+    window.showSecondAction = () => {
+      firstRoot.querySelector('button').style.display = 'none';
+      secondRoot.querySelector('button').style.display = 'block';
+    };
+    document.querySelector('#switch').addEventListener('click', window.showSecondAction);
+  </script>
+</body>
+</html>

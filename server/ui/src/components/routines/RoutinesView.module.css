@@ -1,0 +1,147 @@
+.view {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--canvas);
+}
+
+/* list mode: the list owns the whole view until a routine is opened */
+.listPane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* single toolbar: title + count, search */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.title {
+    flex: 0 0 auto;
+    font-size: 15px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
+.title .bi {
+    color: var(--accent);
+}
+
+.count {
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.search {
+    flex: 1;
+    min-width: 120px;
+}
+
+.scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 240px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--sp-8);
+}
+
+.empty .bi {
+    font-size: 34px;
+    opacity: 0.5;
+}
+
+/* full-screen empty state (no routines at all) — hosts the StarterPrompts grid */
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: 100%;
+    min-height: 320px;
+}
+
+/* sort control (toolbar) — canonical SIGNAL .select */
+.sortCtl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.select {
+    --select-width: 128px;
+}
+
+/* table cell classes — the table chrome lives in the SortableTable primitive */
+.gname {
+    font-weight: 500;
+}
+
+.schedule {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.when {
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.muted {
+    color: var(--text-tertiary);
+}
+
+/* row delete — a shrink-to-fit cell, right-aligned, revealed on row hover */
+.acts {
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* detail mode: full-width routine detail with a back nav in the header */
+.detailHead {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.detailBody {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.errorBanner {
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--danger-muted);
+    border-bottom: 1px solid var(--danger-muted);
+    color: var(--danger);
+    font-size: 12px;
+}

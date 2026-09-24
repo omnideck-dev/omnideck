@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Interactive elements inside headings</title></head>
+<body>
+  <!-- The walker emitted a heading and returned without descending, so links and
+       buttons nested inside h1-h6 never got a ref. -->
+
+  <!-- GitHub search / Wired: an <a> is the heading's title. -->
+  <h3><a href="/omnideck-dev/omnideck">omnideck-dev/omnideck</a></h3>
+
+  <!-- theuselessweb: a <button> nested in an <h5>. -->
+  <h5><button id="button">PLEASE</button></h5>
+
+  <!-- Mixed content: text plus a link inside one heading. -->
+  <h2>Latest: <a href="/story/jay-z">How Jay-Z pulled it off</a></h2>
+
+  <!-- Plain heading with no interactive child must be unchanged (no stray ref). -->
+  <h1>Just a headline</h1>
+
+  <p>Some body text so the page isn't heading-only.</p>
+</body></html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Catalog search</title>
+</head>
+<body>
+  <h1>Catalog</h1>
+  <!-- Autocomplete widget: role="combobox" is on the container div, and the
+       real text field is the inner <input> (the React Autosuggest / Downshift /
+       MUI Autocomplete pattern). -->
+  <div role="combobox" aria-haspopup="listbox" aria-expanded="false"
+       class="autosuggest__container">
+    <input type="text" id="search" autocomplete="off" aria-autocomplete="list"
+           placeholder="Search the catalog" aria-label="Search the catalog">
+  </div>
+</body>
+</html>

@@ -171,7 +171,7 @@ async def test_list_email_messages_reports_generic_error(monkeypatch: pytest.Mon
 @pytest.mark.asyncio
 async def test_read_email_message_renders_header_block_and_body(monkeypatch: pytest.MonkeyPatch) -> None:
     """A typical message produces a ``From: / To: / Date: / Subject:`` block
-    followed by a blank line and the plain-text body.
+    followed by a blank line and the rendered body.
     """
     _patch_call(
         monkeypatch,

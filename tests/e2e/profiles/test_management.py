@@ -2,7 +2,7 @@
 
 from playwright.sync_api import Page
 
-from tests.e2e.pages import SettingsPage
+from tests.e2e.pages import AgentsPage
 
 
 def _create_profile(page: Page, name: str) -> str:
@@ -27,12 +27,12 @@ def test_edit_profile_persists(page: Page):
     """Edit an existing profile's name and description, verify changes saved."""
     profile_id = _create_profile(page, "Edit Target")
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
 
-        settings.builder.name_input.fill("Edited Agent")
-        settings.builder.description_input.fill("Updated description")
-        settings.builder.save()
+        agents.builder.name_input.fill("Edited Agent")
+        agents.builder.description_input.fill("Updated description")
+        agents.builder.save()
         page.wait_for_timeout(500)
 
         profile = page.request.get(f"/api/profiles/{profile_id}").json()
@@ -46,9 +46,9 @@ def test_duplicate_profile(page: Page):
     """Duplicate a profile and verify the copy exists with correct values."""
     profile_id = _create_profile(page, "Dup Source")
     try:
-        settings = SettingsPage(page).goto()
-        settings.profiles.select(profile_id)
-        settings.builder.duplicate()
+        agents = AgentsPage(page).goto()
+        agents.profiles.select(profile_id)
+        agents.builder.duplicate()
         page.wait_for_timeout(500)
 
         profiles = page.request.get("/api/profiles").json()
@@ -63,9 +63,9 @@ def test_duplicate_profile(page: Page):
 def test_delete_profile(page: Page):
     """Delete a profile via the UI and verify it's gone."""
     profile_id = _create_profile(page, "Delete Me")
-    settings = SettingsPage(page).goto()
-    settings.profiles.select(profile_id)
-    settings.builder.delete()
+    agents = AgentsPage(page).goto()
+    agents.profiles.select(profile_id)
+    agents.builder.delete()
     page.wait_for_timeout(500)
 
     profiles = page.request.get("/api/profiles").json()

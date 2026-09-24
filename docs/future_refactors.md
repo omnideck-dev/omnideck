@@ -32,8 +32,8 @@ Migrate them one at a time. Each migration is independent and small.
    to surface auth/credential validation failures. Replace with a `tone="danger"`
    Callout. Drop the bespoke CSS.
 
-3. **`GoalsView.errorBanner`** —
-   `server/ui/src/components/goals/GoalsView.module.css` defines
+3. **`RoutinesView.errorBanner`** —
+   `server/ui/src/components/routines/RoutinesView.module.css` defines
    `.errorBanner` (a sticky-top danger band) used when `setError(err.message)`
    trips. Replace with a `tone="danger"` Callout placed in the same flow
    position. Sticky positioning is no longer needed if the Callout is rendered

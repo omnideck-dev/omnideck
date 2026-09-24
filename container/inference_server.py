@@ -967,7 +967,7 @@ def _generate_image(body):
     with torch.inference_mode():
         image = _pipe(**pipe_kwargs).images[0]
     timestamp = int(time.time() * 1000)
-    out_path = f"/home/computron/generated_images/generated_{timestamp}.png"
+    out_path = os.path.expanduser(f"~/generated_images/generated_{timestamp}.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     image.save(out_path)
     log.info("Image saved: %s", out_path)
@@ -1007,7 +1007,7 @@ def _generate_video(body):
         )
     frames = output.frames[0]
     timestamp = int(time.time() * 1000)
-    out_path = f"/home/computron/generated_videos/generated_{timestamp}.mp4"
+    out_path = os.path.expanduser(f"~/generated_videos/generated_{timestamp}.mp4")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     export_to_video(frames, out_path, fps=16)
     log.info("Video saved: %s", out_path)
@@ -1058,7 +1058,7 @@ def _generate_audio(body):
 
     _ensure_audio_model()
 
-    out_dir = "/home/computron/generated_audio"
+    out_dir = os.path.expanduser("~/generated_audio")
     os.makedirs(out_dir, exist_ok=True)
 
     params = _build_generation_params(body)
@@ -1129,7 +1129,7 @@ def _generate_image_stream(body, write_line):
         image = _pipe(**pipe_kwargs).images[0]
 
     timestamp = int(time.time() * 1000)
-    out_path = f"/home/computron/generated_images/generated_{timestamp}.png"
+    out_path = os.path.expanduser(f"~/generated_images/generated_{timestamp}.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     image.save(out_path)
     log.info("Image saved: %s", out_path)
@@ -1196,7 +1196,7 @@ def _generate_video_stream(body, write_line):
 
     frames = output.frames[0]
     timestamp = int(time.time() * 1000)
-    out_path = f"/home/computron/generated_videos/generated_{timestamp}.mp4"
+    out_path = os.path.expanduser(f"~/generated_videos/generated_{timestamp}.mp4")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     export_to_video(frames, out_path, fps=16)
     log.info("Video saved: %s", out_path)
@@ -1214,7 +1214,7 @@ def _generate_audio_stream(body, write_line):
     _loading_progress("Preparing ACE-Step 1.5 audio model...")
     _ensure_audio_model(on_progress=_loading_progress)
 
-    out_dir = "/home/computron/generated_audio"
+    out_dir = os.path.expanduser("~/generated_audio")
     os.makedirs(out_dir, exist_ok=True)
 
     params = _build_generation_params(body)

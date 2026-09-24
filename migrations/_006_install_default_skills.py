@@ -21,11 +21,11 @@ import logging
 from pathlib import Path
 
 from agents._agent_profiles import PROFILES_SUBDIR
-from sdk.skills._store import SKILLS_SUBDIR
+from skills._store import SKILLS_SUBDIR
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "sdk" / "skills" / "default_skills"
+_DEFAULT_SKILLS_DIR = Path(__file__).resolve().parent.parent / "agent_core" / "skills" / "default_skills"
 _ASSISTANT = "assistant"
 
 

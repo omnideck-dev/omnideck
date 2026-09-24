@@ -25,6 +25,29 @@ export function mergeTerminalEvent(prev, event, maxLines = 50) {
 }
 
 /**
+ * Format a token count compactly for display (e.g. 12847 → "13k",
+ * 2500000 → "2.5M"). Returns null for missing input so callers can
+ * apply their own placeholder (—, 0, etc.).
+ */
+export function formatTokens(n) {
+    if (n == null) return null;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+    return String(n);
+}
+
+/**
+ * Format an agent's internal name for display: replace underscores with
+ * spaces and title-case each word.
+ */
+export function formatAgentName(name) {
+    if (!name) return 'Agent';
+    return name
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
  * Format elapsed time from a start timestamp to an end timestamp (or now
  * if the agent is still running).
  */

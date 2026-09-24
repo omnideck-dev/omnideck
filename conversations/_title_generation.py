@@ -8,7 +8,7 @@ to generate concise titles (3-5 words) that capture the essence of the conversat
 import logging
 
 from settings import load_settings
-from sdk.providers import get_provider
+from providers import get_provider
 
 logger = logging.getLogger(__name__)
 

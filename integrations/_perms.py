@@ -13,7 +13,7 @@ Two distinct mechanisms enforce these modes — they MUST agree:
 
 The trust split the modes encode:
 - Vault contents (``.master-key``, ``creds/*.{meta,enc}``) are readable only
-  by the broker UID. The agent (computron UID) cannot decrypt credentials
+  by the broker UID. The agent (omnideck UID) cannot decrypt credentials
   even with full filesystem access to the rest of the container.
 - Runtime sockets (``app.sock`` and per-broker sockets under ``/run/cvault/``)
   are readable + writable by the broker UID and the broker GROUP. Computron
@@ -42,17 +42,17 @@ VAULT_FILE_MODE = 0o600
 VAULT_DIR_MODE = 0o700
 
 # Sockets the app server needs to connect to. broker UID owns the file; the
-# computron UID reaches it via broker-group membership. Other UIDs are blocked
+# omnideck UID reaches it via broker-group membership. Other UIDs are blocked
 # at the kernel by EACCES before any of our code runs.
 SOCKET_MODE = 0o660
 
 # Runtime directory holding the sockets above. Mode 0o750 lets group members
-# (computron) traverse to reach the sockets — write is broker-only.
+# (omnideck) traverse to reach the sockets — write is broker-only.
 RUNTIME_DIR_MODE = 0o750
 
 # Email-attachment files written by the broker into the shared downloads dir.
-# Owner (broker) rw, group (broker — which computron is in) r, others none.
-# Group read is what lets the computron-UID side open these files.
+# Owner (broker) rw, group (broker — which omnideck is in) r, others none.
+# Group read is what lets the omnideck-UID side open these files.
 ATTACHMENT_FILE_MODE = 0o640
 
 # Process-wide umask the supervisor and brokers install at startup. ``0o077``
@@ -69,7 +69,7 @@ def disable_core_dumps() -> None:
     Call once at the top of the supervisor and broker ``__main__`` modules.
     Brokers hold the decrypted credential in memory; a crash with the
     default core-dump policy would write that memory to disk where the
-    computron UID could read it (the dump file inherits the dumping
+    omnideck UID could read it (the dump file inherits the dumping
     process's UID, but the path and permissions can leak depending on
     ``/proc/sys/kernel/core_pattern``). Hard-capping at zero closes the
     leak path entirely.

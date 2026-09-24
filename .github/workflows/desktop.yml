@@ -1,0 +1,359 @@
+name: omnideck application
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-hardware.yml"
+      - ".github/workflows/desktop-release-contract.yml"
+      - ".github/actionlint.yaml"
+      - ".github/scripts/desktop-build-matrix.mjs"
+      - ".github/scripts/install-apt-packages.sh"
+      - "desktop/**"
+      - "desktop/container-version.txt"
+      - "docs/releases/v*.md"
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-hardware.yml"
+      - ".github/workflows/desktop-release-contract.yml"
+      - ".github/actionlint.yaml"
+      - ".github/scripts/desktop-build-matrix.mjs"
+      - ".github/scripts/install-apt-packages.sh"
+      - "desktop/**"
+      - "desktop/container-version.txt"
+      - "docs/releases/v*.md"
+
+concurrency:
+  group: omnideck-application-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build_required: ${{ steps.classify.outputs.build_required }}
+      full_matrix: ${{ steps.classify.outputs.full_matrix }}
+      native_tests_required: ${{ steps.classify.outputs.native_tests_required }}
+      matrix: ${{ steps.classify.outputs.matrix }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Classify Desktop CI scope
+        id: classify
+        env:
+          DESKTOP_CI_EVENT_NAME: ${{ github.event_name }}
+          DESKTOP_CI_REF: ${{ github.ref }}
+          DESKTOP_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DESKTOP_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/desktop-build-matrix.mjs >> "${GITHUB_OUTPUT}"
+
+      - name: Summarize Desktop CI scope
+        env:
+          BUILD_REQUIRED: ${{ steps.classify.outputs.build_required }}
+          NATIVE_TESTS_REQUIRED: ${{ steps.classify.outputs.native_tests_required }}
+          REASON: ${{ steps.classify.outputs.reason }}
+        run: |
+          {
+            echo '### Desktop CI scope'
+            echo
+            echo "- Reason: ${REASON}"
+            echo "- Native Rust tests: ${NATIVE_TESTS_REQUIRED}"
+            echo "- Native package builds: ${BUILD_REQUIRED}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  test:
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.native_tests_required == 'true'
+        with:
+          components: clippy
+
+      - name: Install Tauri system dependencies
+        if: needs.changes.outputs.native_tests_required == 'true'
+        run: |
+          bash .github/scripts/install-apt-packages.sh \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            unzip
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify installer parity and vendored sidecars
+        working-directory: desktop
+        run: |
+          pnpm run fetch:sidecars
+          pnpm test
+
+      - name: Test the Rust host
+        if: needs.changes.outputs.native_tests_required == 'true'
+        working-directory: desktop/src-tauri
+        run: cargo test --locked
+
+      - name: Check Rust formatting
+        if: needs.changes.outputs.native_tests_required == 'true'
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Lint the Rust host
+        if: needs.changes.outputs.native_tests_required == 'true'
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate release version and notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Tag must be SemVer, for example v0.1.0-alpha.9 or v0.1.0"
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
+            echo "Desktop release tags must point to a commit already merged into main."
+            exit 1
+          fi
+          version=$(node -p "require('./desktop/package.json').version")
+          test "${GITHUB_REF_NAME}" = "v${version}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match desktop version v${version}"
+            exit 1
+          }
+          test -s "docs/releases/${GITHUB_REF_NAME}.md" || {
+            echo "Missing release notes for ${GITHUB_REF_NAME}"
+            exit 1
+          }
+          node scripts/release-notes.mjs check-consumed --target desktop
+
+  runtime_image:
+    needs: [changes, test]
+    if: needs.changes.outputs.build_required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Pin the runtime image
+        shell: bash
+        run: |
+          image_version=$(tr -d '\r\n' < desktop/container-version.txt)
+          [[ "${image_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "desktop/container-version.txt must contain a plain X.Y.Z release"
+            exit 1
+          }
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:${image_version}"
+          digest=$(docker buildx imagetools inspect \
+            "${source_image}" \
+            --format '{{.Manifest.Digest}}' 2>/dev/null) || {
+            echo "Container release ${source_image} does not exist"
+            exit 1
+          }
+          [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "Could not resolve ${source_image} to an immutable digest"
+            exit 1
+          }
+          node desktop/scripts/prepare-runtime-image.mjs \
+            "ghcr.io/${GITHUB_REPOSITORY}@${digest}"
+
+      - name: Upload the runtime image manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-image-manifest
+          path: desktop/src-tauri/resources/image-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+
+  build:
+    needs: [changes, runtime_image]
+    if: needs.changes.outputs.build_required == 'true'
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          bash .github/scripts/install-apt-packages.sh \
+            binutils \
+            fakeroot \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            rpm \
+            unzip
+
+      - name: Download the pinned runtime image manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-manifest
+          path: desktop/src-tauri/resources
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify the target sidecar set
+        working-directory: desktop
+        run: |
+          pnpm run test:policy
+          pnpm run fetch:sidecars -- ${{ matrix.target }}
+          pnpm run verify:sidecars -- ${{ matrix.target }}
+
+      - name: Build native installers
+        working-directory: desktop
+        env:
+          # Tauri otherwise skips the Finder background and icon layout in CI.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+        run: node scripts/build-with-retry.mjs ${{ matrix.command }}
+
+      - name: Verify the packaged macOS app signature
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: ./scripts/verify-macos-bundle.sh ${{ matrix.target }}
+
+      - name: Generate SHA-256 checksums
+        working-directory: desktop
+        run: node scripts/checksums.mjs src-tauri/target/${{ matrix.target }}/release/bundle
+
+      - name: Upload native installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: omnideck-installers-${{ matrix.name }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+  artifact_contract:
+    needs: [changes, build]
+    if: needs.changes.outputs.full_matrix == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Download package matrix
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release artifact contract
+        shell: bash
+        run: |
+          version="v$(node -p "require('./desktop/package.json').version")"
+          node desktop/tests/releasecontract/verify-release.mjs \
+            --directory dist \
+            --version "${version}" \
+            --report artifacts/desktop-release-contract/report.json
+
+      - name: Upload release contract report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-release-contract-${{ github.run_id }}
+          path: artifacts/desktop-release-contract/
+          if-no-files-found: warn
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, artifact_contract]
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-installers-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/**/*
+
+      - name: Publish the preview release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: omnideck ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: dist/**/*
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}

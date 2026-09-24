@@ -5,7 +5,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from settings import SettingsUpdate, load_settings, save_settings
+from settings import (
+    SettingsUpdate,
+    custom_apps_enabled,
+    custom_tools_enabled,
+    load_settings,
+    save_settings,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +39,19 @@ class TestLoadSettings:
         assert s["compaction_model"] == ""
         assert s["title_provider"] == ""
         assert s["title_model"] == ""
+        assert s["custom_apps_enabled"] is False
+        assert s["custom_tools_enabled"] is False
+        assert s["home_app_slug"] is None
+
+    def test_missing_custom_apps_setting_is_disabled(self, tmp_path):
+        """Existing settings files predate the toggle and remain safely off."""
+        (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
+        assert custom_apps_enabled() is False
+
+    def test_missing_custom_tools_setting_is_disabled(self, tmp_path):
+        """Existing settings files predate the toggle and remain safely off."""
+        (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
+        assert custom_tools_enabled() is False
 
     def test_loads_from_disk(self, tmp_path):
         """Reads saved settings."""
@@ -91,6 +110,23 @@ class TestSettingsUpdate:
         u = SettingsUpdate(setup_complete=True, default_agent="computron")
         assert u.setup_complete is True
         assert u.default_agent == "computron"
+
+    def test_home_app_slug_accepted(self):
+        u = SettingsUpdate(home_app_slug="text-lab")
+        assert u.home_app_slug == "text-lab"
+
+    def test_custom_apps_toggle_accepted(self):
+        u = SettingsUpdate(custom_apps_enabled=True)
+        assert u.custom_apps_enabled is True
+
+    def test_custom_tools_toggle_accepted(self):
+        """The Custom Tools feature flag is a valid settings update."""
+        u = SettingsUpdate(custom_tools_enabled=True)
+        assert u.custom_tools_enabled is True
+
+    def test_home_app_slug_rejects_invalid_value(self):
+        with pytest.raises(ValidationError, match="lowercase app slug"):
+            SettingsUpdate(home_app_slug="../../escape")
 
     def test_unknown_key_raises(self):
         """Extra keys must be rejected (extra='forbid')."""

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Redirecting</title></head>
+<body>
+  <h1>Redirecting</h1>
+
+  <script>
+    const target = new URLSearchParams(location.search).get('target');
+    if (target) setTimeout(() => location.replace(target), 75);
+  </script>
+</body>
+</html>

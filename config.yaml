@@ -1,20 +1,21 @@
 settings:
-  home_dir: /var/lib/computron
+  home_dir: /var/lib/omnideck
 virtual_computer:
-  home_dir: /home/computron
+  home_dir: /home/omnideck
 
 features:
   image_generation: ${ENABLE_IMAGE_GEN:-false}
   music_generation: ${ENABLE_MUSIC_GEN:-false}
   desktop: ${ENABLE_DESKTOP:-false}
   visual_grounding: ${ENABLE_GROUNDING:-false}
-  custom_tools: ${ENABLE_CUSTOM_TOOLS:-false}
 
 tools:
   browser:
     headless: false  # true = no GUI, false = visible browser window
     human:
       pointer:
+        move_duration_min_ms: 120
+        move_duration_max_ms: 240
         hover_min_ms: 90
         hover_max_ms: 180
         click_hold_min_ms: 35
@@ -28,7 +29,7 @@ tools:
     scroll_warn_threshold: 10
     scroll_hard_limit: 15
     waits:
-      network_idle_timeout_ms: 3000
+      load_timeout_ms: 3000
       font_timeout_ms: 1000
       dom_mutation_timeout_ms: 1500
       dom_quiet_window_ms: 150
@@ -41,7 +42,7 @@ parallel:
   enabled: true
   max_concurrent: 4
 
-goals:
+routines:
   enabled: true
   poll_interval: 5
   max_concurrent: 2

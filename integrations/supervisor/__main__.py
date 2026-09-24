@@ -6,10 +6,10 @@ development or alternative deployments.
 
 Env overrides (all optional)::
 
-    SUPERVISOR_VAULT_DIR        default /var/lib/computron/vault     (persistent)
+    SUPERVISOR_VAULT_DIR        default /var/lib/omnideck/vault      (persistent)
     SUPERVISOR_APP_SOCK         default /run/cvault/app.sock         (tmpfs)
     SUPERVISOR_SOCKETS_DIR      default /run/cvault                  (tmpfs)
-    SUPERVISOR_DOWNLOADS_DIR    default /home/computron/downloads    (downloads)
+    SUPERVISOR_DOWNLOADS_DIR    default /home/omnideck/downloads     (downloads)
 
 The downloads dir is the shared "downloads" host-path role — agent-initiated
 retrievals (browser saves, email attachments) land here. It's threaded into
@@ -42,15 +42,15 @@ os.umask(PROCESS_UMASK)
 # No core dumps — the supervisor holds the master key in memory while
 # decrypt operations are in flight, and the rlimit is inherited by every
 # broker it spawns. A kernel-generated core would write that memory to
-# disk where the computron UID could read it.
+# disk where the omnideck UID could read it.
 disable_core_dumps()
 
 logger = logging.getLogger("supervisor")
 
-_DEFAULT_VAULT_DIR = "/var/lib/computron/vault"
+_DEFAULT_VAULT_DIR = "/var/lib/omnideck/vault"
 _DEFAULT_APP_SOCK = "/run/cvault/app.sock"
 _DEFAULT_SOCKETS_DIR = "/run/cvault"
-_DEFAULT_DOWNLOADS_DIR = "/home/computron/downloads"
+_DEFAULT_DOWNLOADS_DIR = "/home/omnideck/downloads"
 
 
 def _build_host_paths() -> dict[str, HostPath]:
@@ -62,7 +62,7 @@ def _build_host_paths() -> dict[str, HostPath]:
         "downloads": HostPath(
             path=downloads_dir,
             description="agent-retrieved files (browser saves, email attachments)",
-            owner="computron",
+            owner="omnideck",
             group="broker",
             mode=0o3770,
         ),

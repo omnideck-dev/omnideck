@@ -58,6 +58,27 @@ def test_read_write_access_adds_write_tools() -> None:
 
 
 @pytest.mark.unit
+def test_calendar_write_access_includes_occurrence_and_series_tools() -> None:
+    names = _names(
+        _tools_for_capability(
+            Capability.CALENDAR,
+            _integrations(cap=Capability.CALENDAR, access=Access.READ_WRITE),
+        ),
+    )
+
+    assert names == {
+        "list_calendars",
+        "list_events",
+        "search_events",
+        "create_event",
+        "update_event",
+        "delete_event",
+        "update_event_series",
+        "delete_event_series",
+    }
+
+
+@pytest.mark.unit
 def test_absent_capability_yields_no_tools() -> None:
     # Records grant a different capability — email is absent.
     records = _integrations(cap=Capability.CALENDAR, access=Access.READ_WRITE)

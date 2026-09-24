@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import Modal from '../../primitives/Modal.jsx';
 import styles from './add-wizard.module.css';
 import { slugifyEmail } from './providers.js';
 import { ProviderPicker, SuccessScreen } from './SharedSteps.jsx';
@@ -39,18 +40,6 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [result, setResult] = useState(null);
-
-    useEffect(() => {
-        const onEsc = (e) => {
-            if (e.key === 'Escape' && !submitting) onClose();
-        };
-        document.addEventListener('keydown', onEsc);
-        return () => document.removeEventListener('keydown', onEsc);
-    }, [onClose, submitting]);
-
-    const handleBackdrop = (e) => {
-        if (e.target === e.currentTarget && !submitting) onClose();
-    };
 
     const handleSubmit = async () => {
         setSubmitting(true);
@@ -250,10 +239,17 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
     }, [provider, oauth.pending, oauth.status]);
 
     return (
-        <div className={styles.backdrop} onClick={handleBackdrop}>
-            <div className={styles.modal} role="dialog" aria-modal="true">
+        <Modal
+            onClose={submitting ? undefined : onClose}
+            width={620}
+            labelledBy="add-integration-title"
+            className={styles.modal}
+            testId="add-integration-modal"
+        >
                 <div className={styles.header}>
-                    <div className={styles.title}>ADD INTEGRATION</div>
+                    <div id="add-integration-title" className={styles.title}>
+                        ADD INTEGRATION
+                    </div>
                     <button
                         className={styles.closeBtn}
                         onClick={onClose}
@@ -388,7 +384,6 @@ export default function AddIntegrationModal({ onClose, onAdded }) {
                 ) : (
                     <VerifyingStep />
                 )}
-            </div>
-        </div>
+        </Modal>
     );
 }

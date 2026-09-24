@@ -1,0 +1,499 @@
+.view {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--canvas);
+}
+
+/* ── view title — lives at the head of the list toolbar, not a separate band ── */
+.title {
+    flex: 0 0 auto;
+    font-size: 15px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
+.title .bi {
+    color: var(--accent);
+}
+
+.count {
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.filter {
+    flex: 0 0 auto;
+    gap: var(--sp-2);
+    white-space: nowrap;
+}
+
+/* grid / table toggle */
+.seg {
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+}
+
+.seg button {
+    padding: 5px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.seg button:hover {
+    color: var(--text-primary);
+}
+
+.segOn {
+    background: var(--elevated) !important;
+    color: var(--text-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* sort control (drives both grid + table) */
+.sortCtl {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+/* canonical SIGNAL .select (design language §Select) */
+.select {
+    --select-width: 128px;
+}
+
+
+/* ── content ── */
+.content {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.listPane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.listToolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.search {
+    flex: 1;
+    min-width: 120px;
+}
+
+.scroll {
+    flex: 1;
+    overflow: auto;
+}
+
+/* grid */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+}
+
+.card {
+    position: relative;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .15s var(--ease), box-shadow .15s var(--ease), transform .1s var(--ease);
+}
+
+.card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+
+.card.missing {
+    opacity: .55;
+}
+
+.del {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    opacity: 0;
+}
+
+.card:hover .del {
+    opacity: 1;
+}
+
+.cardTop {
+    position: relative;
+    height: 128px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+    background: var(--canvas);
+}
+
+.thumbViewport {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+}
+
+.cardIcon {
+    font-size: 32px;
+    color: var(--accent);
+}
+
+/* Per-card thumbnails. The preview asset crossfades over its type-specific
+   skeleton only after the underlying image/frame/fetch reports completion. */
+.previewAsset {
+    opacity: 0;
+    transition: opacity 220ms var(--ease);
+}
+
+.previewAssetLoaded {
+    opacity: 1;
+}
+
+.previewSkeleton {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    background: var(--canvas);
+    opacity: 1;
+    pointer-events: none;
+    transition: opacity 220ms var(--ease);
+}
+
+.previewSkeletonHidden {
+    opacity: 0;
+}
+
+.previewSkeletonHidden.imageSkeleton,
+.previewSkeletonHidden.textSkeleton i,
+.previewSkeletonHidden .htmlSkeletonMain i,
+.previewSkeletonHidden .htmlSkeletonMain div {
+    animation: none;
+}
+
+.htmlSkeleton {
+    padding: var(--sp-3);
+}
+
+.htmlSkeletonTop {
+    display: flex;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+}
+
+.htmlSkeletonTop i {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--border-strong);
+}
+
+.htmlSkeletonBody {
+    height: calc(100% - var(--sp-5));
+    display: flex;
+    gap: var(--sp-2);
+}
+
+.htmlSkeletonSide {
+    width: 26%;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.htmlSkeletonMain {
+    flex: 1;
+    display: grid;
+    grid-template-rows: repeat(3, 10px) minmax(0, 1fr);
+    gap: var(--sp-2);
+}
+
+.htmlSkeletonMain i,
+.htmlSkeletonMain div,
+.textSkeleton i {
+    border-radius: var(--radius-sm);
+    background: linear-gradient(
+        90deg,
+        var(--surface) 20%,
+        var(--border) 50%,
+        var(--surface) 80%
+    );
+    background-size: 240% 100%;
+    animation: artifact-shimmer 1.35s linear infinite;
+}
+
+.htmlSkeletonMain i:nth-child(2) {
+    width: 84%;
+}
+
+.htmlSkeletonMain i:nth-child(3) {
+    width: 62%;
+}
+
+.imageSkeleton {
+    background: linear-gradient(
+        105deg,
+        var(--surface) 30%,
+        var(--border) 50%,
+        var(--surface) 70%
+    );
+    background-size: 240% 100%;
+    animation: artifact-shimmer 1.35s linear infinite;
+}
+
+.textSkeleton {
+    display: grid;
+    align-content: start;
+    gap: var(--sp-2);
+    padding: var(--sp-4);
+}
+
+.textSkeleton i {
+    height: 7px;
+}
+
+.textSkeleton i:nth-child(2) {
+    width: 88%;
+}
+
+.textSkeleton i:nth-child(3) {
+    width: 68%;
+}
+
+.textSkeleton i:nth-child(4) {
+    width: 94%;
+    margin-top: var(--sp-2);
+}
+
+.textSkeleton i:nth-child(5) {
+    width: 78%;
+}
+
+.previewUnavailable {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.previewUnavailable .bi {
+    color: var(--danger);
+    font-size: 24px;
+}
+
+@keyframes artifact-shimmer {
+    to {
+        background-position: -240% 0;
+    }
+}
+
+.thumbImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.thumbFrame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200%;
+    height: 200%;
+    border: 0;
+    transform: scale(0.5);
+    transform-origin: top left;
+    background: #fff;
+    pointer-events: none;
+}
+
+.thumbText {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: var(--sp-3);
+    font-family: var(--font-code);
+    font-size: 9px;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .previewAsset,
+    .previewSkeleton {
+        transition: none;
+    }
+
+    .htmlSkeletonMain i,
+    .htmlSkeletonMain div,
+    .imageSkeleton,
+    .textSkeleton i {
+        animation: none;
+    }
+}
+
+.cardMeta {
+    padding: var(--sp-3);
+}
+
+.cardName {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+}
+
+.when {
+    color: var(--text-tertiary);
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.cardPath {
+    margin-top: 8px;
+    font-family: var(--font-code);
+    font-size: 10.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardConv {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardConv .bi {
+    flex: 0 0 auto;
+    font-size: 11px;
+}
+
+/* table: conversation column + deleted placeholder */
+.tconv {
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-secondary);
+}
+
+.muted {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.ext {
+    font-family: var(--font-code);
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.missingBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--warning);
+}
+
+/* table cell classes — the table chrome lives in the SortableTable primitive */
+.missing {
+    opacity: .55;
+}
+
+.tname {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 500;
+}
+
+.acts {
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* empty / no-results */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    height: 100%;
+    min-height: 240px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--sp-8);
+}
+
+.empty .bi {
+    font-size: 34px;
+    opacity: .5;
+}

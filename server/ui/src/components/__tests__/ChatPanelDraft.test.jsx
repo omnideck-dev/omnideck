@@ -8,12 +8,12 @@ import ChatPanel from '../ChatPanel.jsx';
 vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-messages" /> }));
 // ChatPanel reads the root agent from the agent-state context; the title bar is
 // irrelevant to these draft tests, so a no-root stub suffices.
-vi.mock('../../hooks/useAgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
+vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
 
 function renderPanel(props = {}) {
     return render(
         <ChatPanel
-            messages={[]}
+            turns={[]}
             onSend={vi.fn()}
             onStop={vi.fn()}
             isStreaming={false}
@@ -26,9 +26,12 @@ describe('ChatPanel draft handling', () => {
     beforeEach(() => {
         // ProfileSelector fetches profiles on mount; an empty list renders nothing.
         globalThis.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve([]) }));
+        // ChatInput now persists drafts per conversationId; both tests below
+        // reuse 'conv-a', so start each from a clean slate.
+        localStorage.clear();
     });
 
-    it('discards unsent text when the active conversation changes', async () => {
+    it('swaps to the new conversation\'s own draft (empty) when the active conversation changes', async () => {
         const user = userEvent.setup();
         const { rerender } = renderPanel({ conversationId: 'conv-a' });
 
@@ -37,11 +40,37 @@ describe('ChatPanel draft handling', () => {
         expect(textarea.value).toBe('half-written thought');
 
         rerender(
-            <ChatPanel messages={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
 
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
+    });
+
+    it('restores each conversation\'s own draft across an A → B → A switch', async () => {
+        const user = userEvent.setup();
+        const { rerender } = renderPanel({ conversationId: 'conv-a' });
+
+        await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for A');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-b" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
+        await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for B');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-a" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for A');
+
+        rerender(
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+                conversationId="conv-b" />,
+        );
+        expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for B');
     });
 
     it('keeps the text while the conversation stays the same', async () => {
@@ -50,9 +79,9 @@ describe('ChatPanel draft handling', () => {
 
         await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'still typing');
 
-        // Re-render with the same conversation but a changed prop (a new message).
+        // Re-render with the same conversation but a changed prop (a new turn).
         rerender(
-            <ChatPanel messages={[{ id: 'm', role: 'user', content: 'hi' }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[{ id: 't', agentId: 'root.test.1', children: [] }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-a" />,
         );
 

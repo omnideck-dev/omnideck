@@ -11,7 +11,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._protocol import call_tool, open_url
-from tests.e2e.pages import BrowserControl, ChatView
+from tests.e2e.pages import BrowserControl, ChatView, DesktopLayout
 from tests.e2e.preview._browser_fixture import fixture_url, install_fixture, open_fixture
 
 
@@ -21,12 +21,33 @@ def _fixture_page():
 
 
 def test_browser_snapshot_appears(page: Page):
-    """Browsing produces a browser preview tab — Chrome launched successfully."""
+    """The selected root Browser owns control across placement changes."""
     chat = ChatView(page).goto().new_conversation()
     # A cold Chromium launch in the container is the slow path here, well
     # beyond the default turn budget.
     chat.send(open_url("https://example.com")).wait_streaming(timeout=30_000)
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
+    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+
+    desktop = DesktopLayout(page)
+    browser_view = page.locator("[data-view-resource-id='browser']")
+    take_control = page.get_by_test_id("browser-take-control")
+    expect(browser_view).to_have_attribute("data-tab-group-id", "right")
+    # The right group selected its first Browser even though Chat retained
+    # Desktop focus. Control must be ready without a misleading extra tab click.
+    expect(take_control).to_be_enabled(timeout=10_000)
+
+    # Session ownership follows the active root Browser, not the action history
+    # that placed it. Floating focuses the View and docking focuses its target
+    # group, but neither transition should create or remove its eligibility.
+    desktop.float("browser")
+    expect(browser_view).to_have_attribute("data-floating", "true")
+    expect(take_control).to_be_enabled()
+
+    page.get_by_test_id("dock-view-browser-right").click()
+    expect(browser_view).to_have_attribute("data-tab-group-id", "right")
+    expect(browser_view).to_have_attribute("data-floating", "false")
+    expect(take_control).to_be_enabled()
 
 
 def test_agent_close_tab_reflected_in_ui(page: Page):
@@ -48,9 +69,8 @@ def test_agent_close_tab_reflected_in_ui(page: Page):
     expect(bc.tab(2)).not_to_be_visible()
 
 
-def test_agent_close_last_tab_hides_preview(page: Page):
-    """Closing the only tab clears the preview — the live channel's authoritative
-    empty wins over the now-stale agent screenshot list."""
+def test_agent_close_last_tab_clears_content_but_keeps_desktop_tab(page: Page):
+    """Remote tab closure clears Browser data, not user-owned View placement."""
     chat = ChatView(page).goto().new_conversation()
     chat.send(open_fixture("idle")).wait_streaming(timeout=30_000)
     chat.preview.browser_tab.wait_for(state="visible", timeout=10_000)
@@ -60,6 +80,7 @@ def test_agent_close_last_tab_hides_preview(page: Page):
 
     chat.send(call_tool("close_tab", tab="1")).wait_streaming(timeout=20_000)
     expect(page.get_by_test_id("browser-preview")).not_to_be_visible()
-    # The data-plane reconcile prunes the agent tab record too, so the Browser
-    # tab leaves the bar (not just the live preview).
-    expect(chat.preview.browser_tab).not_to_be_visible()
+    expect(chat.preview.browser_tab).to_be_visible()
+
+    DesktopLayout(page).choose_tab_action("browser", "close")
+    expect(chat.preview.browser_tab).to_have_count(0)

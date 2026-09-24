@@ -5,16 +5,6 @@
     overflow: hidden;
 }
 
-/* Fullscreen overlay variant — same toolbar/content, viewport-filling chrome */
-.fullscreen {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-modal);
-    background: var(--canvas);
-    display: flex;
-    flex-direction: column;
-}
-
 /* Toolbar */
 .toolbar {
     display: flex;
@@ -105,6 +95,12 @@
 .toggleBtnActive {
     background: var(--surface);
     color: var(--text-primary);
+}
+
+/* Save icon tints to the accent while there are unsaved edits, so the bare
+   icon still signals a pending save the way the old labelled button did. */
+.saveIconDirty {
+    color: var(--accent);
 }
 
 /* Content area */
@@ -232,10 +228,6 @@
 }
 
 /* Light theme overrides */
-:global([data-theme="light"]) .fullscreen {
-    background: var(--elevated);
-}
-
 :global([data-theme="light"]) .toolbar {
     background: var(--surface);
     border-bottom-color: var(--border);

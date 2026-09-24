@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Embed host</title>
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    h1 { margin: 8px; }
+    #frame { position: fixed; top: 4%; left: 4%; border: 0; }
+  </style>
+</head>
+<body>
+  <h1>Host page heading</h1>
+  <iframe id="frame" title="Embedded widget"></iframe>
+  <script>
+    // Generic iframe host. ?src= sets the embedded page (any origin — the
+    // fixture ports are ephemeral, so it can't be baked into a static file);
+    // ?width=/?height= size the iframe (default: fills the viewport, i.e.
+    // dominant). Pass a small width/height to exercise the non-dominant path.
+    var q = new URLSearchParams(location.search);
+    var frame = document.getElementById('frame');
+    frame.style.width = q.get('width') || '92vw';
+    frame.style.height = q.get('height') || '92vh';
+    var src = q.get('src');
+    if (src) {
+      frame.src = src;
+    }
+  </script>
+</body>
+</html>

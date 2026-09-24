@@ -1,7 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CustomToolsTab from '../CustomToolsTab.jsx';
+import {
+    AppEffectsProvider,
+    useAppEffectDispatch,
+} from '../../features/app/AppEffects.jsx';
+import { APP_EFFECT_TYPES } from '../../features/app/appEffectTypes.js';
 
 const _mockTools = [
     {
@@ -23,6 +28,21 @@ function _ok(body) {
 }
 function _noContent() {
     return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
+}
+
+let _dispatchAppEffect;
+function EffectControl() {
+    _dispatchAppEffect = useAppEffectDispatch();
+    return null;
+}
+
+function renderTab() {
+    return render(
+        <AppEffectsProvider>
+            <EffectControl />
+            <CustomToolsTab />
+        </AppEffectsProvider>,
+    );
 }
 
 describe('CustomToolsTab', () => {
@@ -49,7 +69,7 @@ describe('CustomToolsTab', () => {
     });
 
     it('renders one row per tool with name and description', async () => {
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
         expect(screen.getByText('fetch_page')).toBeInTheDocument();
         expect(screen.getByText('Fetch a URL and return text')).toBeInTheDocument();
@@ -58,7 +78,7 @@ describe('CustomToolsTab', () => {
     });
 
     it('shows the right badge label per tool type/language', async () => {
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
         const fetchRow = document.querySelector('[data-tool-name="fetch_page"]');
         const lsRow = document.querySelector('[data-tool-name="ls_home"]');
@@ -71,20 +91,42 @@ describe('CustomToolsTab', () => {
 
     it('deletes a tool and removes its row', async () => {
         const user = userEvent.setup();
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
 
         const row = document.querySelector('[data-tool-name="ls_home"]');
-        await user.click(row.querySelector('[data-testid="custom-tools-delete"]'));
+        await act(async () => {
+            await user.click(row.querySelector('[data-testid="custom-tools-delete"]'));
+        });
 
         await waitFor(() => expect(screen.queryByText('ls_home')).not.toBeInTheDocument());
         const delCall = _calls.find((c) => c.url === '/api/custom-tools/ls_home' && c.init?.method === 'DELETE');
         expect(delCall).toBeDefined();
     });
 
+    it('refreshes when the application effect is dispatched', async () => {
+        renderTab();
+        await waitFor(() => expect(screen.getAllByTestId('custom-tools-row')).toHaveLength(3));
+        const initialFetches = _calls.filter(({ url, init }) => (
+            url === '/api/custom-tools' && !init?.method
+        )).length;
+
+        act(() => _dispatchAppEffect({
+            type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+            payload: null,
+        }));
+
+        await waitFor(() => {
+            const currentFetches = _calls.filter(({ url, init }) => (
+                url === '/api/custom-tools' && !init?.method
+            )).length;
+            expect(currentFetches).toBe(initialFetches + 1);
+        });
+    });
+
     it('shows the empty state when there are no tools', async () => {
         global.fetch = vi.fn(() => _ok([]));
-        render(<CustomToolsTab />);
+        renderTab();
         await waitFor(() => expect(screen.getByText('No custom tools defined.')).toBeInTheDocument());
         expect(screen.queryByTestId('custom-tools-row')).not.toBeInTheDocument();
     });

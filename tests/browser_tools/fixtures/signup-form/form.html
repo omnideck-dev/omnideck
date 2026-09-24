@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Create your account</title>
+</head>
+<body>
+  <h1>Create your account</h1>
+  <form id="signup">
+    <label for="name">Full name</label>
+    <input id="name" name="name" type="text" required>
+
+    <label for="email">Email address</label>
+    <input id="email" name="email" type="email" required>
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required>
+
+    <label for="country">Country</label>
+    <select id="country" name="country">
+      <option value="">Select a country</option>
+      <option value="us">United States</option>
+      <option value="ca">Canada</option>
+      <option value="uk">United Kingdom</option>
+    </select>
+
+    <label><input id="newsletter" name="newsletter" type="checkbox"> Subscribe to the newsletter</label>
+    <label><input id="terms" name="terms" type="checkbox" required> I accept the terms of service</label>
+
+    <button id="create" type="submit">Create account</button>
+  </form>
+  <div id="confirmation" hidden></div>
+  <script>
+    document.getElementById('signup').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var email = document.getElementById('email').value;
+      var country = document.getElementById('country').value;
+      var newsletter = document.getElementById('newsletter').checked;
+      var confirmation = document.getElementById('confirmation');
+      confirmation.hidden = false;
+      confirmation.textContent =
+        'Account created for ' + email + ' (' + country + '), newsletter=' + newsletter;
+      document.getElementById('signup').hidden = true;
+    });
+  </script>
+</body>
+</html>
