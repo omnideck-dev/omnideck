@@ -349,6 +349,23 @@ it('marks the right pane\'s active view not visible on mobile so it cannot be fo
         .toHaveAttribute('data-visible', 'false');
 });
 
+it('keeps a fullscreen right-pane view visible on mobile even though its tab group is hidden', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    render(
+        <DesktopLayout
+            model={{ ...model(), fullscreenViewId: APP.id }}
+            commands={{ setSplitRatio: vi.fn(), setFullscreenView: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
+    expect(screen.getByTestId(`desktop-view-${APP.id}`))
+        .toHaveAttribute('data-visible', 'true');
+});
+
 it('falls back to the right tab group on mobile when the left group is empty', () => {
     useIsMobileViewport.mockReturnValue(true);
     render(

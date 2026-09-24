@@ -66,6 +66,7 @@ async def manifest_handler(_request: Request) -> StreamResponse:
     """Serve the PWA manifest, which the built dist/ root isn't otherwise routed."""
     manifest_path = UI_DIST_DIR / "manifest.webmanifest"
     if not manifest_path.is_file():
+        logger.warning("UI manifest not found: %s", manifest_path)
         return web.Response(
             text="<h1>File not found</h1>",
             content_type="text/html",
