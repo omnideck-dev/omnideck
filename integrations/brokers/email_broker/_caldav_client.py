@@ -26,8 +26,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import caldav
+import niquests.exceptions
 import recurring_ical_events
-import requests.exceptions
 import urllib3.exceptions
 from caldav.lib import error as caldav_error
 from icalendar import Calendar as ICalendar
@@ -41,16 +41,18 @@ logger = logging.getLogger(__name__)
 
 # Errors that indicate the underlying HTTP connection has gone away —
 # server-side idle close, RST, half-closed TLS. caldav uses niquests under
-# the hood, so the visible shapes are requests/urllib3 errors. Auth failures
-# stay in their own ``AuthorizationError`` branch — retrying those would
-# loop on a real credential rejection.
+# the hood, and raises niquests' own exception classes (not requests') even
+# though its API mirrors requests' — the two libraries' exceptions share no
+# base class, so catching requests.exceptions here would silently never
+# match. Auth failures stay in their own ``AuthorizationError`` branch —
+# retrying those would loop on a real credential rejection.
 #
 # ``Timeout`` is deliberately excluded: a timeout means the server is slow
 # to respond (e.g. iCloud's CalDAV REPORT with event expansion), not that
 # the connection is stale. Treating it as stale would trigger a pointless
 # reconnect+retry, doubling the wait before the error surfaces.
 _STALE_CONN_ERRORS: tuple[type[BaseException], ...] = (
-    requests.exceptions.ConnectionError,
+    niquests.exceptions.ConnectionError,
     urllib3.exceptions.ProtocolError,
 )
 

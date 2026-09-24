@@ -13,8 +13,8 @@ from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import niquests.exceptions
 import pytest
-import requests.exceptions
 from caldav.lib import error as caldav_error
 from icalendar import Calendar as ICalendar
 from icalendar import Event as ICalendarEvent
@@ -530,14 +530,14 @@ class TestStaleConnErrors:
     def test_includes_connection_error(self) -> None:
         """``ConnectionError`` (RST, broken pipe, idle close) should trigger
         a reconnect+retry — the connection is genuinely gone."""
-        assert requests.exceptions.ConnectionError in _STALE_CONN_ERRORS
+        assert niquests.exceptions.ConnectionError in _STALE_CONN_ERRORS
 
     def test_excludes_timeout(self) -> None:
         """``Timeout`` must NOT be in ``_STALE_CONN_ERRORS``. A timeout
         means the server is slow to respond (e.g. iCloud's CalDAV REPORT
         with event expansion), not that the connection is stale. Treating
         it as stale causes a pointless reconnect and doubles the wait."""
-        assert requests.exceptions.Timeout not in _STALE_CONN_ERRORS
+        assert niquests.exceptions.Timeout not in _STALE_CONN_ERRORS
 
     def test_includes_protocol_error(self) -> None:
         """``ProtocolError`` (urllib3) indicates a broken HTTP stream —
@@ -609,7 +609,7 @@ class TestBlockingConnectTimeout:
 
 
 class TestWithReconnectTimeout:
-    """``_with_reconnect`` should NOT catch ``requests.exceptions.Timeout``
+    """``_with_reconnect`` should NOT catch ``niquests.exceptions.Timeout``
     and retry. A timeout means the server is slow — reconnecting doesn't
     help and doubles the wait time before the error surfaces."""
 
@@ -633,9 +633,9 @@ class TestWithReconnectTimeout:
         def _op(_client: object, _principal: object) -> object:
             nonlocal call_count
             call_count += 1
-            raise requests.exceptions.Timeout("Read timed out")
+            raise niquests.exceptions.Timeout("Read timed out")
 
-        with pytest.raises(requests.exceptions.Timeout):
+        with pytest.raises(niquests.exceptions.Timeout):
             await asyncio.to_thread(client._with_reconnect, _op)
 
         # The op should have been called exactly once — no retry.
@@ -663,7 +663,7 @@ class TestWithReconnectTimeout:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise requests.exceptions.ConnectionError("Connection reset")
+                raise niquests.exceptions.ConnectionError("Connection reset")
             return "success"
 
         with patch.object(client, "_blocking_connect") as mock_reconnect:
@@ -687,11 +687,11 @@ class TestWithReconnectTimeout:
         client._principal = MagicMock()
 
         def _op(_client: object, _principal: object) -> object:
-            raise requests.exceptions.ConnectionError("still broken")
+            raise niquests.exceptions.ConnectionError("still broken")
 
         with patch.object(client, "_blocking_connect") as mock_reconnect:
             mock_reconnect.return_value = (MagicMock(), MagicMock())
-            with pytest.raises(requests.exceptions.ConnectionError):
+            with pytest.raises(niquests.exceptions.ConnectionError):
                 await asyncio.to_thread(client._with_reconnect, _op)
 
         # Reconnect called once (for the first ConnectionError).
