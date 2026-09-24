@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { highlightCode } from '../utils/highlight.js';
 import { PreCodeBlock, InlineCode } from './CodeBlock.jsx';
 import MarkdownLink from './MarkdownLink.jsx';
+import useIframeScrollPreservation from '../hooks/useIframeScrollPreservation.js';
 
 const _markdownComponents = {
     pre: (props) => <PreCodeBlock {...props} />,
@@ -24,12 +25,15 @@ export default function FileContentRenderer({
     imageSrc,
     styles,
 }) {
-    const { filename, content_type, content } = item;
+    const { filename, content_type, content, path } = item;
 
     const highlightedSource = useMemo(() => {
         if (!text || isPdf || isImageFile) return null;
         return highlightCode(text, { filename, contentType: content_type });
     }, [text, isPdf, isImageFile, filename, content_type]);
+
+    const htmlIframeRef = useRef(null);
+    const handleHtmlLoad = useIframeScrollPreservation(htmlIframeRef, path || content);
 
     return (
         <>
@@ -70,10 +74,12 @@ export default function FileContentRenderer({
             )}
             {!isPdf && viewMode === 'preview' && isHtml && iframeSrc && (
                 <iframe
+                    ref={htmlIframeRef}
                     className={styles.htmlFrame}
                     src={iframeSrc}
                     title={filename}
                     sandbox="allow-scripts allow-same-origin"
+                    onLoad={handleHtmlLoad}
                 />
             )}
             {!isPdf && viewMode === 'preview' && isHtml && !iframeSrc && (
