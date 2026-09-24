@@ -1,4 +1,27 @@
 .select {
-    min-width: 150px;
-    --select-font-size: 0.75rem;
+    min-width: 0;
+    --select-font-size: 13px;
+}
+
+/* Style the trigger as a tinted pill chip, matching the composer's other
+ * chip-shaped controls. Scoped by role rather than the primitive's own
+ * (hashed) class names, so this only affects the composer's agent picker
+ * and specificity wins over Select.module.css regardless of bundle order. */
+.select button[role="combobox"] {
+    height: 30px;
+    padding: 0 26px 0 12px;
+    border-radius: var(--radius-full);
+    border-color: var(--accent-muted);
+    background: var(--accent-muted);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.select button[role="combobox"]:hover:not(:disabled) {
+    background: var(--accent-glow);
+    border-color: var(--accent-glow);
+}
+
+.select button[role="combobox"]:focus-visible {
+    border-color: var(--accent);
 }

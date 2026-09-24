@@ -1,13 +1,22 @@
 import { memo } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-
 import {
+    afterEach, describe, expect, it, vi,
+} from 'vitest';
+
+vi.mock('../../../hooks/useIsMobileViewport.js', () => ({
+    default: vi.fn(() => false),
+}));
+
+const {
     DesktopViewRuntimeProvider,
     useDesktopViewCatalog,
     useDesktopViewCommands,
     useFocusedViewId,
-} from '../DesktopViewRuntime.jsx';
+} = await import('../DesktopViewRuntime.jsx');
+const { default: useIsMobileViewport } = await import(
+    '../../../hooks/useIsMobileViewport.js'
+);
 
 const CONVERSATION = {
     id: 'destination:conversation',
@@ -61,6 +70,10 @@ function commandSpies() {
     };
 }
 
+afterEach(() => {
+    useIsMobileViewport.mockReturnValue(false);
+});
+
 describe('DesktopViewRuntime', () => {
     it('translates the narrow placement object to the layout command shape', () => {
         const layoutCommands = commandSpies();
@@ -103,6 +116,24 @@ describe('DesktopViewRuntime', () => {
         const { result } = renderHook(useDesktopViewCommands, { wrapper });
 
         expect(result.current.preferredTabGroupId()).toBe('right');
+    });
+
+    it('always prefers the left tab group on mobile', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'left' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('left');
     });
 
     it('prefers floating focus and falls back to the focused tab group', () => {

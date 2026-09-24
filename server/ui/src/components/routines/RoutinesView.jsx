@@ -7,7 +7,7 @@ import RowDeleteButton from '../primitives/RowDeleteButton.jsx';
 import SearchInput from '../primitives/SearchInput.jsx';
 import Select from '../primitives/Select.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
-import StarterPrompts from '../StarterPrompts.jsx';
+import StarterPrompts, { AccentWord } from '../StarterPrompts.jsx';
 import useRoutines from '../../hooks/useRoutines.js';
 import RoutineDetailPanel from './RoutineDetailPanel.jsx';
 import { formatCron, formatTime } from './routineUtils.jsx';
@@ -207,7 +207,7 @@ export default function RoutinesView({ onComposeInChat }) {
             <div className={styles.view} data-testid="routines-view">
                 <div className={styles.emptyState} data-testid="routines-empty">
                     <StarterPrompts
-                        heading="No routines yet"
+                        heading={<>No routines <AccentWord>yet</AccentWord></>}
                         subheading="Routines let the agent run recurring work for you on a schedule. Pick one to get started — or describe your own in chat."
                         prompts={ROUTINE_PROMPTS}
                         onSelect={(text) => onComposeInChat?.(text)}

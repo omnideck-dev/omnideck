@@ -6,6 +6,7 @@ import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
 const LINE_HEIGHT_PX = 20;
@@ -19,8 +20,8 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal }) {
-    const [message, setMessage] = useState('');
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
+    const [message, setMessage] = useState(() => loadChatDraft(conversationId));
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
@@ -84,6 +85,15 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
             onDraftConsumed();
         }
     }, [draft, onDraftConsumed]);
+
+    // Persist the in-progress draft per conversation (component remounts on
+    // conversation switch, so this never leaks into a different chat).
+    // A brand-new, never-sent conversation gets a fresh id on every page load
+    // (nothing anchors it across a reload), so this only survives a hard
+    // refresh once the conversation has been sent at least once — by design.
+    useEffect(() => {
+        saveChatDraft(conversationId, message);
+    }, [conversationId, message]);
 
     // Each entry: { base64, content_type, filename, preview } where preview is a
     // data URL for images, null for other file types.

@@ -1,15 +1,16 @@
 .item {
     position: relative;
-    height: 30px;
+    height: 34px;
     display: flex;
     align-items: center;
-    gap: 11px;
-    padding: 0 10px;
+    gap: 12px;
+    padding: 0 12px;
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-secondary);
     cursor: grab;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 500;
     touch-action: none;
     user-select: none;
 }
@@ -66,7 +67,7 @@
 /* Signal Line — 2px accent bar on the active item's left edge */
 .item.active {
     background: var(--accent-muted);
-    color: var(--accent);
+    color: var(--text-primary);
 }
 .item.active i { color: var(--accent); }
 .item.active::before {

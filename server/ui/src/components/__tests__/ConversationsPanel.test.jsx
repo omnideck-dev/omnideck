@@ -228,6 +228,10 @@ describe('ConversationsPanel — context menu', () => {
 });
 
 describe('ConversationsPanel — delete', () => {
+    beforeEach(() => {
+        localStorage.clear();
+    });
+
     it('deletes a conversation via the menu after a confirm click', async () => {
         const user = userEvent.setup();
         const onLoadConversation = vi.fn();
@@ -319,6 +323,80 @@ describe('ConversationsPanel — delete', () => {
         expect(await screen.findByText(warning)).toBeInTheDocument();
         expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
         expect(onNewConversation).not.toHaveBeenCalled();
+    });
+
+    it('clears the deleted conversation\'s persisted draft', async () => {
+        localStorage.setItem('omnideck_chat_draft_v1:c1', 'unsent draft');
+        const user = userEvent.setup();
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+        const deleteButton = within(menu).getByTestId('recent-menu-delete');
+        await user.click(deleteButton); // arm
+        await user.click(deleteButton); // confirm
+
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        expect(localStorage.getItem('omnideck_chat_draft_v1:c1')).toBeNull();
+    });
+
+    it('clears a permanently-deleted archived conversation\'s persisted draft', async () => {
+        localStorage.setItem('omnideck_chat_draft_v1:a1', 'unsent draft');
+        const user = userEvent.setup();
+        global.fetch = vi.fn((url, opts) => {
+            const method = opts?.method;
+            if (typeof url === 'string' && url.endsWith('/archived')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([
+                        { conversation_id: 'a1', title: 'archived one', started_at: isoAgo({ days: 2 }) },
+                    ]),
+                });
+            }
+            if (typeof url === 'string' && url.endsWith('/folders')) {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+            }
+            if (method === 'DELETE' || method === 'PATCH' || method === 'POST') {
+                return Promise.resolve({ ok: true, status: 204 });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(SESSIONS) });
+        });
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+        await user.click(screen.getByTestId('archived-toggle'));
+        await waitFor(() => expect(screen.getByTestId('archived-item')).toBeInTheDocument());
+
+        const deleteButton = screen.getByTestId('archived-delete');
+        await user.click(deleteButton); // arm
+        await user.click(deleteButton); // confirm
+
+        await waitFor(() => expect(screen.queryByTestId('archived-item')).not.toBeInTheDocument());
+        expect(localStorage.getItem('omnideck_chat_draft_v1:a1')).toBeNull();
+    });
+
+    it('deletes the conversation even when the draft-storage getter throws', async () => {
+        const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+        Object.defineProperty(globalThis, 'localStorage', {
+            configurable: true,
+            get() {
+                throw new DOMException('Storage access blocked', 'SecurityError');
+            },
+        });
+        try {
+            const user = userEvent.setup();
+            render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+            await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+
+            const menu = await openRowMenu(user, screen.getAllByTestId('recent-item')[0]);
+            const deleteButton = within(menu).getByTestId('recent-menu-delete');
+            await user.click(deleteButton); // arm
+            await user.click(deleteButton); // confirm
+
+            await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(3));
+        } finally {
+            Object.defineProperty(globalThis, 'localStorage', descriptor);
+        }
     });
 });
 
