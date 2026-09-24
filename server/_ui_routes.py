@@ -62,10 +62,24 @@ async def index_handler(_request: Request) -> StreamResponse:
     return web.FileResponse(index_path, headers={"Cache-Control": "no-cache"})
 
 
+async def manifest_handler(_request: Request) -> StreamResponse:
+    """Serve the PWA manifest, which the built dist/ root isn't otherwise routed."""
+    manifest_path = UI_DIST_DIR / "manifest.webmanifest"
+    if not manifest_path.is_file():
+        logger.warning("UI manifest not found: %s", manifest_path)
+        return web.Response(
+            text="<h1>File not found</h1>",
+            content_type="text/html",
+            status=404,
+        )
+    return web.FileResponse(manifest_path, headers={"Cache-Control": "no-cache"})
+
+
 def register_ui_routes(app: web.Application) -> None:
     """Register the SPA entry point and static asset directories."""
     app.router.add_route("GET", "/", index_handler)
     app.router.add_route("GET", "/custom.css", custom_css_handler)
+    app.router.add_route("GET", "/manifest.webmanifest", manifest_handler)
     app.on_startup.append(_ensure_custom_css_on_startup)
     if UI_DIST_DIR.exists():
         app.router.add_static("/assets", UI_DIST_DIR / "assets", show_index=False)

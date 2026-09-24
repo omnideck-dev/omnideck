@@ -190,6 +190,7 @@ html, body {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   background: var(--canvas);
   font-family: var(--font-body);

@@ -6,6 +6,7 @@ import {
     useRef,
 } from 'react';
 
+import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import { tabGroupContainingView } from './desktopLayoutSelectors.js';
 
@@ -36,6 +37,7 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     const { model, commands: layoutCommands } = desktopLayout;
     const modelRef = useRef(model);
     modelRef.current = model;
+    const isMobile = useIsMobileViewport();
     // Bounds, split ratios, and focus change frequently. Domain effects need
     // only the View catalog, so keep their context value stable for pure
     // placement updates.
@@ -87,9 +89,14 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     // Placement callers need the latest model, but they should receive stable
     // commands. In particular, navigation effects must not restart merely
     // because a drag or tab selection produced a new layout object.
+    // Mobile has room for only one visible pane, so companion views (artifacts,
+    // workspace resources) always join the conversation's pane instead of
+    // opening into an unreachable second one.
     const preferredTabGroupId = useCallback(
-        () => preferredCompanionTabGroup(modelRef.current),
-        [],
+        () => (isMobile
+            ? DESKTOP_TAB_GROUP_IDS.LEFT
+            : preferredCompanionTabGroup(modelRef.current)),
+        [isMobile],
     );
 
     const commands = useMemo(() => ({
