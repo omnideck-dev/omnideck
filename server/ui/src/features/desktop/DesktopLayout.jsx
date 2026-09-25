@@ -54,12 +54,17 @@ export default function DesktopLayout({
         // layout state, or a desktop window resized down below the mobile
         // breakpoint. Merge the hidden pane into the visible one so its
         // views stay reachable instead of stranding them with no chrome to
-        // select or move them from.
+        // select or move them from. Uses the dedicated merge command, not
+        // moveView: moveView is built for an explicit user placement change
+        // (it activates the moved view and clears floating focus), and this
+        // is an automatic reconciliation that must not silently steal the
+        // active tab or unrelated floating focus out from under the user.
         if (!isMobile || !leftVisible || !rightVisible) return;
-        for (const viewId of rightTabGroup.viewIds) {
-            commands.moveView(viewId, DESKTOP_TAB_GROUP_IDS.LEFT);
-        }
-    }, [commands, isMobile, leftVisible, rightVisible, rightTabGroup.viewIds]);
+        commands.mergeTabGroup(
+            DESKTOP_TAB_GROUP_IDS.RIGHT,
+            DESKTOP_TAB_GROUP_IDS.LEFT,
+        );
+    }, [commands, isMobile, leftVisible, rightVisible]);
     const fullscreenActive = Boolean(model.fullscreenViewId);
     const visibleSplitRatio = liveSplitRatio ?? model.splitRatio;
     const gridTemplateColumns = split

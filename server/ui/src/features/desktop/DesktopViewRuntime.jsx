@@ -79,7 +79,6 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
             || focusedTabGroupActiveViewId,
     }), [
         model.focusedFloatingViewId,
-        model.focusedTabGroupId,
         focusedTabGroupActiveViewId,
     ]);
 
