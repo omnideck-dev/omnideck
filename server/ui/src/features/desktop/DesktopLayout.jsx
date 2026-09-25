@@ -48,6 +48,23 @@ export default function DesktopLayout({
     // hidden there — unless the left group is empty, in which case falling
     // back to the right group's content beats showing a blank screen.
     const showRightTabGroup = rightVisible && (!isMobile || !leftVisible);
+
+    useEffect(() => {
+        // Both panes can end up populated on mobile — restored two-pane
+        // layout state, or a desktop window resized down below the mobile
+        // breakpoint. Merge the hidden pane into the visible one so its
+        // views stay reachable instead of stranding them with no chrome to
+        // select or move them from. Uses the dedicated merge command, not
+        // moveView: moveView is built for an explicit user placement change
+        // (it activates the moved view and clears floating focus), and this
+        // is an automatic reconciliation that must not silently steal the
+        // active tab or unrelated floating focus out from under the user.
+        if (!isMobile || !leftVisible || !rightVisible) return;
+        commands.mergeTabGroup(
+            DESKTOP_TAB_GROUP_IDS.RIGHT,
+            DESKTOP_TAB_GROUP_IDS.LEFT,
+        );
+    }, [commands, isMobile, leftVisible, rightVisible]);
     const fullscreenActive = Boolean(model.fullscreenViewId);
     const visibleSplitRatio = liveSplitRatio ?? model.splitRatio;
     const gridTemplateColumns = split
