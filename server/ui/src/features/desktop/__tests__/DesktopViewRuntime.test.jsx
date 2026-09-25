@@ -159,6 +159,39 @@ describe('DesktopViewRuntime', () => {
         expect(result.current).toBe(ARTIFACT.id);
     });
 
+    it('reports the visible left pane\'s view as focused on mobile, not a hidden right pane', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        // A restored two-pane layout can leave focus on the right group even
+        // though mobile only renders the left one.
+        const twoPaneMobileModel = {
+            openViews: [CONVERSATION, ARTIFACT],
+            openViewsById: {
+                [CONVERSATION.id]: CONVERSATION,
+                [ARTIFACT.id]: ARTIFACT,
+            },
+            tabGroups: {
+                left: { viewIds: [CONVERSATION.id], activeViewId: CONVERSATION.id },
+                right: { viewIds: [ARTIFACT.id], activeViewId: ARTIFACT.id },
+            },
+            focusedFloatingViewId: null,
+            focusedTabGroupId: 'right',
+        };
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: twoPaneMobileModel,
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useFocusedViewId, { wrapper });
+
+        expect(result.current).toBe(CONVERSATION.id);
+    });
+
     it('does not wake catalog consumers when only focus or bounds change', () => {
         const layoutCommands = commandSpies();
         const baseModel = model();

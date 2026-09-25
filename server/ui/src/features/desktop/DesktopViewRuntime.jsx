@@ -45,8 +45,17 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
         openViews: Object.values(model.openViewsById),
         openViewsById: model.openViewsById,
     }), [model.openViewsById]);
+    // On mobile only one pane is ever visible (left, unless it's empty).
+    // Mirror that rule here so reported focus never points at a hidden
+    // pane's view for the render before the layout's own merge effect
+    // catches up with a restored or resized two-pane layout.
+    const mobileVisibleTabGroupId = model.tabGroups[
+        DESKTOP_TAB_GROUP_IDS.LEFT
+    ].viewIds.length > 0
+        ? DESKTOP_TAB_GROUP_IDS.LEFT
+        : DESKTOP_TAB_GROUP_IDS.RIGHT;
     const focusedTabGroupActiveViewId = model.tabGroups[
-        model.focusedTabGroupId
+        isMobile ? mobileVisibleTabGroupId : model.focusedTabGroupId
     ]?.activeViewId || null;
     // Focus is intentionally a separate subscription from the View catalog.
     // Tab selection and floating-window focus change often, while domain
