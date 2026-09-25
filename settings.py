@@ -37,6 +37,11 @@ _DEFAULTS: dict[str, Any] = {
     # Direct-connect providers: {name: {"base_url": "..."}}. Brokered
     # providers (with API keys) live in the integrations vault, not here.
     "direct_providers": {},
+    # Brokered providers' base URLs: {name: "..."}. The api_key itself lives
+    # in the encrypted vault; the URL isn't a secret, so it's cached here
+    # (kept in sync by the provider routes) purely so the settings UI can
+    # display and edit it without a vault round-trip.
+    "brokered_provider_urls": {},
     "vision_provider": "",
     "vision_model": "",
     "vision_think": False,
