@@ -48,6 +48,18 @@ export default function DesktopLayout({
     // hidden there — unless the left group is empty, in which case falling
     // back to the right group's content beats showing a blank screen.
     const showRightTabGroup = rightVisible && (!isMobile || !leftVisible);
+
+    useEffect(() => {
+        // Both panes can end up populated on mobile — restored two-pane
+        // layout state, or a desktop window resized down below the mobile
+        // breakpoint. Merge the hidden pane into the visible one so its
+        // views stay reachable instead of stranding them with no chrome to
+        // select or move them from.
+        if (!isMobile || !leftVisible || !rightVisible) return;
+        for (const viewId of rightTabGroup.viewIds) {
+            commands.moveView(viewId, DESKTOP_TAB_GROUP_IDS.LEFT);
+        }
+    }, [commands, isMobile, leftVisible, rightVisible, rightTabGroup.viewIds]);
     const fullscreenActive = Boolean(model.fullscreenViewId);
     const visibleSplitRatio = liveSplitRatio ?? model.splitRatio;
     const gridTemplateColumns = split

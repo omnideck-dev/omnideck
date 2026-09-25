@@ -317,7 +317,7 @@ it('hides the right tab group and split handle on mobile', () => {
     render(
         <DesktopLayout
             model={model()}
-            commands={{ setSplitRatio: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
@@ -338,7 +338,7 @@ it('marks the right pane\'s active view not visible on mobile so it cannot be fo
     render(
         <DesktopLayout
             model={model()}
-            commands={{ setSplitRatio: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
@@ -354,7 +354,7 @@ it('keeps a fullscreen right-pane view visible on mobile even though its tab gro
     render(
         <DesktopLayout
             model={{ ...model(), fullscreenViewId: APP.id }}
-            commands={{ setSplitRatio: vi.fn(), setFullscreenView: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), setFullscreenView: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
@@ -371,7 +371,7 @@ it('falls back to the right tab group on mobile when the left group is empty', (
     render(
         <DesktopLayout
             model={model({ leftIds: [], leftActive: null })}
-            commands={{ setSplitRatio: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
@@ -392,7 +392,7 @@ it('restores the right tab group once the viewport is no longer mobile', () => {
     const { rerender } = render(
         <DesktopLayout
             model={model()}
-            commands={{ setSplitRatio: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
@@ -404,11 +404,45 @@ it('restores the right tab group once the viewport is no longer mobile', () => {
     rerender(
         <DesktopLayout
             model={model()}
-            commands={{ setSplitRatio: vi.fn() }}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn() }}
             onSelectView={vi.fn()}
             onCloseView={vi.fn()}
             renderView={(view) => <div>{view.label} content</div>}
         />,
     );
     expect(screen.getByTestId('desktop-tab-group-right')).toBeInTheDocument();
+});
+
+it('merges the right pane into the left pane when both are populated on mobile', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    const moveView = vi.fn();
+    render(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), moveView }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    // Otherwise the right pane's content is unreachable: no tab strip is
+    // rendered for it and there is no mobile affordance to switch panes.
+    expect(moveView).toHaveBeenCalledWith(APP.id, DESKTOP_TAB_GROUP_IDS.LEFT);
+});
+
+it('does not merge panes on mobile when only one pane is populated', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    const moveView = vi.fn();
+    render(
+        <DesktopLayout
+            model={model({ rightIds: [], rightActive: null })}
+            commands={{ setSplitRatio: vi.fn(), moveView }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(moveView).not.toHaveBeenCalled();
 });
