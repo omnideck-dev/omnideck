@@ -20,7 +20,7 @@ by all agents, in this order:
 | 5 | LoggingHook | always |
 | 6 | ScratchpadHook | always |
 | 7 | LoadedSkillHook | always |
-| 8 | ToolResultCapHook | `num_ctx > 0` |
+| 8 | ToolResultCapHook | always |
 | 9 | ContextHook | `ctx_manager` provided |
 
 ## Hook catalog

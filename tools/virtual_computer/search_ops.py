@@ -184,22 +184,26 @@ def _search(
                 if found:
                     # Preserve a useful excerpt around the match, not just a
                     # prefix that may omit the matched text entirely.
-                    offset = max(0, found.start() - _MAX_LINE_CHARS // 2) if len(line) > _MAX_LINE_CHARS else 0
+                    line_clipped = len(line) > _MAX_LINE_CHARS
+                    offset = max(0, found.start() - _MAX_LINE_CHARS // 2) if line_clipped else 0
                     excerpt = line[offset:offset + _MAX_LINE_CHARS]
                     before = all_lines[max(0, i - ctx):i] if ctx > 0 else None
                     after = all_lines[i + 1:i + 1 + ctx] if ctx > 0 else None
-                    clipped = len(line) > _MAX_LINE_CHARS or any(
+                    clipped = line_clipped or any(
                         len(value) > _MAX_LINE_CHARS for value in (before or []) + (after or [])
                     )
                     incomplete = incomplete or clipped
                     match = GrepMatch(
                         file_path=file_display, line_number=i + 1,
-                        line=("[excerpt] " if offset else "") + excerpt,
+                        line=("[excerpt] " if line_clipped else "") + excerpt,
                         context_before=[v[:_MAX_LINE_CHARS] for v in before] if before is not None else None,
                         context_after=[v[:_MAX_LINE_CHARS] for v in after] if after is not None else None,
                     )
                     size = len(match.model_dump_json().encode("utf-8")) + 32
-                    if output_bytes + size > _MAX_OUTPUT_BYTES:
+                    # Always let the first match through even if it alone
+                    # exceeds the budget: an empty matches list would read as
+                    # "no match found" when one genuinely was.
+                    if matches and output_bytes + size > _MAX_OUTPUT_BYTES:
                         return GrepResult(
                             success=True, matches=matches, truncated=True, searched_files=searched,
                             notice="Search output limit reached. Narrow the path/pattern or request less context.",
@@ -258,7 +262,7 @@ async def grep(
     Returns partial results and a notice when a limit is reached. Searches at
     most 8 MiB per file, returns excerpts for long lines, and caps collected
     output at 1 MiB. Oversized model-facing responses may be saved temporarily
-    by the runtime. A timed-out regex worker is killed and reaped.
+    by the runtime. A timed-out search stops and returns whatever matched so far.
 
     Args:
         pattern: Regex or literal pattern to search for (up to 4096 characters).

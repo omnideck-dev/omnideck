@@ -347,6 +347,33 @@ async def test_grep_bounds_dense_lines_context_and_total_output(tmp_path):
     assert result.matches and all("NEEDLE" in match.line for match in result.matches)
 
 
+async def test_grep_marks_left_aligned_clipped_line_as_excerpt(tmp_path):
+    # Match starts near the very beginning of a line far longer than the
+    # excerpt budget, so the offset clamps to 0 even though the line is
+    # truncated on the right - the "[excerpt]" marker must not depend on
+    # offset being nonzero.
+    source = tmp_path / "long.txt"
+    source.write_text("NEEDLE" + "x" * 9000)
+    result = await grep("NEEDLE", path=str(source), context=0)
+    assert result.matches
+    assert result.matches[0].line.startswith("[excerpt] ")
+
+
+async def test_grep_returns_oversized_match_instead_of_empty_matches(tmp_path):
+    # A single match whose own context can exceed the output byte budget
+    # must still be returned - an empty matches list would read as "no
+    # match found" when one genuinely was.
+    source = tmp_path / "huge_context.txt"
+    filler = "😄" * 5000
+    lines = [filler for _ in range(250)]
+    lines[150] = "NEEDLE" + filler
+    source.write_text("\n".join(lines))
+    result = await grep("NEEDLE", path=str(source), context=100, max_results=None)
+    assert result.success
+    assert result.matches
+    assert "NEEDLE" in result.matches[0].line
+
+
 @pytest.mark.parametrize("args", [{"pattern": "["}, {"pattern": "x", "context": 1000000}])
 async def test_grep_returns_actionable_validation_errors(args, tmp_path):
     result = await grep(path=str(tmp_path), **args)
