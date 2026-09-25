@@ -53,6 +53,27 @@ describe('useIsMobileViewport', () => {
         expect(latest).toBe(true);
     });
 
+    it('reflects a match that changes in the gap between mount and subscribing', () => {
+        // A plain useState initializer + useEffect subscription can miss a
+        // change that lands between the initial render (which captures the
+        // starting value) and the later effect attaching its 'change'
+        // listener - only a subsequent event would be seen. Simulate that
+        // gap by flipping the match as a side effect of subscribing itself,
+        // with no 'change' event ever dispatched, and confirm the hook
+        // still reflects it (useSyncExternalStore re-checks on subscribe).
+        let matches = false;
+        const mql = {
+            get matches() { return matches; },
+            addEventListener: vi.fn((event) => {
+                if (event === 'change') matches = true;
+            }),
+            removeEventListener: vi.fn(),
+        };
+        window.matchMedia = vi.fn(() => mql);
+        render(<Harness />);
+        expect(latest).toBe(true);
+    });
+
     it('unsubscribes on unmount', () => {
         const { matchMedia, mql } = createMatchMediaMock(false);
         window.matchMedia = matchMedia;
