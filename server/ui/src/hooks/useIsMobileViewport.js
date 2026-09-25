@@ -2,9 +2,22 @@ import { useSyncExternalStore } from 'react';
 
 const MOBILE_QUERY = '(max-width: 768px)';
 
+let cachedMql = null;
+let cachedMatchMedia = null;
+
 function getMediaQueryList() {
     // jsdom (unit tests) has no matchMedia unless a test mocks it.
-    return window.matchMedia?.(MOBILE_QUERY) ?? null;
+    const matchMedia = window.matchMedia;
+    if (!matchMedia) return null;
+    // Cache keyed on the matchMedia reference itself, not just presence: it
+    // stays stable in production so this avoids allocating a fresh
+    // MediaQueryList on every render, while still picking up a replacement
+    // mock across tests that reassign window.matchMedia.
+    if (cachedMatchMedia !== matchMedia) {
+        cachedMql = matchMedia(MOBILE_QUERY);
+        cachedMatchMedia = matchMedia;
+    }
+    return cachedMql;
 }
 
 function subscribe(onChange) {

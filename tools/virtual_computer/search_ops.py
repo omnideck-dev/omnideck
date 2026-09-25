@@ -98,7 +98,7 @@ def _apply_globs(
         yield p
 
 
-def _search(
+def search(
     pattern: str,
     *,
     path: str = ".",
@@ -109,6 +109,7 @@ def _search(
     context: int = 2,
     max_results: int | None = 1000,
     on_match: Callable[[GrepMatch], None] | None = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> GrepResult:
     """Collect bounded matches inside the disposable search process."""
     try:
@@ -177,6 +178,8 @@ def _search(
                 logger.warning("Skipping unreadable file %s", fpath)
                 continue
             searched += 1
+            if on_progress is not None and searched % _PROGRESS_INTERVAL == 0:
+                on_progress(searched)
             all_lines = text.splitlines(keepends=False)
             file_display = str(fpath)
             for i, line in enumerate(all_lines):
@@ -244,6 +247,7 @@ _SEARCH_TIMEOUT_SECONDS = 10.0
 _MAX_OUTPUT_BYTES = 1024 * 1024
 _MAX_FILE_BYTES = 8 * 1024 * 1024
 _MAX_LINE_CHARS = 4096
+_PROGRESS_INTERVAL = 200
 
 
 async def grep(
@@ -308,6 +312,7 @@ async def grep(
             await communication
             await worker.wait()
         matches = []
+        last_progress = 0
         for line in output.splitlines():
             try:
                 record = json.loads(line)
@@ -315,15 +320,21 @@ async def grep(
                 continue  # A timeout can interrupt the last protocol line.
             if "match" in record:
                 matches.append(GrepMatch.model_validate(record["match"]))
+            elif "progress" in record:
+                last_progress = record["progress"]
             elif "result" in record:
                 return GrepResult.model_validate({**record["result"], "matches": matches})
         if not timed_out and worker_stderr:
             # No "result" line and not a timeout means the worker crashed;
             # surface its traceback so the failure is diagnosable in logs.
             logger.warning("Search worker exited abnormally: %s", worker_stderr.decode(errors="replace").strip())
+        # The worker died before sending its final tally. Fall back to the
+        # last progress heartbeat, which tracks files scanned rather than
+        # just files with matches, so a search killed between heartbeats
+        # doesn't undercount how much was actually covered.
         return GrepResult(
             success=bool(matches), matches=matches, truncated=True,
-            searched_files=len({match.file_path for match in matches}),
+            searched_files=max(last_progress, len({match.file_path for match in matches})),
             notice=(f"Search stopped after {_SEARCH_TIMEOUT_SECONDS:g} seconds; results are incomplete. "
                     "Narrow the path or simplify the regex (regex=false searches literal text)."
                     if timed_out else "Search worker exited before completion; results are incomplete."),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 import tempfile
@@ -430,6 +431,36 @@ async def test_grep_logs_worker_stderr_on_crash(monkeypatch, caplog, tmp_path):
         result = await grep("needle", path=str(tmp_path))
     assert not result.success
     assert "Boom" in caplog.text
+
+
+async def test_grep_crash_reports_progress_not_just_matched_files(monkeypatch, tmp_path):
+    # A worker that dies mid-search may have scanned many files but only
+    # matched in one of them; searched_files should reflect the progress
+    # heartbeat, not just the count of distinct files with matches.
+    match_line = json.dumps({
+        "match": {"file_path": "a.txt", "line_number": 1, "line": "needle"},
+    })
+    progress_line = json.dumps({"progress": 250})
+    stdout = f"{match_line}\n{progress_line}\n".encode()
+
+    class _FakeProcess:
+        returncode = 0
+
+        async def communicate(self, input=None):  # noqa: A002 - matches Process.communicate signature
+            return stdout, b"Traceback (most recent call last):\nBoom\n"
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return self.returncode
+
+    async def fake_exec(*args, **kwargs):
+        return _FakeProcess()
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+    result = await grep("needle", path=str(tmp_path))
+    assert result.searched_files == 250
 
 
 async def test_grep_preserves_thirty_lines_of_context(tmp_path):

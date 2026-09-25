@@ -4,17 +4,21 @@ import json
 import sys
 
 from .models import GrepMatch
-from .search_ops import _search
+from .search_ops import search
 
 
 def _emit_match(match: GrepMatch) -> None:
     print(json.dumps({"match": match.model_dump()}), flush=True)
 
 
+def _emit_progress(searched: int) -> None:
+    print(json.dumps({"progress": searched}), flush=True)
+
+
 def main() -> None:
     """Run one search supplied on stdin and emit its completion metadata."""
     arguments = json.load(sys.stdin)
-    result = _search(**arguments, on_match=_emit_match)
+    result = search(**arguments, on_match=_emit_match, on_progress=_emit_progress)
     print(json.dumps({"result": result.model_dump(exclude={"matches"})}), flush=True)
 
 
