@@ -118,7 +118,7 @@ describe('DesktopViewRuntime', () => {
         expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
-    it('always prefers the left tab group on mobile', () => {
+    it('prefers the conversation\'s tab group on mobile, not always left', () => {
         useIsMobileViewport.mockReturnValue(true);
         const layoutCommands = commandSpies();
         const wrapper = ({ children }) => (
@@ -134,6 +134,28 @@ describe('DesktopViewRuntime', () => {
         const { result } = renderHook(useDesktopViewCommands, { wrapper });
 
         expect(result.current.preferredTabGroupId()).toBe('left');
+    });
+
+    it('follows the conversation to the right tab group on mobile', () => {
+        // The desktop-only "move"/"dock" actions can leave the conversation
+        // docked right, and that placement persists across sessions. A
+        // companion opened later on mobile must join it there, not strand
+        // it behind a companion forced into left.
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'right' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
     it('prefers floating focus and falls back to the focused tab group', () => {

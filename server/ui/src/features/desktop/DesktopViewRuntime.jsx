@@ -14,17 +14,31 @@ const DesktopViewCatalogContext = createContext(null);
 const DesktopViewCommandsContext = createContext(null);
 const DesktopViewFocusContext = createContext(null);
 
-/** Return the tab group opposite Conversation, falling back to the right. */
-function preferredCompanionTabGroup(model) {
+/** Locate the tab group actually holding the Conversation view, if any. */
+function conversationTabGroupId(model) {
     const conversationView = Object.values(model.openViewsById).find(
         (view) => view.type === 'conversation',
     );
-    const conversationTabGroupId = conversationView
+    return conversationView
         ? tabGroupContainingView(model.tabGroups, conversationView.id)
         : null;
-    return conversationTabGroupId === DESKTOP_TAB_GROUP_IDS.RIGHT
+}
+
+/** Return the tab group opposite Conversation, falling back to the right. */
+function preferredCompanionTabGroup(model) {
+    return conversationTabGroupId(model) === DESKTOP_TAB_GROUP_IDS.RIGHT
         ? DESKTOP_TAB_GROUP_IDS.LEFT
         : DESKTOP_TAB_GROUP_IDS.RIGHT;
+}
+
+/**
+ * On mobile only one pane is reachable, so a companion must join whichever
+ * pane the conversation already occupies instead of assuming it's always
+ * left - the conversation can be in the right group (the desktop-only
+ * "move"/"dock" actions leave that placement persisted across sessions).
+ */
+function mobileCompanionTabGroup(model) {
+    return conversationTabGroupId(model) || DESKTOP_TAB_GROUP_IDS.LEFT;
 }
 
 /**
@@ -103,7 +117,7 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     // opening into an unreachable second one.
     const preferredTabGroupId = useCallback(
         () => (isMobile
-            ? DESKTOP_TAB_GROUP_IDS.LEFT
+            ? mobileCompanionTabGroup(modelRef.current)
             : preferredCompanionTabGroup(modelRef.current)),
         [isMobile],
     );
