@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import glob
 import logging
 import os
 import tempfile
+import time
 
 logger = logging.getLogger(__name__)
 
 _MAX_INLINE_BYTES = 64 * 1024
 _DEFAULT_INLINE_BYTES = 16 * 1024
+_SPILL_PREFIX = "omnideck-tool-result-"
+_SPILL_TTL_SECONDS = 3600
 
 
 class ToolResultCapHook:
@@ -26,6 +30,22 @@ class ToolResultCapHook:
             if context_window > 0 else _DEFAULT_INLINE_BYTES
         )
 
+    def _reap_stale_spills(self) -> None:
+        """Delete spilled files older than the TTL from earlier tool calls.
+
+        There is no per-session teardown to tie cleanup to, so each new spill
+        opportunistically sweeps the temp directory instead of leaking files
+        for the life of the process.
+        """
+        cutoff = time.time() - _SPILL_TTL_SECONDS
+        pattern = os.path.join(tempfile.gettempdir(), f"{_SPILL_PREFIX}*.txt")
+        for stale_path in glob.glob(pattern):
+            try:
+                if os.path.getmtime(stale_path) < cutoff:
+                    os.unlink(stale_path)
+            except OSError:
+                continue
+
     def after_tool(
         self, tool_name: str, tool_arguments: object, tool_result: str,
     ) -> str:
@@ -35,11 +55,12 @@ class ToolResultCapHook:
         data = tool_result.encode("utf-8", errors="replace")
         if len(data) <= self._max_bytes:
             return tool_result
+        self._reap_stale_spills()
         path = None
         try:
             # Random exclusive file creation, mode 0600; tool names/arguments
             # never become path components. Respect TMPDIR for isolated tests.
-            with tempfile.NamedTemporaryFile(prefix="omnideck-tool-result-", suffix=".txt", delete=False) as output:
+            with tempfile.NamedTemporaryFile(prefix=_SPILL_PREFIX, suffix=".txt", delete=False) as output:
                 path = output.name
                 output.write(data)
         except OSError:

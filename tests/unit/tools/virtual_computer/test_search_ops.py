@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import tempfile
 
@@ -361,11 +362,15 @@ async def test_grep_marks_file_prefix_search_as_incomplete(tmp_path):
     assert [match.line for match in result.matches] == ["early"]
 
 
-async def test_grep_does_not_treat_file_budget_boundary_as_end_of_line(tmp_path):
+async def test_grep_searches_prefix_when_file_has_no_newline_in_budget(tmp_path):
+    # A file with no newline anywhere in the first 8 MiB (e.g. a minified
+    # bundle) has no complete line to trim to. The prefix must still be
+    # searched rather than silently dropped in full.
     source = tmp_path / "large.txt"
-    source.write_text("x" * (9 * 1024 * 1024))
-    result = await grep("x$", path=str(source), context=0)
-    assert result.truncated and not result.matches
+    source.write_text("needle" + "x" * (9 * 1024 * 1024))
+    result = await grep("needle", path=str(source), context=0)
+    assert result.success and result.truncated
+    assert result.matches and "needle" in result.matches[0].line
 
 
 async def test_grep_preserves_complete_line_when_late_match_fits_budget(tmp_path):
@@ -375,6 +380,29 @@ async def test_grep_preserves_complete_line_when_late_match_fits_budget(tmp_path
     result = await grep("needle", path=str(source), context=0)
     assert not result.truncated
     assert result.matches[0].line == line
+
+
+async def test_grep_logs_worker_stderr_on_crash(monkeypatch, caplog, tmp_path):
+    class _FakeProcess:
+        returncode = 0
+
+        async def communicate(self, input=None):  # noqa: A002 - matches Process.communicate signature
+            return b"", b"Traceback (most recent call last):\nBoom\n"
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return self.returncode
+
+    async def fake_exec(*args, **kwargs):
+        return _FakeProcess()
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
+    with caplog.at_level(logging.WARNING):
+        result = await grep("needle", path=str(tmp_path))
+    assert not result.success
+    assert "Boom" in caplog.text
 
 
 async def test_grep_preserves_thirty_lines_of_context(tmp_path):

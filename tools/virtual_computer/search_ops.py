@@ -164,7 +164,14 @@ def _search(
                 if len(raw) > _MAX_FILE_BYTES:
                     # Do not fabricate an end-of-line at the byte boundary:
                     # anchored patterns must only see complete source lines.
-                    prefix = prefix[:prefix.rfind(b"\n") + 1]
+                    # If the budget contains no newline at all (a minified
+                    # bundle or other giant single-line file), there is no
+                    # complete line to trim to - keep the whole chunk so its
+                    # content is still searchable, rather than silently
+                    # dropping the entire file from the search.
+                    last_newline = prefix.rfind(b"\n")
+                    if last_newline != -1:
+                        prefix = prefix[:last_newline + 1]
                 text = prefix.decode("utf-8", errors="replace")
             except OSError:  # pragma: no cover - defensive
                 logger.warning("Skipping unreadable file %s", fpath)
@@ -279,17 +286,17 @@ async def grep(
             sys.executable, "-m", "tools.virtual_computer._search_worker",
             cwd=Path(__file__).resolve().parents[2],
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
         communication = asyncio.create_task(worker.communicate(json.dumps(arguments).encode()))
         try:
             try:
-                output, _ = await asyncio.wait_for(asyncio.shield(communication), _SEARCH_TIMEOUT_SECONDS)
+                output, worker_stderr = await asyncio.wait_for(asyncio.shield(communication), _SEARCH_TIMEOUT_SECONDS)
             except TimeoutError:
                 timed_out = True
                 if worker.returncode is None:
                     worker.kill()
-                output, _ = await communication
+                output, worker_stderr = await communication
         finally:
             # Cancellation of the tool must not leave its regex worker alive.
             if worker.returncode is None:
@@ -306,6 +313,10 @@ async def grep(
                 matches.append(GrepMatch.model_validate(record["match"]))
             elif "result" in record:
                 return GrepResult.model_validate({**record["result"], "matches": matches})
+        if not timed_out and worker_stderr:
+            # No "result" line and not a timeout means the worker crashed;
+            # surface its traceback so the failure is diagnosable in logs.
+            logger.warning("Search worker exited abnormally: %s", worker_stderr.decode(errors="replace").strip())
         return GrepResult(
             success=bool(matches), matches=matches, truncated=True,
             searched_files=len({match.file_path for match in matches}),

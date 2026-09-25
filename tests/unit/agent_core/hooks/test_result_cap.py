@@ -1,8 +1,10 @@
 """Oversized output remains available without entering model history inline."""
 
+import os
 from pathlib import Path
 import re
 import stat
+import time
 
 import pytest
 
@@ -37,6 +39,20 @@ def test_parallel_results_get_distinct_paths(tmp_path):
     b = hook.after_tool("read_file", {}, "b" * 2000)
     assert a != b
     assert {p.read_text() for p in tmp_path.iterdir()} == {"a" * 2000, "b" * 2000}
+
+
+def test_spill_reaps_stale_files_past_ttl(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent_core.hooks._result_cap._SPILL_TTL_SECONDS", 1)
+    hook = ToolResultCapHook(4096)
+    first_notice = hook.after_tool("read_file", {}, "a" * 2000)
+    stale_path = Path(re.search(r"temporary file: (.+)\n", first_notice)[1])
+    old = time.time() - 10
+    os.utime(stale_path, (old, old))
+
+    hook.after_tool("read_file", {}, "b" * 2000)
+
+    assert not stale_path.exists()
+    assert len(list(tmp_path.iterdir())) == 1
 
 
 def test_disk_failure_does_not_publish_large_result(monkeypatch):
