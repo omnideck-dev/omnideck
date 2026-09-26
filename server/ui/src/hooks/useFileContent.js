@@ -119,12 +119,19 @@ export default function useFileContent(item) {
         return () => { cancelled = true; };
     }, [content, path, isImage, isPdf, version]);
 
-    // Watch the disk-backed file for changes, independent of how it's rendered.
-    // The stale flag lives in the shared store so every preview of this file
-    // sees it. Idles while the tab is hidden; tears down on unmount/file switch.
     const refresh = useCallback(() => {
         if (watchKey) fileWatch.refresh(watchKey);
     }, [watchKey]);
+
+    // Auto-refresh whenever the watcher marks the file stale. The refresh()
+    // call bumps the version (which re-triggers the fetch effect) and clears
+    // the stale flag in one step. Skipped while the draft is dirty so an
+    // in-progress edit is never silently overwritten — refresh() is still
+    // available via the manual Reload button, and this effect retries on its
+    // own once the draft is saved or reverted (isDirty flips back to false).
+    useEffect(() => {
+        if (stale && watchKey && !isDirty) fileWatch.refresh(watchKey);
+    }, [stale, watchKey, isDirty]);
 
     useEffect(() => {
         if (!watchKey) return;

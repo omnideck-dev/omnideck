@@ -49,7 +49,6 @@ export default function FilePreview({ item }) {
         handleDownload,
         handleCopy,
         canCopy,
-        stale,
         refresh,
     } = useFileContent(item);
 
@@ -132,17 +131,6 @@ export default function FilePreview({ item }) {
                             <SaveIcon size={14} className={isDirty ? styles.saveIconDirty : undefined} />
                         </IconButton>
                     )}
-                    {stale && (
-                        <button
-                            className={styles.refreshLink}
-                            onClick={refresh}
-                            title="File changed on disk — click to reload"
-                            data-testid="file-refresh"
-                        >
-                            <RefreshIcon size={12} />
-                            Refresh
-                        </button>
-                    )}
                     {canCopy && (
                         <IconButton
                             size="sm"
@@ -162,6 +150,15 @@ export default function FilePreview({ item }) {
                         data-testid="file-download"
                     >
                         <DownloadIcon size={14} />
+                    </IconButton>
+                    <IconButton
+                        size="sm"
+                        onClick={refresh}
+                        title="Reload file"
+                        aria-label="Reload file"
+                        data-testid="file-refresh"
+                    >
+                        <RefreshIcon size={14} />
                     </IconButton>
                 </div>
             </div>
