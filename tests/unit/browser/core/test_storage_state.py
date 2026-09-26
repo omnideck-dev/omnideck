@@ -74,6 +74,8 @@ def test_encoded_empty_object_key_is_removed_but_valid_encoded_records_survive()
     [
         {"d": "2026-09-25T00:00:00.000Z"},
         {"ta": {"b": "AQI=", "k": "ui8"}},
+        {"ab": {"b": "AQI="}},
+        {"ab": {"b": ""}},
         {"v": "Infinity"},
         {"v": "-Infinity"},
         {"v": "-0"},

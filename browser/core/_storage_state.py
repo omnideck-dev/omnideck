@@ -43,8 +43,8 @@ def _decode(value: Any, refs: dict[int, Any]) -> Any:
             "-Infinity": -math.inf,
             "-0": 0,
         }.get(value["v"], _INVALID_ENCODED_VALUE)
-    if "d" in value or "ta" in value:
-        # Serialized Dates and typed arrays are valid scalar IndexedDB keys.
+    if "d" in value or "ta" in value or "ab" in value:
+        # Serialized Dates, typed arrays, and ArrayBuffers are valid scalar keys.
         return _VALID_ENCODED_KEY
     if "a" in value:
         items: list[Any] = []
