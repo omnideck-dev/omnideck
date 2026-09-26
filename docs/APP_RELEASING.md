@@ -1,183 +1,127 @@
 # Releasing the omnideck app
 
-The omnideck app is the container-served product published at
-`ghcr.io/omnideck-dev/omnideck`. It releases independently from the native
-desktop host and uses plain Semantic Versions such as `0.2.2`.
-
-GitHub Releases remain reserved for downloadable desktop installers. Each app
-release instead publishes a versioned container tag and keeps its user-facing
-notes at `docs/releases/app-vX.Y.Z.md`. The desktop update notice and Settings
-open that file through **What’s new**.
-
-The Monday workflow automates this process; see [Automatic Monday releases](#automatic-monday-releases).
-The following steps remain available for manual releases.
-
-## 1. Prepare the release notes
-
-Start from the current `main` branch in a dedicated release worktree. Choose the
-next plain `X.Y.Z` version, validate the outstanding fragments, and generate the
-app draft:
-
-```sh
-VERSION=0.2.2
-node scripts/release-notes.mjs validate-fragments
-node scripts/release-notes.mjs generate \
-  --target app \
-  --version "${VERSION}" \
-  --output "docs/releases/app-v${VERSION}.md"
-```
-
-The generator selects only `target: app` fragments and groups them using the
-Keep a Changelog categories. It does not consume desktop fragments.
-
-Review the generated file before publication. Keep its first line exactly
-`# omnideck app X.Y.Z`, remove duplication, and make the body describe the
-user-visible outcome. Add upgrade guidance or known limitations when relevant.
-
-Remove only the app fragments incorporated into the reviewed release file,
-then verify that no app fragments remain unconsumed:
-
-```sh
-node scripts/release-notes.mjs check-consumed --target app
-node --test tests/release-notes.test.mjs
-git diff --check
-```
-
-Open and merge a release-preparation pull request. Because that pull request
-only aggregates previously reviewed fragments, apply `release-note:none` and
-include a specific reason such as:
-
-```markdown
-None: This pull request only aggregates previously reviewed app release-note fragments.
-```
-
-## 2. Confirm the tested image
-
-Wait for the merge commit's required `main` checks to pass. The CI workflow
-builds and tests the multi-architecture image before publishing the candidate
-tag `main-<seven-character-commit>`.
-
-Do not release from another branch or from a commit whose candidate image did
-not complete the required tests. The release workflow promotes that exact
-candidate; it does not rebuild the product.
-
-## 3. Promote the container version
-
-Run the **Release container** workflow from `main` with the plain version:
-
-```sh
-gh workflow run container-release.yml \
-  --repo omnideck-dev/omnideck \
-  --ref main \
-  -f version="${VERSION}"
-```
-
-The workflow automatically:
-
-- validates the plain `X.Y.Z` version;
-- requires `docs/releases/app-vX.Y.Z.md` with the matching heading;
-- refuses to proceed while any `target: app` fragments remain;
-- resolves the tested `main-<commit>` multi-architecture image;
-- promotes that exact digest to `ghcr.io/omnideck-dev/omnideck:X.Y.Z`; and
-- refuses to move an existing version tag to a different digest.
-
-It does not create a Git tag, a GitHub Release, or desktop installers.
-
-## 4. Verify the release
-
-Confirm the workflow completed successfully and inspect the published manifest:
-
-```sh
-docker buildx imagetools inspect \
-  "ghcr.io/omnideck-dev/omnideck:${VERSION}"
-```
-
-Open the version's rendered notes at:
-
-```text
-https://github.com/omnideck-dev/omnideck/blob/main/docs/releases/app-vX.Y.Z.md
-```
-
-The desktop updater discovers plain Semantic Version tags from GHCR. When it
-offers this version, both update surfaces derive the same notes URL from the
-detected version.
-
-## Relationship to desktop releases
-
-A desktop installer pins the app version selected in
-`desktop/container-version.txt` when that installer is built. Later app
-releases do not modify an existing desktop installer, and a desktop release is
-not required for each app release. Change the desktop pin only when a future
-desktop installer should start from a different app version.
+The container-served app at `ghcr.io/omnideck-dev/omnideck` releases independently
+from the native desktop host. App versions are plain `X.Y.Z` container tags;
+the corresponding GitHub Releases and Git tags are named `app-vX.Y.Z`.
+Desktop installers retain their `v*` tags. App releases set `make_latest: false`
+so they do not replace the desktop release's Latest designation.
 
 ## Automatic Monday releases
 
 **Release container** runs every Monday at **10:00 a.m. America/Chicago**,
-including daylight-saving changes. [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
-are best-effort and may start late. Leave `version` blank when dispatching it manually to use the same
-planner. Set `dry_run` to preview the version and notes and verify the source
-without writing to Git or publishing a tag:
+including daylight-saving changes. GitHub schedules are best-effort and may
+start late. It ships accumulated app changes, or skips when nothing has changed.
+
+1. Read the published container versions and app GitHub Release records,
+   including unfinished draft releases.
+2. Choose the exact main source commit and compare it with the previous app
+   release tag. Combine only new `target: app` fragments into the release notes.
+3. Require successful main push CI for that exact source SHA and resolve its
+   tested `main-<sha>` multi-architecture image digest.
+4. Save a **draft GitHub Release** with the version, rendered notes, source SHA,
+   baseline SHA, selected fragments, and tested digest. The machine-readable
+   record lives in an HTML comment in the release body.
+5. Promote that digest to the versioned GHCR tag, then publish the GitHub
+   Release and its `app-vX.Y.Z` tag at the recorded source commit.
+
+The workflow never commits to main, opens a release PR, approves a review, or
+removes a fragment. Ordinary code PRs retain the existing branch rules and CI.
+It needs `contents: write` for release records/tags, `packages: write` for the
+image, and `actions: read` to check source CI. The organization setting allowing
+Actions to create or approve PRs is not needed.
+
+## Fragment history and version selection
+
+App fragments stay in `release-notes.d/` as an append-only history. Each release
+combines the app fragments added since the previous app release source. Retained
+fragments are not repeated in later notes. Do not edit, rename, or delete an
+already published app fragment; add a new fragment for a correction. Unreleased
+fragments can still be revised in code review. Desktop fragments continue to
+follow their independent release process.
+
+Version selection takes the highest required bump:
+
+- **Patch:** fixes, security fixes, maintenance, and ordinary `changed` notes.
+- **Minor:** `added` app fragments or app-affecting `feat` commits.
+- **Breaking:** `removed` fragments, `bump: major`, a Conventional Commit `!`,
+  or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer.
+
+During 0.x, a breaking change advances the minor version. From 1.0 onward it
+advances the major version. An explicit fragment bump can raise, but cannot
+lower, the bump required by its category or commit. Unnoted app maintenance
+gets a patch version and a generic maintenance note. Desktop-only and
+documentation-only changes do not trigger an app release.
+
+## Manual preview or publication
+
+Preview the version, notes, source CI, and image without writing anything:
 
 ```sh
 gh workflow run container-release.yml --ref main -f dry_run=true
 ```
 
-The planner reads all published package versions from GHCR through the GitHub
-Packages API and uses the highest plain Semantic Version as the baseline.
-It considers accumulated app fragments and app source changes since that
-version's notes were added. Desktop-only, documentation-only, and empty weeks
-are skipped. App maintenance without a fragment receives a patch version and
-a generic maintenance note.
+Run the same release flow immediately:
 
-Version selection takes the highest of:
+```sh
+gh workflow run container-release.yml --ref main
+```
 
-- **Patch:** fixes, security fixes, and maintenance.
-- **Minor:** `added` app fragments or app-affecting `feat` commits.
-- **Breaking:** `removed` app fragments, `bump: major`, a Conventional Commit
-  `!`, or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer.
+An optional `-f version=X.Y.Z` override must be at least the version required by
+the accumulated changes. A pending draft must finish before selecting a new
+version. Repeating an already published current version verifies the recorded
+source and digest without replacing either.
 
-During 0.x, breaking changes advance the minor version, for example 0.3.1 →
-0.4.0. From 1.0 onward they advance the major version. A fragment can explicitly
-request `bump: patch`, `bump: minor`, or `bump: major`; this can raise but cannot
-lower a bump required by its category or commit. `changed` defaults to patch,
-so authors must mark incompatible changes explicitly. Automation cannot infer
-compatibility reliably from prose or code. Promote to 1.0 intentionally using
-the manual release process and version input.
+## Failure recovery
 
-Before preparation, the workflow requires successful main push CI for the exact
-source SHA and resolves its tested `main-<sha>` image digest. It generates notes
-from reviewed fragments, consumes only app fragments, and commits those files
-plus `docs/releases/app-vX.Y.Z.json` to a dedicated release branch. The record
-pins the source SHA and previous version.
+The draft release is a durable checkpoint, created before any versioned image
+is pushed. A retry resumes that version, source, notes, and digest even if main
+has advanced or the image was already published. After a successful retry,
+newer work is left for the next run. Do not delete a pending draft or edit its
+machine-readable record. Multiple pending app drafts stop the workflow for
+operator investigation.
 
-The bot opens a release-preparation PR with `GITHUB_TOKEN`, explicitly dispatches
-CI and release-note policy on that branch, waits for both runs to succeed, and
-merges normally. It never bypasses branch rules, manufactures status checks,
-or force-pushes. If main advances while the checks run, preparation stops and
-must be rerun with a fresh plan. An identical preparation branch/PR is reused
-on retry. The image is then promoted by digest without rebuilding.
+Existing container tags cannot be moved to a different digest. Existing Git
+tags cannot be moved to another commit. Registry authentication or network
+errors are not interpreted as an unused version. An image without its release
+record, a mismatched record, or a missing published image stops publication.
 
-**Required setup:** the organization and repository Actions settings must allow
-GitHub Actions to create pull requests (the UI option is “Allow GitHub Actions
-to create and approve pull requests”). The workflow creates PRs but does not
-approve reviews. If the organization disables the option, an organization admin
-must enable it before unattended releases can work. Required human reviews, if
-added later, will also prevent unattended merging; the workflow does not bypass
-them. Today the normal required status checks remain in force.
+Failed or in-progress source CI also stops publication; rerun after that exact
+main source passes. The workflow does not select an older successful commit
+and silently omit newer app changes.
 
-Explicit workflow dispatch is used because a PR opened by `GITHUB_TOKEN` does
-not reliably trigger the ordinary PR workflows. Both dispatched workflows run
-the real tests on the exact preparation SHA; the release-note workflow also
-fetches and validates the PR metadata. Bot merges do not start another push CI
-run, so the notes commit is intentionally not the published image source.
+## Verify a release
 
-If notes were committed but publication failed, the next blank-version run
-resumes that exact version and source, even if more changes have since merged.
-Existing manually prepared release notes resume from their own tested commit.
-Multiple unpublished versions stop automation for operator resolution. Existing
-version tags are immutable: a retry succeeds only if the digest matches.
+Confirm the workflow passed, compare the version's manifest digest with the
+recorded tested digest, and check both architecture entries:
 
-A failure or in-progress CI stops that Monday run; it does not fall back to an
-older source. Rerun after CI passes. Newer work accumulated while resuming a
-pending release remains for the following run. Desktop installers retain their
-independent release process.
+```sh
+docker buildx imagetools inspect ghcr.io/omnideck-dev/omnideck:X.Y.Z
+gh release view app-vX.Y.Z
+```
+
+The release notes are at:
+
+```text
+https://github.com/omnideck-dev/omnideck/releases/tag/app-vX.Y.Z
+```
+
+## Migration and desktop compatibility
+
+App versions through **0.5.0** used checked-in notes under
+`docs/releases/app-vX.Y.Z.md`. They remain available. The first new release uses
+the latest legacy version's notes commit as its baseline; subsequent releases
+use the published app tag. Versions after 0.5.0 require a GitHub Release record,
+so a missing record cannot silently fall back to a guessed baseline.
+
+The **What’s new** URL belongs to the container-served web UI, not the native
+installer. Installing the new app image updates both the update notice and
+Settings links; a new desktop installer is not required. The URL helper keeps
+legacy links for versions through 0.5.0 and uses app GitHub Releases thereafter.
+A one-time `app-v0.5.1.md` bridge page supports the initial upgrade from older
+UIs. Clients that remain on an older app and skip that transition may still
+construct old-style links for later versions until they update; their container
+update discovery and installation continue to work.
+
+The desktop updater still discovers plain SemVer tags from GHCR. A desktop
+installer pins `desktop/container-version.txt` when it is built; app releases
+do not change that installer pin or publish desktop packages.
