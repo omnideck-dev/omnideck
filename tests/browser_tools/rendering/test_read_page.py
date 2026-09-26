@@ -264,3 +264,30 @@ async def test_read_page_extracts_shadow_content_from_selected_cross_origin_fram
     assert "# Example Money Market Fund" in body
     assert "Seven-day yield" in body
     assert "Host page heading" not in body
+
+
+async def test_read_page_excludes_inert_templates_but_keeps_instantiated_content(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/template-content/page.html")
+    _, _, document = await get_document("read_page", tab=tab)
+    before = await document.evaluate("document.querySelector('#article-template').innerHTML")
+    _, _, body = _split(await read_page(tab=tab))
+
+    assert "{{" not in body
+    assert body == (
+        "# News\n\nPublished news appears here.\n\nInstantiated article.\n\n"
+        "Published component content.\n\nNews footer."
+    )
+    assert await document.evaluate("document.querySelector('#article-template').innerHTML") == before
+
+
+async def test_save_page_content_excludes_inert_templates(open_tab, servers, tmp_path, monkeypatch):
+    config = load_config().model_copy(deep=True)
+    config.virtual_computer.home_dir = str(tmp_path)
+    monkeypatch.setattr("tools.browser.save.load_config", lambda: config)
+    tab = await open_tab(f"{servers.primary}/template-content/page.html")
+    await save_page_content("news.md", tab=tab)
+
+    saved = (tmp_path / "news.md").read_text()
+    assert "{{" not in saved
+    assert saved.count("Instantiated article.") == 1
+    assert "Published component content." in saved
