@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import styles from './ChatInput.module.css';
 import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
@@ -6,7 +6,10 @@ import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import ComposerAutocomplete from './ComposerAutocomplete.jsx';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
+import { detectComposerTrigger, applyComposerToken } from '../hooks/useComposerTrigger.js';
+import { useAppData } from '../contexts/AppData.jsx';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
 const LINE_HEIGHT_PX = 20;
@@ -25,9 +28,101 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
+    const [composerTrigger, setComposerTrigger] = useState(null);
+    const [composerActiveIndex, setComposerActiveIndex] = useState(0);
 
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
+    const pendingCursorRef = useRef(null);
+    // An Escape dismiss doesn't change the textarea's value/caret, so the
+    // very next re-derive (its own keyup, which onKeyDown's stopPropagation
+    // can't reach) would otherwise detect the exact same trigger and reopen
+    // the overlay it just closed. Remember what was dismissed and suppress
+    // re-detecting that same span until the text actually changes.
+    const dismissedRef = useRef(null);
+
+    const { skillsHook, profilesHook } = useAppData();
+
+    // Re-derive the open trigger (if any) from the textarea's own current
+    // value/caret — covers typing, arrow-key caret moves, and clicks alike.
+    const refreshComposerTrigger = useCallback(() => {
+        const el = textareaRef.current;
+        if (!el) {
+            setComposerTrigger(null);
+            return;
+        }
+        const detected = detectComposerTrigger(el.value, el.selectionStart);
+        const dismissed = dismissedRef.current;
+        if (
+            detected && dismissed
+            && detected.triggerIndex === dismissed.triggerIndex
+            && el.value === dismissed.text
+        ) {
+            return;
+        }
+        if (dismissed && el.value !== dismissed.text) dismissedRef.current = null;
+        setComposerTrigger(detected);
+    }, []);
+
+    const enabledProfiles = useMemo(
+        () => (profilesHook?.profiles || []).filter((p) => p.enabled !== false),
+        [profilesHook?.profiles],
+    );
+
+    const composerItems = useMemo(() => {
+        if (!composerTrigger) return [];
+        const query = composerTrigger.query.toLowerCase();
+        const pool = composerTrigger.kind === 'agent' ? enabledProfiles : (skillsHook?.skills || []);
+        return pool.filter((item) => item.name.toLowerCase().startsWith(query));
+    }, [composerTrigger, enabledProfiles, skillsHook?.skills]);
+
+    // While the relevant list is still loading, an open trigger has no items
+    // yet through no fault of the user's typing — don't let Enter fall
+    // through to a plain send of the raw "/xxx" text just because the
+    // overlay hasn't had a chance to populate.
+    const composerDataLoading = !!composerTrigger
+        && (composerTrigger.kind === 'agent' ? profilesHook?.loading : skillsHook?.loading);
+
+    // The active row resets whenever the filtered list changes shape (new
+    // query, items added/removed) so it never points past the new end.
+    useEffect(() => {
+        setComposerActiveIndex(0);
+    }, [composerItems]);
+
+    const commitComposerToken = useCallback((item) => {
+        if (!composerTrigger) return;
+        const prefix = composerTrigger.kind === 'agent' ? '@' : '/';
+        // Names may contain spaces, which the backend's whitespace-delimited
+        // token grammar can't parse — fall back to the stable id then.
+        const token = /\s/.test(item.name) ? item.id : item.name;
+        const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `${prefix}${token}`);
+        pendingCursorRef.current = cursorIndex;
+        setMessage(text);
+        setComposerTrigger(null);
+    }, [composerTrigger, message]);
+
+    // Restore the caret to right after the inserted token once the
+    // controlled value has actually re-rendered into the textarea.
+    useEffect(() => {
+        const cursor = pendingCursorRef.current;
+        if (cursor == null) return;
+        pendingCursorRef.current = null;
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.selectionStart = el.selectionEnd = cursor;
+    }, [message]);
+
+    const composerHint = useMemo(() => {
+        if (!composerTrigger || !selectedProfile) return null;
+        if (composerTrigger.kind === 'agent' && selectedProfile.allow_spawn === false) {
+            return `${selectedProfile.name} can't spawn subagents — this may not work as expected.`;
+        }
+        if (composerTrigger.kind === 'skill' && selectedProfile.allow_load_skills === false) {
+            return `${selectedProfile.name} can't load skills — this may not work as expected.`;
+        }
+        return null;
+    }, [composerTrigger, selectedProfile]);
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -124,6 +219,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         if (!message.trim() && !attachments.length) return;
         onSend(message.trim(), attachments.length ? attachments : null);
         setMessage('');
+        setComposerTrigger(null);
         setAttachments([]);
         if (fileInputRef.current) fileInputRef.current.value = '';
         setExpanded(false);
@@ -166,13 +262,49 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const textareaProps = {
         value: message,
-        onChange: (e) => setMessage(e.target.value),
+        onChange: (e) => {
+            setMessage(e.target.value);
+            refreshComposerTrigger();
+        },
         onKeyDown: (e) => {
+            // While the overlay is open, it owns Arrow/Enter/Tab/Escape —
+            // this guard runs before both the plain Enter-to-send logic
+            // below and the document-level Escape listener that collapses
+            // expanded mode (stopPropagation reaches the underlying native
+            // event too, per React 17+ root-delegated event semantics).
+            if (composerTrigger && (composerItems.length || composerDataLoading)) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (composerItems.length) {
+                        const dir = e.key === 'ArrowDown' ? 1 : -1;
+                        setComposerActiveIndex((current) => (current + dir + composerItems.length) % composerItems.length);
+                    }
+                    return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Still loading: swallow this keypress rather than commit
+                    // nothing or fall through to sending the raw text.
+                    if (composerItems.length) commitComposerToken(composerItems[composerActiveIndex]);
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dismissedRef.current = { triggerIndex: composerTrigger.triggerIndex, text: message };
+                    setComposerTrigger(null);
+                    return;
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e);
             }
         },
+        onKeyUp: refreshComposerTrigger,
+        onClick: refreshComposerTrigger,
         onPaste: handlePaste,
         placeholder,
         disabled: stopRequested,
@@ -218,6 +350,20 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                             expanded && styles.expandedInput,
                         ].filter(Boolean).join(' ')}
                     />
+                    {composerItems.length > 0 && (
+                        <ComposerAutocomplete
+                            anchorRef={textareaRef}
+                            items={composerItems}
+                            activeIndex={composerActiveIndex}
+                            onHover={setComposerActiveIndex}
+                            kind={composerTrigger.kind}
+                            onCommit={commitComposerToken}
+                            onClose={() => setComposerTrigger(null)}
+                        />
+                    )}
+                    {composerHint && (
+                        <div className={styles.composerHint}>{composerHint}</div>
+                    )}
                     {showCornerBtn && (
                         <button
                             type="button"

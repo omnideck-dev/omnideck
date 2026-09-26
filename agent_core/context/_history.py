@@ -69,6 +69,11 @@ class ConversationHistory:
         # None = root view (depth-0 agents only). Set explicitly for sub-agents.
         self._agent_id = agent_id
         self._events: list[dict[str, Any]] = []
+        # Applied only to the derived LLM view (see build_llm_view) — the
+        # stored event and the transcript view always keep the user's exact
+        # text, so a composer-token rewrite never corrupts what's persisted
+        # or displayed.
+        self._user_content_transform: Callable[[str], str] | None = None
         # Observers fan-out: disk writer, SSE stream, future webhooks, etc.
         # The conversation IS the canonical state, not a subscriber, so the
         # observer list never includes the conversation's own append.
@@ -102,7 +107,10 @@ class ConversationHistory:
         """Reconstruct the LLM message list from the recorded events."""
         if self._conversation_id is None:
             return []
-        return build_llm_view(self._events, agent_filter=self._agent_id)
+        return build_llm_view(
+            self._events, agent_filter=self._agent_id,
+            user_content_transform=self._user_content_transform,
+        )
 
     @property
     def recorded_events(self) -> list[dict[str, Any]]:
@@ -126,6 +134,14 @@ class ConversationHistory:
     def set_system_message(self, content: str) -> None:
         """Replace or set the system message."""
         self._system_message = {"role": "system", "content": content}
+
+    def set_user_content_transform(self, transform: Callable[[str], str] | None) -> None:
+        """Set the model-facing-only rewrite applied to user messages.
+
+        See ``build_llm_view``'s ``user_content_transform`` for what it runs
+        over and why it never touches stored/displayed text.
+        """
+        self._user_content_transform = transform
 
     def seed_events(self, events: list[dict[str, Any]]) -> None:
         """Replace the in-memory event log with *events*.

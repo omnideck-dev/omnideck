@@ -110,6 +110,55 @@ def test_attachments_appended_to_first_user_message():
     ]
 
 
+def test_user_content_transform_applies_to_first_user_message():
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "/skill do it"),
+        _iter(ROOT, 0, content="ok"),
+    ]
+    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
+    assert result[0] == {"role": "user", "content": "/SKILL DO IT"}
+
+
+def test_user_content_transform_runs_before_attachment_augmentation():
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "/skill do it",
+              attachments=[{"filename": "a.png", "content_type": "image/png", "path": "/v/a.png"}]),
+        _iter(ROOT, 0, content="ok"),
+    ]
+    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
+    assert result[0] == {"role": "user", "content":
+        "/SKILL DO IT\n\n[Attached files written to virtual computer]\n"
+        "  - a.png (image/png) -> /v/a.png"}
+
+
+def test_user_content_transform_applies_to_later_user_messages_too():
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "hi", evt_id="evt_u1"),
+        _iter(ROOT, 0, content="hello"),
+        _user(ROOT, "/skill nudge", evt_id="evt_u2"),
+    ]
+    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
+    assert result[-1] == {"role": "user", "content": "/SKILL NUDGE"}
+
+
+def test_user_content_transform_skipped_for_compaction_intent_summary():
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "/skill original", evt_id="evt_u1"),
+        _iter(ROOT, 0, content="ok", evt_id="evt_i1"),
+        _compaction(
+            ROOT, "summary text", kept_from_id="evt_i1", kept_to_id="evt_i1",
+            user_intent_summary="the user wants X",
+        ),
+        _iter(ROOT, 1, content="continuing", evt_id="evt_i2"),
+    ]
+    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
+    assert result[0]["content"] == _INTENT_PREFIX + "the user wants X"
+
+
 def test_nudge_appears_as_second_user_message():
     """A second user_message mid-loop (a nudge) shows up in the kept range."""
     events = [

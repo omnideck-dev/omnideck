@@ -33,6 +33,7 @@ from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
+from ._composer_tokens import enrich_composer_message
 from ._factory import AgentFactory, persist_loaded_skills
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
@@ -129,6 +130,10 @@ class AgentRunner:
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
+            # Model-facing only: resolves composer `/skill` and `@agent /skill`
+            # tokens against current skill/profile state on every read, without
+            # ever touching the stored event or what the transcript displays.
+            history.set_user_content_transform(enrich_composer_message)
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,
