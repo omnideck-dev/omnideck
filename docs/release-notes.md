@@ -100,47 +100,39 @@ node --test tests/release-notes.test.mjs
 node scripts/release-notes.mjs validate-fragments
 ```
 
-Generate a release draft from all outstanding fragments:
+Desktop releases generate a draft from their outstanding fragments:
 
 ```sh
-node scripts/release-notes.mjs generate \
-  --target app \
-  --version 1.2.3 \
-  --output docs/releases/app-v1.2.3.md
 node scripts/release-notes.mjs generate \
   --target desktop \
   --version v1.2.3 \
   --output docs/releases/v1.2.3.md
 ```
 
-Generation groups fragments into the Keep a Changelog categories. The result is
-a draft: before publication, add a short release theme when useful, remove
-duplication, confirm upgrade guidance and known limitations, and keep the
-language focused on the shipped product.
+Desktop preparation consumes only desktop fragments after incorporating them
+into the checked-in notes. That release PR uses `release-note:none` with a
+reason explaining that it aggregates already reviewed fragments.
 
-The release change consumes only its target's fragments after their text is
-incorporated into the checked-in release notes or changelog. App and desktop
-can therefore release independently without consuming each other's notes. That
-release pull request uses
-`release-note:none` with a reason explaining that it only aggregates already
-reviewed fragments.
+App fragments are retained permanently. Once published, add a new fragment
+for a correction rather than editing, renaming, or deleting an existing one.
+The app planner combines only new app fragments since the previous release
+source, grouping them into Keep a Changelog categories. It does not include
+retained notes from earlier versions or desktop fragments.
 
 ## App publication
 
-Follow the [app release runbook](APP_RELEASING.md) for the complete operator
-checklist.
+Follow the [app release runbook](APP_RELEASING.md). The [Monday
+workflow](APP_RELEASING.md#automatic-monday-releases) selects a version and exact
+tested main image, saves a draft release checkpoint, promotes the image by
+digest, then publishes the `app-vX.Y.Z` GitHub Release. No release-preparation
+PR or fragment deletion is required. Preview it with:
 
-App versions are the plain `X.Y.Z` tags on
-`ghcr.io/omnideck-dev/omnideck`. Before running **Release container**, merge a
-reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it
-incorporates. The workflow refuses to promote the image if the file is missing
-or any `target: app` fragments remain in the selected release snapshot. The
-[Monday workflow](APP_RELEASING.md#automatic-monday-releases) can automatically
-aggregate reviewed fragments and commit the release metadata.
+```sh
+gh workflow run container-release.yml --ref main -f dry_run=true
+```
 
-The checked-in Markdown is the published app changelog. The desktop update
-notice and Settings link the detected version directly to
-`docs/releases/app-vX.Y.Z.md` on `main`. Container versions do not create GitHub
-Release entries, so the repository Releases page remains reserved for
-downloadable desktop installers. The immutable GHCR digest identifies the
-exact tested image that was promoted.
+The GitHub Release body is the app changelog and includes a hidden source/digest
+record for safe retries. Container tags stay plain `X.Y.Z`; desktop release
+tags stay `v*`. App releases are not marked Latest. **What’s new** in the
+container-served UI opens the app release page. Versions through 0.5.0 keep
+their historical checked-in notes; see the runbook for migration details.

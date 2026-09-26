@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { compareVersions, nextVersion, requiredBump, planRelease, prepareRelease, verifyCi } from '../scripts/weekly-app-release.mjs';
+import { compareVersions, nextVersion, requiredBump, planRelease, releaseBody, readRelease, verifyCi } from '../scripts/weekly-app-release.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(fileURLToPath(new URL('../', import.meta.url)), '.weekly-release-test-'));
@@ -44,22 +44,34 @@ test('empty, desktop-only, and documentation changes skip app publication', t =>
   assert.equal(f.plan().skip, true);
 });
 
-test('mixed targets bump only for app changes and consume only app fragments', t => {
+test('mixed targets include only new app fragments and leave the checkout untouched', t => {
   const f = fixture(t);
   f.fragment('desktop', 'desktop', 'added', 'major'); f.write('desktop/app.rs', 'new'); f.commit('feat(desktop)!: change host');
   f.fragment('app'); f.write('server/app.py', 'fixed'); f.commit('fix(browser): correct state');
   const plan = f.plan();
   assert.equal(plan.version, '0.3.1');
-  prepareRelease(f.root, plan);
+  assert.deepEqual(plan.fragments, ['release-notes.d/app.md']);
+  assert.ok(existsSync(join(f.root, 'release-notes.d/app.md')));
   assert.ok(existsSync(join(f.root, 'release-notes.d/desktop.md')));
-  assert.equal(existsSync(join(f.root, 'release-notes.d/app.md')), false);
-  f.commit('chore(release): prepare app 0.3.1');
-  assert.equal(f.plan().source_sha, plan.source_sha);
-  assert.equal(f.plan().prepare, false);
-  assert.equal(f.plan({ tags: ['0.3.0', '0.3.1'] }).skip, true);
+  assert.equal(f.git('status', '--porcelain'), '');
+  const release = published(f, plan);
+  assert.equal(f.plan({ tags: ['0.3.1'], releases: [release] }).skip, true);
+  f.fragment('next', 'app', 'added'); f.write('server/app.py', 'feature'); f.commit('feat: next');
+  const next = f.plan({ tags: ['0.3.1'], releases: [release] });
+  assert.equal(next.version, '0.4.0');
+  assert.deepEqual(next.fragments, ['release-notes.d/next.md']);
 });
 
-test('unnoted app maintenance ships a patch; feature and breaking titles raise it', t => {
+const digest = 'sha256:' + 'a'.repeat(64);
+function checkpoint(plan, draft = true) {
+  return { id: 1, tag_name: `app-v${plan.version}`, body: releaseBody(plan, digest), draft, prerelease: false };
+}
+function published(f, plan) {
+  f.git('tag', `app-v${plan.version}`, plan.source_sha);
+  return checkpoint(plan, false);
+}
+
+test('unnoted maintenance, feature titles, and breaking changes select the appropriate version', t => {
   const f = fixture(t);
   f.write('server/app.py', 'refactor'); f.commit('refactor(runtime): simplify ownership');
   assert.equal(f.plan().version, '0.3.1');
@@ -70,32 +82,35 @@ test('unnoted app maintenance ships a patch; feature and breaking titles raise i
   assert.equal(f.plan({ preOneBreaking: 'major' }).version, '1.0.0');
 });
 
-test('failed publication resumes the pinned source even after more main changes', t => {
+test('retry uses the draft source even after main advances or the image was pushed', t => {
   const f = fixture(t);
   f.fragment('first'); f.write('server/app.py', 'fix'); f.commit('fix: first');
-  const plan = f.plan(); prepareRelease(f.root, plan); f.commit('chore(release): prepare app 0.3.1');
+  const plan = f.plan();
+  const release = checkpoint(plan);
   f.fragment('later', 'app', 'added'); f.write('server/app.py', 'feature'); f.commit('feat: later');
-  const retry = f.plan();
-  assert.equal(retry.version, '0.3.1'); assert.equal(retry.source_sha, plan.source_sha);
-  const next = f.plan({ tags: ['0.3.0', '0.3.1'] });
-  assert.equal(next.version, '0.4.0'); assert.deepEqual(next.fragments, ['release-notes.d/later.md']);
+  for (const tags of [['0.3.0'], ['0.3.0', '0.3.1']]) {
+    const retry = f.plan({ tags, releases: [release] });
+    assert.equal(retry.version, '0.3.1');
+    assert.equal(retry.source_sha, plan.source_sha);
+    assert.equal(retry.source_digest, digest);
+    assert.equal(retry.notes, plan.notes);
+  }
+  const next = f.plan({ tags: ['0.3.1'], releases: [published(f, plan)] });
+  assert.equal(next.version, '0.4.0');
+  assert.deepEqual(next.fragments, ['release-notes.d/later.md']);
 });
 
-test('source changes abort preparation; manual releases require consumed notes', t => {
+test('manual override cannot undercut the required bump or abandon a pending release', t => {
   const f = fixture(t);
-  f.fragment('first'); f.commit('fix: first');
-  const plan = f.plan(); f.write('server/app.py', 'changed'); f.commit('fix: later');
-  assert.throws(() => prepareRelease(f.root, plan), /source changed/);
-  assert.throws(() => f.plan({ manualVersion: '0.2.9' }), /below/);
-  assert.throws(() => f.plan({ manualVersion: '0.3.0' }), /Unconsumed/);
-});
-
-test('manually prepared notes resume from their own tested commit', t => {
-  const f = fixture(t);
-  f.write('server/app.py', 'fix'); f.commit('fix: change');
-  f.write('docs/releases/app-v0.3.1.md', '# omnideck app 0.3.1\n');
-  const sha = f.commit('chore(release): prepare app 0.3.1');
-  assert.equal(f.plan().source_sha, sha);
+  f.fragment('feature', 'app', 'added'); f.commit('feat: first');
+  const plan = f.plan();
+  assert.throws(() => f.plan({ manualVersion: '0.3.1' }), /at least/);
+  assert.throws(() => f.plan({ manualVersion: 'v1.0.0' }), /plain/);
+  assert.equal(f.plan({ manualVersion: '1.0.0' }).version, '1.0.0');
+  assert.throws(() => f.plan({ releases: [checkpoint(plan)], manualVersion: '1.0.0' }), /pending/);
+  const release = published(f, plan);
+  const retry = f.plan({ tags: [plan.version], releases: [release], manualVersion: plan.version });
+  assert.equal(retry.source_sha, plan.source_sha);
 });
 
 test('CI verification requires latest exact-source main push success', () => {
@@ -112,22 +127,34 @@ test('a lower explicit bump cannot downgrade an added or removed change', () => 
   assert.equal(requiredBump([{ type: 'removed', bump: 'minor' }], []), 'major');
 });
 
-test('ambiguous pending releases and dirty preparation fail closed', t => {
+test('ambiguous or inconsistent release records fail closed', t => {
   const f = fixture(t);
   f.fragment('fix'); f.commit('fix: change');
-  const plan = f.plan(); f.write('untracked.txt', 'work');
-  assert.throws(() => prepareRelease(f.root, plan), /clean/);
-  f.write('docs/releases/app-v0.3.1.md', '# omnideck app 0.3.1\n');
-  f.write('docs/releases/app-v0.4.0.md', '# omnideck app 0.4.0\n'); f.commit('chore: ambiguous notes');
-  assert.throws(() => f.plan(), /Multiple unpublished/);
+  const plan = f.plan();
+  const first = checkpoint(plan);
+  const second = checkpoint({ ...plan, version: '0.3.2' });
+  assert.throws(() => f.plan({ releases: [first, second] }), /Multiple pending/);
+  assert.throws(() => f.plan({ releases: [first, first] }), /Duplicate/);
+  assert.throws(() => f.plan({ releases: [{ ...first, body: 'missing record' }] }), /Missing/);
+  assert.throws(() => f.plan({ releases: [checkpoint({ ...plan, notes: 'wrong notes' })] }), /committed source/);
+  assert.throws(() => f.plan({ tags: ['0.3.0', '0.3.2'], releases: [first] }), /baseline/);
+  assert.throws(() => f.plan({ tags: ['0.5.1'] }), /no app release record/);
+  assert.throws(() => f.plan({ releases: [checkpoint(plan, false)] }), /no corresponding container/);
+  assert.throws(() => f.plan({ tags: ['0.3.1'], releases: [checkpoint(plan, false)] }), /Missing published app tag/);
+  f.git('tag', 'app-v0.3.1', plan.baseline_sha);
+  assert.throws(() => f.plan({ tags: ['0.3.1'], releases: [checkpoint(plan, false)] }), /wrong source/);
 });
 
-test('a pending source record cannot hide untested code in a notes commit', t => {
+test('released fragments cannot be changed or deleted, while unreleased drafts can be edited', t => {
   const f = fixture(t);
-  f.fragment('fix'); f.commit('fix: change');
-  const plan = f.plan(); prepareRelease(f.root, plan);
-  f.write('server/app.py', 'unverified change'); f.commit('chore(release): prepare app 0.3.1');
-  assert.throws(() => f.plan(), /beyond notes/);
+  f.fragment('released'); f.commit('fix: first');
+  f.fragment('released', 'app', 'security'); f.commit('fix: revise before shipping');
+  const plan = f.plan();
+  const release = published(f, plan);
+  f.fragment('released'); f.commit('fix: rewrite published history');
+  assert.throws(() => f.plan({ tags: ['0.3.1'], releases: [release] }), /Published app fragment changed/);
+  f.git('rm', 'release-notes.d/released.md'); f.commit('chore: delete history');
+  assert.throws(() => f.plan({ tags: ['0.3.1'], releases: [release] }), /Published app fragment changed/);
 });
 
 test('breaking commits on a merged branch are included even with a plain merge title', t => {
@@ -138,16 +165,12 @@ test('breaking commits on a merged branch are included even with a plain merge t
   assert.equal(f.plan({ preOneBreaking: 'major' }).version, '1.0.0');
 });
 
-
-test('PR automation waits for newly dispatched checks on the exact branch and SHA', async () => {
-  const { dispatchedRun, assertUnchangedMain } = await import('../.github/scripts/prepare-app-release-pr.mjs');
-  const selection = { afterId: 10, sha: 'abc', branch: 'release/auto-app-0.3.1-abc' };
-  const run = { id: 11, head_sha: 'abc', head_branch: selection.branch, event: 'workflow_dispatch' };
-  assert.equal(dispatchedRun([{ ...run, id: 10 }], selection), undefined);
-  assert.equal(dispatchedRun([{ ...run, event: 'pull_request' }], selection), undefined);
-  assert.equal(dispatchedRun([{ ...run, head_sha: 'old' }], selection), undefined);
-  assert.equal(dispatchedRun([{ ...run, head_branch: 'other' }], selection), undefined);
-  assert.equal(dispatchedRun([run], selection), run);
-  assertUnchangedMain('abc', 'abc');
-  assert.throws(() => assertUnchangedMain('abc', 'def'), /Main advanced/);
+test('desktop releases are excluded, and app metadata round-trips through the release body', t => {
+  const f = fixture(t);
+  f.fragment('first'); f.commit('fix: first');
+  const plan = f.plan({ releases: [{ tag_name: 'v1.0.0', body: 'desktop' }] });
+  const parsed = readRelease(checkpoint(plan));
+  assert.equal(parsed.source_sha, plan.source_sha);
+  assert.equal(parsed.notes, plan.notes);
+  assert.equal(parsed.source_digest, digest);
 });
