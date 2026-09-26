@@ -9,7 +9,7 @@ release instead publishes a versioned container tag and keeps its user-facing
 notes at `docs/releases/app-vX.Y.Z.md`. The desktop update notice and Settings
 open that file through **What’s new**.
 
-The Friday workflow automates this process; see [Automatic Friday releases](#automatic-friday-releases).
+The Monday workflow automates this process; see [Automatic Monday releases](#automatic-monday-releases).
 The following steps remain available for manual releases.
 
 ## 1. Prepare the release notes
@@ -110,9 +110,9 @@ releases do not modify an existing desktop installer, and a desktop release is
 not required for each app release. Change the desktop pin only when a future
 desktop installer should start from a different app version.
 
-## Automatic Friday releases
+## Automatic Monday releases
 
-**Release container** runs every Friday at **10:00 a.m. America/Chicago**,
+**Release container** runs every Monday at **10:00 a.m. America/Chicago**,
 including daylight-saving changes. [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 are best-effort and may start late. Leave `version` blank when dispatching it manually to use the same
 planner. Set `dry_run` to preview the version and notes and verify the source
@@ -177,7 +177,7 @@ Existing manually prepared release notes resume from their own tested commit.
 Multiple unpublished versions stop automation for operator resolution. Existing
 version tags are immutable: a retry succeeds only if the digest matches.
 
-A failure or in-progress CI stops that Friday run; it does not fall back to an
+A failure or in-progress CI stops that Monday run; it does not fall back to an
 older source. Rerun after CI passes. Newer work accumulated while resuming a
 pending release remains for the following run. Desktop installers retain their
 independent release process.
