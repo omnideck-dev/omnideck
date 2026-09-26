@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-from typing import Any
+from typing import Any, TypedDict
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -14,7 +14,20 @@ from googleapiclient.http import MediaInMemoryUpload, MediaIoBaseDownload
 logger = logging.getLogger(__name__)
 
 _FILE_FIELDS = "id, name, mimeType, size, createdTime, modifiedTime, parents, webViewLink"
-_LIST_FIELDS = f"nextPageToken, files({_FILE_FIELDS})"
+_LIST_FIELDS = f"nextPageToken, incompleteSearch, files({_FILE_FIELDS})"
+
+
+class DriveListResult(TypedDict):
+    """Files returned by a corpora=allDrives list/search call.
+
+    ``incomplete`` mirrors Google's ``incompleteSearch`` indicator: with
+    ``corpora="allDrives"``, Google may skip entire drives it can't search in
+    time and still return HTTP 200 with whatever it did find, so an empty or
+    short ``files`` list here does not mean there is nothing more to find.
+    """
+
+    files: list[dict[str, Any]]
+    incomplete: bool
 
 _GOOGLE_DOC_EXPORTS: dict[str, tuple[str, str]] = {
     "application/vnd.google-apps.document": ("text/plain", ".txt"),
@@ -25,7 +38,13 @@ _GOOGLE_DOC_EXPORTS: dict[str, tuple[str, str]] = {
 
 
 class DriveClient:
-    """Thin wrapper around the Drive v3 API."""
+    """Thin wrapper around the Drive v3 API.
+
+    Every call below passes ``supportsAllDrives=True`` — without it, Google
+    silently excludes (or rejects) Shared Drive items instead of erroring,
+    so a new method added here needs it too or Shared Drive support quietly
+    regresses for just that one operation.
+    """
 
     def __init__(self, creds: Credentials) -> None:
         self._creds = creds
@@ -37,10 +56,17 @@ class DriveClient:
         self,
         folder_id: str = "root",
         limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        """List files in a folder. Returns raw file-resource dicts."""
+    ) -> DriveListResult:
+        """List files in a folder.
+
+        Returns:
+            Raw file-resource dicts, plus whether Google reported the
+            allDrives search as incomplete (some drives may have been
+            skipped, so an empty or short result is not necessarily final).
+        """
         q = f"'{folder_id}' in parents and trashed = false"
         results: list[dict[str, Any]] = []
+        incomplete = False
         page_token: str | None = None
         while len(results) < limit:
             page_size = min(limit - len(results), 100)
@@ -52,23 +78,34 @@ class DriveClient:
                     pageSize=page_size,
                     pageToken=page_token,
                     orderBy="folder,modifiedTime desc",
+                    corpora="allDrives",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
             results.extend(resp.get("files", []))
+            incomplete = incomplete or bool(resp.get("incompleteSearch"))
             page_token = resp.get("nextPageToken")
             if not page_token:
                 break
-        return results[:limit]
+        return {"files": results[:limit], "incomplete": incomplete}
 
     def search_files(
         self,
         query: str,
         limit: int = 30,
-    ) -> list[dict[str, Any]]:
-        """Search Drive files. ``query`` is a raw Drive API q-string."""
+    ) -> DriveListResult:
+        """Search Drive files. ``query`` is a raw Drive API q-string.
+
+        Returns:
+            Matching file-resource dicts, plus whether Google reported the
+            allDrives search as incomplete (some drives may have been
+            skipped, so an empty or short result is not necessarily final).
+        """
         q = f"{query} and trashed = false"
         results: list[dict[str, Any]] = []
+        incomplete = False
         page_token: str | None = None
         while len(results) < limit:
             page_size = min(limit - len(results), 100)
@@ -79,20 +116,24 @@ class DriveClient:
                     fields=_LIST_FIELDS,
                     pageSize=page_size,
                     pageToken=page_token,
+                    corpora="allDrives",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
             results.extend(resp.get("files", []))
+            incomplete = incomplete or bool(resp.get("incompleteSearch"))
             page_token = resp.get("nextPageToken")
             if not page_token:
                 break
-        return results[:limit]
+        return {"files": results[:limit], "incomplete": incomplete}
 
     def get_file_metadata(self, file_id: str) -> dict[str, Any]:
         """Get metadata for a single file."""
         return (
             self._service().files()
-            .get(fileId=file_id, fields=_FILE_FIELDS)
+            .get(fileId=file_id, fields=_FILE_FIELDS, supportsAllDrives=True)
             .execute()
         )
 
@@ -124,7 +165,9 @@ class DriveClient:
             return content, export_name, export_mime
 
         buf = io.BytesIO()
-        request = self._service().files().get_media(fileId=file_id)
+        request = self._service().files().get_media(
+            fileId=file_id, supportsAllDrives=True,
+        )
         downloader = MediaIoBaseDownload(buf, request)
         done = False
         while not done:
@@ -145,7 +188,12 @@ class DriveClient:
         media = MediaInMemoryUpload(content, mimetype=mime_type, resumable=True)
         return (
             self._service().files()
-            .create(body=file_metadata, media_body=media, fields=_FILE_FIELDS)
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields=_FILE_FIELDS,
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
@@ -163,7 +211,7 @@ class DriveClient:
             file_metadata["parents"] = [parent_id]
         return (
             self._service().files()
-            .create(body=file_metadata, fields=_FILE_FIELDS)
+            .create(body=file_metadata, fields=_FILE_FIELDS, supportsAllDrives=True)
             .execute()
         )
 
@@ -178,7 +226,11 @@ class DriveClient:
         body: dict[str, Any] = {}
         if name is not None:
             body["name"] = name
-        kwargs: dict[str, Any] = {"fileId": file_id, "fields": _FILE_FIELDS}
+        kwargs: dict[str, Any] = {
+            "fileId": file_id,
+            "fields": _FILE_FIELDS,
+            "supportsAllDrives": True,
+        }
         if body:
             kwargs["body"] = body
         if content is not None:
@@ -192,7 +244,12 @@ class DriveClient:
         """Move a file to the trash. Returns the updated file resource."""
         return (
             self._service().files()
-            .update(fileId=file_id, body={"trashed": True}, fields=_FILE_FIELDS)
+            .update(
+                fileId=file_id,
+                body={"trashed": True},
+                fields=_FILE_FIELDS,
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
@@ -223,6 +280,7 @@ class DriveClient:
                 fileId=file_id,
                 body=permission,
                 fields="id, role, type, emailAddress",
+                supportsAllDrives=True,
             )
             .execute()
         )

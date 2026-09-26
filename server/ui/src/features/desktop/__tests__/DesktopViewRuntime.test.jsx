@@ -1,13 +1,22 @@
 import { memo } from 'react';
 import { act, render, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-
 import {
+    afterEach, describe, expect, it, vi,
+} from 'vitest';
+
+vi.mock('../../../hooks/useIsMobileViewport.js', () => ({
+    default: vi.fn(() => false),
+}));
+
+const {
     DesktopViewRuntimeProvider,
     useDesktopViewCatalog,
     useDesktopViewCommands,
     useFocusedViewId,
-} from '../DesktopViewRuntime.jsx';
+} = await import('../DesktopViewRuntime.jsx');
+const { default: useIsMobileViewport } = await import(
+    '../../../hooks/useIsMobileViewport.js'
+);
 
 const CONVERSATION = {
     id: 'destination:conversation',
@@ -61,6 +70,10 @@ function commandSpies() {
     };
 }
 
+afterEach(() => {
+    useIsMobileViewport.mockReturnValue(false);
+});
+
 describe('DesktopViewRuntime', () => {
     it('translates the narrow placement object to the layout command shape', () => {
         const layoutCommands = commandSpies();
@@ -105,6 +118,46 @@ describe('DesktopViewRuntime', () => {
         expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
+    it('prefers the conversation\'s tab group on mobile, not always left', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'left' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('left');
+    });
+
+    it('follows the conversation to the right tab group on mobile', () => {
+        // The desktop-only "move"/"dock" actions can leave the conversation
+        // docked right, and that placement persists across sessions. A
+        // companion opened later on mobile must join it there, not strand
+        // it behind a companion forced into left.
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'right' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('right');
+    });
+
     it('prefers floating focus and falls back to the focused tab group', () => {
         const layoutCommands = commandSpies();
         let currentModel = model();
@@ -126,6 +179,39 @@ describe('DesktopViewRuntime', () => {
         rerender();
 
         expect(result.current).toBe(ARTIFACT.id);
+    });
+
+    it('reports the visible left pane\'s view as focused on mobile, not a hidden right pane', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        // A restored two-pane layout can leave focus on the right group even
+        // though mobile only renders the left one.
+        const twoPaneMobileModel = {
+            openViews: [CONVERSATION, ARTIFACT],
+            openViewsById: {
+                [CONVERSATION.id]: CONVERSATION,
+                [ARTIFACT.id]: ARTIFACT,
+            },
+            tabGroups: {
+                left: { viewIds: [CONVERSATION.id], activeViewId: CONVERSATION.id },
+                right: { viewIds: [ARTIFACT.id], activeViewId: ARTIFACT.id },
+            },
+            focusedFloatingViewId: null,
+            focusedTabGroupId: 'right',
+        };
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: twoPaneMobileModel,
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useFocusedViewId, { wrapper });
+
+        expect(result.current).toBe(CONVERSATION.id);
     });
 
     it('does not wake catalog consumers when only focus or bounds change', () => {

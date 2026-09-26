@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
 import { useToast } from './ToastProvider.jsx';
+import { clearChatDraft } from '../utils/chatDraftStorage.js';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -140,6 +141,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
             addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
             return;
         }
+        clearChatDraft(id);
         // Deleting the open conversation leaves nothing selected — start fresh.
         if (id === activeConversationId) onNewConversation?.();
     }, [handleDelete, closeMenu, addToast, activeConversationId, onNewConversation]);
@@ -197,6 +199,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
             addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
             return;
         }
+        clearChatDraft(id);
         setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
     }, [handleDelete, addToast]);
 

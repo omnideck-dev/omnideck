@@ -4,7 +4,9 @@ import {
     screen,
     within,
 } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import {
+    afterEach, expect, it, vi,
+} from 'vitest';
 import { createDesktopViewActions } from '../desktopViewActions.js';
 import { DESKTOP_TAB_GROUP_IDS } from '../desktopLayoutReducer.js';
 
@@ -23,8 +25,14 @@ vi.mock('../../../components/SplitHandle.jsx', () => ({
         </button>
     ),
 }));
+vi.mock('../../../hooks/useIsMobileViewport.js', () => ({
+    default: vi.fn(() => false),
+}));
 
 const { default: DesktopLayout } = await import('../DesktopLayout.jsx');
+const { default: useIsMobileViewport } = await import(
+    '../../../hooks/useIsMobileViewport.js'
+);
 
 const CHAT = { id: 'destination:conversation', label: 'Chat', type: 'conversation' };
 const APP = { id: 'custom-app:text-lab', label: 'Text Lab', type: 'custom-app' };
@@ -57,6 +65,10 @@ function model({
         fullscreenViewId: null,
     };
 }
+
+afterEach(() => {
+    useIsMobileViewport.mockReturnValue(false);
+});
 
 it('renders both sides with the same tabGroup component and connects split resizing', () => {
     const setSplitRatio = vi.fn();
@@ -298,4 +310,145 @@ it('keeps the keyed view host while it floats and exposes floating chrome', () =
         `dock-view-${APP.id}-left`,
     ));
     expect(moveView).toHaveBeenCalledWith(APP.id, DESKTOP_TAB_GROUP_IDS.LEFT);
+});
+
+it('hides the right tab group and split handle on mobile', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    render(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(screen.getByTestId('desktop-tab-group-left')).toBeInTheDocument();
+    expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('split-handle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('desktop-layout')).toHaveAttribute('data-split', 'false');
+    expect(screen.getByTestId('desktop-layout')).toHaveStyle({
+        gridTemplateColumns: '1fr 0 0',
+    });
+});
+
+it('marks the right pane\'s active view not visible on mobile so it cannot be focused', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    render(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(screen.getByTestId(`desktop-view-${APP.id}`))
+        .toHaveAttribute('data-visible', 'false');
+});
+
+it('keeps a fullscreen right-pane view visible on mobile even though its tab group is hidden', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    render(
+        <DesktopLayout
+            model={{ ...model(), fullscreenViewId: APP.id }}
+            commands={{ setSplitRatio: vi.fn(), setFullscreenView: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
+    expect(screen.getByTestId(`desktop-view-${APP.id}`))
+        .toHaveAttribute('data-visible', 'true');
+});
+
+it('falls back to the right tab group on mobile when the left group is empty', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    render(
+        <DesktopLayout
+            model={model({ leftIds: [], leftActive: null })}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(screen.queryByTestId('desktop-tab-group-left')).not.toBeInTheDocument();
+    expect(screen.getByTestId('desktop-tab-group-right')).toBeInTheDocument();
+    expect(screen.getByTestId('desktop-layout')).toHaveStyle({
+        gridTemplateColumns: '0 0 1fr',
+    });
+    expect(screen.getByTestId(`desktop-view-${APP.id}`))
+        .toHaveAttribute('data-visible', 'true');
+});
+
+it('restores the right tab group once the viewport is no longer mobile', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    const { rerender } = render(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+    expect(screen.queryByTestId('desktop-tab-group-right')).not.toBeInTheDocument();
+
+    useIsMobileViewport.mockReturnValue(false);
+    rerender(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), moveView: vi.fn(), mergeTabGroup: vi.fn() }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+    expect(screen.getByTestId('desktop-tab-group-right')).toBeInTheDocument();
+});
+
+it('merges the right pane into the left pane when both are populated on mobile', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    const mergeTabGroup = vi.fn();
+    render(
+        <DesktopLayout
+            model={model()}
+            commands={{ setSplitRatio: vi.fn(), mergeTabGroup }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    // Otherwise the right pane's content is unreachable: no tab strip is
+    // rendered for it and there is no mobile affordance to switch panes.
+    // The dedicated merge command is used (not moveView) so the
+    // reconciliation can't silently steal the destination's active tab or
+    // clear unrelated floating focus.
+    expect(mergeTabGroup).toHaveBeenCalledWith(
+        DESKTOP_TAB_GROUP_IDS.RIGHT,
+        DESKTOP_TAB_GROUP_IDS.LEFT,
+    );
+});
+
+it('does not merge panes on mobile when only one pane is populated', () => {
+    useIsMobileViewport.mockReturnValue(true);
+    const mergeTabGroup = vi.fn();
+    render(
+        <DesktopLayout
+            model={model({ rightIds: [], rightActive: null })}
+            commands={{ setSplitRatio: vi.fn(), mergeTabGroup }}
+            onSelectView={vi.fn()}
+            onCloseView={vi.fn()}
+            renderView={(view) => <div>{view.label} content</div>}
+        />,
+    );
+
+    expect(mergeTabGroup).not.toHaveBeenCalled();
 });

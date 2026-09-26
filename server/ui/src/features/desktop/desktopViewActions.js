@@ -50,6 +50,7 @@ export function createDesktopViewActions({
     tabGroup,
     floating = false,
     commands,
+    isMobile = false,
 }) {
     const viewKey = view.testid || view.id;
     const targetTabGroupId = tabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT
@@ -68,20 +69,21 @@ export function createDesktopViewActions({
 
     const actions = [];
     if (floating) {
-        actions.push(
-            action({
-                id: 'dock-left',
-                label: 'Dock in left tab group',
-                ariaLabel: `Dock ${view.label} in left tab group`,
-                icon: 'bi-box-arrow-left',
-                execute: () => commands.moveView(
-                    view.id,
-                    DESKTOP_TAB_GROUP_IDS.LEFT,
-                ),
-                placements: [FLOATING],
-                testid: `dock-view-${viewKey}-left`,
-            }),
-            action({
+        actions.push(action({
+            id: 'dock-left',
+            label: 'Dock in left tab group',
+            ariaLabel: `Dock ${view.label} in left tab group`,
+            icon: 'bi-box-arrow-left',
+            execute: () => commands.moveView(
+                view.id,
+                DESKTOP_TAB_GROUP_IDS.LEFT,
+            ),
+            placements: [FLOATING],
+            testid: `dock-view-${viewKey}-left`,
+        }));
+        // Mobile shows only one pane, so there's no right tab group to dock into.
+        if (!isMobile) {
+            actions.push(action({
                 id: 'dock-right',
                 label: 'Dock in right tab group',
                 ariaLabel: `Dock ${view.label} in right tab group`,
@@ -92,19 +94,22 @@ export function createDesktopViewActions({
                 ),
                 placements: [FLOATING],
                 testid: `dock-view-${viewKey}-right`,
-            }),
-        );
+            }));
+        }
     } else {
-        actions.push(action({
-            id: 'move',
-            label: `Move to ${targetTabGroupId} tab group`,
-            ariaLabel: `Move ${view.label} to ${targetTabGroupId} tab group`,
-            icon: targetTabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT
-                ? 'bi-box-arrow-left'
-                : 'bi-box-arrow-right',
-            execute: () => commands.moveView(view.id, targetTabGroupId),
-            testid: `move-view-${viewKey}-${targetTabGroupId}`,
-        }));
+        // Mobile shows only one pane, so there's no "other side" to move into.
+        if (!isMobile) {
+            actions.push(action({
+                id: 'move',
+                label: `Move to ${targetTabGroupId} tab group`,
+                ariaLabel: `Move ${view.label} to ${targetTabGroupId} tab group`,
+                icon: targetTabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT
+                    ? 'bi-box-arrow-left'
+                    : 'bi-box-arrow-right',
+                execute: () => commands.moveView(view.id, targetTabGroupId),
+                testid: `move-view-${viewKey}-${targetTabGroupId}`,
+            }));
+        }
         actions.push(action({
             id: 'float',
             label: 'Open as floating view',

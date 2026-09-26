@@ -169,19 +169,19 @@ class VerbDispatcher:
         folder_id = args.get("folder_id") or "root"
         limit = _require_int(args, "limit", default=50)
         try:
-            files = await _run_sync(self._drive.list_files, folder_id, limit)
+            result = await _run_sync(self._drive.list_files, folder_id, limit)
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
-        return {"files": files}
+        return {"files": result["files"], "incomplete": result["incomplete"]}
 
     async def _handle_search_drive_files(self, args: dict[str, Any]) -> dict[str, Any]:
         query = _require_str(args, "query")
         limit = _require_int(args, "limit", default=30)
         try:
-            files = await _run_sync(self._drive.search_files, query, limit)
+            result = await _run_sync(self._drive.search_files, query, limit)
         except HttpError as exc:
             raise _wrap_http_error(exc) from exc
-        return {"files": files}
+        return {"files": result["files"], "incomplete": result["incomplete"]}
 
     async def _handle_get_drive_file_metadata(self, args: dict[str, Any]) -> dict[str, Any]:
         file_id = _require_str(args, "file_id")
