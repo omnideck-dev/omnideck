@@ -64,9 +64,10 @@ class BrowserSessionPool:
             if existing is not None:
                 return existing
 
-            loader = self._initializers.pop(key, None)
+            loader = self._initializers.get(key)
             storage_state = await loader() if loader is not None else None
             browser = await host.create_session(storage_state=storage_state)
+            self._initializers.pop(key, None)
             self._sessions[key] = browser
             logger.info("Created isolated browser context for key '%s'", key)
             return browser

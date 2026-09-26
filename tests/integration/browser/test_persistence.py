@@ -193,3 +193,82 @@ async def test_removing_one_domain_and_clearing_state_survive_chromium_restart(
     empty = await Browser.start(storage_state=store.load_state(profile.id), headless=True)
     assert await empty.capture_storage_state() == {"cookies": [], "origins": []}
     await empty.close()
+
+
+async def test_invalid_indexeddb_keys_do_not_block_profile_login(aiohttp_server, tmp_path):
+    async def report(request):
+        response = web.Response(text="<html><body>restored</body></html>", content_type="text/html")
+        response.headers["X-Seen-Cookies"] = json.dumps(dict(request.cookies))
+        return response
+
+    app = web.Application()
+    app.router.add_get("/report", report)
+    server = await aiohttp_server(app)
+    base = str(server.make_url("/")).rstrip("/")
+    state = {
+        "cookies": [
+            {
+                "name": "session",
+                "value": "signed-in",
+                "domain": urlparse(base).hostname,
+                "path": "/",
+                "expires": -1,
+                "httpOnly": True,
+                "secure": False,
+                "sameSite": "Lax",
+            }
+        ],
+        "origins": [
+            {
+                "origin": base,
+                "localStorage": [{"name": "profile-value", "value": "saved"}],
+                "indexedDB": [
+                    {
+                        "name": "cache",
+                        "version": 1,
+                        "stores": [
+                            {
+                                "name": "records",
+                                "keyPath": "id",
+                                "autoIncrement": False,
+                                "indexes": [],
+                                "records": [
+                                    {
+                                        "valueEncoded": {
+                                            "o": [
+                                                {"k": "id", "v": {"o": [], "id": 2}},
+                                                {"k": "payload", "v": "broken cache"},
+                                            ],
+                                            "id": 1,
+                                        }
+                                    },
+                                    {"value": {"id": "good", "payload": "retained"}},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    path = tmp_path / "storage_state.json"
+    original = json.dumps(state)
+    path.write_text(original)
+
+    # Exercise both direct snapshots and storage-state filenames.
+    for source in (state, str(path)):
+        browser = await Browser.start(storage_state=source, headless=True)
+        try:
+            page = await browser._context.new_page()
+            response = await page.goto(f"{base}/report")
+            seen_cookies = json.loads((await response.all_headers())["x-seen-cookies"])
+            assert seen_cookies["session"] == "signed-in"
+            assert await page.evaluate("localStorage.getItem('profile-value')") == "saved"
+            assert "session=" not in await page.evaluate("document.cookie")
+            restored = await browser.capture_storage_state()
+            database = restored["origins"][0]["indexedDB"][0]
+            assert database["stores"][0]["records"] == [{"value": {"id": "good", "payload": "retained"}}]
+        finally:
+            await browser.close()
+    assert path.read_text() == original
+    assert len(state["origins"][0]["indexedDB"][0]["stores"][0]["records"]) == 2
