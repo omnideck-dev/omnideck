@@ -124,6 +124,21 @@ class TestDerivedMessages:
         assert h.messages[0] == {"role": "system", "content": "sys"}
         assert len(h.messages) == 3
 
+    def test_user_content_transform_applies_only_to_derived_messages(self):
+        """The transform reshapes non_system_messages but never the raw log
+        seed_events/recorded_events (and thus never persistence or the
+        transcript) — a composer-token rewrite is model-facing only."""
+        h = ConversationHistory(conversation_id="test")
+        h.seed_events([_agent_started(), _user("/skill do it"), _iter("ok")])
+        h.set_user_content_transform(lambda text: text.upper())
+        assert h.non_system_messages[0] == {"role": "user", "content": "/SKILL DO IT"}
+        assert h.recorded_events[1]["content"] == "/skill do it"
+
+    def test_user_content_transform_defaults_to_none(self):
+        h = ConversationHistory(conversation_id="test")
+        h.seed_events([_agent_started(), _user("/skill do it")])
+        assert h.non_system_messages[0] == {"role": "user", "content": "/skill do it"}
+
 
 @pytest.mark.unit
 class TestSeedAndHandle:

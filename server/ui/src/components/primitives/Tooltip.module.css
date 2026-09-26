@@ -1,0 +1,19 @@
+.wrap {
+    display: contents;
+}
+
+.tooltip {
+    position: fixed;
+    max-width: 260px;
+    background: var(--elevated);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    font-family: var(--font-brand);
+    line-height: 1.4;
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--accent-muted);
+    z-index: var(--z-tooltip);
+    pointer-events: none;
+    box-shadow: var(--shadow-lg);
+}

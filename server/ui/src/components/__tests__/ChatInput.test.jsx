@@ -6,6 +6,25 @@ import ChatInput from '../ChatInput.jsx';
 // Minimal 1x1 transparent PNG base64
 const MOCK_BASE64_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
 
+const skillsHook = {
+    skills: [
+        { id: 'skill_review', name: 'review-code', description: 'Reviews a diff for bugs.' },
+        { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
+    ],
+    loading: false,
+};
+const profilesHook = {
+    profiles: [
+        { id: 'code_expert', name: 'coder', description: 'Coding specialist.', enabled: true, allow_spawn: true, allow_load_skills: true },
+        { id: 'retired_profile', name: 'retired', description: 'Old profile.', enabled: false, allow_spawn: true, allow_load_skills: true },
+    ],
+    loading: false,
+};
+
+vi.mock('../../contexts/AppData.jsx', () => ({
+    useAppData: () => ({ skillsHook, profilesHook }),
+}));
+
 describe('ChatInput', () => {
     it('renders textarea and buttons', () => {
         render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
@@ -410,6 +429,105 @@ describe('ChatInput', () => {
             await user.click(removeButton);
 
             expect(screen.queryByTestId('attachment-image')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('composer / and @ triggers', () => {
+        it('opens the skill list on / and inserts the token on selection', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/rev');
+
+            expect(await screen.findByRole('listbox', { name: 'Skills' })).toBeInTheDocument();
+            expect(screen.getByText('review-code')).toBeInTheDocument();
+            expect(screen.queryByText('summarize')).not.toBeInTheDocument();
+
+            await user.click(screen.getByText('review-code'));
+
+            expect(textarea.value).toBe('/review-code ');
+            expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument();
+        });
+
+        it('closes the overlay once the filtered list is empty', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/zzz');
+
+            expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument();
+        });
+
+        it('opens the agent list on @ and excludes disabled profiles', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '@');
+
+            expect(await screen.findByRole('listbox', { name: 'Agent profiles' })).toBeInTheDocument();
+            expect(screen.getByText('coder')).toBeInTheDocument();
+            expect(screen.queryByText('retired')).not.toBeInTheDocument();
+        });
+
+        it('does not open the overlay for a mid-word slash', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, 'a/b');
+
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+        });
+
+        it('selects with the keyboard and commits on Enter without sending', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Enter}');
+
+            expect(onSend).not.toHaveBeenCalled();
+            expect(textarea.value).toBe('/review-code ');
+        });
+
+        it('closes the overlay on Escape without collapsing the composer', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Escape}');
+
+            expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument();
+            expect(textarea.value).toBe('/');
+        });
+
+        it('does not send the raw token on Enter while skills are still loading', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            skillsHook.loading = true;
+            skillsHook.skills = [];
+            try {
+                render(<ChatInput onSend={onSend} isStreaming={false} />);
+                const textarea = screen.getByPlaceholderText('Message Omnideck…');
+                await user.type(textarea, '/rev{Enter}');
+
+                expect(onSend).not.toHaveBeenCalled();
+                expect(textarea.value).toBe('/rev');
+            } finally {
+                skillsHook.loading = false;
+                skillsHook.skills = [
+                    { id: 'skill_review', name: 'review-code', description: 'Reviews a diff for bugs.' },
+                    { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
+                ];
+            }
         });
     });
 });
