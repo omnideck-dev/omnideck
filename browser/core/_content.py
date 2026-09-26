@@ -8,9 +8,8 @@ CONTENT_HTML_JS = r"""() => {
         if (node.nodeType !== Node.ELEMENT_NODE) {
             return snapshot.importNode(node, false);
         }
-        if (node instanceof HTMLTemplateElement) {
-            return snapshot.importNode(node, true);
-        }
+        // Shallow copies leave inert template.content behind; instantiated
+        // template nodes are ordinary children and are copied below.
         const clone = snapshot.importNode(node, false);
         let children = node.childNodes;
         if (node.shadowRoot) {
