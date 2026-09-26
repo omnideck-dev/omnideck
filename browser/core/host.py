@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import platform
 from pathlib import Path
@@ -12,6 +13,7 @@ from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Playwright, async_playwright
 
+from browser.core._storage_state import prepare_storage_state
 from browser.core.launch import (
     _ANTI_BOT_SCRIPT,
     _OPEN_SHADOW_DOM_SCRIPT,
@@ -150,6 +152,13 @@ class BrowserHost:
         """Create an isolated, non-persistent Browser context."""
         if self._closed:
             raise RuntimeError("Browser host is closed")
+        state: dict[str, Any] | None
+        if isinstance(storage_state, str):
+            state = json.loads(await asyncio.to_thread(Path(storage_state).read_text, encoding="utf-8"))
+        else:
+            state = storage_state
+        if state is not None:
+            state = prepare_storage_state(state)
         context_kwargs: dict[str, Any] = {
             "no_viewport": True,
             "locale": self._locale,
@@ -158,7 +167,7 @@ class BrowserHost:
             "geolocation": self._geolocation,
             "permissions": self._permissions,
             "java_script_enabled": True,
-            "storage_state": storage_state,
+            "storage_state": state,
         }
         if self._proxy:
             context_kwargs["proxy"] = self._proxy
