@@ -3,4 +3,4 @@ target: app
 type: fixed
 area: browser
 ---
-Selecting a dropdown option no longer reports a false failure when committing the selection navigates or reloads the selected frame.
+Dropdown selection now goes directly to the requested option without committing intermediate choices, and no longer reports a false failure when the selection navigates or reloads the selected frame.

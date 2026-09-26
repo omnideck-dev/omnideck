@@ -9,12 +9,15 @@
     <option value="remote">Remote (US)</option>
   </select>
   <p id="result">No filter applied</p>
+  <p id="observed"></p>
   <script>
     const select = document.querySelector('#location');
-    select.addEventListener('change', (event) => {
-      if (!event.isTrusted) return;
+    const selections = [];
+    select.addEventListener('change', () => {
+      selections.push(select.value);
       history.replaceState(null, '', `?selected=${select.value}`);
-      document.querySelector('#result').textContent = `Trusted filter: ${select.value}`;
+      document.querySelector('#result').textContent = `Selected filter: ${select.value}`;
+      document.querySelector('#observed').textContent = `Observed selections: ${selections.join(',')}`;
     });
   </script>
 </body>

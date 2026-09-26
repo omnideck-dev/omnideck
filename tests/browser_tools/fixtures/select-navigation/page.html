@@ -6,28 +6,28 @@
   <label for="location">Location</label>
   <select id="location">
     <option value="">All locations</option>
+    <option value="onsite">On site</option>
     <option value="remote"> Remote (US) </option>
   </select>
   <p id="result">No filter applied</p>
   <p id="events"></p>
-  <p id="trusted"></p>
+  <p id="observed"></p>
   <script>
     const select = document.querySelector('#location');
     const params = new URLSearchParams(location.search);
     const selected = params.get('selected') || sessionStorage.getItem('location') || '';
     select.value = selected;
-    if (selected) document.querySelector('#result').textContent = 'Showing remote jobs';
+    if (selected === 'remote') document.querySelector('#result').textContent = 'Showing remote jobs';
     document.querySelector('#events').textContent =
       `Selection events: input=${sessionStorage.getItem('inputs') || 0}, change=${sessionStorage.getItem('changes') || 0}`;
-    document.querySelector('#trusted').textContent =
-      `Trusted selection: ${sessionStorage.getItem('trusted') || false}`;
-    select.addEventListener('input', (event) => {
-      if (!event.isTrusted) throw new Error('Selection input must be trusted');
+    document.querySelector('#observed').textContent =
+      `Observed selections: ${sessionStorage.getItem('selections') || ''}`;
+    select.addEventListener('input', () => {
       sessionStorage.setItem('inputs', Number(sessionStorage.getItem('inputs') || 0) + 1);
     });
-    select.addEventListener('change', (event) => {
-      if (!event.isTrusted) return;
-      sessionStorage.setItem('trusted', event.isTrusted);
+    select.addEventListener('change', () => {
+      const selections = sessionStorage.getItem('selections');
+      sessionStorage.setItem('selections', selections ? `${selections},${select.value}` : select.value);
       sessionStorage.setItem('changes', Number(sessionStorage.getItem('changes') || 0) + 1);
       sessionStorage.setItem('location', select.value);
       if (params.get('reload') === 'true') {
