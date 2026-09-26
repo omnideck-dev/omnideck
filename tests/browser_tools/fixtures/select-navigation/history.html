@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Select history update</title></head>
+<body>
+  <label for="location">Location</label>
+  <select id="location" size="3">
+    <option value="">All locations</option>
+    <option value="onsite">On site</option>
+    <option value="remote">Remote (US)</option>
+  </select>
+  <p id="result">No filter applied</p>
+  <script>
+    const select = document.querySelector('#location');
+    select.addEventListener('change', (event) => {
+      if (!event.isTrusted) return;
+      history.replaceState(null, '', `?selected=${select.value}`);
+      document.querySelector('#result').textContent = `Trusted filter: ${select.value}`;
+    });
+  </script>
+</body>
+</html>

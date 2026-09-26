@@ -10,6 +10,7 @@
   </select>
   <p id="result">No filter applied</p>
   <p id="events"></p>
+  <p id="trusted"></p>
   <script>
     const select = document.querySelector('#location');
     const params = new URLSearchParams(location.search);
@@ -18,10 +19,15 @@
     if (selected) document.querySelector('#result').textContent = 'Showing remote jobs';
     document.querySelector('#events').textContent =
       `Selection events: input=${sessionStorage.getItem('inputs') || 0}, change=${sessionStorage.getItem('changes') || 0}`;
-    select.addEventListener('input', () => {
+    document.querySelector('#trusted').textContent =
+      `Trusted selection: ${sessionStorage.getItem('trusted') || false}`;
+    select.addEventListener('input', (event) => {
+      if (!event.isTrusted) throw new Error('Selection input must be trusted');
       sessionStorage.setItem('inputs', Number(sessionStorage.getItem('inputs') || 0) + 1);
     });
-    select.addEventListener('change', () => {
+    select.addEventListener('change', (event) => {
+      if (!event.isTrusted) return;
+      sessionStorage.setItem('trusted', event.isTrusted);
       sessionStorage.setItem('changes', Number(sessionStorage.getItem('changes') || 0) + 1);
       sessionStorage.setItem('location', select.value);
       if (params.get('reload') === 'true') {
