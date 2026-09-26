@@ -19,6 +19,7 @@ _PROVIDER_PATHS: dict[str, str] = {
     "openai_compat": "agent_core.providers._openai:OpenAIProvider",
     "openrouter": "agent_core.providers._openai:OpenAIProvider",
     "anthropic": "agent_core.providers._anthropic:AnthropicProvider",
+    "aperture": "agent_core.providers._aperture:ApertureProvider",
     "fake": "providers._fake:FakeProvider",
 }
 
@@ -58,7 +59,7 @@ def _provider_class(provider_name: str) -> type[Provider]:
 def _create_provider(provider_name: str) -> Provider:
     """Instantiate a provider by name.
 
-    Direct providers (Ollama, no-auth OpenAI-compatible) are configured in
+    Direct providers (Ollama, Aperture, no-auth OpenAI-compatible) are configured in
     ``settings.direct_providers`` and connect straight to their base URL.
     Everything else is a brokered integration reached through a Unix socket.
     A name with neither is not configured.

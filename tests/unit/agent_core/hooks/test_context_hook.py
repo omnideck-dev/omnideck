@@ -31,7 +31,11 @@ async def test_after_model_calls_manager_and_returns_response():
     sentinel = object()
     result = await hook.after_model(sentinel, _FakeHistory(), 3, "TEST")
     assert result is sentinel
-    assert mgr.called_with == {"iteration": 3, "max_iterations": 7}
+    assert mgr.called_with == {
+        "response": sentinel,
+        "iteration": 3,
+        "max_iterations": 7,
+    }
 
 
 @pytest.mark.unit

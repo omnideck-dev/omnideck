@@ -481,8 +481,13 @@ class LLMCompactionStrategy:
         """
         import copy
 
-        _, _, options = self._resolve_model() or (None, None, {})
-        num_ctx = options.get("num_ctx", 8192) if isinstance(options, dict) else 8192
+        provider_name, model, options = self._resolve_model() or (None, None, {})
+        model_info = None
+        if provider_name and model:
+            from agent_core.providers import resolve_model_info
+            model_info = await resolve_model_info(get_provider(provider_name), model)
+        configured_ctx = options.get("num_ctx") if isinstance(options, dict) else None
+        num_ctx = configured_ctx or (model_info.context_window if model_info else None) or 8192
         chunk_threshold = int(num_ctx * _CHARS_PER_TOKEN * _CTX_INPUT_FRACTION)
         chunk_target = chunk_threshold // 2
 
@@ -532,6 +537,10 @@ class LLMCompactionStrategy:
         assert resolved is not None
         provider_name, model, options = resolved
         provider = get_provider(provider_name)
+        from agent_core.providers import resolve_role_options
+        options, _model_info = await resolve_role_options(
+            provider, model, "compaction", options,
+        )
 
         user_content = ""
         if prior_summary:
@@ -569,6 +578,15 @@ class LLMCompactionStrategy:
         assert resolved is not None
         provider_name, model, options = resolved
         provider = get_provider(provider_name)
+        from agent_core.providers import resolve_role_options
+        options, model_info = await resolve_role_options(
+            provider, model, "compaction", options,
+        )
+        # A deterministic override is useful only when the selected model
+        # explicitly accepts it. Reasoning models such as GPT Sol reject the
+        # request rather than ignoring an unsupported temperature.
+        if model_info and "temperature" in (model_info.inference_controls or []):
+            options["temperature"] = 0
 
         # Build the user content with numbered messages.
         # Truncate individual messages to keep the input focused.
@@ -585,10 +603,7 @@ class LLMCompactionStrategy:
                     {"role": "user", "content": user_content},
                 ],
                 think=False,
-                options={
-                    **(options if isinstance(options, dict) else {}),
-                    "temperature": 0,
-                },
+                options=options,
             ),
             timeout=60,
         )

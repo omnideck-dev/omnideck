@@ -5,11 +5,13 @@ import Callout from '../primitives/Callout.jsx';
 import Modal from '../primitives/Modal.jsx';
 import styles from './AddProviderModal.module.css';
 
-// The picker catalog. Order is intentional: local first, then a generic
-// compat option, then the three branded cloud APIs.
+// The picker catalog. Order is intentional: local first, then the managed
+// gateway, a generic compatibility option, and branded cloud APIs.
 const CATALOG = [
     { name: 'ollama', label: 'Ollama', icon: 'bi-cpu',
       sub: 'Run models on your own machine' },
+    { name: 'aperture', label: 'Tailscale Aperture', icon: 'bi-diagram-3',
+      sub: 'Discover models managed by your organization' },
     { name: 'openai_compat', label: 'OpenAI-compatible', icon: 'bi-hdd-network',
       sub: 'vLLM, LM Studio, llama.cpp, etc.' },
     { name: 'anthropic', label: 'Anthropic', icon: 'bi-cloud',
@@ -130,11 +132,14 @@ function CatalogStep({ existingNames, onClose, onPick }) {
 function ConfigureStep({ entry, onBack, onClose, onAdded }) {
     // Field shape per provider:
     //   ollama          → base_url
+    //   aperture        → gateway base_url; auth and API formats are discovered
     //   openai_compat   → base_url, optional api_key
     //   anthropic/openai/openrouter → api_key
     const isOllama = entry.name === 'ollama';
+    const isAperture = entry.name === 'aperture';
     const isCompat = entry.name === 'openai_compat';
-    const isCloud = !isOllama && !isCompat;
+    const isEndpoint = isOllama || isAperture || isCompat;
+    const isCloud = !isEndpoint;
 
     const [baseUrl, setBaseUrl] = useState('');
     const [ollamaHost, setOllamaHost] = useState('');
@@ -168,8 +173,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
     }, [isOllama]);
 
     const canSubmit = (() => {
-        if (isOllama) return !!baseUrl.trim();
-        if (isCompat) return !!baseUrl.trim(); // key optional
+        if (isEndpoint) return !!baseUrl.trim();
         return !!apiKey.trim();
     })();
 
@@ -178,7 +182,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
         setSubmitting(true);
         setError(null);
         const body = { name: entry.name };
-        if (isOllama || isCompat) body.base_url = baseUrl.trim();
+        if (isEndpoint) body.base_url = baseUrl.trim();
         if ((isCloud || isCompat) && apiKey.trim()) body.api_key = apiKey.trim();
         try {
             const resp = await fetch('/api/providers', {
@@ -190,7 +194,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
             if (!resp.ok) {
                 const message = data.message || data.error || `HTTP ${resp.status}`;
                 setError(
-                    isOllama && body.base_url && !message.includes(body.base_url)
+                    (isOllama || isAperture) && body.base_url && !message.includes(body.base_url)
                         ? `${message} Tried ${body.base_url}.`
                         : message,
                 );
@@ -199,11 +203,11 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
             onAdded?.(data.provider);
         } catch (err) {
             const message = err?.message || 'Request failed';
-            setError(isOllama && body.base_url ? `${message} Tried ${body.base_url}.` : message);
+            setError((isOllama || isAperture) && body.base_url ? `${message} Tried ${body.base_url}.` : message);
         } finally {
             setSubmitting(false);
         }
-    }, [entry.name, isOllama, isCompat, isCloud, baseUrl, apiKey, canSubmit, submitting, onAdded]);
+    }, [entry.name, isOllama, isAperture, isCompat, isEndpoint, isCloud, baseUrl, apiKey, canSubmit, submitting, onAdded]);
 
     return (
         <>
@@ -228,25 +232,41 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                         description="Your API key is stored encrypted. Agents reach the provider through a separate broker process — the key never leaves the vault."
                     />
                 )}
+                {isAperture && (
+                    <Callout
+                        tone="info"
+                        icon="bi-shield-check"
+                        title="Tailscale handles access"
+                        description="No API key is needed. Omnideck discovers granted models it can use and selects the API format automatically."
+                    />
+                )}
                 {error && (
                     <Callout tone="danger" title="Couldn't add provider" description={error} />
                 )}
-                {(isOllama || isCompat) && (
+                {isEndpoint && (
                     <div className={styles.formRow}>
-                        <label className={styles.formLabel} htmlFor="provider-url">Base URL</label>
+                        <label className={styles.formLabel} htmlFor="provider-url">
+                            {isAperture ? 'Gateway URL' : 'Base URL'}
+                        </label>
                         <input
                             id="provider-url"
                             ref={urlRef}
                             className={`${styles.input} ${styles.inputMono}`}
                             type="text"
                             value={baseUrl}
-                            placeholder={isOllama ? (ollamaHost || 'Enter your Ollama server URL') : 'http://host:port/v1'}
+                            placeholder={isOllama
+                                ? (ollamaHost || 'Enter your Ollama server URL')
+                                : isAperture
+                                    ? 'http://aperture-hostname'
+                                    : 'http://host:port/v1'}
                             onChange={(e) => setBaseUrl(e.target.value)}
                             autoComplete="off"
                         />
                         <div className={styles.formHint}>
                             {isOllama
                                 ? (ollamaHost ? 'Detected automatically.' : 'Enter the address of your Ollama server.')
+                                : isAperture
+                                    ? 'Use the gateway root. Omnideck adds /v1 or /bedrock automatically.'
                                 : 'The OpenAI-compatible endpoint URL (include /v1 if your server uses it).'}
                         </div>
                     </div>
@@ -284,6 +304,8 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                 >
                     {submitting ? (
                         <><i className="bi bi-broadcast" /> Testing…</>
+                    ) : isAperture ? (
+                        <><i className="bi bi-broadcast" /> Discover &amp; add</>
                     ) : (
                         <><i className="bi bi-broadcast" /> Test &amp; add</>
                     )}
