@@ -4,7 +4,12 @@ The container-served app at `ghcr.io/omnideck-dev/omnideck` releases independent
 from the native desktop host. App versions are plain `X.Y.Z` container tags;
 the corresponding GitHub Releases and Git tags are named `app-vX.Y.Z`.
 Desktop installers retain their `v*` tags. App releases set `make_latest: false`
-so they do not replace the desktop release's Latest designation.
+to avoid explicitly selecting an app release as Latest. When every desktop
+release is a prerelease, GitHub's `/releases/latest` endpoint can still return
+the stable app release. Desktop download consumers must select a `v*` desktop
+release with installer assets rather than assume Latest contains installers.
+The desktop app updater discovers container versions through GHCR and is
+unaffected by this GitHub designation.
 
 ## Automatic Monday releases
 
