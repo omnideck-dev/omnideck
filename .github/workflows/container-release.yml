@@ -3,7 +3,7 @@ run-name: Release container ${{ inputs.version || 'weekly auto-version' }}${{ in
 
 on:
   schedule:
-    - cron: '0 10 * * 5'
+    - cron: '0 10 * * 1'
       timezone: America/Chicago
   workflow_dispatch:
     inputs:

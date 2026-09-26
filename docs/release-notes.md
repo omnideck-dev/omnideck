@@ -65,7 +65,7 @@ Optional `bump: patch|minor|major` metadata can raise the automatic app version
 bump. Mark incompatible changes with `bump: major` or a Conventional Commit
 breaking marker. `added` requires at least minor; `removed` requires a breaking
 bump. During 0.x, breaking changes advance the minor version. See the
-[Friday release policy](APP_RELEASING.md#automatic-friday-releases).
+[Monday release policy](APP_RELEASING.md#automatic-monday-releases).
 
 Write what changed for the reader and why it matters. Avoid build systems,
 test environments, commit hashes, internal refactors, and qualification detail
@@ -135,7 +135,7 @@ App versions are the plain `X.Y.Z` tags on
 reviewed `docs/releases/app-vX.Y.Z.md` file and remove the app fragments it
 incorporates. The workflow refuses to promote the image if the file is missing
 or any `target: app` fragments remain in the selected release snapshot. The
-[Friday workflow](APP_RELEASING.md#automatic-friday-releases) can automatically
+[Monday workflow](APP_RELEASING.md#automatic-monday-releases) can automatically
 aggregate reviewed fragments and commit the release metadata.
 
 The checked-in Markdown is the published app changelog. The desktop update
