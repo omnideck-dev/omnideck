@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from tools.browser import BrowserToolError
-from tools.browser import read_page
+from config import load_config
+from tools.browser import BrowserToolError, read_page, save_page_content
+from tools.browser._tool_context import get_document
 
 _EXPECTED_MARKDOWN = """\
 # The Hubble Telescope
@@ -34,10 +35,7 @@ async def test_read_page_returns_markdown(open_tab, servers):
     # Output is "[Page: ...]\n\n[chunk ...]\n\n<markdown>". The header's URL port
     # is runtime-dependent; the rest is exact.
     header, status, body = _split(text)
-    assert (
-        f"[Page: The Hubble Telescope | {servers.primary}/article/article.html"
-        in header
-    )
+    assert f"[Page: The Hubble Telescope | {servers.primary}/article/article.html" in header
     # No viewport line and no empty status slot on a read.
     assert "Viewport:" not in text
     assert header.endswith("]")
@@ -108,9 +106,7 @@ async def test_read_page_chunks_reassemble(open_tab, servers, monkeypatch):
         await read_page(chunk=chunk + 1, tab=tab)
 
 
-async def test_read_page_chunk_boundary_lands_on_a_line(
-    open_tab, servers, monkeypatch
-):
+async def test_read_page_chunk_boundary_lands_on_a_line(open_tab, servers, monkeypatch):
     # A chunk ends at a line break rather than mid-word whenever the line fits
     # the budget, so a paragraph is not sliced in half.
     monkeypatch.setattr("tools.browser.read._READ_BUDGET", 120)
@@ -129,9 +125,7 @@ async def test_read_page_chunk_zero_raises(open_tab, servers):
         await read_page(chunk=0, tab=tab)
 
 
-async def test_read_page_status_line_signals_more_chunks(
-    open_tab, servers, monkeypatch
-):
+async def test_read_page_status_line_signals_more_chunks(open_tab, servers, monkeypatch):
     # The "more remains" cue lives on the chunk status line, not a viewport
     # line. A non-final chunk names the next one; the final chunk doesn't.
     monkeypatch.setattr("tools.browser.read._READ_BUDGET", 100)
@@ -148,9 +142,7 @@ async def test_read_page_status_line_signals_more_chunks(
     assert "Read on with chunk=" not in last_status
 
 
-async def test_read_page_query_locates_matches_by_chunk(
-    open_tab, servers, monkeypatch
-):
+async def test_read_page_query_locates_matches_by_chunk(open_tab, servers, monkeypatch):
     # Query searches the whole page, not just one chunk, and tells the agent
     # which chunk the match sits in so it can go read around it. Here the two
     # occurrences are close enough to merge into a single passage, and chunk 4
@@ -169,9 +161,7 @@ async def test_read_page_query_locates_matches_by_chunk(
     assert "Wide Field Camera 3" in rest
 
 
-async def test_read_page_query_context_is_not_a_blank_line(
-    open_tab, servers
-):
+async def test_read_page_query_context_is_not_a_blank_line(open_tab, servers):
     # Markdown separates blocks with blank lines. Context is counted in
     # non-blank lines, so a match arrives with real surrounding prose rather
     # than the blank separator that follows every block.
@@ -189,3 +179,88 @@ async def test_read_page_query_no_matches(open_tab, servers):
 
     assert '[Search "quasar" — no matches on this page' in text
     assert "1 chunks" in text
+
+
+async def test_read_page_includes_nested_shadow_content_and_distributed_slots(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/shadow-content/page.html")
+    _, _, body = _split(await read_page(tab=tab))
+
+    assert "Privacy choices" in body
+    assert "# Example Money Market Fund" in body
+    assert "## Performance" in body
+    assert "Seven-day yield: **3.63%**." in body
+    assert "* NAV: $1.00" in body
+    assert "[Prospectus](</documents/prospectus.pdf>)" in body
+    for text in (
+        "An investment profile rendered with web components.",
+        "Slotted risk disclosure.",
+        "Default disclosure.",
+        "Default slot paragraph.",
+        "Light DOM footer.",
+    ):
+        assert body.count(text) == 1
+    assert "Unused" not in body
+    assert "Unassigned light DOM content" not in body
+    assert body.index("Privacy choices") < body.index("# Example") < body.index("## Performance")
+    assert body.index("## Performance") < body.index("Default disclosure") < body.index("Light DOM footer")
+
+
+async def test_shadow_content_can_be_searched_and_chunked(open_tab, servers, monkeypatch):
+    tab = await open_tab(f"{servers.primary}/shadow-content/page.html")
+    _, _, whole = _split(await read_page(tab=tab))
+    monkeypatch.setattr("tools.browser.read._READ_BUDGET", 100)
+    search = await read_page(query="Seven-day yield", tab=tab)
+    assert "1 match(es)" in search
+    assert "3.63%" in search
+
+    parts = []
+    for chunk in range(1, 20):
+        _, status, body = _split(await read_page(chunk=chunk, tab=tab))
+        parts.append(body)
+        if "Read on with chunk=" not in status:
+            break
+    else:
+        pytest.fail("Shadow content did not finish within the expected chunks")
+    assert len(parts) > 1
+    assert "".join(parts) == whole
+
+
+async def test_shadow_content_read_does_not_mutate_page_or_construct_components(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/shadow-content/page.html")
+    _, _, document = await get_document("read_page", tab=tab)
+    before = await document.evaluate("""() => ({
+        html: document.documentElement.outerHTML,
+        constructions: window.componentConstructions,
+        slots: document.querySelector('fund-overview').shadowRoot.querySelector('slot').assignedNodes().length,
+    })""")
+    first = await read_page(tab=tab)
+    assert "Seven-day yield" in first
+    assert await read_page(tab=tab) == first
+    after = await document.evaluate("""() => ({
+        html: document.documentElement.outerHTML,
+        constructions: window.componentConstructions,
+        slots: document.querySelector('fund-overview').shadowRoot.querySelector('slot').assignedNodes().length,
+    })""")
+    assert before == after
+    assert after["constructions"] == 2
+
+
+async def test_save_page_content_matches_shadow_dom_read(open_tab, servers, tmp_path, monkeypatch):
+    config = load_config().model_copy(deep=True)
+    config.virtual_computer.home_dir = str(tmp_path)
+    monkeypatch.setattr("tools.browser.save.load_config", lambda: config)
+    tab = await open_tab(f"{servers.primary}/shadow-content/page.html")
+    _, _, body = _split(await read_page(tab=tab))
+    await save_page_content("profile.md", tab=tab)
+    saved = (tmp_path / "profile.md").read_text()
+    assert "Seven-day yield" in saved
+    assert saved.strip() == body
+
+
+async def test_read_page_extracts_shadow_content_from_selected_cross_origin_frame(open_tab, servers):
+    url = servers.embed(f"{servers.secondary}/shadow-content/page.html")
+    tab = await open_tab(url)
+    _, _, body = _split(await read_page(tab=tab))
+    assert "# Example Money Market Fund" in body
+    assert "Seven-day yield" in body
+    assert "Host page heading" not in body
