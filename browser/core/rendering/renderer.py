@@ -214,6 +214,26 @@ __MODAL_HELPERS__
     if (tag === 'IMG') return (el.getAttribute('alt') || '').trim();
     const t = el.innerText;
     if (t && t.trim()) return t.trim();
+    // Image-only controls have no innerText. Use their non-decorative image
+    // labels before tooltip fallbacks, excluding hidden image subtrees.
+    const imageNames = [];
+    for (const img of el.querySelectorAll('img[alt]')) {
+      const alt = (img.getAttribute('alt') || '').trim();
+      if (!alt) continue;
+      const visibility = window.getComputedStyle(img).visibility;
+      if (visibility === 'hidden' || visibility === 'collapse') continue;
+      let hidden = false;
+      for (let ancestor = img; ancestor && ancestor !== el; ancestor = ancestor.parentElement) {
+        if (ancestor.getAttribute('aria-hidden') === 'true'
+            || ancestor.hasAttribute('inert')
+            || window.getComputedStyle(ancestor).display === 'none') {
+          hidden = true;
+          break;
+        }
+      }
+      if (!hidden) imageNames.push(alt);
+    }
+    if (imageNames.length) return imageNames.join(' ');
     // Fall back to the title attribute — a valid low-priority accessible-name
     // source (the tooltip), used only when nothing else names the element. This
     // is what names icon-only controls with no text/aria-label, e.g.
