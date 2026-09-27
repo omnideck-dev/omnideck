@@ -36,7 +36,7 @@ from .._helpers import find_ref
     ],
 )
 async def test_form_fields_cannot_shadow_dom_traversal(open_tab, servers, query):
-    tab = await open_tab(f"{servers.primary}/form-child-properties/page.html?{query}")
+    tab = await open_tab(f"{servers.primary}/forms/child-properties.html?{query}")
     rendered = await browse_page(tab=tab)
 
     assert "document rendering failed" not in rendered

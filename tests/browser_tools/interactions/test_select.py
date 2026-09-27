@@ -11,7 +11,7 @@ from .._helpers import find_ref
 
 async def test_select_result_uses_current_selection(open_tab, servers):
     """Rendered value follows current selection, not initial selected markup."""
-    tab = await open_tab(f"{servers.primary}/selected-option/page.html")
+    tab = await open_tab(f"{servers.primary}/forms/select/selected-option.html")
     view = await browse_page(tab=tab)
     fruit = find_ref(view, role="combobox", name="Fruit")
     assert fruit is not None
@@ -24,7 +24,7 @@ async def test_select_result_uses_current_selection(open_tab, servers):
 
 async def test_long_select_dispatches_change(open_tab, servers):
     """Long dropdown lists select the requested option and notify the page."""
-    tab = await open_tab(f"{servers.primary}/long-select/page.html")
+    tab = await open_tab(f"{servers.primary}/forms/select/long-options.html")
     view = await browse_page(tab=tab)
     item = find_ref(view, role="combobox", name="Item")
     assert item is not None
@@ -38,7 +38,7 @@ async def test_long_select_dispatches_change(open_tab, servers):
 @pytest.mark.parametrize("reload", [False, True], ids=["navigation", "same-url-reload"])
 @pytest.mark.parametrize("embedded", [False, True], ids=["main-frame", "cross-origin-frame"])
 async def test_select_option_succeeds_when_change_navigates(open_tab, servers, reload, embedded):
-    url = f"{servers.secondary}/select-navigation/page.html?reload={str(reload).lower()}"
+    url = f"{servers.secondary}/forms/select/navigation.html?reload={str(reload).lower()}"
     if embedded:
         url = servers.embed(url)
     tab = await open_tab(url)
@@ -55,7 +55,7 @@ async def test_select_option_succeeds_when_change_navigates(open_tab, servers, r
 
 
 async def test_select_option_does_not_commit_intermediate_options(open_tab, servers):
-    tab = await open_tab(f"{servers.primary}/select-navigation/history.html")
+    tab = await open_tab(f"{servers.primary}/forms/select/history.html")
     location = find_ref(await browse_page(tab=tab), name="Location")
     assert location is not None
 
