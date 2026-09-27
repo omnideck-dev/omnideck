@@ -22,14 +22,26 @@ async def test_image_only_controls_are_named_and_clickable(open_tab, servers, ro
     assert result in await click(ref, tab=tab)
 
 
-async def test_image_names_skip_hidden_and_decorative_images(open_tab, servers):
+async def test_image_alt_names_ignore_hidden_and_empty_alt_images(open_tab, servers):
     tab = await open_tab(f"{servers.primary}/accessible-names/image-controls.html")
     view = await browse_page(full_page=True, tab=tab)
 
     assert find_ref(view, role="link", name="Visible destination") is not None
-    assert find_ref(view, role="link", name="North South") is not None
-    assert find_ref(view, role="link", name="Fallback title") is not None
     assert "decoy" not in view
+
+
+async def test_multiple_image_alt_names_follow_document_order(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/accessible-names/image-controls.html")
+    view = await browse_page(full_page=True, tab=tab)
+
+    assert find_ref(view, role="link", name="North South") is not None
+
+
+async def test_tooltip_precedes_image_filename_fallback(open_tab, servers):
+    tab = await open_tab(f"{servers.primary}/accessible-names/image-controls.html")
+    view = await browse_page(full_page=True, tab=tab)
+
+    assert find_ref(view, role="link", name="Fallback title") is not None
 
 
 async def test_image_names_preserve_explicit_and_text_labels(open_tab, servers):
