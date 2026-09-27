@@ -7,7 +7,7 @@ dependencies = [
     "aiohttp",
     "pydantic",
     "pyyaml",
-    "playwright==1.52.0",
+    "playwright==1.59.0",
     "beautifulsoup4",
     "ollama>=0.6",
     "cachetools>=5.5.2",

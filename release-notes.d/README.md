@@ -23,3 +23,8 @@ delivers the change.
 
 Valid types are `added`, `changed`, `deprecated`, `removed`, `fixed`,
 and `security`. Do not edit this README as a substitute for a fragment.
+
+App fragments stay here after release. The Monday workflow combines only new
+app fragments since the previous release tag. Once an app fragment has shipped,
+add a new fragment for a correction; do not edit, rename, or delete it.
+Desktop fragments are still consumed by desktop release preparation.

@@ -307,6 +307,7 @@ function main() {
 
   if (command === 'generate') {
     const target = optionValue(args, '--target');
+    if (target === 'app') throw new Error('Preview app notes with container-release.yml dry_run=true; retained app history must be compared with the previous release');
     const output = renderReleaseNotes(
       fragmentsForTarget(loadFragments(), target),
       optionValue(args, '--version'),
@@ -333,6 +334,7 @@ function main() {
 
   if (command === 'check-consumed') {
     const target = optionValue(args, '--target');
+    if (target === 'app') throw new Error('App fragments are retained after publication; they must not be consumed');
     const fragments = fragmentsForTarget(loadFragments(), target);
     if (fragments.length) {
       throw new Error(

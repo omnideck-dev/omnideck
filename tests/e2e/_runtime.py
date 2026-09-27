@@ -104,8 +104,9 @@ def compaction_script():
     return model_script(*[
         {"content": f"pre-compaction work {i}", "tool_calls": [model_tool(
             "run_bash_cmd",
-            # Enough real output to shrink when the summarizer caps tool text,
-            # while remaining below the profile's tool-result safety limit.
+            # Enough real output to shrink when the summarizer caps tool text.
+            # Tests asserting savings need a context window >= 16000 so the
+            # tool-result cap leaves this 2.5 KB fixture inline.
             cmd="printf 'step zero %.0s' {1..250}" if i == 0 else f"printf 'step {i}'",
         )]}
         for i in range(3)

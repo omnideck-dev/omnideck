@@ -118,3 +118,16 @@ test('Linux package installation is retried and time-bounded', () => {
   assert.match(aptInstaller, /Acquire::https::Timeout=30/);
   assert.match(aptInstaller, /DPkg::Lock::Timeout=120/);
 });
+
+
+test('Monday autoship publishes app records without PR or workflow-dispatch write permissions', async () => {
+  const workflow = await read('../.github/workflows/container-release.yml');
+  assert.match(workflow, /cron: '0 10 \* \* 1'/);
+  assert.match(workflow, /timezone: America\/Chicago/);
+  assert.match(workflow, /actions: read/);
+  assert.doesNotMatch(workflow, /pull-requests:|actions: write|git push|gh pr|prepare-app-release-pr/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /publish-app-release\.mjs/);
+  assert.match(workflow, /DRY_RUN: \$\{\{ inputs\.dry_run \}\}/);
+  assert.match(workflow, /releases\?per_page=100/);
+});

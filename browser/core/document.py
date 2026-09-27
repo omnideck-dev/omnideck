@@ -12,6 +12,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import Locator, Page
 
+from browser.core._content import CONTENT_HTML_JS
 from browser.core.exceptions import BrowserToolError
 from browser.core.input.scroll import ScrollOutcome, human_scroll
 
@@ -68,8 +69,8 @@ class Document:
         return await self._frame.evaluate(expression, arg)
 
     async def content(self) -> str:
-        """Return this document's serialized HTML."""
-        return await self._frame.content()
+        """Return this document's HTML, including shadow content and assigned slots."""
+        return await self._frame.evaluate(CONTENT_HTML_JS)
 
     async def resolve_ref(self, ref: str, *, tool_name: str) -> ResolvedElement:
         """Resolve one agent-visible numeric ref inside this document.
