@@ -49,6 +49,25 @@ def test_bare_skill_no_args():
 
 
 @pytest.mark.unit
+def test_bare_skill_no_args_asks_for_output_not_a_status_report():
+    """With nothing typed after the token, the instruction must steer the
+    model toward delivering the skill's actual output — not toward verifying
+    and reporting on the load mechanism itself (the failure mode this
+    wording exists to prevent)."""
+    _make_skill("review-code", id_="skill_review")
+    result = enrich_composer_message("/review-code")
+    assert "respond with what it produces, not a report on whether it loaded" in result
+
+
+@pytest.mark.unit
+def test_bare_delegate_no_args_asks_for_output_not_a_status_report():
+    _make_skill("review-code", id_="skill_review")
+    _make_profile("coder", id_="code_expert")
+    result = enrich_composer_message("@coder /review-code")
+    assert "respond with what it produces, not a report on whether it loaded" in result
+
+
+@pytest.mark.unit
 def test_single_delegate():
     _make_skill("review-code", id_="skill_review")
     _make_profile("coder", id_="code_expert")
@@ -136,6 +155,40 @@ def test_resolves_by_id_as_well_as_name():
     _make_skill("Review Code", id_="skill_review")
     result = enrich_composer_message("/skill_review do it")
     assert 'skill "Review Code" (id: skill_review)' in result
+
+
+@pytest.mark.unit
+def test_resolves_skill_by_slug_of_multiword_name():
+    _make_skill("Joke teller", id_="4dffecbf8559")
+    result = enrich_composer_message("/joke-teller tell me one")
+    assert 'skill "Joke teller" (id: 4dffecbf8559)' in result
+
+
+@pytest.mark.unit
+def test_ambiguous_skill_slug_is_left_fully_inert():
+    """Two names that happen to slugify identically must never resolve to
+    either one silently — same "unresolved" treatment as a typo."""
+    _make_skill("Joke teller", id_="skill_a")
+    _make_skill("joke   TELLER!!", id_="skill_b")
+    text = "/joke-teller tell me one"
+    assert enrich_composer_message(text) == text
+
+
+@pytest.mark.unit
+def test_resolves_profile_by_slug_of_multiword_name():
+    _make_skill("review-code", id_="skill_review")
+    _make_profile("Code Expert", id_="code_expert")
+    result = enrich_composer_message("@code-expert /review-code myfile.py")
+    assert 'agent profile "Code Expert" (id: code_expert)' in result
+
+
+@pytest.mark.unit
+def test_ambiguous_profile_slug_is_left_fully_inert():
+    _make_skill("review-code", id_="skill_review")
+    _make_profile("Code Expert", id_="profile_a")
+    _make_profile("code   EXPERT!!", id_="profile_b")
+    text = "@code-expert /review-code myfile.py"
+    assert enrich_composer_message(text) == text
 
 
 @pytest.mark.unit

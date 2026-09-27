@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import ChatInput from '../ChatInput.jsx';
@@ -12,6 +12,7 @@ const skillsHook = {
         { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
     ],
     loading: false,
+    refresh: vi.fn(),
 };
 const profilesHook = {
     profiles: [
@@ -19,6 +20,7 @@ const profilesHook = {
         { id: 'retired_profile', name: 'retired', description: 'Old profile.', enabled: false, allow_spawn: true, allow_load_skills: true },
     ],
     loading: false,
+    refresh: vi.fn(),
 };
 
 vi.mock('../../contexts/AppData.jsx', () => ({
@@ -496,6 +498,43 @@ describe('ChatInput', () => {
             expect(textarea.value).toBe('/review-code ');
         });
 
+        it('keeps the arrow-key selection after the keyup that follows it', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+
+            await user.keyboard('{ArrowDown}');
+
+            const options = screen.getAllByRole('option');
+            expect(options[1]).toHaveAttribute('aria-selected', 'true');
+            expect(options[0]).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('does not crash committing Enter when the list narrows before the stale index resets', () => {
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+
+            fireEvent.change(textarea, { target: { value: '/' } });
+            fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+            fireEvent.keyUp(textarea, { key: 'ArrowDown' });
+
+            // Both fire inside one act() so React doesn't get a chance to
+            // flush the reset-to-0 effect between them — the same race a
+            // real narrowing keystroke immediately followed by Enter could
+            // hit with no event-loop turn in between.
+            expect(() => {
+                act(() => {
+                    fireEvent.change(textarea, { target: { value: '/summarize' } });
+                    fireEvent.keyDown(textarea, { key: 'Enter' });
+                });
+            }).not.toThrow();
+
+            expect(textarea.value).toBe('/summarize ');
+        });
+
         it('closes the overlay on Escape without collapsing the composer', async () => {
             const user = userEvent.setup();
             render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
@@ -528,6 +567,73 @@ describe('ChatInput', () => {
                     { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
                 ];
             }
+        });
+
+        it('inserts a slug for a multi-word skill name instead of the raw id', async () => {
+            const user = userEvent.setup();
+            skillsHook.skills = [
+                { id: '4dffecbf8559', name: 'Joke teller', description: 'Tells a joke.' },
+            ];
+            try {
+                render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+                const textarea = screen.getByPlaceholderText('Message Omnideck…');
+                await user.type(textarea, '/Joke');
+                await user.click(await screen.findByText('Joke teller'));
+
+                expect(textarea.value).toBe('/joke-teller ');
+            } finally {
+                skillsHook.skills = [
+                    { id: 'skill_review', name: 'review-code', description: 'Reviews a diff for bugs.' },
+                    { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
+                ];
+            }
+        });
+
+        it('falls back to the raw id when two multi-word skill names collide on the same slug', async () => {
+            const user = userEvent.setup();
+            skillsHook.skills = [
+                { id: '4dffecbf8559', name: 'Joke teller', description: 'Tells a joke.' },
+                { id: 'aaaaaaaaaaaa', name: 'joke   TELLER!!', description: 'Also tells a joke.' },
+            ];
+            try {
+                render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+                const textarea = screen.getByPlaceholderText('Message Omnideck…');
+                await user.type(textarea, '/Joke');
+                await user.click(await screen.findByText('Joke teller'));
+
+                expect(textarea.value).toBe('/4dffecbf8559 ');
+            } finally {
+                skillsHook.skills = [
+                    { id: 'skill_review', name: 'review-code', description: 'Reviews a diff for bugs.' },
+                    { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
+                ];
+            }
+        });
+
+        it('refreshes the skill list once per overlay-open, not on every keystroke', async () => {
+            const user = userEvent.setup();
+            skillsHook.refresh.mockClear();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+
+            await user.type(textarea, '/rev');
+            expect(skillsHook.refresh).toHaveBeenCalledTimes(1);
+
+            await user.keyboard('{Escape}');
+            await user.type(textarea, ' /sum');
+            expect(skillsHook.refresh).toHaveBeenCalledTimes(2);
+        });
+
+        it('refreshes the agent profile list, not the skill list, for an @ trigger', async () => {
+            const user = userEvent.setup();
+            skillsHook.refresh.mockClear();
+            profilesHook.refresh.mockClear();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+
+            await user.type(textarea, '@');
+            expect(profilesHook.refresh).toHaveBeenCalledTimes(1);
+            expect(skillsHook.refresh).not.toHaveBeenCalled();
         });
     });
 });

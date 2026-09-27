@@ -37,12 +37,24 @@ _TOKEN_RE = re.compile(
 )
 
 
+def _slugify(text: str) -> str:
+    """Kebab-case a display name for token matching.
+
+    Must stay behaviorally identical to the frontend's copy of this
+    algorithm (``server/ui/src/utils/slugify.js``) — there's no shared
+    runtime between the two, so any drift here silently breaks resolution
+    for names the composer already slugified client-side.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
 def _resolve_skill(ref: str, skills: list[SkillRecord]) -> SkillRecord | None:
     lowered = ref.lower()
     for skill in skills:
         if skill.name.lower() == lowered or skill.id.lower() == lowered:
             return skill
-    return None
+    slug_matches = [skill for skill in skills if _slugify(skill.name) == lowered]
+    return slug_matches[0] if len(slug_matches) == 1 else None
 
 
 def _resolve_profile(ref: str, profiles: list[AgentProfile]) -> AgentProfile | None:
@@ -50,17 +62,28 @@ def _resolve_profile(ref: str, profiles: list[AgentProfile]) -> AgentProfile | N
     for profile in profiles:
         if profile.name.lower() == lowered or profile.id.lower() == lowered:
             return profile
-    return None
+    slug_matches = [profile for profile in profiles if _slugify(profile.name) == lowered]
+    return slug_matches[0] if len(slug_matches) == 1 else None
 
 
 def _describe_skill(skill: SkillRecord) -> str:
     return f'skill "{skill.name}" (id: {skill.id})'
 
 
+
+# A user who types the bare token with nothing after it hasn't given a task —
+# they want the skill's own output (a joke, a draft, whatever it does),
+# delivered directly. Without this, "load X and use it" reads like a system
+# test spec (it even names a raw skill id), and models asked to "use" a
+# freshly loaded capability with no further direction default to reporting on
+# whether the mechanism worked instead of just doing the thing.
+_NO_ARGS_DIRECTIVE = "use it — respond with what it produces, not a report on whether it loaded"
+
+
 def _render_delegate(profile: AgentProfile, skill: SkillRecord, args: str) -> str:
     agent_desc = f'agent profile "{profile.name}" (id: {profile.id})'
     skill_desc = _describe_skill(skill)
-    task = f'load {skill_desc} and use it to: {args}' if args else f'load {skill_desc} and use it'
+    task = f'load {skill_desc} and use it to: {args}' if args else f'load {skill_desc} and {_NO_ARGS_DIRECTIVE}'
     return (
         f'Spawn a subagent using {agent_desc} to perform this task: {task}. '
         f'Use the spawn_agent tool with profile="{profile.id}".'
@@ -69,7 +92,7 @@ def _render_delegate(profile: AgentProfile, skill: SkillRecord, args: str) -> st
 
 def _render_load(skill: SkillRecord, args: str) -> str:
     skill_desc = _describe_skill(skill)
-    action = f'then use it to: {args}' if args else 'then use it'
+    action = f'then use it to: {args}' if args else f'then {_NO_ARGS_DIRECTIVE}'
     return (
         f'Load {skill_desc} into your own current session using the load_skill tool, '
         f'{action}. Do not spawn a subagent for this — handle it yourself in this '

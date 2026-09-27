@@ -9,6 +9,7 @@ import AttachmentChip from './AttachmentChip.jsx';
 import ComposerAutocomplete from './ComposerAutocomplete.jsx';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 import { detectComposerTrigger, applyComposerToken } from '../hooks/useComposerTrigger.js';
+import { slugify } from '../utils/slugify.js';
 import { useAppData } from '../contexts/AppData.jsx';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
@@ -69,12 +70,35 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         [profilesHook?.profiles],
     );
 
+    // Skills/profiles are otherwise only fetched once, at mount — so without
+    // this, commitComposerToken's slug-collision check (below) could stay
+    // stale for a whole session and miss a same-slug skill/profile created
+    // elsewhere after this tab loaded. Refreshing once per overlay-open
+    // narrows that window to "since the dropdown was last opened" instead.
+    const triggerRefreshedRef = useRef(false);
+    useEffect(() => {
+        if (!composerTrigger) {
+            triggerRefreshedRef.current = false;
+            return;
+        }
+        if (triggerRefreshedRef.current) return;
+        triggerRefreshedRef.current = true;
+        (composerTrigger.kind === 'agent' ? profilesHook : skillsHook)?.refresh?.();
+    }, [composerTrigger, profilesHook, skillsHook]);
+
+    // Depend on the trigger's own fields, not the object itself: the keyup
+    // that follows every keydown (including an arrow key the overlay already
+    // handled) re-derives the trigger via detectComposerTrigger, which always
+    // returns a new object even when the caret hasn't moved. Depending on the
+    // object would recompute this array on that new-but-equal reference,
+    // which resets composerActiveIndex to 0 below — undoing arrow-key
+    // navigation on its own keyup, one keystroke after it moved.
     const composerItems = useMemo(() => {
         if (!composerTrigger) return [];
         const query = composerTrigger.query.toLowerCase();
         const pool = composerTrigger.kind === 'agent' ? enabledProfiles : (skillsHook?.skills || []);
         return pool.filter((item) => item.name.toLowerCase().startsWith(query));
-    }, [composerTrigger, enabledProfiles, skillsHook?.skills]);
+    }, [composerTrigger?.kind, composerTrigger?.query, enabledProfiles, skillsHook?.skills]);
 
     // While the relevant list is still loading, an open trigger has no items
     // yet through no fault of the user's typing — don't let Enter fall
@@ -93,13 +117,22 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         if (!composerTrigger) return;
         const prefix = composerTrigger.kind === 'agent' ? '@' : '/';
         // Names may contain spaces, which the backend's whitespace-delimited
-        // token grammar can't parse — fall back to the stable id then.
-        const token = /\s/.test(item.name) ? item.id : item.name;
+        // token grammar can't parse — slugify then, so the token stays
+        // readable instead of falling back to the item's opaque id. Only
+        // when the slug collides with another item's (rare) do we fall back
+        // to the id, since the backend refuses to resolve an ambiguous slug.
+        let token = item.name;
+        if (/\s/.test(item.name)) {
+            const pool = composerTrigger.kind === 'agent' ? enabledProfiles : (skillsHook?.skills || []);
+            const slug = slugify(item.name);
+            const collides = pool.some((other) => other.id !== item.id && slugify(other.name) === slug);
+            token = slug && !collides ? slug : item.id;
+        }
         const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `${prefix}${token}`);
         pendingCursorRef.current = cursorIndex;
         setMessage(text);
         setComposerTrigger(null);
-    }, [composerTrigger, message]);
+    }, [composerTrigger, message, enabledProfiles, skillsHook?.skills]);
 
     // Restore the caret to right after the inserted token once the
     // controlled value has actually re-rendered into the textarea.
@@ -286,8 +319,14 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     e.preventDefault();
                     e.stopPropagation();
                     // Still loading: swallow this keypress rather than commit
-                    // nothing or fall through to sending the raw text.
-                    if (composerItems.length) commitComposerToken(composerItems[composerActiveIndex]);
+                    // nothing or fall through to sending the raw text. Fall
+                    // back to the first row if the stored index is stale (the
+                    // list can narrow between a query-changing keystroke and
+                    // this one, before the reset-to-0 effect has flushed) —
+                    // an undefined item would otherwise throw in
+                    // commitComposerToken.
+                    const item = composerItems[composerActiveIndex] ?? composerItems[0];
+                    if (item) commitComposerToken(item);
                     return;
                 }
                 if (e.key === 'Escape') {
