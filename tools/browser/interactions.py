@@ -95,9 +95,9 @@ async def click(ref: str, *, tab: str) -> str:
         return await format_action_result(result, tool_name="click", resolution=resolution)
     except BrowserToolError as exc:
         return str(exc)
-    except PlaywrightError:  # pragma: no cover - final safety net
-        logger.exception("Failed to render document after click for ref %s", clean_ref)
-        return "[click] Failed to complete click operation."
+    except PlaywrightError as exc:
+        logger.exception("Failed to complete click for ref %s", clean_ref)
+        return f"[click] Failed to complete click operation: {exc}"
 
 
 @emit_screenshot_after
@@ -153,10 +153,10 @@ async def press_and_hold(
         return await format_action_result(result, tool_name="press_and_hold", resolution=resolution)
     except BrowserToolError:
         raise
-    except PlaywrightError as exc:  # pragma: no cover - final safety net
+    except PlaywrightError as exc:
         logger.exception("Failed to complete press_and_hold for ref %s", clean_ref)
         raise BrowserToolError(
-            "Failed to complete press_and_hold operation",
+            f"Failed to complete press_and_hold operation: {exc}",
             tool="press_and_hold",
             details=details,
         ) from exc

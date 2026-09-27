@@ -17,7 +17,7 @@ from .._helpers import find_ref
 
 
 async def test_browse_page_lists_every_form_control(open_tab, servers):
-    tab = await open_tab(f"{servers.primary}/signup-form/form.html")
+    tab = await open_tab(f"{servers.primary}/forms/signup.html")
     view = await browse_page(tab=tab)
 
     assert find_ref(view, role="textbox", name="Full name") is not None
@@ -30,7 +30,7 @@ async def test_browse_page_lists_every_form_control(open_tab, servers):
 
 
 async def test_complete_and_submit_signup(open_tab, servers):
-    tab = await open_tab(f"{servers.primary}/signup-form/form.html")
+    tab = await open_tab(f"{servers.primary}/forms/signup.html")
     view = await browse_page(tab=tab)
 
     # Refs stay stable while the form structure is unchanged, so resolve them

@@ -118,7 +118,7 @@ describe('DesktopViewRuntime', () => {
         expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
-    it('always prefers the left tab group on mobile', () => {
+    it('prefers the conversation\'s tab group on mobile, not always left', () => {
         useIsMobileViewport.mockReturnValue(true);
         const layoutCommands = commandSpies();
         const wrapper = ({ children }) => (
@@ -134,6 +134,28 @@ describe('DesktopViewRuntime', () => {
         const { result } = renderHook(useDesktopViewCommands, { wrapper });
 
         expect(result.current.preferredTabGroupId()).toBe('left');
+    });
+
+    it('follows the conversation to the right tab group on mobile', () => {
+        // The desktop-only "move"/"dock" actions can leave the conversation
+        // docked right, and that placement persists across sessions. A
+        // companion opened later on mobile must join it there, not strand
+        // it behind a companion forced into left.
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: model({ conversationTabGroupId: 'right' }),
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useDesktopViewCommands, { wrapper });
+
+        expect(result.current.preferredTabGroupId()).toBe('right');
     });
 
     it('prefers floating focus and falls back to the focused tab group', () => {
@@ -157,6 +179,39 @@ describe('DesktopViewRuntime', () => {
         rerender();
 
         expect(result.current).toBe(ARTIFACT.id);
+    });
+
+    it('reports the visible left pane\'s view as focused on mobile, not a hidden right pane', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        const layoutCommands = commandSpies();
+        // A restored two-pane layout can leave focus on the right group even
+        // though mobile only renders the left one.
+        const twoPaneMobileModel = {
+            openViews: [CONVERSATION, ARTIFACT],
+            openViewsById: {
+                [CONVERSATION.id]: CONVERSATION,
+                [ARTIFACT.id]: ARTIFACT,
+            },
+            tabGroups: {
+                left: { viewIds: [CONVERSATION.id], activeViewId: CONVERSATION.id },
+                right: { viewIds: [ARTIFACT.id], activeViewId: ARTIFACT.id },
+            },
+            focusedFloatingViewId: null,
+            focusedTabGroupId: 'right',
+        };
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider
+                desktopLayout={{
+                    model: twoPaneMobileModel,
+                    commands: layoutCommands,
+                }}
+            >
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result } = renderHook(useFocusedViewId, { wrapper });
+
+        expect(result.current).toBe(CONVERSATION.id);
     });
 
     it('does not wake catalog consumers when only focus or bounds change', () => {

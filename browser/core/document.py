@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +11,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import Locator, Page
 
+from browser.core._content import CONTENT_HTML_JS
 from browser.core.exceptions import BrowserToolError
 from browser.core.input.scroll import ScrollOutcome, human_scroll
 
@@ -68,8 +68,8 @@ class Document:
         return await self._frame.evaluate(expression, arg)
 
     async def content(self) -> str:
-        """Return this document's serialized HTML."""
-        return await self._frame.content()
+        """Return this document's HTML, including shadow content and assigned slots."""
+        return await self._frame.evaluate(CONTENT_HTML_JS)
 
     async def resolve_ref(self, ref: str, *, tool_name: str) -> ResolvedElement:
         """Resolve one agent-visible numeric ref inside this document.
@@ -237,58 +237,12 @@ class Document:
                 details={"ref": element.ref},
             ) from exc
 
-        handle = await locator.element_handle(timeout=5000)
-        await self.click(element)
-        await asyncio.sleep(random.randint(100, 300) / 1000)
-
-        keyboard_succeeded = await self._select_option_with_keyboard(
-            handle,
-            target_index,
-        )
-        if not keyboard_succeeded:
-            logger.debug("Falling back to JS selectedIndex for '%s'", value)
-            await self._select_option_with_javascript(handle, target_index)
-            await self.press_keys(["Escape"])
+        # Playwright selects and dispatches input/change as one operation, so
+        # navigation cannot strand post-selection verification on an old handle.
+        await locator.select_option(index=target_index, timeout=5000)
 
         if wait_after_select_ms:
             await asyncio.sleep(wait_after_select_ms / 1000)
-
-    async def _select_option_with_keyboard(
-        self,
-        handle: Any,
-        target_index: int,
-    ) -> bool:
-        """Try trusted keyboard selection before falling back to JavaScript."""
-        max_steps = 30
-        if target_index > max_steps:
-            return False
-        try:
-            await self.press_keys(["Home"])
-            await asyncio.sleep(random.randint(30, 80) / 1000)
-            for _ in range(target_index):
-                await self.press_keys(["ArrowDown"])
-                await asyncio.sleep(random.randint(20, 60) / 1000)
-            await self.press_keys(["Enter"])
-            await asyncio.sleep(random.randint(50, 150) / 1000)
-            actual_index = await handle.evaluate("el => el.selectedIndex")
-            return bool(actual_index == target_index)
-        except Exception as exc:  # noqa: BLE001 - JS is the intended fallback
-            logger.debug("Keyboard selection failed: %s", exc)
-            return False
-
-    @staticmethod
-    async def _select_option_with_javascript(handle: Any, target_index: int) -> None:
-        """Set selectedIndex and dispatch the native form events."""
-        await handle.evaluate(
-            """(el, idx) => {
-                el.selectedIndex = idx;
-                try {
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (_) {}
-            }""",
-            target_index,
-        )
 
     async def screenshot(self, element: ResolvedElement) -> bytes:
         """Capture the element represented by one agent ref."""

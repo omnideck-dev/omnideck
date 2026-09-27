@@ -51,6 +51,9 @@ export default function useDesktopLayout({
     const moveView = useCallback((viewId, tabGroupId) => {
         dispatch({ type: 'MOVE_VIEW', viewId, tabGroupId });
     }, []);
+    const mergeTabGroup = useCallback((fromTabGroupId, toTabGroupId) => {
+        dispatch({ type: 'MERGE_TAB_GROUP', fromTabGroupId, toTabGroupId });
+    }, []);
     const floatView = useCallback((viewId, bounds = null) => {
         dispatch({ type: 'FLOAT_VIEW', viewId, bounds });
     }, []);
@@ -137,6 +140,7 @@ export default function useDesktopLayout({
         updateViews,
         syncViews,
         moveView,
+        mergeTabGroup,
         floatView,
         focusFloatingView,
         updateFloatingBounds,
@@ -152,6 +156,7 @@ export default function useDesktopLayout({
         enterFullscreen,
         floatView,
         focusFloatingView,
+        mergeTabGroup,
         moveView,
         openView,
         syncViews,

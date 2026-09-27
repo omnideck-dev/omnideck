@@ -93,6 +93,16 @@ _DOM_WALK_JS = """
   const vh = window.innerHeight;
   const vw = window.innerWidth;
 
+  // Form controls named "children" or "childNodes" can shadow DOM properties.
+  // Call the native getters directly, including the ShadowRoot/fragment case.
+  const elementChildren = Object.getOwnPropertyDescriptor(Element.prototype, 'children').get;
+  const fragmentChildren = Object.getOwnPropertyDescriptor(DocumentFragment.prototype, 'children').get;
+  const nodeChildren = Object.getOwnPropertyDescriptor(Node.prototype, 'childNodes').get;
+  function childrenOf(node) {
+    return (node instanceof Element ? elementChildren : fragmentChildren).call(node);
+  }
+  function childNodesOf(node) { return nodeChildren.call(node); }
+
 __MODAL_HELPERS__
 
   const activeModal = omnideckActiveModal();
@@ -185,7 +195,7 @@ __MODAL_HELPERS__
       const wrappingLabel = el.closest('label');
       if (wrappingLabel) {
         let labelText = '';
-        for (const node of wrappingLabel.childNodes) {
+        for (const node of childNodesOf(wrappingLabel)) {
           if (node.nodeType === 3) labelText += node.textContent;
           else if (node !== el && node.nodeType === 1 && !['INPUT','TEXTAREA','SELECT'].includes(node.tagName))
             labelText += (node.innerText || node.textContent || '');
@@ -204,6 +214,25 @@ __MODAL_HELPERS__
     if (tag === 'IMG') return (el.getAttribute('alt') || '').trim();
     const t = el.innerText;
     if (t && t.trim()) return t.trim();
+    // Image-only controls have no innerText. Use their non-decorative image
+    // labels before tooltip fallbacks, excluding hidden image subtrees.
+    const visibleImages = [];
+    for (const img of el.querySelectorAll('img')) {
+      const visibility = window.getComputedStyle(img).visibility;
+      if (visibility === 'hidden' || visibility === 'collapse') continue;
+      let hidden = false;
+      for (let ancestor = img; ancestor && ancestor !== el; ancestor = ancestor.parentElement) {
+        if (ancestor.getAttribute('aria-hidden') === 'true'
+            || ancestor.hasAttribute('inert')
+            || window.getComputedStyle(ancestor).display === 'none') {
+          hidden = true;
+          break;
+        }
+      }
+      if (!hidden) visibleImages.push(img);
+    }
+    const imageNames = visibleImages.map(img => (img.getAttribute('alt') || '').trim()).filter(Boolean);
+    if (imageNames.length) return imageNames.join(' ');
     // Fall back to the title attribute — a valid low-priority accessible-name
     // source (the tooltip), used only when nothing else names the element. This
     // is what names icon-only controls with no text/aria-label, e.g.
@@ -214,6 +243,22 @@ __MODAL_HELPERS__
     const svgTitle = el.querySelector('svg title');
     if (svgTitle && svgTitle.textContent && svgTitle.textContent.trim())
       return svgTitle.textContent.trim();
+    // With no authored label, use literal image filenames as a last resort.
+    // URL parsing removes directories, query strings, and fragments. Data/blob
+    // URLs do not provide filenames; never expose their payloads as names.
+    const imageFiles = [];
+    for (const img of visibleImages) {
+      const source = img.currentSrc || img.getAttribute('src');
+      if (!source) continue;
+      try {
+        const url = new URL(source, document.baseURI);
+        if (!['http:', 'https:', 'file:'].includes(url.protocol)) continue;
+        const filename = url.pathname.split('/').pop();
+        if (filename) imageFiles.push(filename);
+      } catch { /* Invalid image URLs cannot provide a filename. */ }
+    }
+    if (imageFiles.length)
+      return 'Unnamed image ' + (getRole(el) || 'control') + ' (file: ' + imageFiles.join(', ') + ')';
     return '';
   }
 
@@ -225,9 +270,9 @@ __MODAL_HELPERS__
   ]);
   function isTextContainer(el) {
     if (el.shadowRoot) return false;
-    if (el.children.length === 0) return false;
+    if (childrenOf(el).length === 0) return false;
     if (hasInteractive(el)) return false;
-    for (const child of el.children) {
+    for (const child of childrenOf(el)) {
       if (!INLINE_TAGS.has(child.tagName)) return false;
     }
     return true;
@@ -357,9 +402,11 @@ __MODAL_HELPERS__
 
   // Walk the child nodes of a container (element or shadow root).
   function walkChildren(container) {
-    const hasMixed = container.childNodes.length > container.children.length;
+    const childNodes = childNodesOf(container);
+    const children = childrenOf(container);
+    const hasMixed = childNodes.length > children.length;
     if (hasMixed) {
-      for (const child of container.childNodes) {
+      for (const child of childNodes) {
         if (child.nodeType === 3) {
           const text = child.textContent.trim();
           if (text.length > 1) {
@@ -370,7 +417,7 @@ __MODAL_HELPERS__
         }
       }
     } else {
-      for (const child of container.children) {
+      for (const child of children) {
         walkSlotOrElement(child);
       }
     }
@@ -407,7 +454,7 @@ __MODAL_HELPERS__
     const skip = shouldSkip(el);
     if (skip === 'skip-tree') return;
     if (skip === 'skip-self') {
-      for (const child of el.children) walk(child, false);
+      for (const child of childrenOf(el)) walk(child, false);
       return;
     }
 
@@ -418,7 +465,7 @@ __MODAL_HELPERS__
       // rather than pruning the subtree. Off-screen descendants are likewise not
       // emitted, so the visible result is unchanged; only content that was being
       // lost behind a mis-measured wrapper now surfaces.
-      for (const child of el.children) walk(child, false);
+      for (const child of childrenOf(el)) walk(child, false);
       return;
     }
 
@@ -533,7 +580,7 @@ __MODAL_HELPERS__
     }
 
     // Leaf text node
-    if (el.children.length === 0 && !el.shadowRoot) {
+    if (childrenOf(el).length === 0 && !el.shadowRoot) {
       const text = (el.innerText || '').trim();
       if (text && text.length > 1) {
         emit({ type: 'text', depth: depth, text: clip(text)});

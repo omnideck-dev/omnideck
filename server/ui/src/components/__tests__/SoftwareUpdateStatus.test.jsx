@@ -6,7 +6,7 @@ import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 describe('SoftwareUpdateStatus', () => {
     it('links an available version to its app release notes', async () => {
         const host = {
-            currentUpdate: vi.fn().mockResolvedValue({ version: '0.2.1', deferred: false }),
+            currentUpdate: vi.fn().mockResolvedValue({ version: '0.5.1', deferred: false }),
             checkForUpdate: vi.fn(),
             installUpdate: vi.fn(),
         };
@@ -22,7 +22,7 @@ describe('SoftwareUpdateStatus', () => {
 
         expect(screen.getByRole('link', { name: /What’s new/ })).toHaveAttribute(
             'href',
-            'https://github.com/omnideck-dev/omnideck/blob/main/docs/releases/app-v0.2.1.md',
+            'https://github.com/omnideck-dev/omnideck/releases/tag/app-v0.5.1',
         );
         expect(screen.getByRole('button', { name: 'Update now' })).toBeInTheDocument();
     });
