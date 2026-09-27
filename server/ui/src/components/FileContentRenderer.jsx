@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PreCodeBlock, InlineCode } from './CodeBlock.jsx';
 import MarkdownLink from './MarkdownLink.jsx';
+import useIframeScrollPreservation from '../hooks/useIframeScrollPreservation.js';
 
 // Code-split the editor: CodeMirror is heavy and only needed once a text source
 // is actually opened, so keep it out of the initial bundle.
@@ -29,7 +30,10 @@ export default function FileContentRenderer({
     imageSrc,
     styles,
 }) {
-    const { filename, content_type, content } = item;
+    const { filename, content_type, content, path } = item;
+
+    const htmlIframeRef = useRef(null);
+    const handleHtmlLoad = useIframeScrollPreservation(htmlIframeRef, path || content);
 
     return (
         <>
@@ -72,10 +76,12 @@ export default function FileContentRenderer({
             )}
             {!isPdf && viewMode === 'preview' && isHtml && iframeSrc && (
                 <iframe
+                    ref={htmlIframeRef}
                     className={styles.htmlFrame}
                     src={iframeSrc}
                     title={filename}
                     sandbox="allow-scripts allow-same-origin"
+                    onLoad={handleHtmlLoad}
                 />
             )}
             {!isPdf && viewMode === 'preview' && isHtml && !iframeSrc && (
