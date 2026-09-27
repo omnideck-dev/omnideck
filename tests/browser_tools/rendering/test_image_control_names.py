@@ -40,3 +40,19 @@ async def test_image_names_preserve_explicit_and_text_labels(open_tab, servers):
         assert find_ref(view, role="link", name=name) is not None
     assert "Ignored" not in view
     assert "Lower priority tooltip" not in view
+
+
+@pytest.mark.parametrize(
+    ("role", "filename", "result"),
+    [("link", "contact-us.svg", "Filename link activated"), ("button", "a81f09cd.svg", "Filename button activated")],
+)
+async def test_unnamed_image_controls_use_literal_filenames(open_tab, servers, role, filename, result):
+    tab = await open_tab(f"{servers.primary}/accessible-names/image-controls.html")
+    view = await browse_page(tab=tab)
+
+    ref = find_ref(view, role=role, name=filename)
+    assert ref is not None
+    assert f"[{ref}] [{role}] {filename}" in view.splitlines()
+    assert "?size=large" not in view
+    assert "#icon" not in view
+    assert result in await click(ref, tab=tab)

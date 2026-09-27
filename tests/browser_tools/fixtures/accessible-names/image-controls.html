@@ -17,10 +17,12 @@
   <p><a href="#referenced" aria-labelledby="link-label"><img alt="Ignored referenced image"></a></p>
   <p><a href="#text">Text destination<img alt="Ignored text image"></a></p>
   <p><a href="#tooltip" title="Lower priority tooltip"><img alt="Image before tooltip"></a></p>
-  <p><a href="#decorative" title="Fallback title"><img alt=""><img hidden alt="Hidden title decoy"></a></p>
+  <p><a href="#decorative" title="Fallback title"><img alt="" src="images/contact-us.svg"><img hidden alt="Hidden title decoy"></a></p>
+  <p><a href="#filename" data-result="Filename link activated"><img src="images/contact-us.svg?size=large#icon"></a></p>
+  <p><button type="button" data-result="Filename button activated"><img alt="" src="images/a81f09cd.svg"></button></p>
   <p id="result">No action yet</p>
   <script>
-    for (const img of document.querySelectorAll('img')) {
+    for (const img of document.querySelectorAll('img:not([src])')) {
       img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24"><rect width="48" height="24" fill="blue"/></svg>');
     }
     for (const control of document.querySelectorAll('[data-result]')) {

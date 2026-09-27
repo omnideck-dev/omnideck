@@ -216,10 +216,8 @@ __MODAL_HELPERS__
     if (t && t.trim()) return t.trim();
     // Image-only controls have no innerText. Use their non-decorative image
     // labels before tooltip fallbacks, excluding hidden image subtrees.
-    const imageNames = [];
-    for (const img of el.querySelectorAll('img[alt]')) {
-      const alt = (img.getAttribute('alt') || '').trim();
-      if (!alt) continue;
+    const visibleImages = [];
+    for (const img of el.querySelectorAll('img')) {
       const visibility = window.getComputedStyle(img).visibility;
       if (visibility === 'hidden' || visibility === 'collapse') continue;
       let hidden = false;
@@ -231,8 +229,9 @@ __MODAL_HELPERS__
           break;
         }
       }
-      if (!hidden) imageNames.push(alt);
+      if (!hidden) visibleImages.push(img);
     }
+    const imageNames = visibleImages.map(img => (img.getAttribute('alt') || '').trim()).filter(Boolean);
     if (imageNames.length) return imageNames.join(' ');
     // Fall back to the title attribute — a valid low-priority accessible-name
     // source (the tooltip), used only when nothing else names the element. This
@@ -244,6 +243,21 @@ __MODAL_HELPERS__
     const svgTitle = el.querySelector('svg title');
     if (svgTitle && svgTitle.textContent && svgTitle.textContent.trim())
       return svgTitle.textContent.trim();
+    // With no authored label, use literal image filenames as a last resort.
+    // URL parsing removes directories, query strings, and fragments. Data/blob
+    // URLs do not provide filenames; never expose their payloads as names.
+    const imageFiles = [];
+    for (const img of visibleImages) {
+      const source = img.currentSrc || img.getAttribute('src');
+      if (!source) continue;
+      try {
+        const url = new URL(source, document.baseURI);
+        if (!['http:', 'https:', 'file:'].includes(url.protocol)) continue;
+        const filename = url.pathname.split('/').pop();
+        if (filename) imageFiles.push(filename);
+      } catch { /* Invalid image URLs cannot provide a filename. */ }
+    }
+    if (imageFiles.length) return imageFiles.join(' ');
     return '';
   }
 
