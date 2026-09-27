@@ -35,28 +35,6 @@
     min-width: 140px;
 }
 
-.bulkButton {
-    height: 28px;
-    padding: 0 var(--sp-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--text-secondary);
-    font: 11px var(--font-body);
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.bulkButton:hover:not(:disabled) {
-    color: var(--accent);
-    border-color: var(--accent);
-}
-
-.bulkButton:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
 .total {
     color: var(--text-tertiary);
     font-size: 11px;
@@ -71,8 +49,52 @@
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
+/* Inside an edit dialog, the modal already supplies the enclosing surface. */
+.pickerEmbedded .toolbar {
+    padding: 0 0 var(--sp-3);
+    border: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 0;
+}
+
+.pickerEmbedded .groups {
+    border: 0;
+    border-radius: 0;
+}
+
 .group + .group {
     border-top: 1px solid var(--border);
+}
+
+.groupHeading {
+    display: flex;
+    align-items: center;
+}
+
+.groupHeader.groupSelection {
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.groupToggle {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: var(--sp-2);
+    align-self: stretch;
+    padding: 0 var(--sp-3) 0 0;
+    color: var(--text-secondary);
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.groupToggle .groupTitle {
+    font-size: var(--font-size-body);
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .groupHeader {

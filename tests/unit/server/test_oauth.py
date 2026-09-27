@@ -47,7 +47,6 @@ def _start(manager: OAuthIntegrationManager, flow: _BlockingFlow):
             client_secret="client-secret",
             scopes=["scope-a"],
             operation_grants_raw=[],
-            permissions_raw={},
             reconnect_id=None,
             redirect_uri="http://127.0.0.1/callback",
         )

@@ -4,15 +4,16 @@ import pytest
 
 from integrations.operations import OPERATIONS_BY_GROUP
 from tools.integrations._tool_resolution import (
+    _BUILDERS,
     _ids_granting,
     _tools_for_category,
     integration_tools_by_category,
 )
-from tools.integrations.types import RegisteredIntegration
+from integrations.connection_cache import IntegrationConnection
 
 
-def _integration(*operations: str, state: str = "running") -> list[RegisteredIntegration]:
-    return [RegisteredIntegration(
+def _integration(*operations: str, state: str = "running") -> list[IntegrationConnection]:
+    return [IntegrationConnection(
         id="acct-1",
         slug="acct",
         operation_grants=frozenset(operations),
@@ -22,6 +23,17 @@ def _integration(*operations: str, state: str = "running") -> list[RegisteredInt
 
 def _names(tools) -> set[str]:
     return {tool.__name__ for tool in tools}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("operation_id", sorted(_BUILDERS))
+def test_agent_tool_descriptions_use_integration_id_consistently(operation_id: str) -> None:
+    tool = _BUILDERS[operation_id](["acct-1"])
+    doc = tool.__doc__ or ""
+    assert "Valid integration IDs: 'acct-1'." in doc
+    parameter_doc = next(line for line in doc.splitlines() if line.strip().startswith("integration_id:"))
+    assert "integration" in parameter_doc.split(":", 1)[1]
+    assert "connection" not in doc.lower()
 
 
 @pytest.mark.unit
@@ -59,8 +71,8 @@ def test_non_running_integration_is_ignored() -> None:
 @pytest.mark.unit
 def test_same_operation_can_be_granted_per_instance() -> None:
     records = [
-        RegisteredIntegration(id="allowed", slug="gmail", operation_grants=frozenset({"email.messages.send"})),
-        RegisteredIntegration(id="denied", slug="gmail", operation_grants=frozenset()),
+        IntegrationConnection(id="allowed", slug="gmail", operation_grants=frozenset({"email.messages.send"})),
+        IntegrationConnection(id="denied", slug="gmail", operation_grants=frozenset()),
     ]
     assert _ids_granting("email.messages.send", records) == frozenset({"allowed"})
 
@@ -71,12 +83,8 @@ def test_http_is_one_indivisible_operation() -> None:
 
 
 @pytest.mark.unit
-async def test_by_category_snapshots_registry_and_reports_state(monkeypatch) -> None:
-    async def _registry():
-        return {"acct-1": _integration("email.messages.search")[0]}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _registry)
-    by_category = await integration_tools_by_category()
+def test_by_category_uses_snapshot_and_reports_state() -> None:
+    by_category = integration_tools_by_category(tuple(_integration("email.messages.search")))
     assert by_category["email"].available is True
     assert _names(by_category["email"].tools) == {"search_email"}
     assert by_category["calendar"].available is False

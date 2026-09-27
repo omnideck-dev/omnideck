@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import Button from '../../../components/primitives/Button.jsx';
+import IconButton from '../../../components/primitives/IconButton.jsx';
 import Callout from '../../../components/primitives/Callout.jsx';
 import Modal from '../../../components/primitives/Modal.jsx';
 import {
     cancelIntegrationOAuth,
-    listIntegrations,
+    listIntegrationConnections,
     removeIntegration,
     updateIntegration,
 } from '../api/integrationsApi.js';
@@ -46,11 +47,11 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
         setStep('tools');
     }, []);
 
-    const connectedById = useCallback(async (integrationId) => {
+    const connectedById = useCallback(async (connectionId) => {
         setConnectionBusy(true);
         try {
-            const integrations = await listIntegrations();
-            const record = integrations.find(item => item.id === integrationId);
+            const connections = await listIntegrationConnections();
+            const record = connections.find(item => item.id === connectionId);
             if (!record) throw new Error('The connected integration was not returned by the service.');
             connected(record);
         } catch (requestError) {
@@ -92,12 +93,12 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
         setCancelling(true);
         setError(null);
         try {
-            let integrationId = connection?.id || null;
+            let connectionId = connection?.id || null;
             if (pendingOAuthState) {
                 const cancelled = await cancelIntegrationOAuth(pendingOAuthState);
-                integrationId ||= cancelled.integration_id || null;
+                connectionId ||= cancelled.integration_id || null;
             }
-            if (integrationId) await removeIntegration(integrationId);
+            if (connectionId) await removeIntegration(connectionId);
             onExit();
         } catch (requestError) {
             setError({
@@ -115,20 +116,18 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
             onClose={dismissalBlocked ? undefined : cancel}
             width={760}
             labelledBy="add-integration-title"
-            className={styles.modal}
+            layout="contained"
             testId="integration-setup-flow"
         >
             <header className={styles.modalHeader}>
                 <div id="add-integration-title" className={styles.modalTitle}>Add integration</div>
-                <button
-                    type="button"
-                    className={styles.closeButton}
+                <IconButton
                     onClick={cancel}
                     disabled={dismissalBlocked}
                     aria-label="Close"
                 >
                     <i className="bi bi-x-lg" />
-                </button>
+                </IconButton>
             </header>
 
             <SetupProgress stepIndex={stepIndex} />
@@ -259,7 +258,7 @@ function ChooseIntegrationStep({ catalog, selectedId, onSelect, onCancel, onCont
                 </div>
             </div>
             <div className={styles.stepFooter}>
-                <Button onClick={onCancel}>Cancel</Button>
+                <Button variant="ghost" onClick={onCancel}>Cancel</Button>
                 <Button
                     variant="filled"
                     onClick={onContinue}
@@ -290,10 +289,12 @@ function ToolsStep({
                     onChange={onChange}
                     disabled={cancelling}
                     scrollMode="contained"
+                    embedded
+                    collapsible
                 />
             </div>
             <div className={styles.stepFooter}>
-                <Button onClick={onCancel} disabled={cancelling} data-testid="wizard-exit">
+                <Button variant="ghost" onClick={onCancel} disabled={cancelling} data-testid="wizard-exit">
                     {cancelling ? 'Cancelling…' : 'Cancel'}
                 </Button>
                 <Button
@@ -337,7 +338,7 @@ function ReviewStep({
                     <section className={`${styles.reviewCard} ${styles.reviewTools}`}>
                         <div className={styles.reviewTitleRow}>
                             <h2>{selectedOperations.length} {selectedOperations.length === 1 ? 'tool' : 'tools'} selected</h2>
-                            <button type="button" onClick={onBack} disabled={saving || cancelling}>Edit</button>
+                            <Button variant="ghost" onClick={onBack} disabled={saving || cancelling}>Edit</Button>
                         </div>
                         {selectedOperations.length > 0 ? (
                             <ul className={styles.reviewOperationList}>
@@ -350,11 +351,11 @@ function ReviewStep({
                 </div>
             </div>
             <div className={styles.stepFooter}>
-                <Button onClick={onCancel} disabled={saving || cancelling}>
+                <Button variant="ghost" onClick={onCancel} disabled={saving || cancelling}>
                     {cancelling ? 'Cancelling…' : 'Cancel'}
                 </Button>
                 <div className={styles.footerActions}>
-                    <Button onClick={onBack} disabled={saving || cancelling}>
+                    <Button variant="ghost" onClick={onBack} disabled={saving || cancelling}>
                         <i className="bi bi-arrow-left" /> Back
                     </Button>
                     <Button

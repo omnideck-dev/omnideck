@@ -1,21 +1,69 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
-from integrations import broker_client, supervisor_client
-from integrations.service import AGENT_CONTEXT, IntegrationService, InvocationContext
+from brokering import broker_client, supervisor_client
+from integrations.service import IntegrationService
+
+
+@pytest.fixture(params=["list_connections", "invoke"])
+def service_call(request, monkeypatch):
+    """Exercise the same failure contract at both transport boundaries."""
+    method = request.param
+    client = supervisor_client if method == "list_connections" else broker_client
+
+    async def run(error):
+        async def fail(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(client, "call", fail)
+        service = IntegrationService()
+        if method == "list_connections":
+            return await service.list_connections(app_sock_path="/tmp/app.sock")
+        return await service.invoke(
+            "gmail_work", "email.messages.search", {},
+            app_sock_path="/tmp/app.sock",
+        )
+
+    return run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [
+    FileNotFoundError, ConnectionRefusedError, ConnectionResetError, BrokenPipeError, TimeoutError, OSError,
+])
+async def test_service_wraps_transport_errors_with_original_cause(service_call, error_type) -> None:
+    error = error_type("transport failed")
+    with pytest.raises(broker_client.IntegrationError, match="transport failed") as caught:
+        await service_call(error)
+    assert caught.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [
+    asyncio.CancelledError,
+    broker_client.IntegrationNotConnected,
+    broker_client.IntegrationAuthFailed,
+    broker_client.IntegrationPermissionDenied,
+])
+async def test_service_preserves_cancellation_and_domain_errors(service_call, error_type) -> None:
+    error = error_type("unchanged")
+    with pytest.raises(error_type) as caught:
+        await service_call(error)
+    assert caught.value is error
 
 
 @pytest.mark.asyncio
 async def test_invoke_passes_canonical_operation_to_broker_unchanged(monkeypatch) -> None:
     captured = {}
 
-    async def _call(instance_id, verb, arguments, *, app_sock_path):
+    async def _call(connection_id, verb, arguments, *, app_sock_path):
         captured.update(
             {
-                "instance_id": instance_id,
+                "connection_id": connection_id,
                 "verb": verb,
                 "arguments": arguments,
                 "app_sock_path": app_sock_path,
@@ -25,7 +73,6 @@ async def test_invoke_passes_canonical_operation_to_broker_unchanged(monkeypatch
 
     monkeypatch.setattr(broker_client, "call", _call)
     result = await IntegrationService().invoke(
-        AGENT_CONTEXT,
         "gmail_work",
         "email.messages.search",
         {"folder": "INBOX", "query": "invoice"},
@@ -33,7 +80,7 @@ async def test_invoke_passes_canonical_operation_to_broker_unchanged(monkeypatch
     )
     assert result == {"headers": []}
     assert captured["verb"] == "email.messages.search"
-    assert captured["instance_id"] == "gmail_work"
+    assert captured["connection_id"] == "gmail_work"
 
 
 @pytest.mark.asyncio
@@ -48,7 +95,6 @@ async def test_unknown_operation_is_rejected_before_transport(monkeypatch, opera
     monkeypatch.setattr(broker_client, "call", _call)
     with pytest.raises(broker_client.IntegrationError, match="unknown integration operation"):
         await IntegrationService().invoke(
-            AGENT_CONTEXT,
             "gmail_work",
             operation_id,
             {},
@@ -58,51 +104,61 @@ async def test_unknown_operation_is_rejected_before_transport(monkeypatch, opera
 
 
 @pytest.mark.asyncio
-async def test_custom_app_context_denies_until_app_specific_grants_exist() -> None:
-    with pytest.raises(broker_client.IntegrationPermissionDenied):
-        await IntegrationService().invoke(
-            InvocationContext(consumer="custom_app", consumer_id="crm"),
-            "gmail_work",
-            "email.messages.search",
-            {},
-            app_sock_path="/tmp/app.sock",
-        )
+async def test_list_connections_requests_only_integrations(monkeypatch) -> None:
+    connection = {
+        "id": "gmail_work",
+        "kind": "integration",
+        "state": "auth_failed",
+        "operation_grants": ["email.messages.search"],
+        "available_operation_ids": ["email.messages.search", "email.messages.send"],
+        "operations": [
+            {"id": "email.messages.search", "title": "Search email"},
+            {"id": "email.messages.send", "title": "Send email"},
+        ],
+    }
 
-
-@pytest.mark.asyncio
-async def test_list_operations_returns_structured_grant_state(monkeypatch) -> None:
-    async def _call(verb, args, *, app_sock_path):
-        assert verb == "resolve"
-        return {
-            "kind": "integration",
-            "operation_grants": ["email.messages.search"],
-            "operations": [
-                {"id": "email.messages.search", "title": "Search email"},
-                {"id": "email.messages.send", "title": "Send email"},
-            ],
-        }
-
-    monkeypatch.setattr(supervisor_client, "call", _call)
-    operations = await IntegrationService().list_operations(
-        AGENT_CONTEXT,
-        "gmail_work",
-        app_sock_path="/tmp/app.sock",
-    )
-    assert operations == [
-        {"id": "email.messages.search", "title": "Search email", "granted": True},
-        {"id": "email.messages.send", "title": "Send email", "granted": False},
-    ]
-
-
-@pytest.mark.asyncio
-async def test_list_instances_requests_only_integrations(monkeypatch) -> None:
     async def _call(verb, args, *, app_sock_path):
         assert verb == "list"
         assert args == {"kind": "integration"}
-        return {"connections": [{"id": "gmail_work", "kind": "integration"}]}
+        return {"connections": [connection]}
 
     monkeypatch.setattr(supervisor_client, "call", _call)
-    assert await IntegrationService().list_instances(
-        AGENT_CONTEXT,
+    assert await IntegrationService().list_connections(
         app_sock_path="/tmp/app.sock",
-    ) == [{"id": "gmail_work", "kind": "integration"}]
+    ) == [connection]
+
+
+@pytest.mark.asyncio
+async def test_list_connections_returns_a_snapshot(monkeypatch) -> None:
+    connections = [{"id": "gmail_work", "kind": "integration"}]
+
+    async def _call(*_args, **_kwargs):
+        return {"connections": connections}
+
+    monkeypatch.setattr(supervisor_client, "call", _call)
+    result = await IntegrationService().list_connections(app_sock_path="/tmp/app.sock")
+    assert result == connections
+    assert result is not connections
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", [
+    None, [], {}, {"integrations": []}, {"connections": None},
+    {"connections": {}}, {"connections": "bad"}, {"connections": [None]},
+])
+async def test_list_connections_rejects_malformed_supervisor_data(monkeypatch, response) -> None:
+    async def _call(*_args, **_kwargs):
+        return response
+
+    monkeypatch.setattr(supervisor_client, "call", _call)
+    with pytest.raises(broker_client.IntegrationError, match="integration list response"):
+        await IntegrationService().list_connections(app_sock_path="/tmp/app.sock")
+
+
+@pytest.mark.asyncio
+async def test_empty_connections_do_not_fall_back_to_legacy_data(monkeypatch) -> None:
+    async def _call(*_args, **_kwargs):
+        return {"connections": [], "integrations": [{"id": "stale"}]}
+
+    monkeypatch.setattr(supervisor_client, "call", _call)
+    assert await IntegrationService().list_connections(app_sock_path="/tmp/app.sock") == []

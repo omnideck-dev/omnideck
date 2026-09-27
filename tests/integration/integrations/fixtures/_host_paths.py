@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from integrations.drivers import HostPathBinding
-from integrations.supervisor.types import HostPath
+from brokering.drivers import HostPathBinding
+from brokering.supervisor.types import HostPath
 
 EMAIL_BROKER_HOST_PATHS: tuple[HostPathBinding, ...] = (
     HostPathBinding(role="downloads", env_var="ATTACHMENTS_DIR", mode="write"),

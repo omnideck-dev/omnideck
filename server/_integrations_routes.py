@@ -8,7 +8,6 @@ concern handled by the frontend.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -16,16 +15,13 @@ from typing import Any
 
 from aiohttp import web
 
-from config import load_config
-from integrations import supervisor_client
-from integrations.catalog import (
-    integration_catalog,
-    model_provider_catalog,
-)
+from integrations.catalog import integration_catalog
+from brokering.brokers.llm_proxy.catalog import model_provider_catalog
 from integrations.operations import operation_descriptors
-from integrations.supervisor_client import SupervisorError
+from brokering.supervisor_client import SupervisorError
+from server._brokering import supervisor_call as _supervisor_call
 from server._integrations_http import error_response
-from tools.integrations import mark_added, mark_removed
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -77,22 +73,6 @@ def _sanitize_suffix(raw: str) -> str | None:
         "-", _SUFFIX_NON_ALLOWED.sub("-", raw.lower()),
     ).strip("-")
     return cleaned[:48] or None
-
-
-async def _supervisor_call(verb: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Call a supervisor verb with a 90s timeout.
-
-    A transactional replacement can wait on a 30s broker READY handshake and,
-    on failure, another 30s handshake while restoring the prior broker. Ninety
-    seconds gives that rollback headroom while still bounding a wedged
-    supervisor. ``TimeoutError`` is an ``OSError`` subclass on 3.11+, so route
-    handlers catch it through the ``except OSError`` arm and return a 503.
-    """
-    app_sock = load_config().integrations.app_sock_path
-    return await asyncio.wait_for(
-        supervisor_client.call(verb, args, app_sock_path=app_sock),
-        timeout=90.0,
-    )
 
 
 async def handle_list_integrations(_request: web.Request) -> web.Response:
@@ -173,6 +153,11 @@ async def handle_add_integration(request: web.Request) -> web.Response:
             status=400,
         )
 
+    if "permissions" in body or "write_allowed" in body:
+        return error_response(
+            "BAD_REQUEST", "This screen is out of date. Refresh the app, then try again.",
+        )
+
     # Keep integration IDs deterministic and out of the user's mental model.
     # Email remains the compatibility-preferred hint, but it is not a generic
     # integration requirement.
@@ -204,23 +189,13 @@ async def handle_add_integration(request: web.Request) -> web.Response:
     except SupervisorError as exc:
         return error_response(exc.code, exc.message)
 
-    # Update the app-server's tool-visibility cache so the agent sees the new
-    # integration's tools on the next turn without a supervisor round-trip.
-    # The supervisor's add response carries everything the cache needs (id,
-    # slug, operation grants). Missing id/slug is a supervisor bug — surface it
-    # as 502 rather than returning 201 with a corrupted cache.
-    integration_id = result.get("id")
+    # Validate the mutation response before refreshing authoritative discovery.
+    connection_id = result.get("id")
     slug = result.get("slug")
-    if not (isinstance(integration_id, str) and isinstance(slug, str)):
+    if not (isinstance(connection_id, str) and isinstance(slug, str)):
         logger.error("supervisor add response missing id/slug: %r", result)
         return error_response("UPSTREAM", "Something went wrong on our end. Try again.")
-    grants_result = result.get("operation_grants")
-    mark_added(
-        integration_id,
-        slug,
-        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
-        result.get("state") or "running",
-    )
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
 
     return web.json_response(result, status=201)
 
@@ -230,14 +205,13 @@ async def handle_update_integration(request: web.Request) -> web.Response:
 
     Body fields (each optional, at least one required): ``operation_grants``
     (array of canonical operation IDs) and ``label`` (non-empty string).
-    The deprecated ``permissions`` object is also accepted for older clients,
-    but cannot be combined with ``operation_grants``. Grant changes respawn the
-    broker; updating ``label`` is metadata-only.
+    Grant changes are persisted and applied to the running broker through its
+    private control channel; updating ``label`` is metadata-only.
 
     On success: ``200 OK`` with the updated record. On unknown id: ``404``.
     """
-    integration_id = request.match_info.get("id", "")
-    if not integration_id:
+    connection_id = request.match_info.get("id", "")
+    if not connection_id:
         return error_response(
             "BAD_REQUEST",
             "Couldn't tell which integration to update. Refresh and try again.",
@@ -257,10 +231,10 @@ async def handle_update_integration(request: web.Request) -> web.Response:
             "Couldn't read that request. Refresh and try again.",
         )
 
-    rpc_args: dict[str, Any] = {"id": integration_id}
-    if "operation_grants" in body and "permissions" in body:
+    rpc_args: dict[str, Any] = {"id": connection_id}
+    if "permissions" in body or "write_allowed" in body:
         return error_response(
-            "BAD_REQUEST", "Choose individual tools or legacy permissions, not both.",
+            "BAD_REQUEST", "This screen is out of date. Refresh the app, then try again.",
         )
     if "operation_grants" in body:
         if not isinstance(body["operation_grants"], list) or any(
@@ -268,15 +242,11 @@ async def handle_update_integration(request: web.Request) -> web.Response:
         ):
             return error_response("BAD_REQUEST", "Selected tools must be an array of IDs.")
         rpc_args["operation_grants"] = body["operation_grants"]
-    if "permissions" in body:
-        if not isinstance(body["permissions"], dict):
-            return error_response("BAD_REQUEST", "Permissions must be an object.")
-        rpc_args["permissions"] = body["permissions"]
     if "label" in body:
         if not isinstance(body["label"], str) or not body["label"].strip():
             return error_response("BAD_REQUEST", "Label can't be empty.")
         rpc_args["label"] = body["label"]
-    if not ({"operation_grants", "permissions", "label"} & rpc_args.keys()):
+    if not ({"operation_grants", "label"} & rpc_args.keys()):
         return error_response("BAD_REQUEST", "Nothing to update.")
 
     try:
@@ -290,13 +260,7 @@ async def handle_update_integration(request: web.Request) -> web.Response:
     except SupervisorError as exc:
         return error_response(exc.code, exc.message)
 
-    grants_result = result.get("operation_grants")
-    mark_added(
-        integration_id,
-        result.get("slug") or "",
-        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
-        result.get("state") or "running",
-    )
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
     return web.json_response(result)
 
 
@@ -304,21 +268,20 @@ async def handle_remove_integration(request: web.Request) -> web.Response:
     """``DELETE /api/integrations/{id}`` — tear down a registered integration.
 
     Calls the supervisor's ``remove`` verb, which SIGTERMs the broker and
-    deletes the vault files. On success the app server clears its tool-
-    visibility cache entry so the agent's next turn no longer sees tools
-    bound to this integration.
+    deletes the vault files. On success the app refreshes discovery before
+    responding, so subsequent runs no longer see this connection's tools.
 
     On success: ``204 No Content``. On unknown id: ``404``.
     """
-    integration_id = request.match_info.get("id", "")
-    if not integration_id:
+    connection_id = request.match_info.get("id", "")
+    if not connection_id:
         return error_response(
             "BAD_REQUEST",
             "Couldn't tell which integration to remove. Refresh and try again.",
         )
 
     try:
-        await _supervisor_call("remove", {"id": integration_id})
+        await _supervisor_call("remove", {"id": connection_id})
     except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
         logger.warning("supervisor unreachable for remove: %s", exc)
         return web.json_response(
@@ -328,14 +291,14 @@ async def handle_remove_integration(request: web.Request) -> web.Response:
     except SupervisorError as exc:
         return error_response(exc.code, exc.message)
 
-    mark_removed(integration_id)
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
     return web.Response(status=204)
 
 
 async def handle_reconnect_integration(request: web.Request) -> web.Response:
     """Replace one integration's credentials without changing its identity."""
-    integration_id = request.match_info.get("id", "")
-    if not integration_id:
+    connection_id = request.match_info.get("id", "")
+    if not connection_id:
         return error_response("BAD_REQUEST", "Couldn't tell which integration to reconnect.")
     try:
         body = await request.json()
@@ -345,7 +308,7 @@ async def handle_reconnect_integration(request: web.Request) -> web.Response:
         return error_response("BAD_REQUEST", "Connection credentials are required.")
     try:
         result = await _supervisor_call("reconnect", {
-            "id": integration_id,
+            "id": connection_id,
             "kind": "integration",
             "auth_blob": body["auth_blob"],
         })
@@ -358,13 +321,7 @@ async def handle_reconnect_integration(request: web.Request) -> web.Response:
     except SupervisorError as exc:
         return error_response(exc.code, exc.message)
 
-    grants_result = result.get("operation_grants")
-    mark_added(
-        integration_id,
-        result.get("slug") or "",
-        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
-        result.get("state") or "running",
-    )
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
     return web.json_response(result)
 
 

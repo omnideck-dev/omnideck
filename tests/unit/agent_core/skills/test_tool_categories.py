@@ -19,7 +19,7 @@ from skills._tool_categories import _custom_tools_category
 from skills._tool_categories import _static_tool_categories, tool_categories
 from agent_core.tools._callable_schema import callable_to_json_schema
 from tools.integrations._tool_resolution import _BUILDERS
-from tools.integrations.types import RegisteredIntegration
+from integrations.connection_cache import IntegrationConnection
 
 _STATIC_IDS = {
     "coding",
@@ -52,10 +52,6 @@ def _isolate(monkeypatch):
     _set_flags(monkeypatch)
     monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
 
-    async def _none():
-        return {}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _none)
     yield
     _static_tool_categories.cache_clear()
 
@@ -65,17 +61,10 @@ def _set_flags(monkeypatch, **overrides):
     _static_tool_categories.cache_clear()
 
 
-def _connect(monkeypatch, *operation_ids):
-    async def _get():
-        return {
-            "acct-1": RegisteredIntegration(
-                id="acct-1",
-                slug="acct",
-                operation_grants=frozenset(operation_ids),
-            ),
-        }
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _get)
+def _connections(*operation_ids):
+    return (IntegrationConnection(
+        id="acct-1", slug="acct", operation_grants=frozenset(operation_ids),
+    ),)
 
 
 def _names(tools):
@@ -175,21 +164,19 @@ async def test_integration_category_empty_when_disconnected():
 
 
 @pytest.mark.unit
-async def test_integration_category_resolves_when_connected(monkeypatch):
-    _connect(monkeypatch, "email.messages.search")
-    email = (await tool_categories())["email"]
+async def test_integration_category_resolves_when_connected():
+    email = (await tool_categories(_connections("email.messages.search")))["email"]
     names = _names(email.tools)
     assert "search_email" in names
     assert "send_email" not in names  # read tier only
 
 
 @pytest.mark.unit
-async def test_connected_flag_tracks_integration_state(monkeypatch):
+async def test_connected_flag_tracks_integration_state():
     cats = await tool_categories()
     assert cats["coding"].connected is None  # static: no connection concept
     assert cats["email"].connected is False  # integration, nothing connected
-    _connect(monkeypatch, "email.messages.search")
-    assert (await tool_categories())["email"].connected is True
+    assert (await tool_categories(_connections("email.messages.search")))["email"].connected is True
 
 
 @pytest.mark.unit

@@ -17,6 +17,7 @@
     font-family: var(--font-body);
     font-size: 13px;
     font-weight: 500;
+    white-space: nowrap;
     border: 1px solid transparent;
 }
 

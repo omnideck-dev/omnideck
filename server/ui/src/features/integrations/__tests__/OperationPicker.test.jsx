@@ -14,6 +14,39 @@ const GROUPS = [
 ];
 
 describe('OperationPicker', () => {
+    it('allows collapsing search results and restores the unfiltered expansion state', () => {
+        render(<OperationPicker operations={OPERATIONS} groups={GROUPS} selectedIds={[]} collapsible />);
+        const toggle = () => screen.getByRole('button', { name: 'Email 0 of 2' });
+        fireEvent.click(toggle());
+        expect(screen.getByTestId('integration-tool-mail.list')).not.toBeVisible();
+
+        const search = screen.getByRole('searchbox', { name: 'Search tools' });
+        fireEvent.change(search, { target: { value: 'message' } });
+        expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+        fireEvent.click(toggle());
+        expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.getByTestId('integration-tool-mail.list')).not.toBeVisible();
+        fireEvent.click(toggle());
+        expect(screen.getByTestId('integration-tool-mail.list')).toBeVisible();
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.getByTestId('integration-tool-mail.list')).not.toBeVisible();
+    });
+
+    it.each([false, true])('uses the same selection language when collapsible=%s', collapsible => {
+        render(<OperationPicker operations={OPERATIONS} selectedIds={[]} collapsible={collapsible} />);
+        expect(screen.getByRole('button', { name: 'Select all', exact: true })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Deselect all', exact: true })).toBeVisible();
+        expect(screen.getByText('0 of 3 selected')).toBeVisible();
+    });
+
+    it('labels ungrouped selection without repeating tools', () => {
+        render(<OperationPicker operations={OPERATIONS} selectedIds={[]} collapsible />);
+
+        expect(screen.getByRole('checkbox', { name: 'Select all in Tools' })).toBeInTheDocument();
+    });
+
     it('starts new operations off and emits explicit operation IDs', () => {
         const onChange = vi.fn();
         render(
@@ -86,7 +119,7 @@ describe('OperationPicker', () => {
         );
 
         expect(screen.getAllByText('List messages')).toHaveLength(1);
-        expect(screen.getByText('0 of 2 enabled')).toBeInTheDocument();
+        expect(screen.getByText('0 of 2 selected')).toBeInTheDocument();
         expect(screen.getByRole('checkbox', { name: 'First 0 of 1' })).toHaveAttribute(
             'aria-checked',
             'false',

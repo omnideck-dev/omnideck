@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from integrations.catalog import (
-    CatalogEntry,
-    IntegrationCatalogEntry,
-)
-from integrations.drivers import BrokerDriver
+from brokering.catalog import CatalogEntry
+from integrations.catalog import IntegrationCatalogEntry
+from brokering.drivers import BrokerDriver
 from integrations.operations import OPERATIONS_BY_GROUP
 from tests.integration.integrations.fixtures._host_paths import EMAIL_BROKER_HOST_PATHS
 from tests.integration.integrations.fixtures.fake_email import FakeEmail
@@ -13,7 +11,7 @@ from tests.integration.integrations.fixtures.fake_email import FakeEmail
 def make_fake_email_catalog(fake: FakeEmail) -> dict[str, CatalogEntry]:
     driver = BrokerDriver(
         id="test.email",
-        command=("python", "-m", "integrations.brokers.email_broker"),
+        command=("python", "-m", "brokering.brokers.email_broker"),
         env_injection={"email": "EMAIL_USER", "password": "EMAIL_PASS"},
         host_paths=EMAIL_BROKER_HOST_PATHS,
     )

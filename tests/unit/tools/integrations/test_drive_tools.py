@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.drive.create_folder import create_drive_folder
 from tools.integrations.drive.share_file import share_drive_file
 from tools.integrations.drive.trash_file import trash_drive_file

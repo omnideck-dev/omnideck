@@ -522,7 +522,7 @@ _ui-build ctr:
 # runs each in a respawn loop, so killing the inner Python lets the loop
 # pick it back up with the freshly synced source.
 _bounce-services ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
+    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m brokering.supervisor" 2>/dev/null || true
     @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
 
 # Poll until the app responds on the given port (up to ~60s)

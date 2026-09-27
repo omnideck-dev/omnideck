@@ -51,41 +51,41 @@ def test_http_integration_crud(page: Page) -> None:
 
     # ── READ ─────────────────────────────────────────────────────────
     tab.open_detail(_ID)
-    expect(tab.tools_tab).to_have_attribute("aria-selected", "true")
-    tab.connection_tab.click()
-    expect(tab.label_input(_ID)).to_have_value(_LABEL)
-    tab.tools_tab.click()
+    expect(page.get_by_role("heading", name=_LABEL, exact=True)).to_be_visible()
+    tab.change_tools_button(_ID).click()
     expect(tab.tool_checkbox("http.request")).to_be_checked()
+    tab.cancel_edit(_ID)
 
     # ── UPDATE ───────────────────────────────────────────────────────
     # Label is meta-only (no respawn). Edit and save, then reload the page
     # so the assertion reads the value back from the vault, not local state.
-    tab.connection_tab.click()
+    tab.open_connection_settings()
+    tab.rename_button(_ID).click()
     tab.label_input(_ID).fill(_RENAMED)
     tab.save_and_wait(_ID)
 
     settings = SettingsPage(page).goto_integrations()
     tab = settings.integrations
     tab.open_detail(_ID)
-    tab.connection_tab.click()
-    expect(tab.label_input(_ID)).to_have_value(_RENAMED)
-    tab.tools_tab.click()
+    expect(page.get_by_role("heading", name=_RENAMED, exact=True)).to_be_visible()
+    tab.change_tools_button(_ID).click()
     # A label-only edit must preserve the exact grant set.
     expect(tab.tool_checkbox("http.request")).to_be_checked()
 
     # Exact grant updates persist independently from the connection label.
     tab.tool_checkbox("http.request").click()
     tab.save_button(_ID).click()
-    expect(tab.row(_ID)).to_contain_text("No tools enabled")
+    expect(tab.row(_ID)).to_contain_text("No tools selected")
     settings = SettingsPage(page).goto_integrations()
     tab = settings.integrations
     tab.open_detail(_ID)
-    tab.tools_tab.click()
+    tab.change_tools_button(_ID).click()
     expect(tab.tool_checkbox("http.request")).not_to_be_checked()
+    tab.cancel_edit(_ID)
 
     # Credential replacement keeps the same connection identity and does not
     # route through Add (which would collide with the deterministic ID).
-    tab.connection_tab.click()
+    tab.open_connection_settings()
     tab.reconnect_button(_ID).click()
     expect(page.get_by_test_id("integration-reconnect-flow")).to_be_visible()
     page.get_by_test_id("wizard-base-url").fill("https://api-v2.example.com")

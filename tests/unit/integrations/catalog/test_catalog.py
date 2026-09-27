@@ -2,18 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from integrations.catalog import (
-    DEFAULT_CATALOG,
-    IntegrationCatalogEntry,
-    ModelProviderCatalogEntry,
-    OperationDisplayGroup,
-    build_default_catalog,
-    integration_catalog,
-    model_provider_catalog,
-    validate_catalog,
-    validate_host_path_bindings,
-)
-from integrations.drivers import BrokerDriver, HostPathBinding
+from brokering.catalog import DEFAULT_CATALOG, build_default_catalog, validate_catalog, validate_host_path_bindings
+from integrations.catalog import IntegrationCatalogEntry, OperationDisplayGroup, integration_catalog
+from brokering.brokers.llm_proxy.catalog import ModelProviderCatalogEntry, model_provider_catalog
+from brokering.drivers import BrokerDriver, HostPathBinding
 from integrations.operations import OPERATIONS_BY_GROUP
 
 
@@ -52,23 +44,19 @@ def test_host_path_validation_uses_role_names_without_runtime_state() -> None:
 
 def test_model_providers_have_no_operations() -> None:
     for entry in model_provider_catalog().values():
-        assert entry.resolve_operations({"scopes": "anything"}) == frozenset()
+        assert entry.resolve_operations(frozenset({"anything"})) == frozenset()
 
 
 def test_google_remote_scopes_bound_available_operations() -> None:
     entry = DEFAULT_CATALOG["google_workspace"]
     readonly = entry.resolve_operations(
-        {
-            "scopes": "https://www.googleapis.com/auth/gmail.readonly",
-        }
+        frozenset({"https://www.googleapis.com/auth/gmail.readonly"})
     )
     assert "email.messages.search" in readonly
     assert "email.messages.send" not in readonly
 
     modify = entry.resolve_operations(
-        {
-            "scopes": "https://www.googleapis.com/auth/gmail.modify",
-        }
+        frozenset({"https://www.googleapis.com/auth/gmail.modify"})
     )
     assert modify == OPERATIONS_BY_GROUP["email"]
 
@@ -86,7 +74,7 @@ def test_scope_mapping_adds_to_unconditional_operations() -> None:
         },
     )
 
-    assert entry.resolve_operations({"scopes": ["scope-a"]}) == frozenset(
+    assert entry.resolve_operations(frozenset({"scope-a"})) == frozenset(
         {
             "http.request",
             "email.messages.search",
@@ -103,6 +91,11 @@ def test_display_groups_are_optional_catalog_metadata() -> None:
         "contacts",
     }
     assert integration_catalog()["http"].operation_groups == ()
+
+
+@pytest.mark.parametrize("scopes", [frozenset(), frozenset({"unknown-scope"})])
+def test_unknown_or_missing_scopes_do_not_offer_google_operations(scopes) -> None:
+    assert DEFAULT_CATALOG["google_workspace"].resolve_operations(scopes) == frozenset()
 
 
 def test_test_integration_is_excluded_unless_explicitly_enabled() -> None:

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from typing import Any
+from integrations.connection_cache import ConnectionSnapshot
 
 @dataclass(frozen=True)
 class ToolCategory:
@@ -36,12 +37,12 @@ class ToolCategory:
     connected: bool | None = None
 
 
-async def tool_categories() -> dict[str, ToolCategory]:
+async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, ToolCategory]:
     """Every tool category keyed by id, each with the tools it currently grants.
 
     Config-gated static categories are built once and held. Settings-backed
-    categories and integration-backed categories resolve their current state
-    on every call, so runtime changes take effect without restarting.
+    categories resolve current settings; integration categories use only the
+    supplied snapshot. This function never performs discovery I/O.
     """
     # Imported here, not at module top: reaching into the tools package runs its
     # __init__, which pulls tools.browser -> agent_core.events -> this package — a
@@ -54,7 +55,7 @@ async def tool_categories() -> dict[str, ToolCategory]:
     if custom_tools_enabled():
         categories["custom_tools"] = _custom_tools_category()
 
-    by_category = await integration_tools_by_category()
+    by_category = integration_tools_by_category(connections)
     for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
         backed = by_category.get(cid, OperationTools([], available=False))
         # A category is connected when at least one granted operation supplies a tool.

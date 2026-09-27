@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations._invoke import invoke_operation
 from tools.integrations._format import format_envelope
 from tools.integrations._messages import auth_failed_message

@@ -22,10 +22,10 @@ import re
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from integrations.supervisor_client import SupervisorError
+from brokering.supervisor_client import SupervisorError
 from providers import get_provider, reset_provider
 from agent_core.providers import ProviderError
-from server._integrations_routes import _supervisor_call
+from server._brokering import supervisor_call as _supervisor_call
 from settings import _validate_base_url, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ def _label(name: str) -> str:
 async def _brokered_provider_connections() -> list[dict[str, object]]:
     """Read model-provider records from their supervisor domain."""
     result = await _supervisor_call("list", {"kind": "model_provider"})
-    return list(result.get("connections") or result.get("integrations") or [])
+    return list(result["connections"])
 
 
 # ── GET ──────────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
         return web.json_response({"ok": True})
 
     try:
-        integrations = await _brokered_provider_connections()
+        connections = await _brokered_provider_connections()
     except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
         logger.warning("supervisor unreachable for provider remove lookup: %s", exc)
         return web.json_response(
@@ -286,7 +286,7 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
             status=503,
         )
     target_slug = f"llm_{name}"
-    for connection in integrations:
+    for connection in connections:
         if connection.get("slug") == target_slug:
             try:
                 await _supervisor_call("remove", {"id": connection.get("id")})
@@ -361,7 +361,7 @@ async def handle_update_provider(request: web.Request) -> web.Response:
     else:
         # Brokered kind — must currently exist as an llm_<name> integration.
         try:
-            integrations = await _brokered_provider_connections()
+            connections = await _brokered_provider_connections()
         except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
             logger.warning("supervisor unreachable for provider update lookup: %s", exc)
             return web.json_response(
@@ -370,7 +370,7 @@ async def handle_update_provider(request: web.Request) -> web.Response:
             )
         target_slug = f"llm_{name}"
         existing = next(
-            (connection for connection in integrations if connection.get("slug") == target_slug),
+            (connection for connection in connections if connection.get("slug") == target_slug),
             None,
         )
         if existing is None:

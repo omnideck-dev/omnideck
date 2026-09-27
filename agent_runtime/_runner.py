@@ -117,6 +117,7 @@ class AgentRunner:
                 name=name,
                 restore_from_conversation=session.conversation_id if policy.restore_skills else None,
                 include_memory=policy.include_memory,
+                connections=session.integration_connections,
             )
             agent = prepared.agent
             history = session.history

@@ -291,9 +291,9 @@ export default function BrowserProfilesSettings() {
                 </Modal>
             )}
 
-            <SplitPanel className={styles.layout}>
+            <SplitPanel>
                 <SplitPanel.List>
-                    <div className={styles.listHeading}>Browser profiles</div>
+                    <SplitPanel.Header>Browser profiles</SplitPanel.Header>
                     <div className={styles.profileList}>
                         {loading && <div className={styles.empty}>Loading profiles…</div>}
                         {!loading && filteredProfiles.length === 0 && (
@@ -304,21 +304,12 @@ export default function BrowserProfilesSettings() {
                                 key={profile.id}
                                 active={profile.id === selectedId}
                                 onClick={() => setSelectedId(profile.id)}
-                                className={styles.profileItem}
+                                icon={<BrowserProfileIcon icon={profile.icon} />}
+                                name={profile.name}
+                                description={`${groupedSitesByProfile.get(profile.id)?.length || 0} site${groupedSitesByProfile.get(profile.id)?.length === 1 ? '' : 's'}`}
                                 data-testid={`browser-profile-${profile.id}`}
                                 aria-label={`Open ${profile.name}`}
-                            >
-                                <span className={styles.profileIcon}>
-                                    <BrowserProfileIcon icon={profile.icon} />
-                                </span>
-                                <span className={styles.profileCopy}>
-                                    <span className={styles.profileName}>{profile.name}</span>
-                                    <span className={styles.profileMeta}>
-                                        {groupedSitesByProfile.get(profile.id)?.length || 0} site{groupedSitesByProfile.get(profile.id)?.length === 1 ? '' : 's'}
-                                    </span>
-                                </span>
-                                <i className="bi bi-chevron-right" aria-hidden="true" />
-                            </ListItem>
+                            />
                         ))}
                     </div>
                 </SplitPanel.List>

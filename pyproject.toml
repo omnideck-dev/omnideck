@@ -95,7 +95,7 @@ exclude = "^(tests|repls|container|migrations|desktop/tests)/"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["integrations.brokers.*"]
+module = ["brokering.brokers.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -118,6 +118,9 @@ addopts = [
     "-q",
     "--no-header",
     "--disable-warnings",
+    # Playwright deletes its output directory at session start. Keep its
+    # disposable artifacts separate from sibling manual-test state/logs.
+    "--output=test-results/playwright",
 ]
 asyncio_mode = "auto"
 log_cli = false
@@ -132,6 +135,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 # Explicitly include our flat-layout top-level packages
 include = [
+    "brokering*",
+    "integrations*",
     "agent_runtime*",
     "agent_core*",
     "providers*",

@@ -21,6 +21,7 @@ from server._integrations_routes import (
     handle_reconnect_integration,
     handle_update_integration,
 )
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 
 # ── email-based suffix derivation ────────────────────────────────────────────
@@ -107,6 +108,7 @@ def _make_add_request(body: dict) -> MagicMock:
     """Build a minimal aiohttp Request mock with a JSON body."""
     req = MagicMock()
     req.json = AsyncMock(return_value=body)
+    req.app = {INTEGRATION_CACHE_KEY: MagicMock(refresh=AsyncMock(return_value=True))}
     return req
 
 
@@ -148,7 +150,6 @@ async def test_non_email_integration_derives_suffix_from_label() -> None:
 
     with (
         patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
     ):
         resp = await handle_add_integration(_make_add_request(body))
 
@@ -165,7 +166,7 @@ async def test_non_llm_add_derives_suffix_from_email() -> None:
         "slug": "icloud",
         "label": "iCloud",
         "auth_blob": {"email": "alice@example.com", "password": "secret"},
-        "permissions": {"email": "rw"},
+        "operation_grants": ["email.messages.send"],
     }
     captured_args = {}
 
@@ -175,7 +176,6 @@ async def test_non_llm_add_derives_suffix_from_email() -> None:
 
     with (
         patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
     ):
         resp = await handle_add_integration(_make_add_request(body))
 
@@ -190,17 +190,20 @@ async def test_list_requests_only_integration_domain() -> None:
     async def fake_supervisor_call(verb, args):
         assert verb == "list"
         assert args == {"kind": "integration"}
-        return {"connections": [], "integrations": []}
+        return {"connections": []}
 
     with patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call):
         response = await handle_list_integrations(MagicMock())
     assert response.status == 200
+
+    assert json.loads(response.text) == {"connections": []}
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_accepts_operation_ids_and_rejects_mixed_legacy_policy() -> None:
     request = MagicMock()
+    request.app = {INTEGRATION_CACHE_KEY: MagicMock(refresh=AsyncMock(return_value=True))}
     request.match_info = {"id": "gmail_alice"}
     request.json = AsyncMock(return_value={
         "operation_grants": ["email.messages.search"],
@@ -223,7 +226,6 @@ async def test_update_accepts_operation_ids_and_rejects_mixed_legacy_policy() ->
 
     with (
         patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
     ):
         response = await handle_update_integration(request)
     assert response.status == 200
@@ -234,6 +236,7 @@ async def test_update_accepts_operation_ids_and_rejects_mixed_legacy_policy() ->
 @pytest.mark.asyncio
 async def test_reconnect_forwards_only_the_existing_id_and_new_credentials() -> None:
     request = MagicMock()
+    request.app = {INTEGRATION_CACHE_KEY: MagicMock(refresh=AsyncMock(return_value=True))}
     request.match_info = {"id": "gmail_alice"}
     request.json = AsyncMock(return_value={
         "auth_blob": {"email": "alice@example.com", "password": "new-secret"},
@@ -250,7 +253,6 @@ async def test_reconnect_forwards_only_the_existing_id_and_new_credentials() -> 
 
     with (
         patch("server._integrations_routes._supervisor_call", side_effect=fake_supervisor_call),
-        patch("server._integrations_routes.mark_added"),
     ):
         response = await handle_reconnect_integration(request)
 

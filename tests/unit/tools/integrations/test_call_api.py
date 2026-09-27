@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.http.call_api import build_call_api_tool, call_api
 
 

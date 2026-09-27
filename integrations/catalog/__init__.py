@@ -1,32 +1,22 @@
-"""Public catalog API shared by server routes and the supervisor.
+"""Tool-integration presets and operation display metadata.
 
-Catalogs describe integration presets; they do not own configured connections,
-credentials, or running brokers. Broker launch contracts live in
-``integrations.drivers`` and operation definitions in ``integrations.operations``.
+Broker launch contracts live in ``brokering.drivers``. Model-provider presets
+live alongside their HTTP proxy in ``brokering.brokers.llm_proxy.catalog``.
 """
 
 from ._defaults import (
-    DEFAULT_CATALOG,
     TEST_INTEGRATIONS_ENV,
-    build_default_catalog,
+    build_integration_catalog,
     integration_catalog,
-    model_provider_catalog,
     test_integrations_enabled,
 )
-from ._types import CatalogEntry, IntegrationCatalogEntry, ModelProviderCatalogEntry, OperationDisplayGroup
-from ._validation import validate_catalog, validate_host_path_bindings
+from ._types import IntegrationCatalogEntry, OperationDisplayGroup
 
 __all__ = [
-    "CatalogEntry",
-    "DEFAULT_CATALOG",
     "IntegrationCatalogEntry",
-    "ModelProviderCatalogEntry",
     "OperationDisplayGroup",
     "TEST_INTEGRATIONS_ENV",
-    "build_default_catalog",
+    "build_integration_catalog",
     "integration_catalog",
-    "model_provider_catalog",
     "test_integrations_enabled",
-    "validate_catalog",
-    "validate_host_path_bindings",
 ]

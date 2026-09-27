@@ -12,6 +12,10 @@ To avoid collisions with another local run, set `E2E_CONTAINER` and `E2E_PORT`.
 `E2E_IMAGE` selects an image; use `E2E_SKIP_BUILD=1` only when that image already
 contains the source being tested.
 
+Playwright artifacts go in `test-results/playwright/`, which pytest deletes at
+session start. Never put manual-container state or persistent fixtures in that
+directory. Keep manual state outside test output trees entirely.
+
 ## Fixture boundary
 
 - Drive model behavior with `tests.e2e._protocol`: `say`, `bash`, `write_file`,

@@ -2,12 +2,11 @@
 
 The loopback OAuth handshake lives here; CRUD routes for integrations live
 in ``_integrations_routes``. Both talk to the supervisor via
-``integrations.supervisor_client``.
+``brokering.supervisor_client``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -16,12 +15,12 @@ from typing import Any
 from aiohttp import web
 
 from config import load_config
-from integrations import supervisor_client
 from integrations.catalog import integration_catalog
-from integrations.supervisor_client import SupervisorError
+from brokering.supervisor_client import SupervisorError
+from server._brokering import supervisor_call as _supervisor_call
 from server._integrations_http import error_response
 from server._oauth import OAuthIntegrationManager
-from tools.integrations import mark_added
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -80,15 +79,6 @@ def _oauth_popup_html(title: str, body: str) -> str:
         f"<h1>{safe_title}</h1><p>{safe_body}</p>"
         "<script>setTimeout(()=>window.close(),1500)</script>"
         "</body></html>"
-    )
-
-
-async def _supervisor_call(verb: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Call a supervisor verb with rollback headroom and a bounded timeout."""
-    app_sock = load_config().integrations.app_sock_path
-    return await asyncio.wait_for(
-        supervisor_client.call(verb, args, app_sock_path=app_sock),
-        timeout=90.0,
     )
 
 
@@ -174,12 +164,9 @@ async def handle_start_oauth(request: web.Request) -> web.Response:
         or any(not isinstance(item, str) for item in grants_raw)
     ):
         return error_response("BAD_REQUEST", "Selected tools must be an array of IDs.")
-    perms_raw = body.get("permissions")
-    if not isinstance(perms_raw, dict):
-        perms_raw = {}
-    if grants_raw is not None and body.get("permissions") is not None:
+    if "permissions" in body or "write_allowed" in body:
         return error_response(
-            "BAD_REQUEST", "Choose individual tools or legacy permissions, not both.",
+            "BAD_REQUEST", "This screen is out of date. Refresh the app, then try again.",
         )
     reconnect_id = body.get("reconnect_id")
     if reconnect_id is not None and (
@@ -201,7 +188,6 @@ async def handle_start_oauth(request: web.Request) -> web.Response:
             client_secret=_require_str(body, "client_secret"),
             scopes=scopes,
             operation_grants_raw=grants_raw,
-            permissions_raw=perms_raw,
             reconnect_id=reconnect_id,
             redirect_uri=redirect_uri,
         )
@@ -294,7 +280,7 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         supervisor_body = {
             "id": pending.reconnect_id,
             "kind": "integration",
-            "auth_blob": auth_blob,
+            "auth_blob": dict(auth_blob),
         }
     else:
         supervisor_verb = "add"
@@ -303,12 +289,9 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
             "kind": "integration",
             "user_suffix": pending.user_suffix,
             "label": pending.label,
-            "auth_blob": auth_blob,
+            "auth_blob": dict(auth_blob),
         }
-        if pending.operation_grants_raw is not None:
-            supervisor_body["operation_grants"] = pending.operation_grants_raw
-        else:
-            supervisor_body["permissions"] = pending.permissions_raw
+        supervisor_body["operation_grants"] = pending.operation_grants_raw or []
     try:
         result = await _supervisor_call(supervisor_verb, supervisor_body)
     except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
@@ -351,15 +334,8 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
             status=502,
         )
 
-    # Warm the agent's tool cache so the new integration's tools appear
-    # on the next turn — same hook the app-password add path uses.
-    grants_result = result.get("operation_grants")
-    mark_added(
-        integration_id,
-        slug,
-        frozenset(grants_result) if isinstance(grants_result, list) else frozenset(),
-        result.get("state") or "running",
-    )
+    # Wait for post-mutation discovery; an older in-flight poll is insufficient.
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
     _oauth.mark_success(state, integration_id)
     return web.Response(
         text=_oauth_popup_html("Signed in", "You can close this window."),

@@ -24,36 +24,15 @@
     text-decoration: underline;
 }
 
-.layout {
-    flex: 1;
-    min-height: 0;
-}
-
-.listHeading {
-    padding: var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-family: var(--font-brand);
-    font-size: var(--font-size-small);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
 .profileList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
     min-height: 0;
     flex: 1;
     overflow-y: auto;
 }
 
-.profileItem {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    min-height: 64px;
-}
-
-.profileIcon,
 .siteIcon {
     display: grid;
     flex-shrink: 0;
@@ -63,13 +42,6 @@
     color: var(--accent);
 }
 
-.profileIcon {
-    width: var(--sp-10);
-    height: var(--sp-10);
-    font-size: var(--font-size-heading);
-}
-
-.profileCopy,
 .siteCopy {
     display: flex;
     min-width: 0;
@@ -77,25 +49,10 @@
     flex-direction: column;
 }
 
-.profileName {
-    overflow: hidden;
-    color: var(--text-primary);
-    font-size: var(--font-size-body);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.profileMeta,
 .siteMeta {
     margin-top: var(--sp-1);
     color: var(--text-tertiary);
     font-size: var(--font-size-caption);
-}
-
-.profileItem > i {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-small);
 }
 
 .detail {

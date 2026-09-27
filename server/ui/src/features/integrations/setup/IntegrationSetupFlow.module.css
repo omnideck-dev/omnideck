@@ -1,19 +1,9 @@
-.modal {
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 72px);
-    padding: 0;
-    overflow: hidden;
-    background: var(--elevated);
-    border-color: var(--border-strong);
-}
-
 .modalHeader {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     min-height: 54px;
     padding: 0 var(--sp-4) 0 var(--sp-5);
-    border-bottom: 1px solid var(--border);
 }
 
 .modalTitle {
@@ -21,29 +11,6 @@
     font: 600 12px var(--font-brand);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-}
-
-.closeButton {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    margin-left: auto;
-    color: var(--text-tertiary);
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-}
-
-.closeButton:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--surface);
-}
-
-.closeButton:disabled {
-    opacity: 0.4;
-    cursor: default;
 }
 
 .progress {
@@ -428,19 +395,6 @@
     flex: 1;
 }
 
-.reviewTitleRow button {
-    color: var(--accent);
-    background: transparent;
-    border: 0;
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.reviewTitleRow button:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
 .reviewRow {
     display: flex;
     align-items: baseline;
@@ -495,7 +449,7 @@
     min-height: 62px;
     padding: 0 var(--sp-5);
     background: var(--elevated);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-subtle);
 }
 
 .footerActions {
@@ -505,10 +459,6 @@
 }
 
 @media (max-width: 720px) {
-    .modal {
-        max-height: calc(100vh - 32px);
-    }
-
     .progressStep + .progressStep::before {
         width: 16px;
         margin: 0 6px;

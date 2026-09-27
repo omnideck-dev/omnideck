@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.create_event import create_event
 from tools.integrations.delete_event import delete_event
 from tools.integrations.delete_event_series import delete_event_series

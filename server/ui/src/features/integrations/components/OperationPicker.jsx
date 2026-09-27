@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import Button from '../../../components/primitives/Button.jsx';
 import SearchInput from '../../../components/primitives/SearchInput.jsx';
 import styles from './OperationPicker.module.css';
 
@@ -38,8 +39,12 @@ export default function OperationPicker({
     onChange,
     disabled = false,
     scrollMode = 'page',
+    collapsible = false,
+    embedded = false,
 }) {
     const [query, setQuery] = useState('');
+    const [collapsed, setCollapsed] = useState(new Set());
+    const [searchCollapsed, setSearchCollapsed] = useState(new Set());
     const validOperations = useMemo(
         () => operations.filter(operation => operation && typeof operation.id === 'string'),
         [operations],
@@ -82,40 +87,44 @@ export default function OperationPicker({
 
     return (
         <div
-            className={`${styles.picker} ${scrollMode === 'contained' ? styles.pickerContained : ''}`}
+            className={`${styles.picker} ${scrollMode === 'contained' ? styles.pickerContained : ''} ${embedded ? styles.pickerEmbedded : ''}`}
             data-testid="integration-operation-picker"
         >
             <div className={styles.toolbar}>
                 <SearchInput
                     className={styles.search}
                     value={query}
-                    onChange={setQuery}
+                    onChange={value => {
+                        setQuery(value);
+                        // Reveal results for a new query without changing the unfiltered layout.
+                        setSearchCollapsed(new Set());
+                    }}
                     placeholder="Search tools"
                     ariaLabel="Search tools"
                     testId="integration-tools-search"
                     clearable={false}
                     disabled={disabled}
                 />
-                <button
+                <Button
                     type="button"
-                    className={styles.bulkButton}
+                    variant="ghost"
                     onClick={() => emit(new Set(validOperations.map(operation => operation.id)))}
                     disabled={disabled || validOperations.length === 0}
                     data-testid="integration-tools-enable-all"
                 >
-                    Enable all
-                </button>
-                <button
+                    Select all
+                </Button>
+                <Button
                     type="button"
-                    className={styles.bulkButton}
+                    variant="ghost"
                     onClick={() => emit(new Set())}
                     disabled={disabled || selected.size === 0}
                     data-testid="integration-tools-clear"
                 >
-                    Clear
-                </button>
+                    Deselect all
+                </Button>
                 <span className={styles.total}>
-                    {selected.size} of {validOperations.length} enabled
+                    {selected.size} of {validOperations.length} selected
                 </span>
             </div>
 
@@ -125,13 +134,16 @@ export default function OperationPicker({
                         operation => selected.has(operation.id),
                     ).length;
                     const allSelected = selectedCount === group.operations.length;
+                    const expanded = !collapsible || !(normalizedQuery ? searchCollapsed : collapsed).has(group.id);
                     return (
                         <section className={styles.group} key={group.id}>
+                            <div className={styles.groupHeading}>
                             <button
                                 type="button"
                                 role="checkbox"
                                 aria-checked={allSelected ? true : selectedCount > 0 ? 'mixed' : false}
-                                className={styles.groupHeader}
+                                className={`${styles.groupHeader} ${collapsible ? styles.groupSelection : ''}`}
+                                aria-label={collapsible ? `Select all in ${group.title}` : undefined}
                                 onClick={() => setGroup(group.operations, !allSelected)}
                                 disabled={disabled}
                                 data-testid={`integration-tool-group-${group.id}`}
@@ -140,9 +152,26 @@ export default function OperationPicker({
                                     {allSelected ? <i className="bi bi-check-lg" />
                                         : selectedCount > 0 ? <i className="bi bi-dash-lg" /> : null}
                                 </span>
-                                <span className={styles.groupTitle}>{group.title}</span>
-                                <span className={styles.groupCount}>{selectedCount} of {group.operations.length}</span>
+                                {!collapsible && <>
+                                    <span className={styles.groupTitle}>{group.title}</span>
+                                    <span className={styles.groupCount}>{selectedCount} of {group.operations.length}</span>
+                                </>}
                             </button>
+                            {collapsible && (
+                                <button type="button" className={styles.groupToggle} aria-expanded={expanded}
+                                    onClick={() => (normalizedQuery ? setSearchCollapsed : setCollapsed)(current => {
+                                        const next = new Set(current);
+                                        if (next.has(group.id)) next.delete(group.id);
+                                        else next.add(group.id);
+                                        return next;
+                                    })}>
+                                    <span className={styles.groupTitle}>{group.title}</span>
+                                    <span className={styles.groupCount}>{selectedCount} of {group.operations.length}</span>
+                                    <i className={`bi bi-chevron-${expanded ? 'up' : 'down'}`} aria-hidden="true" />
+                                </button>
+                            )}
+                            </div>
+                            <div hidden={!expanded}>
                             {group.operations.map(operation => (
                                 <label className={styles.operation} key={operation.id}>
                                     <input
@@ -160,6 +189,7 @@ export default function OperationPicker({
                                     </span>
                                 </label>
                             ))}
+                            </div>
                         </section>
                     );
                 })}

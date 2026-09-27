@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, TypeAlias
+from typing import Literal
 
-from integrations.drivers import BrokerDriver
+from brokering.drivers import BrokerDriver
 
 
 @dataclass(frozen=True)
@@ -36,18 +36,8 @@ class IntegrationCatalogEntry:
     def driver_id(self) -> str:
         return self.driver.id
 
-    def resolve_operations(self, auth_blob: dict | None = None) -> frozenset[str]:
-        """Return operations available under this connection's remote auth."""
-        if not self.scope_operations or auth_blob is None:
-            return self.operations
-        scopes_raw = auth_blob.get("scopes")
-        if isinstance(scopes_raw, str):
-            granted_scopes = set(scopes_raw.split())
-        elif isinstance(scopes_raw, (list, tuple, set, frozenset)):
-            granted_scopes = {scope for scope in scopes_raw if isinstance(scope, str)}
-        else:
-            granted_scopes = set()
-
+    def resolve_operations(self, granted_scopes: frozenset[str] = frozenset()) -> frozenset[str]:
+        """Resolve availability using scope metadata only, never credentials."""
         # ``operations`` are unconditionally available. Scope mappings add
         # operations authorized by remote OAuth grants, which lets future
         # catalog entries combine local and scope-dependent tools.
@@ -56,25 +46,3 @@ class IntegrationCatalogEntry:
             if scope in granted_scopes:
                 available.update(operation_ids)
         return frozenset(available)
-
-
-@dataclass(frozen=True)
-class ModelProviderCatalogEntry:
-    """An LLM-provider connection reusing the common broker platform."""
-
-    slug: str
-    title: str
-    provider_protocol: Literal["openai", "anthropic"]
-    driver: BrokerDriver
-    driver_config: dict[str, str] = field(default_factory=dict)
-    kind: Literal["model_provider"] = "model_provider"
-
-    @property
-    def driver_id(self) -> str:
-        return self.driver.id
-
-    def resolve_operations(self, _auth_blob: dict | None = None) -> frozenset[str]:
-        return frozenset()
-
-
-CatalogEntry: TypeAlias = IntegrationCatalogEntry | ModelProviderCatalogEntry

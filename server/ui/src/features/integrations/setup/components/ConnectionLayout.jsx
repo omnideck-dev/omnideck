@@ -45,7 +45,7 @@ export function ConnectionActions({
 }) {
     return (
         <>
-            <Button onClick={onBack} disabled={submitting}>
+            <Button variant="ghost" onClick={onBack} disabled={submitting}>
                 <i className="bi bi-arrow-left" /> Back
             </Button>
             <Button

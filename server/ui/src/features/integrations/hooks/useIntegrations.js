@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { integrationError, listIntegrationCatalog, listIntegrations } from '../api/integrationsApi.js';
+import { integrationError, listIntegrationCatalog, listIntegrationConnections } from '../api/integrationsApi.js';
 
 export default function useIntegrations() {
-    const [integrations, setIntegrations] = useState([]);
+    const [connections, setConnections] = useState([]);
     const [catalog, setCatalog] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -13,14 +13,14 @@ export default function useIntegrations() {
         setError(null);
         try {
             const [connections, catalogEntries] = await Promise.all([
-                listIntegrations(),
+                listIntegrationConnections(),
                 listIntegrationCatalog(),
             ]);
-            setIntegrations(connections);
+            setConnections(connections);
             setCatalog(catalogEntries);
             return connections;
         } catch (requestError) {
-            setIntegrations([]);
+            setConnections([]);
             setError(integrationError(requestError, 'Failed to load integrations'));
             return [];
         } finally {
@@ -32,5 +32,5 @@ export default function useIntegrations() {
 
     useEffect(() => { load(true); }, [load]);
 
-    return { integrations, catalog, loading, error, refresh };
+    return { connections, catalog, loading, error, refresh };
 }

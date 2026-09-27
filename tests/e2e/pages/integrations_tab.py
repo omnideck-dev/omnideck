@@ -156,7 +156,7 @@ class IntegrationsTab:
         return self.page.get_by_test_id(f"integrations-row-{integration_id}")
 
     def open_detail(self, integration_id: str) -> None:
-        """Click a row to open its detail tab group."""
+        """Click a row to open its read-only overview."""
         self.row(integration_id).click()
 
     def label_input(self, integration_id: str) -> Locator:
@@ -181,17 +181,29 @@ class IntegrationsTab:
             self.save_button(integration_id).click()
         assert saved.value.ok, saved.value.text()
         assert refreshed.value.ok, refreshed.value.text()
+        self.page.get_by_role("dialog").wait_for(state="hidden")
 
     def remove_button(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-remove-{integration_id}")
 
     @property
-    def tools_tab(self) -> Locator:
-        return self.page.get_by_test_id("integration-editor-tab-tools")
+    def connection_settings(self) -> Locator:
+        return self.page.get_by_test_id("integration-overview").locator("details")
 
-    @property
-    def connection_tab(self) -> Locator:
-        return self.page.get_by_test_id("integration-editor-tab-connection")
+    def open_connection_settings(self) -> None:
+        """Expand the initially collapsed settings without closing an open section."""
+        if self.connection_settings.get_attribute("open") is None:
+            self.connection_settings.locator("summary").click()
+
+    def change_tools_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-change-tools-{integration_id}")
+
+    def rename_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-rename-{integration_id}")
+
+    def cancel_edit(self, integration_id: str) -> None:
+        self.page.get_by_test_id(f"integrations-cancel-{integration_id}").click()
+        self.page.get_by_role("dialog").wait_for(state="hidden")
 
     def tool_checkbox(self, operation_id: str) -> Locator:
         return self.page.get_by_test_id(f"integration-tool-{operation_id}")

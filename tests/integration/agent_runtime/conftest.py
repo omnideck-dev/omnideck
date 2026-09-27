@@ -53,10 +53,11 @@ async def harness(tmp_path, monkeypatch):
     manager = AgentRuntime(shutdown_timeout=0.1)
     h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config)
 
-    async def categories():
+    async def categories(*_args):
         return h.categories
 
     monkeypatch.setattr("skills._resolve.tool_categories", categories)
+    monkeypatch.setattr("agent_runtime._factory.tool_categories", categories)
     monkeypatch.setattr("tools.browser.capability.tool_categories", categories)
 
     class BrowserService:

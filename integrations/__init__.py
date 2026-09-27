@@ -1,35 +1,5 @@
-"""Integrations subsystem facade.
+"""Tool integrations: catalog presets, operations, grants, and application API.
 
-Public API surface for the rest of the app. Implementation (supervisor,
-brokers, shared RPC framing, vault storage) lives in sibling sub-packages
-that aren't re-exported here — they're the subsystem's internals.
-
-External consumers (tool handlers, app-server routes) talk to integrations
-through the ``broker_client`` submodule::
-
-    from integrations import broker_client
-
-    result = await broker_client.call(
-        "gmail_personal", "email.mailboxes.list", {}, app_sock_path=...,
-    )
-
-    try:
-        ...
-    except broker_client.IntegrationAuthFailed:
-        ...
-
-Keeping the submodule visible (rather than flattening individual symbols)
-gives external code one clear namespace per surface and matches the
-``requests.get`` / ``asyncio.sleep`` convention.
-
-Internal modules inside this package continue to import from their defining
-submodule, not through this facade.
-
-Preset definitions are exposed by ``integrations.catalog``; shared broker
-launch contracts live in ``integrations.drivers``. Neither depends on
-supervisor lifecycle or persistence.
+Application callers use ``integrations.service``. Credential storage, process
+lifecycle, and transport clients belong to ``brokering``.
 """
-
-from integrations import broker_client, supervisor_client
-
-__all__ = ["broker_client", "supervisor_client"]

@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from datetime import UTC
 from typing import Literal
 
+from brokering.connection_data import BrokerConnectionData
+
 # Google's token endpoint returns expanded scope URIs (e.g.
 # "https://...userinfo.email" instead of the shorthand "email" we
 # requested). oauthlib treats any scope difference as an error unless
@@ -93,7 +95,6 @@ class PendingOAuthIntegration:
     label: str
     scopes: list[str]
     operation_grants_raw: list[str] | None
-    permissions_raw: dict[str, str]
     reconnect_id: str | None
     redirect_uri: str
     authorize_url: str
@@ -122,7 +123,6 @@ class OAuthIntegrationManager:
         client_secret: str,
         scopes: list[str],
         operation_grants_raw: list[str] | None,
-        permissions_raw: dict[str, str],
         reconnect_id: str | None,
         redirect_uri: str,
     ) -> PendingOAuthIntegration:
@@ -186,7 +186,6 @@ class OAuthIntegrationManager:
                 list(operation_grants_raw)
                 if operation_grants_raw is not None else None
             ),
-            permissions_raw=dict(permissions_raw),
             reconnect_id=reconnect_id,
             redirect_uri=redirect_uri,
             authorize_url=authorize_url,
@@ -221,7 +220,7 @@ class OAuthIntegrationManager:
         state: str,
         code: str | None,
         error: str | None,
-    ) -> dict | None:
+    ) -> BrokerConnectionData | None:
         """Exchange the auth code for tokens, return an ``auth_blob``.
 
         Returns ``None`` on user denial / library error / unknown state —
@@ -360,7 +359,7 @@ class OAuthIntegrationManager:
     # -- internals -----------------------------------------------------
 
     @staticmethod
-    def _build_auth_blob(flow: Flow, *, fallback_scopes: list[str]) -> dict:
+    def _build_auth_blob(flow: Flow, *, fallback_scopes: list[str]) -> BrokerConnectionData:
         """Convert ``Credentials`` to the auth_blob shape the supervisor's ``add`` verb expects."""
         creds = flow.credentials
         # google-auth commonly returns a naive UTC datetime but can also
@@ -400,7 +399,7 @@ class OAuthIntegrationManager:
             raise ValueError(
                 f"token response missing string fields: {', '.join(sorted(missing))}",
             )
-        return auth_blob
+        return BrokerConnectionData.from_wire(auth_blob)
 
     def _mark_terminal(self, state: str, status: PendingStatus) -> None:
         pending = self._pending.get(state)

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from tools.integrations._state import registered_integrations
+from integrations.connection_cache import ConnectionSnapshot, IntegrationConnection
 from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
 from tools.integrations.create_event import build_create_event_tool
@@ -34,9 +34,6 @@ from tools.integrations.search_events import build_search_events_tool
 from tools.integrations.send_email import build_send_email_tool
 from tools.integrations.update_event import build_update_event_tool
 from tools.integrations.update_event_series import build_update_event_series_tool
-
-if TYPE_CHECKING:
-    from tools.integrations.types import RegisteredIntegration
 
 ToolBuilder = Callable[[Iterable[str]], Callable[..., Any]]
 
@@ -81,39 +78,38 @@ class OperationTools:
 
 def _ids_granting(
     operation_id: str,
-    integrations: Iterable[RegisteredIntegration],
+    connections: Iterable[IntegrationConnection],
 ) -> frozenset[str]:
     return frozenset(
-        integration.id
-        for integration in integrations
-        if integration.kind == "integration"
-        and integration.state == "running"
-        and operation_id in integration.operation_grants
+        connection.id
+        for connection in connections
+        if connection.kind == "integration"
+        and connection.state == "running"
+        and operation_id in connection.operation_grants
     )
 
 
 def _tools_for_category(
     category: str,
-    integrations: Iterable[RegisteredIntegration],
+    connections: Iterable[IntegrationConnection],
 ) -> list[Callable[..., Any]]:
-    integrations = list(integrations)
+    connections = list(connections)
     tools: list[Callable[..., Any]] = []
     prefix = f"{category}."
     for operation_id, builder in _BUILDERS.items():
         if not operation_id.startswith(prefix):
             continue
-        ids = _ids_granting(operation_id, integrations)
+        ids = _ids_granting(operation_id, connections)
         if ids:
             tools.append(builder(ids))
     return tools
 
 
-async def integration_tools_by_category() -> dict[str, OperationTools]:
-    integrations = list((await registered_integrations()).values())
+def integration_tools_by_category(connections: ConnectionSnapshot = ()) -> dict[str, OperationTools]:
     categories = {operation_id.split(".", 1)[0] for operation_id in _BUILDERS}
     result: dict[str, OperationTools] = {}
     for category in categories:
-        tools = _tools_for_category(category, integrations)
+        tools = _tools_for_category(category, connections)
         result[category] = OperationTools(tools=tools, available=bool(tools))
     return result
 

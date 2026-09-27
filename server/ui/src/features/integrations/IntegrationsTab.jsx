@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import ListItem from '../../components/ListItem.jsx';
+import SplitPanel from '../../components/SplitPanel.jsx';
 import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import { removeIntegration, updateIntegration } from './api/integrationsApi.js';
 import IntegrationIcon from './components/IntegrationIcon.jsx';
-import IntegrationStatusBadge from './components/IntegrationStatusBadge.jsx';
 import IntegrationEditor from './editor/IntegrationEditor.jsx';
 import useIntegrations from './hooks/useIntegrations.js';
 import IntegrationReconnectFlow from './setup/IntegrationReconnectFlow.jsx';
@@ -12,7 +13,7 @@ import IntegrationSetupFlow from './setup/IntegrationSetupFlow.jsx';
 import styles from './IntegrationsView.module.css';
 
 export default function IntegrationsTab() {
-    const { integrations, catalog, loading, error: loadError, refresh } = useIntegrations();
+    const { connections, catalog, loading, error: loadError, refresh } = useIntegrations();
     const [setupOpen, setSetupOpen] = useState(false);
     const [reconnectRecord, setReconnectRecord] = useState(null);
     const [selectedId, setSelectedId] = useState(null);
@@ -21,14 +22,14 @@ export default function IntegrationsTab() {
     const [removeError, setRemoveError] = useState(null);
 
     useEffect(() => {
-        if (integrations.length === 0) {
+        if (connections.length === 0) {
             if (selectedId !== null) setSelectedId(null);
             return;
         }
-        if (!integrations.some(item => item.id === selectedId)) {
-            setSelectedId(integrations[0].id);
+        if (!connections.some(item => item.id === selectedId)) {
+            setSelectedId(connections[0].id);
         }
-    }, [integrations, selectedId]);
+    }, [connections, selectedId]);
 
     useEffect(() => {
         setSaveError(null);
@@ -40,19 +41,19 @@ export default function IntegrationsTab() {
         [catalog],
     );
     const selected = useMemo(
-        () => integrations.find(item => item.id === selectedId) || null,
-        [integrations, selectedId],
+        () => connections.find(item => item.id === selectedId) || null,
+        [connections, selectedId],
     );
     const grouped = useMemo(() => {
         const groups = new Map();
-        for (const record of integrations) {
+        for (const record of connections) {
             const entry = catalogById.get(record.slug);
             const category = entry?.category || 'Other';
             if (!groups.has(category)) groups.set(category, []);
             groups.get(category).push({ record, entry });
         }
         return [...groups.entries()];
-    }, [catalogById, integrations]);
+    }, [catalogById, connections]);
 
     const handleSave = useCallback(async (updates) => {
         if (!selected) return false;
@@ -101,30 +102,35 @@ export default function IntegrationsTab() {
                         <Button onClick={refresh}><i className="bi bi-arrow-clockwise" /> Retry</Button>
                     </div>
                 )
-            ) : integrations.length === 0 ? (
+            ) : connections.length === 0 ? (
                 <EmptyState onAdd={() => setSetupOpen(true)} />
             ) : (
-                <div className={styles.split}>
-                    <IntegrationList
-                        groups={grouped}
-                        selectedId={selectedId}
-                        onSelect={setSelectedId}
-                        onAdd={() => setSetupOpen(true)}
-                    />
-                    {selected && (
-                        <IntegrationEditor
-                            key={selected.id}
-                            record={selected}
-                            catalogEntry={catalogById.get(selected.slug)}
-                            saving={saving}
-                            saveError={saveError}
-                            removeError={removeError}
-                            onSave={handleSave}
-                            onRemove={handleRemove}
-                            onReconnect={() => setReconnectRecord(selected)}
+                <SplitPanel>
+                    <SplitPanel.List>
+                        <IntegrationList
+                            groups={grouped}
+                            selectedId={selectedId}
+                            onSelect={setSelectedId}
+                            onAdd={() => setSetupOpen(true)}
                         />
-                    )}
-                </div>
+                    </SplitPanel.List>
+                    <SplitPanel.Detail>
+                        {selected && (
+                            <IntegrationEditor
+                                key={selected.id}
+                                record={selected}
+                                catalogEntry={catalogById.get(selected.slug)}
+                                saving={saving}
+                                saveError={saveError}
+                                removeError={removeError}
+                                onSave={handleSave}
+                                onClearSaveError={() => setSaveError(null)}
+                                onRemove={handleRemove}
+                                onReconnect={() => setReconnectRecord(selected)}
+                            />
+                        )}
+                    </SplitPanel.Detail>
+                </SplitPanel>
             )}
 
             {setupOpen && (
@@ -175,40 +181,33 @@ function UnavailableState({ onRetry }) {
 function IntegrationList({ groups, selectedId, onSelect, onAdd }) {
     const count = groups.reduce((total, [, rows]) => total + rows.length, 0);
     return (
-        <aside className={styles.listPane}>
-            <div className={styles.listHeader}>
-                <span>Connected · {count}</span>
-                <button type="button" onClick={onAdd} data-testid="integrations-add-another">
+        <>
+            <SplitPanel.Header actions={
+                <Button variant="ghost" onClick={onAdd} data-testid="integrations-add-another">
                     <i className="bi bi-plus-lg" /> Add
-                </button>
-            </div>
+                </Button>
+            }>Integrations · {count}</SplitPanel.Header>
             <div className={styles.listBody}>
                 {groups.map(([category, rows]) => (
                     <section className={styles.listGroup} key={category}>
                         <div className={styles.listGroupLabel}>{category}</div>
-                        {rows.map(({ record, entry }) => (
-                            <button
-                                type="button"
+                        {rows.map(({ record }) => (
+                            <ListItem
                                 key={record.id}
-                                className={`${styles.listItem} ${record.id === selectedId ? styles.listItemActive : ''}`}
+                                active={record.id === selectedId}
+                                aria-current={record.id === selectedId ? 'true' : undefined}
+                                icon={<IntegrationIcon catalogId={record.slug} />}
+                                name={record.label}
+                                description={(record.operation_grants || []).length === 0
+                                    ? 'No tools selected'
+                                    : `${record.operation_grants.length} ${record.operation_grants.length === 1 ? 'tool' : 'tools'} selected`}
                                 onClick={() => onSelect(record.id)}
                                 data-testid={`integrations-row-${record.id}`}
-                            >
-                                <IntegrationIcon catalogId={record.slug} className={styles.listIcon} />
-                                <span className={styles.listCopy}>
-                                    <span className={styles.listTitle}>{record.label}</span>
-                                    <span className={styles.listDescription}>
-                                        {(record.operation_grants || []).length === 0
-                                            ? 'No tools enabled'
-                                            : `${record.operation_grants.length} tools enabled`}
-                                    </span>
-                                </span>
-                                <IntegrationStatusBadge state={record.state} />
-                            </button>
+                            />
                         ))}
                     </section>
                 ))}
             </div>
-        </aside>
+        </>
     );
 }

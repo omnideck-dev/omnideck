@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack
 from uuid import uuid4
+from integrations.connection_cache import ConnectionSnapshot
 
 from artifacts import ArtifactsIndexWriter
 from conversations import BrowserTabsWriter, ConversationScope, ConversationStore, EventsLogWriter, TerminalWriter
@@ -28,7 +29,11 @@ class InvalidRunCursorError(ValueError):
 class RunSession:
     """Own one accepted run and every execution underneath its root."""
 
-    def __init__(self, request: AgentRunRequest, run_id: str, conversations: ConversationStore) -> None:
+    def __init__(
+        self, request: AgentRunRequest, run_id: str, conversations: ConversationStore,
+        *, integration_connections: ConnectionSnapshot = (),
+    ) -> None:
+        self.integration_connections = integration_connections
         self.request = request
         self.run_id = run_id
         self.conversation_id = request.conversation_id

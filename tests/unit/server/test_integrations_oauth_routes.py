@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from server import _integrations_oauth_routes as routes
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 
 @pytest.mark.unit
@@ -44,7 +45,7 @@ async def test_oauth_start_carries_zero_exact_grants_separately_from_scopes() ->
     assert response.status == 200
     assert json.loads(response.body)["state"] == "state-token"
     assert start.call_args.kwargs["operation_grants_raw"] == []
-    assert start.call_args.kwargs["permissions_raw"] == {}
+    assert "permissions_raw" not in start.call_args.kwargs
     assert start.call_args.kwargs["scopes"] == [
         "openid",
         "https://www.googleapis.com/auth/gmail.readonly",
@@ -115,6 +116,8 @@ async def test_oauth_start_rejects_scopes_outside_the_catalog_policy() -> None:
 @pytest.mark.asyncio
 async def test_oauth_callback_reconnects_existing_connection() -> None:
     request = MagicMock()
+    refresh = AsyncMock(return_value=True)
+    request.app = {INTEGRATION_CACHE_KEY: MagicMock(refresh=refresh)}
     request.query = {"state": "state-token", "code": "auth-code"}
     pending = SimpleNamespace(
         status="pending",
@@ -123,7 +126,6 @@ async def test_oauth_callback_reconnects_existing_connection() -> None:
         user_suffix="alice",
         label="Google Workspace · alice",
         operation_grants_raw=[],
-        permissions_raw={},
     )
     supervisor_result = {
         "id": "google_workspace_alice",
@@ -144,7 +146,6 @@ async def test_oauth_callback_reconnects_existing_connection() -> None:
         patch.object(routes._oauth, "begin_commit", return_value=True),
         patch.object(routes._oauth, "mark_success") as mark_success,
         patch("server._integrations_oauth_routes._supervisor_call", supervisor_call),
-        patch("server._integrations_oauth_routes.mark_added"),
     ):
         response = await routes.handle_oauth_callback(request)
 
@@ -158,6 +159,7 @@ async def test_oauth_callback_reconnects_existing_connection() -> None:
         },
     )
     mark_success.assert_called_once_with("state-token", "google_workspace_alice")
+    refresh.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -185,6 +187,8 @@ async def test_oauth_cancel_returns_completed_integration_for_ui_cleanup() -> No
 @pytest.mark.asyncio
 async def test_oauth_callback_does_not_mutate_after_cancellation_wins() -> None:
     request = MagicMock()
+    refresh = AsyncMock()
+    request.app = {INTEGRATION_CACHE_KEY: MagicMock(refresh=refresh)}
     request.query = {"state": "state-token", "code": "auth-code"}
     pending = SimpleNamespace(
         status="pending",
@@ -193,7 +197,6 @@ async def test_oauth_callback_does_not_mutate_after_cancellation_wins() -> None:
         user_suffix="alice",
         label="Google Workspace · alice",
         operation_grants_raw=[],
-        permissions_raw={},
     )
     with (
         patch.object(routes._oauth, "status", return_value=pending),
@@ -204,14 +207,13 @@ async def test_oauth_callback_does_not_mutate_after_cancellation_wins() -> None:
         ),
         patch.object(routes._oauth, "begin_commit", return_value=False),
         patch("server._integrations_oauth_routes._supervisor_call") as call,
-        patch("server._integrations_oauth_routes.mark_added") as mark_added,
         patch.object(routes._oauth, "mark_success") as mark_success,
     ):
         response = await routes.handle_oauth_callback(request)
 
     assert response.status == 200
     call.assert_not_awaited()
-    mark_added.assert_not_called()
+    refresh.assert_not_awaited()
     mark_success.assert_not_called()
 
 

@@ -267,6 +267,15 @@ Full documentation is available at **[omnideck.dev](https://omnideck.dev)**:
 - [Agents](https://omnideck.dev) — Create and customize agent profiles
 - [Routines](https://omnideck.dev) — Schedule background tasks
 
+Developer references maintained in this repository:
+
+- [Integrations and brokering](docs/integrations.md) — terminology, package boundaries, grants, and connection lifecycle
+- [Data migrations](docs/migrations.md) — upgrading persisted application and vault data
+- [Integration testing](tests/integration/integrations/README.md) — local fake services and test-suite boundaries
+- [Design language](docs/design/design_language.md) — shared UI patterns and components
+
+The `plans/` directory contains proposals and follow-ups, not necessarily implemented behavior.
+
 <details>
 <summary>Build from source</summary>
 

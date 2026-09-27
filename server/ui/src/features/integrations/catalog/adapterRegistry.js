@@ -51,8 +51,17 @@ const FALLBACK_ADAPTER = {
     vendor: 'this integration',
 };
 
+const UPDATE_COPY = {
+    app_password: { updateAction: 'Update app password', updateTitle: 'Sign-in', updateDescription: 'Replace the app-specific password for this account.' },
+    google_oauth: { updateAction: 'Sign in again', updateTitle: 'Sign-in', updateDescription: 'Refresh access to your Google account.' },
+    http_token: { updateAction: 'Update token', updateTitle: 'API access', updateDescription: 'Replace the token and confirm your API connection details.' },
+    test: { updateAction: 'Update test credential', updateTitle: 'Test credential', updateDescription: 'Replace the credential for this local test integration.' },
+    unsupported: { updateAction: 'Update connection', updateTitle: 'Connection', updateDescription: 'Update the details used to connect this integration.' },
+};
+
 export function getConnectionAdapter(catalogId) {
-    return ADAPTERS[catalogId] || FALLBACK_ADAPTER;
+    const adapter = ADAPTERS[catalogId] || FALLBACK_ADAPTER;
+    return { ...adapter, ...UPDATE_COPY[adapter.kind] };
 }
 
 export function errorCopy(error, entry) {

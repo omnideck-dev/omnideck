@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react';
 
 import Callout from '../../../components/primitives/Callout.jsx';
+import IconButton from '../../../components/primitives/IconButton.jsx';
 import Modal from '../../../components/primitives/Modal.jsx';
+import { getConnectionAdapter } from '../catalog/adapterRegistry.js';
 import {
     cancelIntegrationOAuth,
-    listIntegrations,
+    listIntegrationConnections,
 } from '../api/integrationsApi.js';
 import ConnectionStep from './ConnectionStep.jsx';
 import styles from './IntegrationSetupFlow.module.css';
@@ -16,12 +18,13 @@ export default function IntegrationReconnectFlow({
     const [cancelling, setCancelling] = useState(false);
     const [pendingOAuthState, setPendingOAuthState] = useState(null);
     const [error, setError] = useState(null);
+    const { updateAction } = getConnectionAdapter(connection.slug);
 
-    const connectedById = useCallback(async (integrationId) => {
+    const connectedById = useCallback(async (connectionId) => {
         setBusy(true);
         try {
-            const integrations = await listIntegrations();
-            const updated = integrations.find(item => item.id === integrationId);
+            const connections = await listIntegrationConnections();
+            const updated = connections.find(item => item.id === connectionId);
             if (!updated) throw new Error('The reconnected integration was not returned by the service.');
             onComplete(updated);
         } catch (requestError) {
@@ -55,29 +58,27 @@ export default function IntegrationReconnectFlow({
             onClose={dismissalBlocked ? undefined : cancel}
             width={760}
             labelledBy="reconnect-integration-title"
-            className={styles.modal}
+            layout="contained"
             testId="integration-reconnect-flow"
         >
             <header className={styles.modalHeader}>
                 <div id="reconnect-integration-title" className={styles.modalTitle}>
-                    Reconnect integration
+                    {updateAction}
                 </div>
-                <button
-                    type="button"
-                    className={styles.closeButton}
+                <IconButton
                     onClick={cancel}
                     disabled={dismissalBlocked}
                     aria-label="Close"
                 >
                     <i className="bi bi-x-lg" />
-                </button>
+                </IconButton>
             </header>
             <div className={styles.stepContent}>
                 {error && (
                     <div className={styles.flowError}>
                         <Callout
                             tone="danger"
-                            title="Reconnect couldn't finish"
+                            title="Couldn't update the connection"
                             description={error}
                         />
                     </div>

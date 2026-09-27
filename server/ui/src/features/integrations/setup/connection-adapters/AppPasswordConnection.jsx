@@ -41,7 +41,7 @@ export default function AppPasswordConnection({
     const copy = error ? errorCopy(error, entry) : null;
     return (
         <ConnectionFrame
-            title={`${existingConnection ? 'Reconnect' : 'Connect'} ${entry.title}`}
+            title={existingConnection ? adapter.updateAction : `Connect ${entry.title}`}
             description={`Use an app-specific password from ${adapter.vendor}.`}
             footer={(
                 <ConnectionActions
@@ -49,7 +49,8 @@ export default function AppPasswordConnection({
                     onSubmit={connect}
                     submitting={submitting}
                     submitDisabled={!canSubmit}
-                    submitLabel={existingConnection ? 'Reconnect' : 'Connect'}
+                    submitLabel={existingConnection ? adapter.updateAction : 'Connect'}
+                    busyLabel={existingConnection ? 'Updating…' : 'Connecting…'}
                 />
             )}
         >

@@ -567,6 +567,17 @@ body {
 .badge-info    { background: var(--accent-muted);  color: var(--accent);  border-color: var(--accent-muted); }
 .badge-neutral { background: var(--border-subtle); color: var(--text-tertiary); border-color: var(--border); }
 
+[id] { scroll-margin-top: calc(var(--header-height) + var(--sp-6)); }
+
+.quiet-connected {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--success);
+  font: var(--font-size-body) var(--font-body);
+  white-space: nowrap;
+}
+
 /* ── Status Dots ── */
 .status-dot {
   width: 6px;
@@ -1750,28 +1761,25 @@ body {
 
 /* ── List Item ───────────────────────────────────────── */
 .list-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px;
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 150ms var(--ease);
-  border-left: 2px solid transparent;
-  background: transparent;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+  background: var(--surface);
   width: 100%;
-  max-width: 280px;
   text-align: left;
-  border: 1px solid transparent;
-  border-left: 2px solid transparent;
+  border: 1px solid var(--border);
 }
-.list-item:hover { background: var(--accent-muted); }
+.list-item:hover { border-color: var(--border-strong); }
 .list-item.active {
   background: var(--accent-muted);
-  border-left-color: var(--accent);
-  border-radius: 0;
+  border-color: var(--accent);
 }
+.list-item:focus-visible, .dl-split-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .list-item .li-main { flex: 1; min-width: 0; }
-.list-item .li-name { font-size: 12px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.list-item .li-desc { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-item .li-name { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-item .li-desc { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item .li-meta { font-family: var(--font-brand); font-size: 10px; color: var(--text-tertiary); }
 
 /* ── Code Block ──────────────────────────────────────── */
@@ -2043,7 +2051,7 @@ body {
   gap: var(--sp-2);
   padding: var(--sp-2);
   background: var(--elevated);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .dl-collection-toolbar .input { flex: 1; min-width: 160px; background: var(--elevated); }
 .dl-collection-row {
@@ -2056,6 +2064,12 @@ body {
 }
 .dl-collection-row + .dl-collection-row { border-top: 1px solid var(--border-subtle); }
 .dl-collection-row input { accent-color: var(--accent); }
+
+.dl-collection-embedded { border: 0; border-radius: 0; }
+.dl-collection-embedded .dl-collection-toolbar {
+  padding: 0 0 var(--sp-3);
+  border-bottom-color: var(--border-subtle);
+}
 
 /* ── Progress Bar ────────────────────────────────────── */
 .progressbar {
@@ -2150,6 +2164,7 @@ body {
   transition: opacity 150ms var(--ease);
 }
 .collapsible-header:hover { opacity: 0.85; }
+.collapsible[open] .disclosure-chevron { transform: rotate(90deg); }
 .collapsible-body {
   font-size: 13px;
   color: var(--text-secondary);
@@ -2376,17 +2391,16 @@ body {
 }
 .dl-modal {
   position: relative;
-  width: 100%; max-width: 500px;
+  width: 100%; max-width: 420px;
   background: var(--elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 .dl-modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border);
 }
 .dl-modal-title {
   font-family: var(--font-brand);
@@ -2401,22 +2415,23 @@ body {
 .dl-modal-footer {
   display: flex; gap: var(--sp-2); justify-content: flex-end;
   padding: var(--sp-3) var(--sp-4);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ── Split Panel ─────────────────────────────────────── */
 .dl-split {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: var(--sp-5);
   height: 320px;
   background: var(--canvas);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .dl-split-list {
-  width: 35%;
-  min-width: 280px; max-width: 420px;
-  background: var(--canvas);
+  min-width: 0;
+  min-height: 0;
+  padding-right: var(--sp-4);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
 }
@@ -2424,63 +2439,59 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
+  gap: var(--sp-2);
+  min-height: var(--sp-8);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 .dl-split-list-title {
   font-family: var(--font-brand);
-  font-size: 12px; font-weight: 600;
+  font-size: var(--font-size-caption); font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-primary); opacity: 0.7;
+  color: var(--text-secondary);
 }
-.dl-split-new-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-family: var(--font-brand);
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.03em;
-  padding: 4px var(--sp-2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent-muted);
-  background: var(--accent-muted);
-  color: var(--accent);
-  cursor: pointer;
-}
-.dl-split-list-body { flex: 1; overflow-y: auto; padding: 0; }
+.dl-split-list-body { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-height: 0; overflow-y: auto; }
 .dl-split-item {
   display: block;
   width: 100%;
   padding: var(--sp-2) var(--sp-3);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-left: 2px solid transparent;
+  background: var(--surface);
+  border: 1px solid var(--border);
   text-align: left;
   cursor: pointer;
   transition: background 150ms var(--ease), border-color 150ms var(--ease);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: none;
 }
-.dl-split-item:hover { background: var(--surface); }
+.dl-split-item:hover { border-color: var(--border-strong); }
 .dl-split-item.active {
   background: var(--accent-muted);
-  border-left-color: var(--accent);
+  border-color: var(--accent);
 }
 .dl-split-item .name {
-  font-size: 13px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
   margin-bottom: 2px;
 }
 .dl-split-item .desc {
-  font-size: 11px; color: var(--text-primary);
-  opacity: 0.5; line-height: 1.3;
+  font-size: 10px; color: var(--text-tertiary);
+  line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .dl-split-detail {
   flex: 1;
   padding: var(--sp-4) var(--sp-5);
   overflow-y: auto;
+}
+@media (max-width: 860px) {
+  .dl-split { grid-template-columns: 250px minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .dl-split { display: block; overflow-y: auto; }
+  .dl-split-list { padding-right: 0; border-right: 0; margin-bottom: var(--sp-4); }
 }
 
 /* ── Split Handle ────────────────────────────────────── */
@@ -3226,7 +3237,7 @@ body {
       indicator on active elements), <strong>Phosphor Glow</strong> (CRT-inspired status glows on running
       states and focused inputs), the <strong>Depth Stack</strong> (canvas → surface → elevated layering),
       <strong>Monospace Voice</strong> (Share Tech Mono on structural UI text), and the strict
-      <strong>Status Vocabulary</strong> (a fixed mapping from state to color, dot, and badge).
+      <strong>Status Vocabulary</strong> (consistent state colors, with emphasis chosen for the context).
     </div>
 
     <!-- Signal Line Showcase -->
@@ -3294,6 +3305,13 @@ body {
     <!-- Depth Stack -->
     <div style="margin-bottom: 32px">
       <div class="component-label">Depth Stack</div>
+      <p class="section-desc">
+        Organize content with spacing and typography before adding surface layers
+        or borders. Use one enclosing boundary for a distinct object or task;
+        ordinary subsections do not each need a card. Internal separators use
+        <code>--border-subtle</code> when needed. Avoid alternating surface levels
+        merely to divide content. Preserve input boundaries and visible keyboard focus.
+      </p>
       <div class="depth-demo">
         <div class="depth-layer depth-canvas">
           <span class="depth-layer-name">Canvas</span>
@@ -3340,19 +3358,22 @@ body {
     <div>
       <div class="component-label">Status Vocabulary</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;max-width:680px;line-height:1.6">
-        State always reads the same way. Running glows. Complete is calm. Error is unmistakable. Idle recedes.
-        These five states cover every status indication across the app — agents, tasks, runs, connections,
-        feature flags. Anything else means we're inventing a new state and should ask whether that's necessary.
+        State colors stay consistent; the amount of decoration depends on the task.
+        Routine healthy status uses a checkmark and sentence-case text without a pill.
+        Active work may pulse; completed work is calm; errors remain unmistakable.
+        Use the optional dot and badge treatments below for compact or emphasized
+        contexts, not as mandatory wrappers. Show status once in a detail header;
+        repeat it in a list only when it helps comparison or exposes an actionable exception.
       </div>
       <table class="status-vocab">
         <thead>
-          <tr><th>State</th><th>Color token</th><th>Dot</th><th>Badge background</th><th>Usage</th></tr>
+          <tr><th>State</th><th>Color token</th><th>Indicator</th><th>Optional badge background</th><th>Usage</th></tr>
         </thead>
         <tbody>
           <tr>
             <td><span class="vocab-state">Ready</span></td>
             <td><code>--success</code></td>
-            <td><span class="vocab-dot" style="background:var(--success);box-shadow:0 0 6px var(--success-muted)"></span><span style="color:var(--text-tertiary)">solid + glow</span></td>
+            <td><span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Ready</span></td>
             <td><code>--success-muted</code></td>
             <td>Connected integrations, enabled routines, healthy services</td>
           </tr>
@@ -3421,7 +3442,7 @@ body {
     </div>
 
     <!-- Buttons -->
-    <div class="subsection">
+    <div class="subsection" id="buttons">
       <div class="subsection-label">Buttons</div>
       <div class="component-row">
         <button class="btn btn-filled">Primary</button>
@@ -3438,16 +3459,22 @@ body {
         <span style="font-size:11px;color:var(--text-tertiary);margin-left:8px;align-self:center">Icon buttons (28&times;28)</span>
       </div>
 
+      <div class="component-row" aria-label="Primary and secondary actions">
+        <button class="btn btn-ghost" type="button">Back</button>
+        <button class="btn btn-ghost" type="button">Cancel</button>
+        <button class="btn btn-filled" type="button">Save changes</button>
+      </div>
+
       <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-code);margin-top:12px;line-height:1.6;max-width:760px">
         // <strong style="color:var(--text-secondary)">When to reach for which.</strong> The four variants form a loudness ladder:
         <code>filled</code> &gt; <code>outline</code> &gt; <code>ghost</code>, with <code>danger</code> as a parallel destructive track.<br>
         // <code>.btn-filled</code> &mdash; the single primary action on a surface (Save, Connect, Submit, Next). At most one per row.<br>
-        // <code>.btn-outline</code> &mdash; the default for everything that isn&apos;t the primary CTA. Cancel, Back, Retry, Configure. A real, peer choice the user might pick.<br>
-        // <code>.btn-ghost</code> &mdash; tertiary / quiet. Use when the button stands alone or genuinely shouldn&apos;t compete for attention (a solo Skip, a hover-revealed row action). Reads as "an escape hatch."<br>
+        // <code>.btn-outline</code> &mdash; use when a peer action needs stronger definition, such as a standalone Retry or Configure. Not the automatic choice for every secondary action.<br>
+        // <code>.btn-ghost</code> &mdash; quiet secondary actions, including Cancel beside Save, Back, Skip, and collection bulk actions. It can share a row with a primary action; it is not a disabled state.<br>
         // <code>.btn-danger</code> &mdash; destructive (Delete, Disconnect, Remove). Use anywhere the action can&apos;t be cheaply undone.<br>
         // <strong style="color:var(--text-secondary)">Async actions:</strong> keep the action in place, replace its contents with a spinner and concise progress label, and disable it until the operation settles. In React, use <code>&lt;Button loading loadingLabel="Saving&hellip;"&gt;</code>; do not recreate the spinner locally.<br>
-        // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> if two buttons live in the same action row, neither should be <code>ghost</code>. Use <code>filled</code> for the one primary CTA, <code>outline</code> for the rest, <code>danger</code> for destructive. Reach for <code>ghost</code> only when the button is alone or you specifically want it to feel almost-not-there.<br>
-        // Counter-example: a wizard footer of <code>[Back] [Cancel] [Save]</code>. All three are peer choices &mdash; render Back &amp; Cancel as <code>outline</code> and Save as <code>filled</code>. A <code>ghost</code> Cancel sitting next to outline Back reads as disabled, especially in dark mode.
+        // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> distinguish primary from secondary through emphasis, not by outlining every action. A wizard footer of <code>[Back] [Cancel] [Save]</code> uses quiet Back/Cancel and filled Save. Retain readable labels, hover feedback, and keyboard focus.<br>
+        // The React Button API still defaults to <code>outline</code>; choose the variant explicitly. Existing screens may predate these rules and should adopt them when revised.
       </div>
 
       <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -3528,8 +3555,14 @@ body {
     </div>
 
     <!-- Badges -->
-    <div class="subsection">
+    <div class="subsection" id="status">
       <div class="subsection-label">Badges</div>
+      <p class="section-desc">
+        Use pills for discrete tags, counts, or statuses needing stronger enclosure,
+        especially warning and error cues. Routine healthy/ready status uses a
+        decorative checkmark and sentence-case body text instead, with no border,
+        background, or dot. Do not decorate the same status repeatedly.
+      </p>
       <div class="component-row">
         <span class="badge badge-success"><span class="status-dot dot-running" style="width:5px;height:5px"></span> RUNNING</span>
         <span class="badge badge-info">COMPLETE</span>
@@ -3540,6 +3573,14 @@ body {
         <span class="badge badge-info">12 iter</span>
         <span class="badge badge-neutral">4.7s</span>
       </div>
+      <p class="section-desc">
+        Quiet status: <code>--success</code>, body font, <code>--sp-2</code> gap,
+        and an <code>aria-hidden</code> icon beside readable status text. Use
+        <code>ConnectionStatus</code> for connections; features supply the label and tone.
+        Keep Configured distinct from verified Connected. Healthy status belongs
+        in the detail header; list badges are reserved for actionable problems.
+      </p>
+      <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
     </div>
 
     <!-- Status Dots -->
@@ -3601,7 +3642,7 @@ body {
     <div class="section-title">10. Containers</div>
     <div class="section-desc">
       Containers hold and organize content. Cards are static or clickable. Settings rows are icon-led
-      form layouts. List items appear in flyouts and lists with the Signal Line on the active state.
+      form layouts. Selectable object rows have rounded boundaries and an accent outline on selection.
       Code blocks display syntax-highlighted code. Tables are for structured data.
     </div>
 
@@ -3704,16 +3745,16 @@ body {
             <div class="desc">Endpoint for the inference backend.</div>
           </div>
           <div class="control">
-            <span class="badge badge-success" style="font-size:9px"><span class="status-dot dot-ready" style="width:5px;height:5px"></span> CONNECTED</span>
+            <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
           </div>
         </div>
       </div>
     </div>
 
     <!-- List Item -->
-    <div class="subsection">
+    <div class="subsection" id="list-item">
       <div class="subsection-label">List Item</div>
-      <div style="display:flex;flex-direction:column;gap:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-2);max-width:300px">
+      <div style="display:flex;flex-direction:column;gap:var(--sp-1);max-width:300px">
         <button class="list-item">
           <div class="li-main">
             <div class="li-name">user_preferences</div>
@@ -3734,7 +3775,10 @@ body {
         </button>
       </div>
       <div style="font-size:11px;color:var(--text-tertiary);margin-top:8px;max-width:680px;line-height:1.5">
-        Active state shows the Signal Line (2px accent left bar) plus <code>--accent-muted</code> background.
+        Shared <code>ListItem</code>: rounded object boundary, accent outline and
+        <code>--accent-muted</code> background on selection. Keep a small gap between
+        rows. The shared component owns icon placement, typography and interaction states;
+        consumers should not restyle them.
       </div>
     </div>
 
@@ -3771,24 +3815,52 @@ body {
     </div>
 
     <!-- Collection Picker -->
-    <div class="subsection">
+    <div class="subsection" id="collection-picker">
       <div class="subsection-label">Collection Picker</div>
       <p class="section-desc">
         A contained collection keeps its search/bulk-action toolbar and rows on the same
-        <code>--elevated</code> surface. Separate them with a border, not a darker
+        <code>--elevated</code> surface. Separate them with <code>--border-subtle</code>, not a darker
         <code>--canvas</code> band. Keep the toolbar outside the row scroller so items
-        cannot scroll behind it. This is distinct from a page-level table header.
+        cannot scroll behind it. A standalone collection may have an outer border;
+        inside an enclosing modal or panel, omit the nested outline and corner treatment.
+        Use ghost buttons for bulk actions. Preserve search-field boundaries and
+        keyboard focus rings. This is distinct from a page-level table header.
         The application reuses <code>SearchInput</code> and its feature-owned picker;
         there is not yet a shared collection-toolbar primitive.
       </p>
       <div class="dl-collection">
         <div class="dl-collection-toolbar">
           <input class="input" type="search" placeholder="Search tools" aria-label="Search tools">
-          <button class="btn btn-outline" type="button">Enable all</button>
-          <button class="btn btn-outline" type="button">Clear</button>
+          <button class="btn btn-ghost" type="button">Select all</button>
+          <button class="btn btn-ghost" type="button">Deselect all</button>
         </div>
         <label class="dl-collection-row"><input type="checkbox" checked> List email folders</label>
         <label class="dl-collection-row"><input type="checkbox"> Send email</label>
+      </div>
+      <p class="section-desc">
+        Embedded variant: the containing surface supplies the boundary. The
+        search controls remain outside the scrolling rows in either variant.
+      </p>
+      <div class="dl-modal">
+        <div class="dl-modal-header">
+          <div class="dl-modal-title">Choose tools</div>
+          <button class="btn-icon" type="button" aria-label="Close tool picker example"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        </div>
+        <div class="dl-modal-body">
+          <div class="dl-collection dl-collection-embedded">
+            <div class="dl-collection-toolbar">
+              <input class="input" type="search" placeholder="Search tools" aria-label="Search tools in embedded collection">
+              <button class="btn btn-ghost" type="button">Select all</button>
+              <button class="btn btn-ghost" type="button">Deselect all</button>
+            </div>
+            <label class="dl-collection-row"><input type="checkbox" checked> List email folders</label>
+            <label class="dl-collection-row"><input type="checkbox"> Send email</label>
+          </div>
+        </div>
+        <div class="dl-modal-footer">
+          <button class="btn btn-ghost" type="button">Cancel</button>
+          <button class="btn btn-filled" type="button">Save changes</button>
+        </div>
       </div>
     </div>
 
@@ -4107,19 +4179,27 @@ body {
     </div>
 
     <!-- Collapsible Block -->
-    <div class="subsection">
+    <div class="subsection" id="disclosure">
       <div class="subsection-label">Collapsible Block</div>
-      <div class="collapsible">
-        <div class="collapsible-header">
-          <i class="bi bi-chevron-down" style="font-size:10px"></i>
-          <i class="bi bi-lightbulb"></i>
+      <p class="section-desc">
+        Keep the main task visible. Optional, infrequently used settings start
+        collapsed under a descriptive disclosure. Do not hide required inputs or
+        actionable errors; provide a visible route to recovery if its controls
+        are collapsed. Preserve the user's open/closed choice while they work.
+        Use native <code>details/summary</code> or a keyboard-operable disclosure
+        with an accurate expanded state; no shared disclosure primitive exists yet.
+      </p>
+      <details class="collapsible">
+        <summary class="collapsible-header">
+          <i class="bi bi-chevron-right disclosure-chevron" aria-hidden="true"></i>
+          <i class="bi bi-lightbulb" aria-hidden="true"></i>
           Show thoughts
-        </div>
+        </summary>
         <div class="collapsible-body">
           The user wants to see API endpoints, so I'll fetch the reference page first, then parse the
           structured data into a JSON array sorted by HTTP method.
         </div>
-      </div>
+      </details>
     </div>
   </div>
 
@@ -4245,13 +4325,17 @@ body {
   </div>
 
   <!-- ═══ 15. Modal / Dialog ═══ -->
-  <div class="section">
+  <div class="section" id="modal-dialog">
     <div class="section-title">15. Modal / Dialog</div>
     <div class="section-desc">
       Centered overlay for confirmations, focused tasks, and content viewing. Scrim + blur backdrop
       (<code>--scrim</code> + <code>backdrop-filter: blur(2px)</code>), modal sits on
-      <code>--elevated</code> with <code>--radius-xl</code> and <code>--shadow-lg</code>. Dismissable
+      <code>--elevated</code> with <code>--radius-lg</code> and <code>--shadow-lg</code>. Dismissable
       via the close button, backdrop click, or Escape.
+      The modal supplies the enclosing boundary: use spacing between header and
+      body, not a mandatory divider or nested cards. If the footer needs a rule,
+      use <code>--border-subtle</code>. Pair the primary action with ghost Cancel;
+      preserve input boundaries, readable controls, and keyboard focus indicators.
     </div>
 
     <div class="dl-modal-stage">
@@ -4266,7 +4350,7 @@ body {
           associated history. This action cannot be undone.
         </div>
         <div class="dl-modal-footer">
-          <button class="btn btn-outline">Cancel</button>
+          <button class="btn btn-ghost">Cancel</button>
           <button class="btn btn-danger"><i class="bi bi-trash3"></i> Delete</button>
         </div>
       </div>
@@ -4274,12 +4358,14 @@ body {
 
     <div style="font-size:11px;color:var(--text-tertiary);margin-top:12px;max-width:680px;line-height:1.5">
       <strong style="color:var(--text-secondary)">Spacing:</strong>
-      modal max-width 500px (default — wider for content-heavy modals); header + footer padding
+      shared modal width 420px by default (wider for content-heavy modals), capped by the viewport; header + footer padding
       <code>--sp-3 --sp-4</code>; body padding <code>--sp-4</code>; footer right-aligned with gap
       <code>--sp-2</code>. Title in brand font, 13px / 600 / 0.04em.
-      <strong style="color:var(--text-secondary)">Containment:</strong> always set
-      <code>overflow: hidden</code> on the modal so the body's tinted background gets clipped to the
-      rounded corners.
+      <strong style="color:var(--text-secondary)">Containment:</strong> simple dialogs use
+      the shared padded, scrollable panel. For header/body/footer layouts, use
+      <code>Modal layout="contained"</code>: the shared shell removes padding, clips
+      the body at the rounded corners, and bounds the height. Keep scrolling in the body.
+      Do not recreate the modal surface or override its styles in a feature.
     </div>
   </div>
 
@@ -4346,12 +4432,13 @@ body {
   </div>
 
   <!-- ═══ 17. Split Panel & Split Handle ═══ -->
-  <div class="section">
+  <div class="section" id="split-panel">
     <div class="section-title">17. Split Panel &amp; Split Handle</div>
     <div class="section-desc">
       Master-detail layout — list on the left, detail on the right. Used for Routines, Profiles,
-      Conversations, and any browse-and-edit interface. The list panel uses the Signal Line on the
-      active item (see List Item in §10). For resizable splits (chat + preview), a draggable
+      Conversations, and any browse-and-edit interface. Whitespace and one divider separate
+      the panes; rounded selectable rows use the shared List Item pattern in §10.
+      For resizable splits (chat + preview), a draggable
       <strong>Split Handle</strong> sits between the columns and respects <code>--split-min</code>
       (20%) / <code>--split-max</code> (80%) bounds.
     </div>
@@ -4363,7 +4450,7 @@ body {
         <div class="dl-split-list">
           <div class="dl-split-list-header">
             <span class="dl-split-list-title">Profiles</span>
-            <button class="dl-split-new-btn"><i class="bi bi-plus-lg" style="font-size:9px"></i> NEW</button>
+            <button class="btn btn-ghost"><i class="bi bi-plus-lg"></i> New</button>
           </div>
           <div class="dl-split-list-body">
             <button class="dl-split-item active">
@@ -4392,11 +4479,11 @@ body {
         </div>
       </div>
       <div style="font-size:11px;color:var(--text-tertiary);margin-top:12px;max-width:680px;line-height:1.5">
-        <strong style="color:var(--text-secondary)">Layout:</strong> list panel 35-40% width
-        (min 220px, max 380-420px), border-right; detail panel fills remaining space.
-        Both panels scroll independently. List header is <code>display: flex</code> with the title
-        on the left and a single accent-pill action on the right (<code>+ NEW</code>, or whatever
-        the panel's primary creation flow is).
+        <strong style="color:var(--text-secondary)">Layout:</strong> list panel 34% width
+        (min 260px, fixed 250px below 860px), one right divider and <code>--sp-4</code> gap.
+        The layout owns <code>--sp-5</code> outer gutters; hosts do not add another inset.
+        Both panes scroll independently on desktop. Below 640px, the shared layout
+        stacks them into one scroll area. Use shared buttons for header actions.
       </div>
     </div>
 
@@ -4428,6 +4515,9 @@ body {
       one or more <strong>setting rows</strong> (icon + label/description + control). Used by:
       System Settings, Profile Builder, Model Settings, and any standalone configuration page.
       The page itself sits on <code>--canvas</code>; rows live on <code>--surface</code>.
+      Group related controls with headings and spacing rather than boxing every
+      subsection. Optional, infrequently used groups may start collapsed; keep
+      required inputs and actionable validation feedback visible.
     </div>
 
     <div class="fs-page">
@@ -4461,7 +4551,7 @@ body {
           <div class="fs-row-desc">Endpoint for the inference backend.</div>
         </div>
         <div class="fs-row-control">
-          <span class="badge badge-success" style="font-size:9px"><span class="status-dot dot-ready" style="width:5px;height:5px"></span> CONNECTED</span>
+          <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
         </div>
       </div>
       <div class="fs-row">
@@ -4534,7 +4624,7 @@ body {
       </div>
 
       <div class="wz-footer">
-        <button class="btn btn-outline" style="font-size:12px;height:32px">Back</button>
+        <button class="btn btn-ghost" style="font-size:12px;height:32px">Back</button>
         <button class="btn btn-filled" style="font-size:12px;height:32px">Next</button>
       </div>
     </div>

@@ -12,9 +12,12 @@ async function readJson(response) {
     return body;
 }
 
-export async function listIntegrations() {
+export async function listIntegrationConnections() {
     const body = await readJson(await fetch('/api/integrations'));
-    return (body.integrations || []).filter(
+    if (!Array.isArray(body.connections)) {
+        throw new Error('Invalid integration connection response.');
+    }
+    return body.connections.filter(
         connection => connection.kind !== 'model_provider',
     );
 }
@@ -32,17 +35,17 @@ export async function createIntegration(payload) {
     }));
 }
 
-export async function updateIntegration(integrationId, updates) {
-    return readJson(await fetch(`/api/integrations/${encodeURIComponent(integrationId)}`, {
+export async function updateIntegration(connectionId, updates) {
+    return readJson(await fetch(`/api/integrations/${encodeURIComponent(connectionId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
     }));
 }
 
-export async function reconnectIntegration(integrationId, authBlob) {
+export async function reconnectIntegration(connectionId, authBlob) {
     return readJson(await fetch(
-        `/api/integrations/${encodeURIComponent(integrationId)}/reconnect`,
+        `/api/integrations/${encodeURIComponent(connectionId)}/reconnect`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -51,8 +54,8 @@ export async function reconnectIntegration(integrationId, authBlob) {
     ));
 }
 
-export async function removeIntegration(integrationId) {
-    const response = await fetch(`/api/integrations/${encodeURIComponent(integrationId)}`, {
+export async function removeIntegration(connectionId) {
+    const response = await fetch(`/api/integrations/${encodeURIComponent(connectionId)}`, {
         method: 'DELETE',
     });
     if (!response.ok) await readJson(response);

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from playwright.sync_api import Page, expect
 
 from tests.e2e.pages import ChatView, DesktopLayout
@@ -75,7 +73,9 @@ def test_inactive_tab_context_menu_controls_that_tab(page: Page):
 
 def test_overflow_controls_scroll_and_reveal_the_selected_tab(page: Page):
     """A crowded tab strip remains navigable and keeps selection in view."""
-    page.set_viewport_size({"width": 720, "height": 720})
+    # The mobile sidebar is collapsed, so 720px can fit all five tabs now.
+    # Use a genuinely crowded strip rather than assuming sidebar width.
+    page.set_viewport_size({"width": 480, "height": 720})
     ChatView(page).goto()
     desktop = DesktopLayout(page)
     _open_destinations(page, "agents", "routines", "artifacts", "settings")
@@ -194,10 +194,10 @@ def test_tab_can_float_over_sidebar_resize_fullscreen_and_redock(page: Page):
     # initialize back to Skills even if the generic View host looked stable.
     system_tab = page.get_by_test_id("settings-tab-system")
     system_tab.click()
-    expect(system_tab).to_have_class(re.compile("tabActive"))
+    expect(system_tab).to_have_attribute("aria-selected", "true")
 
     def expect_settings_state_preserved() -> None:
-        expect(system_tab).to_have_class(re.compile("tabActive"))
+        expect(system_tab).to_have_attribute("aria-selected", "true")
 
     desktop.float("destination:settings")
 

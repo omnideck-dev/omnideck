@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.download_email_attachment import download_email_attachment
 from tools.integrations.list_email_folders import list_email_folders
 from tools.integrations.list_email_messages import list_email_messages

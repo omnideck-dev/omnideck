@@ -12,9 +12,9 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from integrations import broker_client
+from brokering import broker_client
 from integrations.catalog import integration_catalog
-from integrations.supervisor._store import list_integration_ids, read_raw_meta
+from brokering.supervisor._store import enc_path, list_connection_ids, read_raw_meta
 from server import _oauth
 
 READ = "https://www.googleapis.com/auth/gmail.readonly"
@@ -91,9 +91,10 @@ async def authorize(client, *, reconnect=False):
     return await status.json()
 
 
-async def test_oauth_connect_and_reconnect_use_actual_granted_scopes(integration_app, oauth_provider):
+async def test_oauth_reconnect_updates_choices_without_revoking_saved_grants(integration_app, oauth_provider):
     async with integration_app(integration_catalog()) as h:
         assert (await authorize(h.client))["status"] == "success"
+        proc = h.supervisor._registry.get(ID).broker.proc
         listed = await (await h.client.get("/api/integrations")).json()
         record = listed["connections"][0]
         assert record["id"] == ID
@@ -110,17 +111,49 @@ async def test_oauth_connect_and_reconnect_use_actual_granted_scopes(integration
         # Consent grants only READ even though the reconnect requested both.
         oauth_provider["scopes"] = [READ]
         assert (await authorize(h.client, reconnect=True))["status"] == "success"
+        assert h.supervisor._registry.get(ID).broker.proc is proc
         listed = await (await h.client.get("/api/integrations")).json()
         assert len(listed["connections"]) == 1
         record = listed["connections"][0]
         assert record["id"] == ID
         assert "email.messages.send" not in record["available_operation_ids"]
-        assert record["operation_grants"] == ["email.messages.get"]
-        assert read_raw_meta(h.supervisor.vault_dir, ID)["agent_operation_grants"] == ["email.messages.get"]
+        selected = ["email.messages.get", "email.messages.send"]
+        assert record["operation_grants"] == selected
+        assert read_raw_meta(h.supervisor.vault_dir, ID)["agent_operation_grants"] == selected
+        assert "email.messages.send" not in {op["id"] for op in record["operations"]}
+        # Reaches argument validation, proving the broker received the saved
+        # send grant. Empty args avoid any request to Google's actual API.
+        with pytest.raises(broker_client.IntegrationError, match="BAD_REQUEST"):
+            await broker_client.call(ID, "email.messages.send", {}, app_sock_path=h.supervisor.app_sock_path)
+        # Explicit configuration still accepts only scope-available choices.
+        saved = await h.client.patch(
+            f"/api/integrations/{ID}", json={"operation_grants": selected},
+        )
+        assert saved.status == 200, await saved.text()
+        assert (await saved.json())["operation_grants"] == ["email.messages.get"]
         with pytest.raises(broker_client.IntegrationPermissionDenied):
             await broker_client.call(ID, "email.messages.send", {}, app_sock_path=h.supervisor.app_sock_path)
         assert oauth_provider["calls"].count("authorization_code") == 2
-        assert oauth_provider["calls"].count("refresh_token") == 3
+        # Only initial connection and reconnect refresh tokens; grant edits do not.
+        assert oauth_provider["calls"].count("refresh_token") == 2
+
+
+async def test_rejected_refresh_keeps_active_google_broker_and_saved_credentials(integration_app, oauth_provider):
+    async with integration_app(integration_catalog()) as h:
+        assert (await authorize(h.client))["status"] == "success"
+        record = h.supervisor._registry.get(ID)
+        proc = record.broker.proc
+        encrypted = enc_path(h.supervisor.vault_dir, ID).read_bytes()
+        oauth_provider["reject_refresh"] = True
+        status = await authorize(h.client, reconnect=True)
+        assert status["status"] == "error"
+        assert status["error"]["code"] == "AUTH"
+        assert record.broker.proc is proc
+        assert record.state == "running"
+        assert enc_path(h.supervisor.vault_dir, ID).read_bytes() == encrypted
+        oauth_provider["reject_refresh"] = False
+        assert (await authorize(h.client, reconnect=True))["status"] == "success"
+        assert record.broker.proc is proc
 
 
 @pytest.mark.parametrize("failure", ["deny", "reject_refresh"])
@@ -136,7 +169,7 @@ async def test_oauth_failure_leaves_no_registered_or_persisted_connection(
         if failure == "reject_refresh":
             assert status["error"]["code"] == "AUTH"
         assert (await (await h.client.get("/api/integrations")).json())["connections"] == []
-        assert list_integration_ids(h.supervisor.vault_dir) == []
+        assert list_connection_ids(h.supervisor.vault_dir) == []
 
 
 async def test_cancel_during_real_token_exchange_prevents_late_registration(integration_app, oauth_provider):
@@ -166,5 +199,5 @@ async def test_cancel_during_real_token_exchange_prevents_late_registration(inte
             completed = await asyncio.wait_for(callback, timeout=5)
             await completed.read()
         assert (await (await h.client.get("/api/integrations")).json())["connections"] == []
-        assert list_integration_ids(h.supervisor.vault_dir) == []
+        assert list_connection_ids(h.supervisor.vault_dir) == []
         assert oauth_provider["calls"] == ["authorization_code"]

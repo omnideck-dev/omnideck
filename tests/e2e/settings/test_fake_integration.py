@@ -42,13 +42,12 @@ def _invoke(
     script = f"""
 import asyncio
 import json
-from integrations.broker_client import IntegrationError
-from integrations.service import AGENT_CONTEXT, integration_service
+from brokering.broker_client import IntegrationError
+from integrations.service import integration_service
 
 async def main():
     try:
         result = await integration_service.invoke(
-            AGENT_CONTEXT,
             {integration_id!r},
             {operation_id!r},
             json.loads({arguments_json!r}),
@@ -115,22 +114,73 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
     assert denied["ok"] is False
     assert denied["error"] == "IntegrationPermissionDenied"
 
-    # Editing the tool selection respawns the broker with the expanded exact
+    # Editing the tool selection updates the running broker's exact
     # grant set. The stateful pair then proves successful write/read dispatch.
     tab.open_detail(_ID)
-    expect(tab.tools_tab).to_have_attribute("aria-selected", "true")
-    expect(page.get_by_role("tab", name="Overview", exact=True)).to_have_count(0)
+    expect(page.get_by_test_id("integration-overview")).to_be_visible()
+    expect(page.get_by_test_id("integration-status")).to_have_text("Connected")
+    expect(tab.row(_ID).get_by_test_id("integration-status")).to_have_count(0)
+    expect(tab.connection_settings).to_have_js_property("open", False)
+    expect(tab.rename_button(_ID)).to_be_hidden()
+    expect(page.get_by_test_id("integration-operation-picker")).to_be_hidden()
+    # Both shared split-panel consumers must fit without horizontal clipping.
+    original_viewport = page.viewport_size
+    assert original_viewport is not None
+    for width in (1440, 700, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        tab.change_tools_button(_ID).scroll_into_view_if_needed()
+        expect(tab.change_tools_button(_ID)).to_be_in_viewport()
+        assert page.get_by_test_id("integrations-tab").evaluate("""element => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.left >= 0 && bounds.right <= innerWidth
+                && element.scrollWidth <= element.clientWidth + 1;
+        }""")
+    page.set_viewport_size(original_viewport)
+    tab.change_tools_button(_ID).click()
     # A contained collection must not regress to a dark toolbar band.
     picker = page.get_by_test_id("integration-operation-picker")
+    for width in (1440, 700, 390):
+        page.set_viewport_size({"width": width, "height": 900})
+        expect(page.get_by_role("button", name="Save changes")).to_be_in_viewport()
+        assert picker.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
+    page.set_viewport_size(original_viewport)
     assert picker.evaluate("""element => {
         const [toolbar, rows] = element.children;
         return getComputedStyle(toolbar).backgroundColor === getComputedStyle(rows).backgroundColor;
     }""")
+    assert picker.evaluate("""element => {
+        const [toolbar, rows] = element.children;
+        return getComputedStyle(toolbar).borderLeftWidth === '0px'
+            && getComputedStyle(rows).borderLeftWidth === '0px'
+            && getComputedStyle(rows).borderBottomWidth === '0px';
+    }""")
+    # The selection checkbox must not consume the entire heading and push the
+    # group name/expand control outside the clipped collection.
+    group_toggle = picker.get_by_role("button", name="Tools 1 of 2", exact=True)
+    assert group_toggle.evaluate("""element => {
+        const heading = element.parentElement.getBoundingClientRect();
+        const toggle = element.getBoundingClientRect();
+        return toggle.left >= heading.left && toggle.right <= heading.right
+            && toggle.width > 100;
+    }""")
+    group_toggle.click()
+    expect(tab.tool_checkbox("test.value.get")).to_be_hidden()
+    group_toggle.click()
     expect(tab.tool_checkbox("test.value.get")).to_be_checked()
+    # Search reveals results, but must not turn the collapse control into a no-op.
+    search = picker.get_by_role("searchbox", name="Search tools")
+    search.fill("test value")
+    group_toggle.click()
+    expect(tab.tool_checkbox("test.value.get")).to_be_hidden()
+    group_toggle.click()
+    expect(tab.tool_checkbox("test.value.get")).to_be_visible()
+    search.fill("")
     expect(tab.tool_checkbox("test.value.set")).not_to_be_checked()
     tab.tool_checkbox("test.value.set").click()
     tab.save_and_wait(_ID)
+    tab.change_tools_button(_ID).click()
     expect(tab.tool_checkbox("test.value.set")).to_be_checked()
+    tab.cancel_edit(_ID)
 
     assert _invoke(_ID, "test.value.set", {"value": "changed"}) == {
         "ok": True,
@@ -143,18 +193,18 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
 
     # Label-only edits do not respawn the broker, so its in-memory state must
     # survive while metadata is persisted to the real vault.
-    tab.connection_tab.click()
+    tab.open_connection_settings()
+    tab.rename_button(_ID).click()
     tab.label_input(_ID).fill(_RENAMED)
     tab.save_and_wait(_ID)
-    expect(tab.label_input(_ID)).to_have_value(_RENAMED)
+    expect(page.get_by_role("heading", name=_RENAMED, exact=True)).to_be_visible()
 
     # Reload from the server so this assertion proves persisted metadata,
     # rather than merely observing the local input draft.
     settings = SettingsPage(page).goto_integrations()
     tab = settings.integrations
     tab.open_detail(_ID)
-    tab.connection_tab.click()
-    expect(tab.label_input(_ID)).to_have_value(_RENAMED)
+    expect(page.get_by_role("heading", name=_RENAMED, exact=True)).to_be_visible()
     assert _invoke(_ID, "test.value.get") == {
         "ok": True,
         "result": {"value": "changed"},
@@ -162,15 +212,27 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
 
     # Revoke a previously successful operation through the real UI. The next
     # invocation must fail at the broker even though the connection remains.
-    tab.tools_tab.click()
+    tab.change_tools_button(_ID).click()
     tab.tool_checkbox("test.value.set").click()
     tab.save_and_wait(_ID)
     denied = _invoke(_ID, "test.value.set", {"value": "must not be written"})
     assert denied["ok"] is False
     assert denied["error"] == "IntegrationPermissionDenied"
-    assert _invoke(_ID, "test.value.get")["ok"] is True
+    assert _invoke(_ID, "test.value.get") == {"ok": True, "result": {"value": "changed"}}
 
+    tab.open_connection_settings()
     tab.remove_button(_ID).click()
+    # Feature styling must not override the shared armed palette. This catches
+    # danger-colored text disappearing against the solid danger hover fill.
+    expect(tab.remove_button(_ID)).to_have_text("Confirm removal?")
+    expect(tab.remove_button(_ID)).to_have_css("color", "rgb(255, 255, 255)")
+    assert tab.remove_button(_ID).evaluate("""element => {
+        const style = getComputedStyle(element);
+        return style.backgroundColor !== style.color
+            && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
+    }""")
+    page.get_by_role("heading", name=_RENAMED, exact=True).hover()
+    expect(tab.remove_button(_ID)).to_have_css("color", "rgb(255, 255, 255)")
     tab.remove_button(_ID).click()
     expect(tab.row(_ID)).to_be_hidden()
     removed = _invoke(_ID, "test.value.get")
@@ -250,7 +312,7 @@ def test_failed_reconnect_preserves_existing_grants_and_can_retry(page: Page) ->
     flow.done.click()
     expect(tab.row(_ID)).to_be_visible()
     tab.open_detail(_ID)
-    tab.connection_tab.click()
+    tab.open_connection_settings()
     tab.reconnect_button(_ID).click()
     reconnect = page.get_by_test_id("integration-reconnect-flow")
     expect(reconnect).to_be_visible()
@@ -263,9 +325,10 @@ def test_failed_reconnect_preserves_existing_grants_and_can_retry(page: Page) ->
     page.get_by_test_id("wizard-token").fill(_TOKEN)
     page.get_by_test_id("wizard-submit").click()
     expect(reconnect).to_be_hidden()
-    tab.tools_tab.click()
+    tab.change_tools_button(_ID).click()
     expect(tab.tool_checkbox("test.value.get")).to_be_checked()
     expect(tab.tool_checkbox("test.value.set")).not_to_be_checked()
+    tab.cancel_edit(_ID)
     assert _invoke(_ID, "test.value.get")["ok"] is True
     listed = page.request.get(f"{_BASE_URL}/api/integrations").json()["connections"]
     assert sum(record["id"] == _ID for record in listed) == 1

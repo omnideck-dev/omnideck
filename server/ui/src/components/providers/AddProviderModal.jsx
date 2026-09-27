@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
 import Modal from '../primitives/Modal.jsx';
+import IconButton from '../primitives/IconButton.jsx';
 import styles from './AddProviderModal.module.css';
 
 // The picker catalog. Order is intentional: local first, then a generic
@@ -40,7 +41,7 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
             onClose={onClose}
             width={560}
             labelledBy="add-provider-title"
-            className={styles.modal}
+            layout="contained"
             testId="add-provider-modal"
         >
             {step === 'catalog' && (
@@ -72,9 +73,9 @@ function CatalogStep({ existingNames, onClose, onPick }) {
         <>
             <div className={styles.header}>
                 <div id="add-provider-title" className={styles.title}>Add a provider</div>
-                <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
+<IconButton onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />
-                </button>
+                </IconButton>
             </div>
             <div className={styles.body}>
                 {available.length === 0 ? (
@@ -209,16 +210,16 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
         <>
             <div className={styles.header}>
                 <div className={styles.headerLeft}>
-                    <button type="button" className={styles.iconBtn} onClick={onBack} aria-label="Back">
+<IconButton onClick={onBack} aria-label="Back">
                         <i className="bi bi-arrow-left" />
-                    </button>
+                    </IconButton>
                     <div id="add-provider-title" className={styles.title}>
                         Configure {entry.label}
                     </div>
                 </div>
-                <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
+<IconButton onClick={onClose} aria-label="Close">
                     <i className="bi bi-x-lg" />
-                </button>
+                </IconButton>
             </div>
             <div className={styles.body}>
                 {isCloud && (

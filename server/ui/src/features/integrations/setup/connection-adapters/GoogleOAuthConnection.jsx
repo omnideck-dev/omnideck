@@ -125,7 +125,7 @@ export default function GoogleOAuthConnection({
                 description="A Google sign-in window has opened. Sign in with the account you want to connect and approve access."
                 footer={(
                     <>
-                        <Button onClick={onExit} disabled={status === 'committing'}>
+                        <Button variant="ghost" onClick={onExit} disabled={status === 'committing'}>
                             Exit setup
                         </Button>
                         <Button
@@ -171,11 +171,13 @@ export default function GoogleOAuthConnection({
 
     return (
         <ConnectionFrame
-            title={`${existingConnection ? 'Reconnect' : 'Connect'} ${entry.title}`}
-            description="Create a desktop OAuth client in Google Cloud, then authorize the account. Provider access and omnideck’s tool grants are configured separately."
+            title={existingConnection ? adapter.updateAction : `Connect ${entry.title}`}
+            description={existingConnection
+                ? 'Confirm your Google client details, then sign in to refresh access.'
+                : 'Create a desktop OAuth client in Google Cloud, then authorize the account. Provider access and omnideck’s tool grants are configured separately.'}
             footer={(
                 <>
-                    <Button onClick={onBack} disabled={status === 'starting'}>
+                    <Button variant="ghost" onClick={onBack} disabled={status === 'starting'}>
                         <i className="bi bi-arrow-left" /> Back
                     </Button>
                     <Button
@@ -184,7 +186,7 @@ export default function GoogleOAuthConnection({
                         disabled={!canSubmit || status === 'starting'}
                         data-testid="oauth-authorize"
                     >
-                        {status === 'starting' ? 'Starting…' : 'Authorize with Google'}
+                        {status === 'starting' ? 'Starting…' : existingConnection ? 'Sign in with Google' : 'Authorize with Google'}
                     </Button>
                 </>
             )}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import Callout from '../../../../components/primitives/Callout.jsx';
-import { errorCopy } from '../../catalog/adapterRegistry.js';
+import { errorCopy, getConnectionAdapter } from '../../catalog/adapterRegistry.js';
 import {
     ConnectionActions,
     ConnectionField,
@@ -13,6 +13,7 @@ import styles from '../IntegrationSetupFlow.module.css';
 export default function HttpTokenConnection({
     entry, existingConnection = null, onBack, onConnected, onBusyChange,
 }) {
+    const adapter = getConnectionAdapter(entry.id);
     const [form, setForm] = useState({
         label: existingConnection?.label || '',
         baseUrl: '',
@@ -46,7 +47,7 @@ export default function HttpTokenConnection({
     const copy = error ? errorCopy(error, entry) : null;
     return (
         <ConnectionFrame
-            title={`${existingConnection ? 'Reconnect' : 'Connect'} an HTTP API`}
+            title={existingConnection ? adapter.updateAction : 'Connect an HTTP API'}
             description="Configure one authenticated API base URL."
             footer={(
                 <ConnectionActions
@@ -54,7 +55,8 @@ export default function HttpTokenConnection({
                     onSubmit={connect}
                     submitting={submitting}
                     submitDisabled={!canSubmit}
-                    submitLabel={existingConnection ? 'Reconnect' : 'Connect'}
+                    submitLabel={existingConnection ? adapter.updateAction : 'Connect'}
+                    busyLabel={existingConnection ? 'Updating…' : 'Connecting…'}
                 />
             )}
         >
