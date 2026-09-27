@@ -1,10 +1,15 @@
 """Tests for the provider registry and get_provider factory."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from providers import _proxy_socket_path, get_provider, reset_provider
+from providers import (
+    _proxy_socket_path,
+    get_provider,
+    probe_direct_provider,
+    reset_provider,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -115,6 +120,51 @@ class TestGetProvider:
              patch("providers.load_config", return_value=_fake_config()):
             with pytest.raises(ValueError, match="not configured"):
                 get_provider("anthropic")
+
+
+@pytest.mark.unit
+class TestProbeDirectProvider:
+    """probe_direct_provider builds a throwaway instance, bypassing the cache."""
+
+    async def test_returns_the_probed_models(self):
+        from agent_core.providers._ollama import OllamaProvider
+
+        with patch.object(
+            OllamaProvider, "list_models", AsyncMock(return_value=["probed"]),
+        ):
+            result = await probe_direct_provider("ollama", "http://localhost:11434")
+
+        assert result == ["probed"]
+
+    async def test_does_not_populate_the_shared_cache(self):
+        """A probe is throwaway — get_provider(name) must still see no configured entry."""
+        from agent_core.providers._ollama import OllamaProvider
+
+        with patch.object(
+            OllamaProvider, "list_models", AsyncMock(return_value=["probed"]),
+        ):
+            await probe_direct_provider("ollama", "http://localhost:11434")
+
+        with patch("providers.load_settings", return_value={}), \
+             patch("providers.load_config", return_value=_fake_config()):
+            with pytest.raises(ValueError, match="not configured"):
+                get_provider("ollama")
+
+    async def test_connects_to_the_candidate_url_not_settings(self):
+        """Probes the URL passed in, ignoring whatever settings.json has on record —
+        constructs from the caller's base_url, never from stored settings."""
+        fake_instance = MagicMock()
+        fake_instance.list_models = AsyncMock(return_value=[])
+        fake_cls = MagicMock()
+        fake_cls.from_config = MagicMock(return_value=fake_instance)
+
+        with patch("providers._provider_class", return_value=fake_cls), \
+             patch("providers.load_settings", return_value=_direct("ollama", "http://stale-saved-host:11434")):
+            await probe_direct_provider("ollama", "http://candidate-host:11434")
+
+        config_arg = fake_cls.from_config.call_args[0][0]
+        assert config_arg.provider == "ollama"
+        assert config_arg.base_url == "http://candidate-host:11434"
 
 
 @pytest.mark.unit

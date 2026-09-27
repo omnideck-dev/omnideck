@@ -26,7 +26,7 @@ const CATALOG = [
  * the underlying entry (settings.direct_providers or vault integration),
  * probes the new provider, and returns its model list.
  */
-export default function AddProviderModal({ existingNames = [], onClose, onAdded }) {
+export default function AddProviderModal({ existingNames = [], onClose, onAdded, onRefreshList }) {
     const [step, setStep] = useState('catalog'); // 'catalog' | 'configure'
     const [picked, setPicked] = useState(null);
 
@@ -56,6 +56,7 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
                     onBack={() => setStep('catalog')}
                     onClose={onClose}
                     onAdded={onAdded}
+                    onRefreshList={onRefreshList}
                 />
             )}
         </Modal>
@@ -127,7 +128,7 @@ function CatalogStep({ existingNames, onClose, onPick }) {
 
 /* ── Step 2: configure ─────────────────────────────────────────────── */
 
-function ConfigureStep({ entry, onBack, onClose, onAdded }) {
+function ConfigureStep({ entry, onBack, onClose, onAdded, onRefreshList }) {
     // Field shape per provider:
     //   ollama          → base_url
     //   openai_compat   → base_url, optional api_key
@@ -194,16 +195,21 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                         ? `${message} Tried ${body.base_url}.`
                         : message,
                 );
+                // A failed add shouldn't persist anything, but resync the list
+                // regardless — belt-and-suspenders against a partial/rolled-back
+                // state on the server going unnoticed until a manual reload.
+                onRefreshList?.();
                 return;
             }
             onAdded?.(data.provider);
         } catch (err) {
             const message = err?.message || 'Request failed';
             setError(isOllama && body.base_url ? `${message} Tried ${body.base_url}.` : message);
+            onRefreshList?.();
         } finally {
             setSubmitting(false);
         }
-    }, [entry.name, isOllama, isCompat, isCloud, baseUrl, apiKey, canSubmit, submitting, onAdded]);
+    }, [entry.name, isOllama, isCompat, isCloud, baseUrl, apiKey, canSubmit, submitting, onAdded, onRefreshList]);
 
     return (
         <>

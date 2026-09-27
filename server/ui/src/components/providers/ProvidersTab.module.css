@@ -248,6 +248,23 @@
 .input:focus { border-color: var(--accent); box-shadow: var(--shadow-glow); }
 .inputMono { font-family: var(--font-code); font-size: 12px; }
 
+.readOnlyValue {
+    flex: 1;
+    height: 32px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: var(--font-code);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .formHint {
     font-size: 12px;
     color: var(--text-tertiary);

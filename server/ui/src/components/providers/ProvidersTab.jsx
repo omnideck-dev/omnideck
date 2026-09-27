@@ -182,6 +182,7 @@ export default function ProvidersTab() {
                     existingNames={providers.map(p => p.name)}
                     onClose={() => setModalOpen(false)}
                     onAdded={handleAdded}
+                    onRefreshList={fetchProviders}
                 />
             )}
         </div>
@@ -245,10 +246,25 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
     const meta = _meta(provider.name);
     const view = _statusView(status);
     const isDirect = provider.kind === 'direct';
+    // Only openai_compat has a broker-side base_url worth exposing — the
+    // other brokered kinds (Anthropic, OpenAI, OpenRouter) talk to a fixed
+    // hosted endpoint. A stored base_url on any kind still shows it, in
+    // case that ever changes.
+    const showBrokeredUrl = !isDirect && (provider.base_url != null || provider.name === 'openai_compat');
 
-    const [field, setField] = useState(provider.base_url || '');
-    // When the selected provider changes, reset the input.
-    useEffect(() => { setField(provider.base_url || ''); }, [provider.name, provider.base_url]);
+    // `field` is the direct-provider Base URL input OR the brokered API Key
+    // input, depending on isDirect — never prefill it from base_url for a
+    // brokered provider, or the (secret-looking) key field would silently
+    // show the non-secret URL instead of starting blank.
+    const [field, setField] = useState(isDirect ? (provider.base_url || '') : '');
+    const [urlField, setUrlField] = useState(provider.base_url || '');
+    const [urlEditing, setUrlEditing] = useState(false);
+    // When the selected provider changes, reset the inputs.
+    useEffect(() => {
+        setField(isDirect ? (provider.base_url || '') : '');
+        setUrlField(provider.base_url || '');
+        setUrlEditing(false);
+    }, [provider.name, provider.base_url, isDirect]);
 
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
@@ -260,7 +276,11 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
         setSaving(true);
         setSaveError(null);
         try {
-            const body = isDirect ? { base_url: field } : { api_key: field };
+            const body = isDirect
+                ? { base_url: field }
+                : showBrokeredUrl
+                    ? { api_key: field, base_url: urlField }
+                    : { api_key: field };
             const resp = await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -272,13 +292,14 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                 return;
             }
             onSaved?.(data);
+            setUrlEditing(false);
             if (!isDirect) setField(''); // clear the key field on success
         } catch (err) {
             setSaveError(err?.message || 'Request failed');
         } finally {
             setSaving(false);
         }
-    }, [field, isDirect, provider.name, onSaved]);
+    }, [field, isDirect, showBrokeredUrl, urlField, provider.name, onSaved]);
 
     const handleTest = useCallback(async () => {
         setTesting(true);
@@ -318,6 +339,40 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                     </div>
                 </div>
             </div>
+
+            {showBrokeredUrl && (
+                <div className={styles.detailSection}>
+                    <div className={styles.detailSectionLabel}>Base URL</div>
+                    {urlEditing ? (
+                        <div className={styles.inputRow}>
+                            <input
+                                type="text"
+                                className={`${styles.input} ${styles.inputMono}`}
+                                value={urlField}
+                                onChange={(e) => setUrlField(e.target.value)}
+                                placeholder="http://host:port/v1"
+                                autoComplete="off"
+                                data-testid="provider-base-url-input"
+                            />
+                        </div>
+                    ) : (
+                        <div className={styles.inputRow}>
+                            <div className={styles.readOnlyValue} data-testid="provider-base-url-value">
+                                {urlField || 'Default endpoint'}
+                            </div>
+                            <Button
+                                onClick={() => setUrlEditing(true)}
+                                data-testid="provider-base-url-edit-btn"
+                            >
+                                Edit
+                            </Button>
+                        </div>
+                    )}
+                    <div className={styles.formHint}>
+                        Applied the next time you save.
+                    </div>
+                </div>
+            )}
 
             <div className={styles.detailSection}>
                 <div className={styles.detailSectionLabel}>

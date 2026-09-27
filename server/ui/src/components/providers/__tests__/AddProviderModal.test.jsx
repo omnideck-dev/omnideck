@@ -65,3 +65,81 @@ describe('AddProviderModal Ollama host prefill', () => {
         expect(input.getAttribute('placeholder')).not.toContain('localhost');
     });
 });
+
+describe('AddProviderModal failed add', () => {
+    it('refreshes the provider list and stays open, without calling onAdded', async () => {
+        globalThis.fetch = vi.fn((url) => {
+            if (url === '/api/providers') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 503,
+                    json: () => Promise.resolve({
+                        error: 'provider_unreachable',
+                        message: "couldn't reach the endpoint",
+                    }),
+                });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+        const onAdded = vi.fn();
+        const onClose = vi.fn();
+        const onRefreshList = vi.fn();
+        render(
+            <AddProviderModal onClose={onClose} onAdded={onAdded} onRefreshList={onRefreshList} />,
+        );
+
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-catalog-card-anthropic'));
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-catalog-continue-btn'));
+        });
+        fireEvent.change(document.querySelector('#provider-key'), {
+            target: { value: 'sk-ant-test' },
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-configure-submit-btn'));
+        });
+
+        expect(await screen.findByText("couldn't reach the endpoint")).toBeInTheDocument();
+        expect(onRefreshList).toHaveBeenCalledTimes(1);
+        expect(onAdded).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('does not call onRefreshList when the add succeeds', async () => {
+        globalThis.fetch = vi.fn((url) => {
+            if (url === '/api/providers') {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        provider: { name: 'anthropic', kind: 'brokered', status: 'connected' },
+                        models: [],
+                    }),
+                });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+        const onAdded = vi.fn();
+        const onRefreshList = vi.fn();
+        render(
+            <AddProviderModal onClose={vi.fn()} onAdded={onAdded} onRefreshList={onRefreshList} />,
+        );
+
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-catalog-card-anthropic'));
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-catalog-continue-btn'));
+        });
+        fireEvent.change(document.querySelector('#provider-key'), {
+            target: { value: 'sk-ant-test' },
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-configure-submit-btn'));
+        });
+
+        expect(onAdded).toHaveBeenCalledWith({ name: 'anthropic', kind: 'brokered', status: 'connected' });
+        expect(onRefreshList).not.toHaveBeenCalled();
+    });
+});
