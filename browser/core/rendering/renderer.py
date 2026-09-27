@@ -257,7 +257,8 @@ __MODAL_HELPERS__
         if (filename) imageFiles.push(filename);
       } catch { /* Invalid image URLs cannot provide a filename. */ }
     }
-    if (imageFiles.length) return imageFiles.join(' ');
+    if (imageFiles.length)
+      return 'Unnamed image ' + (getRole(el) || 'control') + ' (file: ' + imageFiles.join(', ') + ')';
     return '';
   }
 

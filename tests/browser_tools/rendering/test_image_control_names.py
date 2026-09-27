@@ -52,7 +52,7 @@ async def test_unnamed_image_controls_use_literal_filenames(open_tab, servers, r
 
     ref = find_ref(view, role=role, name=filename)
     assert ref is not None
-    assert f"[{ref}] [{role}] {filename}" in view.splitlines()
+    assert f"[{ref}] [{role}] Unnamed image {role} (file: {filename})" in view.splitlines()
     assert "?size=large" not in view
     assert "#icon" not in view
     assert result in await click(ref, tab=tab)
