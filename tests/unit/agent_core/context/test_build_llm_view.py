@@ -133,7 +133,8 @@ def test_user_content_transform_runs_before_attachment_augmentation():
         "  - a.png (image/png) -> /v/a.png"}
 
 
-def test_user_content_transform_applies_to_later_user_messages_too():
+def test_user_content_transform_applies_to_the_latest_user_message():
+    """Only the message the current turn is actively answering gets transformed."""
     events = [
         _started(ROOT, "COMPUTRON"),
         _user(ROOT, "hi", evt_id="evt_u1"),
@@ -142,6 +143,20 @@ def test_user_content_transform_applies_to_later_user_messages_too():
     ]
     result = build_llm_view(events, user_content_transform=lambda text: text.upper())
     assert result[-1] == {"role": "user", "content": "/SKILL NUDGE"}
+
+
+def test_user_content_transform_skips_already_answered_user_messages():
+    """An earlier, already-answered message must not be re-transformed on later
+    re-derivations — its rendering was settled when it was the active turn."""
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "/skill original", evt_id="evt_u1"),
+        _iter(ROOT, 0, content="hello"),
+        _user(ROOT, "hi again", evt_id="evt_u2"),
+    ]
+    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
+    assert result[0] == {"role": "user", "content": "/skill original"}
+    assert result[-1] == {"role": "user", "content": "HI AGAIN"}
 
 
 def test_user_content_transform_skipped_for_compaction_intent_summary():

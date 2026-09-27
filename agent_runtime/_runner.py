@@ -131,9 +131,14 @@ class AgentRunner:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
             # Model-facing only: resolves composer `/skill` and `@agent /skill`
-            # tokens against current skill/profile state on every read, without
-            # ever touching the stored event or what the transcript displays.
-            history.set_user_content_transform(enrich_composer_message)
+            # tokens against current skill/profile state, without ever touching
+            # the stored event or what the transcript displays. Only the root
+            # execution's history carries user-typed composer text — a spawned
+            # child's message is an LLM-generated task description, not
+            # something a person typed into the composer, so it must never be
+            # reinterpreted as a command.
+            if context.parent_execution_id is None:
+                history.set_user_content_transform(enrich_composer_message)
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,

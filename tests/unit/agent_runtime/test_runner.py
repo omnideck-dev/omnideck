@@ -341,3 +341,48 @@ async def test_composer_token_enriches_llm_view_but_not_stored_message(
     persisted = load_events_jsonl(conversation_id)
     user_events = [event for event in persisted if event["type"] == "user_message"]
     assert user_events[0]["content"] == raw_message
+
+
+async def test_composer_transform_not_applied_to_spawned_child_instructions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """A subagent's own task instructions are never composer-rewritten.
+
+    Only what a person actually typed into the chat composer is eligible for
+    `/skill`-token rewriting. `spawn_agent`'s `instructions` argument is text
+    the *parent LLM* wrote, so a coincidental `/skill-name` inside it must
+    reach the child verbatim, not get reinterpreted as a command.
+    """
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+
+    captured: dict[str, ConversationHistory] = {}
+    child_instructions = "/review-code do it"
+
+    async def _fake_execute(self, *, history: ConversationHistory, context, capabilities, **_kwargs: Any) -> ExecutionResult:
+        if context.parent_execution_id is None:
+            captured["root_history"] = history
+            spawn_agent = next(t for t in capabilities.tools if t.__name__ == "spawn_agent")
+            await spawn_agent(instructions=child_instructions, profile="profile-1", agent_name="CHILD")
+        else:
+            captured["child_history"] = history
+        return ExecutionResult("success")
+
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _fake_execute)
+
+    request = AgentRunRequest(
+        conversation_id="runner-composer-child",
+        message="hi",
+        attachments=None,
+        profile_id="profile-1",
+    )
+    manager = AgentRuntime()
+    info = await manager.start(request)
+    _ = [record async for record in info.events(after_seq=0)]
+
+    assert captured["root_history"]._user_content_transform is not None
+    assert captured["child_history"]._user_content_transform is None
+    assert captured["child_history"].non_system_messages[0]["content"] == child_instructions

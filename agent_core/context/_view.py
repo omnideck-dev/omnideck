@@ -71,20 +71,28 @@ def build_llm_view(
     [Attached files…] block, so the model knows where uploads landed in the
     sandbox. This is the list sent to the provider.
 
-    ``user_content_transform``, when given, runs over each raw user message
-    before any attachment augmentation — e.g. rewriting a composer `/skill`
-    token into an explicit tool instruction. It only ever touches this
-    model-facing view: the stored event and the transcript view the frontend
-    renders (``build_transcript_view``) keep the user's text verbatim, so
-    what's persisted and displayed always matches what the user actually
-    typed. Skipped for a compaction's intent-summary override, since that
-    text is already a compacted abstraction, not a literal typed message.
+    ``user_content_transform``, when given, runs only over the most recent
+    user message — the one the current turn is actively answering — before
+    any attachment augmentation, e.g. rewriting a composer `/skill` token
+    into an explicit tool instruction. Earlier, already-answered user
+    messages are never re-passed through it: the skill/profile store can
+    change between turns, and a message that resolved (or didn't) when it
+    was submitted must keep reading that way on every later re-derivation,
+    not flip based on what exists now. It only ever touches this model-facing
+    view: the stored event and the transcript view the frontend renders
+    (``build_transcript_view``) keep the user's text verbatim, so what's
+    persisted and displayed always matches what the user actually typed.
+    Skipped for a compaction's intent-summary override, since that text is
+    already a compacted abstraction, not a literal typed message.
     """
     evs = events_for_agent(events, agent_filter)
     first_user = next((e for e in evs if e["type"] == "user_message"), None)
     if first_user is None:
         return []
     agent_names = _agent_names(events)
+    latest_user_id = next(
+        (e["id"] for e in reversed(evs) if e["type"] == "user_message"), None,
+    )
 
     latest_compaction = max(
         (e for e in evs if e["type"] == "compaction"),
@@ -93,12 +101,13 @@ def build_llm_view(
     )
 
     # First user message: intent-summary override if a compaction set one,
-    # else the user's text (transformed) with the attachment block appended.
+    # else the user's text (transformed only if it's the active turn) with
+    # the attachment block appended.
     if latest_compaction and latest_compaction.get("user_intent_summary"):
         user_content = _INTENT_PREFIX + latest_compaction["user_intent_summary"]
     else:
         raw = first_user["content"]
-        if user_content_transform is not None:
+        if user_content_transform is not None and first_user["id"] == latest_user_id:
             raw = user_content_transform(raw)
         if first_user.get("attachments"):
             user_content = _augment_with_attachments(raw, first_user["attachments"])
@@ -122,7 +131,8 @@ def build_llm_view(
             return messages
 
     messages.extend(_walk(
-        evs[start_idx:], agent_names, augment=True, user_content_transform=user_content_transform,
+        evs[start_idx:], agent_names, augment=True,
+        user_content_transform=user_content_transform, latest_user_id=latest_user_id,
     ))
     return messages
 
@@ -164,13 +174,15 @@ def _walk(
     *,
     augment: bool,
     user_content_transform: Callable[[str], str] | None = None,
+    latest_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Emit user/assistant/tool messages for a slice of events.
 
-    ``augment``: apply ``user_content_transform`` (if given) and append the
-    [Attached files…] block to user messages — LLM-facing transformations
-    that tell the model where uploads landed and resolve composer tokens.
-    The transcript view passes False to show what the user actually typed.
+    ``augment``: apply ``user_content_transform`` (if given, and only to the
+    ``latest_user_id`` event) and append the [Attached files…] block to user
+    messages — LLM-facing transformations that tell the model where uploads
+    landed and resolve composer tokens. The transcript view passes False to
+    show what the user actually typed.
     """
     out: list[dict[str, Any]] = []
     for e in evs:
@@ -180,7 +192,7 @@ def _walk(
         if t == "user_message":
             content = e["content"]
             if augment:
-                if user_content_transform is not None:
+                if user_content_transform is not None and e.get("id") == latest_user_id:
                     content = user_content_transform(content)
                 if e.get("attachments"):
                     content = _augment_with_attachments(content, e["attachments"])

@@ -53,9 +53,13 @@ def _resolve_profile(ref: str, profiles: list[AgentProfile]) -> AgentProfile | N
     return None
 
 
+def _describe_skill(skill: SkillRecord) -> str:
+    return f'skill "{skill.name}" (id: {skill.id})'
+
+
 def _render_delegate(profile: AgentProfile, skill: SkillRecord, args: str) -> str:
     agent_desc = f'agent profile "{profile.name}" (id: {profile.id})'
-    skill_desc = f'skill "{skill.name}" (id: {skill.id})'
+    skill_desc = _describe_skill(skill)
     task = f'load {skill_desc} and use it to: {args}' if args else f'load {skill_desc} and use it'
     return (
         f'Spawn a subagent using {agent_desc} to perform this task: {task}. '
@@ -64,7 +68,7 @@ def _render_delegate(profile: AgentProfile, skill: SkillRecord, args: str) -> st
 
 
 def _render_load(skill: SkillRecord, args: str) -> str:
-    skill_desc = f'skill "{skill.name}" (id: {skill.id})'
+    skill_desc = _describe_skill(skill)
     action = f'then use it to: {args}' if args else 'then use it'
     return (
         f'Load {skill_desc} into your own current session using the load_skill tool, '
