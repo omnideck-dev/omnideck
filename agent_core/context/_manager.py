@@ -1,6 +1,7 @@
 """Context manager orchestrator tying history and strategies together."""
 
 import logging
+from typing import Any
 
 from rich.console import Console
 from rich.text import Text
@@ -62,11 +63,23 @@ class ContextManager:
 
     async def after_model(
         self, *,
+        response: Any | None = None,
         iteration: int | None = None,
         max_iterations: int | None = None,
     ) -> None:
         """Publish a context usage event and run after-model strategies."""
         stats = self.stats
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        if prompt_tokens > 0:
+            # Provider counts are authoritative for the call that just
+            # completed. Include its output because that response becomes
+            # part of the next outbound context.
+            stats = ContextStats(
+                context_used=prompt_tokens + completion_tokens,
+                context_limit=stats.context_limit,
+            )
         if logger.isEnabledFor(logging.DEBUG):
             _log_context_bar(stats, self._agent_name)
         try:

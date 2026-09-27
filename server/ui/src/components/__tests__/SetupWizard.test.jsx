@@ -139,6 +139,41 @@ describe('SetupWizard provider-step field visibility', () => {
         expect(container.querySelector('#cloud-key')).not.toBeInTheDocument();
     });
 
+    it('asks Aperture for only its gateway URL', async () => {
+        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        await act(async () => {
+            fireEvent.click(screen.getByText('Tailscale Aperture'));
+        });
+
+        expect(screen.getByLabelText('Gateway URL')).toBeInTheDocument();
+        expect(screen.getByText(/Tailscale provides identity/)).toBeInTheDocument();
+        expect(container.querySelector('#compat-key')).not.toBeInTheDocument();
+        expect(container.querySelector('#cloud-key')).not.toBeInTheDocument();
+    });
+
+    it('posts an Aperture direct-provider connection with no API key', async () => {
+        render(<SetupWizard onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        fireEvent.click(screen.getByText('Tailscale Aperture'));
+        fireEvent.change(screen.getByLabelText('Gateway URL'), {
+            target: { value: 'http://aperture.example.ts.net' },
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        });
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/providers', expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+                name: 'aperture',
+                base_url: 'http://aperture.example.ts.net',
+            }),
+        }));
+    });
+
     it('shows the provider select and API key when Cloud API is selected', async () => {
         const { container } = render(<SetupWizard onComplete={vi.fn()} />);
         await _advanceToProviderStep();

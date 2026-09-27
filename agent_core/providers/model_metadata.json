@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "last_reviewed": "2026-09-03",
+  "sources": [
+    "https://developers.openai.com/api/docs/models",
+    "https://platform.claude.com/docs/en/api/models/list",
+    "https://platform.claude.com/docs/en/build-with-claude/effort",
+    "https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking",
+    "https://docs.ollama.com/capabilities/thinking"
+  ],
+  "models": [
+    { "patterns": ["gpt-oss*"], "supports_thinking": true, "thinking_control": "reasoning_effort", "thinking_levels": ["low", "medium", "high"], "thinking_default": "medium", "thinking_required": true },
+    { "patterns": ["gpt-5.6-luna*", "gpt-5.6-terra*", "gpt-5.6-sol*", "gpt-5.6"], "context_window": 1050000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["none", "low", "medium", "high", "xhigh", "max"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["gpt-5.5-pro*", "gpt-5.5*"], "context_window": 1050000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["low", "medium", "high"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["gpt-5.4-nano*", "gpt-5.4-mini*"], "context_window": 400000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["none", "low", "medium", "high", "xhigh"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["gpt-5.4*"], "context_window": 1050000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["none", "low", "medium", "high", "xhigh"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["gpt-5-mini*", "gpt-5*"], "context_window": 400000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["minimal", "low", "medium", "high"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["gpt-4.1-nano*", "gpt-4.1-mini*", "gpt-4.1*"], "context_window": 1047576, "max_output_tokens": 32768, "supports_images": true, "supports_thinking": false },
+    { "patterns": ["gpt-4o-mini*", "gpt-4o*"], "context_window": 128000, "max_output_tokens": 16384, "supports_images": true, "supports_thinking": false },
+    { "patterns": ["gpt-4-turbo*"], "context_window": 128000, "max_output_tokens": 4096, "supports_images": true, "supports_thinking": false },
+    { "patterns": ["o1-mini*"], "context_window": 128000, "max_output_tokens": 65536, "supports_images": false, "supports_thinking": true, "reasoning_efforts": ["low", "medium", "high"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["o3-mini*"], "context_window": 200000, "max_output_tokens": 100000, "supports_images": false, "supports_thinking": true, "reasoning_efforts": ["low", "medium", "high"], "unsupported_controls": ["temperature", "top_p"] },
+    { "patterns": ["o4-mini*", "o3*", "o1-pro*", "o1*"], "context_window": 200000, "max_output_tokens": 100000, "supports_images": true, "supports_thinking": true, "reasoning_efforts": ["low", "medium", "high"], "unsupported_controls": ["temperature", "top_p"] },
+
+    { "patterns": ["*claude-sonnet-5*", "*claude-opus-5*", "*claude-fable-5*", "*claude-mythos-5*"], "context_window": 1000000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "thinking_control": "reasoning_effort", "thinking_levels": ["low", "medium", "high", "xhigh", "max"], "thinking_default": "high" },
+    { "patterns": ["*claude-opus-4-7*", "*claude-opus-4-8*"], "context_window": 1000000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "thinking_control": "reasoning_effort", "thinking_levels": ["low", "medium", "high", "xhigh", "max"], "thinking_default": "high" },
+    { "patterns": ["*claude-sonnet-4-6*", "*claude-opus-4-6*"], "context_window": 1000000, "max_output_tokens": 128000, "supports_images": true, "supports_thinking": true, "thinking_control": "reasoning_effort", "thinking_levels": ["low", "medium", "high", "max"], "thinking_default": "high" },
+    { "patterns": ["*claude-haiku-4-5*"], "context_window": 200000, "max_output_tokens": 64000, "supports_images": true, "supports_thinking": true },
+    { "patterns": ["*claude-sonnet-4-5*", "*claude-opus-4-5*"], "context_window": 200000, "max_output_tokens": 64000, "supports_images": true, "supports_thinking": true },
+    { "patterns": ["*claude-sonnet-4*", "*claude-opus-4*", "*claude-3-7-sonnet*"], "context_window": 200000, "max_output_tokens": 64000, "supports_images": true, "supports_thinking": true },
+    { "patterns": ["*claude-3*"], "context_window": 200000, "max_output_tokens": 8192, "supports_images": true, "supports_thinking": false }
+  ]
+}

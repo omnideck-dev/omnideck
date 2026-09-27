@@ -140,7 +140,12 @@ def apply_llm_config_to_profiles(
             updates: dict = {"model": model}
             if provider is not None:
                 updates["provider"] = provider
-            if context_window is not None:
+            if provider is not None:
+                # Only local Ollama exposes context allocation as a user
+                # setting. Cloud capacities are resolved from model metadata
+                # at runtime and must not become stale profile configuration.
+                updates["context_window"] = context_window if provider == "ollama" else None
+            elif context_window is not None:
                 updates["context_window"] = context_window
             updated = profile.model_copy(update=updates)
             path = d / f"{updated.id}.json"

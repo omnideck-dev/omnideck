@@ -7,6 +7,7 @@ const STEPS = ['Welcome', 'Provider', 'Main Model', 'Vision Model', 'Ready'];
 
 // Internal provider keys
 const PROVIDER_OLLAMA = 'ollama';
+const PROVIDER_APERTURE = 'aperture';
 const PROVIDER_OPENAI_COMPAT = 'openai-compat';
 const PROVIDER_CLOUD = 'cloud';
 
@@ -15,6 +16,7 @@ const PROVIDER_LABELS = {
     anthropic: 'Anthropic API',
     openrouter: 'OpenRouter',
     openai_compat: 'OpenAI-compatible',
+    aperture: 'Tailscale Aperture',
 };
 
 const OPENAI_COMPAT_DEFAULT_URL = 'http://localhost:1234/v1';
@@ -119,6 +121,8 @@ export default function SetupWizard({ onComplete }) {
     const resolvedProviderName = useMemo(() => (
         selectedProvider === PROVIDER_CLOUD
             ? cloudProvider
+            : selectedProvider === PROVIDER_APERTURE
+                ? 'aperture'
             : selectedProvider === PROVIDER_OPENAI_COMPAT
                 ? 'openai_compat'
                 : 'ollama'
@@ -193,14 +197,18 @@ export default function SetupWizard({ onComplete }) {
         setProviderError(null);
 
         const body = { name: resolvedProviderName };
-        if (selectedProvider === PROVIDER_OLLAMA) {
-            const ollamaUrl = providerUrl.trim();
-            if (!ollamaUrl) {
-                setProviderError('Enter your Ollama server URL to continue.');
+        if (selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE) {
+            const endpointUrl = providerUrl.trim();
+            if (!endpointUrl) {
+                setProviderError(
+                    selectedProvider === PROVIDER_APERTURE
+                        ? 'Enter your Aperture gateway URL to continue.'
+                        : 'Enter your Ollama server URL to continue.'
+                );
                 setProviderSaving(false);
                 return;
             }
-            body.base_url = ollamaUrl;
+            body.base_url = endpointUrl;
         } else if (selectedProvider === PROVIDER_OPENAI_COMPAT) {
             body.base_url = providerUrl.trim() || OPENAI_COMPAT_DEFAULT_URL;
             if (providerApiKey.trim()) body.api_key = providerApiKey.trim();
@@ -217,7 +225,11 @@ export default function SetupWizard({ onComplete }) {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 const message = data.message || data.error || `Failed to connect (${res.status})`;
-                if (selectedProvider === PROVIDER_OLLAMA && body.base_url && !message.includes(body.base_url)) {
+                if (
+                    (selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE)
+                    && body.base_url
+                    && !message.includes(body.base_url)
+                ) {
                     setProviderError(`${message} Tried ${body.base_url}.`);
                 } else {
                     setProviderError(message);
@@ -226,7 +238,7 @@ export default function SetupWizard({ onComplete }) {
             }
             setStep((s) => s + 1);
         } catch (err) {
-            if (selectedProvider === PROVIDER_OLLAMA && body.base_url) {
+            if ((selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE) && body.base_url) {
                 setProviderError(`${err.message} Tried ${body.base_url}.`);
             } else {
                 setProviderError(err.message);
@@ -248,7 +260,10 @@ export default function SetupWizard({ onComplete }) {
                     provider: resolvedProviderName,
                     main_model: selectedMain,
                     vision_model: selectedVision,
-                    context_window: mainModelMeta?.context_window ?? null,
+                    context_window: resolvedProviderName === 'ollama'
+                        && mainModelMeta?.is_cloud !== true
+                        ? mainModelMeta?.context_window ?? null
+                        : null,
                 }),
             });
             if (!res.ok) {
@@ -351,6 +366,11 @@ export default function SetupWizard({ onComplete }) {
                                     desc: 'Run models on your own machine or in the cloud',
                                 },
                                 {
+                                    key: PROVIDER_APERTURE,
+                                    name: 'Tailscale Aperture',
+                                    desc: 'Discover models managed by your organization',
+                                },
+                                {
                                     key: PROVIDER_OPENAI_COMPAT,
                                     name: 'OpenAI-compatible endpoint',
                                     desc: 'LM Studio, vLLM, Groq, Together AI, and others',
@@ -392,6 +412,29 @@ export default function SetupWizard({ onComplete }) {
                                         {ollamaHost
                                             ? 'Detected automatically.'
                                             : 'Enter the address of your Ollama server.'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedProvider === PROVIDER_APERTURE && (
+                            <div className={styles.providerFields}>
+                                <div className={styles.field}>
+                                    <label htmlFor="aperture-url" className={styles.fieldLabel}>
+                                        Gateway URL
+                                    </label>
+                                    <input
+                                        id="aperture-url"
+                                        type="url"
+                                        className={styles.fieldInput}
+                                        value={providerUrl}
+                                        onChange={(e) => setProviderUrl(e.target.value)}
+                                        placeholder="http://aperture-hostname"
+                                        aria-describedby="aperture-url-hint"
+                                    />
+                                    <div id="aperture-url-hint" className={styles.fieldHint}>
+                                        No API key needed. Tailscale provides identity; Omnideck discovers
+                                        granted models it can use and selects the API format automatically.
                                     </div>
                                 </div>
                             </div>
@@ -565,6 +608,7 @@ export default function SetupWizard({ onComplete }) {
                                 <span className={styles.summaryLabel}>Provider</span>
                                 <span className={styles.summaryValue}>
                                     {selectedProvider === PROVIDER_OLLAMA ? 'Ollama'
+                                        : selectedProvider === PROVIDER_APERTURE ? 'Tailscale Aperture'
                                         : selectedProvider === PROVIDER_OPENAI_COMPAT ? 'OpenAI-compatible'
                                             : cloudProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}
                                 </span>

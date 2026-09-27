@@ -153,6 +153,36 @@
     line-height: 1.4;
 }
 
+.modelDetection {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-1);
+    margin-top: var(--sp-2);
+    color: var(--text-tertiary);
+    font-size: 0.7rem;
+    line-height: 1.45;
+}
+
+.modelDetection i {
+    color: var(--accent);
+}
+
+.roleSelect {
+    width: 150px;
+}
+
+.resetDefaults {
+    align-self: flex-start;
+    margin-top: var(--sp-2);
+    padding: var(--sp-1) 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
 /* Vision's advanced controls remain part of its model row. */
 .groupDisclosure {
     display: flex;

@@ -62,6 +62,8 @@ function _formatCtx(tokens) {
  *  - selectedProvider: currently chosen provider name (or null/"" when unset).
  *  - selectedModel: currently chosen model name (or null/"" when unset).
  *  - onSelect: (provider, model) => void. Called when the user picks a row.
+ *  - onModelResolved: optional (provider, model, ModelInfo|null) callback. When
+ *    supplied, the selected model is resolved even while the picker is closed.
  *  - placeholder: trigger text when nothing is selected. Default "Choose a model…".
  *  - capability: optional filter — "vision" hides models without supports_images.
  *  - inline: portal the popover to ``document.body`` with fixed positioning
@@ -74,6 +76,7 @@ export default function ModelPicker({
     selectedProvider,
     selectedModel,
     onSelect,
+    onModelResolved,
     placeholder = 'Choose a model…',
     capability,
     defaultOpen = false,
@@ -180,6 +183,24 @@ export default function ModelPicker({
         return () => { cancelled = true; };
     }, [activeTab, cacheRevision, open]);
 
+    // Editors need model capabilities before the user opens this picker. Load
+    // the selected provider's cached model list in the background and resolve
+    // the exact provider/model pair to its ModelInfo descriptor.
+    useEffect(() => {
+        if (!onModelResolved) return;
+        if (!selectedProvider || !selectedModel) return;
+        let cancelled = false;
+        _fetchModels(selectedProvider)
+            .then((list) => {
+                if (!cancelled) {
+                    const model = list.find((candidate) => candidate.name === selectedModel) || null;
+                    if (model) onModelResolved(selectedProvider, selectedModel, model);
+                }
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [selectedProvider, selectedModel, onModelResolved, cacheRevision]);
+
     // Close on click-outside / escape. The portaled popover lives outside
     // wrapperRef, so we check both wrapperRef (trigger) and popoverRef
     // (popover) — a click in either is "inside".
@@ -231,8 +252,9 @@ export default function ModelPicker({
         // Pass through the full ModelInfo so parents can read context_window,
         // parameter_size, capabilities, etc. without re-fetching.
         onSelect?.(activeTab, model.name, model);
+        onModelResolved?.(activeTab, model.name, model);
         setOpen(false);
-    }, [onSelect, activeTab]);
+    }, [onSelect, onModelResolved, activeTab]);
 
     const handleRefresh = useCallback(() => {
         if (!activeTab || loading) return;
@@ -244,6 +266,9 @@ export default function ModelPicker({
         if (!provs.length) return 'No providers configured';
         return placeholder;
     })();
+    const selectedDisplay = selectedProvider === 'aperture' && selectedModel?.includes('/')
+        ? selectedModel.slice(selectedModel.indexOf('/') + 1)
+        : selectedModel;
 
     const popoverStyle = inline && popoverPos ? {
         position: 'fixed',
@@ -325,10 +350,12 @@ export default function ModelPicker({
                             data-testid="model-item"
                             data-model-name={m.name}
                         >
-                            <span className={styles.itemName}>{m.name}</span>
+                            <span className={styles.itemName}>{m.display_name || m.name}</span>
                             <span className={styles.badges}>
                                 {m.supports_thinking && <span className={styles.capBadge}>think</span>}
                                 {m.supports_images && <span className={styles.capBadge}>vision</span>}
+                                {m.upstream_provider && <span className={styles.badge}>{m.upstream_provider}</span>}
+                                {m.wire_api && <span className={styles.badge}>{m.wire_api}</span>}
                                 {ctx && <span className={styles.badge}>{ctx}</span>}
                                 {m.parameter_size && <span className={styles.badge}>{m.parameter_size}</span>}
                             </span>
@@ -361,7 +388,7 @@ export default function ModelPicker({
                                 <span className={styles.triggerSep}>/</span>
                             </>
                         )}
-                        <span className={styles.triggerModel}>{selectedModel}</span>
+                        <span className={styles.triggerModel}>{selectedDisplay}</span>
                     </>
                 ) : (
                     <span className={styles.triggerPlaceholder}>{triggerLabel}</span>

@@ -119,9 +119,15 @@ async def handle_complete(request: web.Request) -> web.Response:
         return web.json_response({"error": "Unknown or invalid field"}, status=400)
 
     try:
-        get_provider(spec.provider)
+        configured_provider = get_provider(spec.provider)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
+
+    vision_think = False
+    if spec.vision_model:
+        models = await configured_provider.list_models()
+        vision_info = next((model for model in models if model.name == spec.vision_model), None)
+        vision_think = bool(vision_info and vision_info.thinking_required)
 
     save_settings({
         "default_agent": spec.default_agent,
@@ -130,8 +136,11 @@ async def handle_complete(request: web.Request) -> web.Response:
         # error rather than half-resolving.
         "vision_provider": spec.provider if spec.vision_model else "",
         "vision_model": spec.vision_model or "",
+        "vision_think": vision_think,
+        "vision_options": {},
         "compaction_provider": spec.provider,
         "compaction_model": spec.main_model,
+        "compaction_options": {},
         "title_provider": spec.provider,
         "title_model": spec.main_model,
     })
