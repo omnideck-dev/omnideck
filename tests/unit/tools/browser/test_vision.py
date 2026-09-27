@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import base64
 import importlib
+from unittest.mock import AsyncMock
 
 import pytest
 
+from agent_core.providers import ProviderError
 from browser.core.document import Document
 from browser.core.rendering import RenderedDocument
 from tools._grounding import GroundingResponse
@@ -141,6 +143,24 @@ _fake_vision_generate.last_image = None
 
 
 # ── inspect_page tests ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_inspect_page_preserves_provider_error(monkeypatch):
+    browser = _FakeBrowser(_ScreenshotFakePage(b"fake-image-bytes"))
+    monkeypatch.setattr("tools.browser.vision.get_document", _make_fake_get_document(browser))
+    cause = ProviderError("vision-model was retired (status code: 410)")
+    generate = AsyncMock(side_effect=cause)
+    monkeypatch.setattr("providers.vision_generate", generate)
+
+    with pytest.raises(BrowserToolError) as caught:
+        await inspect_page("Describe the page", tab="1")
+
+    assert str(cause) in str(caught.value)
+    assert caught.value.tool == "inspect_page"
+    assert caught.value.__cause__ is cause
+    generate.assert_awaited_once()
 
 
 @pytest.mark.unit

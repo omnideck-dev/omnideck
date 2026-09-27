@@ -14,6 +14,40 @@ from tools.browser import browse_page, click
 from .._helpers import find_ref
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",
+        "collision=childNodes",
+        "collision=own",
+        "layout=hidden",
+        "layout=offscreen",
+        "layout=shadow",
+        "layout=dialog",
+    ],
+    ids=[
+        "named-children",
+        "named-child-nodes",
+        "own-children",
+        "hidden-wrapper",
+        "offscreen-wrapper",
+        "shadow-root",
+        "dialog",
+    ],
+)
+async def test_form_fields_cannot_shadow_dom_traversal(open_tab, servers, query):
+    tab = await open_tab(f"{servers.primary}/forms/child-properties.html?{query}")
+    rendered = await browse_page(tab=tab)
+
+    assert "document rendering failed" not in rendered
+    assert find_ref(rendered, role="textbox", name="Passenger count") is not None
+    search = find_ref(rendered, role="button", name="Search flights")
+    assert search is not None
+    if query in {"", "collision=childNodes", "collision=own"}:
+        assert rendered.index("Before field") < rendered.index("Passenger count") < rendered.index("After field")
+    assert "Flight search submitted" in await click(search, tab=tab)
+
+
 async def test_shadow_dom_is_pierced(open_tab, servers):
     tab = await open_tab(f"{servers.primary}/shadow-dom/page.html")
     rendered = await browse_page(tab=tab)

@@ -172,13 +172,17 @@ MODAL_HELPERS_JS = r"""
   // Gather page branches outside a dialog, crossing shadow-root boundaries.
   function omnideckBackgroundBranches(dialogElement) {
     const branches = [];
+    // Named form controls can shadow the container's children property.
+    const elementChildren = Object.getOwnPropertyDescriptor(Element.prototype, 'children').get;
+    const fragmentChildren = Object.getOwnPropertyDescriptor(DocumentFragment.prototype, 'children').get;
     let dialogBranch = dialogElement;
     while (dialogBranch && dialogBranch !== document.body) {
       const root = dialogBranch.getRootNode();
       const container = dialogBranch.parentElement
         || (root instanceof ShadowRoot ? root : null);
       if (!container) break;
-      for (const sibling of container.children) {
+      const children = (container instanceof Element ? elementChildren : fragmentChildren).call(container);
+      for (const sibling of children) {
         if (sibling !== dialogBranch) branches.push(sibling);
       }
       dialogBranch = container instanceof ShadowRoot ? container.host : container;
