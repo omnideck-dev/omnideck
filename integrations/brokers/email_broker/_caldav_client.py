@@ -26,8 +26,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import caldav
+import niquests.exceptions
 import recurring_ical_events
-import requests.exceptions
 import urllib3.exceptions
 from caldav.lib import error as caldav_error
 from icalendar import Calendar as ICalendar
@@ -40,15 +40,46 @@ from integrations.calendar_recurrence import normalize_recurrence_rule, normaliz
 logger = logging.getLogger(__name__)
 
 # Errors that indicate the underlying HTTP connection has gone away —
-# server-side idle close, RST, half-closed TLS. caldav uses requests under
-# the hood, so the visible shapes are requests/urllib3 errors. Auth failures
-# stay in their own ``AuthorizationError`` branch — retrying those would
-# loop on a real credential rejection.
+# server-side idle close, RST, half-closed TLS. caldav uses niquests under
+# the hood, and raises niquests' own exception classes (not requests') even
+# though its API mirrors requests' — the two libraries' exceptions share no
+# base class, so catching requests.exceptions here would silently never
+# match. Auth failures stay in their own ``AuthorizationError`` branch —
+# retrying those would loop on a real credential rejection.
+#
+# ``Timeout`` is deliberately excluded: a timeout means the server is slow
+# to respond (e.g. iCloud's CalDAV REPORT with event expansion), not that
+# the connection is stale. Treating it as stale would trigger a pointless
+# reconnect+retry, doubling the wait before the error surfaces.
 _STALE_CONN_ERRORS: tuple[type[BaseException], ...] = (
-    requests.exceptions.ConnectionError,
-    requests.exceptions.Timeout,
+    niquests.exceptions.ConnectionError,
     urllib3.exceptions.ProtocolError,
 )
+
+# niquests picks a default timeout per HTTP method when DAVClient.timeout is
+# None: 30s for reads (GET/PROPFIND/REPORT), 120s for writes (POST/PUT/
+# DELETE/PATCH). That 30s is plenty for light reads like list_calendars, but
+# too short for iCloud's event-search REPORT (query + recurrence expansion),
+# which can take 30-60s. Rather than raising the client-wide default — which
+# would let a hung light read hold the shared connection lock for 120s
+# instead of failing fast at 30s — callers doing a REPORT search scope the
+# longer timeout to just that call via ``_report_timeout``.
+_REPORT_TIMEOUT = 120
+
+
+@contextlib.contextmanager
+def _report_timeout(client: caldav.DAVClient):
+    """Temporarily widen ``client``'s timeout for a REPORT-heavy search call.
+
+    Caller must hold ``self._lock`` — nothing else may be touching
+    ``client.timeout`` while this is in effect.
+    """
+    previous = client.timeout
+    client.timeout = _REPORT_TIMEOUT
+    try:
+        yield
+    finally:
+        client.timeout = previous
 
 
 class CalDavAuthError(Exception):
@@ -116,7 +147,7 @@ class CalDavClient:
 
         Caller must hold ``self._lock`` and must have awaited ``connect()``
         first. iCloud closes idle DAV sessions after ~10-30 minutes; the
-        next request fails with a requests/urllib3 connection error. We
+        next request fails with a niquests/urllib3 connection error. We
         rebuild the DAVClient + principal and retry once. A second failure
         propagates.
 
@@ -176,11 +207,16 @@ class CalDavClient:
                 start = now - timedelta(days=days_back)
                 end = now + timedelta(days=days_forward)
                 # ``event=True`` filters out tasks/journals; ``expand=True``
-                # asks the server to materialize each recurrence into its
-                # own VEVENT so the parser doesn't need to walk RRULEs.
-                hits = list(cal.search(
-                    start=start, end=end, event=True, expand=True,
-                ))
+                # enables recurrence expansion. In caldav 3.x the expansion
+                # is done client-side by default (via recurring-ical-events);
+                # the library may auto-switch to server-side expansion for
+                # servers that support it. Either way, each recurrence is
+                # materialized into its own VEVENT so the parser doesn't
+                # need to walk RRULEs.
+                with _report_timeout(client):
+                    hits = list(cal.search(
+                        start=start, end=end, event=True, expand=True,
+                    ))
                 return name, hits
 
             name, raw = await asyncio.to_thread(self._with_reconnect, _op)
@@ -229,14 +265,15 @@ class CalDavClient:
                 # CalDAV property filters are combined with AND. Run one
                 # server-side substring query per useful text field to get OR
                 # semantics, then merge the occurrence-expanded results.
-                for field in ("summary", "description", "location"):
-                    hits.extend(cal.search(
-                        start=start,
-                        end=end,
-                        event=True,
-                        expand=True,
-                        **{field: query},
-                    ))
+                with _report_timeout(client):
+                    for field in ("summary", "description", "location"):
+                        hits.extend(cal.search(
+                            start=start,
+                            end=end,
+                            event=True,
+                            expand=True,
+                            **{field: query},
+                        ))
                 return name, hits
 
             name, raw = await asyncio.to_thread(self._with_reconnect, _op)

@@ -1,16 +1,31 @@
-"""Focused tests for CalDAV calendar writes."""
+"""Tests for ``brokers/email_broker/_caldav_client.py`` — CalDAV client logic.
+
+Covers calendar writes (create/update/delete, recurrence, timezones) and the
+connection layer: reconnect-on-stale-connection behavior, and the scoped
+timeout override that keeps iCloud's slow CalDAV REPORT (event search +
+expansion) from hitting niquests' 30-second default read timeout without
+raising the timeout for every other operation.
+"""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
+from unittest.mock import MagicMock, patch
 
+import niquests.exceptions
 import pytest
 from caldav.lib import error as caldav_error
 from icalendar import Calendar as ICalendar
 from icalendar import Event as ICalendarEvent
 
-from integrations.brokers.email_broker._caldav_client import CalDavClient
+from integrations.brokers.email_broker._caldav_client import (
+    CalDavClient,
+    _REPORT_TIMEOUT,
+    _STALE_CONN_ERRORS,
+    _report_timeout,
+)
 
 
 class _StubResource:
@@ -55,9 +70,16 @@ class _StubCalendar:
         self.search_calls: list[dict[str, Any]] = []
         self.search_hits: list[_StubResource] = []
         self.reject_uid_report = False
+        # Set by _StubDavClient.calendar() so search() can record the
+        # client's timeout at call time — lets tests confirm a REPORT
+        # search runs under _report_timeout's widened value.
+        self.dav_client: _StubDavClient | None = None
+        self.search_timeouts: list[int | None] = []
 
     def search(self, **kwargs: Any) -> list[_StubResource]:
         self.search_calls.append(kwargs)
+        if self.dav_client is not None:
+            self.search_timeouts.append(self.dav_client.timeout)
         return self.search_hits
 
     def add_event(self, **properties: Any) -> Any:
@@ -100,9 +122,11 @@ class _StubDavClient:
     def __init__(self, calendar: _StubCalendar) -> None:
         self.stub_calendar = calendar
         self.urls: list[str] = []
+        self.timeout: int | None = None
 
     def calendar(self, *, url: str) -> _StubCalendar:
         self.urls.append(url)
+        self.stub_calendar.dav_client = self
         return self.stub_calendar
 
 
@@ -149,6 +173,37 @@ async def test_search_events_rejects_empty_query() -> None:
         await client.search_events(
             "https://caldav.example/home/", "  ", 365, 0, 50,
         )
+
+
+@pytest.mark.asyncio
+async def test_search_events_report_runs_under_widened_timeout() -> None:
+    """The multi-field REPORT loop must run with the widened timeout, and
+    the client must be back to its normal timeout once the call returns —
+    so the next operation under the shared lock isn't stuck at 120s too."""
+    calendar = _StubCalendar()
+    calendar.search_hits = [_event_resource()]
+    client = _connected_client(calendar)
+
+    await client.search_events(calendar.url, "dentist", 365, 0, 50)
+
+    assert calendar.search_timeouts == [_REPORT_TIMEOUT] * 3
+    assert client._client.timeout is None
+
+
+@pytest.mark.asyncio
+async def test_list_events_report_runs_under_widened_timeout() -> None:
+    """``list_events``'s REPORT must run with the widened timeout too, and
+    restore the client's timeout afterward for the same reason."""
+    calendar = _StubCalendar()
+    calendar.search_hits = [_event_resource()]
+    client = _connected_client(calendar)
+
+    name, events = await client.list_events(calendar.url, days_forward=365, days_back=0, limit=50)
+
+    assert name == "Home"
+    assert [event.summary for event in events] == ["Project review"]
+    assert calendar.search_timeouts == [_REPORT_TIMEOUT]
+    assert client._client.timeout is None
 
 
 @pytest.mark.asyncio
@@ -505,3 +560,194 @@ async def test_series_operations_update_master_and_delete_resource() -> None:
     assert b"BEGIN:VTIMEZONE" in payload
     assert resource.save_calls == 1
     assert resource.delete_calls == 1
+
+
+# ── _STALE_CONN_ERRORS ─────────────────────────────────────────────────────
+
+
+class TestStaleConnErrors:
+    """``_STALE_CONN_ERRORS`` should include connection-level errors but
+    NOT timeouts. A timeout means the server is slow, not that the
+    connection is dead — reconnecting wastes time and doubles the wait."""
+
+    def test_includes_connection_error(self) -> None:
+        """``ConnectionError`` (RST, broken pipe, idle close) should trigger
+        a reconnect+retry — the connection is genuinely gone."""
+        assert niquests.exceptions.ConnectionError in _STALE_CONN_ERRORS
+
+    def test_excludes_timeout(self) -> None:
+        """``Timeout`` must NOT be in ``_STALE_CONN_ERRORS``. A timeout
+        means the server is slow to respond (e.g. iCloud's CalDAV REPORT
+        with event expansion), not that the connection is stale. Treating
+        it as stale causes a pointless reconnect and doubles the wait."""
+        assert niquests.exceptions.Timeout not in _STALE_CONN_ERRORS
+
+    def test_includes_protocol_error(self) -> None:
+        """``ProtocolError`` (urllib3) indicates a broken HTTP stream —
+        reconnecting is the right move."""
+        import urllib3.exceptions
+
+        assert urllib3.exceptions.ProtocolError in _STALE_CONN_ERRORS
+
+
+# ── _blocking_connect leaves niquests' per-method default alone ───────────
+
+
+class TestBlockingConnectTimeout:
+    """``_blocking_connect`` must NOT pin ``DAVClient`` to a flat timeout.
+
+    niquests already picks a sensible default per HTTP method when
+    ``timeout`` is ``None``: 30s for reads, 120s for writes. Overriding
+    that with a flat value would let a light PROPFIND read (e.g.
+    ``list_calendars``) hang for up to 120s instead of failing fast at
+    30s — holding the account's shared connection lock the whole time.
+    The longer timeout REPORT searches need is applied narrowly via
+    ``_report_timeout`` instead."""
+
+    @patch("integrations.brokers.email_broker._caldav_client.caldav")
+    def test_davclient_receives_no_explicit_timeout(self, mock_caldav: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_caldav.DAVClient.return_value = mock_client
+        mock_client.principal.return_value = MagicMock()
+
+        client = CalDavClient(
+            url="https://caldav.icloud.com",
+            username="user",
+            password="pass",
+        )
+        client._blocking_connect()
+
+        call_kwargs = mock_caldav.DAVClient.call_args.kwargs
+        assert "timeout" not in call_kwargs, (
+            "DAVClient must not receive a flat timeout= override; that "
+            "would replace niquests' 30s-read/120s-write per-method "
+            "defaults with a single value for every operation."
+        )
+
+
+# ── _report_timeout scopes the longer timeout to a single REPORT call ─────
+
+
+class TestReportTimeout:
+    """``_report_timeout`` widens the client's timeout only for its block."""
+
+    def test_widens_timeout_inside_the_block(self) -> None:
+        client = MagicMock()
+        client.timeout = None
+
+        with _report_timeout(client):
+            assert client.timeout == _REPORT_TIMEOUT
+
+    def test_restores_previous_timeout_after_the_block(self) -> None:
+        client = MagicMock()
+        client.timeout = None
+
+        with _report_timeout(client):
+            pass
+
+        assert client.timeout is None
+
+    def test_restores_previous_timeout_even_on_exception(self) -> None:
+        """A failed REPORT must not leave the client pinned at 120s for
+        whatever operation runs next under the shared connection lock."""
+        client = MagicMock()
+        client.timeout = None
+
+        with pytest.raises(ValueError, match="boom"), _report_timeout(client):
+            assert client.timeout == _REPORT_TIMEOUT
+            raise ValueError("boom")
+
+        assert client.timeout is None
+
+
+# ── _with_reconnect does NOT retry on timeout ──────────────────────────────
+
+
+class TestWithReconnectTimeout:
+    """``_with_reconnect`` should NOT catch ``niquests.exceptions.Timeout``
+    and retry. A timeout means the server is slow — reconnecting doesn't
+    help and doubles the wait time before the error surfaces."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_propagates_without_reconnect(self) -> None:
+        """When the operation raises ``Timeout``, ``_with_reconnect`` must
+        let it propagate immediately — no reconnect, no retry. Previously
+        the timeout was caught as a stale-connection error, causing a
+        reconnect and a second 30-second wait before the error surfaced."""
+        client = CalDavClient(
+            url="https://caldav.icloud.com",
+            username="user",
+            password="pass",
+        )
+        # Simulate a connected client.
+        client._client = MagicMock()
+        client._principal = MagicMock()
+
+        call_count = 0
+
+        def _op(_client: object, _principal: object) -> object:
+            nonlocal call_count
+            call_count += 1
+            raise niquests.exceptions.Timeout("Read timed out")
+
+        with pytest.raises(niquests.exceptions.Timeout):
+            await asyncio.to_thread(client._with_reconnect, _op)
+
+        # The op should have been called exactly once — no retry.
+        assert call_count == 1, (
+            "Timeout should propagate immediately without triggering a "
+            "reconnect+retry. The op was called "
+            f"{call_count} times (expected 1)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_connection_error_triggers_reconnect_and_retry(self) -> None:
+        """``ConnectionError`` (genuinely stale connection) should still
+        trigger a reconnect and single retry — that behavior is unchanged."""
+        client = CalDavClient(
+            url="https://caldav.icloud.com",
+            username="user",
+            password="pass",
+        )
+        client._client = MagicMock()
+        client._principal = MagicMock()
+
+        call_count = 0
+
+        def _op(_client: object, _principal: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise niquests.exceptions.ConnectionError("Connection reset")
+            return "success"
+
+        with patch.object(client, "_blocking_connect") as mock_reconnect:
+            mock_reconnect.return_value = (MagicMock(), MagicMock())
+            result = await asyncio.to_thread(client._with_reconnect, _op)
+
+        assert result == "success"
+        assert call_count == 2, "Op should be called twice (initial + retry)"
+        mock_reconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_connection_error_retry_failure_propagates(self) -> None:
+        """If the retry after a ``ConnectionError`` also fails, the second
+        error must propagate — ``_with_reconnect`` retries only once."""
+        client = CalDavClient(
+            url="https://caldav.icloud.com",
+            username="user",
+            password="pass",
+        )
+        client._client = MagicMock()
+        client._principal = MagicMock()
+
+        def _op(_client: object, _principal: object) -> object:
+            raise niquests.exceptions.ConnectionError("still broken")
+
+        with patch.object(client, "_blocking_connect") as mock_reconnect:
+            mock_reconnect.return_value = (MagicMock(), MagicMock())
+            with pytest.raises(niquests.exceptions.ConnectionError):
+                await asyncio.to_thread(client._with_reconnect, _op)
+
+        # Reconnect called once (for the first ConnectionError).
+        mock_reconnect.assert_called_once()
