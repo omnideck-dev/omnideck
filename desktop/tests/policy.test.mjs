@@ -237,12 +237,12 @@ test('the AppImage isolates bundled GLib from incompatible host GIO modules', as
 
 test('the promoted CLI beta is pinned with six target binaries and SBOMs', () => {
   assert.equal(vendor.repository, 'omnideck-dev/cli');
-  assert.equal(vendor.tag, 'v0.11.0-beta.5');
-  assert.equal(vendor.version, 'v0.11.0-beta.5');
-  assert.equal(vendor.commit, 'f7f70de2caf5');
+  assert.equal(vendor.tag, 'v0.11.0-beta.6');
+  assert.equal(vendor.version, 'v0.11.0-beta.6');
+  assert.equal(vendor.commit, '4e2b4e4b23c2');
   assert.equal(
     vendor.downloadBaseUrl,
-    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.5',
+    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.6',
   );
   assert.deepEqual(vendor.targets.map(({ targetTriple }) => targetTriple).sort(), [
     'aarch64-apple-darwin',
@@ -252,8 +252,8 @@ test('the promoted CLI beta is pinned with six target binaries and SBOMs', () =>
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.5"/);
-  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "f7f70de2caf5"/);
+  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.6"/);
+  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "4e2b4e4b23c2"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)
     .filter(([name]) => name.startsWith('build:'))

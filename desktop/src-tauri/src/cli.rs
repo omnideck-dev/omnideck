@@ -5,8 +5,8 @@ use tauri::AppHandle;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 const EXPECTED_SCHEMA_VERSION: u32 = 4;
-pub(crate) const EXPECTED_CLI_VERSION: &str = "v0.11.0-beta.5";
-pub(crate) const EXPECTED_CLI_COMMIT: &str = "f7f70de2caf5";
+pub(crate) const EXPECTED_CLI_VERSION: &str = "v0.11.0-beta.6";
+pub(crate) const EXPECTED_CLI_COMMIT: &str = "4e2b4e4b23c2";
 const STDOUT_LIMIT: usize = 1_000_000;
 const STDERR_LIMIT: usize = 256 * 1024;
 const INSPECTION_TIMEOUT: Duration = Duration::from_secs(15);
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn validates_the_immutable_cli_version() {
         let parsed = parse_cli_version(
-            "omnideck version v0.11.0-beta.5 (f7f70de2caf5) built 2026-08-14T00:29:52Z",
+            "omnideck version v0.11.0-beta.6 (4e2b4e4b23c2) built 2026-09-29T01:48:47Z",
         )
         .unwrap();
         assert_eq!(parsed.version, EXPECTED_CLI_VERSION);
