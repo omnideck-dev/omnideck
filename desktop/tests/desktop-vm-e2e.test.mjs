@@ -18,6 +18,29 @@ const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 
+test('Linux update fixture keeps the pinned image and assertions while clearing only its cache', async () => {
+  const fixture = linuxGuest.split('current_step="candidate update"')[1].split('run_journey update')[0];
+  assert.match(fixture, /podman rm --force "\$\{container_name\}"/);
+  assert.match(fixture, /podman rmi "\$\{update_image_ref\}"/);
+  assert.match(fixture, /if podman image exists "\$\{update_image_ref\}"; then[\s\S]*?exit 1/);
+  assert.match(fixture, /update-fixture-preconditions\.txt/);
+  assert.doesNotMatch(fixture, /podman rmi[^\n]*--force|podman volume|podman system prune/);
+  const validator = fixture.match(/<<'PY'\n([\s\S]*?)\nPY\n\)"/)[1];
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-update-image-'));
+  try {
+    const statePath = join(directory, 'setup-state.json');
+    const valid = `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`;
+    for (const imageRef of [valid, 'ghcr.io/omnideck-dev/omnideck:latest', 'unrelated/image:tag', '--all', `${valid}\n--force`]) {
+      await writeFile(statePath, JSON.stringify({ imageRef }));
+      const result = spawnSync('python3', ['-', statePath], { input: validator, encoding: 'utf8' });
+      assert.equal(result.status === 0, imageRef === valid, result.stderr);
+      if (imageRef === valid) assert.equal(result.stdout.trim(), valid);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('Windows setup captures diagnostics before completion and preserves failed staging', () => {
   assert.match(windows, /collect_guest_evidence\(\) \{\s+phase_command Diagnostics/);
   assert.match(windows, /setup_attempt % 20 == 0/);
