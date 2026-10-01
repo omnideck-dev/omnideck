@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -17,6 +17,87 @@ const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
+
+test('Windows setup captures diagnostics before completion and preserves failed staging', () => {
+  assert.match(windows, /collect_guest_evidence\(\) \{\s+phase_command Diagnostics/);
+  assert.match(windows, /setup_attempt % 20 == 0/);
+  assert.match(windows, /runonce-setup-current\.png/);
+  assert.match(windows, /remote_staged.*keep_vm.*exit_code.*== "0"/);
+  const diagnostics = windowsGuest.split('    "Diagnostics" {')[1].split('    "Doctor" {')[0];
+  assert.match(diagnostics, /Copy-Item -LiteralPath \$StatePath/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$DesktopLog -Tail 200/);
+  assert.match(diagnostics, /desktop-tail\.log/);
+  assert.match(diagnostics, /setup-processes\.json/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$InstallLog -Tail 200/);
+  assert.match(windowsGuest, /RedirectStandardError.*resume\.stderr\.log/);
+  assert.match(windowsGuest, /Join-Path \$WorkDir 'resume\.stderr\.log'/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$LiveLog -Tail 200/);
+  assert.match(diagnostics, /-Exclude resume\.stdout\.log,resume\.stderr\.log/);
+  assert.match(diagnostics, /Compress-Archive -Force -DestinationPath/);
+  assert.doesNotMatch(windows, /Compress-Archive/);
+  assert.match(windowsGuest, /Get-SetupFailureCount \| Set-Content -LiteralPath \$ResumeFailureBaseline/);
+  assert.match(windowsGuest, /if \(\$FailureCount -gt \$BeforeResume\) \{\s+Write-Host "failed"/);
+  assert.match(windows, /setup_status.*== "failed"[\s\S]*?collect_guest_evidence \|\| true\s+return 1/);
+});
+
+test('Windows lifecycle qualification rejects WebView2 failed Windows sign-ins', () => {
+  assert.match(windowsGuest, /Start-WebViewLogonAudit\s+Invoke-Smoke \$Application/);
+  assert.match(windowsGuest, /Invoke-Smoke \$Reinstalled\s+Assert-NoWebViewLogonFailures/);
+  assert.match(windowsGuest, /EventID=4625/);
+  assert.match(windowsGuest, /EventRecordID > \$StartRecord/);
+  assert.match(windowsGuest, /if \(\$Failures\.Count\) \{ throw/);
+  assert.match(windowsGuest, /NoMatchingEventsFound/);
+  assert.match(windowsGuest, /webview-logon-audit\.json/);
+  assert.doesNotMatch(windowsGuest + windowsStartDriver + windows, /WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS|lockoutthreshold|AutofillAiWalletPrivatePasses/);
+});
+
+test('Linux browser discovery follows the registered XDG handler, not stale Firefox entries', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omnideck-browser-handler-'));
+  try {
+    await mkdir(join(root, 'applications'));
+    await writeFile(join(root, 'applications', 'org.mozilla.firefox.desktop'), '[Desktop Entry]\n');
+    await writeFile(join(root, 'applications', 'firefox_firefox.desktop'), '[Desktop Entry]\n');
+    const resolver = linuxGuest.match(/resolve_browser_desktop_entry\(\) \{[\s\S]*?\n\}/)[0];
+    for (const handler of ['org.mozilla.firefox.desktop', 'missing.desktop', '../invalid.desktop', '']) {
+      const result = spawnSync('bash', ['-c', `
+        set -eu
+        xdg-mime() { printf '%s' "$TEST_HANDLER"; }
+        ${resolver}
+        resolve_browser_desktop_entry
+        printf '%s' "$browser_desktop_path"
+      `], { encoding: 'utf8', env: { ...process.env, XDG_DATA_HOME: root, XDG_DATA_DIRS: root, TEST_HANDLER: handler } });
+      if (handler === 'org.mozilla.firefox.desktop') {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, join(root, 'applications', handler));
+      } else {
+        assert.notEqual(result.status, 0, handler);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Linux upgrade tests install exact candidate bytes even at the same version', () => {
+  assert.match(linuxGuest, /apt-get install --reinstall -y "\$\{artifact\}"/);
+  const installRpm = linuxGuest.match(/install_rpm\(\) \{[\s\S]*?\n\}/)[0];
+  for (const installed of [true, false]) {
+    const result = spawnSync('bash', ['-c', `
+      set -eu
+      artifact=/candidate.rpm
+      rpm() {
+        if [[ "$1" == -qp ]]; then printf 'omnideck-0.1.0-beta.11.x86_64';
+        else [[ "$2" == omnideck-0.1.0-beta.11.x86_64 ]]; return ${installed ? 0 : 1}; fi
+      }
+      dnf_with_lock_retry() { printf '%s\\n' "$@"; }
+      ${installRpm}
+      install_rpm
+    `], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `candidate-install\n${installed ? 'reinstall' : 'install'}\n-y\n/candidate.rpm\n`);
+  }
+});
+
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
 assert.match(driver, /min\(self\.timeout, 120\)/);
@@ -31,6 +112,7 @@ assert.match(candidateMatrix, /wait "\$active_lane_pid"/);
 const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
+const verifyLinuxSmoke = await read('../tests/e2e/verify_linux_smoke.py');
 const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
 const smokeMatrixGuest = await read('../tests/e2e/smoke-matrix-guest.sh');
 const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
@@ -78,7 +160,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /F3017226-FE2A-4295-8BDF-00C3A9A7E4C5/);
   assert.match(windowsGuest, /does not match WebView2/);
   assert.match(windowsGuest, /"Driver"/);
+  assert.match(windowsGuest, /-RedirectStandardError \(Join-Path \$Smoke "host\.stderr\.log"\)/);
+  assert.match(windowsGuest, /\$Process\.ExitCode/);
+  assert.match(windows, /if \[\[ "\$\{exit_code\}" != "0" \]\]; then\n\s+collect_guest_evidence \|\| true/);
   assert.match(windows, /phase_command Driver/);
+  assert.match(windows, /if \[\[ "\$\{test_status\}" == "0" \]\]; then\n  stop_driver\n  start_driver preserve/);
   assert.match(driver, /tauri:options/);
   assert.match(driver, /mockup-parity/);
   assert.match(driver, /mockup-html/);
@@ -87,6 +173,10 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
   assert.match(run, /custom_app_fixture\.py/);
+  assert.match(run, /verify_linux_smoke\.py/);
+  assert.match(packageSmoke, /verify_linux_smoke\.py/);
+  assert.match(linuxGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
+  assert.match(packageSmokeGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
   assert.match(run, /--upgrade-from-artifact/);
   assert.match(run, /upgrade-from\.\$\{bundle\}/);
   assert.match(linuxGuest, /previous release installation/);
@@ -195,6 +285,8 @@ test('the GNU Windows lab builder disables unintended DLL auto-exports', () => {
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
+  assert.match(linuxGuest, /journalctl --since "\$\{started_at\}" --no-pager/);
+  assert.match(linuxGuest, /coredumpctl --since "\$\{started_at\}" --no-pager info/);
   assert.match(run, /artifact-path desktop e2e/);
   assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);
@@ -239,7 +331,7 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(packageSmokeGuest, /rpm2cpio/);
   assert.match(packageSmokeGuest, /flatpak install --user --noninteractive/);
   assert.match(packageSmokeGuest, /OMNIDECK_DESKTOP_SMOKE_FILE/);
-  assert.match(packageSmokeGuest, /\["--version", "--json runtime status"\]/);
+  assert.match(verifyLinuxSmoke, /\["--version", "--json runtime status"\]/);
   assert.match(smokeMatrix, /appimage:appimage\|deb:deb\|rpm:rpm\|atomic:appimage/);
   assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
   assert.match(smokeMatrix, /finish_incomplete_matrix/);

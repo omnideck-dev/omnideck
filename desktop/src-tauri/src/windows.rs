@@ -52,6 +52,21 @@ const HOSTED_BRIDGE_SCRIPT: &str = r#"
 
 const EXTERNAL_LINK_SCRIPT: &str = include_str!("../../web/external-links.js");
 
+fn with_webview_options<'a, R: tauri::Runtime, M: Manager<R>>(
+    builder: WebviewWindowBuilder<'a, R, M>,
+) -> WebviewWindowBuilder<'a, R, M> {
+    // WebView2 152-154 can submit an invalid Windows password on each browser
+    // startup, eventually locking out the user (WebView2Feedback#5722). Disable
+    // only its AI wallet feature, in both of our webviews, not machine policy.
+    // This API replaces Wry's default arguments, so preserve those defaults.
+    // Revisit when the upstream fix is available across supported runtimes.
+    #[cfg(target_os = "windows")]
+    let builder = builder.additional_browser_args(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AutofillAiWalletPrivatePasses",
+    );
+    zoom::with_native_hotkeys(builder)
+}
+
 pub(crate) fn focus_active(app: &AppHandle) {
     let active = app
         .get_webview_window("hosted-app")
@@ -112,7 +127,7 @@ pub(crate) fn create_desktop_windows(
     app: &tauri::App,
     hosted_port: Arc<RwLock<Option<u16>>>,
 ) -> tauri::Result<()> {
-    zoom::with_native_hotkeys(
+    with_webview_options(
         WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("omnideck")
             .background_color(Color(12, 14, 20, 255))
@@ -126,7 +141,7 @@ pub(crate) fn create_desktop_windows(
     let navigation_port = hosted_port.clone();
     let new_window_port = hosted_port;
     let app_handle = app.handle().clone();
-    zoom::with_native_hotkeys(
+    with_webview_options(
         WebviewWindowBuilder::new(
             app,
             "hosted-app",

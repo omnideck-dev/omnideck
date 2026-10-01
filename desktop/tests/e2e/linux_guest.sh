@@ -62,6 +62,12 @@ cleanup_resources() {
 write_evidence() {
   local exit_code=$?
   set +e
+  if [[ "${test_status}" != "passed" ]]; then
+    # Guest resets discard renderer/driver crash details that are not present
+    # in WebDriver's transport error. Retain diagnostics before that reset.
+    sudo journalctl --since "${started_at}" --no-pager > "${result_dir}/failure-journal.log" 2>&1
+    sudo coredumpctl --since "${started_at}" --no-pager info > "${result_dir}/failure-coredumps.log" 2>&1
+  fi
   inventory after
   mkdir -p "${result_dir}/user-data/logs" "${result_dir}/user-data/runtime"
   [[ -f "${user_data}/setup-state.json" ]] && cp -- "${user_data}/setup-state.json" "${result_dir}/user-data/setup-state.json"
@@ -130,7 +136,12 @@ dnf_with_lock_retry() {
 
 install_rpm() {
   local requested="${1:-${artifact}}" label="${2:-candidate-install}"
-  dnf_with_lock_retry "${label}" install -y "${requested}"
+  local identity action=install
+  identity="$(rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "${requested}")"
+  # PR candidates can share the published package version but contain new bytes.
+  # DNF otherwise keeps the installed package and silently skips the candidate.
+  if rpm -q "${identity}" >/dev/null 2>&1; then action=reinstall; fi
+  dnf_with_lock_retry "${label}" "${action}" -y "${requested}"
 }
 
 current_step="lab preflight isolation"
@@ -204,7 +215,8 @@ case "${package_kind}" in
     ;;
   deb)
     package_name="$(dpkg-deb --field "${artifact}" Package)"
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${artifact}"
+    # Exercise the exact candidate even before its release version is bumped.
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y "${artifact}"
     application="$(command -v omnideck-desktop)"
     ;;
   rpm)
@@ -417,20 +429,12 @@ while [[ ! -s "${smoke_proof}" ]]; do
   }
   sleep 0.25
 done
+# The sidecar proof can precede WebKit startup; allow renderer failures to reach
+# stderr before validating the packaged launch.
+sleep 2
 kill "${smoke_pid}" >/dev/null 2>&1 || true
 wait "${smoke_pid}" >/dev/null 2>&1 || true
-python3 - "${smoke_proof}" "${expected_cli_version}" "${expected_cli_commit}" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    proof = json.load(stream)
-assert proof["cliVersion"] == sys.argv[2], proof
-assert proof["cliCommit"] == sys.argv[3], proof
-assert proof["schemaVersion"] == 4, proof
-assert proof["operations"] == ["--version", "--json runtime status"], proof
-assert proof["mutation"] is False, proof
-PY
+python3 "${work_dir}/verify_linux_smoke.py" "${smoke_dir}" "${expected_cli_version}" "${expected_cli_commit}"
 
 run_journey() {
   local scenario="$1"
@@ -720,7 +724,23 @@ if ! command -v xdg-mime >/dev/null 2>&1; then
   printf 'The Linux guest has no xdg-mime desktop-handler resolver.\n' >&2
   exit 1
 fi
-browser_desktop_id="firefox_firefox.desktop"
+resolve_browser_desktop_entry() {
+  local directory
+  local -a data_dirs
+  browser_desktop_id="$(xdg-mime query default x-scheme-handler/http)"
+  browser_desktop_path=""
+  [[ -n "${browser_desktop_id}" && "${browser_desktop_id}" != */* ]] || return 1
+  IFS=: read -r -a data_dirs <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/var/lib/snapd/desktop}"
+  for directory in "${XDG_DATA_HOME:-${HOME}/.local/share}" "${data_dirs[@]}"; do
+    if [[ -f "${directory}/applications/${browser_desktop_id}" ]]; then
+      browser_desktop_path="${directory}/applications/${browser_desktop_id}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+browser_desktop_id=""
 browser_desktop_path=""
 if [[ -x /snap/bin/firefox ]] &&
   [[ -n "${wayland_display}" ]] &&
@@ -756,31 +776,12 @@ EOF
   browser_desktop_path="${browser_desktop}"
   desktop_env+=("BROWSER=${browser_wrapper}")
 else
-  for candidate in \
-    /var/lib/snapd/desktop/applications/firefox_firefox.desktop \
-    /usr/share/applications/firefox_firefox.desktop; do
-    if [[ -f "${candidate}" ]]; then
-      browser_desktop_path="${candidate}"
-      break
-    fi
-  done
-  if [[ -z "${browser_desktop_path}" ]]; then
-    browser_desktop_id="$(xdg-mime query default x-scheme-handler/http 2>/dev/null || true)"
-  fi
-  if [[ -z "${browser_desktop_path}" && -n "${browser_desktop_id}" ]]; then
-    while IFS= read -r candidate; do
-      if [[ "$(basename "${candidate}")" == "${browser_desktop_id}" ]]; then
-        browser_desktop_path="${candidate}"
-        break
-      fi
-    done < <(find /var/lib/snapd/desktop/applications /usr/share/applications -maxdepth 1 \
-      -type f -name '*.desktop' -print 2>/dev/null | sort -u)
-  fi
-  if [[ -z "${browser_desktop_path}" ]]; then
-    browser_desktop_path="$(find /var/lib/snapd/desktop/applications /usr/share/applications \
-      -maxdepth 1 -type f -iname '*firefox*.desktop' -print -quit 2>/dev/null || true)"
-    browser_desktop_id="$(basename "${browser_desktop_path}")"
-  fi
+  # Respect the guest's registered browser, not stale entries from an older
+  # installation (for example, a Snap shim on a native-Firefox Silverblue image).
+  resolve_browser_desktop_entry || {
+    printf 'The Linux guest default browser has no resolvable desktop entry.\n' >&2
+    exit 1
+  }
 fi
 [[ -n "${browser_desktop_path}" && -f "${browser_desktop_path}" ]] || {
   printf 'The Linux guest has no discoverable Firefox desktop association.\n' >&2

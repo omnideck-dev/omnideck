@@ -224,18 +224,7 @@ touch "${markers}/smoke-proof-created"
 sleep 2
 kill "${smoke_pid}" >/dev/null 2>&1 || true
 wait "${smoke_pid}" >/dev/null 2>&1 || true
-python3 - "${smoke_proof}" "${expected_cli_version}" "${expected_cli_commit}" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    proof = json.load(stream)
-assert proof["cliVersion"] == sys.argv[2], proof
-assert proof["cliCommit"] == sys.argv[3], proof
-assert proof["schemaVersion"] == 4, proof
-assert proof["operations"] == ["--version", "--json runtime status"], proof
-assert proof["mutation"] is False, proof
-PY
+python3 "${work_dir}/verify_linux_smoke.py" "${smoke_dir}" "${expected_cli_version}" "${expected_cli_commit}"
 
 test_status="passed"
 current_step="complete"
