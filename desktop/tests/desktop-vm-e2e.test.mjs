@@ -243,6 +243,8 @@ test('the GNU Windows lab builder disables unintended DLL auto-exports', () => {
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
+  assert.match(linuxGuest, /journalctl --since "\$\{started_at\}" --no-pager/);
+  assert.match(linuxGuest, /coredumpctl --since "\$\{started_at\}" --no-pager info/);
   assert.match(run, /artifact-path desktop e2e/);
   assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);

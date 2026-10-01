@@ -62,6 +62,12 @@ cleanup_resources() {
 write_evidence() {
   local exit_code=$?
   set +e
+  if [[ "${test_status}" != "passed" ]]; then
+    # Guest resets discard renderer/driver crash details that are not present
+    # in WebDriver's transport error. Retain diagnostics before that reset.
+    sudo journalctl --since "${started_at}" --no-pager > "${result_dir}/failure-journal.log" 2>&1
+    sudo coredumpctl --since "${started_at}" --no-pager info > "${result_dir}/failure-coredumps.log" 2>&1
+  fi
   inventory after
   mkdir -p "${result_dir}/user-data/logs" "${result_dir}/user-data/runtime"
   [[ -f "${user_data}/setup-state.json" ]] && cp -- "${user_data}/setup-state.json" "${result_dir}/user-data/setup-state.json"
