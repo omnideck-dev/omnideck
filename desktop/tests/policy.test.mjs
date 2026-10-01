@@ -43,6 +43,11 @@ const cargoLock = await read('../src-tauri/Cargo.lock');
 const stateRust = await read('../src-tauri/src/state.rs');
 const imageManifest = JSON.parse(await read('../src-tauri/resources/image-manifest.json'));
 
+test('Linux packaging pins the bundler with the modern Mesa library fix', () => {
+  // Tauri #16062 stops shipping incompatible Wayland libraries in AppImages.
+  assert.equal(packageJson.devDependencies['@tauri-apps/cli'], '2.12.0');
+});
+
 test('bundles exactly one target-qualified logical sidecar', () => {
   assert.deepEqual(config.bundle.externalBin, ['binaries/omnideck-cli']);
   assert.equal(config.identifier, 'dev.omnideck.desktop');

@@ -79,6 +79,7 @@ assert.match(candidateMatrix, /wait "\$active_lane_pid"/);
 const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
+const verifyLinuxSmoke = await read('../tests/e2e/verify_linux_smoke.py');
 const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
 const smokeMatrixGuest = await read('../tests/e2e/smoke-matrix-guest.sh');
 const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
@@ -127,6 +128,7 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /does not match WebView2/);
   assert.match(windowsGuest, /"Driver"/);
   assert.match(windows, /phase_command Driver/);
+  assert.match(windows, /if \[\[ "\$\{test_status\}" == "0" \]\]; then\n  stop_driver\n  start_driver preserve/);
   assert.match(driver, /tauri:options/);
   assert.match(driver, /mockup-parity/);
   assert.match(driver, /mockup-html/);
@@ -135,6 +137,10 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
   assert.match(run, /custom_app_fixture\.py/);
+  assert.match(run, /verify_linux_smoke\.py/);
+  assert.match(packageSmoke, /verify_linux_smoke\.py/);
+  assert.match(linuxGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
+  assert.match(packageSmokeGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
   assert.match(run, /--upgrade-from-artifact/);
   assert.match(run, /upgrade-from\.\$\{bundle\}/);
   assert.match(linuxGuest, /previous release installation/);
@@ -289,7 +295,7 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(packageSmokeGuest, /rpm2cpio/);
   assert.match(packageSmokeGuest, /flatpak install --user --noninteractive/);
   assert.match(packageSmokeGuest, /OMNIDECK_DESKTOP_SMOKE_FILE/);
-  assert.match(packageSmokeGuest, /\["--version", "--json runtime status"\]/);
+  assert.match(verifyLinuxSmoke, /\["--version", "--json runtime status"\]/);
   assert.match(smokeMatrix, /appimage:appimage\|deb:deb\|rpm:rpm\|atomic:appimage/);
   assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
   assert.match(smokeMatrix, /finish_incomplete_matrix/);

@@ -737,7 +737,9 @@ fi
 test_status=$?
 set -e
 
-if [[ "${test_status}" == "0" && "${security_mode}" == "1" ]]; then
+# First setup can activate an Evergreen WebView2 update even on a product-ready
+# guest. Re-resolve its driver before subsequent sessions, not only after reboot.
+if [[ "${test_status}" == "0" ]]; then
   stop_driver
   start_driver preserve
 fi

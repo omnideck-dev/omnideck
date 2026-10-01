@@ -7,7 +7,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "test": "pnpm run test:source && pnpm run verify:sidecars",
-    "test:source": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs && python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py tests/e2e/test_macos_lab_contract.py",
+    "test:source": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs && python3 -m unittest tests/e2e/test_webdriver_client.py tests/e2e/test_host_boundary_client.py tests/e2e/test_macos_lab_contract.py tests/e2e/test_verify_linux_smoke.py",
     "test:policy": "node --test tests/*.test.mjs",
     "test:release-contract": "node --test tests/releasecontract/*.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
@@ -41,6 +41,6 @@
     "build:linux:arm64": "node scripts/fetch-sidecars.mjs aarch64-unknown-linux-gnu && tauri build --bundles appimage deb rpm --target aarch64-unknown-linux-gnu"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.11.4"
+    "@tauri-apps/cli": "2.12.0"
   }
 }
