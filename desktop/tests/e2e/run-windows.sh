@@ -2,6 +2,9 @@
 
 set -Eeuo pipefail
 
+# Preserve the failing phase even when a native command exits without stderr.
+trap 'printf "Windows E2E command failed (exit %s, line %s): %s\n" "$?" "$LINENO" "$BASH_COMMAND" >&2' ERR
+
 original_args=("$@")
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -205,7 +208,7 @@ fi
 collect_guest_evidence() {
   "${lab_dir}/lab.sh" run windows \
     "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Test-Path '${remote_root}\\results') { Compress-Archive -Force -Path '${remote_root}\\results\\*' -DestinationPath '${remote_root}\\guest-evidence.zip' }" \
-    >/dev/null 2>&1 || return 1
+    || return 1
   "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip" || return 1
   mkdir -p "${evidence_dir}/guest"
   local unzip_status=0

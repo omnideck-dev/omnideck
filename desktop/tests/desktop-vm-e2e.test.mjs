@@ -18,6 +18,17 @@ const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 
+test('Windows lifecycle qualification rejects WebView2 failed Windows sign-ins', () => {
+  assert.match(windowsGuest, /Start-WebViewLogonAudit\s+Invoke-Smoke \$Application/);
+  assert.match(windowsGuest, /Invoke-Smoke \$Reinstalled\s+Assert-NoWebViewLogonFailures/);
+  assert.match(windowsGuest, /EventID=4625/);
+  assert.match(windowsGuest, /EventRecordID > \$StartRecord/);
+  assert.match(windowsGuest, /if \(\$Failures\.Count\) \{ throw/);
+  assert.match(windowsGuest, /NoMatchingEventsFound/);
+  assert.match(windowsGuest, /webview-logon-audit\.json/);
+  assert.doesNotMatch(windowsGuest + windowsStartDriver + windows, /WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS|lockoutthreshold|AutofillAiWalletPrivatePasses/);
+});
+
 test('Linux browser discovery follows the registered XDG handler, not stale Firefox entries', async () => {
   const root = await mkdtemp(join(tmpdir(), 'omnideck-browser-handler-'));
   try {

@@ -322,6 +322,61 @@ function Invoke-Smoke {
     }
 }
 
+function Start-WebViewLogonAudit {
+    # Observe the real package without browser-argument overrides or weakening
+    # Windows lockout policy. Repeated lifecycle launches reproduce #5722.
+    & auditpol.exe /set /subcategory:"{0CCE9215-69AE-11D9-BED3-505054503030}" /failure:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable failed-logon auditing." }
+    & auditpol.exe /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable process-creation auditing." }
+    (Get-WinEvent -LogName Security -MaxEvents 1).RecordId |
+        Set-Content -LiteralPath (Join-Path $Results "security-start-record.txt")
+}
+
+function Assert-NoWebViewLogonFailures {
+    $StartRecord = [long](Get-Content -LiteralPath (Join-Path $Results "security-start-record.txt") -Raw)
+    $Events = @()
+    try {
+        $Events = @(Get-WinEvent -LogName Security -FilterXPath "*[System[(EventID=4625 or EventID=4688) and (EventRecordID > $StartRecord)]]" -Oldest -ErrorAction Stop)
+    }
+    catch {
+        if ($_.FullyQualifiedErrorId -notlike "NoMatchingEventsFound*") { throw }
+    }
+    $Processes = @{}
+    $BrowserStarts = 0
+    $Failures = @(foreach ($Event in $Events) {
+        $Xml = [xml]$Event.ToXml()
+        $Data = @{}
+        $Xml.Event.EventData.Data | ForEach-Object { $Data[$_.Name] = $_.InnerText }
+        if ($Event.Id -eq 4688) {
+            # Track every creation in record order so PID reuse cannot attribute
+            # Windows Search/Widgets failures to an earlier omnideck browser.
+            $IsOurBrowser = $Data.NewProcessName -like "*\msedgewebview2.exe" -and
+                $Data.ParentProcessName -like "*\omnideck-desktop.exe"
+            $Processes[$Data.NewProcessId] = $IsOurBrowser
+            if ($IsOurBrowser) { $BrowserStarts++ }
+        }
+        elseif ($Data.ProcessName -like "*\msedgewebview2.exe" -and $Processes[$Data.ProcessId]) {
+            [ordered]@{
+                recordId = $Event.RecordId
+                process = $Data.ProcessName
+                status = $Data.Status
+                subStatus = $Data.SubStatus
+                logonType = $Data.LogonType
+            }
+        }
+    })
+    [ordered]@{
+        status = $(if ($Failures.Count -or -not $BrowserStarts) { "failed" } else { "passed" })
+        startRecordId = $StartRecord
+        browserStarts = $BrowserStarts
+        failures = $Failures
+    } | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $Results "webview-logon-audit.json") -Encoding utf8
+    if ($Failures.Count) { throw "WebView2 generated failed Windows sign-ins. See webview-logon-audit.json." }
+    if (-not $BrowserStarts) { throw "No omnideck browser process was captured by the Windows audit." }
+}
+
 switch ($Phase) {
     "Driver" {
         Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
@@ -371,6 +426,7 @@ switch ($Phase) {
         Get-FileHash -LiteralPath $Application -Algorithm SHA256 |
             Format-List | Out-File -LiteralPath (Join-Path $Results "application.sha256.txt") -Encoding utf8
         Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
+        Start-WebViewLogonAudit
         Invoke-Smoke $Application
         Write-Host "PREPARED application=$Application"
     }
@@ -699,6 +755,7 @@ switch ($Phase) {
         $Reinstalled = Install-Candidate
         if (-not (Test-Path -LiteralPath $Reinstalled)) { throw "Reinstall did not restore the application." }
         Invoke-Smoke $Reinstalled
+        Assert-NoWebViewLogonFailures
 
         Invoke-Engine rm --force $ContainerName | Out-Null
         Invoke-Engine volume rm --force $HomeVolume $StateVolume | Out-Null

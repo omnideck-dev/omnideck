@@ -91,6 +91,12 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
+Windows qualification also records Security event IDs across the candidate's
+repeated launches and rejects failed Windows sign-ins originating in WebView2.
+This catches upstream browser-runtime regressions that can lock out a local
+account. The harness enables failure auditing but never relaxes account-lockout
+policy or injects browser feature overrides; mitigation must be in the package.
+
 When an upgrade-from artifact is supplied, the native package lanes first
 install the previous release into the clean guest, seed a marker in Desktop's
 normal user-data root, and install the candidate directly over it. The journey

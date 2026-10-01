@@ -121,11 +121,19 @@ test('hosted capability exposes only typed desktop affordances to loopback', () 
 
 test('desktop zoom uses the native Tauri webview capability without a custom controller', () => {
   assert.equal((rustModules.zoom.match(/\.zoom_hotkeys_enabled\(true\)/g) || []).length, 1);
-  assert.equal((rustModules.windows.match(/zoom::with_native_hotkeys\(/g) || []).length, 2);
+  assert.equal((rustModules.windows.match(/with_webview_options\(/g) || []).length, 2);
+  assert.equal((rustModules.windows.match(/zoom::with_native_hotkeys\(/g) || []).length, 1);
   assert.doesNotMatch(rust, /desktop_zoom|zoom_control_script|MIN_ZOOM/);
   assert.doesNotMatch(rust, /__omnideckDesktopZoom|__omnideckZoomControlsInstalled/);
   assert.doesNotMatch(rust, /document\.documentElement\.style\.zoom/);
   assert.doesNotMatch(rust, /\.set_menu\(|\.hide_menu\(|\.on_menu_event\(|MenuItem|Submenu/);
+});
+
+test('both Windows webviews avoid the upstream wallet account-lockout regression', () => {
+  assert.match(rustModules.windows, /#\[cfg\(target_os = "windows"\)\]\s+let builder = builder\.additional_browser_args\(/);
+  assert.match(rustModules.windows, /--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AutofillAiWalletPrivatePasses/);
+  assert.equal((rustModules.windows.match(/\.additional_browser_args\(/g) || []).length, 1);
+  assert.doesNotMatch(rust, /WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS|net accounts|lockoutthreshold|no-sandbox/);
 });
 
 test('desktop host responsibilities stay in focused Rust modules', () => {
