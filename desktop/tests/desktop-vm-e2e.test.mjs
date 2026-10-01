@@ -127,6 +127,9 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /F3017226-FE2A-4295-8BDF-00C3A9A7E4C5/);
   assert.match(windowsGuest, /does not match WebView2/);
   assert.match(windowsGuest, /"Driver"/);
+  assert.match(windowsGuest, /-RedirectStandardError \(Join-Path \$Smoke "host\.stderr\.log"\)/);
+  assert.match(windowsGuest, /\$Process\.ExitCode/);
+  assert.match(windows, /if \[\[ "\$\{exit_code\}" != "0" \]\]; then\n\s+collect_guest_evidence \|\| true/);
   assert.match(windows, /phase_command Driver/);
   assert.match(windows, /if \[\[ "\$\{test_status\}" == "0" \]\]; then\n  stop_driver\n  start_driver preserve/);
   assert.match(driver, /tauri:options/);

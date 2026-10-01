@@ -278,10 +278,21 @@ function Invoke-Smoke {
     try {
         $env:OMNIDECK_DESKTOP_SMOKE_FILE = $Proof
         $env:OMNIDECK_DESKTOP_USER_DATA = $SmokeUserData
-        $Process = Start-Process -FilePath $Application -PassThru
+        Get-Process -Name "omnideck-desktop","omnideck" -ErrorAction SilentlyContinue |
+            Select-Object Id,SessionId,Path |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Smoke "existing-processes.json") -Encoding utf8
+        $Process = Start-Process -FilePath $Application -PassThru `
+            -RedirectStandardOutput (Join-Path $Smoke "host.stdout.log") `
+            -RedirectStandardError (Join-Path $Smoke "host.stderr.log")
+        # Retain the native handle so Windows PowerShell can read the exit code
+        # even when a loader failure terminates the host immediately.
+        $null = $Process.Handle
         $Deadline = [DateTime]::UtcNow.AddSeconds(90)
         while (-not (Test-Path -LiteralPath $Proof)) {
-            if ($Process.HasExited) { throw "Desktop host exited before writing smoke proof." }
+            if ($Process.HasExited) {
+                $Process.WaitForExit()
+                throw "Desktop host exited before writing smoke proof (exit $($Process.ExitCode)). See smoke/host.stderr.log."
+            }
             if ([DateTime]::UtcNow -ge $Deadline) { throw "Desktop smoke proof timed out." }
             Start-Sleep -Milliseconds 250
         }
@@ -292,6 +303,17 @@ function Invoke-Smoke {
         if ($ProofObject.schemaVersion -ne 4 -or $ProofObject.mutation -ne $false) {
             throw "Smoke proof contract mismatch."
         }
+    }
+    catch {
+        Get-WinEvent -FilterHashtable @{
+            LogName = "Application"
+            Id = 1000,1001
+            StartTime = (Get-Date).AddMinutes(-5)
+        } -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated,ProviderName,Id,Message |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $Smoke "application-errors.json") -Encoding utf8
+        throw
     }
     finally {
         $env:OMNIDECK_DESKTOP_SMOKE_FILE = $PreviousSmoke

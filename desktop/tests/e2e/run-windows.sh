@@ -202,6 +202,20 @@ fi
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
   "upgradeFromArtifactCacheKey=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY:-none}"
 
+collect_guest_evidence() {
+  "${lab_dir}/lab.sh" run windows \
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Test-Path '${remote_root}\\results') { Compress-Archive -Force -Path '${remote_root}\\results\\*' -DestinationPath '${remote_root}\\guest-evidence.zip' }" \
+    >/dev/null 2>&1 || return 1
+  "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip" || return 1
+  mkdir -p "${evidence_dir}/guest"
+  local unzip_status=0
+  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest" || unzip_status=$?
+  case "${unzip_status}" in
+    0|1) return 0 ;;
+    *) printf 'Could not extract Windows evidence (unzip exit %s).\n' "${unzip_status}" >&2; return "${unzip_status}" ;;
+  esac
+}
+
 cleanup() {
   local exit_code=$?
   set +e
@@ -215,6 +229,11 @@ cleanup() {
   fi
   if [[ "${vm_started}" == "1" ]]; then
     if [[ "${remote_staged}" == "1" ]]; then
+      # Prepare can fail before normal collection. Preserve its diagnostics
+      # before deleting guest staging and restoring the baseline.
+      if [[ "${exit_code}" != "0" ]]; then
+        collect_guest_evidence || true
+      fi
       "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/runtime-start.log" "${output_dir}/runtime-start.log" \
         >/dev/null 2>&1 || true
     fi
@@ -808,18 +827,7 @@ fi
 "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/tauri-driver.stderr.log" "${output_dir}/tauri-driver.stderr.log" \
   >/dev/null 2>&1 || true
 
-"${lab_dir}/lab.sh" run windows \
-  "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Test-Path '${remote_root}\\results') { Compress-Archive -Force -Path '${remote_root}\\results\\*' -DestinationPath '${remote_root}\\guest-evidence.zip' }" \
-  >/dev/null 2>&1 || true
-if "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip"; then
-  mkdir -p "${evidence_dir}/guest"
-  unzip_status=0
-  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest" || unzip_status=$?
-  case "${unzip_status}" in
-    0|1) ;;
-    *) printf 'Could not extract Windows evidence (unzip exit %s).\n' "${unzip_status}" >&2; exit "${unzip_status}" ;;
-  esac
-fi
+collect_guest_evidence
 
 [[ -f "${evidence_dir}/guest/summary.json" ]] || exit "${test_status}"
 python3 - "${evidence_dir}/guest/summary.json" <<'PY'

@@ -173,6 +173,11 @@ Every release contains ten packages and ten matching `.sha256` files:
 | Linux | x64 | AppImage, DEB, RPM | Ubuntu x64 | AppImage smoke plus lifecycle checks for all three formats |
 | Linux | ARM64 | AppImage, DEB, RPM | Ubuntu ARM64 | Required when hardware is available; otherwise explicitly blocked |
 
+Windows builds inspect the produced host's DLL imports before uploading installers.
+The host must statically link the VC++ runtime, so a clean machine does not need
+an additional redistributable. Native smoke still proves the installed app launches;
+the import check alone does not replace that test.
+
 The static release contract verifies the exact filenames, checksums, file
 signatures, and AppImage architectures. The tag workflow runs it on build
 artifacts before the protected publication step. After publication, dispatch:
