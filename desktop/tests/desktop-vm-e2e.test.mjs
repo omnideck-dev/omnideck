@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -17,6 +17,54 @@ const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
+
+test('Linux browser discovery follows the registered XDG handler, not stale Firefox entries', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omnideck-browser-handler-'));
+  try {
+    await mkdir(join(root, 'applications'));
+    await writeFile(join(root, 'applications', 'org.mozilla.firefox.desktop'), '[Desktop Entry]\n');
+    await writeFile(join(root, 'applications', 'firefox_firefox.desktop'), '[Desktop Entry]\n');
+    const resolver = linuxGuest.match(/resolve_browser_desktop_entry\(\) \{[\s\S]*?\n\}/)[0];
+    for (const handler of ['org.mozilla.firefox.desktop', 'missing.desktop', '../invalid.desktop', '']) {
+      const result = spawnSync('bash', ['-c', `
+        set -eu
+        xdg-mime() { printf '%s' "$TEST_HANDLER"; }
+        ${resolver}
+        resolve_browser_desktop_entry
+        printf '%s' "$browser_desktop_path"
+      `], { encoding: 'utf8', env: { ...process.env, XDG_DATA_HOME: root, XDG_DATA_DIRS: root, TEST_HANDLER: handler } });
+      if (handler === 'org.mozilla.firefox.desktop') {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, join(root, 'applications', handler));
+      } else {
+        assert.notEqual(result.status, 0, handler);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Linux upgrade tests install exact candidate bytes even at the same version', () => {
+  assert.match(linuxGuest, /apt-get install --reinstall -y "\$\{artifact\}"/);
+  const installRpm = linuxGuest.match(/install_rpm\(\) \{[\s\S]*?\n\}/)[0];
+  for (const installed of [true, false]) {
+    const result = spawnSync('bash', ['-c', `
+      set -eu
+      artifact=/candidate.rpm
+      rpm() {
+        if [[ "$1" == -qp ]]; then printf 'omnideck-0.1.0-beta.11.x86_64';
+        else [[ "$2" == omnideck-0.1.0-beta.11.x86_64 ]]; return ${installed ? 0 : 1}; fi
+      }
+      dnf_with_lock_retry() { printf '%s\\n' "$@"; }
+      ${installRpm}
+      install_rpm
+    `], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `candidate-install\n${installed ? 'reinstall' : 'install'}\n-y\n/candidate.rpm\n`);
+  }
+});
+
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
 assert.match(driver, /min\(self\.timeout, 120\)/);
