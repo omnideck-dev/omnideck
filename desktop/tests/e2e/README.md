@@ -140,6 +140,14 @@ fixture image in the full Desktop journey. This makes the hosted proof a check
 of the same application image the package declares, at the cost of a larger
 first pull inside the disposable overlay.
 
+The Linux candidate-update scenario removes its namespaced container and the
+exact immutable image from the disposable guest cache, preserving the data
+volumes. This exercises a real cold-cache update and makes download progress
+observable; a fully cached same-image reconciliation can finish between native
+WebDriver samples. Image removal does not use force and refuses images still
+used by another container. The update copy, bridge, Ready, and hosted-app
+assertions remain unchanged. The preconditions are recorded in the evidence.
+
 The matrix builds each requested package once, then reuses a persistent
 builder-image-keyed Cargo target, Cargo home, pnpm store, and XDG cache owned by
 the VM lab. Source is still copied into an isolated build container, and the

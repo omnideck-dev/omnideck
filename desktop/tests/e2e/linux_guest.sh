@@ -488,6 +488,30 @@ podman rm --force "${container_name}" >/dev/null
 run_journey resume
 
 current_step="candidate update"
+# A warm, unchanged image can reconcile in less than one WebDriver polling
+# interval. Exercise a real cold-cache update so the transient update surface
+# remains observable. Remove only this run's container and the exact immutable
+# image; keep the data volumes, and never force-remove an image used elsewhere.
+update_image_ref="$(python3 - "${state_path}" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    image_ref = json.load(stream)["imageRef"]
+if not re.fullmatch(r"ghcr\.io/omnideck-dev/omnideck@sha256:[0-9a-f]{64}", image_ref):
+    raise SystemExit("Update fixture requires the exact immutable OmniDeck image")
+print(image_ref)
+PY
+)"
+podman rm --force "${container_name}" > "${result_dir}/update-fixture-container-removal.txt"
+podman rmi "${update_image_ref}" > "${result_dir}/update-fixture-image-removal.txt"
+if podman image exists "${update_image_ref}"; then
+  printf 'Cold-cache update fixture still contains %s\n' "${update_image_ref}" >&2
+  exit 1
+fi
+printf 'cache=cold\nimageRef=%s\ndataVolumes=preserved\n' "${update_image_ref}" \
+  > "${result_dir}/update-fixture-preconditions.txt"
 python3 - "${state_path}" <<'PY'
 import json
 import sys
