@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Diagnostics", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -24,6 +24,7 @@ $Installer = Join-Path $WorkDir "candidate-setup.exe"
 $UpgradeFromInstaller = Join-Path $WorkDir "upgrade-from-setup.exe"
 $ApplicationFile = Join-Path $WorkDir "application-path.txt"
 $StatePath = Join-Path $UserData "setup-state.json"
+$ResumeFailureBaseline = Join-Path $WorkDir "resume-failure-count.txt"
 $TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
 if ($TestNamespace.Length -gt 40) { $TestNamespace = $TestNamespace.Substring(0, 40) }
 if (-not $TestNamespace) { throw "The Windows test namespace is empty after normalization." }
@@ -34,6 +35,12 @@ $MachineName = "omnideck-runtime"
 
 New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
 $env:OMNIDECK_CONFIG_DIR = $CliConfig
+
+function Get-SetupFailureCount {
+    $DesktopLog = Join-Path $UserData "logs\desktop.log"
+    if (-not (Test-Path -LiteralPath $DesktopLog)) { return 0 }
+    return @(Select-String -LiteralPath $DesktopLog -Pattern '^\[setup failure\]').Count
+}
 
 function Get-PodmanPath {
     $Command = Get-Command podman.exe -ErrorAction SilentlyContinue
@@ -462,6 +469,9 @@ switch ($Phase) {
         Write-Host "RUNTIME PRESERVED machine=$MachineName"
     }
     "PatchRunOnce" {
+        # UAC cancellation and restart-required errors are expected before
+        # this point. A new setup error after resume must fail, not poll forever.
+        Get-SetupFailureCount | Set-Content -LiteralPath $ResumeFailureBaseline
         $Application = (Get-Content -LiteralPath $ApplicationFile -Raw).Trim()
         if (-not (Test-Path -LiteralPath $Application -PathType Leaf)) {
             throw "The installed application is missing before RunOnce patching."
@@ -485,7 +495,7 @@ switch ($Phase) {
             "`$env:OMNIDECK_CONFIG_DIR = '$(& $EscapeLiteral $CliConfig)'",
             "`$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = '$(& $EscapeLiteral $TestNamespace)'",
             "`$env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = '$(& $EscapeLiteral (Join-Path $WorkDir 'update-fixture.json'))'",
-            "Start-Process -FilePath '$(& $EscapeLiteral $Application)'"
+            "Start-Process -FilePath '$(& $EscapeLiteral $Application)' -RedirectStandardOutput '$(& $EscapeLiteral (Join-Path $WorkDir 'resume.stdout.log'))' -RedirectStandardError '$(& $EscapeLiteral (Join-Path $WorkDir 'resume.stderr.log'))'"
         )
         [IO.File]::WriteAllLines($ResumeScript, $Lines, [Text.UTF8Encoding]::new($false))
         $ResumeCommand = "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$ResumeScript`""
@@ -523,12 +533,56 @@ switch ($Phase) {
         Write-Host "RUNONCE PROVED processCount=$($Processes.Count) status=$($State.status)"
     }
     "SetupStatus" {
+        if (Test-Path -LiteralPath $ResumeFailureBaseline) {
+            $BeforeResume = [int](Get-Content -LiteralPath $ResumeFailureBaseline -Raw)
+            $FailureCount = Get-SetupFailureCount
+            if ($FailureCount -gt $BeforeResume) {
+                Write-Host "failed"
+                return
+            }
+        }
         if (-not (Test-Path -LiteralPath $StatePath)) {
             Write-Host "missing"
             return
         }
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         Write-Host $State.status
+    }
+    "Diagnostics" {
+        # Capture evidence before cleanup, including when setup never reaches Final.
+        # Archive snapshots, not the redirect files held open by Start-Process.
+        foreach ($Stream in @('stdout', 'stderr')) {
+            $LiveLog = Join-Path $WorkDir "resume.$Stream.log"
+            if (-not (Test-Path -LiteralPath $LiveLog)) {
+                $LiveLog = Join-Path $Results "resume.$Stream.log"
+            }
+            if (Test-Path -LiteralPath $LiveLog) {
+                Get-Content -LiteralPath $LiveLog -Tail 200 |
+                    Set-Content -LiteralPath (Join-Path $Results "resume-$Stream-tail.log") -Encoding utf8
+            }
+        }
+        if (Test-Path -LiteralPath $StatePath) {
+            Copy-Item -LiteralPath $StatePath -Destination (Join-Path $Results "setup-state.json")
+        }
+        $DesktopLog = Join-Path $UserData "logs\desktop.log"
+        if (Test-Path -LiteralPath $DesktopLog) {
+            Get-Content -LiteralPath $DesktopLog -Tail 200 |
+                Set-Content -LiteralPath (Join-Path $Results "desktop-tail.log") -Encoding utf8
+        }
+        Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -match '^(omnideck.*|msiexec|consent|wsl.*|podman.*|powershell)\.exe$' } |
+            Select-Object ProcessId,ParentProcessId,Name,CommandLine,CreationDate |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $Results "setup-processes.json") -Encoding utf8
+        $InstallLog = Join-Path $env:LOCALAPPDATA "omnideck-cli\downloads\podman-install.log"
+        if (Test-Path -LiteralPath $InstallLog) {
+            Get-Content -LiteralPath $InstallLog -Tail 200 |
+                Set-Content -LiteralPath (Join-Path $Results "podman-install-tail.log") -Encoding utf8
+        }
+        [DateTime]::UtcNow.ToString("o") | Set-Content (Join-Path $Results "diagnostics-at.txt")
+        # Keep pipelines inside PowerShell rather than the SSH command shell.
+        Get-ChildItem -LiteralPath $Results -Exclude resume.stdout.log,resume.stderr.log |
+            Compress-Archive -Force -DestinationPath (Join-Path $WorkDir "guest-evidence.zip")
     }
     "Doctor" {
         Stop-Omnideck

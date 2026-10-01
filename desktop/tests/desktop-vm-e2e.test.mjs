@@ -18,6 +18,28 @@ const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
 
+test('Windows setup captures diagnostics before completion and preserves failed staging', () => {
+  assert.match(windows, /collect_guest_evidence\(\) \{\s+phase_command Diagnostics/);
+  assert.match(windows, /setup_attempt % 20 == 0/);
+  assert.match(windows, /runonce-setup-current\.png/);
+  assert.match(windows, /remote_staged.*keep_vm.*exit_code.*== "0"/);
+  const diagnostics = windowsGuest.split('    "Diagnostics" {')[1].split('    "Doctor" {')[0];
+  assert.match(diagnostics, /Copy-Item -LiteralPath \$StatePath/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$DesktopLog -Tail 200/);
+  assert.match(diagnostics, /desktop-tail\.log/);
+  assert.match(diagnostics, /setup-processes\.json/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$InstallLog -Tail 200/);
+  assert.match(windowsGuest, /RedirectStandardError.*resume\.stderr\.log/);
+  assert.match(windowsGuest, /Join-Path \$WorkDir 'resume\.stderr\.log'/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$LiveLog -Tail 200/);
+  assert.match(diagnostics, /-Exclude resume\.stdout\.log,resume\.stderr\.log/);
+  assert.match(diagnostics, /Compress-Archive -Force -DestinationPath/);
+  assert.doesNotMatch(windows, /Compress-Archive/);
+  assert.match(windowsGuest, /Get-SetupFailureCount \| Set-Content -LiteralPath \$ResumeFailureBaseline/);
+  assert.match(windowsGuest, /if \(\$FailureCount -gt \$BeforeResume\) \{\s+Write-Host "failed"/);
+  assert.match(windows, /setup_status.*== "failed"[\s\S]*?collect_guest_evidence \|\| true\s+return 1/);
+});
+
 test('Windows lifecycle qualification rejects WebView2 failed Windows sign-ins', () => {
   assert.match(windowsGuest, /Start-WebViewLogonAudit\s+Invoke-Smoke \$Application/);
   assert.match(windowsGuest, /Invoke-Smoke \$Reinstalled\s+Assert-NoWebViewLogonFailures/);

@@ -206,9 +206,7 @@ fi
   "upgradeFromArtifactCacheKey=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY:-none}"
 
 collect_guest_evidence() {
-  "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Test-Path '${remote_root}\\results') { Compress-Archive -Force -Path '${remote_root}\\results\\*' -DestinationPath '${remote_root}\\guest-evidence.zip' }" \
-    || return 1
+  phase_command Diagnostics || return 1
   "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip" || return 1
   mkdir -p "${evidence_dir}/guest"
   local unzip_status=0
@@ -249,7 +247,8 @@ cleanup() {
     "${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${trust_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
       >/dev/null 2>&1 || true
-    if [[ "${remote_staged}" == "1" && "${keep_vm}" != "1" ]]; then
+    # Failed transactions retain their staging so the archived guest remains diagnosable.
+    if [[ "${remote_staged}" == "1" && "${keep_vm}" != "1" && "${exit_code}" == "0" ]]; then
       "${lab_dir}/lab.sh" run windows \
         "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Remove-Item -Recurse -Force -ErrorAction SilentlyContinue '${remote_root}'" \
         >/dev/null 2>&1 || true
@@ -726,7 +725,7 @@ complete_clean_security_setup() {
 
   printf 'Allowing resumed setup to finish while approving any post-reboot installer prompt.\n'
   setup_status=""
-  for _ in $(seq 1 1200); do
+  for setup_attempt in $(seq 1 1200); do
     consent_pid="$("${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-Process consent -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id)\"" \
       2>/dev/null | tr -d '\r' || true)"
@@ -737,6 +736,17 @@ complete_clean_security_setup() {
     fi
     setup_status="$(phase_command SetupStatus 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
     [[ "${setup_status}" == "complete" ]] && break
+    if [[ "${setup_status}" == "failed" ]]; then
+      printf 'RunOnce setup reported a new application error; collecting diagnostics.\n' >&2
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-setup-failed.png" || true
+      collect_guest_evidence || true
+      return 1
+    fi
+    if (( setup_attempt == 1 || setup_attempt % 20 == 0 )); then
+      printf 'RunOnce setup progress: attempt=%s status=%s\n' "${setup_attempt}" "${setup_status:-missing}"
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-setup-current.png" || true
+      collect_guest_evidence || true
+    fi
     sleep 2
   done
   [[ "${setup_status}" == "complete" ]] || {
