@@ -163,12 +163,15 @@ fetch(%s, options).then(async (response) => {
         )
         if created.get("status") != 201:
             raise AssertionError(f"Could not create fixture profile: {created!r}")
-        self.driver.execute("location.reload(); return true;")
+        self.driver.execute(
+            "window.__desktopBoundaryReloadPending = true; location.reload(); return true;"
+        )
         wait_until(
             "the core application after setup",
             self.timeout,
             lambda: self.driver.execute(
-                "return Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
+                "return window.__desktopBoundaryReloadPending !== true && "
+                "Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
             ),
         )
 
