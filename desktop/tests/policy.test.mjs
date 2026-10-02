@@ -214,11 +214,11 @@ test('native desktop enhancements are bounded and observable', () => {
 });
 
 test('desktop ships the current immutable container release', async () => {
-  assert.equal((await read('../container-version.txt')).trim(), '0.2.2');
-  assert.equal(imageManifest.imageVersion, '0.2.2');
+  assert.equal((await read('../container-version.txt')).trim(), '0.5.2');
+  assert.equal(imageManifest.imageVersion, '0.5.2');
   assert.equal(
     imageManifest.imageRef,
-    'ghcr.io/omnideck-dev/omnideck@sha256:fe6cb1ee605d5d8ba3e1802d910c7ce64b2e6d6c3d6d98f0ce0acb56e92aaac9',
+    'ghcr.io/omnideck-dev/omnideck@sha256:acb07e12a1f8e87695ddf2d9389247a2914a3440fdc43255f17755e25db80e80',
   );
 });
 
