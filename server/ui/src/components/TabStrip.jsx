@@ -238,30 +238,52 @@ export default function TabStrip({
                                     <span className={styles.tabIcon}>{tab.icon}</span>
                                     <span className={styles.tabLabel}>{tab.label}</span>
                                 </button>
-                                {isActive && tab.menuActions?.length > 0 && (
-                                    <button
-                                        type="button"
-                                        className={styles.tabMenuButton}
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            const rect = event.currentTarget
-                                                .getBoundingClientRect();
-                                            openTabMenu(tab, {
-                                                x: rect.left,
-                                                y: rect.bottom,
-                                            });
-                                        }}
-                                        title="Tab actions"
-                                        aria-label={`Actions for ${tab.label} tab`}
-                                        aria-haspopup="menu"
-                                        aria-expanded={tabMenu?.tabId === tab.id}
-                                        data-testid={`view-tab-actions-${tab.testid || tab.id}`}
+                                {tab.menuActions?.length > 0 && (
+                                    <div
+                                        className={`${styles.tabActions} ${
+                                            isActive
+                                                ? styles.tabActionsInline
+                                                : styles.tabActionsOverlay
+                                        }`}
                                     >
-                                        <i
-                                            className="bi bi-three-dots"
-                                            aria-hidden="true"
-                                        />
-                                    </button>
+                                        <button
+                                            type="button"
+                                            className={styles.tabMenuButton}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                const rect = event.currentTarget
+                                                    .getBoundingClientRect();
+                                                openTabMenu(tab, {
+                                                    x: rect.left,
+                                                    y: rect.bottom,
+                                                });
+                                            }}
+                                            title="Tab actions"
+                                            aria-label={`Actions for ${tab.label} tab`}
+                                            aria-haspopup="menu"
+                                            aria-expanded={tabMenu?.tabId === tab.id}
+                                            data-testid={`view-tab-actions-${tab.testid || tab.id}`}
+                                        >
+                                            <i
+                                                className="bi bi-three-dots"
+                                                aria-hidden="true"
+                                            />
+                                        </button>
+                                        {tab.closable !== false && (
+                                            <button
+                                                className={styles.tabClose}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onCloseTab(tab.id);
+                                                }}
+                                                title="Close tab"
+                                                aria-label={`Close ${tab.label} tab`}
+                                                data-testid={`close-view-tab-${tab.testid || tab.id}`}
+                                            >
+                                                ×
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                                 {tab.closable !== false
                                     && !tab.menuActions?.length && (
