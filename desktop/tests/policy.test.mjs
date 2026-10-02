@@ -83,9 +83,9 @@ test('macOS previews receive a complete bundle-level ad-hoc signature', () => {
 test('bundles the blue signal icon with readable Linux package assets', async () => {
   assert.equal(config.build.beforeBundleCommand, 'node scripts/prepare-icon-assets.mjs');
   assert.equal(packageJson.scripts['prepare:icons'], 'node scripts/prepare-icon-assets.mjs');
-  assert.match(iconSource, /fill="#2563eb"/);
-  assert.match(iconSource, /fill="#3b82f6"/);
-  assert.match(iconSource, /fill="#60a5fa"/);
+  assert.match(iconSource, /fill="#2563EB"/);
+  assert.match(iconSource, /fill="#3A82F7"/);
+  assert.match(iconSource, /fill="#61A4FA"/);
   assert.doesNotMatch(iconSource, /#7c5cff|#37d5d1|#f4b860/i);
 
   if (process.platform !== 'win32') {
