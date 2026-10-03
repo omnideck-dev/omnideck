@@ -177,6 +177,13 @@
   padding: 8px 8px 2px 0;
 }
 
+/* ── Composer autocomplete hint ──────────────────────────── */
+.composerHint {
+  padding: 2px 8px 0 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
 /* ── Expand in place ─────────────────────────────────────
    The composer grows tall and floats over the chat transcript rather than
    taking over the whole panel — same width and horizontal position as the
