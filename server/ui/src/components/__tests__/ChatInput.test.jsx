@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import ChatInput from '../ChatInput.jsx';
@@ -11,7 +11,7 @@ describe('ChatInput', () => {
         render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
 
         expect(screen.getByPlaceholderText('Message Omnideck…')).toBeInTheDocument();
-        expect(screen.getByLabelText('Attach file')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add to chat' })).toBeInTheDocument();
         expect(screen.getByLabelText('Send message')).toBeInTheDocument();
     });
 
@@ -25,6 +25,219 @@ describe('ChatInput', () => {
         await user.click(screen.getByLabelText('Send message'));
 
         expect(onSend).toHaveBeenCalledWith('Hello world', null);
+    });
+
+    describe('composer actions', () => {
+        it('opens an accessible menu and keeps file selection on the existing input', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+            const trigger = screen.getByRole('button', { name: 'Add to chat' });
+            expect(trigger).toHaveAttribute('aria-expanded', 'false');
+            await user.click(trigger);
+            const menu = screen.getByRole('menu', { name: 'Add to chat' });
+            expect(trigger).toHaveAttribute('aria-controls', menu.id);
+            const attach = screen.getByRole('menuitem', { name: 'Attach file' });
+            expect(attach).toHaveFocus();
+            expect(screen.queryByRole('menuitem', { name: /Goal/ })).not.toBeInTheDocument();
+            const input = screen.getByLabelText('Choose files to attach');
+            const click = vi.spyOn(input, 'click').mockImplementation(() => {});
+            await user.click(attach);
+            expect(click).toHaveBeenCalledOnce();
+            expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+            expect(trigger).toHaveFocus();
+            click.mockRestore();
+            await user.upload(input, new File(['notes'], 'notes.txt', { type: 'text/plain' }));
+            expect(await screen.findByTitle('notes.txt')).toBeInTheDocument();
+        });
+
+        it('navigates items with arrows, Home and End, and returns focus on Escape', async () => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            const trigger = screen.getByRole('button', { name: 'Add to chat' });
+            trigger.focus();
+            await user.keyboard('{ArrowUp}');
+            const goal = screen.getByRole('menuitem', { name: /Goal/ });
+            const attach = screen.getByRole('menuitem', { name: 'Attach file' });
+            expect(goal).toHaveFocus();
+            await user.keyboard('{ArrowDown}');
+            expect(attach).toHaveFocus();
+            await user.keyboard('{End}');
+            expect(goal).toHaveFocus();
+            await user.keyboard('{Home}');
+            expect(attach).toHaveFocus();
+            await user.keyboard('{ArrowUp}');
+            expect(goal).toHaveFocus();
+            await user.keyboard('{Escape}');
+            expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+            expect(trigger).toHaveFocus();
+            expect(onRequestGoal).not.toHaveBeenCalled();
+        });
+
+        it('closes the menu when tabbing to the next composer control', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={vi.fn()} />);
+            await user.type(screen.getByRole('textbox'), 'Draft');
+            await user.click(screen.getByRole('button', { name: 'Add to chat' }));
+            await user.keyboard('{Tab}');
+            expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus();
+        });
+
+        it('opens a blank goal from the menu without consuming draft text or attachments', async () => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            const onSend = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} onRequestGoal={onRequestGoal} attachment={{ base64: 'YWJj', contentType: 'text/plain', filename: 'notes.txt' }} />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, 'My unfinished question');
+            await user.click(screen.getByRole('button', { name: 'Add to chat' }));
+            await user.click(screen.getByRole('menuitem', { name: /Goal/ }));
+            expect(onRequestGoal).toHaveBeenCalledWith({ objective: '', onStarted: expect.any(Function), onClosed: expect.any(Function) });
+            expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+            await act(async () => onRequestGoal.mock.calls[0][0].onStarted());
+            expect(textarea).toHaveValue('My unfinished question');
+            expect(screen.getByTitle('notes.txt')).toBeInTheDocument();
+            expect(onSend).not.toHaveBeenCalled();
+            await act(async () => onRequestGoal.mock.calls[0][0].onClosed());
+            expect(textarea).toHaveFocus();
+        });
+
+        it.each([{ isOffline: true }, { stopRequested: true }])('disables composer actions when unavailable: %j', async (state) => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            const view = render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            await user.click(screen.getByRole('button', { name: 'Add to chat' }));
+            expect(screen.getByRole('menu')).toBeInTheDocument();
+            view.rerender(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={onRequestGoal} {...state} />);
+            expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Add to chat' })).toBeDisabled();
+            expect(onRequestGoal).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('/goal command', () => {
+        it.each([
+            { command: '/goal', objective: '', enter: true },
+            { command: '/goal Plan our family trip', objective: 'Plan our family trip', enter: false },
+            { command: '  /goal   Keep our schedule current  ', objective: 'Keep our schedule current', enter: true },
+        ])('opens the goal dialog for $command without sending a message', async ({ command, objective, enter }) => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            const onSend = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, command);
+            if (enter) await user.keyboard('{Enter}');
+            else await user.click(screen.getByRole('button', { name: 'Send message' }));
+            expect(onSend).not.toHaveBeenCalled();
+            expect(onRequestGoal).toHaveBeenCalledWith({ objective, onStarted: expect.any(Function), onClosed: expect.any(Function) });
+            expect(textarea).toHaveValue(command);
+            await act(async () => onRequestGoal.mock.calls[0][0].onStarted());
+            expect(textarea).toHaveValue('');
+        });
+
+        it('preserves the command and files while the dialog is cancelled or fails, and retains files after success', async () => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={onRequestGoal} attachment={{ base64: 'YWJj', contentType: 'text/plain', filename: 'schedule.txt' }} />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, '/goal Plan this week{Enter}');
+            expect(textarea).toHaveValue('/goal Plan this week');
+            expect(screen.getByTitle('schedule.txt')).toBeInTheDocument();
+            // Closing or failing the dialog never invokes the completion callback.
+            await user.keyboard('{Enter}');
+            expect(onRequestGoal).toHaveBeenCalledTimes(2);
+            expect(textarea).toHaveValue('/goal Plan this week');
+            await act(async () => onRequestGoal.mock.calls[1][0].onStarted());
+            expect(textarea).toHaveValue('');
+            expect(screen.getByTitle('schedule.txt')).toBeInTheDocument();
+        });
+
+        it('does not erase text edited after the goal dialog was opened', async () => {
+            const user = userEvent.setup();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={onRequestGoal} conversationId="goal-command-draft" />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, '/goal Update the calendar{Enter}');
+            await user.clear(textarea);
+            await user.type(textarea, 'Also include our weekend plans');
+            await act(async () => onRequestGoal.mock.calls[0][0].onStarted());
+            expect(textarea).toHaveValue('Also include our weekend plans');
+            expect(localStorage.getItem('omnideck_chat_draft_v1:goal-command-draft')).toBe('Also include our weekend plans');
+        });
+
+        it.each(['/goals', '/goalkeeper', '/goal-and-more'])('sends %s as ordinary chat text', async (command) => {
+            const user = userEvent.setup();
+            const onSend = vi.fn();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            await user.type(screen.getByRole('textbox'), `${command}{Enter}`);
+            expect(onRequestGoal).not.toHaveBeenCalled();
+            expect(onSend).toHaveBeenCalledWith(command, null);
+        });
+
+        it('keeps slash text ordinary when goals are disabled', async () => {
+            const user = userEvent.setup();
+            const onSend = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+            await user.type(screen.getByRole('textbox'), '/goal Plan the trip{Enter}');
+            expect(onSend).toHaveBeenCalledWith('/goal Plan the trip', null);
+        });
+
+        it('does not submit on Shift+Enter or while composing text', async () => {
+            const user = userEvent.setup();
+            const onSend = vi.fn();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, '/goal{Shift>}{Enter}{/Shift}Plan the trip');
+            fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
+            expect(textarea).toHaveValue('/goal\nPlan the trip');
+            expect(onRequestGoal).not.toHaveBeenCalled();
+            expect(onSend).not.toHaveBeenCalled();
+        });
+
+        it('opens a goal during a running turn instead of sending a nudge', async () => {
+            const user = userEvent.setup();
+            const onSend = vi.fn();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={onSend} onStop={vi.fn()} isStreaming onRequestGoal={onRequestGoal} />);
+            await user.type(screen.getByRole('textbox'), '/goal Plan next month{Enter}');
+            expect(onSend).not.toHaveBeenCalled();
+            expect(onRequestGoal).toHaveBeenCalledWith({ objective: 'Plan next month', onStarted: expect.any(Function), onClosed: expect.any(Function) });
+        });
+
+        it('does not open a goal while offline', async () => {
+            const onRequestGoal = vi.fn();
+            const onSend = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} isOffline onRequestGoal={onRequestGoal} />);
+            const textarea = screen.getByRole('textbox');
+            fireEvent.change(textarea, { target: { value: '/goal Plan next month' } });
+            fireEvent.keyDown(textarea, { key: 'Enter' });
+            expect(onRequestGoal).not.toHaveBeenCalled();
+            expect(onSend).not.toHaveBeenCalled();
+            expect(textarea).toHaveValue('/goal Plan next month');
+        });
+
+        it('preserves pasted screenshots through goal creation and sends them with a later message', async () => {
+            const user = userEvent.setup();
+            const onSend = vi.fn();
+            const onRequestGoal = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} onRequestGoal={onRequestGoal} />);
+            const textarea = screen.getByRole('textbox');
+            fireEvent.paste(textarea, {
+                clipboardData: { items: [{ type: 'image/png', getAsFile: () => new File(['image'], 'clipboard.png', { type: 'image/png' }) }] },
+            });
+            await screen.findByTestId('attachment-image');
+            await user.type(textarea, '/goal Organize my schedule{Enter}');
+            await act(async () => onRequestGoal.mock.calls[0][0].onStarted());
+            expect(screen.getByTestId('attachment-image')).toBeInTheDocument();
+            await user.type(textarea, 'Use this schedule{Enter}');
+            expect(onSend).toHaveBeenCalledWith('Use this schedule', expect.arrayContaining([
+                expect.objectContaining({ content_type: 'image/png', filename: expect.stringMatching(/^screenshot_/), base64: expect.any(String) }),
+            ]));
+        });
     });
 
     it('trims whitespace from messages', async () => {
@@ -174,7 +387,7 @@ describe('ChatInput', () => {
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
         const file = new File(['dummy'], 'test.png', { type: 'image/png' });
-        const fileInput = screen.getByLabelText('Attach file').closest('div').querySelector('input[type="file"]');
+        const fileInput = screen.getByLabelText('Choose files to attach');
 
         await user.upload(fileInput, file);
 
@@ -189,7 +402,7 @@ describe('ChatInput', () => {
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
         const file = new File(['dummy'], 'test.png', { type: 'image/png' });
-        const fileInput = screen.getByLabelText('Attach file').closest('div').querySelector('input[type="file"]');
+        const fileInput = screen.getByLabelText('Choose files to attach');
 
         await user.upload(fileInput, file);
 
@@ -211,7 +424,7 @@ describe('ChatInput', () => {
         // Create a mock file
         const fileContent = MOCK_BASE64_PNG;
         const file = new File([atob(fileContent)], 'test.png', { type: 'image/png' });
-        const fileInput = screen.getByLabelText('Attach file').closest('div').querySelector('input[type="file"]');
+        const fileInput = screen.getByLabelText('Choose files to attach');
 
         await user.upload(fileInput, file);
 
@@ -241,7 +454,7 @@ describe('ChatInput', () => {
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
         const file = new File(['dummy'], 'test.png', { type: 'image/png' });
-        const fileInput = screen.getByLabelText('Attach file').closest('div').querySelector('input[type="file"]');
+        const fileInput = screen.getByLabelText('Choose files to attach');
 
         await user.upload(fileInput, file);
 

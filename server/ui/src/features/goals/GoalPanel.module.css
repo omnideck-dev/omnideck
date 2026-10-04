@@ -9,7 +9,6 @@
 .completed { color: var(--accent); }
 .needs_input { color: var(--warning); }
 .compact { font-size: var(--font-size-label); flex-shrink: 0; }
-.emptyLabel { flex: 1; color: var(--text-tertiary); font-size: var(--font-size-small); display: inline-flex; align-items: center; gap: var(--sp-2); }
 .nextWake { padding: 0 var(--sp-4) var(--sp-2); color: var(--text-secondary); font-size: var(--font-size-small); overflow-wrap: anywhere; }
 .feedback { padding: var(--sp-2) var(--sp-4); }
 .details { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4) var(--sp-4); max-height: 45vh; overflow-y: auto; border-top: 1px solid var(--border-subtle); }

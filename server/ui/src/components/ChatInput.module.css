@@ -114,7 +114,7 @@
   align-items: center;
 }
 
-/* Ghost icon button — attach */
+/* Ghost icon button — composer actions */
 .iconButton {
   width: 30px;
   height: 30px;
@@ -134,6 +134,39 @@
 .iconButton:active:not(:disabled) { transform: translateY(1px); }
 .iconButton:disabled { opacity: 0.4; cursor: not-allowed; }
 .iconButton:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.addIcon { font-size: var(--font-size-heading); }
+
+.addMenu {
+  padding: var(--sp-1);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  text-align: left;
+  cursor: pointer;
+}
+.menuItem svg { width: var(--sp-4); height: var(--sp-4); }
+.menuItem > i { width: var(--sp-4); font-size: var(--font-size-small); }
+.menuItem:hover:not(:disabled), .menuItem:focus-visible { background: var(--accent-muted); color: var(--text-primary); }
+.menuItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.menuItem:disabled { color: var(--text-tertiary); cursor: not-allowed; }
+.menuShortcut { margin-left: auto; font-family: var(--font-code); font-size: var(--font-size-caption); color: var(--text-tertiary); }
 
 /* Filled circular send button */
 .sendButton {

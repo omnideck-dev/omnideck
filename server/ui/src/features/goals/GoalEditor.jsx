@@ -25,14 +25,27 @@ function draftFromGoal(goal) {
     };
 }
 
-export default function GoalEditor({ goal, latestGoal, onSave, onClose }) {
+export default function GoalEditor({ goal, latestGoal, initialObjective = '', onSave, onReload, onClose }) {
     const headingId = useId();
-    const [draft, setDraft] = useState(() => draftFromGoal(goal));
+    const [draft, setDraft] = useState(() => draftFromGoal(goal || { objective: initialObjective }));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [conflict, setConflict] = useState(false);
     const change = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
     const changeItem = (id, changes) => setDraft((current) => ({ ...current, plan: current.plan.map((item) => item.id === id ? { ...item, ...changes } : item) }));
+
+    const reload = async () => {
+        setSaving(true);
+        try {
+            setDraft(draftFromGoal(onReload ? await onReload() : latestGoal || goal));
+            setConflict(false);
+            setError('');
+        } catch (failure) {
+            setError(failure.message);
+        } finally {
+            setSaving(false);
+        }
+    };
 
     const submit = async (event) => {
         event.preventDefault();
@@ -51,7 +64,7 @@ export default function GoalEditor({ goal, latestGoal, onSave, onClose }) {
         } catch (failure) {
             setConflict(failure.status === 409);
             setError(failure.status === 409
-                ? 'The agent updated this goal while you were editing. Your changes are still here. Load the latest version before saving.'
+                ? 'This chat’s goal changed while you were editing. Your changes are still here. Load the latest version before saving.'
                 : failure.message);
         } finally {
             setSaving(false);
@@ -67,7 +80,7 @@ export default function GoalEditor({ goal, latestGoal, onSave, onClose }) {
                 </div>
                 <div className={styles.editorBody}>
                     {error && <Callout tone="danger" title="Could not save goal" description={error} />}
-                    {conflict && <Button variant="ghost" disabled={saving} onClick={() => { setDraft(draftFromGoal(latestGoal || goal)); setConflict(false); setError(''); }}>Load latest version</Button>}
+                    {conflict && <Button variant="ghost" disabled={saving} onClick={reload}>Load latest version</Button>}
                     <label className={styles.field}>
                         <span>Objective</span>
                         <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Organize our household schedule for next month" required disabled={saving} />

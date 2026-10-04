@@ -2,9 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import ConfirmButton from '../../components/primitives/ConfirmButton.jsx';
-import { useConversationCatalog } from '../conversation/catalog/ConversationCatalog.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
-import GoalEditor from './GoalEditor.jsx';
 import GoalStatus from './GoalStatus.jsx';
 import styles from './GoalPanel.module.css';
 
@@ -14,13 +12,11 @@ function formatTime(value) {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export default function GoalPanel({ conversationId, profileId, isOffline = false }) {
+export default function GoalPanel({ conversationId, isOffline = false, onEdit }) {
     const { goalsByConversation, detailsByConversation, loadGoal, mutateGoal, error: refreshError } = useGoals();
-    const { refetch: refreshConversations } = useConversationCatalog();
     const goal = goalsByConversation[conversationId];
     const detail = detailsByConversation[conversationId];
     const [expanded, setExpanded] = useState(false);
-    const [editing, setEditing] = useState(null);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState('');
     const detailsId = useId();
@@ -47,32 +43,24 @@ export default function GoalPanel({ conversationId, profileId, isOffline = false
             setBusy('');
         }
     };
-    const save = async (body) => {
-        await mutateGoal(conversationId, editing === 'create' ? 'create' : 'edit', { ...body, ...(editing === 'create' ? { profile_id: profileId } : {}) });
-        if (editing === 'create') void refreshConversations();
-        setExpanded(true);
-    };
     const open = isGoalOpen(goal);
     const completedSteps = (goal?.plan || []).filter((item) => item.status === 'done').length;
     const history = (detail?.history || []).filter((item) => item.id !== goal?.id);
 
+    if (!goal) return null;
+
     return (
         <section className={styles.panel} aria-label="Conversation goal" data-testid="goal-panel">
             <div className={styles.strip}>
-                {goal ? <>
-                    <button className={styles.summaryButton} onClick={() => setExpanded((current) => !current)} aria-expanded={expanded} aria-controls={detailsId}>
-                        <i className="bi bi-bullseye" aria-hidden="true" />
-                        <span className={styles.objective} title={goal.objective}>{goal.objective}</span>
-                        <GoalStatus goal={goal} />
-                        <i className={`bi ${expanded ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
-                    </button>
-                    {open && <Button variant="ghost" disabled={Boolean(busy) || isOffline} loading={busy === 'pause' || busy === 'resume'} loadingLabel="Updating…" onClick={() => act(goal.status === 'paused' || goal.status === 'needs_input' || goal.status === 'scheduled' ? 'resume' : 'pause')}>
-                        {goal.status === 'paused' ? 'Resume' : ['needs_input', 'scheduled'].includes(goal.status) ? 'Resume now' : 'Pause'}
-                    </Button>}
-                </> : <>
-                    <span className={styles.emptyLabel}><i className="bi bi-bullseye" aria-hidden="true" /> Give this chat a goal</span>
-                    <Button variant="ghost" disabled={isOffline} onClick={() => setEditing('create')}>Assign goal</Button>
-                </>}
+                <button className={styles.summaryButton} onClick={() => setExpanded((current) => !current)} aria-expanded={expanded} aria-controls={detailsId}>
+                    <i className="bi bi-bullseye" aria-hidden="true" />
+                    <span className={styles.objective} title={goal.objective}>{goal.objective}</span>
+                    <GoalStatus goal={goal} />
+                    <i className={`bi ${expanded ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
+                </button>
+                {open && <Button variant="ghost" disabled={Boolean(busy) || isOffline} loading={busy === 'pause' || busy === 'resume'} loadingLabel="Updating…" onClick={() => act(goal.status === 'paused' || goal.status === 'needs_input' || goal.status === 'scheduled' ? 'resume' : 'pause')}>
+                    {goal.status === 'paused' ? 'Resume' : ['needs_input', 'scheduled'].includes(goal.status) ? 'Resume now' : 'Pause'}
+                </Button>}
             </div>
             {goal?.status === 'scheduled' && goal.resume_at && <div className={styles.nextWake}>Resumes {formatTime(goal.resume_at)}{goal.wake_reason ? ` · ${goal.wake_reason}` : ''}</div>}
             {goal?.status === 'needs_input' && <div className={styles.nextWake}>{goal.status_reason || goal.next_action || 'Reply in this chat when you are ready.'}</div>}
@@ -82,10 +70,10 @@ export default function GoalPanel({ conversationId, profileId, isOffline = false
                     <span className={styles.description}>{goal.kind === 'ongoing' ? 'Ongoing goal' : 'Outcome goal'}{goal.plan?.length ? ` · ${completedSteps} of ${goal.plan.length} steps done` : ''}</span>
                     <div className={styles.actions}>
                         {open ? <>
-                            <Button variant="ghost" onClick={() => setEditing('edit')} disabled={isOffline || Boolean(busy)}>Edit goal</Button>
+                            <Button variant="ghost" onClick={onEdit} disabled={isOffline || Boolean(busy)}>Edit goal</Button>
                             {['scheduled', 'needs_input'].includes(goal.status) && <Button variant="ghost" disabled={isOffline || Boolean(busy)} onClick={() => act('pause')}>Pause</Button>}
                             <ConfirmButton label="Cancel goal" confirmLabel="Cancel this goal?" onConfirm={() => act('cancel')} disabled={isOffline || Boolean(busy)} />
-                        </> : <Button variant="ghost" onClick={() => setEditing('create')} disabled={isOffline}>Assign new goal</Button>}
+                        </> : null}
                     </div>
                 </div>
                 <p className={styles.fullObjective}>{goal.objective}</p>
@@ -104,7 +92,6 @@ export default function GoalPanel({ conversationId, profileId, isOffline = false
                 {goal.progress?.length > 0 && <div><h3>Progress</h3><ol className={styles.progress}>{[...goal.progress].reverse().map((entry) => <li key={entry.id}><time dateTime={entry.created_at}>{formatTime(entry.created_at)}</time><p>{entry.summary}</p>{entry.next_action && <p className={styles.description}>Next: {entry.next_action}</p>}</li>)}</ol></div>}
                 {history.length > 0 && <details><summary className={styles.disclosure}>Previous goals ({history.length})</summary><ul className={styles.history}>{history.map((item) => <li key={item.id}><GoalStatus goal={item} /><span>{item.objective}</span>{item.outcome && <p className={styles.description}>{item.outcome}</p>}</li>)}</ul></details>}
             </div>}
-            {editing && <GoalEditor goal={editing === 'edit' ? goal : null} latestGoal={goal} onSave={save} onClose={() => setEditing(null)} />}
         </section>
     );
 }

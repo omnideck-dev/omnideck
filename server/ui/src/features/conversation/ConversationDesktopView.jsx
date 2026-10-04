@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import ChatPanel from '../../components/ChatPanel.jsx';
 import { useAppData } from '../../contexts/AppData.jsx';
@@ -23,6 +23,7 @@ import {
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
 import GoalPanel from '../goals/GoalPanel.jsx';
+import GoalDialog from '../goals/GoalDialog.jsx';
 
 /** Conversation-domain adapter for Chat and Agent Network modes. */
 export default function ConversationDesktopView({ view, tabGroupId }) {
@@ -56,6 +57,16 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const navigationTarget = navigationTargetForView(view);
     const mode = navigationTarget?.kind || 'chat';
     const selectedAgentId = navigationTarget?.agentId || null;
+    const [goalRequest, setGoalRequest] = useState(null);
+
+    useEffect(() => {
+        setGoalRequest(null);
+    }, [activeConversationId, features.goals, mode]);
+
+    const requestGoal = useCallback((request = {}) => {
+        if (!features.goals || isOffline || stopRequested) return;
+        setGoalRequest({ ...request, conversationId: activeConversationId });
+    }, [features.goals, isOffline, stopRequested, activeConversationId]);
 
     const handleSend = useCallback((message, attachments) => {
         if (isStreaming) {
@@ -96,7 +107,8 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     return (
         <div className={styles.chatColumn}>
             <ChatPanel
-                goalPanel={features.goals ? <GoalPanel key={`goal:${activeConversationId}`} conversationId={activeConversationId} profileId={selectedProfileId} isOffline={isOffline} /> : null}
+                goalPanel={features.goals ? <GoalPanel key={`goal:${activeConversationId}`} conversationId={activeConversationId} isOffline={isOffline} onEdit={() => requestGoal()} /> : null}
+                onRequestGoal={features.goals ? requestGoal : undefined}
                 turns={turns}
                 stalled={stalled}
                 isOffline={isOffline}
@@ -120,6 +132,17 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 draft={draft}
                 onDraftChange={setDraft}
             />
+            {features.goals && goalRequest?.conversationId === activeConversationId && <GoalDialog
+                key={activeConversationId}
+                conversationId={activeConversationId}
+                profileId={selectedProfileId}
+                initialObjective={goalRequest.objective}
+                onStarted={goalRequest.onStarted}
+                onClose={() => {
+                    goalRequest.onClosed?.();
+                    setGoalRequest((current) => current === goalRequest ? null : current);
+                }}
+            />}
         </div>
     );
 }

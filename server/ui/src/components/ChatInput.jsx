@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useId } from 'react';
 import styles from './ChatInput.module.css';
 import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
@@ -6,6 +6,7 @@ import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import Popover from './primitives/Popover.jsx';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
@@ -20,14 +21,61 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal }) {
     const [message, setMessage] = useState(() => loadChatDraft(conversationId));
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
 
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
+    const addButtonRef = useRef(null);
+    const menuItemRefs = useRef([]);
+    const firstMenuFocusRef = useRef(0);
+    const menuId = useId();
+    const controlsDisabled = stopRequested || isOffline;
+    const closeAddMenu = useCallback(() => setAddMenuOpen(false), []);
+
+    useEffect(() => {
+        if (controlsDisabled) setAddMenuOpen(false);
+        else if (addMenuOpen) {
+            const items = menuItemRefs.current.filter(Boolean);
+            items[Math.min(firstMenuFocusRef.current, items.length - 1)]?.focus();
+        }
+    }, [addMenuOpen, controlsDisabled, onRequestGoal]);
+
+    const openAddMenu = (last = false) => {
+        if (controlsDisabled) return;
+        firstMenuFocusRef.current = last && onRequestGoal ? 1 : 0;
+        setAddMenuOpen(true);
+    };
+
+    const handleMenuKeyDown = (event) => {
+        const items = menuItemRefs.current.filter(Boolean);
+        const index = items.indexOf(document.activeElement);
+        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0
+                : event.key === 'End' ? items.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[next]?.focus();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeAddMenu();
+            addButtonRef.current?.focus();
+        } else if (event.key === 'Tab') {
+            event.preventDefault();
+            closeAddMenu();
+            const controls = Array.from(addButtonRef.current?.form?.querySelectorAll(
+                'button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="file"])',
+            ) || []);
+            const triggerIndex = controls.indexOf(addButtonRef.current);
+            const nextControl = controls[triggerIndex + (event.shiftKey ? -1 : 1)];
+            (nextControl || addButtonRef.current)?.focus();
+        }
+    };
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -74,10 +122,10 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // ESC collapses the expanded composer without discarding text.
     useEffect(() => {
         if (!expanded) return;
-        const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
+        const onKey = (e) => { if (e.key === 'Escape' && !addMenuOpen) setExpanded(false); };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [expanded]);
+    }, [expanded, addMenuOpen]);
 
     useEffect(() => {
         if (draft) {
@@ -122,6 +170,16 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         e.preventDefault();
         if (stopRequested || isOffline) return;
         if (!message.trim() && !attachments.length) return;
+        const goalCommand = onRequestGoal && message.trim().match(/^\/goal(?:\s+([\s\S]*))?$/);
+        if (goalCommand) {
+            const originalCommand = message;
+            onRequestGoal({
+                objective: (goalCommand[1] || '').trim(),
+                onStarted: () => setMessage((current) => current === originalCommand ? '' : current),
+                onClosed: () => textareaRef.current?.focus(),
+            });
+            return;
+        }
         onSend(message.trim(), attachments.length ? attachments : null);
         setMessage('');
         setAttachments([]);
@@ -168,7 +226,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         value: message,
         onChange: (e) => setMessage(e.target.value),
         onKeyDown: (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSubmit(e);
             }
@@ -241,20 +299,80 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     />
                     <div className={styles.actionButtons}>
                         <button
+                            ref={addButtonRef}
                             type="button"
                             id="fileButton"
                             className={styles.iconButton}
-                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                            title="Attach file"
-                            aria-label="Attach file"
+                            onClick={() => addMenuOpen ? closeAddMenu() : openAddMenu()}
+                            onKeyDown={(event) => {
+                                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                                    event.preventDefault();
+                                    openAddMenu(event.key === 'ArrowUp');
+                                }
+                            }}
+                            title="Add to chat"
+                            aria-label="Add to chat"
+                            aria-haspopup="menu"
+                            aria-expanded={addMenuOpen}
+                            aria-controls={addMenuOpen ? menuId : undefined}
+                            disabled={controlsDisabled}
                         >
-                            <PaperclipIcon />
+                            <i className={`bi bi-plus ${styles.addIcon}`} aria-hidden="true" />
                         </button>
+                        {addMenuOpen && <Popover
+                            anchorRef={addButtonRef}
+                            onClose={closeAddMenu}
+                            align="end"
+                            width={184}
+                            maxHeight={160}
+                            className={styles.addMenu}
+                            testId="composer-add-menu"
+                        >
+                            <div id={menuId} role="menu" aria-label="Add to chat" onKeyDown={handleMenuKeyDown}>
+                                <button
+                                    ref={(node) => { menuItemRefs.current[0] = node; }}
+                                    type="button"
+                                    role="menuitem"
+                                    className={styles.menuItem}
+                                    disabled={controlsDisabled}
+                                    onClick={() => {
+                                        closeAddMenu();
+                                        addButtonRef.current?.focus();
+                                        fileInputRef.current?.click();
+                                    }}
+                                >
+                                    <PaperclipIcon />
+                                    Attach file
+                                </button>
+                                {onRequestGoal && <button
+                                    ref={(node) => { menuItemRefs.current[1] = node; }}
+                                    type="button"
+                                    role="menuitem"
+                                    className={styles.menuItem}
+                                    disabled={controlsDisabled}
+                                    onClick={() => {
+                                        closeAddMenu();
+                                        addButtonRef.current?.focus();
+                                        onRequestGoal({
+                                            objective: '',
+                                            onStarted: () => {},
+                                            onClosed: () => textareaRef.current?.focus(),
+                                        });
+                                    }}
+                                >
+                                    <i className="bi bi-bullseye" aria-hidden="true" />
+                                    Goal
+                                    <span className={styles.menuShortcut}>/goal</span>
+                                </button>}
+                            </div>
+                        </Popover>}
                         <input
                             ref={fileInputRef}
                             type="file"
                             id="fileInput"
                             multiple
+                            aria-label="Choose files to attach"
+                            disabled={controlsDisabled}
                             style={{ display: 'none' }}
                             onClick={(e) => { e.target.value = ''; }}
                             onChange={handleFile}
@@ -279,6 +397,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                                 aria-label="Send message"
                                 disabled={
                                     isOffline
+                                    || stopRequested
                                     || (!message.trim() && !attachments.length)
                                 }
                             >
