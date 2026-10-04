@@ -58,7 +58,7 @@ export default function SystemSettings() {
             if (res.ok) {
                 const updated = await res.json();
                 setSettings(updated);
-                if (key === 'custom_apps_enabled' || key === 'custom_tools_enabled') {
+                if (key === 'custom_apps_enabled' || key === 'custom_tools_enabled' || key === 'goals_enabled') {
                     await refreshFeatures();
                 }
                 return;
@@ -174,6 +174,15 @@ export default function SystemSettings() {
                         onChange={(e) => updateSetting('custom_tools_enabled', e.target.checked)}
                         aria-label="Custom Tools"
                     />
+                </label>
+
+                <label className={styles.settingRow} data-testid="goals-toggle">
+                    <div className={styles.settingIcon}><i className="bi bi-bullseye" aria-hidden="true" /></div>
+                    <div className={styles.settingInfo}>
+                        <span className={styles.settingTitle}>Goals</span>
+                        <span className={styles.settingDesc}>Let chats pursue goals with editable plans and scheduled returns. Turning off pauses goals and keeps their progress.</span>
+                    </div>
+                    <ToggleSwitch checked={!!settings.goals_enabled} onChange={(event) => updateSetting('goals_enabled', event.target.checked)} aria-label="Goals" />
                 </label>
 
                 <div className={styles.groupFootnote}>

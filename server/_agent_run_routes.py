@@ -29,6 +29,7 @@ from agent_runtime import (
     RunAttachment,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._goals import pause_conversation_goal
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncGenerator
@@ -196,6 +197,7 @@ async def stop_handler(request: Request) -> Response:
             status=400,
         )
     handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
+    pause_conversation_goal(request.app, conversation_id)
     if handle is not None:
         handle.stop()
     return web.json_response({"ok": True})

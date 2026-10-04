@@ -90,6 +90,14 @@ export function projectTurns(events) {
                 attachments: ev.attachments || [],
                 isNudge: !!ev.is_nudge,
             });
+        } else if (t === EVENT.GOAL_WAKEUP) {
+            currentTurn.children.push({
+                kind: ITEM.GOAL_WAKEUP,
+                id: ev.id,
+                reason: ev.reason || '',
+                nextAction: ev.next_action || '',
+                timestamp: ev.timestamp || null,
+            });
         } else if (t === EVENT.ITERATION) {
             currentTurn.children.push({
                 kind: ITEM.ITERATION,

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Protocol
 from uuid import uuid4
 from integrations.connection_cache import IntegrationConnectionCache
 
+from goals._store import GoalStore
 from conversations import ConversationStore
 from browser.runtime import BrowserRuntime
 from agent_core.control import StopRequestedError
@@ -87,6 +88,8 @@ class AgentRuntime:
         browser_runtime: BrowserRuntime | None = None,
         integration_cache: IntegrationConnectionCache | None = None,
         shutdown_timeout: float = 5.0,
+        goal_store: GoalStore | None = None,
+        goals_enabled: Callable[[], bool] | None = None,
     ) -> None:
         from ._runner import AgentRunner
 
@@ -94,9 +97,20 @@ class AgentRuntime:
             if browser_runtime is not None and browser_runtime is not runner.browser_runtime:
                 raise ValueError("AgentRunner and AgentRuntime must share one browser runtime")
             browser_runtime = runner.browser_runtime
+            if goal_store is not None and runner.goal_store is not goal_store:
+                raise ValueError("AgentRunner and AgentRuntime must share one goal store")
+            goal_store = runner.goal_store
+            if goals_enabled is None:
+                goals_enabled = runner.goals_enabled
+            else:
+                runner.goals_enabled = goals_enabled
         self.conversations = conversations if conversations is not None else ConversationStore()
         self._browser = browser_runtime if browser_runtime is not None else BrowserRuntime()
-        self._runner = runner if runner is not None else AgentRunner(browser_runtime=self._browser)
+        self._goals_enabled = goals_enabled if goals_enabled is not None else lambda: True
+        self._runner = runner if runner is not None else AgentRunner(
+            browser_runtime=self._browser, goal_store=goal_store, goals_enabled=self._goals_enabled,
+        )
+        self._goal_store = goal_store
         self._shutdown_timeout = shutdown_timeout
         self._integration_cache = integration_cache
         self._active_by_conversation: dict[str, RunSession] = {}
@@ -151,7 +165,31 @@ class AgentRuntime:
     async def _drive(self, session: RunSession) -> RunResult:
         session.started = True
         root = ExecutionResult("stopped")
+        goal_id = None
+        trigger = session.request.goal_trigger
+        claim_id = trigger.claim_id if trigger is not None else session.run_id
         try:
+            if trigger is not None and not self._goals_enabled():
+                raise StopRequestedError()
+            if self._goal_store is not None and self._goals_enabled():
+                if trigger is not None:
+                    goal = self._goal_store.get(trigger.goal_id)
+                    if (
+                        goal is None or goal.conversation_id != session.conversation_id
+                        or goal.claimed_run_id != claim_id or goal.status != "active"
+                    ):
+                        raise StopRequestedError()
+                else:
+                    goal = self._goal_store.current(session.conversation_id)
+                    if goal is not None and goal.status in {"active", "scheduled", "needs_input"}:
+                        goal = self._goal_store.claim_for_turn(goal.id, claim_id)
+                    else:
+                        goal = None
+                if goal is not None:
+                    goal_id = goal.id
+                    self._goal_store.bind_run(goal_id, claim_id, session.run_id)
+            elif trigger is not None:
+                raise RuntimeError("Goal wakeup requires a configured goal store")
             async with session:
                 session.root_context.control.check_stop()
                 try:
@@ -165,8 +203,19 @@ class AgentRuntime:
         except Exception as exc:
             root = self._failure(session, exc)
         finally:
-            self._active_by_conversation.pop(session.conversation_id, None)
-            self._runs_by_id.pop(session.run_id, None)
+            try:
+                # Preserve interrupted ownership on shutdown so restart recovery
+                # can ask the agent to reconcile its last actions exactly once.
+                if (
+                    self._goal_store is not None and goal_id is not None
+                    and not (self._closed and root.status == "stopped")
+                ):
+                    self._goal_store.finish_run(
+                        goal_id, claim_id, session.run_id, root.status, error=root.error,
+                    )
+            finally:
+                self._active_by_conversation.pop(session.conversation_id, None)
+                self._runs_by_id.pop(session.run_id, None)
         return session.finish(root)
 
     @staticmethod

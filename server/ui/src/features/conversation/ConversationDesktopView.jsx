@@ -22,6 +22,7 @@ import {
     useConversationSessionState,
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
+import GoalPanel from '../goals/GoalPanel.jsx';
 
 /** Conversation-domain adapter for Chat and Agent Network modes. */
 export default function ConversationDesktopView({ view, tabGroupId }) {
@@ -42,7 +43,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         setDraft,
         setConversationProfileId,
     } = useConversationSessionCommands();
-    const { profilesHook } = useAppData();
+    const { profilesHook, features } = useAppData();
     const { defaultProfileId } = useAppSettings();
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
@@ -95,6 +96,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     return (
         <div className={styles.chatColumn}>
             <ChatPanel
+                goalPanel={features.goals ? <GoalPanel key={`goal:${activeConversationId}`} conversationId={activeConversationId} profileId={selectedProfileId} isOffline={isOffline} /> : null}
                 turns={turns}
                 stalled={stalled}
                 isOffline={isOffline}

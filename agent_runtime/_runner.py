@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 from functools import partial
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from uuid import uuid4
 
 from rich.console import Console
@@ -16,6 +16,7 @@ from rich.text import Text
 from agents import AgentProfile, get_agent_profile
 from browser.runtime import BrowserRuntime
 from config import load_config
+from goals._store import GoalStore
 from conversations import save_conversation_profile
 from agent_core import AgentExecutor, default_hooks
 from agent_core.context import ContextManager, ConversationHistory
@@ -23,6 +24,7 @@ from agent_core.control import StopRequestedError
 from agent_core.events import (
     AgentEvent,
     ErrorPayload,
+    GoalWakeupPayload,
     SpawnRequestedPayload,
     UserAttachment,
     UserMessagePayload,
@@ -34,6 +36,7 @@ from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
 from ._factory import AgentFactory, persist_loaded_skills
+from ._goals import GoalContextHook, goal_capability
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
 from ._session import RunSession
@@ -49,8 +52,12 @@ class AgentRunner:
 
     def __init__(
         self, *, factory: AgentFactory | None = None, browser_runtime: BrowserRuntime | None = None,
+        goal_store: GoalStore | None = None,
+        goals_enabled: Callable[[], bool] | None = None,
     ) -> None:
         self._factory = factory if factory is not None else AgentFactory()
+        self.goal_store = goal_store
+        self.goals_enabled = goals_enabled if goals_enabled is not None else lambda: True
         self.browser_runtime = browser_runtime if browser_runtime is not None else BrowserRuntime()
 
     async def run(self, request: AgentRunRequest, session: RunSession) -> ExecutionResult:
@@ -140,6 +147,24 @@ class AgentRunner:
             )
             hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
             hooks.append(ScratchpadHook())
+            if context.parent_execution_id is None and session.request.goal_trigger is not None and not self.goals_enabled():
+                raise StopRequestedError()
+            if context.parent_execution_id is None and self.goal_store is not None and self.goals_enabled():
+                goal = self.goal_store.current(session.conversation_id)
+                trigger = session.request.goal_trigger
+                claim_id = trigger.claim_id if trigger is not None else session.run_id
+                if trigger is not None and (goal is None or goal.claimed_run_id != claim_id):
+                    raise StopRequestedError()
+                if goal is not None:
+                    owned = goal.claimed_run_id == claim_id
+                    if owned:
+                        prepared.capabilities.add_capability(goal_capability(
+                            self.goal_store, goal.id, context.execution_id, claim_id, enabled=self.goals_enabled,
+                        ))
+                    hooks.insert(0, GoalContextHook(
+                        self.goal_store, goal.id, prepared.system_prompt, claim_id if owned else None,
+                        enabled=self.goals_enabled,
+                    ))
             if correlation_id is not None:
                 publish_event(
                     AgentEvent(payload=SpawnRequestedPayload(type="spawn_requested", correlation_id=correlation_id))
@@ -160,11 +185,18 @@ class AgentRunner:
                         agent_profile_id=profile.id,
                         browser_profile_id=profile.browser_profile_id,
                     ))
-                    publish_event(
-                        AgentEvent(
-                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                    trigger = session.request.goal_trigger if context.parent_execution_id is None else None
+                    if trigger is not None:
+                        publish_event(AgentEvent(payload=GoalWakeupPayload(
+                            type="goal_wakeup", goal_id=trigger.goal_id, wake_id=trigger.wake_id,
+                            reason=trigger.reason, next_action=trigger.next_action,
+                        )))
+                    else:
+                        publish_event(
+                            AgentEvent(
+                                payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                            )
                         )
-                    )
                     parallel = load_config().parallel
                     result = await AgentExecutor().execute(
                         history=history,

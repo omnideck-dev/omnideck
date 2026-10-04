@@ -9,6 +9,7 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from providers import reset_provider
+from server._goals import disable_goals
 from settings import SettingsUpdate, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ async def handle_update_settings(request: web.Request) -> web.Response:
 
     was_complete = load_settings().get("setup_complete", False)
     saved = save_settings(update.model_dump(exclude_unset=True))
+    if "goals_enabled" in update.model_fields_set and saved.get("goals_enabled") is not True:
+        disable_goals(request.app)
 
     # If a direct provider's connection details changed, drop the cached
     # provider instances so the next request re-creates them.

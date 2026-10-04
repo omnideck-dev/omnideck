@@ -1,5 +1,6 @@
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { GoalsProvider } from '../../../goals/GoalsState.jsx';
 import { AgentProvider, useAgentState } from '../../../agent/AgentState.jsx';
 import {
     AppEffectsProvider,
@@ -28,6 +29,7 @@ const harness = vi.hoisted(() => ({
         stopGeneration: vi.fn(),
         loadConversation: vi.fn(),
         reattachActiveRun: vi.fn(),
+        refreshActiveConversation: vi.fn(),
         newConversation: vi.fn(),
         setDraft: vi.fn(),
     },
@@ -82,9 +84,9 @@ function renderSession() {
         <AppEffectsProvider>
             <AgentProvider>
                 <WorkspaceProvider>
-                    <ConversationSessionProvider>
+                    <GoalsProvider><ConversationSessionProvider>
                         <Inspector />
-                    </ConversationSessionProvider>
+                    </ConversationSessionProvider></GoalsProvider>
                 </WorkspaceProvider>
             </AgentProvider>
         </AppEffectsProvider>,

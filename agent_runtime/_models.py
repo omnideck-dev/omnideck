@@ -33,6 +33,17 @@ class RunPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalRunTrigger:
+    """An explicitly requested, durable goal wakeup."""
+
+    goal_id: str
+    wake_id: str
+    claim_id: str
+    reason: str
+    next_action: str
+
+
+@dataclass(frozen=True, slots=True)
 class AgentRunRequest:
     """Channel-neutral application input for work that currently becomes a turn.
 
@@ -45,6 +56,7 @@ class AgentRunRequest:
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
+    goal_trigger: GoalRunTrigger | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,4 +101,4 @@ class RunResult:
         self.root.raise_for_status()
 
 
-__all__ = ["AgentRunRequest", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]
+__all__ = ["GoalRunTrigger", "AgentRunRequest", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]

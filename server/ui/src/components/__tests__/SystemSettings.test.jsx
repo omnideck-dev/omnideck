@@ -23,6 +23,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: true,
                         custom_tools_enabled: true,
+                        goals_enabled: true,
                     }),
                 });
             }
@@ -34,6 +35,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: false,
                         custom_tools_enabled: false,
+                        goals_enabled: false,
                     }),
                 });
             }
@@ -102,6 +104,16 @@ describe('SystemSettings', () => {
                 body: JSON.stringify({ custom_tools_enabled: true }),
             }),
         ));
+        await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(toggle).toBeChecked();
+    });
+
+    it('persists the opt-in Goals setting and refreshes feature availability', async () => {
+        render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        const toggle = await screen.findByRole('switch', { name: 'Goals' });
+        expect(toggle).not.toBeChecked();
+        fireEvent.click(toggle);
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ goals_enabled: true }) })));
         await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
         expect(toggle).toBeChecked();
     });

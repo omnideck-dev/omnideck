@@ -332,6 +332,20 @@ def conversation_exists(conversation_id: str) -> bool:
     return (_get_conv_dir(conversation_id) / "events.jsonl").exists()
 
 
+def ensure_conversation(conversation_id: str, *, title: str, profile_id: str) -> None:
+    """Persist an empty conversation before its first agent execution."""
+    if _get_archived_conv_dir(conversation_id).exists():
+        raise ValueError("Restore the archived conversation before assigning a goal")
+    conv_dir = _get_conv_dir(conversation_id)
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    events_path = conv_dir / "events.jsonl"
+    if not events_path.exists():
+        events_path.touch()
+    if not load_conversation_metadata(conversation_id).get("title"):
+        save_conversation_title(conversation_id, title[:50])
+    save_conversation_profile(conversation_id, profile_id)
+
+
 def _prune_empty_parents(conv_dir: Path) -> None:
     """Remove now-empty parent directories up to the conversations root."""
     conv_root = _get_conversations_dir()

@@ -5,7 +5,7 @@ import ChatPanel from '../ChatPanel.jsx';
 // The message list and composer pull in streaming/profile machinery that
 // isn't relevant to the title bar — stub them out.
 vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-messages" /> }));
-vi.mock('../ChatInput.jsx', () => ({ default: () => <div data-testid="chat-input" /> }));
+vi.mock('../ChatInput.jsx', () => ({ default: () => <input data-testid="chat-input" aria-label="Draft" /> }));
 
 // ChatPanel reads the root agent from the agent-state context; drive it here.
 const { agentState } = vi.hoisted(() => ({ agentState: { value: { rootId: null, agents: {} } } }));
@@ -28,6 +28,19 @@ function renderPanel(props = {}) {
 }
 
 describe('ChatPanel title bar', () => {
+    it('removes goal UI cleanly across feature toggles without remounting the composer', () => {
+        const props = { turns: [], onSend: vi.fn(), onStop: vi.fn(), isStreaming: false, conversationId: 'chat-1' };
+        const view = render(<ChatPanel {...props} goalPanel={<section key="chat-1" data-testid="goal-panel">Waiting</section>} />);
+        const composer = screen.getByTestId('chat-input');
+        fireEvent.change(composer, { target: { value: 'My unsent question' } });
+        view.rerender(<ChatPanel {...props} goalPanel={null} />);
+        expect(screen.queryByTestId('goal-panel')).not.toBeInTheDocument();
+        view.rerender(<ChatPanel {...props} goalPanel={<section key="chat-1" data-testid="goal-panel">Paused</section>} />);
+        expect(screen.getAllByTestId('goal-panel')).toHaveLength(1);
+        expect(screen.getByTestId('goal-panel')).toHaveTextContent('Paused');
+        expect(screen.getByTestId('chat-input')).toBe(composer);
+        expect(composer).toHaveValue('My unsent question');
+    });
     it('falls back to "Chat" when there is no root agent', () => {
         renderPanel();
         expect(screen.getByTestId('chat-title')).toHaveTextContent('Chat');
