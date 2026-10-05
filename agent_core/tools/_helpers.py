@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
+from ._schema_tool import SchemaTool
 
 # Strings the LLM commonly sends for boolean values.
 _BOOL_TRUE = frozenset({"true", "1", "yes"})
@@ -132,6 +133,10 @@ def _prepare_tool_arguments(
     tool_func: Callable[..., Any], arguments: dict[str, Any]
 ) -> dict[str, Any]:
     """Prepare tool function arguments by validating and converting via type hints."""
+    if isinstance(tool_func, SchemaTool):
+        # Explicit-schema tools own validation at their execution boundary.
+        # In particular, don't coerce union/null/nested JSON using Python hints.
+        return dict(arguments)
     sig = inspect.signature(tool_func, eval_str=True)
     func_name = getattr(tool_func, "__name__", repr(tool_func))
     validated: dict[str, Any] = {}
@@ -246,10 +251,9 @@ async def _execute_tool_call(
 
     try:
         validated_args = _prepare_tool_arguments(tool_func, arguments)
-        if inspect.iscoroutinefunction(tool_func):
-            result = await tool_func(**validated_args)
-        else:
-            result = tool_func(**validated_args)
+        result = tool_func(**validated_args)
+        if inspect.isawaitable(result):
+            result = await result
         normalized = _normalize_tool_result(result)
         return str(normalized) if not isinstance(normalized, str) else normalized
     except StopRequestedError:

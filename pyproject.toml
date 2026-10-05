@@ -24,6 +24,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "google-api-python-client>=2.130",
     "curl-cffi>=0.7",
+    "mcp==2.2.0",
 ]
 
 [project.optional-dependencies]

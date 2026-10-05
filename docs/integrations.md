@@ -28,6 +28,71 @@ as the setup action and **Connection** for account/authentication details.
 | Gmail | Email (IMAP + SMTP) | App-specific password |
 | Google Workspace | Gmail, Calendar, Drive, Contacts | Desktop OAuth |
 | Custom HTTP API | One authenticated HTTP request operation | Static token |
+| Slack (MCP preview) | Tools discovered from Slack's remote server | Preregistered public OAuth client + PKCE |
+| MCP server (preview) | Tools discovered per connection | OAuth discovery + DCR or preregistration; unauthenticated servers also supported |
+
+The MCP preview is only offered when the runtime supplies
+`OMNIDECK_EXTERNAL_URL=http://localhost:<published-app-port>` to **both**
+the app and supervisor. This must be the port reachable from the user's browser,
+not an arbitrary inbound Host header or an unpublished container port. The
+companion CLI change supplies this address from its published host port and
+bumps container layout to reconcile older instances without deleting volumes.
+That change still needs a CLI release and updated desktop bundle pin before
+packaged users receive it; the currently bundled CLI does not supply it.
+The first shipping Slack path uses an **organization-owned internal Slack app**.
+Its public Client ID is entered in the connection form, not an environment
+variable; the old `OMNIDECK_SLACK_CLIENT_ID` preview setting is no longer used.
+No shared development registration is bundled. A future Marketplace-approved
+registration will provide the simpler one-click path; Marketplace approval is
+not required for an organization's own internal app. Automatic desktop callback
+configuration remains a release prerequisite for packaged installations.
+
+### Slack setup and access
+
+Choose **Slack** and expand **Set up your Slack app**. An owner/app manager creates
+an internal app from the supplied JSON manifest, which configures MCP, PKCE,
+token rotation, user scopes and this installation's redirect URL. Verify the
+Slack MCP toggle under **Agents** and any workspace administrator approvals.
+Copy **Basic Information → App Credentials → Client ID** into omnideck, connect,
+approve the Slack consent screen, then select tools. Do not enter a Client Secret
+or copy tokens. PKCE makes the app a public OAuth client; reversing that setting
+requires Slack support, so use a dedicated app rather than converting a bot.
+Teammates can reuse the internal app's public Client ID but authorize separately.
+Add each installation's redirect URL if its published port differs. The current
+callback requires the browser to run on the same computer as omnideck.
+
+The endpoint, issuer and scope policy remain pinned by the backend. Reconnect
+loads the saved Client ID from the existing encrypted OAuth registration; it
+does not require re-entering it or expose stored tokens to the browser.
+The preset requests the reviewed user-token scopes for Slack's full MCP catalog:
+search (including public/private conversations, DMs, files and people), history,
+messaging, channel creation, reactions, profiles, files, canvases and lists.
+The explicit policy lives in `integrations/catalog/slack.py`, based on
+[Slack's MCP documentation](https://docs.slack.dev/ai/slack-mcp-server/).
+It does not automatically adopt future scopes from provider discovery, request
+bot/admin access, or use the legacy `search:read` scope.
+
+OAuth permission and omnideck tool grants are separate. The server discovers
+the tools Slack makes available to the consenting user; none are selected on
+creation. Slack workspace policy and user consent can further restrict access.
+Private/DM search can also require consent inside Slack. There is no hardcoded
+Slack tool list or inferred scope-to-tool grant mapping in the generic broker.
+
+Connections made with the initial two-scope prototype keep their old token and
+grants until explicitly reconnected. In **Connection settings → Sign in again**,
+approve the expanded access. Reconnection refreshes discovery, preserves the
+connection ID and selected tools, and leaves newly discovered tools disabled.
+Use **Change tools** to select them. Enable channel search along with message
+reading so agents can resolve names such as `planning` to actual channel IDs.
+Use a new chat for verification; an in-progress run retains its tool snapshot.
+
+Remote tool errors (including `missing_scope`) remain provider results. We do
+not silently reopen consent or retry potentially mutating requests. A successful
+sign-in/discovery is not proof that every Slack operation is authorized.
+Slack file upload is a multi-step provider workflow: obtaining an upload URL
+and completing the upload are MCP calls; transmitting the bytes to the supplied
+URL requires a separate HTTP/file-capable consumer. This preset does not add a
+local file-upload bridge or claim that a metadata-only tool call uploads bytes.
 
 Granted operations on running connections become agent tools —
 `list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`,
@@ -226,7 +291,9 @@ Legacy capability/read-write fields are understood only by the
 versioned vault migration. Live API requests must use operation grants; stale
 clients receive a refresh-required error instead of permission translation.
 
-OAuth scopes limit the operations offered and accepted during configuration.
+Known first-party OAuth scopes limit the operations offered and accepted during configuration.
+MCP discovery supplies availability; omnideck does not guess a generic mapping
+between remote scopes and tool names. The provider authorizes each call.
 Startup, crash recovery, and credential reconnect pass the saved grants to the
 broker unchanged; they do not intersect them with scope availability. Narrower
 remote authorization can therefore cause an enabled operation to fail upstream
@@ -248,6 +315,7 @@ base class; brokers share a lifecycle, not identical contents.
 | HTTP | `VerbDispatcher` with request/auth settings and an owned `aiohttp.ClientSession` |
 | LLM proxy | Immutable `ProxyCredentials`; its process-wide HTTP client survives session replacement |
 | Development test broker | Reused `VerbDispatcher` preserving simulated upstream state across credential updates |
+| Remote MCP | `MCPDispatcher` with an official SDK client/session and discovered tool IDs |
 
 Each broker supplies a `create_session(connection_fields, ...)` async context
 manager. Entering it prepares the provider-specific object; exiting it performs
@@ -298,6 +366,66 @@ pass fields such as `EMAIL_USER` and `EMAIL_PASS` through the environment.
 Healthy credential replacements instead use the private control pipes. Neither
 path sends credentials to the LLM tool adapter.
 
+### Remote MCP preview
+
+`server._mcp_setup.MCPSetupManager` owns bounded, expiring OAuth setup attempts.
+The official SDK handles discovery, registration, PKCE, issuer verification and
+code exchange; omnideck accepts one state-matched callback on the configured
+loopback origin. Setup holds tokens in memory until the supervisor encrypts the
+connection. Browser status responses never include credentials. OAuth access
+logs omit callback queries and SDK protocol logs are suppressed because they
+can contain sensitive responses. Normal sanitized lifecycle logs remain enabled.
+
+`brokering.brokers.mcp_broker` is the single Streamable HTTP broker implementation
+used by both Slack and custom MCP presets. Each connection gets its own process.
+Its public socket only invokes selected `mcp.<remote-tool-name>` operations;
+there is no MCP method passthrough, stdio execution, automatic resource fetching,
+sampling, elicitation, or automatic retry of a tool call. Input schemas are
+preserved. There is no output-schema contract in omnideck.
+
+The encrypted bundle stores endpoint, access token, SDK OAuth state (registration,
+issuer-bound metadata, refresh token and absolute expiry), and the discovered
+tool catalog. Only endpoint and access token are injected into the broker.
+Before resolving an MCP broker, the supervisor refreshes an expiring token under
+the connection mutation lock. Rotated tokens are persisted immediately, before
+attempting the normal prepare/persist/activate credential handoff. They are
+never replaced by the old refresh token during recovery. Boot and crash recovery
+also refresh expired credentials before starting a broker. Refresh failure
+stops resolution and requires reconnect; it never opens consent automatically.
+
+Discovered descriptors travel through the existing `operations` list and immutable
+connection cache. `tools.integrations._mcp_tools` builds connection-bound
+`SchemaTool` adapters: provider-compatible names disambiguate duplicate remote
+tool names, the remote input schema stays intact, and no routing parameter is
+inserted into the upstream schema. The **Connected tools** skill category exposes
+only granted operations. New default assistant skills include it; existing
+customized skills can enable that category explicitly.
+
+Connecting starts with no grants. Reconnecting refreshes discovery while preserving
+the exact saved grants; new tools remain unselected, and removed tools cannot
+be invoked even if an older saved grant remains. No live catalog subscription
+is implemented. MCP cancellation waits for an in-progress connection commit;
+the existing add wizard then removes its newly created connection. Reconnect
+cancellation never deletes the existing account.
+
+Network policy is public HTTPS only: DNS answers are checked and pinned for each
+request, private/link-local addresses are rejected, TLS SNI/Host retain the
+original hostname, and environment proxies and HTTP redirects are not followed.
+Catalogs, responses and tool results are bounded. Compressed responses are not
+accepted. `OMNIDECK_ENABLE_TEST_INTEGRATIONS=1` additionally permits loopback
+HTTP fixtures; it does not permit arbitrary private-network endpoints.
+
+Slack's preset requests the reviewed scope policy described above. The internal
+app manifest comes from `integrations.catalog.slack`; its redirect is
+`<callback-origin>/api/integrations/mcp/oauth/callback`. Organizations provide
+their own registration; distributing a shared app to other organizations needs
+Marketplace approval. `mcp_setup_settings` is an app-socket supervisor RPC that
+returns only endpoint, issuer and public Client ID from the saved bundle, never
+tokens or the complete OAuth state. Live development sign-in and two-tool
+discovery succeeded; the full scope policy still requires fresh user consent
+and live read verification. Fixture results do not establish every live Slack
+permission or operation.
+
 **Encryption details:**
 
 - AES-256-GCM. Random 12-byte nonce per blob, prepended to the ciphertext.
@@ -338,7 +466,7 @@ Each connection has a state visible in the UI. Transitions are driven by broker 
 
 | State | Meaning | UI affordance |
 |---|---|---|
-| `running` | Broker reached READY; HTTP/model proxies validate local configuration, not upstream credentials | Green dot, label `connected` |
+| `running` | Broker reached READY; HTTP/model proxies validate local configuration, not upstream credentials | Quiet checkmark and Connected in the detail header |
 | `auth_failed` | Broker exited with code 77 — upstream rejected the credential | Red status and reconnect action |
 | `broken` | Broker unavailable after startup, reconnect, control/persistence failure, or exhausted crash recovery | Red status and reconnect action |
 
@@ -476,7 +604,7 @@ The broker reconnects automatically when the upstream server drops an idle conne
 - **Container breakout.** If an attacker escapes the container as root or breaks the UID 1000/1001 boundary, all bets are off.
 - **Backup theft.** The state volume contains both the master key and the encrypted blobs. Treat backups like a password-manager export.
 - **`ptrace`-based memory inspection.** v1 doesn't assert `kernel.yama.ptrace_scope >= 1` at startup or refuse to run with `CAP_SYS_PTRACE`. The kernel default already blocks the realistic cross-UID attack (agent UID can't ptrace broker UID without `CAP_SYS_PTRACE`), but if the container is launched with that capability granted, an in-container same-UID-as-broker attacker could attach a debugger and read the credential. Asserting these flags at startup is a follow-up item.
-- **An MCP server (when MCP lands) abusing creds it was given.** Mitigation is "user consented by installing it." Per-integration egress allowlists are a future hardening item.
+- **A remote MCP server abusing credentials or data it legitimately receives.** Public-network endpoint validation does not make a server trustworthy. Users must trust the service they connect; per-integration domain allowlists remain future hardening.
 - **Disk-level forensic recovery.** Deleted credentials are unlinked, not
   securely erased; interrupted atomic writes may leave temporary files.
 
@@ -488,6 +616,9 @@ The broker reconnects automatically when the upstream server drops an idle conne
 |---|---|
 | Supervisor (vault, lifecycle, RPC) | `brokering/supervisor/` |
 | Email broker (IMAP + SMTP + CalDAV) | `brokering/brokers/email_broker/` |
+| Remote MCP broker, network policy and SDK OAuth adapter | `brokering/brokers/mcp_broker/` |
+| MCP setup coordinator and browser callback routes | `server/_mcp_setup.py`, `server/_mcp_routes.py`, `server/_mcp_oauth_callback.py` |
+| Supervisor-owned MCP refresh | `brokering/supervisor/_mcp_refresh.py` |
 | Wire framing + ready signal + exit codes | `brokering/_rpc.py`, `brokering/_ready.py`, `brokering/_exit_codes.py` |
 | Tool-integration catalog | `integrations/catalog/` |
 | Model-provider presets and HTTP proxy | `brokering/brokers/llm_proxy/` |

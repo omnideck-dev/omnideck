@@ -43,7 +43,8 @@ def main() -> None:
 
     app.on_cleanup.append(_shutdown_executor)
     logger.info("Starting server on port %s", PORT)
-    aiohttp.web.run_app(app, port=PORT)
+    from server._access_log import SafeAccessLogger
+    aiohttp.web.run_app(app, port=PORT, access_log_class=SafeAccessLogger)
 
 
 if __name__ == "__main__":  # pragma: no cover

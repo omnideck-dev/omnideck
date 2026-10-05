@@ -1,39 +1,9 @@
-import styles from './GoogleCloudSetupInstructions.module.css';
-
-function ConsoleLink({ href, children, host }) {
-    return (
-        <a className={styles.consoleLink} href={href} target="_blank" rel="noopener noreferrer">
-            <span><i className="bi bi-box-arrow-up-right" /> {children}</span>
-            <small>{host}</small>
-        </a>
-    );
-}
-
-function SetupStep({ number, title, children }) {
-    return (
-        <details className={styles.step}>
-            <summary>
-                <span>{number}</span>
-                {title}
-                <i className="bi bi-chevron-down" aria-hidden="true" />
-            </summary>
-            <div className={styles.stepBody}>{children}</div>
-        </details>
-    );
-}
+import SetupInstructions, { ConsoleLink, SetupStep } from '../components/SetupInstructions.jsx';
 
 export default function GoogleCloudSetupInstructions() {
     return (
-        <details className={styles.instructions} data-testid="google-cloud-setup">
-            <summary className={styles.instructionsSummary}>
-                <span>
-                    <strong>Google Cloud setup</strong>
-                    <small>This one-time setup creates the desktop OAuth client omnideck uses on this device.</small>
-                </span>
-                <i className="bi bi-chevron-down" aria-hidden="true" />
-            </summary>
-
-            <div className={styles.steps}>
+        <SetupInstructions title="Google Cloud setup" testId="google-cloud-setup"
+            description="This one-time setup creates the desktop OAuth client omnideck uses on this device.">
                 <SetupStep number="1" title="Create a Google Cloud project">
                     <ConsoleLink href="https://console.cloud.google.com" host="console.cloud.google.com">
                         Open Google Cloud Console
@@ -103,7 +73,6 @@ export default function GoogleCloudSetupInstructions() {
                         both values in the downloaded client JSON.
                     </p>
                 </SetupStep>
-            </div>
-        </details>
+        </SetupInstructions>
     );
 }

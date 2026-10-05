@@ -342,6 +342,7 @@ e2e *args:
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
         -e OMNIDECK_ENABLE_TEST_INTEGRATIONS=1 \
+        -e OMNIDECK_EXTERNAL_URL="http://localhost:$port" \
         "${env_args[@]}" \
         -v "$state/home:/home/omnideck:rw,z" \
         -v "$state/state:/var/lib/omnideck:rw,z" \

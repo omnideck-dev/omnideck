@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 
 from brokering.drivers import BrokerDriver, HostPathBinding
+from brokering.brokers.mcp_broker.catalog import MCP_DRIVER
 from integrations.operations import OPERATIONS_BY_GROUP
 
 from ._types import IntegrationCatalogEntry, OperationDisplayGroup
@@ -177,6 +178,13 @@ _STANDARD_CATALOG_ENTRIES: tuple[IntegrationCatalogEntry, ...] = (
     _HTTP,
 )
 
+_MCP_ENTRIES = (
+    IntegrationCatalogEntry(slug="slack", title="Slack", description="Search and work with your Slack workspace",
+                            category="Communication", driver=MCP_DRIVER),
+    IntegrationCatalogEntry(slug="mcp", title="MCP server", description="Connect tools from a remote service",
+                            category="Custom", driver=MCP_DRIVER),
+)
+
 TEST_INTEGRATIONS_ENV = "OMNIDECK_ENABLE_TEST_INTEGRATIONS"
 
 
@@ -194,6 +202,11 @@ def build_integration_catalog(*, include_test_integrations: bool | None = None) 
     """Build the process catalog, optionally including deterministic test entries."""
     include_test = test_integrations_enabled() if include_test_integrations is None else include_test_integrations
     entries = _STANDARD_CATALOG_ENTRIES + ((_TEST,) if include_test else ())
+    # Do not offer consent until the runtime supplies its trusted host callback
+    # address. Container-internal ports and arbitrary request Host headers are
+    # not a safe substitute for the published desktop address.
+    if os.environ.get("OMNIDECK_EXTERNAL_URL"):
+        entries += _MCP_ENTRIES
     return {entry.slug: entry for entry in entries}
 
 

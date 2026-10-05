@@ -1,12 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import Button from '../../../../components/primitives/Button.jsx';
 import Callout from '../../../../components/primitives/Callout.jsx';
-import {
-    getIntegrationOAuthStatus,
-    integrationError,
-    startIntegrationOAuth,
-} from '../../api/integrationsApi.js';
+import useOAuthSetup from '../hooks/useOAuthSetup.js';
 import { errorCopy, getConnectionAdapter, slugify } from '../../catalog/adapterRegistry.js';
 import { ConnectionField, ConnectionFrame } from '../components/ConnectionLayout.jsx';
 import styles from '../IntegrationSetupFlow.module.css';
@@ -28,73 +24,17 @@ export default function GoogleOAuthConnection({
         clientId: '',
         clientSecret: '',
     });
-    const [pending, setPending] = useState(null);
-    const [status, setStatus] = useState(null);
-    const [error, setError] = useState(null);
-    const pollTimer = useRef(null);
-    const authorizing = useRef(false);
+    const { pending, status, error, start, reopen } = useOAuthSetup({
+        onBusyChange, onConnectedId, onPendingOAuthChange,
+    });
     const connecting = ['starting', 'pending', 'committing'].includes(status);
     const canSubmit = (existingConnection || form.email.trim()) && form.clientId.trim()
         && form.clientSecret.trim() && !connecting;
     const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
 
-    useEffect(() => () => {
-        if (pollTimer.current) window.clearTimeout(pollTimer.current);
-    }, []);
-
-    useEffect(() => {
-        if (!pending?.state || !['pending', 'committing'].includes(status)) return undefined;
-        let cancelled = false;
-        const poll = async () => {
-            try {
-                const next = await getIntegrationOAuthStatus(pending.state);
-                if (cancelled) return;
-                setStatus(next.status);
-                onBusyChange?.(next.status === 'committing');
-                if (next.status === 'success') {
-                    onBusyChange?.(false);
-                    onConnectedId(next.integration_id);
-                    return;
-                }
-                if (next.status === 'error') {
-                    onBusyChange?.(false);
-                    setError(next.error || { code: 'AUTH', message: 'Authorization failed.' });
-                    return;
-                }
-                if (next.status === 'denied' || next.status === 'expired') {
-                    onBusyChange?.(false);
-                    return;
-                }
-                pollTimer.current = window.setTimeout(poll, 1000);
-            } catch (requestError) {
-                if (!cancelled) {
-                    onBusyChange?.(false);
-                    setStatus('error');
-                    setError(integrationError(requestError, 'Failed to check authorization'));
-                }
-            }
-        };
-        pollTimer.current = window.setTimeout(poll, 700);
-        return () => {
-            cancelled = true;
-            if (pollTimer.current) window.clearTimeout(pollTimer.current);
-        };
-    }, [onBusyChange, onConnectedId, pending, status]);
-
-    const openPopup = (url) => window.open(
-        url,
-        'omnideck-google-oauth',
-        'width=600,height=720',
-    );
-
     const authorize = async () => {
-        if (!canSubmit || authorizing.current) return;
-        authorizing.current = true;
-        setError(null);
-        setStatus('starting');
-        onBusyChange?.(true);
-        try {
-            const result = await startIntegrationOAuth({
+        if (!canSubmit) return;
+        await start({
                 slug: entry.id,
                 label: form.label.trim() || `${entry.title} · ${form.email.trim()}`,
                 client_id: form.clientId.trim(),
@@ -104,18 +44,7 @@ export default function GoogleOAuthConnection({
                 ...(existingConnection
                     ? { reconnect_id: existingConnection.id }
                     : { user_suffix: slugify(form.email.split('@')[0]) }),
-            });
-            setPending(result);
-            onPendingOAuthChange?.(result.state);
-            setStatus('pending');
-            openPopup(result.authorize_url);
-        } catch (requestError) {
-            setStatus('error');
-            setError(integrationError(requestError, 'Failed to start authorization'));
-        } finally {
-            authorizing.current = false;
-            onBusyChange?.(false);
-        }
+        });
     };
 
     if (pending && (status === 'pending' || status === 'committing')) {
@@ -130,7 +59,7 @@ export default function GoogleOAuthConnection({
                         </Button>
                         <Button
                             variant="filled"
-                            onClick={() => openPopup(pending.authorize_url)}
+                            onClick={reopen}
                             disabled={status === 'committing'}
                             data-testid="oauth-reopen-popup"
                         >

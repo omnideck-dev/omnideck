@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
 from dataclasses import dataclass
 
 from integrations.operation_grants import OperationGrants
 from integrations.service import IntegrationService
+from integrations.discovery import DiscoveredOperation, parse_discovered_operations
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,8 @@ class IntegrationConnection:
     kind: str = "integration"
     operation_grants: OperationGrants = frozenset()
     state: str = "running"
+    label: str = ""
+    discovered_operations: tuple[DiscoveredOperation, ...] = ()
 
 
 ConnectionSnapshot = tuple[IntegrationConnection, ...]
@@ -160,5 +164,15 @@ def _project_connections(entries: list[dict]) -> ConnectionSnapshot:
             or not isinstance(grants, list) or any(not isinstance(g, str) for g in grants)
         ):
             raise ValueError("Malformed integration discovery record")
-        result.append(IntegrationConnection(connection_id, slug, kind, frozenset(grants), state))
+        operations = entry.get("operations", [])
+        if not isinstance(operations, list) or any(not isinstance(operation, dict) for operation in operations):
+            raise ValueError("Malformed integration operations")
+        discovered = parse_discovered_operations(json.dumps([
+            operation for operation in operations
+            if isinstance(operation.get("id"), str) and operation["id"].startswith("mcp.")
+        ]))
+        label = entry.get("label", "")
+        if not isinstance(label, str):
+            raise ValueError("Malformed integration label")
+        result.append(IntegrationConnection(connection_id, slug, kind, frozenset(grants), state, label, discovered))
     return tuple(result)

@@ -258,6 +258,7 @@ _INTEGRATION_TOOL_CATEGORIES: dict[str, _IntegrationToolCategory] = {
     "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files."),
     "contacts": _IntegrationToolCategory("Contacts", "Look up contacts."),
     "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs."),
+    "mcp": _IntegrationToolCategory("Connected tools", "Use selected tools from connected MCP services."),
 }
 
 

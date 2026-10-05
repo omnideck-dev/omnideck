@@ -9,6 +9,7 @@
     "calendar",
     "drive",
     "contacts",
-    "http"
+    "http",
+    "mcp"
   ]
 }

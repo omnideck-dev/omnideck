@@ -11,6 +11,7 @@ from ollama import AsyncClient
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+from agent_core.tools._schema_tool import SchemaTool
 
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
@@ -40,7 +41,7 @@ def _build_ollama_kwargs(
         "think": think,
     }
     if tools:
-        kwargs["tools"] = tools
+        kwargs["tools"] = [tool.definition() if isinstance(tool, SchemaTool) else tool for tool in tools]
     if options:
         kwargs["options"] = options
     return kwargs

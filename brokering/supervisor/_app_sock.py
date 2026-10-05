@@ -29,6 +29,9 @@ Verbs
 **remove** (id)
     SIGTERM the broker and delete its vault files.
 
+**mcp_setup_settings** (id)
+    Return only the saved public endpoint, client ID and issuer for reconnect.
+
 The handler is a thin dispatcher: it parses args and delegates to a
 :class:`BrokerManager` (lifecycle) and :class:`Registry` (read access).
 """
@@ -68,6 +71,11 @@ class AppSockHandler:
         if verb == "list":
             return self._list(args)
         if verb == "resolve":
+            connection_id = _require_str(args, "id")
+            record = self._registry.get(connection_id)
+            # Native connections keep their cheap, unchanged resolution path.
+            if record is not None and record.driver_id == "remote.mcp":
+                await self._manager.ensure_fresh_authorization(connection_id)
             return self._resolve(args)
         if verb == "update":
             return await self._update(args)
@@ -75,6 +83,8 @@ class AppSockHandler:
             return await self._reconnect(args)
         if verb == "remove":
             return await self._remove(args)
+        if verb == "mcp_setup_settings":
+            return await self._manager.mcp_setup_settings(_require_str(args, "id"))
         msg = f"unknown verb: {verb}"
         raise RpcError("BAD_REQUEST", msg)
 
@@ -124,7 +134,7 @@ class AppSockHandler:
         if isinstance(record.meta, IntegrationConnectionMeta):
             result["operation_grants"] = sorted(record.meta.agent_operation_grants)
             result["available_operation_ids"] = sorted(record.available_operations)
-            result["operations"] = operation_descriptors(record.available_operations)
+            result["operations"] = _operations(record)
         return result
 
     async def _update(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -185,9 +195,16 @@ def _record_to_dict(record: BrokeredConnectionRecord) -> dict[str, Any]:
         result.update({
             "operation_grants": sorted(record.meta.agent_operation_grants),
             "available_operation_ids": sorted(record.available_operations),
-            "operations": operation_descriptors(record.available_operations),
+            "operations": _operations(record),
         })
     return result
+
+
+def _operations(record: BrokeredConnectionRecord) -> list[dict[str, Any]]:
+    return operation_descriptors(record.available_operations) + [
+        operation.public_dict()
+        for operation in record.discovered_operations
+    ]
 
 
 def _parse_operation_grants(value: Any) -> OperationGrants | None:

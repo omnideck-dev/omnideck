@@ -62,24 +62,36 @@ export async function removeIntegration(connectionId) {
 }
 
 export async function startIntegrationOAuth(payload) {
-    return readJson(await fetch('/api/integrations/oauth/start', {
+    const prefix = ['mcp', 'slack'].includes(payload.slug) ? '/api/integrations/mcp/oauth' : '/api/integrations/oauth';
+    return readJson(await fetch(`${prefix}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     }));
 }
 
+export async function getMCPConnectionSettings(connectionId) {
+    const query = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : '';
+    return readJson(await fetch(`/api/integrations/mcp/connection-settings${query}`));
+}
+
 export async function getIntegrationOAuthStatus(state) {
+    const prefix = oauthPrefix(state);
     return readJson(await fetch(
-        `/api/integrations/oauth/status/${encodeURIComponent(state)}`,
+        `${prefix}/status/${encodeURIComponent(state)}`,
     ));
 }
 
 export async function cancelIntegrationOAuth(state) {
+    const prefix = oauthPrefix(state);
     return readJson(await fetch(
-        `/api/integrations/oauth/status/${encodeURIComponent(state)}`,
+        `${prefix}/status/${encodeURIComponent(state)}`,
         { method: 'DELETE' },
     ));
+}
+
+function oauthPrefix(state) {
+    return state.startsWith('mcp_') ? '/api/integrations/mcp/oauth' : '/api/integrations/oauth';
 }
 
 export function integrationError(error, fallback = 'Request failed') {

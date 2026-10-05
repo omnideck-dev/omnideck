@@ -49,6 +49,8 @@ from integrations.operation_grants import (
 )
 from brokering.supervisor._crypto import DecryptError
 from brokering.supervisor._registry import BrokeredConnectionRecord, Registry
+from brokering.supervisor._operation_metadata import connection_operations
+from brokering.supervisor._mcp_refresh import refresh_mcp_authorization
 from brokering.supervisor._spawn import BrokerHandle, BrokerSpawnError, connection_fields, spawn_broker
 from brokering.supervisor._store import (
     delete_connection,
@@ -153,7 +155,10 @@ class BrokerManager:
         if self._registry.contains(connection_id):
             raise RpcError("BAD_REQUEST", f"integration already exists: {connection_id}")
 
-        available_operations = entry.resolve_operations(auth_blob.granted_scopes)
+        try:
+            available_operations, discovered = connection_operations(entry, auth_blob)
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", "Invalid connection tool catalog.") from exc
         grants = _grants_for_add(
             entry,
             available_operations=available_operations,
@@ -200,6 +205,8 @@ class BrokerManager:
             meta=meta,
             broker=handle,
             available_operations=available_operations,
+            discovered_operations=discovered,
+            driver_id=entry.driver_id,
         )
         self._registry.add(record)
         self._start_watcher(connection_id)
@@ -227,7 +234,10 @@ class BrokerManager:
             msg = f"decrypt failed for {connection_id}: {exc}"
             raise ReconcileError(msg) from exc
 
-        available_operations = entry.resolve_operations(secret_bundle.granted_scopes)
+        try:
+            available_operations, discovered = connection_operations(entry, secret_bundle)
+        except ValueError as exc:
+            raise ReconcileError("Invalid saved tool catalog") from exc
         meta = connection_meta_from_dict(raw)
 
         expected_kind = entry.kind
@@ -241,6 +251,7 @@ class BrokerManager:
         # remains responsible for authorizing the token on each API request.
 
         try:
+            secret_bundle = await self._refresh_mcp_fields(entry, connection_id, secret_bundle)
             handle = await spawn_broker(
                 entry=entry,
                 connection_id=connection_id,
@@ -259,6 +270,8 @@ class BrokerManager:
                 broker=None,
                 available_operations=available_operations,
                 state=state,
+                discovered_operations=discovered,
+                driver_id=entry.driver_id,
             )
             self._registry.add(record)
             logger.warning(
@@ -274,11 +287,76 @@ class BrokerManager:
             meta=meta,
             broker=handle,
             available_operations=available_operations,
+            discovered_operations=discovered,
+            driver_id=entry.driver_id,
         )
         self._registry.add(record)
         self._start_watcher(connection_id)
         logger.info("reconciled %s (slug=%s)", connection_id, meta.slug)
         return record
+
+    @_serialize_connection_mutation
+    async def mcp_setup_settings(self, connection_id: str) -> dict[str, str]:
+        """Project a strict public allowlist from saved OAuth registration.
+
+        Reconnect UI must not read the vault or receive serialized OAuth state,
+        which also contains tokens. The existing credential transaction remains
+        the sole owner of replacing this registration after successful consent.
+        """
+        from brokering.brokers.mcp_broker.authorization import OAuthStorage
+
+        record = self._registry.get(connection_id)
+        if record is None:
+            raise RpcError("NOT_FOUND", "Integration was removed.")
+        if record.driver_id != "remote.mcp":
+            raise RpcError("BAD_REQUEST", "This integration does not use MCP sign-in.")
+        try:
+            fields = read_secrets(self._vault_dir, connection_id, self._master_key)
+            oauth = OAuthStorage(fields.get("oauth_state", ""))
+        except Exception as exc:
+            raise RpcError("AUTH", "Could not load the saved sign-in settings.") from exc
+        client = oauth.client_info
+        return {"endpoint": fields.get("endpoint", ""),
+                "client_id": client.client_id if client else "",
+                "issuer": str(client.issuer) if client and client.issuer else ""}
+
+    @_serialize_connection_mutation
+    async def ensure_fresh_authorization(self, connection_id: str) -> None:
+        """Refresh MCP before resolution, serialized with edits and removal."""
+        record = self._registry.get(connection_id)
+        if record is None:
+            raise RpcError("NOT_FOUND", "Integration was removed.")
+        entry = self._catalog.get(record.meta.slug)
+        if entry is None or entry.driver_id != "remote.mcp" or record.state != "running":
+            return
+        try:
+            fields = read_secrets(self._vault_dir, connection_id, self._master_key)
+            refreshed = await self._refresh_mcp_fields(entry, connection_id, fields)
+            if refreshed is fields:
+                return
+            # Rotation is already authoritative on disk. Both transaction
+            # recovery inputs intentionally point to the NEW credentials.
+            await self._update_credentials(
+                record, entry, refreshed, refreshed, record.meta, record.available_operations,
+            )
+        except (Exception, asyncio.CancelledError) as exc:
+            record.state = "broken"
+            await self._stop_record_broker(record)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise RpcError("AUTH", "Could not refresh access. Sign in again to reconnect.") from exc
+
+    async def _refresh_mcp_fields(
+        self, entry: CatalogEntry, connection_id: str, fields: BrokerConnectionData,
+    ) -> BrokerConnectionData:
+        if entry.driver_id != "remote.mcp":
+            return fields
+        try:
+            return await refresh_mcp_authorization(
+                fields, lambda updated: write_secrets(self._vault_dir, connection_id, self._master_key, updated),
+            )
+        except Exception as exc:
+            raise BrokerSpawnError("Could not refresh MCP access; sign in again.", exit_code=_AUTH_FAIL_EXIT_CODE) from exc
 
     @_serialize_connection_mutation
     async def remove(self, connection_id: str) -> None:
@@ -424,7 +502,10 @@ class BrokerManager:
                 f"catalog has no {record.meta.kind!r} entry for slug {record.meta.slug!r}",
             )
         old_meta = record.meta
-        new_available = entry.resolve_operations(auth_blob.granted_scopes)
+        try:
+            new_available, _ = connection_operations(entry, auth_blob)
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", "Invalid connection tool catalog.") from exc
         new_grants = _meta_grants(old_meta)
         new_meta = old_meta.model_copy(update={"updated_at": datetime.now(UTC)})
 
@@ -502,6 +583,7 @@ class BrokerManager:
 
         record.meta = new_meta
         record.available_operations = new_available
+        record.discovered_operations = connection_operations(entry, new_secrets)[1]
         try:
             await credential_command(broker.proc, "activate_credentials", update_id)
         except (Exception, asyncio.CancelledError) as exc:
@@ -614,6 +696,7 @@ class BrokerManager:
         record.broker = new_handle
         record.meta = new_meta
         record.available_operations = new_available
+        record.discovered_operations = connection_operations(entry, new_secrets)[1]
         record.state = "running"
         record.expected_termination = False
         self._start_watcher(connection_id)
@@ -717,6 +800,7 @@ class BrokerManager:
             raise _RespawnError(msg) from exc
 
         try:
+            secret_bundle = await self._refresh_mcp_fields(entry, connection_id, secret_bundle)
             return await spawn_broker(
                 entry=entry,
                 connection_id=connection_id,

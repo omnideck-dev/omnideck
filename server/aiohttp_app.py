@@ -38,6 +38,7 @@ from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
+from server._mcp_routes import register_mcp_routes
 from server._memory_routes import register_memory_routes
 from server._model_routes import register_model_routes
 from server._pack_routes import register_pack_routes
@@ -179,6 +180,7 @@ def create_app(
     # Integrations (supervisor / brokers)
     register_integrations_routes(app)
     register_oauth_routes(app)
+    register_mcp_routes(app)
 
     # Container file serving — lets the frontend (and agent-authored HTML) reference
     # container files by their real path instead of base64-encoding them.

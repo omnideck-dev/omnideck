@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from integrations.connection_cache import ConnectionSnapshot, IntegrationConnection
+from tools.integrations._mcp_tools import build_mcp_tool
 from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
 from tools.integrations.create_event import build_create_event_tool
@@ -111,6 +112,14 @@ def integration_tools_by_category(connections: ConnectionSnapshot = ()) -> dict[
     for category in categories:
         tools = _tools_for_category(category, connections)
         result[category] = OperationTools(tools=tools, available=bool(tools))
+    remote_tools = [
+        build_mcp_tool(connection, operation)
+        for connection in connections
+        if connection.kind == "integration" and connection.state == "running"
+        for operation in connection.discovered_operations
+        if operation.id in connection.operation_grants
+    ]
+    result["mcp"] = OperationTools(tools=list(remote_tools), available=bool(remote_tools))
     return result
 
 

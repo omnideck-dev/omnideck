@@ -5,6 +5,8 @@ import AppPasswordConnection from './connection-adapters/AppPasswordConnection.j
 import GoogleOAuthConnection from './connection-adapters/GoogleOAuthConnection.jsx';
 import HttpTokenConnection from './connection-adapters/HttpTokenConnection.jsx';
 import TestConnection from './connection-adapters/TestConnection.jsx';
+import MCPOAuthConnection from './connection-adapters/MCPOAuthConnection.jsx';
+import SlackOAuthConnection from './connection-adapters/SlackOAuthConnection.jsx';
 import styles from './IntegrationSetupFlow.module.css';
 
 // The catalog selects a stable adapter kind; it never describes or renders the
@@ -16,6 +18,8 @@ const CONNECTION_COMPONENTS = {
     google_oauth: GoogleOAuthConnection,
     http_token: HttpTokenConnection,
     test: TestConnection,
+    mcp_oauth: MCPOAuthConnection,
+    slack_oauth: SlackOAuthConnection,
 };
 
 export default function ConnectionStep(props) {

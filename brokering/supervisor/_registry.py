@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from integrations.operation_grants import OperationGrants
+from integrations.discovery import DiscoveredOperation
 from brokering.supervisor._spawn import BrokerHandle
 from brokering.supervisor.types import ConnectionMeta
 
@@ -49,6 +50,8 @@ class BrokeredConnectionRecord:
     expected_termination: bool = False
     # Serialize grant handoffs with reconnect/remove and watcher respawns.
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    discovered_operations: tuple[DiscoveredOperation, ...] = ()
+    driver_id: str = ""
 
 
 class Registry:
