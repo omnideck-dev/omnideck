@@ -571,3 +571,29 @@ test('the updater bridge fixture is newer than the bundled runtime image', async
   assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
   assert.match(windowsGuest, /version = "0\.5\.3"/);
 });
+
+test('desktop cleanup preserves evidence and delegates final reset to its lease', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-cleanup-owner-'));
+  const actions = join(directory, 'actions');
+  await writeFile(join(directory, 'lab.sh'), '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$AUDIT_ACTIONS"\nif [[ "$1" == stop && "$AUDIT_STOP_FAIL" == 1 ]]; then exit 1; fi\n', { mode: 0o755 });
+  try {
+    for (const [name, source] of [['linux', run], ['windows', windows]]) {
+      const cleanup = `cleanup() {${source.split('cleanup() {')[1].split('\ntrap cleanup EXIT')[0]}`;
+      for (const [exitCode, complete, keep, stopFails, expected] of [[0, 1, 0, 0, 0], [9, 1, 0, 0, 9], [0, 0, 0, 0, 1], [0, 1, 1, 0, 0], [0, 1, 0, 1, 1]]) {
+        await writeFile(actions, '');
+        const result = spawnSync('bash', ['-c', `${cleanup}\ntrap cleanup EXIT\nexit "$AUDIT_EXIT"`], {
+          encoding: 'utf8',
+          env: { ...process.env, lab_dir: directory, vm: 'appimage', output_dir: directory, remote_staged: '0', vm_started: '1', driver_ssh_pid: '', driver_task_name: 'owned-test', trust_task_name: 'owned-trust', qualification_complete: String(complete), keep_vm: String(keep), AUDIT_ACTIONS: actions, AUDIT_EXIT: String(exitCode), AUDIT_STOP_FAIL: String(stopFails) },
+        });
+        const log = (await readFile(actions, 'utf8')).trim().split('\n');
+        assert.equal(result.status, expected, `${name}: ${result.stderr}`);
+        assert.equal(log.filter((line) => line.startsWith('stop ')).length, 1);
+        assert.equal(log.filter((line) => line.startsWith('reset ')).length, 0, 'lease must receive the tested guest state for failure retention and final reset');
+        assert.ok(log.includes(`evidence-finish ${directory} ${expected === 0 ? 'passed' : 'failed'}`));
+        if (keep) assert.match(result.stdout, /kept stopped for debugging/);
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

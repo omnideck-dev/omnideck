@@ -181,7 +181,6 @@ driver_forward_port="$(python3 -c 'import socket; listener=socket.socket(); list
 driver_task_name="OmnideckDesktopE2E-${safe_run_id}"
 trust_task_name="OmnideckDesktopTrust-${safe_run_id}"
 vm_started=0
-initial_reset=0
 remote_staged=0
 driver_ssh_pid=""
 test_status=1
@@ -256,9 +255,8 @@ cleanup() {
     "${lab_dir}/lab.sh" stop windows || exit_code=1
     vm_started=0
   fi
-  if [[ "${initial_reset}" == "1" && "${keep_vm}" != "1" ]]; then
-    "${lab_dir}/lab.sh" reset windows "$baseline" || exit_code=1
-  elif [[ "${keep_vm}" == "1" ]]; then
+  # The enclosing lease owns final reset and failed-transaction retention.
+  if [[ "${keep_vm}" == "1" ]]; then
     printf 'Windows guest kept stopped for debugging.\n'
   fi
   if [[ "${exit_code}" == "0" ]]; then
@@ -273,7 +271,6 @@ trap cleanup EXIT
 
 printf 'Resetting the leased Windows guest to %s.\n' "${baseline}"
 "${lab_dir}/lab.sh" reset windows "${baseline}"
-initial_reset=1
 
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
