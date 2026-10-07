@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -17,6 +17,29 @@ const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
+
+test('macOS lane refuses a running ordinary app without terminating it', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-macos-process-guard-'));
+  const guard = macosGuest.split("current_step='exclusive desktop process'\n")[1].split('\nif [[ "$upgrade_dmg" != none ]]')[0];
+  for (const executable of ['omnideck-desktop', 'omnideck']) {
+    const ordinary = spawn('bash', ['-c', 'exec -a "$1" sleep 60', 'fixture', `/Applications/ordinary.app/Contents/MacOS/${executable}`]);
+    try {
+      await new Promise((resolve, reject) => {
+        ordinary.once('spawn', resolve);
+        ordinary.once('error', reject);
+      });
+      const result = spawnSync('bash', ['-c', guard], { encoding: 'utf8', env: { ...process.env, result_dir: directory } });
+      assert.equal(result.status, 3, result.stderr);
+      assert.match(result.stderr, /no user process was stopped/);
+      assert.equal(process.kill(ordinary.pid, 0), true, 'ordinary installation must remain running');
+      assert.match(await readFile(join(directory, 'preexisting-omnideck-processes.txt'), 'utf8'), new RegExp(`\\b${ordinary.pid}\\b`));
+    } finally {
+      ordinary.kill('SIGTERM');
+      await new Promise((resolve) => ordinary.exitCode !== null || ordinary.signalCode !== null ? resolve() : ordinary.once('exit', resolve));
+    }
+  }
+  await rm(directory, { recursive: true, force: true });
+});
 
 test('Linux update fixture keeps the pinned image and assertions while clearing only its cache', async () => {
   const fixture = linuxGuest.split('current_step="candidate update"')[1].split('run_journey update')[0];
@@ -138,6 +161,32 @@ const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
 const verifyLinuxSmoke = await read('../tests/e2e/verify_linux_smoke.py');
 const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
 const smokeMatrixGuest = await read('../tests/e2e/smoke-matrix-guest.sh');
+test('grouped smoke resolves the lab in its child process and leaves the final reset to its lease', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-smoke-child-'));
+  try {
+    await mkdir(join(directory, 'cells'));
+    await writeFile(join(directory, 'lab.sh'), `#!/usr/bin/env bash
+set -eu
+printf '%s\\n' "$*" >> "$OMNIDECK_TEST_LAB_CALLS"
+case "$1" in
+  capabilities) printf '%s\\n' '{"features":["artifact-path","cache-path","lease-cleanup","preflight","profiles"]}' ;;
+  profile) echo product-ready-v2 ;;
+  reset|start|stop|wait|verify) ;;
+  *) exit 9 ;;
+esac
+`, { mode: 0o755 });
+    const environment = { ...process.env, OMNIDECK_VM_LAB_DIR: directory, OMNIDECK_VM_LAB_LEASED: '1', OMNIDECK_TEST_LAB_CALLS: join(directory, 'calls.txt') };
+    delete environment.lab_dir;
+    const result = spawnSync('bash', [new URL('../tests/e2e/smoke-matrix-guest.sh', import.meta.url).pathname, 'appimage', 'product-ready', directory, join(directory, 'status.tsv')], { env: environment, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = (await readFile(join(directory, 'calls.txt'), 'utf8')).trim().split('\n');
+    assert.deepEqual(calls.filter((call) => /^(reset|start|stop|wait|verify) /.test(call)), [
+      'reset appimage product-ready-v2', 'start appimage', 'wait appimage', 'verify appimage', 'stop appimage',
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
 const packageSmokePurge = await read('../tests/e2e/purge-package-smoke.sh');
 const remainder = JSON.parse(await read('../tests/e2e/manual-remainder.json'));
@@ -375,7 +424,8 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /Omnideck Lab Driver\.app/);
   assert.match(macosGuest, /OMNIDECK_DESKTOP_TEST_NAMESPACE/);
   assert.match(macosGuest, /release-test-macos/);
-  assert.match(macosGuest, /pkill -f '\/omnideck-desktop\$'/);
+  assert.match(macosGuest, /no user process was stopped/);
+  assert.doesNotMatch(macosGuest, /pkill -f '\/omnideck(?:-desktop)?\$'/);
   assert.match(macos, /--upgrade-from-artifact/);
   assert.match(macosGuest, /previous DMG installation/);
   assert.match(macosGuest, /stateMarkerPreserved/);
