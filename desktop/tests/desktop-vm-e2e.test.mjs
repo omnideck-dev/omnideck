@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -17,6 +19,195 @@ const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
+
+test('Windows only refreshes an explicit driver mismatch once and preserves both version receipts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-webview-refresh-'));
+  const helper = windows.split('refresh_mismatched_webview_driver() {\n')[1].split('\n}\n\nrun_journey()')[0];
+  const mismatch = 'FAIL: WebDriverError: WebDriver POST /session failed with HTTP 500: session not created: This version of Microsoft Edge WebDriver only supports Microsoft Edge version 151; Current browser version is 154.0.4258.62';
+  try {
+    await writeFile(join(directory, 'lab.sh'), '#!/bin/bash\ncp "$fixture_root/current-version.json" "$4"\n', { mode: 0o755 });
+    for (const [label, status, attempt, log, expected, mode] of [
+      ['mismatch', 1, 0, mismatch, 0, 'preserve'],
+      ['clean-first-session', 1, 0, mismatch, 0, 'skip'],
+      ['already-retried', 1, 1, mismatch, 1, 'preserve'],
+      ['product-error', 1, 0, 'FAIL: Setup failed: memory.max missing', 1, 'preserve'],
+      ['historical-mismatch', 1, 0, `${mismatch}\nFAIL: Setup failed: memory.max missing`, 1, 'preserve'],
+      ['partial-message', 1, 0, 'Current browser version is 154.0.4258.62', 1, 'preserve'],
+      ['passed', 0, 0, mismatch, 1, 'preserve'],
+    ]) {
+      const attemptDir = join(directory, label);
+      const markers = `${attemptDir}-markers`;
+      await mkdir(attemptDir);
+      await mkdir(markers);
+      await writeFile(join(attemptDir, 'session.log'), log);
+      await writeFile(join(markers, 'observed'), 'original marker');
+      await writeFile(join(directory, 'current-version.json'), '{"major":151}');
+      await writeFile(join(directory, 'driver-runtime-mode.txt'), mode);
+      const result = spawnSync('bash', ['-c', `
+        refresh_mismatched_webview_driver() {\n${helper}\n}
+        stop_driver() { echo stopped; }
+        start_driver() { [[ "$1" == "$expected_mode" ]] || return 7; echo '{"major":154}' > "$fixture_root/current-version.json"; }
+        refresh_mismatched_webview_driver "$1" "$2" "$3" "$4"
+      `, 'fixture', String(status), String(attempt), attemptDir, markers], {
+        encoding: 'utf8', env: { ...process.env, fixture_root: directory, lab_dir: directory, output_dir: directory, remote_scp_root: 'guest', expected_mode: mode },
+      });
+      assert.equal(result.status, expected, `${label}: ${result.stderr}`);
+      if (expected === 0) {
+        assert.equal(await readFile(`${attemptDir}-driver-mismatch/session.log`, 'utf8'), log);
+        assert.equal(await readFile(`${markers}-driver-mismatch/observed`, 'utf8'), 'original marker');
+        assert.equal(JSON.parse(await readFile(`${attemptDir}-driver-mismatch/webdriver-before-refresh.json`)).major, 151);
+        assert.equal(JSON.parse(await readFile(`${attemptDir}-driver-mismatch/webdriver-after-refresh.json`)).major, 154);
+        assert.match(result.stdout, /stopped/);
+      } else {
+        assert.equal(await readFile(join(attemptDir, 'session.log'), 'utf8'), log);
+        assert.doesNotMatch(result.stdout, /stopped/);
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows tunnel receipts survive subshell refresh and reject unrelated or reused PIDs', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-tunnel-owner-'));
+  const helper = fileURLToPath(new URL('../tests/e2e/windows_driver_tunnel.py', import.meta.url));
+  const receipt = join(directory, 'tunnel.json');
+  const portFile = join(directory, 'port');
+  const command = [process.execPath, '-e', 'const s = require("node:net").createServer(); s.listen(0, "127.0.0.1", () => require("node:fs").writeFileSync(process.argv[1], String(s.address().port)));', portFile];
+  let original;
+  try {
+    // The launcher exits; the outer caller must use its receipt rather than a
+    // shell variable that belonged to the launcher/subshell.
+    const launched = spawnSync('python3', [helper, 'start', '--receipt', receipt, '--log', join(directory, 'tunnel.log'), '--', ...command], { encoding: 'utf8' });
+    assert.equal(launched.status, 0, launched.stderr);
+    original = JSON.parse(await readFile(receipt, 'utf8'));
+    assert.equal(process.kill(original.pid, 0), true);
+    let port;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { port = Number(await readFile(portFile, 'utf8')); break; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(port > 0, 'the original process must hold a real listening port');
+    for (const changed of [
+      { ...original, command: ['unrelated-process'] },
+      { ...original, startTicks: '0' },
+    ]) {
+      await writeFile(receipt, JSON.stringify(changed));
+      const refused = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+      assert.notEqual(refused.status, 0);
+      assert.match(refused.stderr, /Refusing to stop/);
+      assert.equal(process.kill(original.pid, 0), true, 'a mismatched process must remain alive');
+    }
+    await writeFile(receipt, JSON.stringify(original));
+    const stopped = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    assert.equal(stopped.status, 0, stopped.stderr);
+    await assert.rejects(readFile(receipt), { code: 'ENOENT' });
+    let alive = false;
+    try {
+      const stat = await readFile(`/proc/${original.pid}/stat`, 'utf8');
+      alive = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] !== 'Z';
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    assert.equal(alive, false, 'the tunnel created by the exited subshell must stop');
+    const reused = createServer();
+    await new Promise((resolve, reject) => {
+      reused.once('error', reject);
+      reused.listen(port, '127.0.0.1', resolve);
+    });
+    await new Promise((resolve) => reused.close(resolve));
+    const repeated = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    assert.equal(repeated.status, 0, repeated.stderr);
+  } finally {
+    if (original) {
+      await writeFile(receipt, JSON.stringify(original));
+      spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows tunnel launch reaps its child if ownership recording fails', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-tunnel-record-failure-'));
+  const helper = fileURLToPath(new URL('../tests/e2e/windows_driver_tunnel.py', import.meta.url));
+  try {
+    const result = spawnSync('python3', ['-c', `
+import importlib.util, pathlib, sys
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('tunnel', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+root = pathlib.Path(sys.argv[2])
+children = []
+real_popen = module.subprocess.Popen
+def launch(*args, **kwargs):
+    child = real_popen(*args, **kwargs)
+    children.append(child)
+    return child
+try:
+    with patch.object(module.subprocess, 'Popen', side_effect=launch), patch.object(module, 'record', side_effect=OSError('injected receipt write failure')):
+        try:
+            module.start(root / 'receipt.json', [sys.executable, '-c', 'import time; time.sleep(60)'], root / 'tunnel.log')
+        except OSError as error:
+            assert str(error) == 'injected receipt write failure'
+        else:
+            raise AssertionError('receipt failure reported successful startup')
+    assert len(children) == 1
+    assert children[0].poll() is not None, 'start returned with a live unowned tunnel'
+    assert not (root / 'receipt.json').exists()
+finally:
+    for child in children:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+`, helper, directory], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows driver startup propagates required-stage failures inside a refresh conditional', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-driver-start-failure-'));
+  const body = windows.split('start_driver() {\n')[1].split('\n}\n\nwait_for_consent()')[0];
+  try {
+    await writeFile(join(directory, 'lab.sh'), '#!/bin/bash\necho register >> "$actions"\n[[ "$fail_stage" != register ]]\n', { mode: 0o755 });
+    for (const stage of ['counter-read', 'counter-write', 'phase', 'phase-log', 'register', 'record', 'pid-write', 'health', 'mode-write', 'success']) {
+      const output = join(directory, stage);
+      await mkdir(output);
+      const actions = join(output, 'actions');
+      await writeFile(actions, '');
+      if (stage === 'counter-read') await writeFile(join(output, 'driver-start-count.txt'), '0');
+      for (const [failure, filename] of [['counter-write', 'driver-start-count.txt'], ['phase-log', 'webdriver-refresh.log'], ['pid-write', 'driver-tunnel.pid'], ['mode-write', 'driver-runtime-mode.txt']]) {
+        if (stage === failure) await mkdir(join(output, filename));
+      }
+      const result = spawnSync('bash', ['-c', `
+        set -Eeuo pipefail
+        start_driver() {\n${body}\n}
+        driver_start_count=0
+        ssh_options=()
+        phase_command() { echo phase >> "$actions"; [[ "$fail_stage" != phase ]]; }
+        cat() { [[ "$fail_stage" != counter-read ]] || return 8; command cat "$@"; }
+        python3() { echo tunnel >> "$actions"; [[ "$fail_stage" != record ]] || return 9; echo 12345; }
+        stop_driver_tunnel() { echo stopped >> "$actions"; }
+        kill() { return 0; }
+        curl() {
+          if [[ -f "$output_dir/curl-called" && "$fail_stage" == health ]]; then return 7; fi
+          touch "$output_dir/curl-called"
+        }
+        if start_driver preserve; then exit 0; else exit $?; fi
+      `], { encoding: 'utf8', env: { ...process.env, actions, fail_stage: stage, output_dir: output, lab_dir: directory, script_dir: directory, remote_root: 'guest', driver_forward_port: '1234' } });
+      assert.equal(result.status, stage === 'success' ? 0 : 1, `${stage}: ${result.stderr}`);
+      const log = (await readFile(actions, 'utf8')).trim().split('\n');
+      if (['counter-read', 'counter-write', 'phase', 'phase-log'].includes(stage)) assert.ok(!log.includes('register'), stage);
+      if (stage === 'register') assert.ok(!log.includes('tunnel'));
+      if (['pid-write', 'health', 'mode-write'].includes(stage)) assert.ok(log.includes('stopped'), 'post-launch failure must stop its owned tunnel');
+      if (stage === 'success') assert.equal((await readFile(join(output, 'driver-runtime-mode.txt'), 'utf8')).trim(), 'preserve');
+      else if (stage !== 'mode-write') await assert.rejects(readFile(join(output, 'driver-runtime-mode.txt')), { code: 'ENOENT' });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('macOS lane refuses a running ordinary app without terminating it', { skip: process.platform !== 'linux' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'omnideck-macos-process-guard-'));
@@ -578,12 +769,14 @@ test('desktop cleanup preserves evidence and delegates final reset to its lease'
   await writeFile(join(directory, 'lab.sh'), '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$AUDIT_ACTIONS"\nif [[ "$1" == stop && "$AUDIT_STOP_FAIL" == 1 ]]; then exit 1; fi\n', { mode: 0o755 });
   try {
     for (const [name, source] of [['linux', run], ['windows', windows]]) {
+      if (name === 'windows' && process.platform !== 'linux') continue;
       const cleanup = `cleanup() {${source.split('cleanup() {')[1].split('\ntrap cleanup EXIT')[0]}`;
+      const tunnelStop = name === 'windows' ? `stop_driver_tunnel() {${source.split('stop_driver_tunnel() {')[1].split('\n}\n\ncleanup()')[0]}\n}` : '';
       for (const [exitCode, complete, keep, stopFails, expected] of [[0, 1, 0, 0, 0], [9, 1, 0, 0, 9], [0, 0, 0, 0, 1], [0, 1, 1, 0, 0], [0, 1, 0, 1, 1]]) {
         await writeFile(actions, '');
-        const result = spawnSync('bash', ['-c', `${cleanup}\ntrap cleanup EXIT\nexit "$AUDIT_EXIT"`], {
+        const result = spawnSync('bash', ['-c', `${tunnelStop}\n${cleanup}\ntrap cleanup EXIT\nexit "$AUDIT_EXIT"`], {
           encoding: 'utf8',
-          env: { ...process.env, lab_dir: directory, vm: 'appimage', output_dir: directory, remote_staged: '0', vm_started: '1', driver_ssh_pid: '', driver_task_name: 'owned-test', trust_task_name: 'owned-trust', qualification_complete: String(complete), keep_vm: String(keep), AUDIT_ACTIONS: actions, AUDIT_EXIT: String(exitCode), AUDIT_STOP_FAIL: String(stopFails) },
+          env: { ...process.env, script_dir: fileURLToPath(new URL('../tests/e2e/', import.meta.url)), lab_dir: directory, vm: 'appimage', output_dir: directory, remote_staged: '0', vm_started: '1', driver_ssh_pid: '', driver_task_name: 'owned-test', trust_task_name: 'owned-trust', qualification_complete: String(complete), keep_vm: String(keep), AUDIT_ACTIONS: actions, AUDIT_EXIT: String(exitCode), AUDIT_STOP_FAIL: String(stopFails) },
         });
         const log = (await readFile(actions, 'utf8')).trim().split('\n');
         assert.equal(result.status, expected, `${name}: ${result.stderr}`);
