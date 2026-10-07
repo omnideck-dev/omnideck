@@ -42,7 +42,7 @@ export default function DesktopViewContent({
     }
 
     if (view.type === 'artifact-file') {
-        return <ArtifactFileDesktopView view={view} />;
+        return <ArtifactFileDesktopView view={view} visible={visible} />;
     }
 
     if (view.type === 'conversation') {

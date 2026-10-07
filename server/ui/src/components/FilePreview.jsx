@@ -26,7 +26,7 @@ function getFileIcon(contentType, filename) {
  * A file preview rendered inside its stable artifact tab.
  * Full-screen presentation belongs to Desktop Layout.
  */
-export default function FilePreview({ item }) {
+export default function FilePreview({ item, visible = true }) {
     const {
         text,
         draft,
@@ -51,7 +51,7 @@ export default function FilePreview({ item }) {
         canCopy,
         stale,
         refresh,
-    } = useFileContent(item);
+    } = useFileContent(item, { visible });
 
     const [copied, setCopied] = useState(false);
     const onCopyClick = async () => {
