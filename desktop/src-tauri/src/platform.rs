@@ -4,6 +4,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::Mutex,
 };
 
 #[cfg(target_os = "windows")]
@@ -71,15 +72,38 @@ pub fn diagnostic_log() -> BridgeResult<PathBuf> {
 }
 
 pub fn append_diagnostic(message: &str) {
+    static LOG_WRITE: Mutex<()> = Mutex::new(());
+    let _guard = LOG_WRITE.lock().unwrap_or_else(|error| error.into_inner());
     let Ok(path) = diagnostic_log() else {
         return;
     };
+    let _ = append_diagnostic_to(&path, message);
+}
+
+fn append_diagnostic_to(path: &Path, message: &str) -> std::io::Result<()> {
+    const MAX_LOG_BYTES: u64 = 1024 * 1024;
+    const MAX_ENTRY_BYTES: usize = 64 * 1024;
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent)?;
     }
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{message}");
+    let mut end = message.len().min(MAX_ENTRY_BYTES);
+    while !message.is_char_boundary(end) {
+        end -= 1;
     }
+    let message = &message[..end];
+    if fs::metadata(path)
+        .is_ok_and(|metadata| metadata.len() + message.len() as u64 + 1 > MAX_LOG_BYTES)
+    {
+        let previous = path.with_extension("log.1");
+        match fs::remove_file(&previous) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        fs::rename(path, previous)?;
+    }
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{message}")
 }
 
 fn command(program: impl AsRef<Path>) -> Command {
@@ -98,11 +122,16 @@ fn command(program: impl AsRef<Path>) -> Command {
 }
 
 fn spawn(program: &str, args: &[String]) -> BridgeResult<()> {
-    command(program)
+    let mut child = command(program)
         .args(args)
         .spawn()
-        .map(|_| ())
-        .map_err(|error| BridgeError::new("ACTION_FAILED", error.to_string()))
+        .map_err(|error| BridgeError::new("ACTION_FAILED", error.to_string()))?;
+    // Dropping std::process::Child does not reap Unix processes. Keep a waiter
+    // without blocking the UI while the desktop's URL handler launches.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 pub fn open_url(url: &str) -> BridgeResult<()> {
@@ -210,5 +239,20 @@ mod tests {
             assert_eq!(resource_name("omnideck-desktop"), "omnideck-desktop");
         }
         assert_eq!(machine_name(), "omnideck-runtime");
+    }
+
+    #[test]
+    fn diagnostic_logs_rotate_and_bound_large_entries() {
+        let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/test-artifacts")
+            .join(format!("logs-{}", std::process::id()));
+        let path = directory.join("desktop.log");
+        for _ in 0..20 {
+            append_diagnostic_to(&path, &"é".repeat(100_000)).unwrap();
+        }
+        assert!(fs::metadata(&path).unwrap().len() <= 1024 * 1024);
+        assert!(fs::metadata(path.with_extension("log.1")).unwrap().len() <= 1024 * 1024);
+        assert!(fs::read_to_string(&path).is_ok());
+        fs::remove_dir_all(directory).unwrap();
     }
 }

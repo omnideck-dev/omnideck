@@ -89,19 +89,13 @@ pub(crate) struct HostState {
     pub(crate) setup_running: Arc<AtomicBool>,
     pub(crate) app_ready: Arc<AtomicBool>,
     pub(crate) offered_actions: Arc<RwLock<HashSet<String>>>,
-    pub(crate) available_update: Arc<RwLock<Option<updates::UpdateTarget>>>,
-    pub(crate) deferred_version: Arc<RwLock<Option<String>>>,
     pub(crate) update_target: Arc<RwLock<Option<updates::UpdateTarget>>>,
     pub(crate) update_checks_started: Arc<AtomicBool>,
 }
 
 impl Default for HostState {
     fn default() -> Self {
-        let update_state = updates::read_state();
         let setup_record = read_setup_record();
-        let available_update = setup_record
-            .as_ref()
-            .and_then(|record| updates::known_update(&record.image_version));
         // An update writes its selected immutable image into setup-state before
         // reconciling the environment. Rehydrate that selection after a crash
         // so Resume cannot accidentally fall back to the packaged older image.
@@ -119,8 +113,6 @@ impl Default for HostState {
             setup_running: Arc::new(AtomicBool::new(false)),
             app_ready: Arc::new(AtomicBool::new(false)),
             offered_actions: Arc::new(RwLock::new(HashSet::new())),
-            available_update: Arc::new(RwLock::new(available_update)),
-            deferred_version: Arc::new(RwLock::new(update_state.deferred_version)),
             update_target: Arc::new(RwLock::new(update_target)),
             update_checks_started: Arc::new(AtomicBool::new(false)),
         }
@@ -676,12 +668,6 @@ pub(crate) async fn begin_setup(
             updates::complete()?;
             if let Ok(mut selected) = host.update_target.write() {
                 *selected = None;
-            }
-            if let Ok(mut available) = host.available_update.write() {
-                *available = None;
-            }
-            if let Ok(mut deferred) = host.deferred_version.write() {
-                *deferred = None;
             }
         }
         *host.hosted_port.write().map_err(|_| {
