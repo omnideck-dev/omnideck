@@ -1,6 +1,6 @@
 FROM node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS node-runtime
 
-FROM rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff
+FROM rust:1.90.0-bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f
 
 LABEL org.opencontainers.image.title="omnideck desktop Windows builder" \
       org.opencontainers.image.description="Pinned cross-toolchain for local Windows desktop packaging" \

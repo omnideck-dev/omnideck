@@ -5,12 +5,16 @@ shell while preserving the existing setup experience.
 
 The installer UI assets and copy are checked against the Electron source by the
 policy tests. The hosted application runs in a separate webview with only typed
-software-update commands and Tauri's native webview-zoom capability; it receives
+external-link and software-update commands and Tauri's native webview-zoom capability; it receives
 no shell, filesystem, process, dialog, opener, updater-plugin, or generic event
 authority. Rust revalidates its exact dynamic loopback origin on every call. The
 local setup webview receives only four typed lifecycle commands plus the same
 native zoom capability; Rust owns every CLI argument, validates the CLI and JSON
 contracts, and limits process output and execution time.
+
+Update preferences are persisted by the native host before the UI reports a
+successful save. Software updates replace the container application; framework
+and bundled CLI updates require installing a new desktop release.
 
 The hosted webview enables native clipboard access, keeps copy/paste keyboard
 shortcuts available, refreshes with Ctrl/Cmd+R or F5, opens external HTTP(S)

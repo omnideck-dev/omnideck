@@ -28,8 +28,7 @@ test('Windows builds enforce static runtime and inspect the produced host before
   const read = (file) => readFile(new URL(file, import.meta.url), 'utf8');
   const build = await read('../src-tauri/build.rs');
   const workflow = await read('../../.github/workflows/desktop.yml');
-  assert.match(build, /set_var\("STATIC_VCRUNTIME", "true"\)/);
-  assert(build.indexOf('set_var(') < build.indexOf('tauri_build::build()'));
+  assert.match(build, /windows_attributes\(tauri_build::WindowsAttributes::new\(\)\.static_vc_runtime\(true\)\)/);
   assert.match(workflow, /if: runner\.os == 'Windows'[\s\S]*?node scripts\/verify-windows-runtime\.mjs src-tauri\/target\/\$\{\{ matrix.target \}\}\/release\/omnideck-desktop\.exe/);
   assert(workflow.indexOf('node scripts/verify-windows-runtime.mjs') < workflow.indexOf('name: Upload native installers'));
 });

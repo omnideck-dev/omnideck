@@ -1,0 +1,24 @@
+name: Desktop dependency security
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned advisory scanner
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - name: Check desktop dependencies against current RustSec advisories
+        run: cargo audit --file desktop/src-tauri/Cargo.lock

@@ -140,14 +140,25 @@ immutable digest and builds the package matrix on native build runners. A
 Windows ARM64 package built on Windows x64 remains a cross-build until executed
 on ARM64 hardware.
 
+The `Desktop dependency security` workflow checks the committed Cargo lockfile
+against current RustSec advisories before desktop builds and daily, so newly
+published advisories are detected even when application code has not changed.
+Run the same check locally with `cargo install cargo-audit --locked --version
+0.22.2`, then `cargo audit --file desktop/src-tauri/Cargo.lock` from the repository
+root. Unmaintained dependency warnings remain visible; vulnerabilities fail the
+check. The native build toolchains require Rust 1.90 or newer.
+
 ## Automated security boundary
 
 Source tests must keep the following invariants release-blocking:
 
 - only the local `main` setup window receives the `read-only-cli` capability;
-- exactly `bootstrap`, `begin_setup`, `open_app`, and `run_action` are exposed;
+- only the local setup window can invoke `bootstrap`, `begin_setup`, `open_app`,
+  and `run_action`;
 - Rust, not web content, owns every CLI argument;
-- hosted content has no Tauri capability or command bridge;
+- the hosted bridge permits only typed external-link and software-update
+  commands (including update preferences), plus native webview zoom; it cannot
+  invoke setup lifecycle commands or generic shell/filesystem operations;
 - only the exact dynamic `http://127.0.0.1:<port>` origin remains in-app;
 - external HTTP(S) navigations and new windows go to the system browser;
 - non-HTTP(S), lookalike localhost, alternate-port, credentials-in-URL, IPv6,

@@ -115,6 +115,7 @@ test('hosted capability exposes only typed desktop affordances to loopback', () 
   assert.match(hostedPermission, /install_update/);
   assert.match(hostedPermission, /defer_update/);
   assert.match(hostedPermission, /skip_update/);
+  assert.match(hostedPermission, /set_update_preferences/);
   assert.doesNotMatch(hostedPermission, /desktop_zoom/);
   assert.doesNotMatch(`${JSON.stringify(hostedCapability)}${hostedPermission}`, /shell:|process:|fs:|updater:|dialog:|opener:|core:event|spawn|execute/i);
 });
