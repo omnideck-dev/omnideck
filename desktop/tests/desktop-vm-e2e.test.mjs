@@ -184,7 +184,9 @@ test('Windows driver startup propagates required-stage failures inside a refresh
         set -Eeuo pipefail
         start_driver() {\n${body}\n}
         driver_start_count=0
-        ssh_options=()
+        # Match real startup's populated options; Bash 3.2 treats empty arrays
+        # as unset under nounset, which would bypass the injected failure.
+        ssh_options=(-p 2225)
         phase_command() { echo phase >> "$actions"; [[ "$fail_stage" != phase ]]; }
         cat() { [[ "$fail_stage" != counter-read ]] || return 8; command cat "$@"; }
         python3() { echo tunnel >> "$actions"; [[ "$fail_stage" != record ]] || return 9; echo 12345; }
@@ -200,7 +202,7 @@ test('Windows driver startup propagates required-stage failures inside a refresh
       const log = (await readFile(actions, 'utf8')).trim().split('\n');
       if (['counter-read', 'counter-write', 'phase', 'phase-log'].includes(stage)) assert.ok(!log.includes('register'), stage);
       if (stage === 'register') assert.ok(!log.includes('tunnel'));
-      if (['pid-write', 'health', 'mode-write'].includes(stage)) assert.ok(log.includes('stopped'), 'post-launch failure must stop its owned tunnel');
+      if (['pid-write', 'health', 'mode-write'].includes(stage)) assert.ok(log.includes('stopped'), `${stage}: post-launch failure must stop its owned tunnel; ${result.stderr}`);
       if (stage === 'success') assert.equal((await readFile(join(output, 'driver-runtime-mode.txt'), 'utf8')).trim(), 'preserve');
       else if (stage !== 'mode-write') await assert.rejects(readFile(join(output, 'driver-runtime-mode.txt')), { code: 'ENOENT' });
     }
