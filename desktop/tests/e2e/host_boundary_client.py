@@ -584,7 +584,7 @@ const finish = (value) => done(JSON.stringify(value));
             result = json.loads(result)
         expected_keys = [
             "checkForUpdate", "currentUpdate", "deferUpdate", "installUpdate", "onUpdate",
-            "openExternal", "skipUpdate",
+            "openExternal", "setUpdatePreferences", "skipUpdate",
         ]
         if not isinstance(result, dict) or result.get("ok") is not True:
             raise AssertionError(f"Native update bridge failed: {result!r}")

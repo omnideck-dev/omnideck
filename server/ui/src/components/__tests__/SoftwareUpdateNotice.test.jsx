@@ -13,6 +13,7 @@ function bridge() {
         installUpdate: vi.fn().mockResolvedValue(undefined),
         deferUpdate: vi.fn().mockResolvedValue(undefined),
         skipUpdate: vi.fn().mockResolvedValue(undefined),
+        setUpdatePreferences: vi.fn().mockResolvedValue(undefined),
         onUpdate: (listener) => {
             desktop.announce = listener;
             return () => { desktop.unsubscribed = true; };
@@ -123,6 +124,7 @@ describe('SoftwareUpdateNotice', () => {
         act(() => desktop.announce({ version: '0.2.0' }));
 
         fireEvent.click(screen.getByRole('button', { name: 'Skip this version' }));
+        await settle();
 
         expect(desktop.skipUpdate).toHaveBeenCalledTimes(1);
         expect(desktop.installUpdate).not.toHaveBeenCalled();
@@ -155,6 +157,7 @@ describe('SoftwareUpdateNotice', () => {
         act(() => desktop.announce({ version: '0.2.0' }));
 
         fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+        await settle();
 
         expect(desktop.deferUpdate).toHaveBeenCalledTimes(1);
         // It is neither installed now nor refused: it waits.
@@ -207,4 +210,56 @@ describe('SoftwareUpdateNotice', () => {
 
         expect(desktop.unsubscribed).toBe(true);
     });
+
+    it('keeps the notice and shows an error when the preference server rejects the save', async () => {
+        const desktop = bridge();
+        settings();
+        renderNotice(desktop);
+        await settle();
+        act(() => desktop.announce({ version: '0.5.3' }));
+        global.fetch.mockResolvedValueOnce({ ok: false, status: 500 });
+        fireEvent.click(screen.getByRole('button', { name: /Don’t show these again/ }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not save update preferences');
+        expect(screen.getByTestId('software-update-notice')).toBeInTheDocument();
+        expect(desktop.setUpdatePreferences).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: /Don’t show these again/ })).not.toBeDisabled();
+    });
+
+    it('keeps the notice when native persistence fails', async () => {
+        const desktop = bridge();
+        desktop.setUpdatePreferences.mockRejectedValue(new Error('disk full'));
+        settings();
+        renderNotice(desktop);
+        await settle();
+        act(() => desktop.announce({ version: '0.5.3' }));
+        fireEvent.click(screen.getByRole('button', { name: /Don’t show these again/ }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not save update preferences on this desktop');
+        expect(screen.getByTestId('software-update-notice')).toBeInTheDocument();
+    });
+
+    it('does not resurrect a skipped version when the initial snapshot arrives late', async () => {
+        const desktop = bridge();
+        let finishSnapshot;
+        desktop.currentUpdate.mockImplementation(() => new Promise((resolve) => { finishSnapshot = resolve; }));
+        settings();
+        renderNotice(desktop);
+        await settle();
+        act(() => desktop.announce(null));
+        await act(async () => { finishSnapshot({ version: '0.5.3' }); });
+        expect(screen.queryByTestId('software-update-notice')).not.toBeInTheDocument();
+    });
+
+
+    it('shows a failed skip and leaves the actions available for retry', async () => {
+        const desktop = bridge();
+        desktop.skipUpdate.mockRejectedValue(new Error('state write failed'));
+        settings();
+        renderNotice(desktop);
+        await settle();
+        act(() => desktop.announce({ version: '0.5.3' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Skip this version' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not skip this version');
+        expect(screen.getByRole('button', { name: 'Skip this version' })).not.toBeDisabled();
+    });
+
 });

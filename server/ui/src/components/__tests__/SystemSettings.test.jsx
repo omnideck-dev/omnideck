@@ -123,7 +123,7 @@ describe('SystemSettings', () => {
         });
 
         const updates = await screen.findByTestId('updates-settings-group');
-        expect(within(updates).getByText('Omnideck is up to date')).toBeInTheDocument();
+        expect(within(updates).getByText('Check for updates')).toBeInTheDocument();
         expect(within(updates).getByRole('switch', { name: 'Install updates automatically' })).toBeInTheDocument();
 
         const experimental = screen.getByTestId('experimental-settings-group');
@@ -136,4 +136,45 @@ describe('SystemSettings', () => {
         expect(within(models).getByText('Title generation')).toBeInTheDocument();
         expect(within(models).getAllByTestId('model-picker')).toHaveLength(3);
     });
+
+    it('waits for native persistence before confirming automatic updates are disabled', async () => {
+        let finishSave;
+        const host = {
+            currentUpdate: vi.fn().mockResolvedValue(null),
+            setUpdatePreferences: vi.fn(() => new Promise((resolve) => { finishSave = resolve; })),
+        };
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = vi.fn((url, init = {}) => {
+            if (url === '/api/settings' && init.method === 'PUT') {
+                return Promise.resolve({ ok: true, json: async () => ({ software_updates_automatic: false }) });
+            }
+            return originalFetch(url, init);
+        });
+        render(<OmnideckHostProvider host={host}><SystemSettings /></OmnideckHostProvider>);
+        const toggle = await screen.findByRole('switch', { name: 'Install updates automatically' });
+        fireEvent.click(toggle);
+        await waitFor(() => expect(host.setUpdatePreferences).toHaveBeenCalledWith({ automatic: false }));
+        expect(toggle).toBeChecked();
+        expect(toggle).toBeDisabled();
+        await act(async () => { finishSave(); });
+        expect(toggle).not.toBeChecked();
+        expect(toggle).not.toBeDisabled();
+    });
+
+    it('keeps the previous value and reports a native save failure', async () => {
+        const host = {
+            currentUpdate: vi.fn().mockResolvedValue(null),
+            setUpdatePreferences: vi.fn().mockRejectedValue(new Error('disk full')),
+        };
+        render(<OmnideckHostProvider host={host}><SystemSettings /></OmnideckHostProvider>);
+        const toggle = await screen.findByRole('switch', { name: 'Install updates automatically' });
+        fireEvent.click(toggle);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not save update preferences on this desktop');
+        expect(toggle).toBeChecked();
+        expect(toggle).not.toBeDisabled();
+        expect(globalThis.fetch).toHaveBeenLastCalledWith('/api/settings', expect.objectContaining({
+            method: 'PUT', body: JSON.stringify({ software_updates_automatic: true }),
+        }));
+    });
+
 });

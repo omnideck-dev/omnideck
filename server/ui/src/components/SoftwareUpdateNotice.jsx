@@ -3,6 +3,8 @@ import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
 import { appReleaseNotesUrl } from '../utils/appReleaseNotes.js';
 import styles from './SoftwareUpdateNotice.module.css';
 import DownloadIcon from './icons/DownloadIcon';
+import Callout from './primitives/Callout.jsx';
+import { saveUpdatePreference, UPDATE_PREFERENCES_EVENT } from '../utils/updatePreferences.js';
 
 /**
  * Tells you a newer version of Omnideck is ready, and gets out of the way.
@@ -18,37 +20,56 @@ export default function SoftwareUpdateNotice() {
     const [update, setUpdate] = useState(null);
     const [wanted, setWanted] = useState(false);
     const [busy, setBusy] = useState(false);
-    const [dismissed, setDismissed] = useState(false);
+    const [error, setError] = useState('');
     const host = useOmnideckHost();
 
     useEffect(() => {
         if (!host?.onUpdate) return undefined;
-        const stopListening = host.onUpdate(setUpdate);
+        let announced = false;
+        const stopListening = host.onUpdate((found) => {
+            announced = true;
+            setUpdate(found);
+            setBusy(false);
+            setError('');
+        });
+        let preferenceChanged = false;
+        const onPreferences = (event) => {
+            if (typeof event.detail?.software_updates_notify !== 'boolean') return;
+            preferenceChanged = true;
+            setWanted(event.detail.software_updates_notify);
+        };
+        window.addEventListener(UPDATE_PREFERENCES_EVENT, onPreferences);
         // An update found before this page existed was announced to nobody, so
         // it has to be asked for rather than waited on.
         let current = true;
         host.currentUpdate?.()
-            .then((found) => { if (current) setUpdate(found); })
+            .then((found) => { if (current && !announced) setUpdate(found); })
             .catch(() => {});
         fetch('/api/settings')
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) throw new Error('Could not read update preferences.');
+                return response.json();
+            })
             .then((settings) => {
-                if (current) setWanted(settings.software_updates_notify !== false);
+                if (current && !preferenceChanged) setWanted(settings.software_updates_notify !== false);
             })
             .catch(() => {});
         return () => {
             current = false;
             stopListening();
+            window.removeEventListener(UPDATE_PREFERENCES_EVENT, onPreferences);
         };
     }, [host]);
 
     const install = useCallback(async () => {
         setBusy(true);
+        setError('');
         try {
             // Installing replaces what is running, so the window leaves for the
             // progress screen and this notice goes with it.
             await host.installUpdate();
         } catch {
+            setError('Could not start the update. Please try again.');
             setBusy(false);
         }
     }, [host]);
@@ -59,18 +80,24 @@ export default function SoftwareUpdateNotice() {
     // for it once without turning them back on.
     const later = useCallback(async () => {
         setBusy(true);
+        setError('');
         try {
             await host.deferUpdate();
         } catch {
+            setError('Could not schedule this update. Please try again.');
+        } finally {
             setBusy(false);
         }
     }, [host]);
 
     const skip = useCallback(async () => {
         setBusy(true);
+        setError('');
         try {
             await host.skipUpdate();
         } catch {
+            setError('Could not skip this version. Please try again.');
+        } finally {
             setBusy(false);
         }
     }, [host]);
@@ -79,21 +106,19 @@ export default function SoftwareUpdateNotice() {
     // the update stays available and Settings goes on offering it.
     const stopShowing = useCallback(async () => {
         setBusy(true);
-        setDismissed(true);
+        setError('');
         try {
-            await fetch('/api/settings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ software_updates_notify: false }),
-            });
-        } catch {
-            setDismissed(false);
+            await saveUpdatePreference(host, 'software_updates_notify', false, true);
+            setWanted(false);
+        } catch (error) {
+            setError(error.message);
+        } finally {
             setBusy(false);
         }
     }, [host]);
 
     // An update already answered with Later is settled; Settings still has it.
-    if (!update || update.deferred || !wanted || dismissed) return null;
+    if (!update || update.deferred || !wanted) return null;
     const notesUrl = appReleaseNotesUrl(update.version);
 
     return (
@@ -153,6 +178,7 @@ export default function SoftwareUpdateNotice() {
                         Don&rsquo;t show these again
                     </button>
                 </div>
+                {error && <Callout tone="danger" description={error} />}
                 <p className={styles.footnote}>
                     Updates stay available in Settings.
                 </p>
