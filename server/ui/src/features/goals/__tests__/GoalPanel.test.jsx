@@ -38,22 +38,53 @@ afterEach(() => vi.restoreAllMocks());
 describe('conversation goals', () => {
     it('shows waiting status, next wake, checklist, and progress together', async () => {
         setup();
-        const status = await screen.findByLabelText('Goal: Waiting');
+        const status = await screen.findByLabelText('Goal: Returning later');
         fireEvent.click(status.closest('button'));
-        expect(screen.getByText(/Resumes/)).toHaveTextContent('Check the school calendar');
+        expect(screen.getAllByText(/Back /).length).toBeGreaterThan(0);
         expect(screen.getByText('1 of 2 steps done', { exact: false })).toBeInTheDocument();
         expect(screen.getByText('Collect school dates')).toBeInTheDocument();
-        expect(screen.getByText('Collected the school schedule.')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Progress updates'));
+        expect(screen.getByText('Collected the school schedule.')).toBeVisible();
         expect(screen.getByText('Keep evenings free')).toBeInTheDocument();
     });
 
     it('opens the shared editor through its edit callback', async () => {
         const onEdit = vi.fn();
         setup({ onEdit });
-        fireEvent.click((await screen.findByLabelText('Goal: Waiting')).closest('button'));
-        fireEvent.click(screen.getByRole('button', { name: 'Edit goal' }));
+        fireEvent.click((await screen.findByLabelText('Goal: Returning later')).closest('button'));
+        fireEvent.click(screen.getByRole('button', { name: 'Change goal' }));
         expect(onEdit).toHaveBeenCalledTimes(1);
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('opens details with keyboard focus, dismisses with Escape, and restores the trigger', async () => {
+        setup();
+        const trigger = (await screen.findByLabelText('Goal: Returning later')).closest('button');
+        expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
+        fireEvent.click(trigger);
+        const details = document.getElementById(trigger.getAttribute('aria-controls'));
+        await waitFor(() => expect(details).toHaveFocus());
+        fireEvent.keyDown(details, { key: 'Escape' });
+        expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+        fireEvent.click(trigger);
+        const outerEscape = vi.fn();
+        document.addEventListener('keydown', outerEscape);
+        fireEvent.keyDown(trigger, { key: 'Escape' });
+        expect(outerEscape).not.toHaveBeenCalled();
+        document.removeEventListener('keydown', outerEscape);
+        fireEvent.click(trigger);
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
+    });
+
+    it('keeps a request for input visible while the details are closed', async () => {
+        currentGoal = { ...baseGoal, status: 'needs_input', resume_at: null, status_reason: 'Which morning works for you?' };
+        setup();
+        await screen.findByLabelText('Goal: Waiting for you');
+        expect(screen.getByRole('group', { name: 'Question about your goal' })).toHaveTextContent('Which morning works for you?');
+        expect(screen.getByText('Reply below to continue')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
     });
 
     it('renders nothing when the chat has no assigned goal', async () => {
@@ -66,14 +97,14 @@ describe('conversation goals', () => {
 
     it('pauses a scheduled goal and allows an explicit resume and cancellation', async () => {
         setup();
-        fireEvent.click((await screen.findByLabelText('Goal: Waiting')).closest('button'));
+        fireEvent.click((await screen.findByLabelText('Goal: Returning later')).closest('button'));
         fireEvent.click(screen.getByRole('button', { name: 'Pause', exact: true }));
         await screen.findByLabelText('Goal: Paused');
         const pause = globalThis.fetch.mock.calls.find(([url]) => url.endsWith('/pause'));
         expect(JSON.parse(pause[1].body)).toEqual({ goal_id: 'g1' });
-        expect(screen.queryByText(/Resumes/)).not.toBeInTheDocument();
+        expect(screen.queryByText('Check the school calendar')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Resume', exact: true }));
-        await screen.findByLabelText('Goal: Continuing');
+        await screen.findByLabelText('Goal: Getting started');
         fireEvent.click(screen.getByRole('button', { name: 'Cancel goal' }));
         fireEvent.click(screen.getByRole('button', { name: 'Cancel this goal?' }));
         await screen.findByLabelText('Goal: Cancelled');

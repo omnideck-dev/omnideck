@@ -18,9 +18,9 @@ export function goalStatusLabel(goal) {
     if (!goal) return '';
     if (goal.status === 'paused') return goal.running ? 'Pausing' : 'Paused';
     if (goal.status === 'cancelled') return goal.running ? 'Cancelling' : 'Cancelled';
-    if (goal.status === 'completed') return 'Completed';
-    if (goal.running) return 'Running';
-    return ({ active: 'Continuing', scheduled: 'Waiting', needs_input: 'Needs input', completed: 'Completed' })[goal.status] || goal.status;
+    if (goal.status === 'completed') return 'Finished';
+    if (goal.running) return 'Working on it';
+    return ({ active: 'Getting started', scheduled: 'Returning later', needs_input: 'Waiting for you' })[goal.status] || goal.status;
 }
 
 async function requestJson(url, options) {

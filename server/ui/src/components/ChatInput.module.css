@@ -1,9 +1,10 @@
 .inputAreaWrapper {
+  --composer-max-width: 760px;
   padding: 14px 18px 18px;
 }
 
 .offlineNotice {
-  max-width: 760px;
+  max-width: var(--composer-max-width);
   margin: 0 auto var(--sp-2);
 }
 
@@ -15,7 +16,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  max-width: 760px;
+  max-width: var(--composer-max-width);
   margin: 0 auto;
   padding: 6px 6px 6px 14px;
   background: var(--elevated);
@@ -253,4 +254,12 @@
 .customInput.expandedInput {
   flex: 1;
   overflow-y: auto;
+}
+
+.goalDock {
+  width: 100%;
+  max-width: var(--composer-max-width);
+  margin: 0 auto;
+  flex-shrink: 0;
+  pointer-events: auto;
 }

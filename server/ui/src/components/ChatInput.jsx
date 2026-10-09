@@ -21,7 +21,7 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal }) {
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goalPanel }) {
     const [message, setMessage] = useState(() => loadChatDraft(conversationId));
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
@@ -251,6 +251,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     description="Messages and controls are unavailable."
                 />
             )}
+            {goalPanel && <div className={styles.goalDock}>{goalPanel}</div>}
             <form className={styles.inputArea} onSubmit={handleSubmit}>
                 {attachments.length > 0 && (
                     <div className={styles.tray}>

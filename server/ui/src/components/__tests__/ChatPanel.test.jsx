@@ -8,7 +8,7 @@ vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-me
 const inputProps = vi.hoisted(() => ({ current: null }));
 vi.mock('../ChatInput.jsx', () => ({ default: (props) => {
     inputProps.current = props;
-    return <input data-testid="chat-input" aria-label="Draft" />;
+    return <div>{props.goalPanel}<input data-testid="chat-input" aria-label="Draft" /></div>;
 } }));
 
 // ChatPanel reads the root agent from the agent-state context; drive it here.

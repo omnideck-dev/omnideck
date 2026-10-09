@@ -4964,6 +4964,10 @@ body {
       enabled chat actions such as Goal. The <code>/goal</code> command opens the same goal dialog;
       an optional objective prefills it. Streaming-state placeholder ("Send a nudge to the
       agent..."). Optional inline attachment preview area sits above the textarea.
+      An assigned goal appears in a quiet strip immediately above the composer, aligned to its
+      width. Goal details use the shared viewport-aware popover at that same width, opening
+      above when space allows. Steps and next actions use two columns when there is room;
+      on narrow screens they stack. Questions needing a reply remain visible above the message box.
     </div>
 
     <div class="m-chat-input" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);max-width:640px">

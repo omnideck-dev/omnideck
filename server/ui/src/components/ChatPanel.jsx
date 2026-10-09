@@ -54,7 +54,6 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
                     </button>
                 )}
             </div>
-            <React.Fragment key="goal-panel">{goalPanel}</React.Fragment>
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input —
                 its own unsent-draft state is restored from local storage per
@@ -65,6 +64,7 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
                 onSend={onSend}
                 onStop={onStop}
                 onRequestGoal={onRequestGoal}
+                goalPanel={goalPanel}
                 isStreaming={isStreaming}
                 isOffline={isOffline}
                 stopRequested={stopRequested}
