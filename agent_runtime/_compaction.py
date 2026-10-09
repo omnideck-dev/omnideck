@@ -271,12 +271,17 @@ class LLMCompactionStrategy:
         if kept_from_id is None or kept_to_id is None:
             return
 
-        all_user_contents = []
-        for m in non_system:
-            if m.get("role") == "user":
-                content = m.get("content") or ""
-                if content and not content.startswith(_SUMMARY_PREFIX):
-                    all_user_contents.append(content)
+        # Raw event content, not `non_system` (the LLM-facing view): that view
+        # applies the composer-token transform to whichever message is
+        # currently latest, which is model-facing only — summarizing it here
+        # would bake a rendered tool instruction ("Spawn a subagent...") into
+        # the persisted user_intent_summary as if it were the user's own
+        # words, and that fabrication gets re-injected on every later turn.
+        all_user_contents = [
+            e["content"]
+            for e in history.scoped_events
+            if e.get("type") == "user_message" and e.get("content")
+        ]
 
         prior_summary = _extract_prior_summary(compactable)
 
