@@ -3,7 +3,7 @@
 These tests stub Playwright Locator/ElementHandle/Page/mouse/keyboard to verify:
 - human_click calls mouse.move/down/up in expected order and respects hover/click durations
 - human_type calls keyboard.type per character and includes clear_existing behavior
-- pointer input rejects detached element handles
+- pointer input rejects missing elements and unusable geometry
 
 Tests deterministic by seeding random and patching config to small timings.
 """
@@ -15,7 +15,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from playwright.async_api import Locator, Page
+from playwright.async_api import Frame, Locator, Page
 
 from browser.core.exceptions import BrowserToolError
 from browser.core.input._shared import _HumanConfig
@@ -58,16 +58,12 @@ class DummyKeyboard:
 
 
 class DummyElementHandle:
-    def __init__(self, bounding_box=None, frame=None, text=""):
+    def __init__(self, bounding_box=None, text=""):
         self._box = bounding_box
-        self._frame = frame
         self._text = text
 
     async def bounding_box(self):
         return self._box
-
-    async def owner_frame(self):
-        return self._frame
 
     async def evaluate(self, fn):
         return None
@@ -116,7 +112,9 @@ def native_evaluation(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
 
 @pytest.mark.unit
-async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch, native_evaluation: AsyncMock) -> None:
+async def test_human_click_sequence_and_missing_element(
+    monkeypatch: pytest.MonkeyPatch, native_evaluation: AsyncMock
+) -> None:
     recorder: list[str] = []
 
     # deterministic random values
@@ -128,7 +126,7 @@ async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch
     frame = DummyFrame(page=page)
 
     box = {"x": 10.0, "y": 20.0, "width": 100.0, "height": 40.0}
-    handle = DummyElementHandle(bounding_box=box, frame=frame)
+    handle = DummyElementHandle(bounding_box=box)
     locator = DummyLocator(handle)
 
     # Force small timings via config cache
@@ -149,7 +147,7 @@ async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch
         ),
     )
 
-    await human_click(cast(Page, page), cast(Locator, locator))
+    await human_click(cast(Page, page), cast(Locator, locator), frame=cast(Frame, frame))
 
     assert native_evaluation.await_args.args[0] is page.main_frame
 
@@ -157,16 +155,11 @@ async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch
     assert any(r.startswith("move:") for r in recorder)
     assert recorder[-2:] == ["down", "up"]
 
-    # Now test fallback when no frame/page
+    # A stale locator cannot produce pointer input.
     recorder.clear()
-    handle_no_frame = DummyElementHandle(bounding_box=box, frame=None)
-    locator2 = DummyLocator(handle_no_frame)
-
-    # human_click now raises BrowserToolError when no frame/page is present
-    from browser.core.exceptions import BrowserToolError
-
-    with pytest.raises(BrowserToolError):
-        await human_click(cast(Page, page), cast(Locator, locator2))
+    with pytest.raises(BrowserToolError, match="Unable to resolve element handle"):
+        await human_click(cast(Page, page), cast(Locator, DummyLocator(None)), frame=cast(Frame, frame))
+    assert recorder == []
 
 
 @pytest.mark.unit
@@ -182,8 +175,8 @@ async def test_human_drag_sequence_to_target(monkeypatch: pytest.MonkeyPatch) ->
 
     source_box = {"x": 10.0, "y": 20.0, "width": 80.0, "height": 40.0}
     target_box = {"x": 200.0, "y": 160.0, "width": 60.0, "height": 60.0}
-    source_locator = DummyLocator(DummyElementHandle(bounding_box=source_box, frame=frame))
-    target_locator = DummyLocator(DummyElementHandle(bounding_box=target_box, frame=frame))
+    source_locator = DummyLocator(DummyElementHandle(bounding_box=source_box))
+    target_locator = DummyLocator(DummyElementHandle(bounding_box=target_box))
 
     monkeypatch.setattr(
         "browser.core.input._shared._config_cache",
@@ -206,6 +199,8 @@ async def test_human_drag_sequence_to_target(monkeypatch: pytest.MonkeyPatch) ->
         cast(Page, page),
         cast(Locator, source_locator),
         target_locator=cast(Locator, target_locator),
+        source_frame=cast(Frame, frame),
+        target_frame=cast(Frame, frame),
     )
 
     assert recorder.count("down") == 1
@@ -229,10 +224,8 @@ async def test_human_drag_target_no_bbox_raises(monkeypatch: pytest.MonkeyPatch)
     frame = DummyFrame(page=page)
 
     source_box = {"x": 0.0, "y": 0.0, "width": 40.0, "height": 40.0}
-    source_locator = DummyLocator(DummyElementHandle(bounding_box=source_box, frame=frame))
-    target_locator = DummyLocator(
-        DummyElementHandle(bounding_box={"x": 0, "y": 0, "width": 0, "height": 0}, frame=frame)
-    )
+    source_locator = DummyLocator(DummyElementHandle(bounding_box=source_box))
+    target_locator = DummyLocator(DummyElementHandle(bounding_box={"x": 0, "y": 0, "width": 0, "height": 0}))
 
     monkeypatch.setattr(
         "browser.core.input._shared._config_cache",
@@ -256,18 +249,22 @@ async def test_human_drag_target_no_bbox_raises(monkeypatch: pytest.MonkeyPatch)
             cast(Page, page),
             cast(Locator, source_locator),
             target_locator=cast(Locator, target_locator),
+            source_frame=cast(Frame, frame),
+            target_frame=cast(Frame, frame),
         )
 
     # Page without mouse support fails.
     page_no_mouse = DummyPage(mouse=None)
     frame_no_mouse = DummyFrame(page=page_no_mouse)
-    locator_no_mouse = DummyLocator(DummyElementHandle(bounding_box=source_box, frame=frame_no_mouse))
-    target_no_mouse = DummyLocator(DummyElementHandle(bounding_box=source_box, frame=frame_no_mouse))
+    locator_no_mouse = DummyLocator(DummyElementHandle(bounding_box=source_box))
+    target_no_mouse = DummyLocator(DummyElementHandle(bounding_box=source_box))
     with pytest.raises(BrowserToolError):
         await human_drag(
             cast(Page, page_no_mouse),
             cast(Locator, locator_no_mouse),
             target_locator=cast(Locator, target_no_mouse),
+            source_frame=cast(Frame, frame_no_mouse),
+            target_frame=cast(Frame, frame_no_mouse),
         )
 
 
@@ -279,9 +276,8 @@ async def test_human_type_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch)
 
     keyboard = DummyKeyboard(recorder)
     page = DummyPage(keyboard=keyboard)
-    frame = DummyFrame(page=page)
 
-    handle = DummyElementHandle(bounding_box=None, frame=frame)
+    handle = DummyElementHandle(bounding_box=None)
     locator = DummyLocator(handle)
 
     monkeypatch.setattr(
@@ -373,7 +369,7 @@ async def test_human_press_and_hold_sequence(monkeypatch: pytest.MonkeyPatch) ->
     frame = DummyFrame(page=page)
 
     box = {"x": 50.0, "y": 60.0, "width": 120.0, "height": 50.0}
-    handle = DummyElementHandle(bounding_box=box, frame=frame)
+    handle = DummyElementHandle(bounding_box=box)
     locator = DummyLocator(handle)
 
     monkeypatch.setattr(
@@ -398,6 +394,7 @@ async def test_human_press_and_hold_sequence(monkeypatch: pytest.MonkeyPatch) ->
         cast(Page, page),
         cast(Locator, locator),
         duration_ms=50,
+        frame=cast(Frame, frame),
     )
 
     # Should have move commands, then down, then up (with the hold in between)
@@ -410,15 +407,14 @@ async def test_human_press_and_hold_sequence(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.unit
-async def test_human_press_and_hold_no_frame_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Press-and-hold raises when element has no frame."""
+async def test_human_press_and_hold_missing_element_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Press-and-hold rejects a stale locator before pointer input."""
     recorder: list[str] = []
     mouse = DummyMouse(recorder)
     page = DummyPage(mouse=mouse)
 
-    box = {"x": 10.0, "y": 10.0, "width": 40.0, "height": 40.0}
-    handle = DummyElementHandle(bounding_box=box, frame=None)
-    locator = DummyLocator(handle)
+    frame = page.main_frame
+    locator = DummyLocator(None)
 
     monkeypatch.setattr(
         "browser.core.input._shared._config_cache",
@@ -437,12 +433,15 @@ async def test_human_press_and_hold_no_frame_raises(monkeypatch: pytest.MonkeyPa
         ),
     )
 
-    with pytest.raises(BrowserToolError):
+    with pytest.raises(BrowserToolError, match="Unable to resolve element handle"):
         await human_press_and_hold(
             cast(Page, page),
             cast(Locator, locator),
             duration_ms=100,
+            frame=cast(Frame, frame),
         )
+
+    assert recorder == []
 
 
 @pytest.mark.unit
@@ -452,7 +451,7 @@ async def test_human_press_and_hold_no_mouse_raises(monkeypatch: pytest.MonkeyPa
     frame = DummyFrame(page=page)
 
     box = {"x": 10.0, "y": 10.0, "width": 40.0, "height": 40.0}
-    handle = DummyElementHandle(bounding_box=box, frame=frame)
+    handle = DummyElementHandle(bounding_box=box)
     locator = DummyLocator(handle)
 
     monkeypatch.setattr(
@@ -477,6 +476,7 @@ async def test_human_press_and_hold_no_mouse_raises(monkeypatch: pytest.MonkeyPa
             cast(Page, page),
             cast(Locator, locator),
             duration_ms=100,
+            frame=cast(Frame, frame),
         )
 
 

@@ -317,13 +317,13 @@ async def _label_bounding_box(handle: ElementHandle, frame: Frame) -> FloatRect 
             logger.debug("Could not remove temporary label marker after document change: %s", exc)
 
 
-async def human_click(page: Page, locator: Locator, *, frame: Frame | None = None) -> None:
+async def human_click(page: Page, locator: Locator, *, frame: Frame) -> None:
     """Click an element with human-like pointer movement and timing.
 
     Args:
         page: Owning page that receives physical input.
         locator: Locator identifying the element to click.
-        frame: Known owning document, when available.
+        frame: Owning document supplied by the caller.
 
     Raises:
         BrowserToolError: If the locator cannot be resolved or the page lacks a mouse.
@@ -337,17 +337,6 @@ async def human_click(page: Page, locator: Locator, *, frame: Frame | None = Non
     handle = await locator.element_handle(timeout=5000)
     if handle is None:
         raise BrowserToolError("Unable to resolve element handle", tool="click")
-    # A DOM locator supplies the element, while the owning tab supplies the
-    # physical pointer. A detached element has no shared render coordinates,
-    # so it cannot be driven through the tab's mouse.
-    if frame is None:
-        frame = await handle.owner_frame()
-    if frame is None:
-        raise BrowserToolError(
-            "Element is not attached to a frame/page; cannot perform mouse-based click",
-            tool="click",
-        )
-
     box = await handle.bounding_box()
     if box is None or box.get("width", 0) < 4 or box.get("height", 0) < 4:
         label_box = await _label_bounding_box(handle, frame)
@@ -383,7 +372,7 @@ async def human_press_and_hold(
     locator: Locator,
     duration_ms: int = 3000,
     *,
-    frame: Frame | None = None,
+    frame: Frame,
 ) -> None:
     """Press and hold an element for a specified duration.
 
@@ -394,7 +383,7 @@ async def human_press_and_hold(
         page: Owning page that receives physical input.
         locator: Locator identifying the element to press and hold.
         duration_ms: How long to hold the mouse button down in milliseconds.
-        frame: Known owning document, when available.
+        frame: Owning document supplied by the caller.
 
     Raises:
         BrowserToolError: If the locator cannot be resolved or the page lacks a mouse.
@@ -408,14 +397,6 @@ async def human_press_and_hold(
     handle = await locator.element_handle(timeout=5000)
     if handle is None:
         raise BrowserToolError("Unable to resolve element handle", tool="press_and_hold")
-
-    if frame is None:
-        frame = await handle.owner_frame()
-    if frame is None:
-        raise BrowserToolError(
-            "Element is not attached to a frame/page; cannot perform press_and_hold",
-            tool="press_and_hold",
-        )
 
     box = await handle.bounding_box()
     if box is None or box.get("width", 0) < 4 or box.get("height", 0) < 4:
@@ -453,8 +434,8 @@ async def human_drag(
     source_locator: Locator,
     *,
     target_locator: Locator,
-    source_frame: Frame | None = None,
-    target_frame: Frame | None = None,
+    source_frame: Frame,
+    target_frame: Frame,
 ) -> None:
     """Drag from ``source_locator`` to ``target_locator``.
 
@@ -462,8 +443,8 @@ async def human_drag(
         page: Owning page that receives physical input.
         source_locator: Locator identifying the element where the drag should begin.
         target_locator: Locator identifying the destination element.
-        source_frame: Known owning document of the source, when available.
-        target_frame: Known owning document of the target, when available.
+        source_frame: Owning document of the source supplied by the caller.
+        target_frame: Owning document of the target supplied by the caller.
 
     Raises:
         BrowserToolError: On invalid inputs, detached elements, missing mouse APIs,
@@ -475,14 +456,6 @@ async def human_drag(
     source_handle = await source_locator.element_handle(timeout=5000)
     if source_handle is None:
         raise BrowserToolError("Unable to resolve source element handle", tool="drag")
-
-    if source_frame is None:
-        source_frame = await source_handle.owner_frame()
-    if source_frame is None:
-        raise BrowserToolError(
-            "Source element is not attached to a frame/page; cannot perform drag",
-            tool="drag",
-        )
 
     source_box = await source_handle.bounding_box()
     if source_box is None or source_box.get("width", 0) < 4 or source_box.get("height", 0) < 4:
@@ -513,14 +486,6 @@ async def human_drag(
     target_handle = await target_locator.element_handle(timeout=5000)
     if target_handle is None:
         raise BrowserToolError("Unable to resolve target element handle", tool="drag")
-
-    if target_frame is None:
-        target_frame = await target_handle.owner_frame()
-    if target_frame is None:
-        raise BrowserToolError(
-            "Target element is not attached to a frame/page; cannot perform drag",
-            tool="drag",
-        )
 
     target_box = await target_handle.bounding_box()
     if target_box is None or target_box.get("width", 0) < 4 or target_box.get("height", 0) < 4:
