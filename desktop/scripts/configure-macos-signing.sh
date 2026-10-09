@@ -71,8 +71,8 @@ security set-key-partition-list \
 python3 - "${keychain_path}" <<'PYKEYCHAIN'
 import shlex, subprocess, sys
 existing = shlex.split(subprocess.check_output(['security', 'list-keychains', '-d', 'user'], text=True))
-subprocess.run(['security', 'list-keychains', '-d', 'user', '-s',
-                *[path for path in existing if path != sys.argv[1]], sys.argv[1]], check=True)
+subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', sys.argv[1],
+                *[path for path in existing if path != sys.argv[1]]], check=True)
 PYKEYCHAIN
 
 identity_output="$(security find-identity -v -p codesigning "${keychain_path}")"
