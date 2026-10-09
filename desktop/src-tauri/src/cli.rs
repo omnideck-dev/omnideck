@@ -1,8 +1,9 @@
-use crate::{platform, BridgeError, BridgeResult, CONTAINER_NAME};
+use crate::{lifecycle::Lifecycle, platform, BridgeError, BridgeResult, CONTAINER_NAME};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tauri::AppHandle;
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri::{AppHandle, Manager};
+use tauri_plugin_shell::ShellExt;
+use tokio::io::AsyncReadExt;
 
 const EXPECTED_SCHEMA_VERSION: u32 = 4;
 pub(crate) const EXPECTED_CLI_VERSION: &str = "v0.11.0-beta.6";
@@ -228,49 +229,82 @@ where
         .sidecar("omnideck-cli")
         .map_err(|error| BridgeError::new("SIDECAR_NOT_BUNDLED", error.to_string()))?
         .args(args);
-    let (mut events, child) = command
-        .spawn()
+    run_process(
+        &app.state::<Lifecycle>(),
+        command.into(),
+        timeout_duration,
+        &mut on_stdout,
+    )
+    .await
+}
+
+async fn run_process<F>(
+    lifecycle: &Lifecycle,
+    mut command: std::process::Command,
+    timeout_duration: Duration,
+    mut on_stdout: F,
+) -> BridgeResult<ProcessResult>
+where
+    F: FnMut(&str),
+{
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let (mut child, mut operation) = lifecycle
+        .spawn(command)
         .map_err(|error| BridgeError::new("SIDECAR_SPAWN_FAILED", error.to_string()))?;
+    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let mut stdout_buffer = [0u8; 8192];
+    let mut stderr_buffer = [0u8; 8192];
+    let mut stdout_done = false;
+    let mut stderr_done = false;
     let mut output = ProcessOutput::default();
     let mut stdout_lines = LineBuffer::default();
     let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
 
     loop {
-        tokio::select! {
+        if stdout_done && stderr_done && output.exit_code.is_some() {
+            operation.complete();
+            stdout_lines.flush(&mut on_stdout);
+            return output.finish();
+        }
+        let error = tokio::select! {
+            _ = operation.cancelled() => {
+                Some(BridgeError::new("SIDECAR_CANCELLED", "omnideck is closing."))
+            }
             _ = &mut timeout => {
-                let _ = child.kill();
-                return Err(BridgeError::new("SIDECAR_TIMEOUT", "The bundled CLI did not finish in time."));
+                Some(BridgeError::new("SIDECAR_TIMEOUT", "The bundled CLI did not finish in time."))
             }
-            event = events.recv() => match event {
-                Some(CommandEvent::Stdout(line)) => {
-                    if let Err(error) = output.push_stdout(&line) {
-                        let _ = child.kill();
-                        return Err(error);
-                    }
-                    stdout_lines.push(&line, &mut on_stdout);
-                }
-                Some(CommandEvent::Stderr(line)) => {
-                    if let Err(error) = output.push_stderr(&line) {
-                        let _ = child.kill();
-                        return Err(error);
+            read = stdout.read(&mut stdout_buffer), if !stdout_done => match read {
+                Ok(0) => { stdout_done = true; None }
+                Ok(read) => {
+                    if let Err(error) = output.push_stdout(&stdout_buffer[..read]) {
+                        Some(error)
+                    } else {
+                        stdout_lines.push(&stdout_buffer[..read], &mut on_stdout);
+                        None
                     }
                 }
-                Some(CommandEvent::Error(error)) => {
-                    let _ = child.kill();
-                    return Err(BridgeError::new("SIDECAR_IO_FAILED", error));
+                Err(error) => Some(BridgeError::new("SIDECAR_IO_FAILED", error.to_string())),
+            },
+            read = stderr.read(&mut stderr_buffer), if !stderr_done => match read {
+                Ok(0) => { stderr_done = true; None }
+                Ok(read) => output.push_stderr(&stderr_buffer[..read]).err(),
+                Err(error) => Some(BridgeError::new("SIDECAR_IO_FAILED", error.to_string())),
+            },
+            status = child.wait(), if output.exit_code.is_none() => match status {
+                Ok(status) => {
+                    // Drain both pipes after exit so final JSON is not lost.
+                    output.terminate(status.code().unwrap_or(-1)).err()
                 }
-                Some(CommandEvent::Terminated(payload)) => {
-                    // The stream readers run independently from the process
-                    // waiter, so their final events can arrive after this one.
-                    // Keep draining until every event sender has closed.
-                    output.terminate(payload.code.unwrap_or(-1))?;
-                }
-                Some(_) => {}
-                None => {
-                    stdout_lines.flush(&mut on_stdout);
-                    return output.finish();
-                }
-            }
+                Err(error) => Some(BridgeError::new("SIDECAR_IO_FAILED", error.to_string())),
+            },
+        };
+        if let Some(error) = error {
+            operation.stop(&mut child).await;
+            return Err(error);
         }
     }
 }
@@ -598,5 +632,56 @@ mod tests {
                 r#"{"stage":"start_container"}"#
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn process_pipes_deliver_progress_and_final_output() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "printf '{\"stage\":\"start\"}\\n'; printf diagnostic >&2; printf '{\"stage\":\"done\"}\\n'"]);
+        let mut lines = Vec::new();
+        let result = run_process(
+            &Lifecycle::default(),
+            command,
+            Duration::from_secs(5),
+            |line| lines.push(line.to_owned()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stderr, "diagnostic");
+        assert_eq!(lines, [r#"{"stage":"start"}"#, r#"{"stage":"done"}"#]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn process_timeout_cancels_the_command() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "sleep 60"]);
+        let lifecycle = Lifecycle::default();
+        let error = run_process(&lifecycle, command, Duration::from_millis(30), |_| {})
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "SIDECAR_TIMEOUT");
+        assert!(lifecycle.begin_shutdown());
+        tokio::time::timeout(Duration::from_secs(1), lifecycle.shutdown())
+            .await
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unbroken_output_is_limited_before_a_newline_arrives() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "head -c 1000001 /dev/zero; sleep 60"]);
+        let error = run_process(
+            &Lifecycle::default(),
+            command,
+            Duration::from_secs(5),
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "OUTPUT_LIMIT");
     }
 }

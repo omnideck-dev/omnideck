@@ -231,10 +231,10 @@ export function ArtifactDesktopEffects() {
  * Restored Views remain blank only while the headless Artifact effect resolves
  * their durable key. This renderer needs no Desktop commands or placement.
  */
-export function ArtifactFileDesktopView({ view }) {
+export function ArtifactFileDesktopView({ view, visible = true }) {
     // Restored file Views render after the headless domain effect resolves
     // their durable key. Avoid handing an incomplete record to FilePreview.
-    return view.artifact ? <FilePreview item={view.artifact} /> : null;
+    return view.artifact ? <FilePreview item={view.artifact} visible={visible} /> : null;
 }
 
 /** Render the Artifact library and adapt its actions to Desktop commands. */

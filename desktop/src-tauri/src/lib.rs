@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod downloads;
+mod lifecycle;
 mod navigation;
 mod parity;
 mod platform;
@@ -22,6 +23,7 @@ pub fn run() {
             windows::focus_active(app);
         }))
         .manage(host)
+        .manage(lifecycle::Lifecycle::default())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(commands::handler!())
@@ -37,6 +39,23 @@ pub fn run() {
             runtime::start_packaged_smoke(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running omnideck");
+        .build(tauri::generate_context!())
+        .expect("error while building omnideck")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                let lifecycle = app.state::<lifecycle::Lifecycle>();
+                if lifecycle.is_complete() {
+                    return;
+                }
+                api.prevent_exit();
+                if lifecycle.begin_shutdown() {
+                    let lifecycle = lifecycle.inner().clone();
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        lifecycle.shutdown().await;
+                        app.exit(code.unwrap_or(0));
+                    });
+                }
+            }
+        });
 }

@@ -52,6 +52,7 @@ const TEST_ONLY_FILES = new Set([
   '.github/actionlint.yaml',
   '.github/workflows/desktop-hardware.yml',
   '.github/workflows/desktop-release-contract.yml',
+  '.github/workflows/desktop-security.yml',
   'desktop/scripts/build-with-local-cli-windows.sh',
   'desktop/scripts/build-with-local-cli.sh',
   'desktop/scripts/run-linux-builder.sh',
@@ -65,6 +66,7 @@ function isWorkflowInput(path) {
     || path === '.github/workflows/desktop.yml'
     || path === '.github/workflows/desktop-hardware.yml'
     || path === '.github/workflows/desktop-release-contract.yml'
+    || path === '.github/workflows/desktop-security.yml'
     || path.startsWith('desktop/')
     || /^docs\/releases\/v[^/]+\.md$/.test(path);
 }

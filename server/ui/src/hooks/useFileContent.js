@@ -4,9 +4,6 @@ import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
 import { bytesDownload, triggerDownload } from '../utils/downloads.js';
 
-// How often to re-check a disk-backed file for changes while its preview is open.
-const POLL_INTERVAL_MS = 4000;
-
 function _decodeText(b64) {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
@@ -19,7 +16,7 @@ function _bust(url, nonce) {
     return `${url}${url.includes('?') ? '&' : '?'}v=${nonce}`;
 }
 
-export default function useFileContent(item) {
+export default function useFileContent(item, { visible = true } = {}) {
     const { filename, content_type, content, path } = item || {};
 
     const [fetchedText, setFetchedText] = useState(null);
@@ -120,46 +117,13 @@ export default function useFileContent(item) {
     }, [content, path, isImage, isPdf, version]);
 
     // Watch the disk-backed file for changes, independent of how it's rendered.
-    // The stale flag lives in the shared store so every preview of this file
-    // sees it. Idles while the tab is hidden; tears down on unmount/file switch.
+    // Visible previews share one watcher; hidden previews retain their baseline
+    // and state so returning to a tab detects changes made while it was hidden.
     const refresh = useCallback(() => {
         if (watchKey) fileWatch.refresh(watchKey);
     }, [watchKey]);
 
-    useEffect(() => {
-        if (!watchKey) return;
-        let cancelled = false;
-        let baseline = null;
-
-        const probe = async () => {
-            // no-store: the backend sends no Cache-Control, so without this the
-            // browser serves a cached validator and the change goes unseen until
-            // its heuristic freshness window expires.
-            const r = await fetch(watchKey, { method: 'HEAD', cache: 'no-store' });
-            return r.headers.get('ETag') || r.headers.get('Last-Modified');
-        };
-
-        probe().then(v => { if (!cancelled) baseline = v; }).catch(() => {});
-
-        const check = async () => {
-            if (document.hidden || baseline == null) return;
-            try {
-                const v = await probe();
-                if (!cancelled && v && v !== baseline) fileWatch.markStale(watchKey);
-            } catch { /* transient network blip — retry next tick */ }
-        };
-        const timer = setInterval(check, POLL_INTERVAL_MS);
-        // Catch up immediately when the user returns to the tab.
-        const onVisible = () => { if (!document.hidden) check(); };
-        document.addEventListener('visibilitychange', onVisible);
-
-        return () => {
-            cancelled = true;
-            clearInterval(timer);
-            document.removeEventListener('visibilitychange', onVisible);
-        };
-        // Re-baseline after a refresh bumps the shared version.
-    }, [watchKey, version]);
+    useEffect(() => fileWatch.watch(watchKey, visible), [watchKey, visible]);
 
     // Blob URL for HTML iframe preview
     const iframeSrc = useMemo(() => {

@@ -15,25 +15,37 @@ export default function SoftwareUpdateStatus() {
     const [checking, setChecking] = useState(false);
     const [installing, setInstalling] = useState(false);
     const [checked, setChecked] = useState(false);
+    const [error, setError] = useState('');
     const host = useOmnideckHost();
     const notesUrl = update ? appReleaseNotesUrl(update.version) : null;
 
     useEffect(() => {
         let current = true;
+        let announced = false;
+        const stopListening = host?.onUpdate?.((found) => {
+            announced = true;
+            setUpdate(found);
+            setChecked(false);
+            setError('');
+        });
         host?.currentUpdate?.()
-            .then((found) => { if (current) setUpdate(found); })
+            .then((found) => { if (current && !announced) setUpdate(found); })
             .catch(() => {});
-        return () => { current = false; };
+        return () => {
+            current = false;
+            stopListening?.();
+        };
     }, [host]);
 
     const check = useCallback(async () => {
         setChecking(true);
+        setChecked(false);
+        setError('');
         try {
             setUpdate(await host.checkForUpdate());
             setChecked(true);
         } catch {
-            // A check that could not reach anywhere says nothing rather than
-            // claiming to be up to date.
+            setError('Could not check for updates. Please try again.');
         } finally {
             setChecking(false);
         }
@@ -41,9 +53,11 @@ export default function SoftwareUpdateStatus() {
 
     const install = useCallback(async () => {
         setInstalling(true);
+        setError('');
         try {
             await host.installUpdate();
         } catch {
+            setError('Could not start the update. Please try again.');
             setInstalling(false);
         }
     }, [host]);
@@ -56,16 +70,16 @@ export default function SoftwareUpdateStatus() {
         >
             <div className={styles.info}>
                 <span className={styles.title}>
-                    {update ? `Omnideck ${update.version} is ready` : 'Omnideck is up to date'}
+                    {update ? `Omnideck ${update.version} is ready` : checked ? 'Omnideck is up to date' : 'Check for updates'}
                 </span>
                 <span className={styles.desc}>
-                    {update
+                    {error || (update
                         ? update.deferred
                             ? 'Installs the next time you open Omnideck. You can install it now instead.'
                             : 'Installing takes a few minutes and closes what you have open.'
                         : checked
                             ? 'No newer version is available yet.'
-                            : 'Omnideck looks for updates on its own while it is open.'}
+                            : 'Omnideck looks for updates on its own while it is open.')}
                 </span>
             </div>
             {update ? (

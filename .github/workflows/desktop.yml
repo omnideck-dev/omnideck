@@ -13,6 +13,7 @@ on:
       - ".github/workflows/desktop.yml"
       - ".github/workflows/desktop-hardware.yml"
       - ".github/workflows/desktop-release-contract.yml"
+      - ".github/workflows/desktop-security.yml"
       - ".github/actionlint.yaml"
       - ".github/scripts/desktop-build-matrix.mjs"
       - ".github/scripts/install-apt-packages.sh"
@@ -28,6 +29,7 @@ on:
       - ".github/workflows/desktop.yml"
       - ".github/workflows/desktop-hardware.yml"
       - ".github/workflows/desktop-release-contract.yml"
+      - ".github/workflows/desktop-security.yml"
       - ".github/actionlint.yaml"
       - ".github/scripts/desktop-build-matrix.mjs"
       - ".github/scripts/install-apt-packages.sh"
@@ -87,8 +89,11 @@ jobs:
             echo "- Native package builds: ${BUILD_REQUIRED}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+  dependency_security:
+    uses: ./.github/workflows/desktop-security.yml
+
   test:
-    needs: changes
+    needs: [changes, dependency_security]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

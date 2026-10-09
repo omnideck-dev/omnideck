@@ -33,7 +33,7 @@ test('Desktop package builds are gated by deterministic change classification', 
       .length,
     2,
   );
-  assert.match(desktopWorkflow, /test:\n    needs: changes/);
+  assert.match(desktopWorkflow, /test:\n    needs: \[changes, dependency_security\]/);
   assert.match(
     desktopWorkflow,
     /runtime_image:\n    needs: \[changes, test\]\n    if: needs\.changes\.outputs\.build_required == 'true'/,
@@ -55,6 +55,15 @@ test('Desktop package builds are gated by deterministic change classification', 
       .length,
     5,
   );
+});
+
+test('desktop package promotion and daily monitoring use the same advisory gate', async () => {
+  const securityWorkflow = await read('../.github/workflows/desktop-security.yml');
+  assert.match(desktopWorkflow, /dependency_security:\n    uses: \.\/\.github\/workflows\/desktop-security\.yml/);
+  assert.match(securityWorkflow, /workflow_call:/);
+  assert.match(securityWorkflow, /schedule:\n    - cron:/);
+  assert.match(securityWorkflow, /cargo audit --file desktop\/src-tauri\/Cargo\.lock/);
+  assert.doesNotMatch(securityWorkflow, /continue-on-error: true|--ignore/);
 });
 
 test('browser jobs reuse hosted Chrome instead of downloading Playwright browsers', () => {

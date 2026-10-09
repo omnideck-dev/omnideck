@@ -10,7 +10,8 @@ macro_rules! handler {
             crate::updates::check_for_update,
             crate::updates::install_update,
             crate::updates::defer_update,
-            crate::updates::skip_update
+            crate::updates::skip_update,
+            crate::updates::set_update_preferences
         ]
     };
 }

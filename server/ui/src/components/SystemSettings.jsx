@@ -12,7 +12,9 @@ import DownloadIcon from './icons/DownloadIcon';
 import SparkleIcon from './icons/SparkleIcon';
 import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
 import Select from './primitives/Select.jsx';
-import { useIsHosted } from '../features/app/OmnideckHost.jsx';
+import { useOmnideckHost } from '../features/app/OmnideckHost.jsx';
+import { saveUpdatePreference } from '../utils/updatePreferences.js';
+import Callout from './primitives/Callout.jsx';
 
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
@@ -24,7 +26,10 @@ export default function SystemSettings() {
     // Omnideck run from the command line, or opened in a plain browser, has no
     // installer behind it: there is nothing for these settings to act on, and
     // updating is done with the command line tool instead.
-    const hosted = useIsHosted();
+    const host = useOmnideckHost();
+    const hosted = Boolean(host);
+    const [savingUpdates, setSavingUpdates] = useState(false);
+    const [updateError, setUpdateError] = useState('');
 
     useEffect(() => {
         async function init() {
@@ -48,6 +53,19 @@ export default function SystemSettings() {
 
     const updateSetting = useCallback(async (key, value) => {
         const previousValue = settings[key];
+        if (key === 'software_updates_automatic' || key === 'software_updates_notify') {
+            setSavingUpdates(true);
+            setUpdateError('');
+            try {
+                const updated = await saveUpdatePreference(host, key, value, previousValue !== false);
+                setSettings(updated);
+            } catch (error) {
+                setUpdateError(error.message);
+            } finally {
+                setSavingUpdates(false);
+            }
+            return;
+        }
         setSettings((prev) => ({ ...prev, [key]: value }));
         try {
             const res = await fetch('/api/settings', {
@@ -67,7 +85,7 @@ export default function SystemSettings() {
             // Restore the server-backed value below.
         }
         setSettings((prev) => ({ ...prev, [key]: previousValue }));
-    }, [refreshFeatures, settings]);
+    }, [host, refreshFeatures, settings]);
 
     // Update a (provider, model) pair atomically so they always stay in sync.
     const updateProviderModel = useCallback(async (providerKey, modelKey, provider, model) => {
@@ -99,6 +117,7 @@ export default function SystemSettings() {
             {hosted && (
                 <>
                     <div className={styles.sectionLabel}>Updates</div>
+                    {updateError && <Callout tone="danger" description={updateError} />}
                     <div className={styles.settingsGroup} data-testid="updates-settings-group">
                         <SoftwareUpdateStatus />
 
@@ -113,6 +132,7 @@ export default function SystemSettings() {
                                 </span>
                             </div>
                             <ToggleSwitch
+                                disabled={savingUpdates}
                                 checked={settings.software_updates_automatic !== false}
                                 onChange={(e) => updateSetting('software_updates_automatic', e.target.checked)}
                                 aria-label="Install updates automatically"
@@ -130,6 +150,7 @@ export default function SystemSettings() {
                                 </span>
                             </div>
                             <ToggleSwitch
+                                disabled={savingUpdates}
                                 checked={settings.software_updates_notify !== false}
                                 onChange={(e) => updateSetting('software_updates_notify', e.target.checked)}
                                 aria-label="Tell me when an update is ready"

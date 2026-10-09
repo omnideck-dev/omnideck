@@ -27,6 +27,7 @@ const HOSTED_BRIDGE_SCRIPT: &str = r#"
     installUpdate: () => invoke('install_update'),
     deferUpdate: () => invoke('defer_update'),
     skipUpdate: () => invoke('skip_update'),
+    setUpdatePreferences: (preferences) => invoke('set_update_preferences', { preferences }),
     onUpdate(listener) {
       updateListeners.add(listener);
       return () => updateListeners.delete(listener);
