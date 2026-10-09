@@ -295,7 +295,7 @@ for lane in appimage deb rpm atomic windows; do
   lane_dir="${lane_root}/${lane}"
   mkdir -p "${lane_dir}"
   artifact="$(artifact_for_lane "${lane}")"
-  lane_arguments=(--vm "${lane}" --artifact "${artifact}" --profile release-clean --yes)
+  lane_arguments=(--vm "${lane}" --suite onboarding --artifact "${artifact}" --profile onboarding-clean --yes)
   if [[ -n "${upgrade_release}" ]]; then
     lane_arguments+=(--upgrade-from-artifact "$(upgrade_artifact_for_lane "${lane}")")
   fi

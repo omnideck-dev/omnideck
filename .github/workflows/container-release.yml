@@ -1,105 +1,109 @@
 name: Release container
-run-name: Release container ${{ inputs.version }}
+run-name: Release container ${{ inputs.version || 'weekly auto-version' }}${{ inputs.dry_run && ' (dry run)' || '' }}
 
 on:
+  schedule:
+    - cron: '0 10 * * 1'
+      timezone: America/Chicago
   workflow_dispatch:
     inputs:
       version:
-        description: Container version (X.Y.Z)
-        required: true
+        description: 'Optional X.Y.Z override; leave blank to auto-version accumulated app changes'
+        required: false
         type: string
+      dry_run:
+        description: 'Preview the version, notes, and release record without publishing'
+        default: false
+        type: boolean
 
 concurrency:
   group: omnideck-container-release
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
+  actions: read
   packages: write
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: main
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Validate version and release notes
+      - name: Test release tooling
+        run: |
+          node --test tests/release-notes.test.mjs tests/weekly-app-release.test.mjs tests/publish-app-release.test.mjs
+          node scripts/release-notes.mjs validate-fragments
+
+      - name: Read published container versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate --slurp \
+            "orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/omnideck/versions?per_page=100" \
+            > "$RUNNER_TEMP/app-tags.json"
+
+      - name: Read app release records (including drafts)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            > "$RUNNER_TEMP/app-releases.json"
+
+      - name: Plan release
+        id: plan
         env:
           VERSION: ${{ inputs.version }}
-        shell: bash
+          PRE_ONE_BREAKING: minor
+        run: node scripts/weekly-app-release.mjs plan "$RUNNER_TEMP/app-release.json" "$RUNNER_TEMP/app-tags.json" "$RUNNER_TEMP/app-releases.json"
+
+      - name: Verify exact source CI
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.plan.outputs.source_sha }}
         run: |
-          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
-            echo "Container version must be plain X.Y.Z"
-            exit 1
-          }
-          notes="docs/releases/app-v${VERSION}.md"
-          test -s "${notes}" || {
-            echo "Missing app release notes for ${VERSION}"
-            exit 1
-          }
-          test "$(head -n 1 "${notes}")" = "# omnideck app ${VERSION}" || {
-            echo "App release notes must begin with: # omnideck app ${VERSION}"
-            exit 1
-          }
-          node scripts/release-notes.mjs check-consumed --target app
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?head_sha=${SOURCE_SHA}&event=push&branch=main&per_page=100" \
+            > "$RUNNER_TEMP/app-ci.json"
+          node scripts/weekly-app-release.mjs verify-ci "$RUNNER_TEMP/app-release.json" "$RUNNER_TEMP/app-ci.json"
 
       - uses: docker/setup-buildx-action@v4
+        if: steps.plan.outputs.skip != 'true'
 
       - uses: docker/login-action@v4
+        if: steps.plan.outputs.skip != 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote tested image
+      - name: Resolve tested image
+        if: steps.plan.outputs.skip != 'true'
+        id: image
         env:
-          VERSION: ${{ inputs.version }}
-        shell: bash
+          SOURCE_SHA: ${{ steps.plan.outputs.source_sha }}
         run: |
-          [[ "${GITHUB_REF}" = "refs/heads/main" ]] || {
-            echo "Container releases must run from main"
-            exit 1
-          }
-          [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
-            echo "Container version must be plain X.Y.Z"
-            exit 1
-          }
+          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${SOURCE_SHA:0:7}"
+          source_digest=$(docker buildx imagetools inspect "$source_image" --format '{{.Manifest.Digest}}')
+          [[ "$source_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "digest=$source_digest" >> "$GITHUB_OUTPUT"
 
-          source_image="ghcr.io/${GITHUB_REPOSITORY}:main-${GITHUB_SHA:0:7}"
-          release_image="ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"
-          source_digest=$(docker buildx imagetools inspect \
-            "${source_image}" \
-            --format '{{.Manifest.Digest}}')
-          [[ "${source_digest}" =~ ^sha256:[a-f0-9]{64}$ ]] || {
-            echo "${source_image} is not a tested multi-architecture image"
-            exit 1
-          }
-
-          if release_digest=$(docker buildx imagetools inspect \
-            "${release_image}" \
-            --format '{{.Manifest.Digest}}' 2>/dev/null); then
-            [[ "${release_digest}" = "${source_digest}" ]] || {
-              echo "${release_image} already points at ${release_digest}"
-              exit 1
-            }
-            echo "${release_image} already points at ${source_digest}"
-            exit 0
-          fi
-
-          source_ref="ghcr.io/${GITHUB_REPOSITORY}@${source_digest}"
-          docker buildx imagetools create --tag "${release_image}" "${source_ref}"
-          release_digest=$(docker buildx imagetools inspect \
-            "${release_image}" \
-            --format '{{.Manifest.Digest}}')
-          [[ "${release_digest}" = "${source_digest}" ]] || {
-            echo "${release_image} does not match ${source_ref}"
-            exit 1
-          }
-          echo "Released ${release_image} at ${release_digest}"
+      - name: Publish app release and promote tested image
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_DIGEST: ${{ steps.image.outputs.digest }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node .github/scripts/publish-app-release.mjs "$RUNNER_TEMP/app-release.json"

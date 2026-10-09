@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><title>Portal dialog</title>
 <style>html,body{margin:0} #__primerPortalRoot__{height:0;width:100%;overflow:visible}</style></head>
 <body>
-  <div id="app">
+  <div id="app" inert>
     <h1>Docs</h1>
     <button>Open menu</button>
   </div>
@@ -13,8 +13,14 @@
       <div role="dialog" aria-modal="true"
            style="position:fixed;top:20px;left:20px;width:600px;height:400px;background:#fff">
         <input type="search" aria-label="Search docs" placeholder="Search docs">
-        <button>Close</button>
+        <button id="close-search">Close</button>
       </div>
     </div>
   </div>
+  <script>
+    document.getElementById('close-search').addEventListener('click', () => {
+      document.getElementById('__primerPortalRoot__').remove();
+      document.getElementById('app').removeAttribute('inert');
+    });
+  </script>
 </body></html>

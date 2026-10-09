@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,10 +19,9 @@ from migrations._011_seed_welcome_conversation import migrate as _011_seed_welco
 from migrations._012_computron_path_rename import migrate as _012_computron_path_rename
 from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
 from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
+from migrations._015_browser_profiles import migrate as _015_browser_profiles
 
-logger = logging.getLogger(__name__)
-
-_APPLIED_FILE = ".migrations.json"
+from migrations._engine import run_migration_plan
 
 # Migrations run top-to-bottom on first startup; already-applied entries are
 # skipped on subsequent runs. Insert new migrations at the bottom — the order
@@ -44,42 +41,10 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("012_computron_path_rename", _012_computron_path_rename),
     ("013_goals_to_routines", _013_goals_to_routines),
     ("014_software_updates_setting", _014_software_updates_setting),
+    ("015_browser_profiles", _015_browser_profiles),
 ]
 
 
-def _load_applied(state_dir: Path) -> set[str]:
-    path = state_dir / _APPLIED_FILE
-    if not path.exists():
-        return set()
-    try:
-        return set(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, TypeError):
-        logger.warning("Corrupt %s, treating as empty", path)
-        return set()
-
-
-def _save_applied(state_dir: Path, applied: set[str]) -> None:
-    path = state_dir / _APPLIED_FILE
-    path.write_text(json.dumps(sorted(applied), indent=2), encoding="utf-8")
-
-
 def run_migrations(state_dir: Path) -> None:
-    """Run all pending migrations against the state directory."""
-    state_dir = Path(state_dir)
-    if not state_dir.is_dir():
-        logger.debug("State directory %s does not exist, skipping migrations", state_dir)
-        return
-
-    applied = _load_applied(state_dir)
-    pending = [(name, fn) for name, fn in _MIGRATIONS if name not in applied]
-
-    if not pending:
-        return
-
-    logger.info("%d pending migration(s)", len(pending))
-    for name, fn in pending:
-        logger.info("Running migration: %s", name)
-        fn(state_dir)
-        applied.add(name)
-        _save_applied(state_dir, applied)
-        logger.info("Migration complete: %s", name)
+    """Run the application-state migration plan."""
+    run_migration_plan(state_dir, _MIGRATIONS)

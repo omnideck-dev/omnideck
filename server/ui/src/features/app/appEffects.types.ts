@@ -34,6 +34,10 @@ export type AppEffectPayloads = {
         artifactId: string;
         conversationId: string | null;
     };
+    [APP_EFFECT_TYPES.OPEN_BROWSER_PROFILE_REQUESTED]: {
+        profileId: string;
+        profileName: string;
+    };
     [APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING]: {
         views: Array<Record<string, unknown> & {
             id: string;

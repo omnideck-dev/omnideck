@@ -14,6 +14,7 @@ import {
     useDesktopNavigationCommands,
 } from '../features/navigation/DesktopNavigation.jsx';
 import navigationItemStyles from '../features/navigation/sidebar/SidebarNavigationItem.module.css';
+import useIsMobileViewport from '../hooks/useIsMobileViewport.js';
 import useSidebarReorder from './useSidebarReorder.js';
 import styles from './Sidebar.module.css';
 
@@ -25,6 +26,9 @@ const NAV_ORDER_KEY = 'omnideck_sidebar_navigation_order';
 // network view is opened from the chat title-bar pill, not a nav item.
 // Memory and Custom Tools live under Settings, not in the nav.
 const NAV_ITEMS = [
+    {
+        id: 'browser', icon: 'bi-globe2', label: 'Browser', command: 'openBrowser',
+    },
     {
         id: 'agents', icon: 'bi-robot', label: 'Agents', command: 'openAgents',
     },
@@ -55,11 +59,16 @@ function _normalizeNavigationOrder(order) {
     return normalized;
 }
 
-function _readCollapsed() {
+// Honors an explicit stored preference either way; only the un-set default
+// depends on viewport size, so a mobile user who expands the sidebar keeps
+// it expanded on their next visit.
+function _readCollapsed(isMobile) {
     try {
-        return localStorage.getItem(COLLAPSE_KEY) === '1';
+        const stored = localStorage.getItem(COLLAPSE_KEY);
+        if (stored !== null) return stored === '1';
+        return isMobile;
     } catch {
-        return false;
+        return isMobile;
     }
 }
 
@@ -83,7 +92,7 @@ function _persistNavigationOrder(order) {
 
 /**
  * Left navigation rail. Collapses to an icon-only strip or expands to
- * show labels, the OMNIDECK wordmark, pinned Apps, and conversations.
+ * show labels, the omnideck wordmark, pinned Apps, and conversations.
  * The collapsed/expanded choice is persisted to localStorage.
  */
 export default function Sidebar({
@@ -97,7 +106,8 @@ export default function Sidebar({
     const navigationTarget = useCurrentNavigationTarget();
     const navigation = useDesktopNavigationCommands();
     const customApps = useCustomApps();
-    const [collapsed, setCollapsed] = useState(_readCollapsed);
+    const isMobile = useIsMobileViewport();
+    const [collapsed, setCollapsed] = useState(() => _readCollapsed(isMobile));
     const [navigationOrder, setNavigationOrder] = useState(_readNavigationOrder);
     const [navigationMenu, setNavigationMenu] = useState(null);
     const closeNavigationMenu = useCallback(() => setNavigationMenu(null), []);
@@ -162,7 +172,7 @@ export default function Sidebar({
             data-collapsed={collapsed}
         >
             <div className={styles.brand}>
-                {!collapsed && <span className={styles.wordmark}>OMNIDECK</span>}
+                {!collapsed && <span className={styles.wordmark}>omnideck</span>}
                 <button
                     className={styles.iconBtn}
                     onClick={toggleCollapsed}

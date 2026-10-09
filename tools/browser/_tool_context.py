@@ -2,11 +2,11 @@
 
 from playwright.async_api import Error as PlaywrightError
 
-from tools.browser.core.browser import Browser
-from tools.browser.core.document import Document
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.pool import get_browser
-from tools.browser.core.tab import Tab
+from browser.core.browser import Browser
+from browser.core.document import Document
+from browser.core.exceptions import BrowserToolError
+from browser.core.tab import Tab
+from browser.runtime import get_browser
 
 
 async def get_document(

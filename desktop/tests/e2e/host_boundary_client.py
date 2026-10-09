@@ -163,12 +163,15 @@ fetch(%s, options).then(async (response) => {
         )
         if created.get("status") != 201:
             raise AssertionError(f"Could not create fixture profile: {created!r}")
-        self.driver.execute("location.reload(); return true;")
+        self.driver.execute(
+            "window.__desktopBoundaryReloadPending = true; location.reload(); return true;"
+        )
         wait_until(
             "the core application after setup",
             self.timeout,
             lambda: self.driver.execute(
-                "return Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
+                "return window.__desktopBoundaryReloadPending !== true && "
+                "Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
             ),
         )
 
@@ -603,7 +606,7 @@ const finish = (value) => done(JSON.stringify(value));
         )
 
     def external_links(
-        self, expected_browser_process: str, skip_browser_process_check: bool
+        self, expected_browser_processes: list[str], skip_browser_process_check: bool
     ) -> None:
         initial = self.select_hosted_window()
         inserted = self.driver.execute("""
@@ -643,15 +646,18 @@ return true;
         )
 
         def browser_pids() -> list[int]:
-            completed = subprocess.run(
-                ["pgrep", "-u", str(os.getuid()), "-x", expected_browser_process],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            return sorted(
-                int(value) for value in completed.stdout.split() if value.isdigit()
-            )
+            pids: set[int] = set()
+            for process_name in expected_browser_processes:
+                completed = subprocess.run(
+                    ["pgrep", "-u", str(os.getuid()), "-x", process_name],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                pids.update(
+                    int(value) for value in completed.stdout.split() if value.isdigit()
+                )
+            return sorted(pids)
 
         before_pids = [] if skip_browser_process_check else browser_pids()
         self.driver.click('[data-testid="desktop-external-link"]')
@@ -660,7 +666,7 @@ return true;
             opened_pids = []
         else:
             opened_pids = wait_until(
-                f"the system browser process {expected_browser_process}",
+                f"one of the system browser processes {expected_browser_processes}",
                 self.timeout,
                 lambda: browser_pids() or None,
             )
@@ -690,7 +696,7 @@ return true;
                     "externalBlankUrl": "https://example.com/omnideck-external-blank-link-test",
                     "hostedUrlAfterExternal": after_external,
                     "hostedUrlAfterExternalBlank": after_blank,
-                    "browserProcess": expected_browser_process,
+                    "browserProcesses": expected_browser_processes,
                     "browserProcessVerified": not skip_browser_process_check,
                     "browserPidsBefore": before_pids,
                     "browserPidsAfter": opened_pids,
@@ -779,8 +785,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture-name", required=True)
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
-    parser.add_argument("--expected-update-version", default="0.2.3")
-    parser.add_argument("--expected-browser-process", default="firefox")
+    parser.add_argument("--expected-update-version", default="0.5.3")
+    parser.add_argument(
+        "--expected-browser-process",
+        default="firefox",
+        help="Comma-separated process names accepted for external browser launches",
+    )
     parser.add_argument("--skip-browser-process-check", action="store_true")
     parser.add_argument("--native-input-signal-dir", type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
@@ -842,7 +852,12 @@ def main() -> int:
                 journey.update_bridge(args.expected_update_version)
             else:
                 journey.external_links(
-                    args.expected_browser_process, args.skip_browser_process_check
+                    [
+                        process.strip()
+                        for process in args.expected_browser_process.split(",")
+                        if process.strip()
+                    ],
+                    args.skip_browser_process_check,
                 )
             status = "passed"
         return 0

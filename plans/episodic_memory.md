@@ -33,9 +33,9 @@ Add to `AppConfig`:
 episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
 ```
 
-### Step 2: Expose `_serialize_messages` — `sdk/context/_strategy.py`
+### Step 2: Expose `_serialize_messages` — `agent_core/context/_strategy.py`
 
-Rename `_serialize_messages` to `serialize_messages` (public). Add it to `sdk/context/__init__.py` exports. The episodic indexer needs this to convert message history into text for summarization.
+Rename `_serialize_messages` to `serialize_messages` (public). Add it to `agent_core/context/__init__.py` exports. The episodic indexer needs this to convert message history into text for summarization.
 
 Update all internal references (there should only be one call site within the compaction strategy itself).
 
@@ -77,7 +77,7 @@ New file. The background worker logic:
 
 - **`async def _summarize_conversation(conversation_id: str) -> str`**
   - First check for existing `SummaryRecord` entries via `list_summary_records(conversation_id)`. If any exist, use the latest `summary_text` — no LLM call needed.
-  - Otherwise, load the history via `load_conversation_history(conversation_id)`, serialize via `serialize_messages()`, and call the summary LLM using the same pattern as `_title_generation.py` (load config, get provider, call `provider.chat` with `_SUMMARIZE_PROMPT`). Use `_build_summarize_prompt()` from `sdk/context/_strategy.py` (also needs to be made public — rename to `build_summarize_prompt`).
+  - Otherwise, load the history via `load_conversation_history(conversation_id)`, serialize via `serialize_messages()`, and call the summary LLM using the same pattern as `_title_generation.py` (load config, get provider, call `provider.chat` with `_SUMMARIZE_PROMPT`). Use `_build_summarize_prompt()` from `agent_core/context/_strategy.py` (also needs to be made public — rename to `build_summarize_prompt`).
   - Wrap LLM call in try/except — on failure, fall back to the conversation title + first message as a basic summary.
 
 ### Step 5: Background runner — `tools/episodic/_runner.py`
@@ -201,8 +201,8 @@ New test files:
 
 ## Files to modify
 - `config/__init__.py` — add `EpisodicConfig`, add to `AppConfig`
-- `sdk/context/_strategy.py` — make `_serialize_messages` and `_build_summarize_prompt` public
-- `sdk/context/__init__.py` — export `serialize_messages`, `build_summarize_prompt`
+- `agent_core/context/_strategy.py` — make `_serialize_messages` and `_build_summarize_prompt` public
+- `agent_core/context/__init__.py` — export `serialize_messages`, `build_summarize_prompt`
 - `server/aiohttp_app.py` — add episodic runner startup/cleanup hooks, cleanup on delete
 - `agents/computron/agent.py` — register `search_conversations` tool, update system prompt
 

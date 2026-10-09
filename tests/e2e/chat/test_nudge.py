@@ -1,142 +1,61 @@
-"""E2E tests for nudge routing.
+"""Nudge UI drives actual running/completed agents through the public API."""
 
-Verifies that the nudge bar sends the correct agent_id to /api/nudge
-and that success/error toasts appear.
-"""
+from playwright.sync_api import Page, expect
 
-import json
-
-import pytest
-from playwright.sync_api import Page, Route, expect
-
+from tests.e2e._protocol import bash, say, spawn
+from tests.e2e._runtime import delete_conversation, resume
 from tests.e2e.pages import ChatView, NetworkView
 
 
-def _build_jsonl(events: list[dict]) -> str:
-    return "".join(json.dumps(e) + "\n" for e in events)
-
-
-def _event(payload_type, agent_id="root", agent_name="computron",
-           depth=0, **payload_fields):
-    payload = {"type": payload_type, **payload_fields}
-    if payload_type in ("agent_started", "agent_completed"):
-        payload.setdefault("agent_id", agent_id)
-        payload.setdefault("agent_name", agent_name)
-    return {
-        "payload": payload,
-        "agent_id": agent_id,
-        "agent_name": agent_name,
-        "timestamp": "2026-05-10T00:00:00+00:00",
-        "depth": depth,
-    }
-
-
-MULTI_AGENT_EVENTS = _build_jsonl([
-    _event("agent_started", agent_id="root", agent_name="computron",
-           parent_agent_id=None),
-    _event("user_message", content="test", attachments=[], is_nudge=False),
-    _event("content", content="Delegating."),
-    _event("iteration", iteration_index=0,
-           content="Delegating.", thinking=None, tool_calls=[]),
-    _event("agent_started", agent_id="sub1", agent_name="research_agent",
-           parent_agent_id="root", depth=1),
-    _event("content", agent_id="sub1", agent_name="research_agent",
-           depth=1, content="On it."),
-    _event("iteration", agent_id="sub1", agent_name="research_agent",
-           depth=1, iteration_index=0,
-           content="On it.", thinking=None, tool_calls=[]),
-    _event("agent_completed", agent_id="sub1", agent_name="research_agent",
-           depth=1, status="success"),
-    _event("content", content="Done."),
-    _event("iteration", iteration_index=1,
-           content="Done.", thinking=None, tool_calls=[]),
-    _event("agent_completed", agent_id="root", agent_name="computron",
-           status="success"),
-    _event("turn_end"),
-])
-
-
-@pytest.mark.e2e
 def test_nudge_sends_correct_agent_id(page: Page):
-    """Nudge bar sends the selected agent's ID to /api/nudge."""
+    captured = {}
+    page.on("request", lambda request: captured.update(request.post_data_json)
+            if request.method == "POST" and request.url.endswith("/api/chat") else None)
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", lambda route: route.fulfill(
-        status=200,
-        headers={"Content-Type": "application/json"},
-        body=MULTI_AGENT_EVENTS,
-    ))
-    chat.send("test")
-    chat.wait_streaming()
-    page.wait_for_timeout(200)
-
-    # Open network view, select the sub-agent
-    network = NetworkView(page)
-    expect(network.indicator).to_be_visible(timeout=5000)
-    network.open()
-    expect(network.agent_cards.first).to_be_visible(timeout=5000)
-    activity = network.select_agent(1)
-    expect(activity.root).to_be_visible(timeout=5000)
-
-    # Intercept /api/nudge to capture the request body
-    captured = []
-
-    def capture_nudge(route: Route):
-        body = json.loads(route.request.post_data)
-        captured.append(body)
-        route.fulfill(
-            status=200,
-            headers={"Content-Type": "application/json"},
-            body=json.dumps({"ok": True}),
-        )
-
-    page.route("**/api/nudge", capture_nudge)
-
-    # Type into the nudge bar and send
-    nudge_input = page.locator("input[placeholder*='Send a nudge']")
-    expect(nudge_input).to_be_visible(timeout=3000)
-    nudge_input.fill("hey focus on the API")
-    nudge_input.press("Enter")
-    page.wait_for_timeout(500)
-
-    assert len(captured) == 1, f"Expected 1 nudge request, got {len(captured)}"
-    assert captured[0]["agent_id"] == "sub1"
-    assert captured[0]["message"] == "hey focus on the API"
-
-    # Success toast should appear
-    toast_region = page.locator("[role='region'][aria-label='Notifications']")
-    expect(toast_region).to_contain_text("Nudge sent", timeout=3000)
+    try:
+        chat.send(spawn(bash("sleep 8") + say("obsolete answer"), name="research_agent") + say("parent done"))
+        network = NetworkView(page)
+        expect(network.indicator).to_be_visible(timeout=10_000)
+        network.open()
+        activity = network.select_agent(1)
+        nudge_input = activity.root.locator("input[placeholder*='Send a nudge']")
+        nudge_input.fill("hey focus on the API")
+        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/nudge")) as sent:
+            nudge_input.press("Enter")
+        response = sent.value
+        assert response.status == 200, response.text()
+        assert response.request.post_data_json["agent_id"] == activity.agent_id
+        assert response.request.post_data_json["message"] == "hey focus on the API"
+        expect(page.locator("[role='region'][aria-label='Notifications']")).to_contain_text("Nudge sent")
+        expect(activity.root).to_contain_text("hey focus on the API", timeout=15_000)
+        network.back_to_chat()
+        chat.wait_streaming(timeout=15_000)
+        events = resume(captured["conversation_id"])["events"]
+        nudges = [e for e in events if e["type"] == "user_message" and e.get("is_nudge")]
+        assert len(nudges) == 1 and nudges[0]["agent_id"] == activity.agent_id
+        assert any(e["type"] == "iteration" and e["agent_id"] == activity.agent_id
+                   and e["content"] == "hey focus on the API" for e in events)
+    finally:
+        if captured:
+            delete_conversation(captured["conversation_id"])
 
 
-@pytest.mark.e2e
 def test_nudge_shows_error_toast_on_409(page: Page):
-    """Nudge bar shows a warning toast when the agent is no longer running."""
+    captured = {}
+    page.on("request", lambda request: captured.update(request.post_data_json)
+            if request.method == "POST" and request.url.endswith("/api/chat") else None)
     chat = ChatView(page).goto().new_conversation()
-    page.route("**/api/chat", lambda route: route.fulfill(
-        status=200,
-        headers={"Content-Type": "application/json"},
-        body=MULTI_AGENT_EVENTS,
-    ))
-    chat.send("test")
-    chat.wait_streaming()
-    page.wait_for_timeout(200)
-
-    network = NetworkView(page)
-    expect(network.indicator).to_be_visible(timeout=5000)
-    network.open()
-    expect(network.agent_cards.first).to_be_visible(timeout=5000)
-    activity = network.select_agent(1)
-    expect(activity.root).to_be_visible(timeout=5000)
-
-    # Mock /api/nudge to return 409
-    page.route("**/api/nudge", lambda route: route.fulfill(
-        status=409,
-        headers={"Content-Type": "application/json"},
-        body=json.dumps({"error": "No active turn for this conversation."}),
-    ))
-
-    nudge_input = page.locator("input[placeholder*='Send a nudge']")
-    nudge_input.fill("hello")
-    nudge_input.press("Enter")
-
-    toast_region = page.locator("[role='region'][aria-label='Notifications']")
-    expect(toast_region).to_contain_text("no longer running", timeout=3000)
+    try:
+        chat.send(spawn(say("finished"), name="research_agent") + say("parent done")).wait_streaming()
+        network = NetworkView(page).open()
+        activity = network.select_agent(1)
+        nudge_input = activity.root.locator("input[placeholder*='Send a nudge']")
+        nudge_input.fill("hello")
+        with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/nudge")) as sent:
+            nudge_input.press("Enter")
+        assert sent.value.status == 409
+        assert sent.value.json() == {"error": "No active turn for this conversation."}
+        expect(page.locator("[role='region'][aria-label='Notifications']")).to_contain_text("no longer running")
+    finally:
+        if captured:
+            delete_conversation(captured["conversation_id"])

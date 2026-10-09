@@ -219,6 +219,40 @@
     color: var(--warning);
 }
 
+/* ---- Browser access ---- */
+.browserAccessRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    cursor: pointer;
+}
+
+.browserProfileField {
+    margin: var(--sp-3) 0 0 var(--sp-10);
+    max-width: 440px;
+}
+
+.browserProfileField > label {
+    display: block;
+    margin-bottom: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-small);
+    font-weight: 600;
+}
+
+.browserProfileSelect {
+    --select-width: min(100%, 320px);
+}
+
+.browserProfileHint {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
+    margin-top: var(--sp-2);
+    color: var(--text-secondary);
+    font-size: var(--font-size-caption);
+}
+
 
 /* ---- System prompt textarea ---- */
 .promptTextarea {

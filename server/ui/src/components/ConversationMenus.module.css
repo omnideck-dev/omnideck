@@ -79,36 +79,3 @@
     color: #fff;
     border-color: var(--danger);
 }
-
-/* ── Folder icon picker (portaled grid) ──────────────── */
-.iconPicker {
-    position: fixed;
-    z-index: var(--z-toast);
-    width: 236px;
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 2px;
-    padding: var(--sp-2);
-    background: var(--elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-}
-.iconOption {
-    aspect-ratio: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-}
-.iconOption:hover { background: var(--accent-muted); color: var(--text-primary); }
-.iconOptionActive {
-    background: var(--accent-muted);
-    border-color: var(--accent);
-    color: var(--accent);
-}

@@ -23,12 +23,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from aiohttp.web_request import Request
     from aiohttp.web_response import StreamResponse
 
-from agent_runtime import ActiveRunManager
+from agent_runtime import AgentRuntime
 from config import load_config
 from server._agent_run_routes import register_agent_run_routes
-from server._agent_runtime import ACTIVE_RUN_MANAGER_KEY, build_agent_runner
+from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
+from server._browser_profile_routes import register_browser_profile_routes
 from server._container_file_routes import register_container_file_routes
 from server._conversation_routes import register_conversation_routes
 from server._custom_app_routes import register_custom_app_routes
@@ -45,7 +46,7 @@ from server._provider_routes import register_provider_routes
 from server._settings_routes import register_settings_routes
 from server._setup_routes import register_setup_routes
 from server._skill_routes import register_skill_routes
-from server._task_routes import register_task_routes
+from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._ui_routes import register_ui_routes
 
@@ -77,10 +78,7 @@ async def cors_and_error_middleware(
     # CSRF: mutating requests must carry X-Requested-With: XMLHttpRequest.
     # Same-origin JS can always set this header; cross-origin JS cannot because
     # the server does not list it in Access-Control-Allow-Headers.
-    if (
-        request.method in _CSRF_METHODS
-        and request.headers.get("X-Requested-With") != "XMLHttpRequest"
-    ):
+    if request.method in _CSRF_METHODS and request.headers.get("X-Requested-With") != "XMLHttpRequest":
         return web.json_response({"error": "CSRF check failed"}, status=403, headers=_CORS_HEADERS)
     try:
         resp: StreamResponse = await handler(request)
@@ -110,8 +108,22 @@ def create_app(
     Returns:
         Configured aiohttp web.Application instance.
     """
+    from browser.runtime import BrowserRuntime
+    from server._browser_runtime import BROWSER_RUNTIME_KEY
+    from conversations import ConversationStore
+    from integrations.connection_cache import IntegrationConnectionCache
+    from integrations.service import integration_service
+    from server._integration_cache import INTEGRATION_CACHE_KEY
+
+    browser_runtime = BrowserRuntime()
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
-    app[ACTIVE_RUN_MANAGER_KEY] = ActiveRunManager(build_agent_runner())
+    app[BROWSER_RUNTIME_KEY] = browser_runtime
+    integration_cache = IntegrationConnectionCache(integration_service)
+    app[INTEGRATION_CACHE_KEY] = integration_cache
+    app[AGENT_RUNTIME_KEY] = AgentRuntime(
+        conversations=ConversationStore(), browser_runtime=browser_runtime,
+        integration_cache=integration_cache,
+    )
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -153,6 +165,7 @@ def create_app(
 
     # Browser takeover side channel (WebSocket)
     register_browser_control_routes(app)
+    register_browser_profile_routes(app)
 
     # Conversation sessions API
     register_conversation_routes(app)
@@ -177,6 +190,7 @@ def create_app(
     # Phase 1: Data migrations — synchronous, must complete before anything
     # else reads state.  No user interaction needed.
     app.on_startup.append(_run_data_migrations)
+    app.on_startup.append(_configure_routines)
 
     # Phase 2: Readiness signals — each contributor hook calls
     # ``register_ready_contributor`` and signals its event when its
@@ -199,13 +213,14 @@ def create_app(
     app.on_startup.append(_start_deferred_subsystems)
     app.on_cleanup.append(_stop_deferred_subsystems)
     app.on_cleanup.append(_stop_active_run_manager)
+    app.on_cleanup.append(_stop_integrations)
 
     return app
 
 
 async def _stop_active_run_manager(app: web.Application) -> None:
     """Gracefully stop process-owned agent runs during server shutdown."""
-    await app[ACTIVE_RUN_MANAGER_KEY].close()
+    await app[AGENT_RUNTIME_KEY].close()
 
 
 async def _run_data_migrations(_app: web.Application) -> None:
@@ -245,11 +260,10 @@ async def _init_setup_signal(app: web.Application) -> None:
 
 
 _INTEGRATIONS_LOAD_DEADLINE_SECONDS = 30.0
-_INTEGRATIONS_LOAD_RETRY_INTERVAL_SECONDS = 1.0
 
 
 async def _init_integrations_signal(app: web.Application) -> None:
-    """Register the integrations-readiness contributor and load the cache.
+    """Start discovery polling and register its bounded initial-readiness gate.
 
     The supervisor binds ``app.sock`` after reconciling stored brokers
     (an upstream IMAP/CalDAV login per integration), which can take a
@@ -261,34 +275,38 @@ async def _init_integrations_signal(app: web.Application) -> None:
     keeps working without integration tools and the UI surfaces the
     "Integrations unavailable" state.
     """
-    from tools.integrations import cache_loaded, registered_integrations
+    from server._integration_cache import INTEGRATION_CACHE_KEY
 
     app["integrations_ready"] = register_ready_contributor(app, "integrations")
+    cache = app[INTEGRATION_CACHE_KEY]
+    cache.start()
 
-    async def _load_with_retry() -> None:
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + _INTEGRATIONS_LOAD_DEADLINE_SECONDS
+    async def _wait_for_initial_snapshot() -> None:
         try:
-            while True:
-                await registered_integrations()
-                if cache_loaded():
-                    logger.info("Integrations cache loaded")
-                    return
-                if loop.time() >= deadline:
-                    logger.warning(
-                        "Integrations cache failed to load within %.0fs; "
-                        "deferred subsystems starting without integrations",
-                        _INTEGRATIONS_LOAD_DEADLINE_SECONDS,
-                    )
-                    return
-                await asyncio.sleep(_INTEGRATIONS_LOAD_RETRY_INTERVAL_SECONDS)
+            await asyncio.wait_for(cache.wait_loaded(), _INTEGRATIONS_LOAD_DEADLINE_SECONDS)
+            logger.info("Integrations cache loaded")
+        except TimeoutError:
+            logger.warning("Starting without integrations; discovery will keep retrying")
         finally:
             app["integrations_ready"].set()
 
     # Store the task on the app so the GC doesn't drop it before it completes.
     app["_integrations_load"] = asyncio.create_task(
-        _load_with_retry(), name="integrations-load-gate",
+        _wait_for_initial_snapshot(),
+        name="integrations-load-gate",
     )
+
+
+async def _stop_integrations(app: web.Application) -> None:
+    """Stop startup waiters and the application-owned discovery poller."""
+    from server._integration_cache import INTEGRATION_CACHE_KEY
+
+    tasks = [app.get("_integrations_load"), app.get("_ready_watcher")]
+    for task in tasks:
+        if task is not None:
+            task.cancel()
+    await asyncio.gather(*(task for task in tasks if task is not None), return_exceptions=True)
+    await app[INTEGRATION_CACHE_KEY].close()
 
 
 async def _init_ready_signal(app: web.Application) -> None:
@@ -324,7 +342,9 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
                 logger.info("Deferred subsystems waiting for readiness")
             await app["ready"].wait()
             logger.info("Ready — starting deferred subsystems")
-            await _init_task_runner(app)
+            runner = app.get("task_runner")
+            if runner:
+                await runner.start()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -333,16 +353,17 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
     app["_deferred_init"] = asyncio.create_task(_deferred(), name="deferred-init")
 
 
-async def _init_task_runner(app: web.Application) -> None:
-    """Initialize and start the task runner."""
+async def _configure_routines(app: web.Application) -> None:
+    """Compose routine services before requests; defer execution until readiness."""
+    from tasks import RoutineService, TaskExecutor, TaskRunner, TelegramNotifier, get_store
+
     config = load_config()
+    store = get_store()
     if not config.routines.enabled:
+        app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner=None)
         return
 
-    from tasks import TaskExecutor, TaskRunner, TelegramNotifier, get_store
-
-    store = get_store()
-    executor = TaskExecutor(store)
+    executor = TaskExecutor(store, app[AGENT_RUNTIME_KEY])
 
     notifier = None
     if config.routines.notifications.enabled:
@@ -352,7 +373,7 @@ async def _init_task_runner(app: web.Application) -> None:
 
     runner = TaskRunner(store, executor, config.routines, notifier=notifier)
     app["task_runner"] = runner
-    await runner.start()
+    app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner)
 
 
 async def _stop_deferred_subsystems(app: web.Application) -> None:
@@ -365,4 +386,4 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
         await runner.stop()
 
 
-__all__ = ["ACTIVE_RUN_MANAGER_KEY", "create_app"]
+__all__ = ["AGENT_RUNTIME_KEY", "create_app"]

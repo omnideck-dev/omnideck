@@ -2,12 +2,11 @@
 
 The loopback OAuth handshake lives here; CRUD routes for integrations live
 in ``_integrations_routes``. Both talk to the supervisor via
-``integrations.supervisor_client``.
+``brokering.supervisor_client``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -16,12 +15,12 @@ from typing import Any
 from aiohttp import web
 
 from config import load_config
-from integrations import supervisor_client
-from integrations.supervisor_client import SupervisorError
-from integrations.permissions import permissions_from_dict
+from integrations.catalog import integration_catalog
+from brokering.supervisor_client import SupervisorError
+from server._brokering import supervisor_call as _supervisor_call
 from server._integrations_http import error_response
 from server._oauth import OAuthIntegrationManager
-from tools.integrations import mark_added
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,8 @@ logger = logging.getLogger(__name__)
 # OAuth-related route handlers. Pending flows live in this object's
 # memory only — restart drops them, user retries.
 _oauth = OAuthIntegrationManager()
+
+_GOOGLE_IDENTITY_SCOPES = frozenset({"openid", "email", "profile"})
 
 
 class _StringRequired(ValueError):
@@ -49,7 +50,7 @@ _FIELD_LABEL = {
 
 def _require_str(body: dict, key: str) -> str:
     value = body.get(key)
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         label = _FIELD_LABEL.get(key, key.replace("_", " ").capitalize())
         msg = f"{label} can't be empty."
         raise _StringRequired(msg)
@@ -81,15 +82,6 @@ def _oauth_popup_html(title: str, body: str) -> str:
     )
 
 
-async def _supervisor_call(verb: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Call a supervisor verb with a 60s timeout."""
-    app_sock = load_config().integrations.app_sock_path
-    return await asyncio.wait_for(
-        supervisor_client.call(verb, args, app_sock_path=app_sock),
-        timeout=60.0,
-    )
-
-
 async def handle_start_oauth(request: web.Request) -> web.Response:
     """``POST /api/integrations/oauth/start`` — begin a loopback-flow add.
 
@@ -102,7 +94,7 @@ async def handle_start_oauth(request: web.Request) -> web.Response:
           "client_id": "...",
           "client_secret": "...",
           "scopes": ["https://www.googleapis.com/auth/gmail.readonly", ...],
-          "permissions": {"email": "rw", "calendar": "r"}
+          "operation_grants": []
         }
 
     On success: ``200 OK`` with ``{state, authorize_url, expires_in}``.
@@ -129,12 +121,32 @@ async def handle_start_oauth(request: web.Request) -> web.Response:
             status=400,
         )
 
+    try:
+        slug = _require_str(body, "slug")
+    except _StringRequired as exc:
+        return error_response("BAD_REQUEST", str(exc))
+    catalog_entry = integration_catalog().get(slug)
+    if catalog_entry is None or not catalog_entry.scope_operations:
+        return error_response(
+            "BAD_REQUEST",
+            "This integration does not support OAuth setup.",
+        )
+
     scopes = body.get("scopes")
     if not isinstance(scopes, list) or not all(
         isinstance(s, str) and s for s in scopes
     ):
         return error_response(
-            "BAD_REQUEST", "Pick at least one capability before authorizing.",
+            "BAD_REQUEST", "Provider access is required before authorizing.",
+        )
+    unsupported_scopes = set(scopes).difference(
+        _GOOGLE_IDENTITY_SCOPES,
+        catalog_entry.scope_operations,
+    )
+    if unsupported_scopes:
+        return error_response(
+            "BAD_REQUEST",
+            "The requested provider access is not supported by this integration.",
         )
 
     # Build the redirect URI from the request's host so it always points
@@ -146,19 +158,37 @@ async def handle_start_oauth(request: web.Request) -> web.Response:
         f"{request.scheme}://{request.host}/api/integrations/oauth/callback"
     )
 
-    perms_raw = body.get("permissions")
-    if not isinstance(perms_raw, dict):
-        perms_raw = {}
+    grants_raw = body.get("operation_grants")
+    if grants_raw is not None and (
+        not isinstance(grants_raw, list)
+        or any(not isinstance(item, str) for item in grants_raw)
+    ):
+        return error_response("BAD_REQUEST", "Selected tools must be an array of IDs.")
+    if "permissions" in body or "write_allowed" in body:
+        return error_response(
+            "BAD_REQUEST", "This screen is out of date. Refresh the app, then try again.",
+        )
+    reconnect_id = body.get("reconnect_id")
+    if reconnect_id is not None and (
+        not isinstance(reconnect_id, str) or not reconnect_id
+    ):
+        return error_response("BAD_REQUEST", "Connection to reconnect is invalid.")
 
     try:
+        user_suffix = (
+            None
+            if reconnect_id is not None
+            else _require_str(body, "user_suffix")
+        )
         pending = _oauth.start(
-            slug=_require_str(body, "slug"),
-            user_suffix=_require_str(body, "user_suffix"),
+            slug=slug,
+            user_suffix=user_suffix,
             label=_require_str(body, "label"),
             client_id=_require_str(body, "client_id"),
             client_secret=_require_str(body, "client_secret"),
             scopes=scopes,
-            permissions_raw=perms_raw,
+            operation_grants_raw=grants_raw,
+            reconnect_id=reconnect_id,
             redirect_uri=redirect_uri,
         )
     except _StringRequired as exc:
@@ -220,6 +250,8 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         terminal = _oauth.status(state)
         if terminal and terminal.status == "denied":
             heading, body = "Sign-in cancelled", "You can close this window."
+        elif terminal and terminal.status == "cancelled":
+            heading, body = "Setup cancelled", "You can close this window."
         else:
             heading, body = (
                 "Couldn't complete sign-in",
@@ -231,16 +263,37 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
             content_type="text/html",
         )
 
-    # Tokens in hand — hand off to the supervisor's existing add path.
-    add_body = {
-        "slug": pending.slug,
-        "user_suffix": pending.user_suffix,
-        "label": pending.label,
-        "auth_blob": auth_blob,
-        "permissions": pending.permissions_raw,
-    }
+    # Cancellation is allowed while the provider exchange is pending, but
+    # not after a supervisor mutation begins. Claim the commit atomically in
+    # this process so a reconnect cannot succeed under a "cancelled" UI.
+    if not _oauth.begin_commit(state):
+        return web.Response(
+            text=_oauth_popup_html("Setup cancelled", "You can close this window."),
+            content_type="text/html",
+        )
+
+    # Tokens in hand — add a new connection or atomically replace the
+    # credentials of the connection that launched a reconnect flow.
+    supervisor_body: dict[str, Any]
+    if pending.reconnect_id is not None:
+        supervisor_verb = "reconnect"
+        supervisor_body = {
+            "id": pending.reconnect_id,
+            "kind": "integration",
+            "auth_blob": dict(auth_blob),
+        }
+    else:
+        supervisor_verb = "add"
+        supervisor_body = {
+            "slug": pending.slug,
+            "kind": "integration",
+            "user_suffix": pending.user_suffix,
+            "label": pending.label,
+            "auth_blob": dict(auth_blob),
+        }
+        supervisor_body["operation_grants"] = pending.operation_grants_raw or []
     try:
-        result = await _supervisor_call("add", add_body)
+        result = await _supervisor_call(supervisor_verb, supervisor_body)
     except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
         logger.warning("supervisor unreachable for add (oauth path): %s", exc)
         _oauth.mark_error(
@@ -275,21 +328,14 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         return web.Response(
             text=_oauth_popup_html(
                 "Something went wrong",
-                "Try again from Omnideck.",
+                "Try again from omnideck.",
             ),
             content_type="text/html",
             status=502,
         )
 
-    # Warm the agent's tool cache so the new integration's tools appear
-    # on the next turn — same hook the app-password add path uses.
-    perms_result = result.get("permissions")
-    mark_added(
-        integration_id,
-        slug,
-        permissions_from_dict(perms_result) if isinstance(perms_result, dict) else {},
-        result.get("state") or "running",
-    )
+    # Wait for post-mutation discovery; an older in-flight poll is insufficient.
+    await request.app[INTEGRATION_CACHE_KEY].refresh()
     _oauth.mark_success(state, integration_id)
     return web.Response(
         text=_oauth_popup_html("Signed in", "You can close this window."),
@@ -312,15 +358,19 @@ async def handle_oauth_status(request: web.Request) -> web.Response:
     if not state:
         return error_response(
             "BAD_REQUEST",
-            "Sign-in session is missing. Try again from Omnideck.",
+            "Sign-in session is missing. Try again from omnideck.",
         )
     pending = _oauth.status(state)
     if pending is None:
         return error_response(
             "NOT_FOUND",
-            "Sign-in session expired. Try again from Omnideck.",
+            "Sign-in session expired. Try again from omnideck.",
         )
-    out: dict[str, Any] = {"status": pending.status}
+    # ``exchanging`` is an internal claim that deduplicates provider callbacks.
+    # The UI may still cancel during that phase, so expose it as pending rather
+    # than adding a transport state to every OAuth connection adapter.
+    public_status = "pending" if pending.status == "exchanging" else pending.status
+    out: dict[str, Any] = {"status": public_status}
     if pending.integration_id is not None:
         out["integration_id"] = pending.integration_id
     if pending.error_code is not None:
@@ -328,6 +378,35 @@ async def handle_oauth_status(request: web.Request) -> web.Response:
             "code": pending.error_code,
             "message": pending.error_message or "",
         }
+    return web.json_response(out)
+
+
+async def handle_cancel_oauth(request: web.Request) -> web.Response:
+    """Cancel an in-flight setup so a late OAuth callback cannot create it."""
+    state = request.match_info.get("state", "")
+    if not state:
+        return error_response(
+            "BAD_REQUEST",
+            "Sign-in session is missing. Try again from omnideck.",
+        )
+    pending = _oauth.cancel(state)
+    if pending is None:
+        # Cancellation is intentionally idempotent. An unknown state cannot
+        # subsequently authorize through this process, so setup is clean.
+        return web.json_response({"status": "cancelled"})
+    if pending.status == "committing":
+        return web.json_response(
+            {
+                "error": {
+                    "code": "BUSY",
+                    "message": "Authorization is being committed and can no longer be cancelled.",
+                },
+            },
+            status=409,
+        )
+    out: dict[str, Any] = {"status": pending.status}
+    if pending.integration_id is not None:
+        out["integration_id"] = pending.integration_id
     return web.json_response(out)
 
 
@@ -341,4 +420,7 @@ def register_oauth_routes(app: web.Application) -> None:
     )
     app.router.add_route(
         "GET", "/api/integrations/oauth/status/{state}", handle_oauth_status,
+    )
+    app.router.add_route(
+        "DELETE", "/api/integrations/oauth/status/{state}", handle_cancel_oauth,
     )

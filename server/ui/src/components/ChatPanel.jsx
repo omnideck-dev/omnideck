@@ -55,10 +55,12 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
                 )}
             </div>
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
-            {/* Keyed by conversation so switching chats remounts the input,
-                discarding any unsent text instead of carrying it over. */}
+            {/* Keyed by conversation so switching chats remounts the input —
+                its own unsent-draft state is restored from local storage per
+                conversationId rather than carried over from the old chat. */}
             <ChatInput
                 key={conversationId}
+                conversationId={conversationId}
                 onSend={onSend}
                 onStop={onStop}
                 isStreaming={isStreaming}

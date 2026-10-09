@@ -14,7 +14,7 @@ import time
 import pytest
 
 from tests.e2e._api import ApiClient
-from tests.e2e._protocol import provider_fail, say, slow
+from tests.e2e._protocol import provider_fail, say, slow, spawn
 
 
 def _conversation_id(label: str) -> str:
@@ -389,3 +389,42 @@ def test_preflight_failure_still_closes_the_stream(
     finally:
         _delete_conversation(api_client, conversation_id)
         api_client.delete(f"/api/profiles/{profile_id}")
+
+
+def test_nested_agents_share_one_run_and_persist_distinct_lifecycles(api_client: ApiClient) -> None:
+    """Protect the public transport and durable identity contract for a run tree."""
+    conversation_id = _conversation_id("nested")
+    profile_id = _default_profile_id(api_client)
+    message = spawn(
+        spawn(say("grandchild answer"), profile=profile_id, name="GRANDCHILD") + say("child answer"),
+        profile=profile_id, name="CHILD",
+    ) + say("root answer")
+    try:
+        events = _run_agent(api_client, conversation_id=conversation_id, profile_id=profile_id, message=message)
+        types = _payload_types(events)
+        assert types.count("turn_end") == 1 and types[-1] == "turn_end"
+        starts = {e["payload"]["agent_id"]: e["payload"] for e in events if e["payload"]["type"] == "agent_started"}
+        ends = {e["payload"]["agent_id"]: e["payload"] for e in events if e["payload"]["type"] == "agent_completed"}
+        assert len(starts) == len(ends) == 3
+        assert starts.keys() == ends.keys()
+        assert all(e["status"] == "success" for e in ends.values())
+        child = next(p for p in starts.values() if p["agent_name"] == "CHILD")
+        grandchild = next(p for p in starts.values() if p["agent_name"] == "GRANDCHILD")
+        assert grandchild["parent_agent_id"] == child["agent_id"]
+        assert child["parent_agent_id"] in starts
+        assert len({e["run_id"] for e in events}) == 1
+        assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
+        calls = {tc["id"] for e in events if e["payload"]["type"] == "iteration"
+                 for tc in e["payload"].get("tool_calls", [])}
+        results = [e["payload"]["tool_call_id"] for e in events if e["payload"]["type"] == "tool_result"]
+        assert len(calls) == len(results) == 2 and set(results) == calls
+        snapshot = _resume(api_client, conversation_id)
+        assert snapshot["active_run"] is None
+        persisted = snapshot["events"]
+        assert len({e["id"] for e in persisted}) == len(persisted)
+        assert {e["agent_id"] for e in persisted if e["type"] == "agent_completed"} == set(starts)
+        assert {e["content"] for e in persisted if e["type"] == "iteration" and not e.get("tool_calls")} == {
+            "root answer", "child answer", "grandchild answer",
+        }
+    finally:
+        _stop_and_delete_conversation(api_client, conversation_id)

@@ -23,6 +23,11 @@ const DEFAULT_PROMPTS = [
     },
 ];
 
+/** Highlights one word of a hero heading in the accent color. */
+export function AccentWord({ children }) {
+    return <span className={styles.accentWord}>{children}</span>;
+}
+
 /**
  * Grid of clickable suggestion cards. Each card hands its prompt text to
  * onSelect — used both by the empty chat (default prompts) and the empty
@@ -31,7 +36,7 @@ const DEFAULT_PROMPTS = [
 export default function StarterPrompts({
     onSelect,
     prompts = DEFAULT_PROMPTS,
-    heading = 'What can I help you with?',
+    heading = <>What can I <AccentWord>help</AccentWord> you with?</>,
     subheading,
 }) {
     return (

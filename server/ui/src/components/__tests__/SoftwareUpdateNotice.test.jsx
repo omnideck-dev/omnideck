@@ -76,12 +76,12 @@ describe('SoftwareUpdateNotice', () => {
         renderNotice(desktop);
         await settle();
 
-        act(() => desktop.announce({ version: '0.2.0' }));
+        act(() => desktop.announce({ version: '0.5.1' }));
 
-        expect(screen.getByText('Omnideck 0.2.0 is ready')).toBeInTheDocument();
+        expect(screen.getByText('Omnideck 0.5.1 is ready')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: /What’s new/ })).toHaveAttribute(
             'href',
-            'https://github.com/omnideck-dev/omnideck/blob/main/docs/releases/app-v0.2.0.md',
+            'https://github.com/omnideck-dev/omnideck/releases/tag/app-v0.5.1',
         );
         expect(screen.getByRole('button', { name: 'Update now' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Later' })).toBeInTheDocument();

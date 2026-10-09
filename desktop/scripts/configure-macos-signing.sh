@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "configure-macos-signing.sh must run on macOS" >&2
@@ -66,7 +67,13 @@ security set-key-partition-list \
   -s \
   -k "${keychain_password}" \
   "${keychain_path}" >/dev/null
-security list-keychains -d user -s "${keychain_path}"
+# Preserve identities belonging to other work on a shared Mac.
+python3 - "${keychain_path}" <<'PYKEYCHAIN'
+import shlex, subprocess, sys
+existing = shlex.split(subprocess.check_output(['security', 'list-keychains', '-d', 'user'], text=True))
+subprocess.run(['security', 'list-keychains', '-d', 'user', '-s',
+                *[path for path in existing if path != sys.argv[1]], sys.argv[1]], check=True)
+PYKEYCHAIN
 
 identity_output="$(security find-identity -v -p codesigning "${keychain_path}")"
 printf '%s\n' "${identity_output}"
@@ -86,7 +93,7 @@ fi
 
 certificate_subject="$(
   security find-certificate -c "${signing_identity}" -p "${keychain_path}" |
-    openssl x509 -noout -subject
+    openssl x509 -noout -subject -nameopt RFC2253
 )"
 if [[ "${certificate_subject}" != *"OU=${APPLE_TEAM_ID}"* ]]; then
   echo "The Developer ID certificate subject does not contain team ${APPLE_TEAM_ID}" >&2

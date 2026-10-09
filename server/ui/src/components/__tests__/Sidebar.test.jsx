@@ -11,11 +11,17 @@ import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
+import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
+
+vi.mock('../../hooks/useIsMobileViewport.js', () => ({
+    default: vi.fn(() => false),
+}));
 
 const navigationHarness = vi.hoisted(() => ({
     navigationTarget: { kind: 'chat', conversationId: 'conversation-1' },
     commands: {
         openChat: vi.fn(),
+        openBrowser: vi.fn(),
         openAgents: vi.fn(),
         openRoutines: vi.fn(),
         openArtifacts: vi.fn(),
@@ -82,6 +88,7 @@ beforeEach(() => {
     navigationHarness.customApps.unpinApp.mockReset();
     navigationHarness.customApps.reorderPinnedApps.mockReset();
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
+    useIsMobileViewport.mockReturnValue(false);
 });
 afterEach(() => localStorage.clear());
 
@@ -89,7 +96,7 @@ describe('Sidebar', () => {
     it('starts expanded with the wordmark and nav labels visible', () => {
         setup();
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
-        expect(screen.getByText('OMNIDECK')).toBeInTheDocument();
+        expect(screen.getByText('omnideck')).toBeInTheDocument();
         expect(screen.getByText('New chat')).toBeInTheDocument();
         expect(screen.getByText('Routines')).toBeInTheDocument();
     });
@@ -99,7 +106,7 @@ describe('Sidebar', () => {
         setup();
         await user.click(screen.getByTestId('sidebar-toggle'));
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
-        expect(screen.queryByText('OMNIDECK')).not.toBeInTheDocument();
+        expect(screen.queryByText('omnideck')).not.toBeInTheDocument();
         expect(screen.queryByText('New chat')).not.toBeInTheDocument();
         expect(screen.queryByText('Routines')).not.toBeInTheDocument();
     });
@@ -131,6 +138,19 @@ describe('Sidebar', () => {
         localStorage.setItem(COLLAPSE_KEY, '1');
         setup();
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
+    });
+
+    it('starts collapsed by default on a mobile viewport', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        setup();
+        expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
+    });
+
+    it('honors an explicit stored preference over the mobile default', () => {
+        useIsMobileViewport.mockReturnValue(true);
+        localStorage.setItem(COLLAPSE_KEY, '0');
+        setup();
+        expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
     });
 
     it('fires onNewConversation from the New chat button', async () => {
@@ -257,7 +277,7 @@ describe('Sidebar', () => {
         const nav = screen.getByRole('navigation');
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'agents', 'artifacts']);
+            .toEqual(['routines', 'agents', 'artifacts', 'browser']);
 
         const agents = screen.getByTestId('sidebar-nav-agents');
         expect(agents).toHaveAttribute(
@@ -267,11 +287,11 @@ describe('Sidebar', () => {
         fireEvent.keyDown(agents, { key: 'ArrowDown', altKey: true });
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'artifacts', 'agents']);
+            .toEqual(['routines', 'artifacts', 'agents', 'browser']);
         expect(JSON.parse(localStorage.getItem('omnideck_sidebar_navigation_order')))
-            .toEqual(['routines', 'artifacts', 'agents', 'apps']);
+            .toEqual(['routines', 'artifacts', 'agents', 'apps', 'browser']);
         expect(screen.getByRole('status')).toHaveTextContent(
-            'Agents moved to position 3 of 3',
+            'Agents moved to position 3 of 4',
         );
     });
 
@@ -288,7 +308,7 @@ describe('Sidebar', () => {
         const nav = screen.getByRole('navigation');
         expect([...nav.querySelectorAll('[data-reorder-id]')]
             .map((row) => row.dataset.reorderId))
-            .toEqual(['routines', 'agents', 'artifacts']);
+            .toEqual(['browser', 'routines', 'agents', 'artifacts']);
     });
 
     it('reorders and unpins sidebar Apps with keyboard and context actions', async () => {

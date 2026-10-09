@@ -27,6 +27,36 @@ test('app notes do not start the native desktop package matrix', () => {
   assert.doesNotMatch(desktopWorkflow, /docs\/releases\/\*\*/);
 });
 
+test('Desktop package builds are gated by deterministic change classification', () => {
+  assert.equal(
+    [...desktopWorkflow.matchAll(/- "\.github\/scripts\/desktop-build-matrix\.mjs"/g)]
+      .length,
+    2,
+  );
+  assert.match(desktopWorkflow, /test:\n    needs: changes/);
+  assert.match(
+    desktopWorkflow,
+    /runtime_image:\n    needs: \[changes, test\]\n    if: needs\.changes\.outputs\.build_required == 'true'/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /build:\n    needs: \[changes, runtime_image\]\n    if: needs\.changes\.outputs\.build_required == 'true'/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/,
+  );
+  assert.match(
+    desktopWorkflow,
+    /artifact_contract:\n    needs: \[changes, build\]\n    if: needs\.changes\.outputs\.full_matrix == 'true'/,
+  );
+  assert.equal(
+    [...desktopWorkflow.matchAll(/if: needs\.changes\.outputs\.native_tests_required == 'true'/g)]
+      .length,
+    5,
+  );
+});
+
 test('browser jobs reuse hosted Chrome instead of downloading Playwright browsers', () => {
   assert.doesNotMatch(publishWorkflow, /playwright install/);
   assert.equal(
@@ -38,6 +68,40 @@ test('browser jobs reuse hosted Chrome instead of downloading Playwright browser
     publishWorkflow,
     /just e2e tests\/e2e\/ --browser-channel chrome/,
   );
+});
+
+test('pre-merge jobs are named for their verification responsibilities', () => {
+  assert.match(
+    publishWorkflow,
+    /python-unit-tests:\n    name: Python unit tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /integration-tests:\n    name: Python and browser integration tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /frontend-tests:\n    name: Frontend unit tests/,
+  );
+  assert.match(
+    publishWorkflow,
+    /static-analysis:\n    name: Static analysis and repository policy/,
+  );
+  assert.match(
+    publishWorkflow,
+    /build:\n    needs: \[python-unit-tests, integration-tests, frontend-tests, static-analysis\]/,
+  );
+});
+
+test('integration suites share the hosted browser job', () => {
+  const integrationJob = publishWorkflow.slice(
+    publishWorkflow.indexOf('  integration-tests:'),
+    publishWorkflow.indexOf('  frontend-tests:'),
+  );
+
+  assert.match(integrationJob, /runs-on: ubuntu-24\.04/);
+  assert.match(integrationJob, /run: just test-browser-tools/);
+  assert.match(integrationJob, /run: just integration/);
 });
 
 test('Linux package installation is retried and time-bounded', () => {
@@ -53,4 +117,17 @@ test('Linux package installation is retried and time-bounded', () => {
   assert.match(aptInstaller, /Acquire::http::Timeout=30/);
   assert.match(aptInstaller, /Acquire::https::Timeout=30/);
   assert.match(aptInstaller, /DPkg::Lock::Timeout=120/);
+});
+
+
+test('Monday autoship publishes app records without PR or workflow-dispatch write permissions', async () => {
+  const workflow = await read('../.github/workflows/container-release.yml');
+  assert.match(workflow, /cron: '0 10 \* \* 1'/);
+  assert.match(workflow, /timezone: America\/Chicago/);
+  assert.match(workflow, /actions: read/);
+  assert.doesNotMatch(workflow, /pull-requests:|actions: write|git push|gh pr|prepare-app-release-pr/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /publish-app-release\.mjs/);
+  assert.match(workflow, /DRY_RUN: \$\{\{ inputs\.dry_run \}\}/);
+  assert.match(workflow, /releases\?per_page=100/);
 });

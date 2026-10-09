@@ -58,6 +58,25 @@ def test_screencast_renders_and_rail_shows_tabs(page: Page):
     expect(bc.tab(2)).to_contain_text("localhost")
 
 
+def test_tab_thumbnails_keep_one_size_for_long_and_short_hosts(page: Page):
+    """A long hostname cannot stretch its tab card beyond the shared base size."""
+    _, bc = _open(page, open_fixture("click") + open_fixture("input"))
+    bc.tab(1).evaluate(
+        "tab => { tab.lastElementChild.textContent = 'myaccount.google.com'; }"
+    )
+    bc.tab(2).evaluate(
+        "tab => { tab.lastElementChild.textContent = 'youtube.com'; }"
+    )
+
+    long_host = bc.tab(1).bounding_box()
+    short_host = bc.tab(2).bounding_box()
+    assert long_host is not None
+    assert short_host is not None
+    assert abs(long_host["width"] - 120) < 1
+    assert abs(short_host["width"] - 120) < 1
+    assert abs(long_host["height"] - short_host["height"]) < 1
+
+
 def test_selecting_tab_switches_streamed_url(page: Page):
     """Selecting a tab points the screencast at it; the address reflects it."""
     _, bc = _open(page, open_fixture("click") + open_fixture("input"))

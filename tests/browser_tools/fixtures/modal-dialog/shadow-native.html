@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Native modal in shadow DOM</title>
+</head>
+<body>
+  <main>
+    <h1>Profile</h1>
+    <button type="button">Background action</button>
+  </main>
+
+  <modal-shell></modal-shell>
+
+  <script>
+    const shell = document.querySelector('modal-shell').attachShadow({mode: 'open'});
+    shell.innerHTML = `
+      <dialog>
+        <h2>Verify your profile</h2>
+        <button id="shadow-close" type="button">Close</button>
+        <button type="button">Continue</button>
+      </dialog>
+    `;
+    const dialog = shell.querySelector('dialog');
+    shell.getElementById('shadow-close').addEventListener('click', () => dialog.close());
+    dialog.showModal();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
-"""Conversation persistence package — store and query conversation data."""
+"""Conversation state, persistence, and live-resource lifecycle."""
 
 from ._browser_tabs import BrowserTabsWriter, load_browser_tabs
+from ._conversation_store import ConversationScope, ConversationStore
 from ._events_log import EventsLogWriter, load_events_jsonl
 from ._folders import (
     create_folder,
@@ -9,7 +10,7 @@ from ._folders import (
     list_folders,
     update_folder,
 )
-from ._models import ConversationSummary, Folder
+from ._models import ConversationResumeState, ConversationSummary, Folder
 from ._terminal import TerminalWriter, load_terminal
 from ._store import (
     archive_conversation,
@@ -34,6 +35,9 @@ from ._title_generation import generate_conversation_title
 
 __all__ = [
     "BrowserTabsWriter",
+    "ConversationResumeState",
+    "ConversationScope",
+    "ConversationStore",
     "ConversationSummary",
     "EventsLogWriter",
     "Folder",

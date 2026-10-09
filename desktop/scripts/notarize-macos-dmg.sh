@@ -35,15 +35,17 @@ if [[ "${#dmgs[@]}" -ne 1 ]]; then
 fi
 
 echo "Submitting final disk image to Apple's notary service: ${dmgs[0]}"
+notary_status=0
 submission_json="$(
   xcrun notarytool submit "${dmgs[0]}" \
     --key "${APPLE_API_KEY_PATH}" \
     --key-id "${APPLE_API_KEY}" \
     --issuer "${APPLE_API_ISSUER}" \
-    --wait \
+    --wait --timeout 20m \
     --output-format json
-)"
+)" || notary_status=$?
 printf '%s\n' "${submission_json}"
+[[ "${notary_status}" == 0 ]] || { echo "Notarization command failed or timed out; retain the submission ID above for follow-up" >&2; exit "${notary_status}"; }
 
 submission_status="$(
   printf '%s' "${submission_json}" |

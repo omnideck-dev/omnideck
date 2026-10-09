@@ -6,10 +6,10 @@ import logging
 
 from playwright.async_api import Error as PlaywrightError
 
+from browser.core.exceptions import BrowserToolError
+from browser.runtime import get_browser
 from tools.browser._tool_context import get_document, get_tab
 from tools.browser._tool_support import format_action_result
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.pool import get_browser
 from tools.browser.events import emit_screenshot, emit_screenshot_after, emit_tab_state
 
 logger = logging.getLogger(__name__)

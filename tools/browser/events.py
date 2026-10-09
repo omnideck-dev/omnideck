@@ -27,9 +27,9 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from tools.browser.core.tab import Tab
+    from browser.core.tab import Tab
 
-from tools.browser.core.pool import get_browser
+from browser.runtime import get_browser
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ async def _emit_screenshot(tab: Tab) -> None:
     This is the single code path for all screenshot emission.  Uses JPEG at
     reduced quality for fast encoding and small payloads.
     """
-    from sdk.events import (
+    from agent_core.events import (
         AgentEvent,
         BrowserScreenshotPayload,
         publish_event,
@@ -141,7 +141,7 @@ async def emit_tab_state() -> None:
     notably after a tab closes (which has no page to screenshot), so the closed
     tab is pruned even when it was the last one open.
     """
-    from sdk.events import AgentEvent, BrowserScreenshotPayload, publish_event
+    from agent_core.events import AgentEvent, BrowserScreenshotPayload, publish_event
 
     try:
         browser = await get_browser()

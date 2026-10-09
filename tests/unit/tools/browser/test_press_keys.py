@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tools.browser import BrowserToolError
-from tools.browser.core.document import Document
-from tools.browser.interactions import press_keys
+from browser.core.document import Document
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
+from tools.browser import BrowserToolError
+from tools.browser.interactions import press_keys
 
 
 class FakeKeyboard:

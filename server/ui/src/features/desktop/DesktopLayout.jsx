@@ -5,6 +5,7 @@ import {
 } from 'react';
 
 import SplitHandle from '../../components/SplitHandle.jsx';
+import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import DesktopTabGroup from './DesktopTabGroup.jsx';
 import DesktopViewHost from './DesktopViewHost.jsx';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
@@ -27,6 +28,7 @@ export default function DesktopLayout({
     renderView,
 }) {
     const [liveSplitRatio, setLiveSplitRatio] = useState(null);
+    const isMobile = useIsMobileViewport();
 
     useEffect(() => {
         if (!model.fullscreenViewId) return undefined;
@@ -41,7 +43,28 @@ export default function DesktopLayout({
     const rightTabGroup = model.tabGroups[DESKTOP_TAB_GROUP_IDS.RIGHT];
     const leftVisible = leftTabGroup.viewIds.length > 0;
     const rightVisible = rightTabGroup.viewIds.length > 0;
-    const split = leftVisible && rightVisible;
+    const split = leftVisible && rightVisible && !isMobile;
+    // Mobile has no room for a second pane, so the right tab group stays
+    // hidden there — unless the left group is empty, in which case falling
+    // back to the right group's content beats showing a blank screen.
+    const showRightTabGroup = rightVisible && (!isMobile || !leftVisible);
+
+    useEffect(() => {
+        // Both panes can end up populated on mobile — restored two-pane
+        // layout state, or a desktop window resized down below the mobile
+        // breakpoint. Merge the hidden pane into the visible one so its
+        // views stay reachable instead of stranding them with no chrome to
+        // select or move them from. Uses the dedicated merge command, not
+        // moveView: moveView is built for an explicit user placement change
+        // (it activates the moved view and clears floating focus), and this
+        // is an automatic reconciliation that must not silently steal the
+        // active tab or unrelated floating focus out from under the user.
+        if (!isMobile || !leftVisible || !rightVisible) return;
+        commands.mergeTabGroup(
+            DESKTOP_TAB_GROUP_IDS.RIGHT,
+            DESKTOP_TAB_GROUP_IDS.LEFT,
+        );
+    }, [commands, isMobile, leftVisible, rightVisible]);
     const fullscreenActive = Boolean(model.fullscreenViewId);
     const visibleSplitRatio = liveSplitRatio ?? model.splitRatio;
     const gridTemplateColumns = split
@@ -97,7 +120,7 @@ export default function DesktopLayout({
                 />
             )}
 
-            {rightVisible && (
+            {showRightTabGroup && (
                 <div
                     className={[
                         styles.rightTabGroup,
@@ -119,8 +142,18 @@ export default function DesktopLayout({
 
             {model.openViews.map((view) => {
                 const tabGroupId = tabGroupContainingView(model.tabGroups, view.id);
+                // A tab group that isn't actually rendered (the right group,
+                // suppressed on mobile) must not mark its active view visible
+                // either — otherwise that view stays mounted, focusable, and
+                // "visible" in a 0-width grid column with no chrome to reach it.
+                const tabGroupShown = tabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT
+                    ? leftVisible
+                    : tabGroupId === DESKTOP_TAB_GROUP_IDS.RIGHT
+                        ? showRightTabGroup
+                        : false;
                 const activeInTabGroup = Boolean(
-                    tabGroupId && model.tabGroups[tabGroupId].activeViewId === view.id,
+                    tabGroupShown
+                    && model.tabGroups[tabGroupId].activeViewId === view.id,
                 );
                 const floatingView = model.floatingByViewId?.[
                     view.id

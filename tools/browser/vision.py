@@ -14,12 +14,12 @@ from dataclasses import replace
 
 from playwright.async_api import Error as PlaywrightError
 
+from browser.core.document import Document
+from browser.core.exceptions import BrowserToolError
+from browser.core.formatting import format_rendered_document
 from settings import load_settings
 from tools.browser._tool_context import get_document
 from tools.browser._tool_support import format_action_result
-from tools.browser.core.document import Document
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.formatting import format_rendered_document
 from tools.browser.events import emit_screenshot_after
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,8 @@ async def inspect_page(
 
     encoded_image = base64.b64encode(screenshot_bytes).decode("ascii")
 
-    from sdk.providers import ProviderError, vision_generate
+    from agent_core.providers import ProviderError
+    from providers import vision_generate
 
     try:
         answer = await vision_generate(clean_prompt, encoded_image)
@@ -104,7 +105,7 @@ async def inspect_page(
         raise BrowserToolError(str(exc), tool=_SCREENSHOT_TOOL_NAME) from exc
     except ProviderError as exc:
         logger.exception("Failed to generate answer for screenshot question")
-        msg = "Failed to generate answer from screenshot."
+        msg = f"Failed to generate answer from screenshot: {exc}"
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME) from exc
 
     if not answer:

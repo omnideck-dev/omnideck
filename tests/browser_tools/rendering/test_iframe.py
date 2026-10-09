@@ -11,7 +11,13 @@ separate refactor (plans/iframe_per_frame_page_view.md).
 
 from __future__ import annotations
 
-from tools.browser import browse_page, click, fill_field
+import asyncio
+
+import pytest
+from aiohttp import web
+
+from browser.core.document import Document
+from tools.browser import browse_page, click, fill_field, new_tab
 
 from .._helpers import find_ref
 
@@ -39,6 +45,56 @@ async def test_dominant_cross_origin_iframe_becomes_selected_document(open_tab, 
     assert find_ref(rendered, role="textbox", name="Email address") is not None
     assert find_ref(rendered, role="button", name="Continue") is not None
     assert "Host page heading" not in rendered
+
+
+@pytest.mark.parametrize("dominant", [True, False])
+async def test_iframe_loading_during_settle_reconsiders_host_selection(
+    _live_browser, servers, monkeypatch, dominant,
+):
+    """Real iframe loading must not leave the early host selection cached."""
+    release_response = asyncio.Event()
+
+    async def widget(_request):
+        await release_response.wait()
+        return web.Response(
+            text='<html><body><label>Email address<input></label>'
+            '<button>Continue</button></body></html>',
+            content_type="text/html",
+        )
+
+    app = web.Application()
+    app.router.add_get("/widget", widget)
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    original_settle = Document.settle
+
+    async def settle_after_response_is_released(document, waits):
+        # Hold the cross-origin response until selection has already chosen
+        # the host. Keep the real load/DOM waits and renderer: no timing sleeps
+        # or fake selection results, even on fast local machines.
+        release_response.set()
+        return await original_settle(document, waits)
+
+    monkeypatch.setattr(Document, "settle", settle_after_response_is_released)
+    try:
+        await web.TCPSite(runner, "127.0.0.1", 0).start()
+        port = runner.addresses[0][1]
+        rendered = await new_tab(servers.embed(
+            f"http://127.0.0.1:{port}/widget",
+            width="92vw" if dominant else "100px",
+            height="92vh" if dominant else "100px",
+        ))
+        if dominant:
+            assert find_ref(rendered, role="textbox", name="Email address") is not None
+            assert find_ref(rendered, role="button", name="Continue") is not None
+            assert "Host page heading" not in rendered
+        else:
+            assert "Host page heading" in rendered
+            assert find_ref(rendered, role="textbox", name="Email address") is None
+    finally:
+        release_response.set()
+        await runner.cleanup()
 
 
 async def test_cross_origin_iframe_supports_physical_input(open_tab, servers):

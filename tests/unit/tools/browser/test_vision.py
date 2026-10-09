@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import base64
 import importlib
+from unittest.mock import AsyncMock
 
 import pytest
 
+from agent_core.providers import ProviderError
+from browser.core.document import Document
+from browser.core.rendering import RenderedDocument
 from tools._grounding import GroundingResponse
 from tools.browser import BrowserToolError
-from tools.browser.core.document import Document
-from tools.browser.core.rendering import RenderedDocument
 from tools.browser.vision import browser_visual_action, inspect_page
 
 # ── Shared helpers ────────────────────────────────────────────────────
@@ -110,7 +112,7 @@ class _FakeBrowser:
         return self._tab
 
     async def coordinate_action(self, action_fn, *, source_tab=None):
-        from tools.browser.core.browser import ActionResult
+        from browser.core.browser import ActionResult
 
         await action_fn()
         return ActionResult(
@@ -128,7 +130,7 @@ _FAKE_SETTINGS = {
 
 
 async def _fake_vision_generate(prompt, image_base64, *, media_type="image/png"):
-    """Stand-in for sdk.providers.vision_generate."""
+    """Stand-in for providers.vision_generate."""
     _fake_vision_generate.called = True
     _fake_vision_generate.last_prompt = prompt
     _fake_vision_generate.last_image = image_base64
@@ -141,6 +143,24 @@ _fake_vision_generate.last_image = None
 
 
 # ── inspect_page tests ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_inspect_page_preserves_provider_error(monkeypatch):
+    browser = _FakeBrowser(_ScreenshotFakePage(b"fake-image-bytes"))
+    monkeypatch.setattr("tools.browser.vision.get_document", _make_fake_get_document(browser))
+    cause = ProviderError("vision-model was retired (status code: 410)")
+    generate = AsyncMock(side_effect=cause)
+    monkeypatch.setattr("providers.vision_generate", generate)
+
+    with pytest.raises(BrowserToolError) as caught:
+        await inspect_page("Describe the page", tab="1")
+
+    assert str(cause) in str(caught.value)
+    assert caught.value.tool == "inspect_page"
+    assert caught.value.__cause__ is cause
+    generate.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -162,7 +182,7 @@ async def test_inspect_page_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("sdk.providers.vision_generate", _fake_vision_generate):
+    with patch("providers.vision_generate", _fake_vision_generate):
         answer = await inspect_page("What is in the header?", tab="1")
 
     assert answer == "Mock answer"
@@ -223,14 +243,12 @@ async def test_inspect_page_ref_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("sdk.providers.vision_generate", _fake_vision_generate):
+    with patch("providers.vision_generate", _fake_vision_generate):
         answer = await inspect_page("Describe the hero", mode="ref", ref="7", tab="1")
 
     assert answer == "Mock answer"
     assert _fake_vision_generate.called
-    assert _fake_vision_generate.last_image == base64.b64encode(
-        b"element-bytes"
-    ).decode("ascii")
+    assert _fake_vision_generate.last_image == base64.b64encode(b"element-bytes").decode("ascii")
 
 
 @pytest.mark.unit

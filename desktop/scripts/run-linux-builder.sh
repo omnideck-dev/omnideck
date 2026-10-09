@@ -34,6 +34,23 @@ docker_args=(
   --env RUSTUP_HOME=/usr/local/rustup
   --env XDG_CACHE_HOME=/tmp/omnideck-cache
 )
+builder_cache=''
+builder_lock_fd=''
+if [[ -n "${OMNIDECK_DESKTOP_BUILDER_CACHE_DIR:-}" ]]; then
+  mkdir -p "${OMNIDECK_DESKTOP_BUILDER_CACHE_DIR}"
+  builder_cache="$(realpath -e "${OMNIDECK_DESKTOP_BUILDER_CACHE_DIR}")"
+  mkdir -p "${builder_cache}/home" "${builder_cache}/cargo" \
+    "${builder_cache}/xdg" "${builder_cache}/pnpm"
+  exec {builder_lock_fd}>"${builder_cache}/build.lock"
+  flock "${builder_lock_fd}"
+  docker_args+=(
+    --env HOME=/builder-cache/home
+    --env CARGO_HOME=/builder-cache/cargo
+    --env XDG_CACHE_HOME=/builder-cache/xdg
+    --volume "${builder_cache}:/builder-cache"
+    --volume "${builder_cache}/pnpm:/tmp/.pnpm-store"
+  )
+fi
 container_workdir=/workspace/desktop
 stage_source=''
 if [[ -n "${OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR:-}" ]]; then
@@ -49,3 +66,7 @@ docker_args+=(--workdir "${container_workdir}" "${image}")
 
 docker "${docker_args[@]}" \
   bash -c "${stage_source}mkdir -p \"\${HOME}\" \"\${CARGO_HOME}\" \"\${XDG_CACHE_HOME}\" && pnpm install --frozen-lockfile && ${command_string}"
+if [[ -n "${builder_lock_fd}" ]]; then
+  flock -u "${builder_lock_fd}"
+  exec {builder_lock_fd}>&-
+fi

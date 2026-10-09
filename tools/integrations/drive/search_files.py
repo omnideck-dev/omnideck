@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.drive._format import format_file
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,9 @@ async def search_drive_files(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "search_drive_files",
+            "drive.files.search",
             {"query": query, "limit": limit},
             app_sock_path=app_sock,
         )
@@ -43,10 +44,19 @@ async def search_drive_files(
         return f"Failed to search Drive: {exc}"
 
     files = result.get("files", [])
+    incomplete_note = (
+        "\n(Note: Google could not search all Shared Drives — these results may be incomplete.)"
+        if result.get("incomplete")
+        else ""
+    )
     if not files:
-        return f"No files matching {query!r}."
+        return f"No files matching {query!r}." + incomplete_note
     lines = [format_file(f) for f in files]
-    return f"Drive search results for {query!r} ({len(lines)}):\n" + "\n".join(lines)
+    return (
+        f"Drive search results for {query!r} ({len(lines)}):\n"
+        + "\n".join(lines)
+        + incomplete_note
+    )
 
 
 def build_search_drive_files_tool(integration_ids: Iterable[str]) -> Callable[..., Any]:

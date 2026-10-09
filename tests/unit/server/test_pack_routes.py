@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agents._agent_profiles import AgentProfile, list_agent_profiles, save_agent_profile
-from sdk.skills._store import SkillRecord, list_skill_records, save_skill_record
+from skills._store import SkillRecord, list_skill_records, save_skill_record
 from server._pack_routes import (
     _slug,
     handle_export_profile,
@@ -23,10 +23,8 @@ from server._pack_routes import (
 
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles"
-    )
-    monkeypatch.setattr("sdk.skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr("agents._agent_profiles._profiles_dir", lambda: tmp_path / "agent_profiles")
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
 
 def _make_request(*, match_info=None, json_body=None, query=None, raw_body=None):
@@ -62,9 +60,7 @@ async def test_export_profile_downloads_pack_with_attachment_header():
 @pytest.mark.unit
 async def test_export_profile_include_skills_and_exclude_model():
     save_skill_record(SkillRecord(id="coder", name="Coder"))
-    save_agent_profile(
-        AgentProfile(id="r", name="R", provider="anthropic", model="claude-x", skills=["coder"])
-    )
+    save_agent_profile(AgentProfile(id="r", name="R", provider="anthropic", model="claude-x", skills=["coder"]))
     req = _make_request(
         match_info={"id": "r"},
         query={"include_skills": "true", "include_model": "false"},
@@ -100,6 +96,15 @@ async def test_export_skill_downloads_pack():
     assert 'filename="Coder.skill.omnideck.json"' in resp.headers["Content-Disposition"]
     pack = json.loads(resp.body)
     assert pack["skills"][0]["prompt"] == "Write code."
+
+
+@pytest.mark.unit
+async def test_export_browser_skill_returns_404():
+    save_skill_record(SkillRecord(id="browser", name="Browser", tool_categories=["browser"]))
+
+    resp = await handle_export_skill(_make_request(match_info={"id": "browser"}))
+
+    assert resp.status == 404
 
 
 @pytest.mark.unit
@@ -162,9 +167,7 @@ async def test_import_creates_profiles_and_skills():
     body = {
         "kind": "omnideck.pack",
         "version": 1,
-        "profiles": [
-            {"name": "Researcher", "skills": [{"name": "Coder", "prompt": "Write code."}]}
-        ],
+        "profiles": [{"name": "Researcher", "skills": [{"name": "Coder", "prompt": "Write code."}]}],
         "skills": [],
     }
     resp = await handle_import_pack(_make_request(json_body=body))

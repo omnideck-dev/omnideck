@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import useBrowserControl from './useBrowserControl.js';
+import useBrowserControl from '../browser/useBrowserControl.js';
 
 /**
  * Owns the browser side channel and the tab model the workspace renders.
@@ -12,10 +12,24 @@ import useBrowserControl from './useBrowserControl.js';
  *
  * Returns the control object, the merged tab list, and the selection state.
  */
-export default function useBrowserTabs({ conversationId, canControl, enabled, agentTabs }) {
+export default function useBrowserTabs({
+    conversationId,
+    canControl,
+    enabled,
+    agentTabs,
+    sessionKey = null,
+}) {
     const [selectedTabId, setSelectedTabId] = useState(null);
 
-    const control = useBrowserControl({ conversationId, selectedTabId, canControl, enabled });
+    const control = useBrowserControl({
+        target: conversationId
+            ? { type: 'conversation', conversationId }
+            : null,
+        selectedTabId,
+        canControl,
+        enabled,
+        sessionKey,
+    });
 
     // Prefer the live channel list once it has sent anything (fresh during
     // takeover, when the agent emits no screenshots), reusing agent screenshots

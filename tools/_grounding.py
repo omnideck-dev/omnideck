@@ -69,7 +69,7 @@ async def run_grounding(
             grounding server fails.
     """
     if screenshot_filename is None:
-        from sdk.events import get_current_agent_id
+        from agent_core.events import get_current_agent_id
         agent_id = get_current_agent_id() or "default"
         safe_id = agent_id.replace(".", "_")
         screenshot_filename = f"grounding_{safe_id}.png"

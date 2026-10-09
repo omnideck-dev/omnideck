@@ -54,10 +54,11 @@ Run the deterministic candidate matrix before opening a viewer:
 cd /path/to/omnideck/desktop
 export OMNIDECK_VM_LAB_DIR=/absolute/path/to/omnideck-release-lab
 export OMNIDECK_CLI_WORKTREE=/path/to/omnideck-cli
-pnpm run test:vm-candidate -- --lanes appimage,deb,rpm,atomic,windows --yes
+pnpm run test:vm-candidate -- --suite product --lanes appimage,deb,rpm,atomic,windows --yes
 ```
 
-The matrix preflights the selected profile, builds Linux and Windows candidates
+Use `--suite onboarding` for prerequisite/elevation/restart changes and
+`--suite all` for both tiers. The matrix preflights the selected profile, builds Linux and Windows candidates
 once into the lab's content-addressed cache, groups work by guest, owns every
 lease/reset, and writes aggregate evidence under
 `$OMNIDECK_VM_LAB_DIR/artifacts/desktop/candidate-matrix/`. Cargo, pnpm, sidecar,

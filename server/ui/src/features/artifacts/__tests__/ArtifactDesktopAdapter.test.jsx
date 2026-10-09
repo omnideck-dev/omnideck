@@ -10,6 +10,7 @@ import {
 
 import {
     ArtifactDesktopEffects,
+    default as ArtifactsHubDesktopView,
 } from '../ArtifactDesktopAdapter.jsx';
 
 const desktop = vi.hoisted(() => ({
@@ -18,6 +19,14 @@ const desktop = vi.hoisted(() => ({
         openView: vi.fn(),
         preferredTabGroupId: vi.fn(() => 'right'),
         syncViews: vi.fn(),
+    },
+}));
+const artifactHub = vi.hoisted(() => ({ render: vi.fn() }));
+
+vi.mock('../../../components/artifacts/ArtifactsHubView.jsx', () => ({
+    default: (props) => {
+        artifactHub.render(props);
+        return null;
     },
 }));
 
@@ -159,5 +168,25 @@ describe('ArtifactDesktopEffects restore reconciliation', () => {
             '/api/artifacts?conversation_id=conversation-1',
             expect.any(Object),
         );
+    });
+});
+
+describe('ArtifactsHubDesktopView', () => {
+    beforeEach(() => {
+        artifactHub.render.mockClear();
+    });
+
+    it('passes Desktop visibility to the Artifact hub', () => {
+        render(
+            <ArtifactsHubDesktopView
+                view={{ type: 'artifacts' }}
+                visible={false}
+                tabGroupId="left"
+            />,
+        );
+
+        expect(artifactHub.render).toHaveBeenCalledWith(expect.objectContaining({
+            visible: false,
+        }));
     });
 });

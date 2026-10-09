@@ -1,0 +1,37 @@
+.popover {
+    overflow: auto;
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--elevated);
+    box-shadow: var(--shadow-lg);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--sp-1);
+}
+
+.option {
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-ui);
+}
+
+.option:hover,
+.option:focus-visible {
+    background: var(--accent-muted);
+    color: var(--text-primary);
+}
+
+.selected {
+    border-color: var(--accent);
+    background: var(--accent-muted);
+    color: var(--accent);
+}

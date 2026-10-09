@@ -74,12 +74,26 @@ verify_app() {
       echo "${app} is not signed by expected Apple team ${expected_team_id}" >&2
       return 1
     fi
-    if ! grep -Eq '^flags=.*\(runtime\)' <<<"${details}"; then
+    if ! grep -Eq '(^|[[:space:]])flags=.*\(runtime\)' <<<"${details}"; then
       echo "${app} does not enable the hardened runtime" >&2
       return 1
     fi
     if ! grep -Eq '^Timestamp=.+$' <<<"${details}" || grep -q '^Timestamp=none$' <<<"${details}"; then
       echo "${app} does not have a secure signing timestamp" >&2
+      return 1
+    fi
+    local cli="${app}/Contents/MacOS/omnideck-cli"
+    [[ -f "${cli}" ]] || { echo "Missing bundled CLI: ${cli}" >&2; return 1; }
+    codesign --verify --strict --verbose=4 "${cli}"
+    local cli_details
+    cli_details="$(codesign --display --verbose=4 "${cli}" 2>&1)"
+    printf '%s\n' "${cli_details}"
+    if ! grep -q '^Authority=Developer ID Application:' <<<"${cli_details}" ||
+      ! grep -q "^TeamIdentifier=${expected_team_id}$" <<<"${cli_details}" ||
+      ! grep -Eq '(^|[[:space:]])flags=.*\(runtime\)' <<<"${cli_details}" ||
+      ! grep -Eq '^Timestamp=.+$' <<<"${cli_details}" ||
+      grep -q '^Timestamp=none$' <<<"${cli_details}"; then
+      echo "The bundled CLI is missing the expected Developer ID, hardened runtime, or timestamp" >&2
       return 1
     fi
   fi

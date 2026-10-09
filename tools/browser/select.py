@@ -6,9 +6,10 @@ import logging
 
 from playwright.async_api import Error as PlaywrightError
 
+from browser.core.exceptions import BrowserToolError
+
 from ._tool_context import get_document
 from ._tool_support import format_action_result
-from .core.exceptions import BrowserToolError
 
 logger = logging.getLogger(__name__)
 

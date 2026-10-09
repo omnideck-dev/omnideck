@@ -6,10 +6,10 @@ import logging
 
 from playwright.async_api import Error as PlaywrightError
 
+from browser.core.exceptions import BrowserToolError
+from browser.core.formatting import format_page_header
+from browser.core.markdown import html_to_markdown
 from tools.browser._tool_context import get_document
-from tools.browser.core.exceptions import BrowserToolError
-from tools.browser.core.formatting import format_page_header
-from tools.browser.core.markdown import html_to_markdown
 
 logger = logging.getLogger(__name__)
 

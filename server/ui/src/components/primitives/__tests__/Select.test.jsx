@@ -25,9 +25,13 @@ describe('Select', () => {
         const trigger = screen.getByRole('combobox', { name: 'Agent profile' });
         expect(trigger).toHaveAttribute('data-value', 'omni');
         expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(trigger).toHaveAttribute('title', 'Omnideck');
+        expect(trigger.previousElementSibling).toHaveAttribute('aria-hidden', 'true');
+        expect(trigger.previousElementSibling).toHaveTextContent('Unavailable');
 
         fireEvent.click(trigger);
         expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('option', { name: 'Omnideck' })).toHaveAttribute('title', 'Omnideck');
         expect(screen.getByRole('option', { name: 'Omnideck' })).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByTestId('profile-select-menu').parentElement).toBe(document.body);
     });
@@ -43,6 +47,22 @@ describe('Select', () => {
         expect(onChange).toHaveBeenCalledWith('research', options[1]);
         expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
         expect(trigger).toHaveFocus();
+    });
+
+    it('carries the trigger typography into its portaled menu', () => {
+        render(<Select ariaLabel="Profile" options={options} value="omni" />);
+        const trigger = screen.getByRole('combobox', { name: 'Profile' });
+        const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+            font: '12px "Roboto Mono"',
+        });
+
+        try {
+            fireEvent.click(trigger);
+            expect(document.querySelector('[role="listbox"]').style.font)
+                .toBe('12px "Roboto Mono"');
+        } finally {
+            getComputedStyle.mockRestore();
+        }
     });
 
     it('supports arrows, Home, End, Enter, Escape, and skips disabled options', async () => {

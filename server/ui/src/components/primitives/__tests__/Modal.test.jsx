@@ -2,6 +2,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
 import Modal from '../Modal.jsx';
+import styles from '../Modal.module.css';
+
+test('contained layout is opt-in and preserves dismissal behavior', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<Modal onClose={onClose}>body</Modal>);
+    expect(screen.getByRole('dialog')).not.toHaveClass(styles.contained);
+    rerender(<Modal layout="contained" onClose={onClose}>body</Modal>);
+    expect(screen.getByRole('dialog')).toHaveClass(styles.contained);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+});
 
 test('renders its children inside the panel', () => {
     render(<Modal testId="m"><p>body</p></Modal>);

@@ -201,9 +201,9 @@ test-browser-tools *args:
 test-file file:
     PYTHONPATH=. uv run pytest {{file}}
 
-# Run integration tests (needs a running container with Ollama)
+# Run local integration tests. Tests needing an external app opt in via OMNIDECK_URL.
 integration:
-    OMNIDECK_URL="${OMNIDECK_URL:-http://localhost:8080}" PYTHONPATH=. uv run pytest tests/integration/
+    PYTHONPATH=. uv run pytest tests/integration/
 
 # Coverage report
 test-cov:
@@ -309,8 +309,8 @@ e2e *args:
     else
         just _build-image "$image"
     fi
-    name="omnideck_e2e"
-    port=9090
+    name="${E2E_CONTAINER:-omnideck_e2e}"
+    port="${E2E_PORT:-9090}"
     state=$(mktemp -d)
     mkdir -p "$state/home" "$state/state"
     cleanup() {
@@ -341,6 +341,7 @@ e2e *args:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
+        -e OMNIDECK_ENABLE_TEST_INTEGRATIONS=1 \
         "${env_args[@]}" \
         -v "$state/home:/home/omnideck:rw,z" \
         -v "$state/state:/var/lib/omnideck:rw,z" \
@@ -365,7 +366,9 @@ e2e *args:
         -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
-    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
+    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" \
+        OMNIDECK_CONTAINER_ENGINE="$engine" PYTHONPATH=. \
+        uv run pytest ${targets:-tests/e2e/}
 
 
 # =============================================================================
@@ -384,11 +387,11 @@ typecheck:
 
 # Verify every registered agent tool has schema-ready Google documentation
 tool-docs:
-    uv run --extra test pytest -p no:warnings tests/unit/sdk/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
+    uv run --extra test pytest -p no:warnings tests/unit/agent_core/skills/test_tool_categories.py::test_agent_tools_have_schema_ready_google_docstrings
 
 # Verify the shared release-note contract and any outstanding fragments
 release-note-policy:
-    node --test tests/release-notes.test.mjs
+    node --test tests/release-notes.test.mjs tests/weekly-app-release.test.mjs tests/publish-app-release.test.mjs
     node scripts/release-notes.mjs validate-fragments
 
 # Verify CI event routing, bounded package setup, and hosted browser reuse
@@ -519,7 +522,7 @@ _ui-build ctr:
 # runs each in a respawn loop, so killing the inner Python lets the loop
 # pick it back up with the freshly synced source.
 _bounce-services ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
+    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m brokering.supervisor" 2>/dev/null || true
     @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
 
 # Poll until the app responds on the given port (up to ~60s)

@@ -1,246 +1,236 @@
-"""Execute one complete application-level agent run."""
+"""Prepare and execute root and child agents inside an application RunSession."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from contextlib import AsyncExitStack
+from functools import partial
+from collections.abc import Sequence
+from uuid import uuid4
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from agent_runtime._models import AgentRunRequest, EventSink, RunAttachment
-from agents import AgentProfile, build_agent, get_agent_profile
-from agents.types import Agent
-from artifacts import ArtifactsIndexWriter
-from conversations import (
-    BrowserTabsWriter,
-    EventsLogWriter,
-    TerminalWriter,
-    save_conversation_profile,
-)
-from sdk import default_hooks, run_turn
-from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events import (
+from agents import AgentProfile, get_agent_profile
+from browser.runtime import BrowserRuntime
+from config import load_config
+from conversations import save_conversation_profile
+from agent_core import AgentExecutor, default_hooks
+from agent_core.context import ContextManager, ConversationHistory
+from agent_core.control import StopRequestedError
+from agent_core.events import (
     AgentEvent,
     ErrorPayload,
-    TurnEndPayload,
+    SpawnRequestedPayload,
     UserAttachment,
     UserMessagePayload,
     agent_span,
     publish_event,
 )
-from sdk.skills import build_agent_state, persist_loaded_skills
-from sdk.turn import ToolLoopError, check_stop, turn_scope
-from sdk.turn._turn import StopRequestedError
-from tools.memory import load_memory
+from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
+
+from ._compaction import LLMCompactionStrategy
+from ._factory import AgentFactory, persist_loaded_skills
+from ._models import AgentRunRequest, RunAttachment, RunPolicy
+from ._scratchpad_hook import ScratchpadHook
+from ._session import RunSession
+from ._spawn import make_spawn_tool
 
 logger = logging.getLogger(__name__)
 _console = Console(stderr=True)
-
-ConversationLoader = Callable[
-    [str],
-    Awaitable[ConversationHistory],
-]
+_CHILD_POLICY = RunPolicy(restore_skills=False, persist_skills=False, include_memory=False)
 
 
 class AgentRunner:
-    """Translate an application-level agent run into SDK turn execution.
+    """Execute one agent; the supplied session owns the surrounding run."""
 
-    This boundary owns the setup shared by every delivery channel. The current
-    implementation maps one run to one root turn, but callers depend on run
-    semantics rather than the lower-level turn lifecycle.
-    """
-
-    def __init__(self, conversation_loader: ConversationLoader) -> None:
-        self._conversation_loader = conversation_loader
-
-    async def run(
-        self,
-        request: AgentRunRequest,
-        *,
-        emit: EventSink,
-        stop_event: asyncio.Event,
+    def __init__(
+        self, *, factory: AgentFactory | None = None, browser_runtime: BrowserRuntime | None = None,
     ) -> None:
-        """Run until domain completion, publishing every event through ``emit``."""
+        self._factory = factory if factory is not None else AgentFactory()
+        self.browser_runtime = browser_runtime if browser_runtime is not None else BrowserRuntime()
+
+    async def run(self, request: AgentRunRequest, session: RunSession) -> ExecutionResult:
+        """Translate accepted root input into the shared execution path."""
         try:
-            if not request.conversation_id:
-                msg = "conversation_id is required"
-                raise ValueError(msg)
-            history = await self._conversation_loader(request.conversation_id)
+            session.root_context.control.check_stop()
+            profile = self._factory.resolve_profile(request.profile_id)
+            _log_turn_start(profile)
+            instruction = request.message
+            attachments: list[UserAttachment] = []
+            if request.attachments:
+                instruction, attachments = _augment_message_with_attachments(request.message, request.attachments)
+            save_conversation_profile(request.conversation_id, profile.id)
+            return await self.execute(
+                session=session,
+                context=session.root_context,
+                profile=profile,
+                message=request.message,
+                instruction=instruction,
+                attachments=attachments,
+                name=request.policy.agent_name,
+                policy=request.policy,
+            )
+        except StopRequestedError:
+            return ExecutionResult("stopped")
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Failed to prepare agent run")
-            _emit_terminal_error(emit)
-            return
-
-        await self._run_with_history(
-            request,
-            history=history,
-            emit=emit,
-            stop_event=stop_event,
-        )
-
-    async def _run_with_history(
-        self,
-        request: AgentRunRequest,
-        *,
-        history: ConversationHistory,
-        emit: EventSink,
-        stop_event: asyncio.Event,
-    ) -> None:
-        conversation_id = request.conversation_id
-        try:
-            observers = [
-                EventsLogWriter(conversation_id).handle_event,
-                BrowserTabsWriter(conversation_id).handle_event,
-                TerminalWriter(conversation_id).handle_event,
-                ArtifactsIndexWriter(conversation_id).handle_event,
-                emit,
-            ]
-        except Exception:
-            logger.exception("Failed to prepare event observers for '%s'", conversation_id)
-            _emit_terminal_error(emit)
-            return
-        for observer in observers:
-            history.subscribe(observer)
-
-        agent_state = None
-        try:
-            # The scope begins as soon as persistence and delivery observers
-            # exist. Setup failures can therefore become ordinary run events,
-            # and a stop recorded by ActiveRunManager before this task starts
-            # is observed before expensive setup or a provider request.
-            async with turn_scope(
-                history,
-                conversation_id=conversation_id,
-                stop_event=stop_event,
-            ):
-                try:
-                    check_stop()
-                    profile = _resolve_profile(request.profile_id)
-                    active_agent = _build_agent_from_profile(profile)
-                    _log_turn_start(profile)
-
-                    user_content = request.message
-                    attachments: list[UserAttachment] = []
-                    if request.attachments:
-                        user_content, attachments = _augment_message_with_attachments(
-                            request.message,
-                            request.attachments,
-                        )
-
-                    save_conversation_profile(conversation_id, profile.id)
-
-                    # Fresh AgentState each turn: the profile's skills, plus
-                    # any loaded in earlier turns and restored from metadata.
-                    agent_state = await build_agent_state(
-                        profile,
-                        conversation_id=conversation_id,
-                    )
-                    ctx_manager = ContextManager(
-                        history=history,
-                        agent_state=agent_state,
-                        context_limit=active_agent.context_window,
-                        agent_name=active_agent.name,
-                        compaction_threshold=active_agent.compaction_threshold,
-                        strategies=[
-                            LLMCompactionStrategy(
-                                threshold=active_agent.compaction_threshold,
-                            ),
-                        ],
-                    )
-
-                    logger.info(
-                        "Agent run started: conv=%s agent=%s message=%.80s",
-                        conversation_id,
-                        active_agent.name,
-                        user_content,
-                    )
-                    async with agent_span(
-                        active_agent.name,
-                        instruction=user_content,
-                        agent_state=agent_state,
-                        profile_name=profile.name,
-                    ):
-                        try:
-                            publish_event(AgentEvent(payload=UserMessagePayload(
-                                type="user_message",
-                                content=request.message,
-                                attachments=attachments,
-                            )))
-                        except Exception:  # pragma: no cover - defensive
-                            logger.exception("Failed to publish user_message event")
-
-                        # LoadedSkillHook adds current skill prompts before
-                        # each model call; the base system message stays fresh.
-                        _refresh_system_message(history, active_agent.instruction)
-                        hooks = default_hooks(
-                            active_agent,
-                            max_iterations=active_agent.max_iterations,
-                            ctx_manager=ctx_manager,
-                        )
-                        await run_turn(
-                            history=history,
-                            agent=active_agent,
-                            hooks=hooks,
-                        )
-                except StopRequestedError:
-                    # Propagate through turn_scope so it emits turn_end, then
-                    # swallow outside the scope as a normal stopped outcome.
-                    raise
-                except ToolLoopError:
-                    # run_turn already published the specific error. Swallow
-                    # only after agent_span recorded an error completion.
-                    logger.debug("Agent run failed; error already published")
-                except Exception:
-                    # Setup and other unexpected failures become one persisted
-                    # generic error; turn_scope owns the following turn_end.
-                    logger.exception("Error running agent for '%s'", conversation_id)
-                    publish_event(AgentEvent(payload=ErrorPayload(
+        except Exception as exc:
+            logger.exception("Failed to prepare root agent for '%s'", request.conversation_id)
+            session.add_event(
+                AgentEvent(
+                    payload=ErrorPayload(
                         type="error",
                         message="An error occurred while processing your message.",
-                    )))
-        except StopRequestedError:
-            logger.info("Agent run for conversation '%s' stopped by user", conversation_id)
-        finally:
-            # Unsubscribe synchronously before awaiting observer drainage. If
-            # cancellation interrupts the await, the cached history still
-            # cannot leak writers into the next run.
-            for observer in observers:
-                history.unsubscribe(observer)
-            await history.drain_observers()
-
-        if agent_state is not None and agent_state.loaded_skill_ids:
-            try:
-                persist_loaded_skills(agent_state, conversation_id)
-            except Exception:
-                logger.exception(
-                    "Failed to save loaded skills for '%s'",
-                    conversation_id,
+                    )
                 )
+            )
+            return ExecutionResult("error", error=str(exc))
 
+    async def execute(
+        self,
+        *,
+        session: RunSession,
+        context: ExecutionContext,
+        profile: AgentProfile,
+        message: str,
+        name: str | None = None,
+        instruction: str | None = None,
+        attachments: list[UserAttachment] | None = None,
+        policy: RunPolicy = _CHILD_POLICY,
+        correlation_id: str | None = None,
+    ) -> ExecutionResult:
+        """Use explicit session-owned identity, controls, history, and event delivery."""
+        prepared = None
+        child_history = None
+        cancelled = False
+        result = ExecutionResult("error", error="Execution did not complete")
+        try:
+            context.control.check_stop()
+            spawn_agent = make_spawn_tool(partial(self._invoke_child, session, context))
+            prepared = await self._factory.prepare(
+                profile,
+                spawn_agent=spawn_agent,
+                name=name,
+                restore_from_conversation=session.conversation_id if policy.restore_skills else None,
+                include_memory=policy.include_memory,
+                connections=session.integration_connections,
+            )
+            agent = prepared.agent
+            history = session.history
+            if context.parent_execution_id is not None:
+                child_history = ConversationHistory(
+                    conversation_id=session.conversation_id, agent_id=context.execution_id
+                )
+                history = child_history
+                session.subscribe(history.handle_event)
+            if history is None or session.conversation is None:
+                raise RuntimeError("RunSession has no prepared history")
+            history.set_system_message(prepared.system_prompt)
+            ctx_manager = ContextManager(
+                history=history,
+                agent_capabilities=prepared.capabilities,
+                context_limit=agent.context_window,
+                agent_name=agent.name,
+                compaction_threshold=agent.compaction_threshold,
+                strategies=[LLMCompactionStrategy(threshold=agent.compaction_threshold)],
+            )
+            hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
+            hooks.append(ScratchpadHook())
+            if correlation_id is not None:
+                publish_event(
+                    AgentEvent(payload=SpawnRequestedPayload(type="spawn_requested", correlation_id=correlation_id))
+                )
+            async with agent_span(
+                agent.name,
+                instruction=instruction if instruction is not None else message,
+                agent_capabilities=prepared.capabilities,
+                profile_name=profile.name,
+                correlation_id=correlation_id,
+                execution=context,
+            ):
+                async with AsyncExitStack() as execution_resources:
+                    await execution_resources.enter_async_context(self.browser_runtime.execution(
+                        execution=context,
+                        execution_resources=execution_resources,
+                        conversation_resources=session.conversation.resources,
+                        agent_profile_id=profile.id,
+                        browser_profile_id=profile.browser_profile_id,
+                    ))
+                    publish_event(
+                        AgentEvent(
+                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                        )
+                    )
+                    parallel = load_config().parallel
+                    result = await AgentExecutor().execute(
+                        history=history,
+                        agent=agent,
+                        capabilities=prepared.capabilities,
+                        provider=prepared.provider,
+                        context=context,
+                        max_parallel_tools=parallel.max_concurrent if parallel.enabled else 1,
+                        hooks=hooks,
+                    )
+                    result.raise_for_status()
+        except asyncio.CancelledError:
+            cancelled = True
+            result = ExecutionResult("stopped")
+            raise
+        except StopRequestedError:
+            if result.status != "stopped":
+                result = ExecutionResult("stopped")
+        except ToolLoopError as exc:
+            if result.status != "error" or result.error == "Execution did not complete":
+                result = ExecutionResult("error", error=str(exc))
+        except Exception as exc:
+            result = ExecutionResult("error", error=str(exc))
+            raise
+        finally:
+            session.finish_execution(context, result)
+            if child_history is not None:
+                session.unsubscribe(child_history.handle_event)
+            if (
+                policy.persist_skills
+                and not cancelled
+                and prepared is not None
+                and prepared.capabilities.loaded_skill_ids
+            ):
+                try:
+                    persist_loaded_skills(prepared.capabilities, session.conversation_id)
+                except Exception:
+                    logger.exception("Failed to save loaded skills for '%s'", session.conversation_id)
+        return result
 
-def _resolve_profile(profile_id: str | None) -> AgentProfile:
-    if not profile_id:
-        msg = "profile_id is required"
-        raise RuntimeError(msg)
-    profile = get_agent_profile(profile_id)
-    if profile is None:
-        msg = f"Agent profile '{profile_id}' not found"
-        raise RuntimeError(msg)
-    if not profile.model:
-        msg = "No model configured. Select a model in the agent profile settings."
-        raise ValueError(msg)
-    return profile
-
-
-def _build_agent_from_profile(profile: AgentProfile) -> Agent:
-    """Construct an Agent; per-turn skill tools live in AgentState."""
-    return build_agent(profile, tools=[])
+    async def _invoke_child(
+        self,
+        session: RunSession,
+        parent: ExecutionContext,
+        instructions: str,
+        profile: str,
+        agent_name: str,
+    ) -> str:
+        session.require_parent(parent)
+        parent.control.check_stop()
+        agent_profile = get_agent_profile(profile)
+        if agent_profile is None:
+            return f"Agent profile '{profile}' not found. Call list_agent_profiles() to see available profiles."
+        if not agent_profile.enabled:
+            return f"Agent profile '{profile}' is disabled and cannot be used by spawn_agent. Call list_agent_profiles() to see available profiles."
+        child = session.create_child(parent)
+        result = await self.execute(
+            session=session,
+            context=child,
+            profile=agent_profile,
+            message=instructions,
+            name=agent_name,
+            correlation_id=uuid4().hex,
+        )
+        result.raise_for_status()
+        return (result.output or "").strip()
 
 
 def _augment_message_with_attachments(
@@ -258,30 +248,17 @@ def _augment_message_with_attachments(
         )
         name = item.filename or "unnamed"
         file_lines.append(f"  - {name} ({item.content_type}) -> {container_path}")
-        attachments.append(UserAttachment(
-            filename=name,
-            content_type=item.content_type,
-            path=container_path,
-        ))
+        attachments.append(
+            UserAttachment(
+                filename=name,
+                content_type=item.content_type,
+                path=container_path,
+            )
+        )
 
     files_block = "\n".join(file_lines)
     augmented = f"{message}\n\n[Attached files written to virtual computer]\n{files_block}"
     return augmented, attachments
-
-
-def _refresh_system_message(history: ConversationHistory, system_prompt: str) -> None:
-    """Refresh the system prompt with memories stored during earlier runs."""
-    instruction = system_prompt
-    memory = load_memory()
-    if memory:
-        lines = "\n".join(f"  {key}: {entry.value}" for key, entry in memory.items())
-        sep = "─" * 64
-        memory_block = (
-            "\n── Memory (persisted across sessions) ──────────────────────────\n"
-            f"{lines}\n{sep}\n"
-        )
-        instruction = memory_block + instruction
-    history.set_system_message(instruction)
 
 
 def _log_turn_start(profile: AgentProfile) -> None:
@@ -324,21 +301,14 @@ def _log_turn_start(profile: AgentProfile) -> None:
         body.append("\nparams:  ", style="bold")
         body.append(", ".join(params), style="dim")
 
-    _console.print(Panel(
-        body,
-        title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
-        border_style="bright_magenta",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            body,
+            title="[bold bright_magenta]🤖 Agent Turn[/bold bright_magenta]",
+            border_style="bright_magenta",
+            expand=False,
+        )
+    )
 
 
-def _emit_terminal_error(emit: EventSink) -> None:
-    """Deliver a terminal failure when no conversation scope could be opened."""
-    emit(AgentEvent(payload=ErrorPayload(
-        type="error",
-        message="An error occurred while processing your message.",
-    )))
-    emit(AgentEvent(payload=TurnEndPayload(type="turn_end")))
-
-
-__all__ = ["AgentRunner", "ConversationLoader", "EventSink"]
+__all__ = ["AgentRunner"]

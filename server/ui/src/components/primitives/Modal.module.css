@@ -3,14 +3,27 @@
     inset: 0;
     background: var(--scrim);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     place-items: center;
     padding: var(--sp-4);
     z-index: var(--z-modal);
 }
 
+/* Caller supplies header/body/footer; only the body scrolls in this layout. */
+.modal.contained {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+}
+
 .modal {
     width: 420px;
     max-width: 100%;
+    max-height: calc(100dvh - var(--sp-8));
+    min-width: 0;
+    overflow-y: auto;
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);

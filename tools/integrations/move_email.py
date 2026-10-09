@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._messages import auth_failed_message
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,9 @@ async def move_email(
         return "No UIDs supplied — nothing to move."
     app_sock = load_config().integrations.app_sock_path
     try:
-        await broker_client.call(
+        await invoke_operation(
             integration_id,
-            "move_messages",
+            "email.messages.move",
             {"folder": folder, "uids": list(uids), "dest_folder": dest_folder},
             app_sock_path=app_sock,
         )
@@ -47,8 +48,8 @@ async def move_email(
         return f"Integration {integration_id!r} is not connected."
     except broker_client.IntegrationAuthFailed:
         return auth_failed_message(integration_id)
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "move_email(%r, %r, %d uid(s) -> %r) failed: %s",

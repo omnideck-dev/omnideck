@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from conversations import TerminalWriter, load_terminal
-from sdk.events import AgentEvent, ContentPayload, TerminalOutputPayload
+from agent_core.events import AgentEvent, ContentPayload, TerminalOutputPayload
 
 
 @pytest.fixture()

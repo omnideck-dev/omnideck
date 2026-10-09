@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
+    [ValidateSet("Prepare", "Driver", "ConfigureClean", "Runtime", "RuntimePreserve", "PatchRunOnce", "RunOnceProof", "SetupStatus", "Diagnostics", "Doctor", "Resume", "Update", "PortConflict", "VerifyPortConflict", "CustomAppFixture", "HostBoundaryDownload", "SeedArtifact", "HostBoundaryArtifactDownload", "SeedUpdateFixture", "PromoteUpdateFixture", "Final")]
     [string]$Phase,
     [Parameter(Mandatory = $true)]
     [string]$WorkDir,
@@ -24,6 +24,7 @@ $Installer = Join-Path $WorkDir "candidate-setup.exe"
 $UpgradeFromInstaller = Join-Path $WorkDir "upgrade-from-setup.exe"
 $ApplicationFile = Join-Path $WorkDir "application-path.txt"
 $StatePath = Join-Path $UserData "setup-state.json"
+$ResumeFailureBaseline = Join-Path $WorkDir "resume-failure-count.txt"
 $TestNamespace = ([System.IO.Path]::GetFileName($WorkDir).ToLowerInvariant() -replace '[^a-z0-9-]', '')
 if ($TestNamespace.Length -gt 40) { $TestNamespace = $TestNamespace.Substring(0, 40) }
 if (-not $TestNamespace) { throw "The Windows test namespace is empty after normalization." }
@@ -34,6 +35,12 @@ $MachineName = "omnideck-runtime"
 
 New-Item -ItemType Directory -Path $Results,$UserData,$CliConfig -Force | Out-Null
 $env:OMNIDECK_CONFIG_DIR = $CliConfig
+
+function Get-SetupFailureCount {
+    $DesktopLog = Join-Path $UserData "logs\desktop.log"
+    if (-not (Test-Path -LiteralPath $DesktopLog)) { return 0 }
+    return @(Select-String -LiteralPath $DesktopLog -Pattern '^\[setup failure\]').Count
+}
 
 function Get-PodmanPath {
     $Command = Get-Command podman.exe -ErrorAction SilentlyContinue
@@ -278,10 +285,21 @@ function Invoke-Smoke {
     try {
         $env:OMNIDECK_DESKTOP_SMOKE_FILE = $Proof
         $env:OMNIDECK_DESKTOP_USER_DATA = $SmokeUserData
-        $Process = Start-Process -FilePath $Application -PassThru
+        Get-Process -Name "omnideck-desktop","omnideck" -ErrorAction SilentlyContinue |
+            Select-Object Id,SessionId,Path |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Smoke "existing-processes.json") -Encoding utf8
+        $Process = Start-Process -FilePath $Application -PassThru `
+            -RedirectStandardOutput (Join-Path $Smoke "host.stdout.log") `
+            -RedirectStandardError (Join-Path $Smoke "host.stderr.log")
+        # Retain the native handle so Windows PowerShell can read the exit code
+        # even when a loader failure terminates the host immediately.
+        $null = $Process.Handle
         $Deadline = [DateTime]::UtcNow.AddSeconds(90)
         while (-not (Test-Path -LiteralPath $Proof)) {
-            if ($Process.HasExited) { throw "Desktop host exited before writing smoke proof." }
+            if ($Process.HasExited) {
+                $Process.WaitForExit()
+                throw "Desktop host exited before writing smoke proof (exit $($Process.ExitCode)). See smoke/host.stderr.log."
+            }
             if ([DateTime]::UtcNow -ge $Deadline) { throw "Desktop smoke proof timed out." }
             Start-Sleep -Milliseconds 250
         }
@@ -293,11 +311,77 @@ function Invoke-Smoke {
             throw "Smoke proof contract mismatch."
         }
     }
+    catch {
+        Get-WinEvent -FilterHashtable @{
+            LogName = "Application"
+            Id = 1000,1001
+            StartTime = (Get-Date).AddMinutes(-5)
+        } -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated,ProviderName,Id,Message |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $Smoke "application-errors.json") -Encoding utf8
+        throw
+    }
     finally {
         $env:OMNIDECK_DESKTOP_SMOKE_FILE = $PreviousSmoke
         $env:OMNIDECK_DESKTOP_USER_DATA = $PreviousData
         Stop-Omnideck
     }
+}
+
+function Start-WebViewLogonAudit {
+    # Observe the real package without browser-argument overrides or weakening
+    # Windows lockout policy. Repeated lifecycle launches reproduce #5722.
+    & auditpol.exe /set /subcategory:"{0CCE9215-69AE-11D9-BED3-505054503030}" /failure:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable failed-logon auditing." }
+    & auditpol.exe /set /subcategory:"{0CCE922B-69AE-11D9-BED3-505054503030}" /success:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable process-creation auditing." }
+    (Get-WinEvent -LogName Security -MaxEvents 1).RecordId |
+        Set-Content -LiteralPath (Join-Path $Results "security-start-record.txt")
+}
+
+function Assert-NoWebViewLogonFailures {
+    $StartRecord = [long](Get-Content -LiteralPath (Join-Path $Results "security-start-record.txt") -Raw)
+    $Events = @()
+    try {
+        $Events = @(Get-WinEvent -LogName Security -FilterXPath "*[System[(EventID=4625 or EventID=4688) and (EventRecordID > $StartRecord)]]" -Oldest -ErrorAction Stop)
+    }
+    catch {
+        if ($_.FullyQualifiedErrorId -notlike "NoMatchingEventsFound*") { throw }
+    }
+    $Processes = @{}
+    $BrowserStarts = 0
+    $Failures = @(foreach ($Event in $Events) {
+        $Xml = [xml]$Event.ToXml()
+        $Data = @{}
+        $Xml.Event.EventData.Data | ForEach-Object { $Data[$_.Name] = $_.InnerText }
+        if ($Event.Id -eq 4688) {
+            # Track every creation in record order so PID reuse cannot attribute
+            # Windows Search/Widgets failures to an earlier omnideck browser.
+            $IsOurBrowser = $Data.NewProcessName -like "*\msedgewebview2.exe" -and
+                $Data.ParentProcessName -like "*\omnideck-desktop.exe"
+            $Processes[$Data.NewProcessId] = $IsOurBrowser
+            if ($IsOurBrowser) { $BrowserStarts++ }
+        }
+        elseif ($Data.ProcessName -like "*\msedgewebview2.exe" -and $Processes[$Data.ProcessId]) {
+            [ordered]@{
+                recordId = $Event.RecordId
+                process = $Data.ProcessName
+                status = $Data.Status
+                subStatus = $Data.SubStatus
+                logonType = $Data.LogonType
+            }
+        }
+    })
+    [ordered]@{
+        status = $(if ($Failures.Count -or -not $BrowserStarts) { "failed" } else { "passed" })
+        startRecordId = $StartRecord
+        browserStarts = $BrowserStarts
+        failures = $Failures
+    } | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $Results "webview-logon-audit.json") -Encoding utf8
+    if ($Failures.Count) { throw "WebView2 generated failed Windows sign-ins. See webview-logon-audit.json." }
+    if (-not $BrowserStarts) { throw "No omnideck browser process was captured by the Windows audit." }
 }
 
 switch ($Phase) {
@@ -349,6 +433,7 @@ switch ($Phase) {
         Get-FileHash -LiteralPath $Application -Algorithm SHA256 |
             Format-List | Out-File -LiteralPath (Join-Path $Results "application.sha256.txt") -Encoding utf8
         Install-EdgeDriver | Set-Content -LiteralPath (Join-Path $WorkDir "edgedriver-path.txt") -Encoding utf8
+        Start-WebViewLogonAudit
         Invoke-Smoke $Application
         Write-Host "PREPARED application=$Application"
     }
@@ -384,6 +469,9 @@ switch ($Phase) {
         Write-Host "RUNTIME PRESERVED machine=$MachineName"
     }
     "PatchRunOnce" {
+        # UAC cancellation and restart-required errors are expected before
+        # this point. A new setup error after resume must fail, not poll forever.
+        Get-SetupFailureCount | Set-Content -LiteralPath $ResumeFailureBaseline
         $Application = (Get-Content -LiteralPath $ApplicationFile -Raw).Trim()
         if (-not (Test-Path -LiteralPath $Application -PathType Leaf)) {
             throw "The installed application is missing before RunOnce patching."
@@ -407,7 +495,7 @@ switch ($Phase) {
             "`$env:OMNIDECK_CONFIG_DIR = '$(& $EscapeLiteral $CliConfig)'",
             "`$env:OMNIDECK_DESKTOP_TEST_NAMESPACE = '$(& $EscapeLiteral $TestNamespace)'",
             "`$env:OMNIDECK_DESKTOP_UPDATE_FIXTURE = '$(& $EscapeLiteral (Join-Path $WorkDir 'update-fixture.json'))'",
-            "Start-Process -FilePath '$(& $EscapeLiteral $Application)'"
+            "Start-Process -FilePath '$(& $EscapeLiteral $Application)' -RedirectStandardOutput '$(& $EscapeLiteral (Join-Path $WorkDir 'resume.stdout.log'))' -RedirectStandardError '$(& $EscapeLiteral (Join-Path $WorkDir 'resume.stderr.log'))'"
         )
         [IO.File]::WriteAllLines($ResumeScript, $Lines, [Text.UTF8Encoding]::new($false))
         $ResumeCommand = "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$ResumeScript`""
@@ -445,12 +533,56 @@ switch ($Phase) {
         Write-Host "RUNONCE PROVED processCount=$($Processes.Count) status=$($State.status)"
     }
     "SetupStatus" {
+        if (Test-Path -LiteralPath $ResumeFailureBaseline) {
+            $BeforeResume = [int](Get-Content -LiteralPath $ResumeFailureBaseline -Raw)
+            $FailureCount = Get-SetupFailureCount
+            if ($FailureCount -gt $BeforeResume) {
+                Write-Host "failed"
+                return
+            }
+        }
         if (-not (Test-Path -LiteralPath $StatePath)) {
             Write-Host "missing"
             return
         }
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
         Write-Host $State.status
+    }
+    "Diagnostics" {
+        # Capture evidence before cleanup, including when setup never reaches Final.
+        # Archive snapshots, not the redirect files held open by Start-Process.
+        foreach ($Stream in @('stdout', 'stderr')) {
+            $LiveLog = Join-Path $WorkDir "resume.$Stream.log"
+            if (-not (Test-Path -LiteralPath $LiveLog)) {
+                $LiveLog = Join-Path $Results "resume.$Stream.log"
+            }
+            if (Test-Path -LiteralPath $LiveLog) {
+                Get-Content -LiteralPath $LiveLog -Tail 200 |
+                    Set-Content -LiteralPath (Join-Path $Results "resume-$Stream-tail.log") -Encoding utf8
+            }
+        }
+        if (Test-Path -LiteralPath $StatePath) {
+            Copy-Item -LiteralPath $StatePath -Destination (Join-Path $Results "setup-state.json")
+        }
+        $DesktopLog = Join-Path $UserData "logs\desktop.log"
+        if (Test-Path -LiteralPath $DesktopLog) {
+            Get-Content -LiteralPath $DesktopLog -Tail 200 |
+                Set-Content -LiteralPath (Join-Path $Results "desktop-tail.log") -Encoding utf8
+        }
+        Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -match '^(omnideck.*|msiexec|consent|wsl.*|podman.*|powershell)\.exe$' } |
+            Select-Object ProcessId,ParentProcessId,Name,CommandLine,CreationDate |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $Results "setup-processes.json") -Encoding utf8
+        $InstallLog = Join-Path $env:LOCALAPPDATA "omnideck-cli\downloads\podman-install.log"
+        if (Test-Path -LiteralPath $InstallLog) {
+            Get-Content -LiteralPath $InstallLog -Tail 200 |
+                Set-Content -LiteralPath (Join-Path $Results "podman-install-tail.log") -Encoding utf8
+        }
+        [DateTime]::UtcNow.ToString("o") | Set-Content (Join-Path $Results "diagnostics-at.txt")
+        # Keep pipelines inside PowerShell rather than the SSH command shell.
+        Get-ChildItem -LiteralPath $Results -Exclude resume.stdout.log,resume.stderr.log |
+            Compress-Archive -Force -DestinationPath (Join-Path $WorkDir "guest-evidence.zip")
     }
     "Doctor" {
         Stop-Omnideck
@@ -646,7 +778,7 @@ switch ($Phase) {
     "PromoteUpdateFixture" {
         $UpdateFixture = Join-Path $WorkDir "update-fixture.json"
         $Value = [ordered]@{
-            version = "0.2.3"
+            version = "0.5.3"
             imageRef = "ghcr.io/omnideck-dev/omnideck@sha256:$('a' * 64)"
         } | ConvertTo-Json
         [IO.File]::WriteAllText($UpdateFixture, "$Value`n", [Text.UTF8Encoding]::new($false))
@@ -677,6 +809,7 @@ switch ($Phase) {
         $Reinstalled = Install-Candidate
         if (-not (Test-Path -LiteralPath $Reinstalled)) { throw "Reinstall did not restore the application." }
         Invoke-Smoke $Reinstalled
+        Assert-NoWebViewLogonFailures
 
         Invoke-Engine rm --force $ContainerName | Out-Null
         Invoke-Engine volume rm --force $HomeVolume $StateVolume | Out-Null

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 
-from tools.browser.core.browser import ActionResult
-from tools.browser.core.document import ResolvedElement
-from tools.browser.core.downloads import format_download_message
-from tools.browser.core.formatting import format_rendered_document
-from tools.browser.core.rendering import RenderedDocument
+from browser.core.browser import ActionResult
+from browser.core.document import ResolvedElement
+from browser.core.downloads import format_download_message
+from browser.core.formatting import format_rendered_document
+from browser.core.rendering import RenderedDocument
 from tools.browser.events import set_result_tab
 
 logger = logging.getLogger(__name__)

@@ -113,17 +113,19 @@ cache_candidate_artifact() {
 }
 
 create_desktop_build_output() {
-  local target="$1" key
-  key="build-${target}-$(date -u +%Y%m%dT%H%M%SZ)-$$-${RANDOM}"
-  desktop_build_output="$("$lab_dir/lab.sh" cache-path desktop-work "$key")"
-  mkdir -p "$desktop_build_output"
+  local target="$1" builder_key
+  builder_key="$(printf '%s' "$desktop_builder_id" | sha256sum | awk '{print substr($1,1,20)}')"
+  desktop_builder_cache="$("$lab_dir/lab.sh" cache-path desktop-build "${target}-${builder_key}")"
+  desktop_build_output="${desktop_builder_cache}/target"
+  mkdir -p "$desktop_build_output" "${desktop_builder_cache}/home" \
+    "${desktop_builder_cache}/cargo" "${desktop_builder_cache}/xdg" \
+    "${desktop_builder_cache}/pnpm"
+  touch "$desktop_builder_cache"
 }
 
 remove_desktop_build_output() {
-  [[ -n "${desktop_build_output:-}" ]] || return 0
-  case "$(realpath -m "$desktop_build_output")" in
-    "$lab_dir/cache/desktop-work/"*) rm -rf -- "$desktop_build_output" ;;
-    *) printf 'Refusing to remove unexpected Desktop build output: %s\n' "$desktop_build_output" >&2; return 1 ;;
-  esac
+  # Build output is a reusable Cargo target cache keyed by builder image. Cargo
+  # fingerprints source inputs, while the lab GC owns cache retention.
   desktop_build_output=""
+  desktop_builder_cache=""
 }

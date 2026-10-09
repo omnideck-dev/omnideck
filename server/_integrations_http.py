@@ -10,7 +10,8 @@ ERROR_STATUS = {
     "BAD_REQUEST": 400,
     "NOT_FOUND": 404,
     "AUTH": 409,           # credentials rejected by upstream — client can reconnect
-    "WRITE_DENIED": 403,
+    "PERMISSION_DENIED": 403,
+    "WRITE_DENIED": 403,   # deprecated v1 compatibility code
     "UPSTREAM": 502,
     "INTERNAL": 500,
 }

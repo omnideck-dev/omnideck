@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
+from browser.core.browser import ActionResult
+from browser.core.document import Document
+from browser.core.rendering import DEFAULT_BUDGET
+from browser.core.rendering import render_document as render
 from config import load_config
-from tools.browser.core.browser import ActionResult
-from tools.browser.core.document import Document
-from tools.browser.core.rendering import DEFAULT_BUDGET
-from tools.browser.core.rendering import render_document as render
 
 
 class _StubTab:
@@ -126,7 +126,7 @@ def browser_tool_harness(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], _St
             *,
             tab: Any = None,
         ) -> tuple[_StubBrowser, _StubTab, Document]:
-            from tools.browser.core.exceptions import BrowserToolError
+            from browser.core.exceptions import BrowserToolError
 
             resolved_tab = browser.get_tab(tab)
             if resolved_tab.url in {"", "about:blank"}:
@@ -151,7 +151,7 @@ def settle_tracker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     calls: dict[str, Any] = {"count": 0}
 
     async def _fake_settle(document: Document, waits: Any) -> Any:
-        from tools.browser.core.settling import SettleTimings
+        from browser.core.settling import SettleTimings
 
         calls["count"] += 1
         return SettleTimings()

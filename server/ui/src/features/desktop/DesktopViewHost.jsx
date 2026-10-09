@@ -121,9 +121,13 @@ function DesktopViewHost({
 }) {
     const hostRef = useRef(null);
     const floating = Boolean(floatingView);
-    // Visibility is distinct from Desktop focus. Every floating View and the
-    // selected tab in each tab group is visible, but only one may be focused.
-    const visible = Boolean(floating || (tabGroupId && activeInTabGroup));
+    // Visibility is distinct from Desktop focus. Every floating View, every
+    // fullscreen View, and the selected tab in each tab group is visible, but
+    // only one may be focused. Fullscreen and floating both escape their tab
+    // group's own chrome (rendered via position:fixed), so neither should be
+    // gated on whether that tab group is currently shown — a view can stay
+    // fullscreen after its tab group is hidden by a viewport resize.
+    const visible = Boolean(floating || fullscreen || (tabGroupId && activeInTabGroup));
     const {
         bounds: liveBounds,
         drag,

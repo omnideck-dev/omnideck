@@ -2,39 +2,22 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
-from agents import build_agent, get_agent_profile
-from conversations import EventsLogWriter
-from sdk import default_hooks, run_turn
-from sdk.context import ContextManager, ConversationHistory, LLMCompactionStrategy
-from sdk.events import run_conversation_exit_hooks
-from sdk.events._context import (
-    agent_span,
-    publish_event,
-)
-from sdk.events._models import (
-    AgentEvent,
-    FileOutputPayload,
-    UserMessagePayload,
-)
-from sdk.skills import build_agent_state
-from sdk.turn import turn_scope
+from agents import get_agent_profile
+from agent_runtime import AgentRuntime, AgentRunRequest, RunPolicy
 
 if TYPE_CHECKING:
     from agents._agent_profiles import AgentProfile
     from tasks._models import Routine, Task, TaskResult
     from tasks._store import TaskStore
 
-logger = logging.getLogger(__name__)
-
-
 class TaskExecutor:
     """Execute a single TaskResult as an agent turn."""
 
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStore, runtime: AgentRuntime) -> None:
         self._store = store
+        self._runtime = runtime
 
     async def run(self, task_result: TaskResult, task: Task) -> tuple[str, list[str]]:
         """Execute a task and return (result_text, file_output_paths)."""
@@ -49,71 +32,25 @@ class TaskExecutor:
 
         instruction = self._build_instruction(task_result, task, routine)
         conversation_id = f"routines/{run.routine_id}/{run.id}/{task_result.id}"
-        self._store.set_conversation_id(task_result.id, conversation_id)
-
+        profile = self._profile_for(task)
+        handle = await self._runtime.start(AgentRunRequest(
+            conversation_id=conversation_id, message=instruction, attachments=None, profile_id=profile.id,
+            policy=RunPolicy(
+                restore_skills=False, persist_skills=False, include_memory=False,
+                conversation_lifetime="run", agent_name="TASK_AGENT",
+            ),
+        ))
         try:
-            profile = self._profile_for(task)
-            agent_state = await build_agent_state(profile)
-            agent = build_agent(profile, tools=agent_state.tools, name="TASK_AGENT")
-
-            history = ConversationHistory(
-                system_message=agent.instruction,
-                conversation_id=conversation_id,
-            )
-
-            file_paths: list[str] = []
-
-            def _capture_file_output(event: AgentEvent) -> None:
-                if isinstance(event.payload, FileOutputPayload) and event.payload.path:
-                    file_paths.append(event.payload.path)
-
-            events_log = EventsLogWriter(conversation_id)
-            # Observers subscribe around the scope so the turn_scope-owned
-            # turn_end at the end of the turn still reaches them.
-            history.subscribe(events_log.handle_event)
-            history.subscribe(_capture_file_output)
-            try:
-                async with turn_scope(history, conversation_id=conversation_id):
-                    ctx_manager = ContextManager(
-                        history=history,
-                        agent_state=agent_state,
-                        context_limit=agent.context_window,
-                        agent_name=agent.name,
-                        strategies=[
-                            LLMCompactionStrategy(threshold=agent.compaction_threshold),
-                        ],
-                    )
-                    hooks = default_hooks(
-                        agent,
-                        max_iterations=agent.max_iterations,
-                        ctx_manager=ctx_manager,
-                    )
-                    async with agent_span(agent.name, instruction=instruction, agent_state=agent_state):
-                        publish_event(
-                            AgentEvent(
-                                payload=UserMessagePayload(
-                                    type="user_message",
-                                    content=instruction,
-                                )
-                            )
-                        )
-                        result = await run_turn(history, agent, hooks=hooks)
-            finally:
-                # Unsubscribe synchronously before the await so a cancellation
-                # mid-drain can't skip the unsubscribes and leak observers onto
-                # the history. Drain still flushes in-flight events: it waits on
-                # already-created observer tasks regardless of the list.
-                history.unsubscribe(events_log.handle_event)
-                history.unsubscribe(_capture_file_output)
-                await history.drain_observers()
-
-            return result or "", file_paths
-        finally:
-            # Routine task conversations are single-execution resources rather
-            # than server-cached interactive conversations. Always run their
-            # exit hooks so browser contexts and other conversation-scoped
-            # resources are released after success, failure, or cancellation.
-            await run_conversation_exit_hooks(conversation_id)
+            self._store.set_agent_run(task_result.id, conversation_id=conversation_id, agent_run_id=handle.run_id)
+            result = await handle.wait()
+        except BaseException:
+            # Routine cancellation is an explicit ownership action. A passive
+            # RunHandle.wait cancellation elsewhere never stops the shared run.
+            handle.cancel()
+            await handle.wait()
+            raise
+        result.raise_for_status()
+        return result.output or "", [artifact.path for artifact in result.artifacts if artifact.path]
 
     def _profile_for(self, task: Task) -> AgentProfile:
         """The agent profile for a task, or raise if it's missing."""

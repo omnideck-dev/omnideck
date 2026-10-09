@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -17,18 +19,367 @@ const windowsTrust = await read('../tests/e2e/windows_trust.ps1');
 const windowsGuest = await read('../tests/e2e/windows_guest.ps1');
 const windowsStartDriver = await read('../tests/e2e/windows_start_driver.ps1');
 const linuxGuest = await read('../tests/e2e/linux_guest.sh');
+
+test('Windows only refreshes an explicit driver mismatch once and preserves both version receipts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-webview-refresh-'));
+  const helper = windows.split('refresh_mismatched_webview_driver() {\n')[1].split('\n}\n\nrun_journey()')[0];
+  const mismatch = 'FAIL: WebDriverError: WebDriver POST /session failed with HTTP 500: session not created: This version of Microsoft Edge WebDriver only supports Microsoft Edge version 151; Current browser version is 154.0.4258.62';
+  try {
+    await writeFile(join(directory, 'lab.sh'), '#!/bin/bash\ncp "$fixture_root/current-version.json" "$4"\n', { mode: 0o755 });
+    for (const [label, status, attempt, log, expected, mode] of [
+      ['mismatch', 1, 0, mismatch, 0, 'preserve'],
+      ['clean-first-session', 1, 0, mismatch, 0, 'skip'],
+      ['already-retried', 1, 1, mismatch, 1, 'preserve'],
+      ['product-error', 1, 0, 'FAIL: Setup failed: memory.max missing', 1, 'preserve'],
+      ['historical-mismatch', 1, 0, `${mismatch}\nFAIL: Setup failed: memory.max missing`, 1, 'preserve'],
+      ['partial-message', 1, 0, 'Current browser version is 154.0.4258.62', 1, 'preserve'],
+      ['passed', 0, 0, mismatch, 1, 'preserve'],
+    ]) {
+      const attemptDir = join(directory, label);
+      const markers = `${attemptDir}-markers`;
+      await mkdir(attemptDir);
+      await mkdir(markers);
+      await writeFile(join(attemptDir, 'session.log'), log);
+      await writeFile(join(markers, 'observed'), 'original marker');
+      await writeFile(join(directory, 'current-version.json'), '{"major":151}');
+      await writeFile(join(directory, 'driver-runtime-mode.txt'), mode);
+      const result = spawnSync('bash', ['-c', `
+        refresh_mismatched_webview_driver() {\n${helper}\n}
+        stop_driver() { echo stopped; }
+        start_driver() { [[ "$1" == "$expected_mode" ]] || return 7; echo '{"major":154}' > "$fixture_root/current-version.json"; }
+        refresh_mismatched_webview_driver "$1" "$2" "$3" "$4"
+      `, 'fixture', String(status), String(attempt), attemptDir, markers], {
+        encoding: 'utf8', env: { ...process.env, fixture_root: directory, lab_dir: directory, output_dir: directory, remote_scp_root: 'guest', expected_mode: mode },
+      });
+      assert.equal(result.status, expected, `${label}: ${result.stderr}`);
+      if (expected === 0) {
+        assert.equal(await readFile(`${attemptDir}-driver-mismatch/session.log`, 'utf8'), log);
+        assert.equal(await readFile(`${markers}-driver-mismatch/observed`, 'utf8'), 'original marker');
+        assert.equal(JSON.parse(await readFile(`${attemptDir}-driver-mismatch/webdriver-before-refresh.json`)).major, 151);
+        assert.equal(JSON.parse(await readFile(`${attemptDir}-driver-mismatch/webdriver-after-refresh.json`)).major, 154);
+        assert.match(result.stdout, /stopped/);
+      } else {
+        assert.equal(await readFile(join(attemptDir, 'session.log'), 'utf8'), log);
+        assert.doesNotMatch(result.stdout, /stopped/);
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows tunnel receipts survive subshell refresh and reject unrelated or reused PIDs', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-tunnel-owner-'));
+  const helper = fileURLToPath(new URL('../tests/e2e/windows_driver_tunnel.py', import.meta.url));
+  const receipt = join(directory, 'tunnel.json');
+  const portFile = join(directory, 'port');
+  const command = [process.execPath, '-e', 'const s = require("node:net").createServer(); s.listen(0, "127.0.0.1", () => require("node:fs").writeFileSync(process.argv[1], String(s.address().port)));', portFile];
+  let original;
+  try {
+    // The launcher exits; the outer caller must use its receipt rather than a
+    // shell variable that belonged to the launcher/subshell.
+    const launched = spawnSync('python3', [helper, 'start', '--receipt', receipt, '--log', join(directory, 'tunnel.log'), '--', ...command], { encoding: 'utf8' });
+    assert.equal(launched.status, 0, launched.stderr);
+    original = JSON.parse(await readFile(receipt, 'utf8'));
+    assert.equal(process.kill(original.pid, 0), true);
+    let port;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { port = Number(await readFile(portFile, 'utf8')); break; }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(port > 0, 'the original process must hold a real listening port');
+    for (const changed of [
+      { ...original, command: ['unrelated-process'] },
+      { ...original, startTicks: '0' },
+    ]) {
+      await writeFile(receipt, JSON.stringify(changed));
+      const refused = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+      assert.notEqual(refused.status, 0);
+      assert.match(refused.stderr, /Refusing to stop/);
+      assert.equal(process.kill(original.pid, 0), true, 'a mismatched process must remain alive');
+    }
+    await writeFile(receipt, JSON.stringify(original));
+    const stopped = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    assert.equal(stopped.status, 0, stopped.stderr);
+    await assert.rejects(readFile(receipt), { code: 'ENOENT' });
+    let alive = false;
+    try {
+      const stat = await readFile(`/proc/${original.pid}/stat`, 'utf8');
+      alive = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] !== 'Z';
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    assert.equal(alive, false, 'the tunnel created by the exited subshell must stop');
+    const reused = createServer();
+    await new Promise((resolve, reject) => {
+      reused.once('error', reject);
+      reused.listen(port, '127.0.0.1', resolve);
+    });
+    await new Promise((resolve) => reused.close(resolve));
+    const repeated = spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    assert.equal(repeated.status, 0, repeated.stderr);
+  } finally {
+    if (original) {
+      await writeFile(receipt, JSON.stringify(original));
+      spawnSync('python3', [helper, 'stop', '--receipt', receipt, '--', ...command], { encoding: 'utf8' });
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows tunnel launch reaps its child if ownership recording fails', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-tunnel-record-failure-'));
+  const helper = fileURLToPath(new URL('../tests/e2e/windows_driver_tunnel.py', import.meta.url));
+  try {
+    const result = spawnSync('python3', ['-c', `
+import importlib.util, pathlib, sys
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('tunnel', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+root = pathlib.Path(sys.argv[2])
+children = []
+real_popen = module.subprocess.Popen
+def launch(*args, **kwargs):
+    child = real_popen(*args, **kwargs)
+    children.append(child)
+    return child
+try:
+    with patch.object(module.subprocess, 'Popen', side_effect=launch), patch.object(module, 'record', side_effect=OSError('injected receipt write failure')):
+        try:
+            module.start(root / 'receipt.json', [sys.executable, '-c', 'import time; time.sleep(60)'], root / 'tunnel.log')
+        except OSError as error:
+            assert str(error) == 'injected receipt write failure'
+        else:
+            raise AssertionError('receipt failure reported successful startup')
+    assert len(children) == 1
+    assert children[0].poll() is not None, 'start returned with a live unowned tunnel'
+    assert not (root / 'receipt.json').exists()
+finally:
+    for child in children:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+`, helper, directory], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows driver startup propagates required-stage failures inside a refresh conditional', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-driver-start-failure-'));
+  const body = windows.split('start_driver() {\n')[1].split('\n}\n\nwait_for_consent()')[0];
+  try {
+    await writeFile(join(directory, 'lab.sh'), '#!/bin/bash\necho register >> "$actions"\n[[ "$fail_stage" != register ]]\n', { mode: 0o755 });
+    for (const stage of ['counter-read', 'counter-write', 'phase', 'phase-log', 'register', 'record', 'pid-write', 'health', 'mode-write', 'success']) {
+      const output = join(directory, stage);
+      await mkdir(output);
+      const actions = join(output, 'actions');
+      await writeFile(actions, '');
+      if (stage === 'counter-read') await writeFile(join(output, 'driver-start-count.txt'), '0');
+      for (const [failure, filename] of [['counter-write', 'driver-start-count.txt'], ['phase-log', 'webdriver-refresh.log'], ['pid-write', 'driver-tunnel.pid'], ['mode-write', 'driver-runtime-mode.txt']]) {
+        if (stage === failure) await mkdir(join(output, filename));
+      }
+      const result = spawnSync('bash', ['-c', `
+        set -Eeuo pipefail
+        start_driver() {\n${body}\n}
+        driver_start_count=0
+        # Match real startup's populated options; Bash 3.2 treats empty arrays
+        # as unset under nounset, which would bypass the injected failure.
+        ssh_options=(-p 2225)
+        phase_command() { echo phase >> "$actions"; [[ "$fail_stage" != phase ]]; }
+        cat() { [[ "$fail_stage" != counter-read ]] || return 8; command cat "$@"; }
+        python3() { echo tunnel >> "$actions"; [[ "$fail_stage" != record ]] || return 9; echo 12345; }
+        stop_driver_tunnel() { echo stopped >> "$actions"; }
+        kill() { return 0; }
+        curl() {
+          if [[ -f "$output_dir/curl-called" && "$fail_stage" == health ]]; then return 7; fi
+          touch "$output_dir/curl-called"
+        }
+        if start_driver preserve; then exit 0; else exit $?; fi
+      `], { encoding: 'utf8', env: { ...process.env, actions, fail_stage: stage, output_dir: output, lab_dir: directory, script_dir: directory, remote_root: 'guest', driver_forward_port: '1234' } });
+      assert.equal(result.status, stage === 'success' ? 0 : 1, `${stage}: ${result.stderr}`);
+      const log = (await readFile(actions, 'utf8')).trim().split('\n');
+      if (['counter-read', 'counter-write', 'phase', 'phase-log'].includes(stage)) assert.ok(!log.includes('register'), stage);
+      if (stage === 'register') assert.ok(!log.includes('tunnel'));
+      if (['pid-write', 'health', 'mode-write'].includes(stage)) assert.ok(log.includes('stopped'), `${stage}: post-launch failure must stop its owned tunnel; ${result.stderr}`);
+      if (stage === 'success') assert.equal((await readFile(join(output, 'driver-runtime-mode.txt'), 'utf8')).trim(), 'preserve');
+      else if (stage !== 'mode-write') await assert.rejects(readFile(join(output, 'driver-runtime-mode.txt')), { code: 'ENOENT' });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('macOS lane refuses a running ordinary app without terminating it', { skip: process.platform !== 'linux' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-macos-process-guard-'));
+  const guard = macosGuest.split("current_step='exclusive desktop process'\n")[1].split('\nif [[ "$upgrade_dmg" != none ]]')[0];
+  for (const executable of ['omnideck-desktop', 'omnideck']) {
+    const ordinary = spawn('bash', ['-c', 'exec -a "$1" sleep 60', 'fixture', `/Applications/ordinary.app/Contents/MacOS/${executable}`]);
+    try {
+      await new Promise((resolve, reject) => {
+        ordinary.once('spawn', resolve);
+        ordinary.once('error', reject);
+      });
+      const result = spawnSync('bash', ['-c', guard], { encoding: 'utf8', env: { ...process.env, result_dir: directory } });
+      assert.equal(result.status, 3, result.stderr);
+      assert.match(result.stderr, /no user process was stopped/);
+      assert.equal(process.kill(ordinary.pid, 0), true, 'ordinary installation must remain running');
+      assert.match(await readFile(join(directory, 'preexisting-omnideck-processes.txt'), 'utf8'), new RegExp(`\\b${ordinary.pid}\\b`));
+    } finally {
+      ordinary.kill('SIGTERM');
+      await new Promise((resolve) => ordinary.exitCode !== null || ordinary.signalCode !== null ? resolve() : ordinary.once('exit', resolve));
+    }
+  }
+  await rm(directory, { recursive: true, force: true });
+});
+
+test('Linux update fixture keeps the pinned image and assertions while clearing only its cache', async () => {
+  const fixture = linuxGuest.split('current_step="candidate update"')[1].split('run_journey update')[0];
+  assert.match(fixture, /podman rm --force "\$\{container_name\}"/);
+  assert.match(fixture, /podman rmi "\$\{update_image_ref\}"/);
+  assert.match(fixture, /if podman image exists "\$\{update_image_ref\}"; then[\s\S]*?exit 1/);
+  assert.match(fixture, /update-fixture-preconditions\.txt/);
+  assert.doesNotMatch(fixture, /podman rmi[^\n]*--force|podman volume|podman system prune/);
+  const validator = fixture.match(/<<'PY'\n([\s\S]*?)\nPY\n\)"/)[1];
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-update-image-'));
+  try {
+    const statePath = join(directory, 'setup-state.json');
+    const valid = `ghcr.io/omnideck-dev/omnideck@sha256:${'a'.repeat(64)}`;
+    for (const imageRef of [valid, 'ghcr.io/omnideck-dev/omnideck:latest', 'unrelated/image:tag', '--all', `${valid}\n--force`]) {
+      await writeFile(statePath, JSON.stringify({ imageRef }));
+      const result = spawnSync('python3', ['-', statePath], { input: validator, encoding: 'utf8' });
+      assert.equal(result.status === 0, imageRef === valid, result.stderr);
+      if (imageRef === valid) assert.equal(result.stdout.trim(), valid);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Windows setup captures diagnostics before completion and preserves failed staging', () => {
+  assert.match(windows, /collect_guest_evidence\(\) \{\s+phase_command Diagnostics/);
+  assert.match(windows, /setup_attempt % 20 == 0/);
+  assert.match(windows, /runonce-setup-current\.png/);
+  assert.match(windows, /remote_staged.*keep_vm.*exit_code.*== "0"/);
+  const diagnostics = windowsGuest.split('    "Diagnostics" {')[1].split('    "Doctor" {')[0];
+  assert.match(diagnostics, /Copy-Item -LiteralPath \$StatePath/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$DesktopLog -Tail 200/);
+  assert.match(diagnostics, /desktop-tail\.log/);
+  assert.match(diagnostics, /setup-processes\.json/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$InstallLog -Tail 200/);
+  assert.match(windowsGuest, /RedirectStandardError.*resume\.stderr\.log/);
+  assert.match(windowsGuest, /Join-Path \$WorkDir 'resume\.stderr\.log'/);
+  assert.match(diagnostics, /Get-Content -LiteralPath \$LiveLog -Tail 200/);
+  assert.match(diagnostics, /-Exclude resume\.stdout\.log,resume\.stderr\.log/);
+  assert.match(diagnostics, /Compress-Archive -Force -DestinationPath/);
+  assert.doesNotMatch(windows, /Compress-Archive/);
+  assert.match(windowsGuest, /Get-SetupFailureCount \| Set-Content -LiteralPath \$ResumeFailureBaseline/);
+  assert.match(windowsGuest, /if \(\$FailureCount -gt \$BeforeResume\) \{\s+Write-Host "failed"/);
+  assert.match(windows, /setup_status.*== "failed"[\s\S]*?collect_guest_evidence \|\| true\s+return 1/);
+});
+
+test('Windows lifecycle qualification rejects WebView2 failed Windows sign-ins', () => {
+  assert.match(windowsGuest, /Start-WebViewLogonAudit\s+Invoke-Smoke \$Application/);
+  assert.match(windowsGuest, /Invoke-Smoke \$Reinstalled\s+Assert-NoWebViewLogonFailures/);
+  assert.match(windowsGuest, /EventID=4625/);
+  assert.match(windowsGuest, /EventRecordID > \$StartRecord/);
+  assert.match(windowsGuest, /if \(\$Failures\.Count\) \{ throw/);
+  assert.match(windowsGuest, /NoMatchingEventsFound/);
+  assert.match(windowsGuest, /webview-logon-audit\.json/);
+  assert.doesNotMatch(windowsGuest + windowsStartDriver + windows, /WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS|lockoutthreshold|AutofillAiWalletPrivatePasses/);
+});
+
+test('Linux browser discovery follows the registered XDG handler, not stale Firefox entries', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'omnideck-browser-handler-'));
+  try {
+    await mkdir(join(root, 'applications'));
+    await writeFile(join(root, 'applications', 'org.mozilla.firefox.desktop'), '[Desktop Entry]\n');
+    await writeFile(join(root, 'applications', 'firefox_firefox.desktop'), '[Desktop Entry]\n');
+    const resolver = linuxGuest.match(/resolve_browser_desktop_entry\(\) \{[\s\S]*?\n\}/)[0];
+    for (const handler of ['org.mozilla.firefox.desktop', 'missing.desktop', '../invalid.desktop', '']) {
+      const result = spawnSync('bash', ['-c', `
+        set -eu
+        xdg-mime() { printf '%s' "$TEST_HANDLER"; }
+        ${resolver}
+        resolve_browser_desktop_entry
+        printf '%s' "$browser_desktop_path"
+      `], { encoding: 'utf8', env: { ...process.env, XDG_DATA_HOME: root, XDG_DATA_DIRS: root, TEST_HANDLER: handler } });
+      if (handler === 'org.mozilla.firefox.desktop') {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, join(root, 'applications', handler));
+      } else {
+        assert.notEqual(result.status, 0, handler);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Linux upgrade tests install exact candidate bytes even at the same version', () => {
+  assert.match(linuxGuest, /apt-get install --reinstall -y "\$\{artifact\}"/);
+  const installRpm = linuxGuest.match(/install_rpm\(\) \{[\s\S]*?\n\}/)[0];
+  for (const installed of [true, false]) {
+    const result = spawnSync('bash', ['-c', `
+      set -eu
+      artifact=/candidate.rpm
+      rpm() {
+        if [[ "$1" == -qp ]]; then printf 'omnideck-0.1.0-beta.11.x86_64';
+        else [[ "$2" == omnideck-0.1.0-beta.11.x86_64 ]]; return ${installed ? 0 : 1}; fi
+      }
+      dnf_with_lock_retry() { printf '%s\\n' "$@"; }
+      ${installRpm}
+      install_rpm
+    `], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `candidate-install\n${installed ? 'reinstall' : 'install'}\n-y\n/candidate.rpm\n`);
+  }
+});
+
 const polkitAgent = await read('../tests/e2e/polkit_agent.py');
 const driver = await read('../tests/e2e/webdriver_client.py');
+assert.match(driver, /min\(self\.timeout, 120\)/);
+assert.match(driver, /hosted-observations\.json/);
 const customAppFixture = await read('../tests/e2e/custom_app_fixture.py');
 const hostBoundaryDriver = await read('../tests/e2e/host_boundary_client.py');
 const purge = await read('../tests/e2e/purge.sh');
 const qualifier = await read('../tests/e2e/qualify-release.sh');
 const candidateMatrix = await read('../tests/e2e/candidate-matrix.sh');
+assert.match(candidateMatrix, /interrupt_matrix 130 INT/);
+assert.match(candidateMatrix, /wait "\$active_lane_pid"/);
 const releasePurge = await read('../tests/e2e/purge-release.sh');
 const packageSmoke = await read('../tests/e2e/run-package-smoke.sh');
 const packageSmokeGuest = await read('../tests/e2e/linux_package_smoke.sh');
+const verifyLinuxSmoke = await read('../tests/e2e/verify_linux_smoke.py');
 const smokeMatrix = await read('../tests/e2e/smoke-matrix.sh');
 const smokeMatrixGuest = await read('../tests/e2e/smoke-matrix-guest.sh');
+test('grouped smoke resolves the lab in its child process and leaves the final reset to its lease', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-smoke-child-'));
+  try {
+    await mkdir(join(directory, 'cells'));
+    await writeFile(join(directory, 'lab.sh'), `#!/usr/bin/env bash
+set -eu
+printf '%s\\n' "$*" >> "$OMNIDECK_TEST_LAB_CALLS"
+case "$1" in
+  capabilities) printf '%s\\n' '{"features":["artifact-path","cache-path","lease-cleanup","preflight","profiles"]}' ;;
+  profile) echo product-ready-v2 ;;
+  reset|start|stop|wait|verify) ;;
+  *) exit 9 ;;
+esac
+`, { mode: 0o755 });
+    const environment = { ...process.env, OMNIDECK_VM_LAB_DIR: directory, OMNIDECK_VM_LAB_LEASED: '1', OMNIDECK_TEST_LAB_CALLS: join(directory, 'calls.txt') };
+    delete environment.lab_dir;
+    const result = spawnSync('bash', [new URL('../tests/e2e/smoke-matrix-guest.sh', import.meta.url).pathname, 'appimage', 'product-ready', directory, join(directory, 'status.tsv')], { env: environment, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = (await readFile(join(directory, 'calls.txt'), 'utf8')).trim().split('\n');
+    assert.deepEqual(calls.filter((call) => /^(reset|start|stop|wait|verify) /.test(call)), [
+      'reset appimage product-ready-v2', 'start appimage', 'wait appimage', 'verify appimage', 'stop appimage',
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 const smokeMatrixReportUrl = new URL('../tests/e2e/smoke_matrix_report.py', import.meta.url);
 const packageSmokePurge = await read('../tests/e2e/purge-package-smoke.sh');
 const remainder = JSON.parse(await read('../tests/e2e/manual-remainder.json'));
@@ -74,7 +425,11 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(windowsGuest, /F3017226-FE2A-4295-8BDF-00C3A9A7E4C5/);
   assert.match(windowsGuest, /does not match WebView2/);
   assert.match(windowsGuest, /"Driver"/);
+  assert.match(windowsGuest, /-RedirectStandardError \(Join-Path \$Smoke "host\.stderr\.log"\)/);
+  assert.match(windowsGuest, /\$Process\.ExitCode/);
+  assert.match(windows, /if \[\[ "\$\{exit_code\}" != "0" \]\]; then\n\s+collect_guest_evidence \|\| true/);
   assert.match(windows, /phase_command Driver/);
+  assert.match(windows, /if \[\[ "\$\{test_status\}" == "0" \]\]; then\n  stop_driver\n  start_driver preserve/);
   assert.match(driver, /tauri:options/);
   assert.match(driver, /mockup-parity/);
   assert.match(driver, /mockup-html/);
@@ -83,6 +438,10 @@ test('Desktop VM E2E uses the packaged app and frozen exact-copy mockup', () => 
   assert.match(driver, /update-bridge\.json/);
   assert.match(driver, /setup:updating/);
   assert.match(run, /custom_app_fixture\.py/);
+  assert.match(run, /verify_linux_smoke\.py/);
+  assert.match(packageSmoke, /verify_linux_smoke\.py/);
+  assert.match(linuxGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
+  assert.match(packageSmokeGuest, /python3 "\$\{work_dir\}\/verify_linux_smoke\.py"/);
   assert.match(run, /--upgrade-from-artifact/);
   assert.match(run, /upgrade-from\.\$\{bundle\}/);
   assert.match(linuxGuest, /previous release installation/);
@@ -191,6 +550,8 @@ test('the GNU Windows lab builder disables unintended DLL auto-exports', () => {
 });
 
 test('Desktop VM evidence and destructive cleanup remain run-scoped', () => {
+  assert.match(linuxGuest, /journalctl --since "\$\{started_at\}" --no-pager/);
+  assert.match(linuxGuest, /coredumpctl --since "\$\{started_at\}" --no-pager info/);
   assert.match(run, /artifact-path desktop e2e/);
   assert.match(windows, /artifact-path desktop e2e/);
   assert.match(run, /evidence-init/);
@@ -235,7 +596,7 @@ test('cross-distro smoke separates the guest from the package format', () => {
   assert.match(packageSmokeGuest, /rpm2cpio/);
   assert.match(packageSmokeGuest, /flatpak install --user --noninteractive/);
   assert.match(packageSmokeGuest, /OMNIDECK_DESKTOP_SMOKE_FILE/);
-  assert.match(packageSmokeGuest, /\["--version", "--json runtime status"\]/);
+  assert.match(verifyLinuxSmoke, /\["--version", "--json runtime status"\]/);
   assert.match(smokeMatrix, /appimage:appimage\|deb:deb\|rpm:rpm\|atomic:appimage/);
   assert.match(smokeMatrix, /for package_kind in appimage deb rpm flatpak/);
   assert.match(smokeMatrix, /finish_incomplete_matrix/);
@@ -256,7 +617,8 @@ test('native macOS E2E leases the physical ARM host and drives the production ap
   assert.match(macosGuest, /Omnideck Lab Driver\.app/);
   assert.match(macosGuest, /OMNIDECK_DESKTOP_TEST_NAMESPACE/);
   assert.match(macosGuest, /release-test-macos/);
-  assert.match(macosGuest, /pkill -f '\/omnideck-desktop\$'/);
+  assert.match(macosGuest, /no user process was stopped/);
+  assert.doesNotMatch(macosGuest, /pkill -f '\/omnideck(?:-desktop)?\$'/);
   assert.match(macos, /--upgrade-from-artifact/);
   assert.match(macosGuest, /previous DMG installation/);
   assert.match(macosGuest, /stateMarkerPreserved/);
@@ -357,8 +719,8 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
   assert.match(windows, /golden-prerequisites\.json/);
   assert.match(windows, /lab\.sh" profile/);
   assert.match(windows, /lab\.sh" preflight/);
-  assert.match(run, /--cleanup-baseline clean/);
-  assert.match(windows, /--cleanup-baseline clean/);
+  assert.match(run, /--cleanup-baseline "?\$baseline"?/);
+  assert.match(windows, /--cleanup-baseline "?\$baseline"?/);
 });
 
 test('current Linux guests install only the input dependencies their lane uses', () => {
@@ -400,5 +762,33 @@ test('the updater bridge fixture is newer than the bundled runtime image', async
     `${fixtureVersion} must be newer than ${imageVersion}`,
   );
   assert.match(linuxGuest, /--expected-update-version "\$\{update_version\}"/);
-  assert.match(windowsGuest, /version = "0\.2\.3"/);
+  assert.match(windowsGuest, /version = "0\.5\.3"/);
+});
+
+test('desktop cleanup preserves evidence and delegates final reset to its lease', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'omnideck-cleanup-owner-'));
+  const actions = join(directory, 'actions');
+  await writeFile(join(directory, 'lab.sh'), '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$AUDIT_ACTIONS"\nif [[ "$1" == stop && "$AUDIT_STOP_FAIL" == 1 ]]; then exit 1; fi\n', { mode: 0o755 });
+  try {
+    for (const [name, source] of [['linux', run], ['windows', windows]]) {
+      if (name === 'windows' && process.platform !== 'linux') continue;
+      const cleanup = `cleanup() {${source.split('cleanup() {')[1].split('\ntrap cleanup EXIT')[0]}`;
+      const tunnelStop = name === 'windows' ? `stop_driver_tunnel() {${source.split('stop_driver_tunnel() {')[1].split('\n}\n\ncleanup()')[0]}\n}` : '';
+      for (const [exitCode, complete, keep, stopFails, expected] of [[0, 1, 0, 0, 0], [9, 1, 0, 0, 9], [0, 0, 0, 0, 1], [0, 1, 1, 0, 0], [0, 1, 0, 1, 1]]) {
+        await writeFile(actions, '');
+        const result = spawnSync('bash', ['-c', `${tunnelStop}\n${cleanup}\ntrap cleanup EXIT\nexit "$AUDIT_EXIT"`], {
+          encoding: 'utf8',
+          env: { ...process.env, script_dir: fileURLToPath(new URL('../tests/e2e/', import.meta.url)), lab_dir: directory, vm: 'appimage', output_dir: directory, remote_staged: '0', vm_started: '1', driver_ssh_pid: '', driver_task_name: 'owned-test', trust_task_name: 'owned-trust', qualification_complete: String(complete), keep_vm: String(keep), AUDIT_ACTIONS: actions, AUDIT_EXIT: String(exitCode), AUDIT_STOP_FAIL: String(stopFails) },
+        });
+        const log = (await readFile(actions, 'utf8')).trim().split('\n');
+        assert.equal(result.status, expected, `${name}: ${result.stderr}`);
+        assert.equal(log.filter((line) => line.startsWith('stop ')).length, 1);
+        assert.equal(log.filter((line) => line.startsWith('reset ')).length, 0, 'lease must receive the tested guest state for failure retention and final reset');
+        assert.ok(log.includes(`evidence-finish ${directory} ${expected === 0 ? 'passed' : 'failed'}`));
+        if (keep) assert.match(result.stdout, /kept stopped for debugging/);
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

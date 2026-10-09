@@ -67,8 +67,13 @@ export default function Select({
     const selectedValue = controlled ? value : internalValue;
     const selectedIndex = options.findIndex((option) => option.value === selectedValue);
     const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : null;
+    const sizingText = useMemo(
+        () => [placeholder, ...options.map((option) => String(option.label))].join('\n'),
+        [options, placeholder],
+    );
 
     const [open, setOpen] = useState(false);
+    const [menuFont, setMenuFont] = useState('');
     const [activeIndex, setActiveIndex] = useState(() => (
         selectedIndex >= 0 ? selectedIndex : firstEnabledIndex(options)
     ));
@@ -85,6 +90,9 @@ export default function Select({
 
     const openMenu = useCallback(() => {
         if (disabled || firstEnabledIndex(options) < 0) return;
+        if (triggerRef.current) {
+            setMenuFont(window.getComputedStyle(triggerRef.current).font);
+        }
         setActiveIndex(selectedIndex >= 0 && !options[selectedIndex]?.disabled
             ? selectedIndex
             : firstEnabledIndex(options));
@@ -193,6 +201,7 @@ export default function Select({
     return (
         <div className={`${styles.root} ${className}`}>
             {name && <input type="hidden" name={name} value={selectedValue ?? ''} />}
+            <span className={styles.sizer} aria-hidden="true">{sizingText}</span>
             <button
                 ref={triggerRef}
                 id={triggerId}
@@ -211,6 +220,7 @@ export default function Select({
                 disabled={disabled}
                 onClick={() => (open ? close() : openMenu())}
                 onKeyDown={handleKeyDown}
+                title={selectedOption ? String(selectedOption.label) : undefined}
                 data-testid={testId}
                 data-value={selectedValue ?? ''}
             >
@@ -239,6 +249,7 @@ export default function Select({
                     <div
                         id={listboxId}
                         className={styles.listbox}
+                        style={menuFont ? { font: menuFont } : undefined}
                         role="listbox"
                         aria-label={ariaLabel ? `${ariaLabel} options` : undefined}
                         aria-labelledby={!ariaLabel ? ariaLabelledBy : undefined}
@@ -260,6 +271,7 @@ export default function Select({
                                     }}
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => choose(index)}
+                                    title={String(option.label)}
                                     data-value={option.value}
                                 >
                                     <span className={styles.optionLabel}>{option.label}</span>

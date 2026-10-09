@@ -137,6 +137,8 @@ describe('useWorkspaceResourceDesktopViews', () => {
             .toEqual([CHAT.id, browserId]);
         expect(result.current.desktopLayout.model.tabGroups.right.viewIds)
             .not.toContain(browserId);
+        expect(result.current.desktopLayout.model.openViewsById[browserId].identity.agentId)
+            .toBe('root-2');
     });
 
     it('keeps an explicitly closed root view closed during the same conversation', () => {

@@ -549,7 +549,17 @@ class Journey:
                 raise AssertionError(f"Setup ended in {contract}: {final!r}")
             if text_of(final, "primary") != "Open omnideck":
                 raise AssertionError("Ready primary action wording changed")
-            self.driver.click("#primary")
+            try:
+                self.driver.click("#primary")
+            except WebDriverError as error:
+                if "Remote end closed connection without response" not in str(error):
+                    raise
+                # WebKit can drop the command response while the native
+                # hosted window opens. Observe the actual hosted page below;
+                # the bounded wait can retry Open if Ready is still visible.
+                self.evidence.joinpath("hosted-open-disconnect.txt").write_text(
+                    str(error) + "\n", encoding="utf-8"
+                )
             self.wait_for_hosted(fixture_text, hosted_selector)
             return "opened"
 
@@ -622,7 +632,10 @@ class Journey:
         return self.finish_setup(fixture_text, hosted_selector)
 
     def wait_for_hosted(self, fixture_text: str, hosted_selector: str) -> dict[str, Any]:
-        deadline = time.monotonic() + self.timeout
+        # Once setup reports ready, a native hosted window should appear in
+        # seconds. Keep this boundary independently bounded so a wedged
+        # WebKit session cannot consume the full 30-minute setup allowance.
+        deadline = time.monotonic() + min(self.timeout, 120)
         observed: list[dict[str, Any]] = []
         ready_observations = 0
         recovery_clicks = 0
@@ -688,6 +701,10 @@ class Journey:
                         )
                     except WebDriverError as error:
                         observed.append({"hostedOpenRecoveryError": str(error)})
+            self.evidence.joinpath("hosted-observations.json").write_text(
+                json.dumps(observed[-20:], indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
             time.sleep(0.5)
         raise AssertionError(f"Hosted application did not open: {observed[-10:]!r}")
 

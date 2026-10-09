@@ -35,7 +35,7 @@ from migrations._terminal_collapse import merge_terminal_transcripts
 logger = logging.getLogger(__name__)
 
 # Same constants used by the compaction strategy. Kept in sync with
-# sdk/context/_strategy.py; if those change there, update here.
+# agent_runtime/_compaction.py; if those change there, update here.
 _SUMMARY_PREFIX = "[Conversation summary — earlier messages were compacted]\n\n"
 _INTENT_PREFIX = "[User intent history]\n"
 # Same chars/token approximation the live strategy and view layer use.
@@ -842,7 +842,7 @@ def migrate_conversation(
     full_msgs, msg_to_record_id = reconstruct_full_history(history, root_records)
 
     # Phase 2: synthesize per-message events. Each turn's anchor brings its
-    # own agent_id (each turn = a fresh root span in the SDK today).
+    # own agent_id (each turn = a fresh root span in the agent core today).
     root_events, evt_to_rec, warns = synthesize_agent_events(
         full_msgs, conv_id, root_starts, fallback_root_id, fallback_root_name, msg_to_record_id,
     )

@@ -9,6 +9,8 @@ expected_sha256="${4:?artifact SHA-256 is required}"
 expected_cli_version="${5:?CLI version is required}"
 expected_cli_commit="${6:?CLI commit is required}"
 upgrade_from_sha256="${7:-none}"
+test_tier="${8:-product}"
+case "$test_tier" in product|onboarding) ;; *) printf 'Unknown test tier: %s\n' "$test_tier" >&2; exit 2 ;; esac
 result_dir="${work_dir}/results"
 markers="${work_dir}/markers"
 user_data="${work_dir}/user-data"
@@ -60,6 +62,12 @@ cleanup_resources() {
 write_evidence() {
   local exit_code=$?
   set +e
+  if [[ "${test_status}" != "passed" ]]; then
+    # Guest resets discard renderer/driver crash details that are not present
+    # in WebDriver's transport error. Retain diagnostics before that reset.
+    sudo journalctl --since "${started_at}" --no-pager > "${result_dir}/failure-journal.log" 2>&1
+    sudo coredumpctl --since "${started_at}" --no-pager info > "${result_dir}/failure-coredumps.log" 2>&1
+  fi
   inventory after
   mkdir -p "${result_dir}/user-data/logs" "${result_dir}/user-data/runtime"
   [[ -f "${user_data}/setup-state.json" ]] && cp -- "${user_data}/setup-state.json" "${result_dir}/user-data/setup-state.json"
@@ -128,7 +136,12 @@ dnf_with_lock_retry() {
 
 install_rpm() {
   local requested="${1:-${artifact}}" label="${2:-candidate-install}"
-  dnf_with_lock_retry "${label}" install -y "${requested}"
+  local identity action=install
+  identity="$(rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "${requested}")"
+  # PR candidates can share the published package version but contain new bytes.
+  # DNF otherwise keeps the installed package and silently skips the candidate.
+  if rpm -q "${identity}" >/dev/null 2>&1; then action=reinstall; fi
+  dnf_with_lock_retry "${label}" "${action}" -y "${requested}"
 }
 
 current_step="lab preflight isolation"
@@ -202,7 +215,8 @@ case "${package_kind}" in
     ;;
   deb)
     package_name="$(dpkg-deb --field "${artifact}" Package)"
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${artifact}"
+    # Exercise the exact candidate even before its release version is bumped.
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y "${artifact}"
     application="$(command -v omnideck-desktop)"
     ;;
   rpm)
@@ -373,10 +387,16 @@ desktop_env=(
   "OMNIDECK_CONFIG_DIR=${cli_config}"
 )
 update_fixture="${result_dir}/update-fixture.json"
-update_version="0.2.3"
+update_version="0.5.3"
 desktop_env+=("OMNIDECK_DESKTOP_UPDATE_FIXTURE=${update_fixture}")
 if [[ -n "${xauthority}" && -f "${xauthority}" ]]; then
   desktop_env+=("DISPLAY=${display:-:0}" "XAUTHORITY=${xauthority}" "GDK_BACKEND=x11")
+  # Keep the native Wayland transport available to child desktop applications.
+  # The AppImage itself needs X11, but Ubuntu's confined Firefox uses the
+  # session's Wayland socket when an external URL is opened.
+  if [[ -n "${wayland_display}" && -S "/run/user/1000/${wayland_display}" ]]; then
+    desktop_env+=("WAYLAND_DISPLAY=${wayland_display}")
+  fi
   printf 'backend=x11 display=%s xauthority=%s\n' "${display:-:0}" "${xauthority}" \
     > "${result_dir}/desktop-backend.txt"
 else
@@ -409,20 +429,12 @@ while [[ ! -s "${smoke_proof}" ]]; do
   }
   sleep 0.25
 done
+# The sidecar proof can precede WebKit startup; allow renderer failures to reach
+# stderr before validating the packaged launch.
+sleep 2
 kill "${smoke_pid}" >/dev/null 2>&1 || true
 wait "${smoke_pid}" >/dev/null 2>&1 || true
-python3 - "${smoke_proof}" "${expected_cli_version}" "${expected_cli_commit}" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    proof = json.load(stream)
-assert proof["cliVersion"] == sys.argv[2], proof
-assert proof["cliCommit"] == sys.argv[3], proof
-assert proof["schemaVersion"] == 4, proof
-assert proof["operations"] == ["--version", "--json runtime status"], proof
-assert proof["mutation"] is False, proof
-PY
+python3 "${work_dir}/verify_linux_smoke.py" "${smoke_dir}" "${expected_cli_version}" "${expected_cli_commit}"
 
 run_journey() {
   local scenario="$1"
@@ -476,6 +488,30 @@ podman rm --force "${container_name}" >/dev/null
 run_journey resume
 
 current_step="candidate update"
+# A warm, unchanged image can reconcile in less than one WebDriver polling
+# interval. Exercise a real cold-cache update so the transient update surface
+# remains observable. Remove only this run's container and the exact immutable
+# image; keep the data volumes, and never force-remove an image used elsewhere.
+update_image_ref="$(python3 - "${state_path}" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    image_ref = json.load(stream)["imageRef"]
+if not re.fullmatch(r"ghcr\.io/omnideck-dev/omnideck@sha256:[0-9a-f]{64}", image_ref):
+    raise SystemExit("Update fixture requires the exact immutable OmniDeck image")
+print(image_ref)
+PY
+)"
+podman rm --force "${container_name}" > "${result_dir}/update-fixture-container-removal.txt"
+podman rmi "${update_image_ref}" > "${result_dir}/update-fixture-image-removal.txt"
+if podman image exists "${update_image_ref}"; then
+  printf 'Cold-cache update fixture still contains %s\n' "${update_image_ref}" >&2
+  exit 1
+fi
+printf 'cache=cold\nimageRef=%s\ndataVolumes=preserved\n' "${update_image_ref}" \
+  > "${result_dir}/update-fixture-preconditions.txt"
 python3 - "${state_path}" <<'PY'
 import json
 import sys
@@ -592,6 +628,8 @@ run_host_boundary() {
     operation_args+=(--native-input-signal-dir "${markers}")
   elif [[ "${operation}" == "update-bridge" ]]; then
     operation_args+=(--expected-update-version "${update_version}")
+  elif [[ "${operation}" == "external-links" && -n "${browser_processes:-}" ]]; then
+    operation_args+=(--expected-browser-process "${browser_processes}")
   fi
   mkdir -p "${operation_dir}"
   for attempt in 1 2 3; do
@@ -706,8 +744,29 @@ PY
 run_host_boundary update-bridge
 
 current_step="external browser and internal navigation"
-if command -v xdg-mime >/dev/null 2>&1 &&
-  [[ -x /snap/bin/firefox ]] &&
+if ! command -v xdg-mime >/dev/null 2>&1; then
+  printf 'The Linux guest has no xdg-mime desktop-handler resolver.\n' >&2
+  exit 1
+fi
+resolve_browser_desktop_entry() {
+  local directory
+  local -a data_dirs
+  browser_desktop_id="$(xdg-mime query default x-scheme-handler/http)"
+  browser_desktop_path=""
+  [[ -n "${browser_desktop_id}" && "${browser_desktop_id}" != */* ]] || return 1
+  IFS=: read -r -a data_dirs <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/var/lib/snapd/desktop}"
+  for directory in "${XDG_DATA_HOME:-${HOME}/.local/share}" "${data_dirs[@]}"; do
+    if [[ -f "${directory}/applications/${browser_desktop_id}" ]]; then
+      browser_desktop_path="${directory}/applications/${browser_desktop_id}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+browser_desktop_id=""
+browser_desktop_path=""
+if [[ -x /snap/bin/firefox ]] &&
   [[ -n "${wayland_display}" ]] &&
   [[ -S "/run/user/1000/${wayland_display}" ]]; then
   browser_wrapper="${work_dir}/firefox-wayland"
@@ -737,19 +796,36 @@ EOF
   if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${applications_dir}"
   fi
-  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/http
-  xdg-mime default "$(basename "${browser_desktop}")" x-scheme-handler/https
-  [[ "$(xdg-mime query default x-scheme-handler/http)" == "$(basename "${browser_desktop}")" ]]
-  [[ "$(xdg-mime query default x-scheme-handler/https)" == "$(basename "${browser_desktop}")" ]]
+  browser_desktop_id="$(basename "${browser_desktop}")"
+  browser_desktop_path="${browser_desktop}"
   desktop_env+=("BROWSER=${browser_wrapper}")
 else
-  printf 'The AppImage guest has no supported Wayland Firefox session.\n' >&2
-  exit 1
+  # Respect the guest's registered browser, not stale entries from an older
+  # installation (for example, a Snap shim on a native-Firefox Silverblue image).
+  resolve_browser_desktop_entry || {
+    printf 'The Linux guest default browser has no resolvable desktop entry.\n' >&2
+    exit 1
+  }
 fi
+[[ -n "${browser_desktop_path}" && -f "${browser_desktop_path}" ]] || {
+  printf 'The Linux guest has no discoverable Firefox desktop association.\n' >&2
+  exit 1
+}
+xdg-mime default "${browser_desktop_id}" x-scheme-handler/http
+xdg-mime default "${browser_desktop_id}" x-scheme-handler/https
+[[ "$(xdg-mime query default x-scheme-handler/http)" == "${browser_desktop_id}" ]]
+[[ "$(xdg-mime query default x-scheme-handler/https)" == "${browser_desktop_id}" ]]
+browser_processes="firefox"
+if command -v firefox-esr >/dev/null 2>&1; then
+  browser_processes+=",firefox-esr"
+fi
+printf 'Using browser desktop entry %s (%s), accepted processes=%s\n' \
+  "${browser_desktop_id}" "${browser_desktop_path}" "${browser_processes}"
 run_host_boundary external-links
 touch "${markers}/external-browser-visible"
 sleep 5
 pkill -u "$(id -u)" -TERM -x firefox >/dev/null 2>&1 || true
+pkill -u "$(id -u)" -TERM -x firefox-esr >/dev/null 2>&1 || true
 
 current_step="resource contract"
 podman container inspect "${container_name}" > "${result_dir}/container-inspect.json"

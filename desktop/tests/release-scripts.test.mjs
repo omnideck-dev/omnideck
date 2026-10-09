@@ -82,8 +82,7 @@ test('macOS preview packages contain a strict bundle-level signature', () => {
 
 test('macOS tag builds require protected Developer ID signing and notarization', () => {
   assert.match(desktopWorkflow, /signed_macos:/);
-  assert.match(desktopWorkflow, /build_macos_preview:[\s\S]*?!startsWith/);
-  assert.match(desktopWorkflow, /build_macos_release:[\s\S]*?startsWith/);
+  assert.match(desktopWorkflow, /build_macos_release:[\s\S]*?needs.changes.outputs.signed_macos == 'true'/);
   assert.match(desktopWorkflow, /environment: desktop-signing/);
   assert.match(desktopWorkflow, /DESKTOP_MAC_CERTIFICATE_P12_BASE64: \$\{\{ secrets\./);
   assert.match(desktopWorkflow, /DESKTOP_APPLE_API_PRIVATE_KEY_BASE64: \$\{\{ secrets\./);

@@ -9,9 +9,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from browser.core.document import Document
+from browser.core.exceptions import BrowserToolError
 from tools._grounding import GroundingResponse
-from tools.browser.core.document import Document
-from tools.browser.core.exceptions import BrowserToolError
 
 logger = logging.getLogger(__name__)
 

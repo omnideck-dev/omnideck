@@ -2,12 +2,14 @@
 
 import pytest
 
+from conversations import load_conversation_metadata, save_conversation_title
 from tasks._file_store import FileTaskStore
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
     """Create a FileTaskStore backed by a temp directory."""
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
     return FileTaskStore(tmp_path / "routines")
 
 
@@ -198,20 +200,20 @@ class TestRunLifecycle:
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
-        conv_ids = store.delete_run(run.id)
-        assert isinstance(conv_ids, list)
+        assert store.delete_run(run.id) is None
         assert store.get_run(run.id) is None
 
-    def test_delete_run_returns_conv_ids(self, store):
-        """Delete run returns conversation IDs for cleanup."""
+    def test_delete_run_deletes_execution_history(self, store):
+        """Delete run removes its conversation data without exposing storage IDs."""
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
-        store.set_conversation_id(results[0].id, "conv-123")
+        store.set_agent_run(results[0].id, conversation_id="conv-123", agent_run_id="agent-run")
+        save_conversation_title("conv-123", "Execution history")
 
-        conv_ids = store.delete_run(run.id)
-        assert "conv-123" in conv_ids
+        assert store.delete_run(run.id) is None
+        assert load_conversation_metadata("conv-123") == {}
 
 
 @pytest.mark.unit
@@ -264,10 +266,10 @@ class TestTaskResultMutations:
         assert updated.retry_count == 2
         assert updated.error == "err2"
 
-    def test_set_conversation_id(self, store):
+    def test_set_agent_run(self, store):
         """Set conversation ID on a task result."""
         _, _, run, tr = self._setup(store)
-        store.set_conversation_id(tr.id, "conv-abc")
+        store.set_agent_run(tr.id, conversation_id="conv-abc", agent_run_id="agent-run")
         updated = store.get_task_results(run.id)[0]
         assert updated.conversation_id == "conv-abc"
 
@@ -419,15 +421,14 @@ class TestCascadeDelete:
     """Test cascade deletion."""
 
     def test_delete_routine_cascades(self, store):
-        """Deleting a routine removes all runs and returns conv IDs."""
+        """Deleting a routine removes its runs and associated conversation data."""
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
-        store.set_conversation_id(results[0].id, "conv-xyz")
+        store.set_agent_run(results[0].id, conversation_id="conv-xyz", agent_run_id="agent-run")
+        save_conversation_title("conv-xyz", "Execution history")
 
-        conv_ids = store.delete_routine(routine.id)
-        assert "conv-xyz" in conv_ids
+        assert store.delete_routine(routine.id) is None
+        assert load_conversation_metadata("conv-xyz") == {}
         assert store.get_routine(routine.id) is None
-
-

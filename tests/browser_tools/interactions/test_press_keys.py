@@ -9,7 +9,7 @@ from .._helpers import find_ref
 
 
 async def test_press_enter_submits_form(open_tab, servers):
-    tab = await open_tab(f"{servers.primary}/enter-submit/page.html")
+    tab = await open_tab(f"{servers.primary}/forms/enter-submit.html")
     view = await browse_page(tab=tab)
 
     q = find_ref(view, role="textbox", name="Query")

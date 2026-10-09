@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatCron, formatTime, formatTimeUntil, formatDuration } from './routineUtils.jsx';
 import TaskOutputModal from './TaskOutputModal.jsx';
 import Button from '../primitives/Button.jsx';
+import BrandTabs from '../primitives/BrandTabs.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
 import StatusDot from '../StatusDot.jsx';
 import styles from './RoutineDetailPanel.module.css';
@@ -136,26 +137,24 @@ export default function RoutineDetailPanel({
                 )}
             </div>
 
-            {/* Tabs */}
-            <div className={styles.tabs}>
-                <button
-                    className={`${styles.tab} ${activeTab === 'runs' ? styles.tabActive : ''}`}
-                    onClick={() => setActiveTab('runs')}
-                >
-                    Recent Runs
-                    <span className={styles.tabCount}>{runs.length}</span>
-                </button>
-                <button
-                    className={`${styles.tab} ${activeTab === 'tasks' ? styles.tabActive : ''}`}
-                    onClick={() => setActiveTab('tasks')}
-                >
-                    Tasks
-                    <span className={styles.tabCount}>{tasks.length}</span>
-                </button>
-            </div>
+            <BrandTabs
+                tabs={[
+                    { id: 'runs', label: 'Recent Runs', count: runs.length },
+                    { id: 'tasks', label: 'Tasks', count: tasks.length },
+                ]}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                ariaLabel="Routine details"
+                idBase="routine-detail"
+            />
 
             {/* Tab content */}
-            <div className={styles.tabContent}>
+            <div
+                className={styles.tabContent}
+                id={`routine-detail-panel-${activeTab}`}
+                role="tabpanel"
+                aria-labelledby={`routine-detail-tab-${activeTab}`}
+            >
                 {activeTab === 'runs' && (
                     <RunsTab
                         runs={runs}

@@ -30,4 +30,17 @@ describe('SearchInput', () => {
         render(<SearchInput value="mail" onChange={() => {}} clearable={false} clearTestId="s-clear" />);
         expect(screen.queryByTestId('s-clear')).not.toBeInTheDocument();
     });
+
+    it('disables editing and clearing together', () => {
+        render(
+            <SearchInput
+                value="mail"
+                onChange={() => {}}
+                disabled
+                clearTestId="s-clear"
+            />,
+        );
+        expect(screen.getByRole('searchbox')).toBeDisabled();
+        expect(screen.queryByTestId('s-clear')).not.toBeInTheDocument();
+    });
 });

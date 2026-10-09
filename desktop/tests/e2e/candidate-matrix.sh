@@ -7,7 +7,8 @@ desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
 source "${script_dir}/_lab.sh"
 lanes_csv="${OMNIDECK_DESKTOP_VM_E2E_LANES:-appimage,deb,rpm,atomic,windows}"
-profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
+suite="${OMNIDECK_DESKTOP_VM_E2E_SUITE:-product}"
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-}"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
 upgrade_from="${OMNIDECK_DESKTOP_VM_E2E_UPGRADE_FROM:-latest}"
 assume_yes=0
@@ -15,14 +16,18 @@ assume_yes=0
 while (($#)); do
   case "$1" in
     --lanes) lanes_csv="${2:?--lanes requires a value}"; shift 2 ;;
+    --suite) suite="${2:?--suite requires a value}"; shift 2 ;;
     --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --cli) cli_root="${2:?--cli requires a value}"; shift 2 ;;
     --upgrade-from) upgrade_from="${2:?--upgrade-from requires a value}"; shift 2 ;;
     --yes) assume_yes=1; shift ;;
-    -h|--help) printf 'Usage: %s --cli PATH [--upgrade-from latest|none|TAG] [--lanes LIST] [--profile NAME] [--yes]\n' "$0"; exit 0 ;;
+    -h|--help) printf 'Usage: %s --cli PATH [--suite product|onboarding|all] [--upgrade-from latest|none|TAG] [--lanes LIST] [--profile NAME] [--yes]\n' "$0"; exit 0 ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+case "$suite" in product|onboarding|all) ;; *) printf 'Unsupported suite: %s\n' "$suite" >&2; exit 2 ;; esac
+if [[ "$suite" == all && -n "$profile" ]]; then printf '%s\n' '--profile cannot be combined with --suite all.' >&2; exit 2; fi
+if [[ "$suite" == all ]]; then tiers=(product onboarding); else tiers=("$suite"); fi
 
 [[ -d "$cli_root" ]] || { printf 'Pass --cli PATH or set OMNIDECK_CLI_WORKTREE.\n' >&2; exit 2; }
 require_lab
@@ -36,7 +41,10 @@ for lane in "${lanes[@]}"; do
   case "$lane" in appimage|deb|rpm|atomic|windows) ;; *) printf 'Unsupported lane: %s\n' "$lane" >&2; exit 2 ;; esac
   selected["$lane"]=1
 done
-"${lab_dir}/lab.sh" preflight desktop "$profile" --lanes "$lanes_csv" >/dev/null
+for tier in "${tiers[@]}"; do
+  if [[ -n "$profile" ]]; then tier_profile="$profile"; elif [[ "$tier" == product ]]; then tier_profile=product-ready; else tier_profile=onboarding-clean; fi
+  "${lab_dir}/lab.sh" preflight desktop "$tier_profile" --lanes "$lanes_csv" >/dev/null
+done
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_root="$("${lab_dir}/lab.sh" artifact-path desktop candidate-matrix "$run_id")"
@@ -55,10 +63,12 @@ if [[ "$upgrade_from" != none ]]; then
   }
 fi
 "${lab_dir}/lab.sh" evidence-init "$run_root" desktop candidate-matrix "$run_id" \
-  "$source_commit" multi qualification "phase=preparing" "profile=${profile}" \
+  "$source_commit" multi qualification "phase=preparing" "profile=${profile:-suite-default}" "testTier=${suite}" \
   "lanes=${lanes_csv}" "upgradeFrom=${upgrade_release:-none}" \
   "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}"
 finalized=0
+matrix_signal=0
+active_lane_pid=""
 finish_incomplete() {
   local exit_status=$?
   set +e
@@ -69,6 +79,19 @@ finish_incomplete() {
   return "$exit_status"
 }
 trap finish_incomplete EXIT
+interrupt_matrix() {
+  local status="$1" signal_name="$2"
+  matrix_signal="$status"
+  if [[ "$signal_name" == INT ]]; then signal_name=TERM; fi
+  if [[ "$active_lane_pid" =~ ^[0-9]+$ ]] && kill -0 "$active_lane_pid" 2>/dev/null; then
+    kill -s "$signal_name" "$active_lane_pid" 2>/dev/null || true
+  fi
+}
+trap 'interrupt_matrix 130 INT' INT
+trap 'interrupt_matrix 143 TERM' TERM
+abort_if_signaled() {
+  [[ "$matrix_signal" == 0 ]] || exit "$matrix_signal"
+}
 
 if [[ -n "$upgrade_release" ]]; then
   upgrade_download_dir="${run_root}/upgrade-downloads"
@@ -101,9 +124,11 @@ if [[ "${#linux_bundles[@]}" -gt 0 ]]; then
   printf 'Building all requested Linux packages once before leasing any guest.\n'
   OMNIDECK_CLI_BUILDER_IMAGE="$cli_builder_image" \
   OMNIDECK_DESKTOP_BUILDER_IMAGE="$desktop_builder_image" \
+  OMNIDECK_DESKTOP_BUILDER_CACHE_DIR="$desktop_builder_cache" \
   OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR="$desktop_build_output" \
     "${desktop_root}/scripts/build-with-local-cli.sh" "$cli_root" \
     "pnpm exec tauri build --bundles ${bundle_csv} --target x86_64-unknown-linux-gnu"
+  abort_if_signaled
   for kind in "${linux_bundles[@]}"; do
     case "$kind" in
       appimage) glob='*.AppImage' ;;
@@ -123,8 +148,10 @@ if [[ -n "${selected[windows]:-}" ]]; then
   printf 'Building the requested Windows package once before leasing its guest.\n'
   OMNIDECK_CLI_BUILDER_IMAGE="$cli_builder_image" \
   OMNIDECK_DESKTOP_WINDOWS_BUILDER_IMAGE="$desktop_builder_image" \
+  OMNIDECK_DESKTOP_BUILDER_CACHE_DIR="$desktop_builder_cache" \
   OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR="$desktop_build_output" \
     "${desktop_root}/scripts/build-with-local-cli-windows.sh" "$cli_root"
+  abort_if_signaled
   built="$(find "${desktop_build_output}/x86_64-pc-windows-gnu/release/bundle/nsis" -maxdepth 1 -type f -name '*-setup.exe' -print | sort | head -n 1)"
   [[ -n "$built" ]] || { printf 'Missing built Windows candidate.\n' >&2; exit 1; }
   cache_candidate_artifact "$built" nsis
@@ -132,32 +159,46 @@ if [[ -n "${selected[windows]:-}" ]]; then
   remove_desktop_build_output
 fi
 "${lab_dir}/lab.sh" evidence-set "$run_root" "phase=prepared"
+abort_if_signaled
 
 status=0
-for lane in "${lanes[@]}"; do
+for tier in "${tiers[@]}"; do
+ for lane in "${lanes[@]}"; do
+  if [[ -n "$profile" ]]; then tier_profile="$profile"; elif [[ "$tier" == product ]]; then tier_profile=product-ready; else tier_profile=onboarding-clean; fi
   case "$lane" in
     appimage|atomic) artifact="${artifact_by_kind[appimage]}" ;;
     deb) artifact="${artifact_by_kind[deb]}" ;;
     rpm) artifact="${artifact_by_kind[rpm]}" ;;
     windows) artifact="${artifact_by_kind[windows]}" ;;
   esac
-  arguments=(--vm "$lane" --profile "$profile" --cli "$cli_root" --artifact "$artifact")
+  arguments=(--vm "$lane" --suite "$tier" --profile "$tier_profile" --cli "$cli_root" --artifact "$artifact")
   if [[ -n "$upgrade_release" ]]; then
     case "$lane" in appimage|atomic) upgrade_kind=appimage ;; *) upgrade_kind="$lane" ;; esac
     arguments+=(--upgrade-from-artifact "${upgrade_artifact_by_kind[$upgrade_kind]}")
   fi
   [[ "$assume_yes" == 0 ]] || arguments+=(--yes)
   lane_status=0
-  lane_dir="${run_root}/lanes/${lane}"
+  lane_key="${tier}-${lane}"
+  lane_dir="${run_root}/lanes/${lane_key}"
   mkdir -p "$lane_dir"
   OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR="$lane_dir" \
-    "$script_dir/run.sh" "${arguments[@]}" > >(tee "${lane_dir}/host.log") 2>&1 || lane_status=$?
+    "$script_dir/run.sh" "${arguments[@]}" > >(tee "${lane_dir}/host.log") 2>&1 &
+  active_lane_pid=$!
+  wait "$active_lane_pid" || lane_status=$?
+  if [[ "$matrix_signal" != 0 ]]; then
+    wait "$active_lane_pid" 2>/dev/null || true
+    active_lane_pid=""
+    printf '%s\tcanceled\tlanes/%s\n' "$lane_key" "$lane_key" >> "$status_file"
+    exit "$matrix_signal"
+  fi
+  active_lane_pid=""
   if [[ "$lane_status" == 0 ]]; then
-    printf '%s\tpassed\tlanes/%s\n' "$lane" "$lane" >> "$status_file"
+    printf '%s\tpassed\tlanes/%s\n' "$lane_key" "$lane_key" >> "$status_file"
   else
-    printf '%s\tfailed\tlanes/%s\n' "$lane" "$lane" >> "$status_file"
+    printf '%s\tfailed\tlanes/%s\n' "$lane_key" "$lane_key" >> "$status_file"
     status=1
   fi
+ done
 done
 if [[ "$status" == 0 ]]; then
   "${lab_dir}/lab.sh" evidence-finish "$run_root" passed

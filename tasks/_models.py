@@ -68,6 +68,7 @@ class TaskResult(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     conversation_id: str | None = None
+    agent_run_id: str | None = None
     file_outputs: list[str] = Field(default_factory=list)
 
 

@@ -7,6 +7,10 @@ import Callout from './primitives/Callout.jsx';
 import ConfirmButton from './primitives/ConfirmButton.jsx';
 import Popover from './primitives/Popover.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
+import Select from './primitives/Select.jsx';
+import { BrowserProfileIcon } from '../features/browser/browserIcons.jsx';
+import { EMPTY_BROWSER_PROFILE } from '../features/browser/browserProfileConstants.js';
+import { useBrowserProfilesCatalog } from '../features/browser/BrowserProfilesContext.jsx';
 import { categoryIcon } from './skills/skillCategoryIcons.js';
 import { InferenceSettings, resolvePreset, detectPreset, INFERENCE_FIELDS, isSupported } from './inference';
 
@@ -16,6 +20,7 @@ const HELP_SECTIONS = [
     { title: 'Model', body: 'The model to use when this profile is active.' },
     { title: 'System Prompt', body: 'Instructions prepended to every conversation. Controls the agent\'s personality, constraints, and behavior. Supports markdown.' },
     { title: 'Skills', body: 'Toggle which tool groups the agent can access. Disabled skills are not available during inference.' },
+    { title: 'Browser', body: 'Grant Browser access and choose the saved profile this agent starts from.' },
     { title: 'Inference Preset', body: 'Quick presets that set temperature, sampling, and thinking for common workloads. Selecting a preset fills in the advanced values.' },
     { title: 'Temperature', body: '0.0 = deterministic, 0.7 = general use, 1.0+ = creative. Controls randomness in token selection.' },
     { title: 'Top K', body: 'Limits sampling to the K most probable tokens. 10 = factual, 40 = general, 100+ = creative.' },
@@ -48,6 +53,7 @@ export default function ProfileBuilder({
     const [saveError, setSaveError] = useState(null);
     const [showPicker, setShowPicker] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
+    const { profiles: browserProfiles } = useBrowserProfilesCatalog();
 
     useEffect(() => {
         setSaveError(null);
@@ -379,7 +385,58 @@ export default function ProfileBuilder({
                         </div>
                     </section>
 
-                    {/* 5. Autonomy */}
+                    {/* 5. Browser */}
+                    <section className={styles.section} data-testid="profile-browser-settings">
+                        <div className={styles.sectionLabel}>Browser</div>
+                        <label className={styles.browserAccessRow}>
+                            <ToggleSwitch
+                                checked={draft.browser_profile_id !== null}
+                                onChange={(event) => {
+                                    const enabled = event.target.checked;
+                                    setDraft((current) => current ? {
+                                        ...current,
+                                        browser_profile_id: enabled
+                                            ? (current.browser_profile_id || 'default')
+                                            : null,
+                                    } : current);
+                                }}
+                                aria-label="Allow Browser access"
+                            />
+                            <span className={styles.autoText}>
+                                <span className={styles.autoLabel}>Allow Browser access</span>
+                                <span className={styles.autoHelp}>The agent can open websites in its own isolated Browser session.</span>
+                            </span>
+                        </label>
+                        {draft.browser_profile_id !== null && (
+                            <div className={styles.browserProfileField}>
+                                <label id="agent-browser-profile-label">Starting profile</label>
+                                <Select
+                                    options={[
+                                        { value: EMPTY_BROWSER_PROFILE, label: 'Empty' },
+                                        ...browserProfiles.map((item) => ({
+                                            value: item.id,
+                                            label: item.name,
+                                        })),
+                                    ]}
+                                    value={draft.browser_profile_id}
+                                    onChange={(value) => update('browser_profile_id', value)}
+                                    ariaLabelledBy="agent-browser-profile-label"
+                                    className={styles.browserProfileSelect}
+                                    testId="agent-browser-profile-select"
+                                />
+                                <div className={styles.browserProfileHint}>
+                                    {draft.browser_profile_id !== EMPTY_BROWSER_PROFILE ? (
+                                        <>
+                                            <BrowserProfileIcon icon={browserProfiles.find((item) => item.id === draft.browser_profile_id)?.icon} />
+                                            The agent gets an isolated copy of this saved profile.
+                                        </>
+                                    ) : 'Empty starts without saved cookies or site data.'}
+                                </div>
+                            </div>
+                        )}
+                    </section>
+
+                    {/* 6. Autonomy */}
                     <section className={styles.section}>
                         <div className={styles.sectionLabel}>Autonomy</div>
                         <label className={styles.autoRow}>

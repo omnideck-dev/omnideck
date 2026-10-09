@@ -142,7 +142,8 @@ the imported certificate, requires Apple team `2FL6BUG8Q4`, and has Tauri
 notarize and staple the package. The verifier then requires a Developer ID
 Application authority, hardened runtime, secure timestamp, valid stapled
 ticket, and successful Gatekeeper assessments for both the application and
-DMG. The same Developer ID Application certificate signs the Intel and Apple
+DMG. It separately verifies the embedded `omnideck-cli` executable has the
+same Developer ID team, hardened runtime, and timestamp. The same Developer ID Application certificate signs the Intel and Apple
 Silicon packages. A Developer ID Installer certificate is not used because the
 release format is DMG rather than PKG.
 
@@ -150,7 +151,8 @@ release format is DMG rather than PKG.
 
 Create a Developer ID Application certificate for Apple team `2FL6BUG8Q4` on a
 trusted Mac. Export the certificate and its private key from Keychain Access as
-a password-protected PKCS#12 (`.p12`) file. Create a team App Store Connect API
+a password-protected PKCS#12 (`.p12`) file, including the Apple Developer ID
+intermediate certificate so the temporary keychain can validate its trust chain. Create a team App Store Connect API
 key with permission to submit notarization requests and retain its issuer ID,
 key ID, and one-time-download `.p8` private key.
 

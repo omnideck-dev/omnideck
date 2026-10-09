@@ -6,7 +6,7 @@ use crate::cli::{
 use crate::parity::SetupState;
 use crate::state::{
     image_manifest, persisted_port, read_setup_record, reserve_and_persist_port, save_setup_record,
-    ImageManifest, APP_VERSION,
+    ImageManifest, SetupRecord, APP_VERSION,
 };
 use crate::{
     navigation::authorize_local_setup,
@@ -249,7 +249,25 @@ fn selected_manifest(host: &HostState) -> BridgeResult<ImageManifest> {
             image_ref: target.image_ref,
         });
     }
-    image_manifest()
+    Ok(preserve_newer_installed_image(
+        image_manifest()?,
+        read_setup_record().as_ref(),
+    ))
+}
+
+fn preserve_newer_installed_image(
+    mut packaged: ImageManifest,
+    installed: Option<&SetupRecord>,
+) -> ImageManifest {
+    if let Some(record) = installed {
+        // Desktop upgrades and repairs must not downgrade independently updated
+        // application state. Keep the exact digest, even across desktop versions.
+        if updates::is_newer_release(&record.image_version, &packaged.image_version) {
+            packaged.image_version.clone_from(&record.image_version);
+            packaged.image_ref.clone_from(&record.image_ref);
+        }
+    }
+    packaged
 }
 
 fn send_state(
@@ -868,6 +886,40 @@ mod tests {
         assert_eq!(target.image_ref, image_ref);
         assert!(interrupted_update_target("complete", "update", "0.1.2", "unused").is_none());
         assert!(interrupted_update_target("in-progress", "repair", "0.1.2", "unused").is_none());
+    }
+
+    #[test]
+    fn desktop_upgrade_preserves_a_newer_installed_container() {
+        let packaged = ImageManifest {
+            schema_version: 3,
+            app_version: APP_VERSION.into(),
+            image_version: "0.2.2".into(),
+            image_ref: format!("ghcr.io/omnideck-dev/omnideck@sha256:{}", "a".repeat(64)),
+        };
+        let installed: SetupRecord = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "status": "complete",
+            "reason": "update",
+            "appVersion": "0.1.0-beta.11",
+            "imageVersion": "0.5.2",
+            "imageRef": format!("ghcr.io/omnideck-dev/omnideck@sha256:{}", "b".repeat(64)),
+        }))
+        .unwrap();
+        let selected = preserve_newer_installed_image(packaged.clone(), Some(&installed));
+        assert_eq!(selected.app_version, APP_VERSION);
+        assert_eq!(selected.image_version, "0.5.2");
+        assert_eq!(selected.image_ref, installed.image_ref);
+
+        let newer_package = ImageManifest {
+            image_version: "0.5.3".into(),
+            ..packaged.clone()
+        };
+        let selected = preserve_newer_installed_image(newer_package.clone(), Some(&installed));
+        assert_eq!(selected.image_version, newer_package.image_version);
+        assert_eq!(selected.image_ref, newer_package.image_ref);
+        let selected = preserve_newer_installed_image(packaged.clone(), None);
+        assert_eq!(selected.image_version, packaged.image_version);
+        assert_eq!(selected.image_ref, packaged.image_ref);
     }
 
     #[test]

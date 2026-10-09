@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.http.call_api import build_call_api_tool, call_api
 
 
@@ -114,7 +114,7 @@ async def test_method_and_path_passed_through(
         },
     )
     await call_api("linear", "delete", "/issues/42")
-    assert captured["verb"] == "http_request"
+    assert captured["verb"] == "http.request"
     assert captured["integration_id"] == "linear"
     assert captured["args"]["method"] == "delete"
     assert captured["args"]["path"] == "/issues/42"
@@ -232,9 +232,9 @@ async def test_not_connected_maps_to_message(
 async def test_write_denied_explains_read_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await call_api("linear", "POST", "/issues")
-    assert "read-only" in out
+    assert "tool access is disabled" in out.lower()
     assert "'POST'" in out
 
 

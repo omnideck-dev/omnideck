@@ -2,6 +2,9 @@
 
 set -Eeuo pipefail
 
+# Preserve the failing phase even when a native command exits without stderr.
+trap 'printf "Windows E2E command failed (exit %s, line %s): %s\n" "$?" "$LINENO" "$BASH_COMMAND" >&2' ERR
+
 original_args=("$@")
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +12,8 @@ desktop_root="$(cd "${script_dir}/../.." && pwd)"
 repo_root="$(cd "${desktop_root}/.." && pwd)"
 source "${script_dir}/_lab.sh"
 cli_root="${OMNIDECK_CLI_WORKTREE:-}"
-profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-dev-fast}"
+suite="${OMNIDECK_DESKTOP_VM_E2E_SUITE:-product}"
+profile="${OMNIDECK_DESKTOP_VM_E2E_PROFILE:-}"
 baseline=""
 artifact="${OMNIDECK_DESKTOP_PREPARED_ARTIFACT:-}"
 upgrade_from_artifact="${OMNIDECK_DESKTOP_PREPARED_UPGRADE_FROM_ARTIFACT:-}"
@@ -26,8 +30,9 @@ reinstall. The clean baseline additionally drives UAC cancellation/approval,
 restart-now, a real reboot, and RunOnce reopening.
 
 Options:
+  --suite product|onboarding     Test tier (default: product)
   --baseline clean|NAME         Guest checkpoint (default: podman-ready)
-  --profile NAME                Deterministic lab profile (default: dev-fast)
+  --profile NAME                Override the suite's deterministic lab profile
   --artifact PATH                Test this exact prebuilt NSIS installer
   --upgrade-from-artifact PATH   Install this prior NSIS release before the candidate
   --cli PATH                     CLI worktree embedded in a local candidate
@@ -40,6 +45,7 @@ EOF
 while (($#)); do
   case "$1" in
     --) shift ;;
+    --suite) suite="${2:?--suite requires a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline requires a value}"; shift 2 ;;
     --profile) profile="${2:?--profile requires a value}"; shift 2 ;;
     --artifact) artifact="${2:?--artifact requires a path}"; shift 2 ;;
@@ -51,6 +57,8 @@ while (($#)); do
     *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+case "$suite" in product) default_profile=product-ready ;; onboarding) default_profile=onboarding-clean ;; *) printf 'Unsupported suite: %s\n' "$suite" >&2; exit 2 ;; esac
+[[ -n "$profile" ]] || profile="$default_profile"
 require_lab
 for dependency in curl docker node python3 sha256sum ssh unzip; do
   command -v "${dependency}" >/dev/null 2>&1 || { printf '%s is required.\n' "${dependency}" >&2; exit 2; }
@@ -64,7 +72,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
   prepare_output_dir="${OMNIDECK_DESKTOP_VM_E2E_OUTPUT_DIR:-$("${lab_dir}/lab.sh" artifact-path desktop e2e "${lease_run_id}-windows")}"
   mkdir -p "${prepare_output_dir}"
   "${lab_dir}/lab.sh" evidence-init "${prepare_output_dir}" desktop e2e "${lease_run_id}" \
-    "${source_commit}" windows "${baseline}" "phase=preparing" "profile=${profile}" \
+    "${source_commit}" windows "${baseline}" "phase=preparing" "profile=${profile}" "testTier=${suite}" \
     "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}"
   trap '"${lab_dir}/lab.sh" evidence-finish "${prepare_output_dir}" failed || true' EXIT
   prepare_tauri_driver windows
@@ -74,6 +82,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
     create_desktop_build_output windows
     OMNIDECK_CLI_BUILDER_IMAGE="${cli_builder_image}" \
     OMNIDECK_DESKTOP_WINDOWS_BUILDER_IMAGE="${desktop_builder_image}" \
+    OMNIDECK_DESKTOP_BUILDER_CACHE_DIR="${desktop_builder_cache}" \
     OMNIDECK_DESKTOP_BUILD_OUTPUT_DIR="${desktop_build_output}" \
       "${desktop_root}/scripts/build-with-local-cli-windows.sh" "${cli_root}"
     artifact="$(find "${desktop_build_output}/x86_64-pc-windows-gnu/release/bundle/nsis" \
@@ -94,7 +103,7 @@ if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
   "${lab_dir}/lab.sh" evidence-set "${prepare_output_dir}" "phase=prepared" \
     "tauriDriverKey=${tauri_driver_key}" "artifactCacheKey=${prepared_artifact_key}" \
     "upgradeFromArtifactCacheKey=${prepared_upgrade_from_key:-none}"
-  lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline clean)
+  lease_args=(lease windows desktop "${lease_run_id}" --cleanup-baseline "$baseline")
   [[ "${keep_vm}" != "1" ]] || lease_args+=(--keep-state)
   lease_args+=(-- env OMNIDECK_DESKTOP_PREPARED_ARTIFACT="${artifact}" \
     OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE="${tauri_driver_cache}" \
@@ -120,7 +129,7 @@ fi
   exit 2
 }
 security_mode=0
-[[ "${baseline}" != "clean" ]] || security_mode=1
+[[ "$suite" != onboarding ]] || security_mode=1
 eval "$("${lab_dir}/lab.sh" describe windows --shell)"
 
 if [[ "${OMNIDECK_VM_LAB_LEASED:-}" != "1" ]]; then
@@ -172,7 +181,6 @@ driver_forward_port="$(python3 -c 'import socket; listener=socket.socket(); list
 driver_task_name="OmnideckDesktopE2E-${safe_run_id}"
 trust_task_name="OmnideckDesktopTrust-${safe_run_id}"
 vm_started=0
-initial_reset=0
 remote_staged=0
 driver_ssh_pid=""
 test_status=1
@@ -189,12 +197,31 @@ if [[ -f "${output_dir}/run.json" ]]; then
 else
   "${lab_dir}/lab.sh" evidence-init "${output_dir}" desktop e2e "${safe_run_id}" \
     "${source_commit}" windows "${baseline}" "cliVersion=${cli_version}" "cliCommit=${cli_commit}" \
-    "profile=${profile}" "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}" \
+    "profile=${profile}" "testTier=${suite}" "sourceDirty=${source_dirty}" "sourceFingerprint=${source_fingerprint}" \
     "tauriDriverKey=${OMNIDECK_DESKTOP_TAURI_DRIVER_KEY}"
 fi
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" "artifactCacheKey=${OMNIDECK_DESKTOP_ARTIFACT_CACHE_KEY:-external}"
 "${lab_dir}/lab.sh" evidence-set "${output_dir}" \
   "upgradeFromArtifactCacheKey=${OMNIDECK_DESKTOP_UPGRADE_FROM_ARTIFACT_CACHE_KEY:-none}"
+
+collect_guest_evidence() {
+  phase_command Diagnostics || return 1
+  "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip" || return 1
+  mkdir -p "${evidence_dir}/guest"
+  local unzip_status=0
+  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest" || unzip_status=$?
+  case "${unzip_status}" in
+    0|1) return 0 ;;
+    *) printf 'Could not extract Windows evidence (unzip exit %s).\n' "${unzip_status}" >&2; return "${unzip_status}" ;;
+  esac
+}
+
+stop_driver_tunnel() {
+  python3 "${script_dir}/windows_driver_tunnel.py" stop \
+    --receipt "${output_dir}/driver-tunnel.json" -- ssh "${ssh_options[@]}" -N tester@127.0.0.1 || return 1
+  driver_ssh_pid=""
+  unlink "${output_dir}/driver-tunnel.pid" 2>/dev/null || true
+}
 
 cleanup() {
   local exit_code=$?
@@ -203,12 +230,14 @@ cleanup() {
     printf 'Desktop E2E stopped before its evidence was validated.\n' >&2
     exit_code=1
   fi
-  if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
-    kill "${driver_ssh_pid}" 2>/dev/null || true
-    wait "${driver_ssh_pid}" 2>/dev/null || true
-  fi
+  stop_driver_tunnel || exit_code=1
   if [[ "${vm_started}" == "1" ]]; then
     if [[ "${remote_staged}" == "1" ]]; then
+      # Prepare can fail before normal collection. Preserve its diagnostics
+      # before deleting guest staging and restoring the baseline.
+      if [[ "${exit_code}" != "0" ]]; then
+        collect_guest_evidence || true
+      fi
       "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/runtime-start.log" "${output_dir}/runtime-start.log" \
         >/dev/null 2>&1 || true
     fi
@@ -221,7 +250,8 @@ cleanup() {
     "${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Unregister-ScheduledTask -TaskName '${trust_task_name}' -Confirm:\$false -ErrorAction SilentlyContinue" \
       >/dev/null 2>&1 || true
-    if [[ "${remote_staged}" == "1" && "${keep_vm}" != "1" ]]; then
+    # Failed transactions retain their staging so the archived guest remains diagnosable.
+    if [[ "${remote_staged}" == "1" && "${keep_vm}" != "1" && "${exit_code}" == "0" ]]; then
       "${lab_dir}/lab.sh" run windows \
         "powershell.exe -NoLogo -NoProfile -NonInteractive -Command Remove-Item -Recurse -Force -ErrorAction SilentlyContinue '${remote_root}'" \
         >/dev/null 2>&1 || true
@@ -229,9 +259,8 @@ cleanup() {
     "${lab_dir}/lab.sh" stop windows || exit_code=1
     vm_started=0
   fi
-  if [[ "${initial_reset}" == "1" && "${keep_vm}" != "1" ]]; then
-    "${lab_dir}/lab.sh" reset windows clean || exit_code=1
-  elif [[ "${keep_vm}" == "1" ]]; then
+  # The enclosing lease owns final reset and failed-transaction retention.
+  if [[ "${keep_vm}" == "1" ]]; then
     printf 'Windows guest kept stopped for debugging.\n'
   fi
   if [[ "${exit_code}" == "0" ]]; then
@@ -246,7 +275,6 @@ trap cleanup EXIT
 
 printf 'Resetting the leased Windows guest to %s.\n' "${baseline}"
 "${lab_dir}/lab.sh" reset windows "${baseline}"
-initial_reset=1
 
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"
@@ -269,7 +297,7 @@ printf 'Starting and verifying Windows.\n'
 vm_started=1
 "${lab_dir}/lab.sh" wait windows
 "${lab_dir}/lab.sh" verify windows | tee "${output_dir}/guest-verify.txt"
-if [[ "${baseline}" == "podman-ready" ]]; then
+if [[ "$suite" == product ]]; then
   grep -Eq 'podman=(ready|present|installed|[A-Za-z]:)|podman_version=' "${output_dir}/guest-verify.txt" || {
     printf 'The podman-ready checkpoint did not report Podman.\n' >&2
     exit 1
@@ -289,17 +317,19 @@ fi
   "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { exit 1 }"
 
 printf 'Staging and installing the exact NSIS artifact.\n'
-"${lab_dir}/lab.sh" run windows "cmd.exe /d /c if not exist ${remote_root} mkdir ${remote_root}"
-remote_staged=1
-"${lab_dir}/lab.sh" copy-to windows "${artifact}" "${remote_scp_root}/candidate-setup.exe"
-if [[ -n "${upgrade_from_artifact}" ]]; then
-  "${lab_dir}/lab.sh" copy-to windows "${upgrade_from_artifact}" "${remote_scp_root}/upgrade-from-setup.exe"
+payload_dir="${build_dir}/payload"
+mkdir -p "$payload_dir"
+install -m 0644 "$artifact" "$payload_dir/candidate-setup.exe"
+if [[ -n "$upgrade_from_artifact" ]]; then
+  install -m 0644 "$upgrade_from_artifact" "$payload_dir/upgrade-from-setup.exe"
 fi
-"${lab_dir}/lab.sh" copy-to windows "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "${remote_scp_root}/tauri-driver.exe"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_guest.ps1" "${remote_scp_root}/windows_guest.ps1"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/custom_app_fixture.py" "${remote_scp_root}/custom_app_fixture.py"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_start_driver.ps1" "${remote_scp_root}/windows_start_driver.ps1"
-"${lab_dir}/lab.sh" copy-to windows "${script_dir}/windows_trust.ps1" "${remote_scp_root}/windows_trust.ps1"
+install -m 0644 "${OMNIDECK_DESKTOP_TAURI_DRIVER_CACHE}/tauri-driver.exe" "$payload_dir/tauri-driver.exe"
+install -m 0644 "${script_dir}/windows_guest.ps1" "$payload_dir/windows_guest.ps1"
+install -m 0644 "${script_dir}/custom_app_fixture.py" "$payload_dir/custom_app_fixture.py"
+install -m 0644 "${script_dir}/windows_start_driver.ps1" "$payload_dir/windows_start_driver.ps1"
+install -m 0644 "${script_dir}/windows_trust.ps1" "$payload_dir/windows_trust.ps1"
+"${lab_dir}/lab.sh" stage windows "$payload_dir" "$remote_root" | tee "${output_dir}/payload-stage.txt"
+remote_staged=1
 
 phase_command() {
   local phase="$1"
@@ -393,13 +423,8 @@ ssh_options=(
 )
 driver_start_count=0
 stop_driver() {
+  stop_driver_tunnel || return 1
   set +e
-  if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
-    kill "${driver_ssh_pid}" 2>/dev/null || true
-    wait "${driver_ssh_pid}" 2>/dev/null || true
-  fi
-  driver_ssh_pid=""
-  unlink "${output_dir}/driver-tunnel.pid" 2>/dev/null || true
   "${lab_dir}/lab.sh" run windows \
     "taskkill.exe /F /IM tauri-driver.exe & taskkill.exe /F /IM msedgedriver.exe" \
     >/dev/null 2>&1 || true
@@ -418,18 +443,30 @@ start_driver() {
     preserve) register_arguments+=(-PreserveRuntime) ;;
     *) printf 'Unknown Windows driver runtime mode: %s\n' "${runtime_mode}" >&2; return 2 ;;
   esac
+  # Refreshes may happen in a journey subshell; persist its receipt and counter.
+  if [[ -f "${output_dir}/driver-start-count.txt" ]]; then
+    driver_start_count="$(cat "${output_dir}/driver-start-count.txt")" || return 1
+  fi
+  [[ "$driver_start_count" =~ ^[0-9]+$ ]] || return 1
   driver_start_count=$((driver_start_count + 1))
+  printf '%s\n' "$driver_start_count" > "${output_dir}/driver-start-count.txt" || return 1
   printf 'Starting the native Windows WebView driver (runtime=%s).\n' "${runtime_mode}"
-  phase_command Driver | tee -a "${output_dir}/webdriver-refresh.log"
+  phase_command Driver | tee -a "${output_dir}/webdriver-refresh.log" || return 1
   "${lab_dir}/lab.sh" run windows \
-    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_start_driver.ps1 -WorkDir ${remote_root} -Register ${register_arguments[*]}"
-  ssh "${ssh_options[@]}" -N tester@127.0.0.1 > "${output_dir}/driver-tunnel-${driver_start_count}.log" 2>&1 &
-  driver_ssh_pid=$!
-  printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid"
+    "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ${remote_root}\\windows_start_driver.ps1 -WorkDir ${remote_root} -Register ${register_arguments[*]}" || return 1
+  driver_ssh_pid="$(python3 "${script_dir}/windows_driver_tunnel.py" start \
+    --receipt "${output_dir}/driver-tunnel.json" \
+    --log "${output_dir}/driver-tunnel-${driver_start_count}.log" \
+    -- ssh "${ssh_options[@]}" -N tester@127.0.0.1)" || return 1
+  printf '%s\n' "${driver_ssh_pid}" > "${output_dir}/driver-tunnel.pid" || {
+    stop_driver_tunnel || true
+    return 1
+  }
   for attempt in $(seq 1 480); do
     kill -0 "${driver_ssh_pid}" >/dev/null 2>&1 || {
       tail -100 "${output_dir}/driver-tunnel-${driver_start_count}.log" >&2
       printf 'Windows tauri-driver exited before becoming ready.\n' >&2
+      stop_driver_tunnel || true
       return 1
     }
     if curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null 2>&1; then
@@ -444,12 +481,26 @@ start_driver() {
           >/dev/null 2>&1 || true
         tail -100 "${output_dir}/runtime-start-${driver_start_count}.log" 2>/dev/null >&2 || true
         printf 'Windows interactive runtime/driver task stopped before the driver became ready (state=%s).\n' "${task_state:-unknown}" >&2
+        stop_driver_tunnel || true
         return 1
       fi
     fi
     sleep 0.5
   done
-  curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null
+  curl --silent --fail --max-time 2 "http://127.0.0.1:${driver_forward_port}/status" >/dev/null || {
+    stop_driver_tunnel || true
+    return 1
+  }
+  # Once reset has initialized the runtime, subsequent refreshes preserve it.
+  if [[ "$runtime_mode" == "skip" ]]; then
+    runtime_mode=skip
+  else
+    runtime_mode=preserve
+  fi
+  printf '%s\n' "$runtime_mode" > "${output_dir}/driver-runtime-mode.txt" || {
+    stop_driver_tunnel || true
+    return 1
+  }
 }
 
 wait_for_consent() {
@@ -472,12 +523,37 @@ else
   start_driver reset
 fi
 
+# Evergreen may activate a newer WebView2 between native sessions. Retry only
+# its explicit session-creation mismatch, keeping the failed attempt intact.
+refresh_mismatched_webview_driver() {
+  local status="$1" attempt="$2" attempt_dir="$3" attempt_markers="${4:-}"
+  local failure runtime_mode
+  [[ "$status" != "0" && "$attempt" == "0" ]] || return 1
+  failure="$(grep '^FAIL:' "$attempt_dir/session.log" | tail -n 1)" || return 1
+  [[ "$failure" == 'FAIL: WebDriverError: WebDriver POST /session failed '* &&
+     "$failure" == *'session not created: This version of Microsoft Edge WebDriver only supports Microsoft Edge version '* &&
+     "$failure" == *'Current browser version is '* ]] || return 1
+  runtime_mode="$(<"${output_dir}/driver-runtime-mode.txt")"
+  [[ "$runtime_mode" == "skip" || "$runtime_mode" == "preserve" ]] || return 1
+  printf 'WebView2 changed during qualification; preserving the failed attempt and refreshing its driver.\n'
+  "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/webdriver.json" \
+    "$attempt_dir/webdriver-before-refresh.json" || return 1
+  mv -- "$attempt_dir" "${attempt_dir}-driver-mismatch" || return 1
+  if [[ -n "$attempt_markers" ]]; then
+    mv -- "$attempt_markers" "${attempt_markers}-driver-mismatch" || return 1
+  fi
+  stop_driver && start_driver "$runtime_mode" || return 1
+  "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/results/webdriver.json" \
+    "${attempt_dir}-driver-mismatch/webdriver-after-refresh.json"
+}
+
 run_journey() {
   local scenario="$1"
   local label="${2:-${scenario}}"
   local restart_action="${3:-later}"
   local uac_mode="${4:-none}"
   local expected_port_conflict="${5:-}"
+  local driver_retry="${6:-0}"
   local scenario_dir="${evidence_dir}/${label}"
   local marker_dir="${marker_root}/${label}"
   local -a driver_args=()
@@ -525,12 +601,17 @@ run_journey() {
   local status=$?
   set -e
   cat "${scenario_dir}/session.log"
+  if refresh_mismatched_webview_driver "$status" "$driver_retry" "$scenario_dir" "$marker_dir"; then
+    run_journey "$scenario" "$label" "$restart_action" "$uac_mode" "$expected_port_conflict" 1
+    return $?
+  fi
   return "${status}"
 }
 
 run_host_boundary() {
   local operation="$1"
   local upload_path="${2:-}"
+  local driver_retry="${3:-0}"
   local scenario_dir="${evidence_dir}/host-boundaries/${operation}"
   local native_input_dir="${scenario_dir}/native-input"
   local -a operation_args=()
@@ -573,9 +654,18 @@ run_host_boundary() {
           reset) key=ctrl-0 ;;
         esac
         acknowledgement="${request%.request}.ack"
+        # Windows notifications can remain above the hosted app after native
+        # download assertions. Dismiss stacked overlays and let focus settle
+        # before delivering the hardware shortcut, matching the Linux lanes.
+        for focus_escape in 1 2; do
+          "${lab_dir}/lab.sh" send-keys windows esc
+          sleep 0.2
+        done
+        sleep 0.5
         "${lab_dir}/lab.sh" screenshot windows \
           "${screenshot_dir}/zoom-${marker%.request}-before.png" >/dev/null 2>&1 || true
         "${lab_dir}/lab.sh" send-keys windows "${key}"
+        sleep 0.5
         "${lab_dir}/lab.sh" screenshot windows \
           "${screenshot_dir}/zoom-${marker%.request}-after.png" >/dev/null 2>&1 || true
         touch "${acknowledgement}"
@@ -588,6 +678,10 @@ run_host_boundary() {
   local boundary_status=$?
   set -e
   cat "${scenario_dir}/session.log"
+  if refresh_mismatched_webview_driver "$boundary_status" "$driver_retry" "$scenario_dir"; then
+    run_host_boundary "$operation" "$upload_path" 1
+    return $?
+  fi
   return "${boundary_status}"
 }
 
@@ -615,11 +709,7 @@ complete_clean_security_setup() {
   run_journey first-run first-run now cancel-approve
   "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/restart-now-issued.png" >/dev/null 2>&1 || true
 
-  if [[ -n "${driver_ssh_pid}" ]] && kill -0 "${driver_ssh_pid}" 2>/dev/null; then
-    kill "${driver_ssh_pid}" 2>/dev/null || true
-    wait "${driver_ssh_pid}" 2>/dev/null || true
-  fi
-  driver_ssh_pid=""
+  stop_driver_tunnel
 
   printf 'Waiting for the restart-now disconnect, reboot, and new Windows boot identity.\n'
   observed_disconnect=0
@@ -687,7 +777,7 @@ complete_clean_security_setup() {
 
   printf 'Allowing resumed setup to finish while approving any post-reboot installer prompt.\n'
   setup_status=""
-  for _ in $(seq 1 1200); do
+  for setup_attempt in $(seq 1 1200); do
     consent_pid="$("${lab_dir}/lab.sh" run windows \
       "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"(Get-Process consent -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Id)\"" \
       2>/dev/null | tr -d '\r' || true)"
@@ -698,6 +788,17 @@ complete_clean_security_setup() {
     fi
     setup_status="$(phase_command SetupStatus 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
     [[ "${setup_status}" == "complete" ]] && break
+    if [[ "${setup_status}" == "failed" ]]; then
+      printf 'RunOnce setup reported a new application error; collecting diagnostics.\n' >&2
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-setup-failed.png" || true
+      collect_guest_evidence || true
+      return 1
+    fi
+    if (( setup_attempt == 1 || setup_attempt % 20 == 0 )); then
+      printf 'RunOnce setup progress: attempt=%s status=%s\n' "${setup_attempt}" "${setup_status:-missing}"
+      "${lab_dir}/lab.sh" screenshot windows "${screenshot_dir}/runonce-setup-current.png" || true
+      collect_guest_evidence || true
+    fi
     sleep 2
   done
   [[ "${setup_status}" == "complete" ]] || {
@@ -720,7 +821,9 @@ fi
 test_status=$?
 set -e
 
-if [[ "${test_status}" == "0" && "${security_mode}" == "1" ]]; then
+# First setup can activate an Evergreen WebView2 update even on a product-ready
+# guest. Re-resolve its driver before subsequent sessions, not only after reboot.
+if [[ "${test_status}" == "0" ]]; then
   stop_driver
   start_driver preserve
 fi
@@ -789,18 +892,7 @@ fi
 "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/tauri-driver.stderr.log" "${output_dir}/tauri-driver.stderr.log" \
   >/dev/null 2>&1 || true
 
-"${lab_dir}/lab.sh" run windows \
-  "powershell.exe -NoLogo -NoProfile -NonInteractive -Command if (Test-Path '${remote_root}\\results') { Compress-Archive -Force -Path '${remote_root}\\results\\*' -DestinationPath '${remote_root}\\guest-evidence.zip' }" \
-  >/dev/null 2>&1 || true
-if "${lab_dir}/lab.sh" copy-from windows "${remote_scp_root}/guest-evidence.zip" "${output_dir}/guest-evidence.zip"; then
-  mkdir -p "${evidence_dir}/guest"
-  unzip_status=0
-  unzip -q -o "${output_dir}/guest-evidence.zip" -d "${evidence_dir}/guest" || unzip_status=$?
-  case "${unzip_status}" in
-    0|1) ;;
-    *) printf 'Could not extract Windows evidence (unzip exit %s).\n' "${unzip_status}" >&2; exit "${unzip_status}" ;;
-  esac
-fi
+collect_guest_evidence
 
 [[ -f "${evidence_dir}/guest/summary.json" ]] || exit "${test_status}"
 python3 - "${evidence_dir}/guest/summary.json" <<'PY'

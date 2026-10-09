@@ -8,7 +8,7 @@ import logging
 from aiohttp import web
 from pydantic import ValidationError
 
-from sdk.providers import reset_provider
+from providers import reset_provider
 from settings import SettingsUpdate, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
