@@ -183,7 +183,10 @@ The Tauri build also receives its certificate inputs directly from secrets, so
 it selects a scoped keychain explicitly for both app and DMG signing. Signed
 builds do not automatically restart on failure: preserve the submitted bytes
 and Apple submission ID, inspect the existing request, and resume verification
-when an interrupted notarization completes.
+when an interrupted notarization completes. Apple may take longer than twenty
+minutes; the final DMG submission waits up to ninety minutes. Failed signing
+jobs retain only the app/DMG as recovery artifacts, never keychains or keys.
+These artifacts are not approved release downloads.
 
 Before creating a release tag, run a non-publishing proof from `main`:
 

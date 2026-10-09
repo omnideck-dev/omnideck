@@ -301,7 +301,7 @@ jobs:
   build_macos_release:
     needs: [changes, runtime_image]
     if: needs.changes.outputs.signed_macos == 'true'
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: desktop-signing
     strategy:
       fail-fast: false
@@ -378,6 +378,30 @@ jobs:
       - name: Verify Developer ID signature, notarization, and Gatekeeper trust
         working-directory: desktop
         run: ./scripts/verify-macos-bundle.sh ${{ matrix.target }} --require-developer-id 2FL6BUG8Q4
+
+      - name: Preserve interrupted signed package for notarization recovery
+        if: failure()
+        working-directory: desktop
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          bundle="src-tauri/target/${TARGET}/release/bundle"
+          mkdir -p signing-recovery
+          if [[ -d "${bundle}/macos/omnideck.app" ]]; then
+            ditto -c -k --keepParent "${bundle}/macos/omnideck.app" signing-recovery/omnideck.app.zip
+          fi
+          if [[ -d "${bundle}/dmg" ]]; then
+            find "${bundle}/dmg" -name '*.dmg' -exec cp {} signing-recovery/ \;
+          fi
+
+      - name: Upload interrupted signing evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-recovery-${{ matrix.name }}-${{ github.run_id }}
+          path: desktop/signing-recovery/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Remove release signing material
         if: always()

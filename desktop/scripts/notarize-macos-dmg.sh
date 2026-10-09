@@ -41,7 +41,7 @@ submission_json="$(
     --key "${APPLE_API_KEY_PATH}" \
     --key-id "${APPLE_API_KEY}" \
     --issuer "${APPLE_API_ISSUER}" \
-    --wait --timeout 20m \
+    --wait --timeout 90m \
     --output-format json
 )" || notary_status=$?
 printf '%s\n' "${submission_json}"
