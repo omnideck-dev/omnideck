@@ -1,0 +1,419 @@
+{
+  "as_of": "2026-10-09",
+  "base_commit": "c3c960704b38a86707acba699a54ceff71eb1977",
+  "branch": "fix/browser-issues-sweep",
+  "issues": [
+    {
+      "number": 436,
+      "title": "[browser-test] click() that opens a new tab asynchronously returns the source tab's snapshot (new tab created but not reported)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/436",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 433,
+      "title": "[browser-test] browse_page(scope=...) cannot match headings that contain a control (e.g. self-link anchors) \u2014 silently falls back to full page",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/433",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_scope_preserves_heading_controls_and_subsections",
+        "test_heading_links_view"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 432,
+      "title": "[browser-test] False-positive semantic modal: aria-hidden descendants + aria-modal consent banner freeze the whole page with zero refs (IQAir)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/432",
+      "group": "modal-detection",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_consent_banner_with_hidden_chrome_does_not_hide_page"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 431,
+      "title": "[browser-test] browse_page never shows the content of a contenteditable textbox (role=textbox reads el.value, which is undefined for a div)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/431",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_contenteditable_values_are_visible_before_and_after_fill"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 429,
+      "title": "[browser-test] browse_page silently drops text nodes of length \u2264 1 (single-character cells/labels vanish)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/429",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_single_character_content_survives_all_walk_paths"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 423,
+      "title": "[browser-test] scroll_page budget is never enforced \u2014 per-URL counter lives in a ContextVar mutated inside a per-call asyncio Task, so it resets on every call",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/423",
+      "group": "scrolling",
+      "status": "queued"
+    },
+    {
+      "number": 422,
+      "title": "[browser-test] browse_page(full_page=True) leaks hidden (display:none) modal content as phantom refs \u2014 click() then fails with \"Element has no bounding box to click\"",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/422",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_hidden_dialog_subtrees_never_produce_refs"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 420,
+      "title": "[browser-test] browse_page permanently fails with \"document rendering failed\" when the page contains a cross-realm element (childrenOf uses instanceof Element -> TypeError: Illegal invocation)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/420",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_adopted_cross_realm_widgets_remain_interactive"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 419,
+      "title": "[browser-test] browse_page silently drops position:sticky/fixed subtrees once the page is scrolled (full_page=True cannot recover them; scope= then reports \"not found\")",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/419",
+      "group": "rendering",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_scrolled_sticky_section_can_be_scoped_and_clicked",
+        "test_fixed_and_sticky_chrome_on_scroll"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 416,
+      "title": "[browser-test] Concurrent page-acting tool calls on the same tab silently corrupt input (no per-tab action serialization)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/416",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 367,
+      "title": "[browser-test] fill_field fails on collapsed zero-width search input that browse_page exposes as an interactable textbox (lichess.org)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/367",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 357,
+      "title": "[browser-test] Empty full-viewport ad containers misdetected as blocking modals, freezing all interaction (The Verge, Newegg)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/357",
+      "group": "modal-detection",
+      "status": "implemented-awaiting-review",
+      "regression_tests": [
+        "test_empty_pointer_overlay_does_not_erase_page_snapshot"
+      ],
+      "evidence": "Controlled local fixtures using public browser tools and real headed Chrome in a dedicated Podman container."
+    },
+    {
+      "number": 356,
+      "title": "[browser-test] scroll_page fails on virtualized inner scroll containers (LinkedIn feed) \u2014 wheel targets pointer at (0,0) over left rail, not the <main> feed container",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/356",
+      "group": "scrolling",
+      "status": "queued"
+    },
+    {
+      "number": 337,
+      "title": "[browser-test] click tool fails to click below-fold elements inside overflow:hidden ancestors (scroll_into_view_if_needed no-op) \u2014 securityweek.com",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/337",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 281,
+      "title": "[browser-test] press_keys returns stale page snapshot on Sephora search submission",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/281",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 280,
+      "title": "[browser-test] Ad script hijacks page navigation on Motley Fool (fool.com) - clicks redirect to dianomi.com ad server",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/280",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 273,
+      "title": "[browser-test] DataDome anti-bot challenge not detected \u2014 agent gets blank page instead of helpful banner",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/273",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 270,
+      "title": "[browser-test] select_option selects wrong option when Home key doesn't reset dropdown position",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/270",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 265,
+      "title": "[browser-test] read_page includes hidden responsive-design duplicate content in markdown output",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/265",
+      "group": "read-page",
+      "status": "queued"
+    },
+    {
+      "number": 240,
+      "title": "[browser-test] DataDome bot-detection interstitial not detected \u2014 agent gets raw blocked page instead of challenge banner",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/240",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 233,
+      "title": "[browser-test] browse_page fails to assign refs to <label role=\"button\"> wrapping aria-hidden inputs (Patagonia size selector)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/233",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 231,
+      "title": "[browser-test] SPA pages render empty on initial navigation due to short DOM quiet window",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/231",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 230,
+      "title": "[browser-test] fill_field silently fails on React controlled combobox \u2014 no error raised when text doesn't appear",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/230",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 229,
+      "title": "[browser-test] PerimeterX press-and-hold CAPTCHA not detected \u2014 press_and_hold tool unusable",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/229",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 220,
+      "title": "[browser-test] read_page includes hidden video player UI elements in markdown output",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/220",
+      "group": "read-page",
+      "status": "queued"
+    },
+    {
+      "number": 214,
+      "title": "[browser] accessible name and role computation diverges from spec, silently dropping interactive elements",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/214",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 209,
+      "title": "[browser-test] scroll_page fails on pages with overflow:hidden on body (paywall sites like The Daily Beast)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/209",
+      "group": "scrolling",
+      "status": "queued"
+    },
+    {
+      "number": 207,
+      "title": "[browser-test] Page view shows stale URL and title after JavaScript redirect on Bloomberg.com",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/207",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 206,
+      "title": "[browser-test] browse_page does not capture autocomplete dropdown options \u2014 Hotels.com search field",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/206",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 205,
+      "title": "[browser-test] browse_page() does not detect DocSearch input field in Algolia search modal",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/205",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 204,
+      "title": "[browser-test] click() fails to navigate when overlapping elements intercept mouse-coordinate clicks",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/204",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 203,
+      "title": "[browser-test] PerimeterX press-and-hold challenge not detected, button not exposed by browse_page",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/203",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 200,
+      "title": "[browser-test] click tool fails when target element is overlapped by another element (Tumblr permalink links)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/200",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 199,
+      "title": "[browser-test] scroll_page fails on sites with body { overflow: hidden } (e.g. SoundCloud)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/199",
+      "group": "scrolling",
+      "status": "queued"
+    },
+    {
+      "number": 197,
+      "title": "[browser-test] click() on sr-only radio buttons hits wrong element when label bounding box center is occupied by another element",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/197",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 192,
+      "title": "[browser-test] Wrong URL reported when click opens new tab with iframe document responses",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/192",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 191,
+      "title": "[browser-test] Dominant frame detection selects about:srcdoc preview iframes (Svelte tutorial) as active frame",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/191",
+      "group": "frame-selection",
+      "status": "queued"
+    },
+    {
+      "number": 190,
+      "title": "[browser-test] Dominant frame detection selects ad iframes (googlesyndication SafeFrame) as active frame",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/190",
+      "group": "frame-selection",
+      "status": "queued"
+    },
+    {
+      "number": 176,
+      "title": "[browser-test] Page redirects to about:blank after JS resource refusal \u2014 URL mismatch in page view header",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/176",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 166,
+      "title": "[browser-test] Invisible overlay divs with pointer-events:auto intercept clicks on ad-heavy sites (MarketWatch)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/166",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 158,
+      "title": "[browser-test] browse_page returns empty content in viewport mode on Quora (zero-height #root container)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/158",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 157,
+      "title": "[browser-test] PerimeterX bot-detection challenge not detected, press-and-hold captcha invisible to browse_page",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/157",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 147,
+      "title": "[browser-test] Dominant iframe detection incorrectly selects ad iframe on Reuters (dianomi.com)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/147",
+      "group": "frame-selection",
+      "status": "queued"
+    },
+    {
+      "number": 131,
+      "title": "[browser-test] browse_page returns 'Viewport: unavailable' when called immediately after navigation (race condition)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/131",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 120,
+      "title": "Browser tools fail Cloudflare Turnstile and modern bot detection \u2014 research findings & fix roadmap",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/120",
+      "group": "challenge-detection",
+      "status": "queued"
+    },
+    {
+      "number": 111,
+      "title": "Page view flattens tables into cell soup (no row/column structure)",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/111",
+      "group": "rendering",
+      "status": "queued"
+    },
+    {
+      "number": 109,
+      "title": "[browser-test] scroll_page fails to move viewport on some pages (Walmart) - mouse.wheel() events don't propagate to scroll container",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/109",
+      "group": "scrolling",
+      "status": "queued"
+    },
+    {
+      "number": 103,
+      "title": "[browser] post-action settle is an implicit, fragile pile of timing heuristics",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/103",
+      "group": "navigation-and-settling",
+      "status": "queued"
+    },
+    {
+      "number": 102,
+      "title": "[browser] replace dominant-frame switch with a per-frame walk-and-merge",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/102",
+      "group": "frame-selection",
+      "status": "queued"
+    },
+    {
+      "number": 97,
+      "title": "[browser] stale ref numbers silently resolve to the wrong element after a page change",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/97",
+      "group": "action-and-ref-integrity",
+      "status": "queued"
+    },
+    {
+      "number": 45,
+      "title": "GPU-accelerated browser rendering: detect GPU and pass EGL flags to Chromium",
+      "url": "https://github.com/omnideck-dev/omnideck/issues/45",
+      "group": "gpu-rendering",
+      "status": "queued"
+    }
+  ],
+  "validation": {
+    "rendering_suite": "110 passed, 2 pre-existing xfailed",
+    "browser_unit_tests": "passed",
+    "just_check": "passed",
+    "complete_browser_suite": "162 passed, 2 pre-existing xfailed",
+    "live_reported_sites": "not retested",
+    "environment": {
+      "container_image": "sha256:f711050bb22e9eb26a2c19bf422f4a43c267c221c5166639148974d4c04de5f4",
+      "chrome": "154.0.8037.92",
+      "playwright": "1.59.0",
+      "container_init": true
+    }
+  },
+  "next_batch": {
+    "group": "action-and-ref-integrity",
+    "issues": [
+      416,
+      423
+    ],
+    "reason": "Protect tab-global keyboard focus and retain scroll budgets across per-call asyncio tasks."
+  }
+}

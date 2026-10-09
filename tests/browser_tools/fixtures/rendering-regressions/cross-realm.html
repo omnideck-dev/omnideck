@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Adopted widget</title><body>
+<h1>Booking page</h1><button>Original control</button>
+<iframe id="realm" hidden srcdoc="<body></body>"></iframe>
+<script>
+realm.addEventListener('load', () => {
+  const widget = realm.contentDocument.createElement('div');
+  widget.innerHTML = '<form><label>Passenger <input name="children" aria-label="Passenger"></label><button type="button" onclick="this.textContent=\'Widget activated\'">Adopted control</button></form>';
+  document.body.append(document.adoptNode(widget));
+  const shadow = realm.contentDocument.createElement('div');
+  shadow.attachShadow({mode:'open'}).innerHTML = '<button>Adopted shadow control</button>';
+  document.body.append(document.adoptNode(shadow));
+  document.body.dataset.crossRealm = String(!(widget instanceof Element));
+});
+</script></body></html>

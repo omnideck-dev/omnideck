@@ -150,10 +150,10 @@ class TestRenderNode:
         node = DomNode(type=NodeType.TEXT, depth=0, text="Hello world")
         assert _render_node(node, name_limit=150) == "Hello world"
 
-    def test_text_node_short_ignored(self):
-        """Single character text nodes are filtered out."""
+    def test_single_character_text_is_preserved(self):
+        """Single characters can be meaningful table cells or labels."""
         node = DomNode(type=NodeType.TEXT, depth=0, text="x")
-        assert _render_node(node, name_limit=150) is None
+        assert _render_node(node, name_limit=150) == "x"
 
     def test_text_node_truncated(self):
         """Long text is truncated at 200 chars."""
