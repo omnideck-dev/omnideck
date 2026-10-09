@@ -7,7 +7,7 @@ rendered as ``[ref] [role] name``.  Pass the ref number to ``click()``,
 ``fill_field()``, and other interaction tools.
 
 Design goals:
-    * Single ``page.evaluate()`` round-trip for the entire DOM walk
+    * Single document evaluation for the entire DOM walk
     * Viewport-clipped by default to keep output small
     * Ref numbers assigned in document order for deterministic interaction
     * Optional scoping to narrow output to a page section

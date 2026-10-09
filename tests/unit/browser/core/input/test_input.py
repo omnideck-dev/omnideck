@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import random
 from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 from playwright.async_api import Locator, Page
@@ -71,7 +72,7 @@ class DummyElementHandle:
     async def evaluate(self, fn):
         return None
 
-    async def evaluate_handle(self, fn):
+    async def get_attribute(self, name):
         return None
 
 
@@ -104,20 +105,18 @@ class DummyPage:
     def __init__(self, mouse=None, keyboard=None):
         self.mouse = mouse
         self.keyboard = keyboard
+        self.main_frame = DummyFrame(page=self)
 
-    async def evaluate(self, script_or_fn, *args, **kwargs):  # type: ignore[no-untyped-def]
-        """Minimal evaluate stub used by human helpers.
 
-        Supports:
-        - Injection script string (no-op)
-        """
-        if isinstance(script_or_fn, str):
-            return None
-        return None
+@pytest.fixture(autouse=True)
+def native_evaluation(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    evaluator = AsyncMock(return_value=None)
+    monkeypatch.setattr("browser.core.input.pointer.evaluate_frame", evaluator)
+    return evaluator
 
 
 @pytest.mark.unit
-async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch, native_evaluation: AsyncMock) -> None:
     recorder: list[str] = []
 
     # deterministic random values
@@ -151,6 +150,8 @@ async def test_human_click_sequence_and_fallback(monkeypatch: pytest.MonkeyPatch
     )
 
     await human_click(cast(Page, page), cast(Locator, locator))
+
+    assert native_evaluation.await_args.args[0] is page.main_frame
 
     # Expect move + down + up in order; coordinates centered
     assert any(r.startswith("move:") for r in recorder)

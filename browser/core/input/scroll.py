@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame, Page
 
+from browser.core.evaluation import evaluate_frame
 from browser.core.exceptions import BrowserToolError
 from browser.core.input._shared import _sleep_ms
 from browser.core.modals import MODAL_HELPERS_JS
@@ -197,7 +198,7 @@ async def human_scroll(
         if normalized in {"down", "up"}:
             if amount is None:
                 try:
-                    height = await frame.evaluate("() => window.innerHeight")
+                    height = await evaluate_frame(frame, "() => window.innerHeight")
                     if not isinstance(height, int | float) or height <= 0:
                         height = 800
                 except PlaywrightError:
@@ -212,7 +213,8 @@ async def human_scroll(
             if hasattr(page, "mouse") and page.mouse is not None:
                 wheel_target = await _wheel_target_point(frame, page)
 
-        initial_state = await frame.evaluate(
+        initial_state = await evaluate_frame(
+            frame,
             _INITIAL_SCROLL_STATE_JS,
             {
                 "x": wheel_target[0] if wheel_target is not None else None,
@@ -244,29 +246,34 @@ async def human_scroll(
         if modal_open and not modal_scrollable:
             pass
         elif modal_open and normalized in {"top", "bottom", "page_down", "page_up"}:
-            await frame.evaluate(
+            await evaluate_frame(
+                frame,
                 _SCROLL_MODAL_JS,
                 {"direction": normalized, "delta": delta},
             )
         elif normalized in {"top", "bottom"}:
-            await frame.evaluate(
+            await evaluate_frame(
+                frame,
                 "(bottom) => window.scrollTo(0, bottom ? document.documentElement.scrollHeight : 0)",
                 normalized == "bottom",
             )
         elif normalized in {"page_down", "page_up"}:
-            await frame.evaluate(
+            await evaluate_frame(
+                frame,
                 "(direction) => window.scrollBy(0, window.innerHeight * direction)",
                 1 if normalized == "page_down" else -1,
             )
         else:
             if not hasattr(page, "mouse") or page.mouse is None:
                 if modal_open:
-                    await frame.evaluate(
+                    await evaluate_frame(
+                        frame,
                         _SCROLL_MODAL_JS,
                         {"direction": normalized, "delta": delta},
                     )
                 else:
-                    await frame.evaluate(
+                    await evaluate_frame(
+                        frame,
                         "(dy) => window.scrollBy({ top: dy, left: 0, behavior: 'smooth' })",
                         delta,
                     )
@@ -282,7 +289,8 @@ async def human_scroll(
                     await page.mouse.wheel(0, remainder if delta > 0 else -remainder)
                     await asyncio.sleep(0.016)
 
-        raw_outcome = await frame.evaluate(
+        raw_outcome = await evaluate_frame(
+            frame,
             _FINALIZE_SCROLL_JS,
             {
                 "initial": initial_state,
