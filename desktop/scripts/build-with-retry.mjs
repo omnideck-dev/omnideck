@@ -3,7 +3,9 @@ import { rmSync } from 'node:fs';
 import path from 'node:path';
 
 const packageScript = process.argv[2];
-const maxAttempts = 3;
+// Signed builds may already have a submission at Apple. Preserve its exact
+// bytes and submission ID instead of deleting it and submitting a new build.
+const maxAttempts = process.env.APPLE_SIGNING_IDENTITY ? 1 : 3;
 const targetByPackageScript = {
   'build:windows': 'x86_64-pc-windows-msvc',
   'build:windows:arm64': 'aarch64-pc-windows-msvc',

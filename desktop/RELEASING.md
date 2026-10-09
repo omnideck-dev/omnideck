@@ -178,7 +178,12 @@ openssl base64 -A -in AuthKey_KEYID.p8
 Do not store the unencoded files, their base64 representations, or the
 certificate password in source control, release artifacts, workflow variables,
 or pull-request text. The workflow decodes them only beneath `RUNNER_TEMP`,
-uses an ephemeral keychain, and deletes the material before artifact upload.
+uses ephemeral keychains, and deletes the material before artifact upload.
+The Tauri build also receives its certificate inputs directly from secrets, so
+it selects a scoped keychain explicitly for both app and DMG signing. Signed
+builds do not automatically restart on failure: preserve the submitted bytes
+and Apple submission ID, inspect the existing request, and resume verification
+when an interrupted notarization completes.
 
 Before creating a release tag, run a non-publishing proof from `main`:
 

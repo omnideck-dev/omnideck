@@ -61,7 +61,7 @@ test('hosted CI, public artifact validation, and native hardware remain distinct
 
 test('native package builds retry transient Tauri helper downloads', () => {
   assert.match(desktopWorkflow, /node scripts\/build-with-retry\.mjs \$\{\{ matrix\.command \}\}/);
-  assert.match(buildWithRetry, /const maxAttempts = 3/);
+  assert.match(buildWithRetry, /const maxAttempts = process.env.APPLE_SIGNING_IDENTITY \? 1 : 3/);
   assert.match(buildWithRetry, /attempt \* 5_000/);
   assert.match(buildWithRetry, /spawnSync\(`pnpm run \$\{packageScript\}`/);
   assert.match(buildWithRetry, /targetByPackageScript/);

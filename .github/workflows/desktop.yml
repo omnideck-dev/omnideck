@@ -363,6 +363,10 @@ jobs:
       - name: Build signed and notarized macOS installer
         working-directory: desktop
         env:
+          # Tauri imports a scoped keychain and passes --keychain to codesign,
+          # including the separate DMG signing phase after notarization.
+          APPLE_CERTIFICATE: ${{ secrets.DESKTOP_MAC_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DESKTOP_MAC_CERTIFICATE_PASSWORD }}
           # Tauri otherwise skips the Finder background and icon layout in CI.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: node scripts/build-with-retry.mjs ${{ matrix.command }}
