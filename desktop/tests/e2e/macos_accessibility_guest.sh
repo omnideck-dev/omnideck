@@ -142,19 +142,13 @@ preflight="$("$driver" preflight 2>&1 || true)"
 [[ "$preflight" == *'accessibility=true'* ]] || { printf '%s\n' "$preflight" >&2; exit 3; }
 
 current_step='exclusive desktop process'
-/usr/bin/pgrep -f '/omnideck-desktop$' > "$result_dir/preexisting-omnideck-desktop-pids.txt" 2>/dev/null || true
-/usr/bin/pgrep -f '/omnideck$' > "$result_dir/preexisting-omnideck-pids.txt" 2>/dev/null || true
-/usr/bin/pkill -f '/omnideck-desktop$' 2>/dev/null || true
-/usr/bin/pkill -f '/omnideck$' 2>/dev/null || true
-for _ in 1 2 3 4 5; do
-  if ! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1 &&
-     ! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1
-! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1
+# The lab reset already stops its owned app. An ordinary app or CLI belongs to
+# the user: reject the lane instead of terminating it to make smoke pass.
+if /usr/bin/pgrep -fl '(^|/)(omnideck-desktop|omnideck)([[:space:]]|$)' \
+  > "$result_dir/preexisting-omnideck-processes.txt" 2>/dev/null; then
+  printf 'Close the existing omnideck app or CLI before running the macOS lab; no user process was stopped.\n' >&2
+  exit 3
+fi
 
 if [[ "$upgrade_dmg" != none ]]; then
   current_step='previous DMG installation'

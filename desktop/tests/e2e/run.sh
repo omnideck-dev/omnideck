@@ -184,7 +184,6 @@ remote_root="/home/tester/omnideck-desktop-e2e-${safe_run_id}"
 key_file="${LAB_VM_KEY}"
 known_hosts="${LAB_VM_KNOWN_HOSTS}"
 vm_started=0
-initial_reset=0
 remote_staged=0
 test_status=1
 qualification_complete=0
@@ -221,9 +220,8 @@ cleanup() {
     "${lab_dir}/lab.sh" stop "${vm}" || exit_code=1
     vm_started=0
   fi
-  if [[ "${initial_reset}" == "1" && "${keep_vm}" != "1" ]]; then
-    "${lab_dir}/lab.sh" reset "${vm}" "$baseline" || exit_code=1
-  elif [[ "${keep_vm}" == "1" ]]; then
+  # The enclosing lease owns final reset and failed-transaction retention.
+  if [[ "${keep_vm}" == "1" ]]; then
     printf 'Guest kept stopped for debugging: %s\n' "${vm}"
   fi
   if [[ "${exit_code}" == "0" ]]; then
@@ -238,7 +236,6 @@ trap cleanup EXIT
 
 printf 'Resetting the leased %s guest to %s.\n' "${vm}" "${baseline}"
 "${lab_dir}/lab.sh" reset "${vm}" "${baseline}"
-initial_reset=1
 
 artifact="$(realpath -e "${artifact}")"
 artifact_sha256="$(sha256sum "${artifact}" | awk '{print $1}')"

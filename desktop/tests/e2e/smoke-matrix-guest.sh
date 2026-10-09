@@ -15,9 +15,9 @@ shift 4
   printf 'smoke-matrix-guest.sh must run under a lab lease.\n' >&2
   exit 2
 }
+require_lab
 baseline="$("${lab_dir}/lab.sh" profile "${profile}" "${vm}")"
 vm_started=0
-initial_reset=0
 
 cleanup_guest() {
   local exit_status=$?
@@ -26,16 +26,13 @@ cleanup_guest() {
     "${lab_dir}/lab.sh" stop "${vm}" || exit_status=1
     vm_started=0
   fi
-  if [[ "${initial_reset}" == "1" ]]; then
-    "${lab_dir}/lab.sh" reset "${vm}" clean || exit_status=1
-  fi
+  # The enclosing lease owns the final reset, including failed/interrupted runs.
   exit "${exit_status}"
 }
 trap cleanup_guest EXIT
 
 printf 'Preparing %s once for %s grouped smoke cell(s).\n' "${vm}" "$#"
 "${lab_dir}/lab.sh" reset "${vm}" "${baseline}"
-initial_reset=1
 "${lab_dir}/lab.sh" start "${vm}"
 vm_started=1
 "${lab_dir}/lab.sh" wait "${vm}"

@@ -2,9 +2,8 @@
 
 The walker emitted a heading and returned without descending, so a link that is a
 heading's title (GitHub search, Wired) or a button wrapped in a heading
-(theuselessweb) was never assigned a ref and could not be clicked. Headings now
-follow the same rule as paragraph-like blocks: hold something interactive and the
-walk descends into it, hold nothing interactive and the block is emitted whole.
+(theuselessweb) was never assigned a ref and could not be clicked. Headings keep structural section boundaries for scoping. Their interactive
+children carry refs and visible text, so the heading label is not printed twice.
 
 This asserts the entire rendered view, so the text the agent actually reads is
 right here rather than inferred from a substring match.

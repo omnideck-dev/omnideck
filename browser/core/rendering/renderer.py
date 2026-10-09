@@ -99,7 +99,7 @@ _DOM_WALK_JS = """
   const fragmentChildren = Object.getOwnPropertyDescriptor(DocumentFragment.prototype, 'children').get;
   const nodeChildren = Object.getOwnPropertyDescriptor(Node.prototype, 'childNodes').get;
   function childrenOf(node) {
-    return (node instanceof Element ? elementChildren : fragmentChildren).call(node);
+    return (node.nodeType === 1 ? elementChildren : fragmentChildren).call(node);
   }
   function childNodesOf(node) { return nodeChildren.call(node); }
 
@@ -301,30 +301,19 @@ __MODAL_HELPERS__
   }
 
   // ---- Visibility / viewport ----
-  const scrolled = window.scrollY > 50;
-
   function shouldSkip(el) {
     if (el.hasAttribute('inert')) return 'skip-tree';
-    if (el.getAttribute('aria-hidden') === 'true') {
-      if (el.querySelector('[role="dialog"],[role="alertdialog"],dialog'))
-        return 'skip-self';
-      return 'skip-tree';
-    }
+    // A hidden ancestor cannot be made visible by a dialog role below it.
+    // Active modal roots are selected before walking, so background ARIA-hidden
+    // branches can be pruned without losing a rendered portal dialog.
+    if (el.getAttribute('aria-hidden') === 'true') return 'skip-tree';
     const s = window.getComputedStyle(el);
     if (s.display === 'none') return 'skip-tree';
-    if (s.visibility === 'hidden') return 'skip-self';
     if (parseFloat(s.opacity) === 0
         && !(el.tagName === 'INPUT' && el.type === 'range'))
-      return 'skip-self';
-    if (scrolled && (s.position === 'sticky' || s.position === 'fixed')) {
-      if (s.position === 'fixed') {
-        const role = el.getAttribute('role');
-        if (role === 'dialog' || role === 'alertdialog') return null;
-        const r = el.getBoundingClientRect();
-        if (r.width > vw * 0.5 && r.height > vh * 0.5) return null;
-      }
       return 'skip-tree';
-    }
+    // Unlike display/opacity, visibility can be restored by a descendant.
+    if (s.visibility === 'hidden' || s.visibility === 'collapse') return 'skip-self';
     return null;
   }
 
@@ -397,7 +386,7 @@ __MODAL_HELPERS__
       return;
     }
     const text = (el.innerText || '').trim();
-    if (text.length > 1) emit(makeNode(text));
+    if (text.length > 0) emit(makeNode(text));
   }
 
   // Walk the child nodes of a container (element or shadow root).
@@ -409,7 +398,7 @@ __MODAL_HELPERS__
       for (const child of childNodes) {
         if (child.nodeType === 3) {
           const text = child.textContent.trim();
-          if (text.length > 1) {
+          if (text.length > 0) {
             emit({ type: 'text', depth: depth, text: clip(text)});
           }
         } else if (child.nodeType === 1) {
@@ -431,7 +420,7 @@ __MODAL_HELPERS__
           for (const node of assigned) {
             if (node.nodeType === 3) {
               const text = node.textContent.trim();
-              if (text.length > 1) {
+              if (text.length > 0) {
                 emit({ type: 'text', depth: depth, text: clip(text)});
               }
             } else if (node.nodeType === 1) {
@@ -504,7 +493,9 @@ __MODAL_HELPERS__
       } else if (role === 'checkbox' || role === 'radio' || role === 'switch') {
         node.checked = el.checked || el.getAttribute('aria-checked') === 'true';
       } else if (role === 'textbox' || role === 'searchbox' || role === 'spinbutton' || role === 'slider') {
-        node.value = (el.value != null && el.value !== '') ? String(el.value) : '';
+        node.value = el.isContentEditable
+          ? (el.innerText || '').trim()
+          : (el.value != null && el.value !== '') ? String(el.value) : '';
         if (role === 'slider') {
           node.extra = {
             min: parseFloat(el.min) || 0,
@@ -553,12 +544,18 @@ __MODAL_HELPERS__
 
     // Headings
     if (role === 'heading') {
-      // A heading can wrap a control: an <h3> whose title is a link, an <h5>
-      // around a button. Then the control is what matters, not the label.
-      const lvl = parseInt(el.tagName.match(/H(\\d)/)?.[1]) || null;
-      collapseOrDescend(el, (text) => (
-        { type: 'heading', depth: depth, name: text, level: lvl}
-      ));
+      // Keep section boundaries even when the title contains links or buttons.
+      // Children still carry their own refs/text; the structural node is not
+      // printed a second time by the pipeline.
+      const lvl = parseInt(el.getAttribute('aria-level'), 10)
+        || parseInt(el.tagName.substring(1), 10) || 2;
+      const text = (el.innerText || '').trim();
+      const contentInChildren = hasInteractive(el);
+      if (text) emit({
+        type: 'heading', depth: depth, name: text, level: lvl,
+        extra: { content_in_children: contentInChildren }
+      });
+      if (contentInChildren) walkChildren(el);
       return;
     }
 
@@ -582,7 +579,7 @@ __MODAL_HELPERS__
     // Leaf text node
     if (childrenOf(el).length === 0 && !el.shadowRoot) {
       const text = (el.innerText || '').trim();
-      if (text && text.length > 1) {
+      if (text) {
         emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;
@@ -597,7 +594,7 @@ __MODAL_HELPERS__
     // Inline-only containers
     if (isTextContainer(el)) {
       const text = (el.innerText || '').trim();
-      if (text && text.length > 1) {
+      if (text) {
         emit({ type: 'text', depth: depth, text: clip(text)});
       }
       return;

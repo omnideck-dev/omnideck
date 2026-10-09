@@ -48,7 +48,7 @@ test('Desktop package builds are gated by deterministic change classification', 
   );
   assert.match(
     desktopWorkflow,
-    /artifact_contract:\n    needs: \[changes, build\]\n    if: needs\.changes\.outputs\.full_matrix == 'true'/,
+    /artifact_contract:\n    needs: \[changes, build, build_macos_release\][\s\S]*?needs\.changes\.outputs\.full_matrix == 'true'/,
   );
   assert.equal(
     [...desktopWorkflow.matchAll(/if: needs\.changes\.outputs\.native_tests_required == 'true'/g)]

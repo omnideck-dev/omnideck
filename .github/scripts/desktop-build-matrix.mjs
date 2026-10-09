@@ -147,12 +147,20 @@ function changedPaths(baseSha, headSha) {
   return output.toString('utf8').split('\0').filter(Boolean);
 }
 
-export function githubOutput(result) {
+export function requiresMacosSigning({ eventName, ref = '', signedMacos = false }) {
+  return (eventName === 'push' && ref.startsWith('refs/tags/v'))
+    || (eventName === 'workflow_dispatch' && signedMacos);
+}
+
+export function githubOutput(result, signedMacos = false) {
   // A skipped job still has its matrix expression parsed by Actions. Keep a
   // valid fallback matrix while build_required=false prevents runner use.
-  const matrixTargets = result.targets.length > 0 ? result.targets : BUILD_TARGETS;
+  const targets = result.targets.length > 0 ? result.targets : BUILD_TARGETS;
+  // Protected macOS jobs own these targets when signing is requested.
+  const matrixTargets = signedMacos ? targets.filter(({ platform }) => platform !== 'macos') : targets;
   return [
     `build_required=${result.buildRequired}`,
+    `signed_macos=${signedMacos}`,
     `full_matrix=${result.fullMatrix}`,
     `native_tests_required=${result.nativeTestsRequired}`,
     `reason=${result.reason}`,
@@ -169,5 +177,8 @@ if (invokedAsScript) {
     ? changedPaths(process.env.DESKTOP_CI_BASE_SHA ?? '', process.env.DESKTOP_CI_HEAD_SHA ?? '')
     : [];
   const result = classifyDesktopBuilds({ eventName, ref, paths });
-  process.stdout.write(`${githubOutput(result)}\n`);
+  const signedMacos = requiresMacosSigning({
+    eventName, ref, signedMacos: process.env.DESKTOP_CI_SIGNED_MACOS === 'true',
+  });
+  process.stdout.write(`${githubOutput(result, signedMacos)}\n`);
 }
