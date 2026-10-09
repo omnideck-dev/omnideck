@@ -54,6 +54,14 @@ function setup({ capture, page, displayed }) {
 
 const mouse = (type, init) => new MouseEvent(type, { bubbles: true, ...init });
 
+function pasteEvent(text) {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+        value: { getData: (type) => type === 'text/plain' ? text : '' },
+    });
+    return event;
+}
+
 describe('ScreencastViewport', () => {
     beforeEach(() => {
         frameCallbacks = [];
@@ -181,14 +189,97 @@ describe('ScreencastViewport', () => {
             displayed: { width: 100, height: 100 },
         });
 
+        const keydown = new KeyboardEvent('keydown', {
+            bubbles: true, cancelable: true, key: 'a', code: 'KeyA',
+        });
         act(() => {
-            surface.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a', code: 'KeyA' }));
+            surface.dispatchEvent(keydown);
         });
 
+        expect(keydown.defaultPrevented).toBe(true);
         const sent = sendInput.mock.calls.map(([m]) => m);
         expect(sent).toHaveLength(1);
         expect(sent[0]).toMatchObject({ type: 'keydown', key: 'a', code: 'KeyA' });
         expect(sent.some((m) => m.type === 'text')).toBe(false);
+    });
+
+    it.each([
+        ['Ctrl+V', { key: 'v', code: 'KeyV', ctrlKey: true }],
+        ['Cmd+V', { key: 'v', code: 'KeyV', metaKey: true }],
+        ['Ctrl+Shift+V', { key: 'V', code: 'KeyV', ctrlKey: true, shiftKey: true }],
+        ['Cmd+Shift+V', { key: 'V', code: 'KeyV', metaKey: true, shiftKey: true }],
+        ['Shift+Insert', { key: 'Insert', code: 'Insert', shiftKey: true }],
+    ])('allows native %s paste and forwards its text exactly once', (_shortcut, keys) => {
+        const { surface, sendInput, view } = setup({
+            capture: { width: 100, height: 100 },
+            page: { width: 100, height: 100 },
+            displayed: { width: 100, height: 100 },
+        });
+        const outerKeydown = vi.fn();
+        const outerPaste = vi.fn();
+        view.container.addEventListener('keydown', outerKeydown);
+        view.container.addEventListener('paste', outerPaste);
+        const keydown = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...keys });
+        let nativePasteAllowed;
+        act(() => {
+            nativePasteAllowed = surface.dispatchEvent(keydown);
+        });
+
+        // Cancelling this keydown prevents the browser from producing a paste
+        // event. Testing only a dispatched paste event misses that failure.
+        expect(nativePasteAllowed).toBe(true);
+        expect(keydown.defaultPrevented).toBe(false);
+        expect(outerKeydown).not.toHaveBeenCalled();
+        expect(sendInput).not.toHaveBeenCalled();
+
+        // jsdom has no native clipboard action; supply the subsequent event
+        // only after verifying the shortcut allows that action to occur.
+        const text = 'First line\nSecond line — café';
+        const paste = pasteEvent(text);
+        act(() => {
+            surface.dispatchEvent(paste);
+        });
+        expect(paste.defaultPrevented).toBe(true);
+        expect(outerPaste).not.toHaveBeenCalled();
+        expect(sendInput.mock.calls).toEqual([[{ type: 'paste', text }]]);
+        expect(surface).not.toHaveTextContent(text);
+    });
+
+    it('does not forward an empty text paste', () => {
+        const { surface, sendInput } = setup({
+            capture: { width: 100, height: 100 },
+            page: { width: 100, height: 100 },
+            displayed: { width: 100, height: 100 },
+        });
+        const paste = pasteEvent('');
+        act(() => {
+            surface.dispatchEvent(paste);
+        });
+        expect(paste.defaultPrevented).toBe(true);
+        expect(sendInput).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['not engaged', { engaged: false, active: true }],
+        ['not selected', { engaged: true, active: false }],
+    ])('leaves clipboard events alone while %s', (_condition, state) => {
+        const sendInput = vi.fn();
+        const view = render(<ScreencastViewport frameBus={createFrameBus()} sendInput={sendInput} {...state} />);
+        const surface = view.getByTestId('browser-viewport');
+        const outerPaste = vi.fn();
+        view.container.addEventListener('paste', outerPaste);
+        const keydown = new KeyboardEvent('keydown', {
+            bubbles: true, cancelable: true, key: 'v', code: 'KeyV', ctrlKey: true,
+        });
+        const paste = pasteEvent('Keep this local');
+        act(() => {
+            surface.dispatchEvent(keydown);
+            surface.dispatchEvent(paste);
+        });
+        expect(keydown.defaultPrevented).toBe(false);
+        expect(paste.defaultPrevented).toBe(false);
+        expect(outerPaste).toHaveBeenCalledOnce();
+        expect(sendInput).not.toHaveBeenCalled();
     });
 
     it('applies the mirrored remote cursor while engaged', () => {
