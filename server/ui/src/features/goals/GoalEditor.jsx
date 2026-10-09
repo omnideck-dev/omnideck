@@ -16,10 +16,11 @@ const PLAN_STATUSES = [
 
 function draftFromGoal(goal) {
     return {
-        objective: goal?.objective || '',
+        // Existing goals may have instructions in the former separate fields.
+        // Bring them into the editable description before clearing those fields on save.
+        objective: [goal?.objective, goal?.constraints && `Limits and preferences:\n${goal.constraints}`,
+            goal?.success_criteria?.length && `Done when:\n${goal.success_criteria.join('\n')}`].filter(Boolean).join('\n\n'),
         kind: goal?.kind || 'finite',
-        constraints: goal?.constraints || '',
-        criteria: (goal?.success_criteria || []).join('\n'),
         plan: (goal?.plan || []).map((item) => ({ ...item })),
         revision: goal?.revision,
     };
@@ -56,9 +57,7 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
         try {
             await onSave({
                 objective: draft.objective.trim(),
-                constraints: draft.constraints.trim(),
-                success_criteria: draft.criteria.split('\n').map((item) => item.trim()).filter(Boolean),
-                ...(goal ? { expected_revision: draft.revision, plan: draft.plan } : { kind: draft.kind }),
+                ...(goal ? { expected_revision: draft.revision, plan: draft.plan, constraints: '', success_criteria: [] } : { kind: draft.kind }),
             });
             onClose();
         } catch (failure) {
@@ -82,30 +81,17 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
                     {error && <Callout tone="danger" title="Could not save goal" description={error} />}
                     {conflict && <Button variant="ghost" disabled={saving} onClick={reload}>Load latest version</Button>}
                     <label className={styles.field}>
-                        <span>Objective</span>
-                        <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Organize our household schedule for next month" required disabled={saving} />
+                        <span>What would you like done?</span>
+                        <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Describe the goal, including any preferences or limits" required disabled={saving} />
                     </label>
                     {!goal && <div className={styles.field}>
                         <span id={`${headingId}-kind`}>Goal type</span>
                         <Select ariaLabelledBy={`${headingId}-kind`} value={draft.kind} onChange={(value) => change('kind', value)} disabled={saving} options={[
-                            { value: 'finite', label: 'Finish an outcome' },
-                            { value: 'ongoing', label: 'Keep working over time' },
+                            { value: 'finite', label: 'One-time' },
+                            { value: 'ongoing', label: 'Ongoing' },
                         ]} />
                         <p className={styles.description}>{draft.kind === 'ongoing' ? 'Continues until you pause or cancel it.' : 'Completes when the outcome is achieved.'}</p>
                     </div>}
-                    <details open={Boolean(goal)}>
-                        <summary className={styles.disclosure}>Constraints and success criteria</summary>
-                        <div className={styles.fields}>
-                            <label className={styles.field}>
-                                <span>Constraints</span>
-                                <textarea className={styles.textarea} value={draft.constraints} onChange={(event) => change('constraints', event.target.value)} placeholder="Preferences, limits, and anything the agent should avoid" disabled={saving} />
-                            </label>
-                            <label className={styles.field}>
-                                <span>Success criteria</span>
-                                <textarea className={styles.textarea} value={draft.criteria} onChange={(event) => change('criteria', event.target.value)} placeholder="One outcome per line" disabled={saving} />
-                            </label>
-                        </div>
-                    </details>
                     {goal && <section className={styles.fields} aria-label="Edit plan">
                         <h3>Plan</h3>
                         {draft.plan.map((item, index) => <div className={styles.planEditor} key={item.id}>
