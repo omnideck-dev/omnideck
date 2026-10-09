@@ -76,7 +76,8 @@ class _FakePage:
         # detection measures the real window via evaluate() instead.
         self.viewport_size = None
         self._window = window or {"width": 1280, "height": 800}
-        self.main_frame = object()
+        self.main_frame = AsyncMock()
+        self.main_frame.evaluate.side_effect = self.evaluate
         # Prepend main_frame to the frames list so page.frames includes it
         self.frames.insert(0, self.main_frame)
         self.url = "https://example.test"
@@ -94,6 +95,15 @@ class _FakePage:
 
 def _make_tab(page: _FakePage) -> Tab:
     return Tab(1, page)  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def _stub_native_evaluation(monkeypatch):
+    async def evaluate(frame, expression):
+        return await frame.evaluate(expression)
+
+    monkeypatch.setattr("browser.core.tab.evaluate_frame", evaluate)
+    monkeypatch.setattr("browser.core.challenges.evaluate_frame", AsyncMock(return_value=False))
 
 
 # ---- _detect_embedded_content_frame tests ----
@@ -281,10 +291,12 @@ async def test_unmeasurable_window_returns_none() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("has_loaded_content", [True, False])
 async def test_render_reselects_loaded_frame_without_replacing_unchanged_root(
-    monkeypatch: pytest.MonkeyPatch, has_loaded_content: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    has_loaded_content: bool,
 ) -> None:
     frame = _FakeFrame(
-        box={"x": 0, "y": 0, "width": 1200, "height": 700}, child_count=0,
+        box={"x": 0, "y": 0, "width": 1200, "height": 700},
+        child_count=0,
     )
     tab = _make_tab(_FakePage(frames=[frame]))
     root = await tab.document()
