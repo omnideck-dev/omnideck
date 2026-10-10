@@ -37,9 +37,9 @@ export function ConversationSessionProvider({ children }) {
         keepRunningConversation: (id) => goalsEnabled && isGoalOpen(goalsByConversation[id]),
     });
 
-    const sendMessage = useCallback((message, attachments, profileId) => {
+    const sendMessage = useCallback((message, attachments, profileId, goalAnswers) => {
         if (!message && !attachments?.length) {
-            return session.sendMessage(message, attachments, profileId);
+            return session.sendMessage(message, attachments, profileId, goalAnswers);
         }
         if (session.isOffline) return null;
         if (isFreshConversationRef.current) {
@@ -49,7 +49,7 @@ export function ConversationSessionProvider({ children }) {
                 firstMessage: message || '',
             });
         }
-        return session.sendMessage(message, attachments, profileId);
+        return session.sendMessage(message, attachments, profileId, goalAnswers);
     }, [
         addStartedConversation,
         session.activeConversationId,
@@ -57,8 +57,8 @@ export function ConversationSessionProvider({ children }) {
         session.sendMessage,
     ]);
 
-    const sendNudge = useCallback(async (message, agentId) => {
-        const result = await session.sendNudge(message, agentId);
+    const sendNudge = useCallback(async (message, agentId, goalAnswers) => {
+        const result = await session.sendNudge(message, agentId, goalAnswers);
         if (!result) return result;
         if (result.ok) {
             addToast('Nudge sent', { type: 'info', duration: 3000 });

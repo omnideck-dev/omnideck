@@ -81,8 +81,8 @@ describe('conversation goals', () => {
     it('keeps a request for input visible while the details are closed', async () => {
         currentGoal = { ...baseGoal, status: 'needs_input', resume_at: null, status_reason: 'Which morning works for you?' };
         setup();
-        await screen.findByLabelText('Goal: Waiting for you');
-        expect(screen.getByRole('group', { name: 'Question about your goal' })).toHaveTextContent('Which morning works for you?');
+        await screen.findByLabelText('Goal: Waiting for your answer');
+        expect(screen.getByText('Which morning works for you?')).toBeInTheDocument();
         expect(screen.getByText('Reply below to continue')).toBeInTheDocument();
         expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
     });

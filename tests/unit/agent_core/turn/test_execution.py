@@ -911,3 +911,26 @@ async def test_tool_failure_does_not_republish_completed_iteration(_patch_publis
     ]
     assert len(iterations) == 1
     assert iterations[0].payload.stopped is False
+
+
+async def test_nudge_during_final_response_is_delivered_before_execution_finishes():
+    from agent_core.hooks import NudgeHook
+
+    class LateReplyProvider(FakeProvider):
+        async def chat_stream(self, **kwargs):
+            if self._call_count == 0:
+                inputs["context"].control.nudge("Insurance: Aetna Dental PPO")
+            else:
+                assert any("Insurance: Aetna Dental PPO" in str(message) for message in kwargs["messages"])
+            async for response in super().chat_stream(**kwargs):
+                yield response
+
+    provider = LateReplyProvider([_text_response("Waiting for insurance"), _text_response("I have your plan")])
+    inputs = execution_inputs(provider)
+    history = ConversationHistory([{"role": "user", "content": "Find a dentist"}])
+    result = await AgentExecutor().execute(history=history, agent=_make_agent(), hooks=[NudgeHook()], **inputs)
+    assert result.output == "I have your plan"
+    assert provider._call_count == 2
+    assert inputs["context"].control.nudges == []
+    with pytest.raises(ValueError, match="finished"):
+        inputs["context"].control.nudge("Too late")

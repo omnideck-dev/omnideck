@@ -19,8 +19,11 @@ export function goalStatusLabel(goal) {
     if (goal.status === 'paused') return goal.running ? 'Pausing' : 'Paused';
     if (goal.status === 'cancelled') return goal.running ? 'Cancelling' : 'Cancelled';
     if (goal.status === 'completed') return 'Finished';
-    if (goal.running) return 'Working on it';
-    return ({ active: 'Getting started', scheduled: 'Returning later', needs_input: 'Waiting for you' })[goal.status] || goal.status;
+    const open = (goal.questions || []).filter((q) => q.status === 'open');
+    const unanswered = open.filter((q) => q.answers.length <= q.reviewed_answer_count).length;
+    if (goal.status === 'needs_input') return 'Waiting for your answer';
+    if (goal.running) return unanswered ? `Working · ${unanswered} question${unanswered === 1 ? '' : 's'} for you` : open.length ? 'Reviewing your answers' : 'Working on it';
+    return ({ active: 'Getting started', scheduled: 'Returning later' })[goal.status] || goal.status;
 }
 
 async function requestJson(url, options) {

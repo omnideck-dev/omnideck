@@ -12,7 +12,10 @@ from threading import RLock
 from typing import ClassVar
 from uuid import uuid4
 
-from ._models import Goal, GoalKind, GoalProgress, TERMINAL_STATUSES, utc_now, utc_timestamp
+from ._models import (
+    Goal, GoalAnswer, GoalAnswerSubmission, GoalKind, GoalProgress, GoalQuestion,
+    GoalQuestionChange, GoalQuestionVersion, TERMINAL_STATUSES, utc_now, utc_timestamp,
+)
 
 GOALS_SUBDIR = "session-goals"
 
@@ -198,15 +201,70 @@ class GoalStore:
             self._queue(goal, when, reason.strip(), next_action.strip())
         return self._mutate(goal_id, change, expected_revision=expected_revision, claim_id=claim_id)
 
-    def wait_for_input(
-        self, goal_id: str, reason: str, *, claim_id: str | None = None, expected_revision: int | None = None,
+    def update_questions(
+        self, goal_id: str, changes: builtins.list[GoalQuestionChange], known_facts: str,
+        expected_revision: int, *, claim_id: str,
     ) -> Goal:
-        if not reason.strip():
-            raise ValueError("Explain what input is needed")
+        if len({change.id for change in changes}) != len(changes):
+            raise ValueError("Question IDs must be unique within an update")
 
         def change(goal: Goal) -> None:
+            for item in changes:
+                previous = next((question for question in goal.questions if question.id == item.id), None)
+                if previous is None:
+                    goal.questions.append(GoalQuestion(**item.model_dump()))
+                    continue
+                previous.history.append(GoalQuestionVersion(
+                    **{name: getattr(previous, name) for name in GoalQuestionChange.model_fields},
+                    revision=previous.revision, updated_at=previous.updated_at,
+                ))
+                for name, value in item.model_dump().items():
+                    setattr(previous, name, value)
+                previous.revision += 1
+                previous.updated_at = utc_now()
+                previous.reviewed_answer_count = len(previous.answers)
+            goal.known_facts = known_facts.strip()
+            open_ids = {question.id for question in goal.questions if question.status == "open"}
+            goal.blocking_question_ids = [item for item in goal.blocking_question_ids if item in open_ids]
+
+        return self._mutate(goal_id, change, expected_revision=expected_revision, claim_id=claim_id)
+
+    def submit_answers(self, conversation_id: str, submission: GoalAnswerSubmission) -> str:
+        """Save version-checked user answers and return their canonical chat message."""
+        lines = ["Answers to goal questions:"]
+
+        def change(goal: Goal) -> None:
+            if goal.conversation_id != conversation_id:
+                raise GoalConflictError("These questions belong to another conversation")
+            if len({answer.question_id for answer in submission.answers}) != len(submission.answers):
+                raise ValueError("Submit one answer per question")
+            for answer in submission.answers:
+                question = next((item for item in goal.questions if item.id == answer.question_id), None)
+                if question is None or question.status != "open" or question.revision != answer.question_revision:
+                    raise GoalConflictError("A question changed. Review the current question before sending your answer.")
+                question.answers.append(GoalAnswer(**answer.model_dump()))
+                lines.extend(["", f"[{question.id}] {question.question}", answer.answer])
+
+        # Paused goals accept answers, but keep their pause and never acquire a wake here.
+        self._mutate(submission.goal_id, change)
+        return "\n".join(lines)
+
+    def wait_for_input(
+        self, goal_id: str, question_ids: builtins.list[str], *, claim_id: str | None = None,
+        expected_revision: int | None = None,
+    ) -> Goal:
+        if not question_ids or len(set(question_ids)) != len(question_ids):
+            raise ValueError("Select the open questions blocking further useful work")
+
+        def change(goal: Goal) -> None:
+            questions = {question.id: question for question in goal.questions if question.status == "open"}
+            if any(item not in questions for item in question_ids):
+                raise GoalStateError("Wait requires existing open questions; update_goal_questions first")
+            if any(len(questions[item].answers) > questions[item].reviewed_answer_count for item in question_ids):
+                raise GoalConflictError("New answers arrived. Read and evaluate them before waiting again.")
             goal.status = "needs_input"
-            goal.status_reason = reason.strip()
+            goal.blocking_question_ids = question_ids
+            goal.status_reason = "\n".join(questions[item].question for item in question_ids)
             self._clear_wake(goal)
         return self._mutate(goal_id, change, expected_revision=expected_revision, claim_id=claim_id)
 

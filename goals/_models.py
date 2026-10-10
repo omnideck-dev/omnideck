@@ -58,6 +58,78 @@ class GoalProgress(BaseModel):
     next_action: str = ""
 
 
+class GoalQuestionChange(BaseModel):
+    """An agent-authored revision to one durable question."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$", description="Stable question ID; preserve for the same question.")
+    question: str = Field(min_length=1, max_length=4000, description="Question to show the user.")
+    status: Literal["open", "resolved", "withdrawn"] = Field(description="open: still needs an answer; resolved: sufficient answer found; withdrawn: no longer relevant after a change of direction.")
+    choices: list[str] = Field(default_factory=list, max_length=12, description="Optional suggested answers. Free text is always allowed.")
+
+    @field_validator("question")
+    @classmethod
+    def question_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Question cannot be blank")
+        return value.strip()
+
+    @field_validator("choices")
+    @classmethod
+    def valid_choices(cls, values: list[str]) -> list[str]:
+        values = [value.strip() for value in values]
+        if any(not value or len(value) > 2000 for value in values) or len(set(values)) != len(values):
+            raise ValueError("Choices must be unique, nonempty text of at most 2000 characters")
+        return values
+
+
+class GoalQuestionVersion(GoalQuestionChange):
+    """Previous wording and status, retained when the agent revises a question."""
+
+    revision: int = Field(ge=1)
+    updated_at: str
+
+
+class GoalAnswerInput(BaseModel):
+    """One user's answer tied to the question version they actually saw."""
+
+    model_config = ConfigDict(extra="forbid")
+    question_id: str = Field(min_length=1)
+    question_revision: int = Field(ge=1)
+    answer: str = Field(min_length=1, max_length=20000)
+
+    @field_validator("answer")
+    @classmethod
+    def answer_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Answer cannot be blank")
+        return value.strip()
+
+
+class GoalAnswer(GoalAnswerInput):
+    """An immutable user answer; submission does not resolve the question."""
+
+    created_at: str = Field(default_factory=utc_now)
+
+
+class GoalAnswerSubmission(BaseModel):
+    """Structured answers sent through the normal chat or nudge channel."""
+
+    model_config = ConfigDict(extra="forbid")
+    goal_id: str
+    answers: list[GoalAnswerInput] = Field(min_length=1, max_length=50)
+
+
+class GoalQuestion(GoalQuestionChange):
+    """A question's current state, immutable answers, and previous versions."""
+
+    revision: int = Field(default=1, ge=1)
+    updated_at: str = Field(default_factory=utc_now)
+    answers: list[GoalAnswer] = Field(default_factory=list)
+    reviewed_answer_count: int = Field(default=0, ge=0)
+    history: list[GoalQuestionVersion] = Field(default_factory=list)
+
+
 class Goal(BaseModel):
     """A goal attached to one conversation, including its single pending wake."""
 
@@ -72,6 +144,9 @@ class Goal(BaseModel):
     success_criteria: list[str] = Field(default_factory=list)
     plan: list[GoalStep] = Field(default_factory=list)
     progress: list[GoalProgress] = Field(default_factory=list)
+    questions: list[GoalQuestion] = Field(default_factory=list)
+    known_facts: str = Field(default="", max_length=12000)
+    blocking_question_ids: list[str] = Field(default_factory=list)
     next_action: str = ""
     status_reason: str = ""
     outcome: str | None = None

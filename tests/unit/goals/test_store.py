@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from goals import GoalConflictError, GoalStateError, GoalStore
+from goals import GoalConflictError, GoalQuestionChange, GoalStateError, GoalStore
 
 
 @pytest.fixture
@@ -160,7 +160,8 @@ def test_manual_turn_can_explicitly_replace_preserved_future_wake(store):
     store.claim_for_turn(goal.id, "manual")
     replacement = store.schedule(goal.id, future(), "Updated timing", "Check new calendar", claim_id="manual")
     assert replacement.wake_id != scheduled.wake_id
-    store.wait_for_input(goal.id, "Need the latest calendar", claim_id="manual")
+    store.update_questions(goal.id, [GoalQuestionChange(id="calendar", question="Which calendar?", status="open")], "", store.get(goal.id).revision, claim_id="manual")
+    store.wait_for_input(goal.id, ["calendar"], claim_id="manual")
     assert store.get(goal.id).wake_id is None
 
 
@@ -205,7 +206,8 @@ def test_restart_reconciles_interrupted_execution_once_without_overriding_agent_
     scheduled = claim(store, create(store, "scheduled"))
     future_goal = store.schedule(scheduled.id, future(), "Wait for response", "Read the response", claim_id="claim-1")
     waiting = claim(store, create(store, "waiting"))
-    store.wait_for_input(waiting.id, "Need the school calendar", claim_id="claim-1")
+    store.update_questions(waiting.id, [GoalQuestionChange(id="calendar", question="Which calendar?", status="open")], "", waiting.revision, claim_id="claim-1")
+    store.wait_for_input(waiting.id, ["calendar"], claim_id="claim-1")
     completed = claim(store, create(store, "completed"))
     store.complete(completed.id, "Delivered the calendar", claim_id="claim-1")
     recovered = GoalStore(store._base)

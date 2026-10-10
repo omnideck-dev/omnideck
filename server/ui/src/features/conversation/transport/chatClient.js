@@ -5,8 +5,9 @@
  * value is not part of the backend contract and must not cross the transport
  * boundary.
  */
-function buildTurnRequest(message, attachments, profileId, conversationId) {
+function buildTurnRequest(message, attachments, profileId, conversationId, goalAnswers) {
     const body = { message: message || '(uploaded file)' };
+    if (goalAnswers) body.goal_answers = goalAnswers;
     if (conversationId) body.conversation_id = conversationId;
     if (attachments?.length) {
         body.data = attachments.map(({ preview: _preview, ...rest }) => rest);
@@ -78,6 +79,7 @@ export async function* streamChatTurn({
     attachments,
     profileId,
     conversationId,
+    goalAnswers,
     signal,
 }) {
     const response = await fetch('/api/chat', {
@@ -88,6 +90,7 @@ export async function* streamChatTurn({
             attachments,
             profileId,
             conversationId,
+            goalAnswers,
         )),
         signal,
     });

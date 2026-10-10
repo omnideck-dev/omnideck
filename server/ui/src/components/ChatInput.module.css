@@ -103,6 +103,7 @@
 /* ── Controls row ────────────────────────────────────── */
 .inputAreaButtons {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: center;
   justify-content: space-between;
@@ -111,6 +112,7 @@
 
 .actionButtons {
   display: flex;
+  margin-left: auto;
   gap: var(--sp-1);
   align-items: center;
 }

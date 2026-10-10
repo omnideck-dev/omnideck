@@ -8,6 +8,7 @@ import CompactionChip from './CompactionChip.jsx';
 import Callout from './primitives/Callout.jsx';
 import styles from './Message.module.css';
 import goalStyles from '../features/goals/GoalPanel.module.css';
+import { GoalQuestionTranscript } from '../features/goals/GoalQuestions.jsx';
 
 /**
  * Convert one iteration child from a Turn into the flat `entries` shape
@@ -115,6 +116,9 @@ export default function Turn({
         } else if (child.kind === ITEM.ITERATION) {
             if (entries === null) entries = [];
             entries.push(..._iterationToEntries(child));
+        } else if (child.kind === ITEM.TOOL_RESULT && child.toolName === 'update_goal_questions') {
+            flushAssistant();
+            items.push({ kind: 'goal_questions', child });
         } else if (child.kind === ITEM.FILE_OUTPUT) {
             if (entries === null) entries = [];
             entries.push(_fileOutputToEntry(child));
@@ -151,6 +155,7 @@ export default function Turn({
                         />
                     );
                 }
+                if (item.kind === 'goal_questions') return <GoalQuestionTranscript key={item.child.id} content={item.child.content} />;
                 if (item.kind === 'goal_wakeup') {
                     return <div key={`g-${item.child.id}`} className={goalStyles.wakeup} data-testid="goal-wakeup"><i className="bi bi-bullseye" aria-hidden="true" /><span>Goal resumed{item.child.reason ? ` · ${item.child.reason}` : ''}{item.child.nextAction ? ` — ${item.child.nextAction}` : ''}</span></div>;
                 }

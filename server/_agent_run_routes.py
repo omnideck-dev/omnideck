@@ -30,6 +30,7 @@ from agent_runtime import (
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goals import pause_conversation_goal
+from goals import GoalAnswerSubmission, GoalConflictError, GoalStateError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncGenerator
@@ -57,6 +58,7 @@ class ChatRequest(BaseModel):
     data: list[Attachment] | None = None
     profile_id: str | None = None
     conversation_id: str | None = None
+    goal_answers: GoalAnswerSubmission | None = None
 
 
 class NudgeRequest(BaseModel):
@@ -65,6 +67,7 @@ class NudgeRequest(BaseModel):
     message: str
     conversation_id: str
     agent_id: str
+    goal_answers: GoalAnswerSubmission | None = None
 
 
 async def stream_events(
@@ -144,7 +147,12 @@ async def chat_handler(request: Request) -> StreamResponse:
             message=user_query,
             attachments=run_attachments,
             profile_id=payload.profile_id,
+            goal_answers=payload.goal_answers,
         ))
+    except (GoalConflictError, GoalStateError) as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    except (ValueError, KeyError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     except RunConflictError:
         return web.json_response(
             {
@@ -221,8 +229,11 @@ async def nudge_handler(request: Request) -> Response:
             status=409,
         )
     try:
-        handle.nudge(text, execution_id=payload.agent_id)
-    except ValueError as exc:
+        if payload.goal_answers is not None:
+            request.app[AGENT_RUNTIME_KEY].answer_goal_during_run(payload.conversation_id, payload.goal_answers)
+        else:
+            handle.nudge(text, execution_id=payload.agent_id)
+    except (ValueError, KeyError) as exc:
         return web.json_response({"error": str(exc)}, status=409)
     return web.json_response({"ok": True})
 

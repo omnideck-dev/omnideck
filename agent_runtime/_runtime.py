@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
+from dataclasses import replace
 from typing import Protocol
 from uuid import uuid4
 from integrations.connection_cache import IntegrationConnectionCache
 
 from goals._store import GoalStore
+from goals._models import GoalAnswerSubmission
 from conversations import ConversationStore
 from browser.runtime import BrowserRuntime
 from agent_core.control import StopRequestedError
@@ -124,6 +126,10 @@ class AgentRuntime:
             raise ValueError("conversation_id is required")
         if request.conversation_id in self._active_by_conversation:
             raise RunConflictError(f"Conversation '{request.conversation_id}' already has an active run")
+        if request.goal_answers is not None:
+            if self._goal_store is None or not self._goals_enabled():
+                raise ValueError("Goals are disabled")
+            request = replace(request, message=self._goal_store.submit_answers(request.conversation_id, request.goal_answers))
         # Reserve before the first await so concurrent starts cannot both enter.
         session = RunSession(
             request, f"run_{uuid4().hex}", self.conversations,
@@ -133,6 +139,18 @@ class AgentRuntime:
         self._runs_by_id[session.run_id] = session
         session.task = asyncio.create_task(self._drive(session), name=f"agent-run-{session.run_id[4:12]}")
         return RunHandle(session)
+
+    def answer_goal_during_run(self, conversation_id: str, submission: GoalAnswerSubmission) -> None:
+        """Save answers and nudge the existing root; never start a competing execution."""
+        session = self._active_by_conversation.get(conversation_id)
+        if (session is None or session.completed or session.stop_event.is_set()
+                or session.root_context.execution_id not in session.executions
+                or not session.root_context.control.accepting_nudges):
+            raise ValueError("The agent is no longer running. Send your answers again.")
+        if self._goal_store is None or not self._goals_enabled():
+            raise ValueError("Goals are disabled")
+        message = self._goal_store.submit_answers(conversation_id, submission)
+        session.nudge(message)
 
     def get(self, run_id: str) -> RunHandle | None:
         session = self._runs_by_id.get(run_id)

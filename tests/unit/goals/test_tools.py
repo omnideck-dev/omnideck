@@ -11,7 +11,7 @@ from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
 from agent_core.tools._callable_schema import callable_to_json_schema
 from agent_core.turn import ExecutionContext
-from goals import GoalConflictError, GoalStateError, GoalStep, GoalStore, make_goal_tools
+from goals import GoalConflictError, GoalStateError, GoalQuestionChange, GoalStep, GoalStore, make_goal_tools
 
 
 @pytest.fixture
@@ -70,7 +70,8 @@ async def test_agent_explicitly_selects_each_disposition(owned_goal):
             (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(), "Check for replies", "Review replies",
         ))
         assert scheduled["status"] == "scheduled" and scheduled["wake_id"] != continued["wake_id"]
-        waiting = json.loads(await tools["wait_for_goal_input"]("Which school calendar is current?"))
+        await tools["update_goal_questions"]([GoalQuestionChange(id="calendar", question="Which school calendar is current?", status="open")], "", scheduled["revision"])
+        waiting = json.loads(await tools["wait_for_goal_input"](["calendar"]))
         assert waiting["status"] == "needs_input" and waiting["wake_id"] is None
         completed = json.loads(await tools["complete_goal"]("The calendar is complete and shared"))
         assert completed["status"] == "completed" and completed["claimed_run_id"] == "claim"

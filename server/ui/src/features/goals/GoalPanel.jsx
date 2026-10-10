@@ -93,7 +93,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit })
                     {goal.status === 'paused' ? 'Resume' : 'Pause'}
                 </Button>}
             </div>
-            {goal.status === 'needs_input' && <div className={styles.question} role="group" aria-label="Question about your goal">{goal.status_reason || goal.next_action || 'Reply in this chat when you are ready.'}</div>}
+            {goal.status === 'needs_input' && !goal.questions?.some((q) => q.status === 'open') && <Callout tone="warning" title="Goal needs attention" description={goal.status_reason || 'Review the goal before resuming.'} />}
             {(error || refreshError) && <div className={styles.feedback}><Callout tone="warning" title={error || refreshError} onDismiss={error ? () => setError('') : undefined} /></div>}
             {expanded && <Popover anchorRef={anchorRef} returnFocusRef={triggerRef} onClose={closeDetails} className={styles.popover} role="region" ariaLabel="Goal details" testId="goal-details">
                 <div ref={detailsRef} tabIndex={-1} className={styles.details} id={detailsId} onBlur={(event) => {
@@ -119,6 +119,8 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit })
                             {goal.outcome && <section><h3>Outcome</h3><p className={styles.prose}>{goal.outcome}</p></section>}
                         </div>
                     </div>
+                    {goal.known_facts && <section><h3>Current facts</h3><p className={styles.prose}>{goal.known_facts}</p></section>}
+                    {goal.questions?.some((q) => q.status !== 'open') && <details><summary className={styles.disclosure}>Previous questions</summary><ol className={styles.progress}>{goal.questions.filter((q) => q.status !== 'open').map((q) => <li key={q.id}><p>{q.question}</p><span className={styles.description}>{q.status === 'withdrawn' ? 'No longer needed' : 'Resolved'}</span>{q.answers.map((answer, i) => <p key={i}>{answer.answer}</p>)}</li>)}</ol></details>}
                     {goal.progress?.length > 0 && <details><summary className={styles.disclosure}>Progress updates</summary><ol className={styles.progress}>{[...goal.progress].reverse().map((entry) => <li key={entry.id}><time dateTime={entry.created_at}>{formatTime(entry.created_at)}</time><p>{entry.summary}</p>{entry.next_action && <p className={styles.description}>Next: {entry.next_action}</p>}</li>)}</ol></details>}
                     {history.length > 0 && <details><summary className={styles.disclosure}>Previous goals ({history.length})</summary><ul className={styles.history}>{history.map((item) => <li key={item.id}><GoalStatus goal={item} /><span>{item.objective}</span>{item.outcome && <p className={styles.description}>{item.outcome}</p>}</li>)}</ul></details>}
                     <div className={styles.actions}>

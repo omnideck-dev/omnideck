@@ -10,6 +10,7 @@ from agent_core.providers import TokenUsage
 from agent_core.events import FileOutputPayload
 
 from agent_core.events import AgentEvent
+from goals._models import GoalAnswerSubmission
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,7 @@ class AgentRunRequest:
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
     goal_trigger: GoalRunTrigger | None = None
+    goal_answers: GoalAnswerSubmission | None = None
 
 
 @dataclass(frozen=True, slots=True)

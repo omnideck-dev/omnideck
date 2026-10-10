@@ -1,3 +1,4 @@
+import { useGoals } from '../goals/GoalsState.jsx';
 import { useCallback, useEffect, useState } from 'react';
 
 import ChatPanel from '../../components/ChatPanel.jsx';
@@ -45,6 +46,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         setConversationProfileId,
     } = useConversationSessionCommands();
     const { profilesHook, features } = useAppData();
+    const { goalsByConversation } = useGoals();
     const { defaultProfileId } = useAppSettings();
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
@@ -68,11 +70,11 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         setGoalRequest({ ...request, conversationId: activeConversationId });
     }, [features.goals, isOffline, stopRequested, activeConversationId]);
 
-    const handleSend = useCallback((message, attachments) => {
+    const handleSend = useCallback((message, attachments, goalAnswers) => {
         if (isStreaming) {
-            if (!stopRequested) sendNudge(message);
+            if (!stopRequested) return sendNudge(message, undefined, goalAnswers);
         } else {
-            sendMessage(message, attachments, selectedProfileId);
+            return sendMessage(message, attachments, selectedProfileId, goalAnswers);
         }
     }, [
         isStreaming,
@@ -107,6 +109,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     return (
         <div className={styles.chatColumn}>
             <ChatPanel
+                goal={features.goals ? goalsByConversation[activeConversationId] : undefined}
                 goalPanel={features.goals ? <GoalPanel key={`goal:${activeConversationId}`} conversationId={activeConversationId} isOffline={isOffline} onEdit={() => requestGoal()} /> : null}
                 onRequestGoal={features.goals ? requestGoal : undefined}
                 turns={turns}

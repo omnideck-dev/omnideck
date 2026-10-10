@@ -7,6 +7,8 @@ import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 import Popover from './primitives/Popover.jsx';
+import Button from './primitives/Button.jsx';
+import GoalQuestions, { goalAnswerMessage, useGoalQuestionDrafts } from '../features/goals/GoalQuestions.jsx';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
@@ -21,8 +23,23 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goalPanel }) {
-    const [message, setMessage] = useState(() => loadChatDraft(conversationId));
+function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goalPanel, goal }) {
+    const [chatMessage, setChatMessage] = useState(() => loadChatDraft(conversationId));
+    const questions = useGoalQuestionDrafts(goal, conversationId);
+    const [chatMode, setChatMode] = useState(false);
+    const answering = Boolean(questions.current && !chatMode);
+    const message = answering ? questions.text : chatMessage;
+    const setMessage = answering ? questions.setAnswer : setChatMessage;
+    const [sendingAnswers, setSendingAnswers] = useState(false);
+    const submittedAnswers = useRef([]);
+    useEffect(() => {
+        if (submittedAnswers.current.length && submittedAnswers.current.every((answer) =>
+            goal?.questions?.find((q) => q.id === answer.question_id)?.answers.some((saved) =>
+                saved.question_revision === answer.question_revision && saved.answer === answer.answer))) {
+            setSendingAnswers(false);
+            submittedAnswers.current = [];
+        }
+    }, [goal]);
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
@@ -78,7 +95,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     };
 
     const profileName = selectedProfile?.name;
-    const placeholder = stopRequested
+    const placeholder = answering ? 'Type your answer…' : stopRequested
         ? 'Stopping…'
         : isStreaming
         ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
@@ -140,8 +157,8 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // (nothing anchors it across a reload), so this only survives a hard
     // refresh once the conversation has been sent at least once — by design.
     useEffect(() => {
-        saveChatDraft(conversationId, message);
-    }, [conversationId, message]);
+        saveChatDraft(conversationId, chatMessage);
+    }, [conversationId, chatMessage]);
 
     // Each entry: { base64, content_type, filename, preview } where preview is a
     // data URL for images, null for other file types.
@@ -169,6 +186,15 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const handleSubmit = (e) => {
         e.preventDefault();
         if (stopRequested || isOffline) return;
+        if (answering) {
+            if (!questions.answers.length || questions.stale || sendingAnswers) return;
+            const answers = questions.answers;
+            submittedAnswers.current = answers;
+            setSendingAnswers(true);
+            Promise.resolve(onSend(goalAnswerMessage(questions.questions, answers), attachments.length ? attachments : null,
+                { goal_id: goal.id, answers })).finally(() => setSendingAnswers(false));
+            return;
+        }
         if (!message.trim() && !attachments.length) return;
         const goalCommand = onRequestGoal && message.trim().match(/^\/goal(?:\s+([\s\S]*))?$/);
         if (goalCommand) {
@@ -224,6 +250,8 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const textareaProps = {
         value: message,
+        'aria-label': answering ? 'Answer the goal question' : undefined,
+        'aria-describedby': answering ? 'goal-current-question' : undefined,
         onChange: (e) => setMessage(e.target.value),
         onKeyDown: (e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -253,6 +281,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
             )}
             {goalPanel && <div className={styles.goalDock}>{goalPanel}</div>}
             <form className={styles.inputArea} onSubmit={handleSubmit}>
+                <GoalQuestions state={questions} disabled={controlsDisabled || sendingAnswers} paused={goal?.status === 'paused'} chatMode={chatMode} onChatModeChange={setChatMode} />
                 {attachments.length > 0 && (
                     <div className={styles.tray}>
                         {attachments.map((att, i) => (
@@ -378,6 +407,9 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                             onClick={(e) => { e.target.value = ''; }}
                             onChange={handleFile}
                         />
+                        {answering && <Button variant="filled" type="submit" disabled={controlsDisabled || sendingAnswers || questions.stale || !questions.answers.length} loading={sendingAnswers} loadingLabel="Sending…">
+                            {goal?.status === 'paused' ? 'Send answers' : isStreaming ? 'Send answers' : 'Send answers & resume'}
+                        </Button>}
                         {isStreaming ? (
                             <button
                                 type="button"
@@ -390,7 +422,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                             >
                                 <StopIcon />
                             </button>
-                        ) : (
+                        ) : !answering && (
                             <button
                                 type="submit"
                                 className={styles.sendButton}

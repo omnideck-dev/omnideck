@@ -344,10 +344,11 @@ export default function useConversationSessionController({
         }
         return addedEventCount;
     }, [workspaceDispatch]);
-    const sendNudge = useCallback(async (message, agentId) => {
+    const sendNudge = useCallback(async (message, agentId, goalAnswers) => {
         if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
             message,
+            ...(goalAnswers ? { goal_answers: goalAnswers } : {}),
             conversation_id: conversationIdRef.current,
             agent_id: agentId || rootAgentIdRef.current,
         };
@@ -620,7 +621,7 @@ export default function useConversationSessionController({
         setStopRequested,
     ]);
 
-    const sendMessage = useCallback(async (message, attachments, profileId) => {
+    const sendMessage = useCallback(async (message, attachments, profileId, goalAnswers) => {
         if (
             (!message && !attachments?.length)
             || isStreamingRef.current
@@ -655,7 +656,7 @@ export default function useConversationSessionController({
         await runConnection({
             conversationId: conversationIdRef.current,
             controller,
-            initialRequest: { message, attachments, profileId },
+            initialRequest: { message, attachments, profileId, goalAnswers },
             persistedEvents: eventsRef.current,
         });
     }, [runConnection]);
