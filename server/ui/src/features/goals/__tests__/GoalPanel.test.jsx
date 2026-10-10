@@ -6,8 +6,8 @@ import { GoalsProvider } from '../GoalsState.jsx';
 
 const baseGoal = {
     id: 'g1', conversation_id: 'chat-1', objective: 'Organize our family schedule', kind: 'finite',
-    status: 'scheduled', revision: 4, profile_id: 'assistant', constraints: 'Keep evenings free',
-    success_criteria: ['Everyone has a weekly schedule'], running: false,
+    status: 'scheduled', revision: 4, profile_id: 'assistant',
+    running: false,
     resume_at: '2026-10-06T15:00:00Z', wake_reason: 'Check the school calendar', next_action: 'Collect updated dates',
     plan: [{ id: 's1', title: 'Collect school dates', status: 'done', notes: 'Autumn dates saved', depends_on: [] }, { id: 's2', title: 'Combine calendars', status: 'pending', notes: '', depends_on: ['s1'] }],
     progress: [{ id: 'p1', created_at: '2026-10-04T15:00:00Z', summary: 'Collected the school schedule.' }],
@@ -46,7 +46,7 @@ describe('conversation goals', () => {
         expect(screen.getByText('Collect school dates')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Goal history'));
         expect(await screen.findByText('Collected the school schedule.')).toBeVisible();
-        expect(screen.getByText('Keep evenings free')).toBeInTheDocument();
+        expect(screen.queryByText('Limits and preferences')).not.toBeInTheDocument();
     });
 
     it('opens the shared editor through its edit callback', async () => {

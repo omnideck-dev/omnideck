@@ -8,8 +8,8 @@ import { GoalsProvider } from '../GoalsState.jsx';
 const goalPath = '/api/conversations/sessions/chat-1/goal';
 const baseGoal = {
     id: 'g1', conversation_id: 'chat-1', objective: 'Organize our family schedule', kind: 'finite',
-    status: 'scheduled', revision: 4, profile_id: 'assistant', constraints: 'Keep evenings free',
-    success_criteria: ['Everyone has a weekly schedule'], running: false,
+    status: 'scheduled', revision: 4, profile_id: 'assistant',
+    running: false,
     resume_at: '2026-10-06T15:00:00Z', wake_reason: 'Check the school calendar', next_action: 'Collect updated dates',
     plan: [{ id: 's1', title: 'Collect school dates', status: 'done', notes: 'Autumn dates saved', depends_on: [] }, { id: 's2', title: 'Combine calendars', status: 'pending', notes: '', depends_on: ['s1'] }],
     progress: [{ id: 'p1', created_at: '2026-10-04T15:00:00Z', summary: 'Collected the school schedule.' }],
@@ -94,7 +94,7 @@ describe('goal assignment dialog', () => {
     it.each(['active', 'paused', 'scheduled', 'needs_input'])('edits a %s goal without replacing its objective or resuming it', async (status) => {
         currentGoal.status = status;
         const callbacks = setup({ initialObjective: 'A different request from the composer' });
-        expect(await screen.findByLabelText('What would you like done?')).toHaveValue(`${baseGoal.objective}\n\nLimits and preferences:\n${baseGoal.constraints}\n\nDone when:\n${baseGoal.success_criteria.join('\n')}`);
+        expect(await screen.findByLabelText('What would you like done?')).toHaveValue(`${baseGoal.objective}`);
         expect(screen.getByRole('heading', { name: 'Edit goal' })).toBeInTheDocument();
         expect(screen.queryByRole('combobox', { name: 'Goal type' })).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Constraints')).not.toBeInTheDocument();
@@ -106,8 +106,7 @@ describe('goal assignment dialog', () => {
         const edit = mutations()[0];
         expect(edit[1].method).toBe('PATCH');
         expect(JSON.parse(edit[1].body)).toEqual({
-            expected_revision: 4, objective: description, constraints: '',
-            success_criteria: [], plan: baseGoal.plan,
+            expected_revision: 4, objective: description, plan: baseGoal.plan,
         });
         expect(currentGoal.status).toBe(status);
         expect(currentGoal.profile_id).toBe('assistant');
@@ -136,7 +135,7 @@ describe('goal assignment dialog', () => {
         expect(callbacks.onStarted).not.toHaveBeenCalled();
         expect(callbacks.onClose).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Load latest version' }));
-        await waitFor(() => expect(screen.getByLabelText('What would you like done?')).toHaveValue(`Agent revised objective\n\nLimits and preferences:\n${baseGoal.constraints}\n\nDone when:\n${baseGoal.success_criteria.join('\n')}`));
+        await waitFor(() => expect(screen.getByLabelText('What would you like done?')).toHaveValue(`Agent revised objective`));
         rejectEdit = false;
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
         await waitFor(() => expect(callbacks.onStarted).toHaveBeenCalledTimes(1));
@@ -163,7 +162,7 @@ describe('goal assignment dialog', () => {
         expect(callbacks.onStarted).not.toHaveBeenCalled();
         failLoad = false;
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        expect(await screen.findByLabelText('What would you like done?')).toHaveValue(`${baseGoal.objective}\n\nLimits and preferences:\n${baseGoal.constraints}\n\nDone when:\n${baseGoal.success_criteria.join('\n')}`);
+        expect(await screen.findByLabelText('What would you like done?')).toHaveValue(`${baseGoal.objective}`);
         expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
         expect(mutations()).toHaveLength(0);
     });
@@ -195,7 +194,7 @@ describe('goal assignment dialog', () => {
         expect(callbacks.onStarted).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Load latest version' }));
         await screen.findByRole('button', { name: 'Save changes' });
-        expect(screen.getByLabelText('What would you like done?')).toHaveValue(`Goal assigned in another window\n\nLimits and preferences:\n${baseGoal.constraints}\n\nDone when:\n${baseGoal.success_criteria.join('\n')}`);
+        expect(screen.getByLabelText('What would you like done?')).toHaveValue(`Goal assigned in another window`);
         rejectCreate = 0;
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
         await waitFor(() => expect(callbacks.onStarted).toHaveBeenCalledTimes(1));

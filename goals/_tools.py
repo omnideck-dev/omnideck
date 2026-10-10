@@ -36,12 +36,19 @@ def make_goal_tools(
         return goal, owner
 
     def result(goal: Goal) -> str:
-        return json.dumps(goal_context(goal))
+        # The hook refreshes current state before the next model call. Do not append
+        # another full snapshot to the transcript after every mutation.
+        receipt = {"revision": goal.revision, "status": goal.status}
+        for name in ("next_action", "status_reason", "resume_at", "wake_reason", "blocking_question_ids", "outcome"):
+            value = getattr(goal, name)
+            if value:
+                receipt[name] = value
+        return json.dumps(receipt)
 
     async def read_goal() -> str:
-        """Read the compact goal state: summary, working plan, open questions and recent progress."""
+        """Read the compact goal state: summary, full working plan, open questions and last three progress entries."""
         goal, _owner = require_owner()
-        return result(goal)
+        return json.dumps(goal_context(goal))
 
     async def read_goal_history(query: str = "", before: int | None = None) -> str:
         """Search or browse preserved progress, decisions, plan revisions, questions and answers.
@@ -83,7 +90,7 @@ def make_goal_tools(
         """
         _goal, owner = require_owner()
         goal = store.update_questions(goal_id, changes, known_facts, expected_revision, claim_id=owner)
-        snapshot = goal_context(goal)
+        snapshot = json.loads(result(goal))
         snapshot["question_updates"] = []
         for item in changes:
             question = store.question(goal_id, item.id)

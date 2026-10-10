@@ -40,7 +40,7 @@ async def test_tools_require_root_identity_conversation_and_current_claim(owned_
         with invalid.bind("Agent", AgentCapabilities([])), pytest.raises(GoalConflictError):
             await read()
     with context.bind("Agent", AgentCapabilities([])):
-        assert json.loads(await read())["id"] == goal.id
+        assert json.loads(await read())["objective"] == goal.objective
         store.release(goal.id, "claim")
         with pytest.raises(GoalConflictError):
             await read()
@@ -56,8 +56,11 @@ async def test_plan_and_progress_use_revision_and_never_implicitly_schedule(owne
         with pytest.raises(GoalConflictError):
             await tools["update_goal_plan"]([], "Plan changed", snapshot["revision"])
         progress = json.loads(await tools["record_goal_progress"]("Found the school calendar", "Draft next week"))
-    assert updated["plan"][0]["id"] == "calendar"
-    assert progress["progress"][0]["summary"] == "Found the school calendar"
+    assert updated["revision"] == snapshot["revision"] + 1
+    assert progress["revision"] > updated["revision"]
+    assert "plan" not in updated and "progress" not in progress
+    assert store.get(goal.id).plan[0].id == "calendar"
+    assert store.get(goal.id).progress[0].summary == "Found the school calendar"
     assert store.get(goal.id).wake_id is None
 
 
@@ -65,16 +68,20 @@ async def test_agent_explicitly_selects_each_disposition(owned_goal):
     store, goal, context, tools = owned_goal
     with context.bind("Agent", AgentCapabilities([])):
         continued = json.loads(await tools["continue_goal"]("More work remains", "Draft next week"))
-        assert continued["status"] == "active" and continued["wake_id"]
+        assert continued["status"] == "active" and continued["resume_at"]
+        continued_wake = store.get(goal.id).wake_id
         scheduled = json.loads(await tools["schedule_goal_resume"](
             (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(), "Check for replies", "Review replies",
         ))
-        assert scheduled["status"] == "scheduled" and scheduled["wake_id"] != continued["wake_id"]
+        assert scheduled["status"] == "scheduled" and scheduled["resume_at"]
+        assert store.get(goal.id).wake_id != continued_wake
         await tools["update_goal_questions"]([GoalQuestionChange(id="calendar", question="Which school calendar is current?", status="open")], "", scheduled["revision"])
         waiting = json.loads(await tools["wait_for_goal_input"](["calendar"]))
-        assert waiting["status"] == "needs_input" and waiting["wake_id"] is None
+        assert waiting["status"] == "needs_input" and waiting["blocking_question_ids"] == ["calendar"]
+        assert store.get(goal.id).wake_id is None
         completed = json.loads(await tools["complete_goal"]("The calendar is complete and shared"))
-        assert completed["status"] == "completed" and completed["claimed_run_id"] == "claim"
+        assert completed["status"] == "completed" and completed["outcome"] == "The calendar is complete and shared"
+        assert store.get(goal.id).claimed_run_id == "claim"
         with pytest.raises(GoalStateError):
             await tools["continue_goal"]("Keep going", "Another task")
     assert store.get(goal.id).wake_id is None

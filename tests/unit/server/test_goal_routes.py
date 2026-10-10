@@ -53,12 +53,12 @@ async def assign(client, **fields):
 
 async def test_assign_to_empty_chat_persists_chat_and_initial_wake(goal_client):
     client, store, _, _ = goal_client
-    response = await assign(client, kind="ongoing", constraints="Weekday mornings only")
+    response = await assign(client, kind="ongoing")
     assert response.status == 201
     goal = (await response.json())["goal"]
     assert goal["conversation_id"] == "chat-1"
     assert goal["kind"] == "ongoing"
-    assert goal["constraints"] == "Weekday mornings only"
+    assert "constraints" not in goal and "success_criteria" not in goal
     assert not goal["running"]
     assert store.due()[0].id == goal["id"]
     assert conversation_exists("chat-1")
@@ -314,3 +314,14 @@ async def test_history_is_lazy_searchable_paged_and_scoped_to_its_conversation(g
     assert (await client.get(url, params={'goal_id': goal.id, 'before': '-1'})).status == 400
     enabled['value'] = False
     assert (await client.get(url, params={'goal_id': goal.id})).status == 404
+
+
+@pytest.mark.parametrize("field,value", [("constraints", "Mornings only"), ("success_criteria", ["Booked"])])
+async def test_removed_goal_fields_are_rejected_by_assignment_and_edit(goal_client, field, value):
+    client, store, _, _ = goal_client
+    response = await assign(client, **{field: value})
+    assert response.status == 400
+    assert not store.list()
+    goal = (await (await assign(client)).json())["goal"]
+    response = await client.patch(BASE, json={"expected_revision": goal["revision"], field: value})
+    assert response.status == 400

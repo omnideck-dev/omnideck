@@ -16,10 +16,7 @@ const PLAN_STATUSES = [
 
 function draftFromGoal(goal) {
     return {
-        // Existing goals may have instructions in the former separate fields.
-        // Bring them into the editable description before clearing those fields on save.
-        objective: [goal?.objective, goal?.constraints && `Limits and preferences:\n${goal.constraints}`,
-            goal?.success_criteria?.length && `Done when:\n${goal.success_criteria.join('\n')}`].filter(Boolean).join('\n\n'),
+        objective: goal?.objective || '',
         kind: goal?.kind || 'finite',
         plan: (goal?.plan || []).map((item) => ({ ...item })),
         revision: goal?.revision,
@@ -57,7 +54,7 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
         try {
             await onSave({
                 objective: draft.objective.trim(),
-                ...(goal ? { expected_revision: draft.revision, plan: draft.plan, constraints: '', success_criteria: [] } : { kind: draft.kind }),
+                ...(goal ? { expected_revision: draft.revision, plan: draft.plan } : { kind: draft.kind }),
             });
             onClose();
         } catch (failure) {

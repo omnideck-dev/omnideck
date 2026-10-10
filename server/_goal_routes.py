@@ -21,8 +21,6 @@ class GoalAssignment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1, max_length=20000)
     kind: GoalKind = "finite"
-    constraints: str = Field(default="", max_length=20000)
-    success_criteria: list[str] = Field(default_factory=list, max_length=100)
     profile_id: str | None = None
 
 
@@ -33,8 +31,6 @@ class GoalEdit(BaseModel):
     expected_revision: int = Field(ge=1)
     objective: str = Field(default="", min_length=1, max_length=20000)
     kind: GoalKind = "finite"
-    constraints: str = Field(default="", max_length=20000)
-    success_criteria: list[str] = Field(default_factory=list, max_length=100)
     plan: list[GoalStep] = Field(default_factory=list, max_length=500)
 
 
@@ -140,12 +136,11 @@ async def assign_goal_handler(request: web.Request) -> web.Response:
         # Validate the goal before creating its conversation or its pending wake.
         Goal(
             conversation_id=conversation_id, objective=payload.objective, profile_id=profile.id,
-            kind=payload.kind, constraints=payload.constraints, success_criteria=payload.success_criteria,
+            kind=payload.kind,
         )
         ensure_conversation(conversation_id, title=payload.objective.strip(), profile_id=profile.id)
         request.app[GOAL_STORE_KEY].create(
             conversation_id, payload.objective, profile.id, kind=payload.kind,
-            constraints=payload.constraints, success_criteria=payload.success_criteria,
         )
     except GoalConflictError as exc:
         return web.json_response({"error": str(exc)}, status=409)

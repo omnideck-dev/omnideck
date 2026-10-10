@@ -80,14 +80,12 @@ class GoalStore:
 
     def create(
         self, conversation_id: str, objective: str, profile_id: str, *, kind: GoalKind = "finite",
-        constraints: str = "", success_criteria: builtins.list[str] | None = None,
     ) -> Goal:
         with self._lock:
             if self.current(conversation_id.strip()) is not None:
                 raise GoalConflictError("This conversation already has an unfinished goal")
             goal = Goal(
                 conversation_id=conversation_id, objective=objective, profile_id=profile_id, kind=kind,
-                constraints=constraints, success_criteria=success_criteria or [],
                 wake_id=uuid4().hex, resume_at=utc_now(), wake_reason="Goal assigned",
                 next_action="Review the goal and create or update the plan.",
             )
@@ -120,9 +118,9 @@ class GoalStore:
             return self._write(goal, reason)
 
     def update(self, goal_id: str, expected_revision: int, *, claim_id: str | None = None, reason: str = "Goal edited", **fields: object) -> Goal:
-        allowed = {"objective", "kind", "profile_id", "constraints", "success_criteria", "plan", "next_action", "summary"}
+        allowed = {"objective", "kind", "profile_id", "plan", "next_action", "summary"}
         if fields.keys() - allowed:
-            raise ValueError("Only objective, kind, profile, constraints, success criteria, plan, summary, and next action are editable")
+            raise ValueError("Only objective, kind, profile, plan, summary, and next action are editable")
 
         def change(goal: Goal) -> None:
             updated = Goal.model_validate({**goal.model_dump(), **fields})

@@ -132,8 +132,6 @@ class Goal(BaseModel):
     profile_id: str = Field(min_length=1)
     kind: GoalKind = "finite"
     status: GoalStatus = "active"
-    constraints: str = ""
-    success_criteria: list[str] = Field(default_factory=list)
     plan: list[GoalStep] = Field(default_factory=list)
     progress: list[GoalProgress] = Field(default_factory=list)
     questions: list[GoalQuestion] = Field(default_factory=list)
@@ -165,13 +163,6 @@ class Goal(BaseModel):
         if not value.strip():
             raise ValueError("Value cannot be blank")
         return value.strip()
-
-    @field_validator("success_criteria")
-    @classmethod
-    def criteria_not_blank(cls, values: list[str]) -> list[str]:
-        if any(not value.strip() for value in values):
-            raise ValueError("Success criteria cannot be blank")
-        return [value.strip() for value in values]
 
     @field_validator("resume_at", "claimed_resume_at")
     @classmethod

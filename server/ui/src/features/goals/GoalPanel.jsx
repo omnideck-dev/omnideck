@@ -115,8 +115,6 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit })
                         </section>
                         <div className={styles.detailColumn}>
                             {goal.next_action && <section><h3>Next up</h3><p className={styles.prose}>{goal.next_action}</p></section>}
-                            {goal.constraints && <section><h3>Limits and preferences</h3><p className={styles.prose}>{goal.constraints}</p></section>}
-                            {goal.success_criteria?.length > 0 && <section><h3>Done when</h3><ul className={styles.criteria}>{goal.success_criteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul></section>}
                             {goal.outcome && <section><h3>Outcome</h3><p className={styles.prose}>{goal.outcome}</p></section>}
                         </div>
                     </div>

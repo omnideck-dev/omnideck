@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -38,36 +37,7 @@ class GoalDatabase:
                     summary TEXT NOT NULL, data TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS history_goal ON history(goal_id, id DESC);
-                CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY);
             ''')
-            # Real migration consumer: goals saved by the experimental JSON store.
-            # One transaction imports all records; originals remain as recovery copies.
-            if not db.execute("SELECT 1 FROM metadata WHERE key='json_imported'").fetchone():
-                for source in sorted(base.glob('*.json')):
-                    raw = json.loads(source.read_text(encoding='utf-8'))
-                    if source.stem != raw['id'] or not re.fullmatch(r'[a-f0-9]{32}', source.stem):
-                        raise ValueError(f'Invalid legacy goal file: {source.name}')
-                    versions = []
-                    for question in raw.get('questions', []):
-                        versions.extend(question.pop('history', []))
-                    goal = Goal.model_validate(raw)
-                    goal = self._save(db, goal, 'Imported saved goal')
-                    for version in versions:
-                        self._event(db, goal, 'question', version['question'], version, version['updated_at'])
-                    rows = db.execute('SELECT kind,created_at,summary,data FROM history WHERE goal_id=? ORDER BY created_at,id', (goal.id,)).fetchall()
-                    db.execute('DELETE FROM history WHERE goal_id=?', (goal.id,))
-                    wording = {(version['id'], version['revision']): version['question'] for version in versions}
-                    for row in rows:
-                        kind, created_at, summary, data = row
-                        if kind == 'answer':
-                            answer = json.loads(data)
-                            summary = wording.get((answer['question_id'], answer['question_revision']), summary)
-                            answer['question'] = summary
-                            data = json.dumps(answer, ensure_ascii=False)
-                        db.execute('INSERT INTO history(goal_id,kind,created_at,summary,data) VALUES (?,?,?,?,?)',
-                                   (goal.id, kind, created_at, summary, data))
-                    db.execute('UPDATE goals SET state=? WHERE id=?', (goal.model_dump_json(), goal.id))
-                db.execute("INSERT INTO metadata VALUES ('json_imported')")
 
     def connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30)
@@ -100,13 +70,12 @@ class GoalDatabase:
                    (goal.id, goal.conversation_id, goal.created_at, goal.model_dump_json()))
         if previous is None:
             self._event(db, goal, 'goal', reason or 'Goal assigned', {
-                'objective': goal.objective, 'kind': goal.kind, 'constraints': goal.constraints,
-                'success_criteria': goal.success_criteria, 'status': goal.status,
+                'objective': goal.objective, 'kind': goal.kind, 'status': goal.status,
                 'outcome': goal.outcome, 'next_action': goal.next_action,
             }, goal.created_at)
         groups = {
             'plan': ['plan'], 'summary': ['summary'], 'facts': ['known_facts'],
-            'goal': ['objective', 'kind', 'constraints', 'success_criteria', 'profile_id'],
+            'goal': ['objective', 'kind', 'profile_id'],
             'state': ['status', 'resume_at', 'wake_reason', 'status_reason', 'outcome', 'next_action'],
         }
         for kind, fields in groups.items():
@@ -172,7 +141,4 @@ class GoalDatabase:
 
     def delete_for_conversation(self, conversation_id: str) -> None:
         with closing(self.connect()) as db, db:
-            ids = [row[0] for row in db.execute('SELECT id FROM goals WHERE conversation_id=?', (conversation_id,))]
             db.execute('DELETE FROM goals WHERE conversation_id=?', (conversation_id,))
-        for goal_id in ids:
-            (self.path.parent / f'{goal_id}.json').unlink(missing_ok=True)

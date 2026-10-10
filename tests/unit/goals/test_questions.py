@@ -109,4 +109,5 @@ async def test_tool_results_and_model_context_exclude_archives_until_explicit_re
         assert len(history["entries"]) == 20 and history["next_before"]
         assert history["entries"][0]["data"]["id"] == "44"
         progress = json.loads(await tools["record_goal_progress"]("Checked evidence", "Continue"))
-        assert progress["questions"] == []
+        assert "questions" not in progress and "known_facts" not in progress
+        assert progress["revision"] > current["revision"]

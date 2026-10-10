@@ -1,11 +1,11 @@
-"""Long-running goal recall, bounded state, migration and atomic journal writes."""
+"""Long-running goal recall, bounded state and atomic journal writes."""
 
 import json
 import sqlite3
 
 import pytest
 
-from goals import Goal, GoalAnswerSubmission, GoalQuestionChange, GoalStep, GoalStore
+from goals import GoalAnswerSubmission, GoalQuestionChange, GoalStep, GoalStore
 
 
 def pages(store, goal_id, query=''):
@@ -99,45 +99,17 @@ def test_failed_journal_write_rolls_back_state_and_events(tmp_path, monkeypatch)
     assert store.read_history(goal.id) == before
 
 
-def test_json_migration_preserves_history_once_and_does_not_resurrect_deleted_goals(tmp_path):
-    raw = Goal(conversation_id='chat', objective='Goal', profile_id='assistant').model_dump(mode='json')
-    for field in ['summary', 'progress_count', 'history_count']:
-        raw.pop(field)
-    raw['progress'] = [{'id': str(i), 'created_at': raw['created_at'], 'summary': f'Old progress {i}', 'next_action': ''} for i in range(35)]
-    raw['questions'] = [{
-        'id': 'q', 'question': 'Which exact plan?', 'status': 'resolved', 'revision': 2,
-        'answers': [{'question_id': 'q', 'question_revision': 1, 'answer': 'Aetna', 'created_at': raw['created_at']}],
-        'reviewed_answer_count': 1,
-        'history': [{'id': 'q', 'question': 'Which insurer?', 'status': 'open', 'choices': [], 'revision': 1, 'updated_at': raw['created_at']}],
-    }]
-    source = tmp_path / f"{raw['id']}.json"
-    source.write_text(json.dumps(raw))
+def test_deleting_conversation_removes_its_journal_and_questions_only(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.get(raw['id'])
-    assert len(goal.progress) == 20 and goal.progress_count == 35 and not goal.questions
-    entries = pages(store, goal.id)
-    assert any(entry['data'].get('question') == 'Which insurer?' for entry in entries)
-    assert any(entry['data'].get('answer') == 'Aetna' and entry['data']['question'] == 'Which insurer?' for entry in entries)
-    assert goal.history_count == len(entries)
-    assert len(pages(GoalStore(tmp_path), goal.id)) == len(entries)
+    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.claim(goal.id, goal.wake_id, 'claim')
+    store.update_questions(goal.id, [GoalQuestionChange(id='q', question='Which plan?', status='open')], '', goal.revision, claim_id='claim')
+    store.record_progress(goal.id, 'Checked options')
+    other = store.create('other-chat', 'Keep me', 'assistant')
     store.delete_for_conversation('chat')
-    assert GoalStore(tmp_path).list() == []
-    assert not source.exists()
+    assert store.get(goal.id) is None
+    assert store.get(other.id) is not None
+    assert store.read_history(other.id)['entries']
     with sqlite3.connect(tmp_path / 'goals.sqlite3') as db:
-        assert db.execute('SELECT count(*) FROM history').fetchone()[0] == 0
-
-
-def test_interrupted_legacy_import_rolls_back_and_can_be_retried(tmp_path):
-    raw = Goal(id='a' * 32, conversation_id='chat', objective='Preserve me', profile_id='assistant').model_dump(mode='json')
-    (tmp_path / f"{raw['id']}.json").write_text(json.dumps(raw))
-    broken = tmp_path / f"{'b' * 32}.json"
-    broken.write_text('{broken')
-    with pytest.raises(ValueError):
-        GoalStore(tmp_path)
-    with sqlite3.connect(tmp_path / 'goals.sqlite3') as db:
-        assert db.execute('SELECT count(*) FROM goals').fetchone()[0] == 0
-        assert db.execute('SELECT count(*) FROM history').fetchone()[0] == 0
-    broken.unlink()
-    store = GoalStore(tmp_path)
-    assert store.get(raw['id']).objective == 'Preserve me'
-    assert len(pages(store, raw['id'])) == 1
+        assert db.execute('SELECT count(*) FROM questions WHERE goal_id=?', (goal.id,)).fetchone()[0] == 0
+        assert db.execute('SELECT count(*) FROM history WHERE goal_id=?', (goal.id,)).fetchone()[0] == 0
