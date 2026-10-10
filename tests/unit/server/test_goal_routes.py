@@ -75,8 +75,8 @@ async def test_only_one_unfinished_goal_and_terminal_history_survives(goal_clien
     assert (await assign(client, objective="Plan household meals")).status == 201
     body = await (await client.get(BASE)).json()
     assert body["goal"]["objective"] == "Plan household meals"
-    assert len(body["history"]) == 2
-    assert body["history"][1]["outcome"] == "Appointment confirmed for Tuesday"
+    assert len(body["history"]) == 1
+    assert body["history"][0]["outcome"] == "Appointment confirmed for Tuesday"
 
 
 async def test_user_plan_edit_conflicts_instead_of_losing_agent_progress(goal_client):
@@ -290,3 +290,27 @@ async def test_disable_wins_over_goal_mutation_waiting_for_body(goal_client, mon
     finally:
         release.set()
         await pending
+
+
+async def test_history_is_lazy_searchable_paged_and_scoped_to_its_conversation(goal_client):
+    client, store, _, enabled = goal_client
+    await assign(client)
+    goal = store.current('chat-1')
+    for index in range(60):
+        store.record_progress(goal.id, f'Progress {index}')
+    snapshot = await (await client.get(BASE)).json()
+    assert len(snapshot['goal']['progress']) == 20
+    assert snapshot['goal']['progress_count'] == 60
+    assert snapshot['history'] == []
+    url = BASE + '/history'
+    first = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress'})).json()
+    second = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress', 'before': first['next_before']})).json()
+    assert len(first['entries']) == len(second['entries']) == 20
+    assert not {e['id'] for e in first['entries']} & {e['id'] for e in second['entries']}
+    match = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress 0'})).json()
+    assert match['entries'][0]['summary'] == 'Progress 0'
+    other = store.create('other-chat', 'Private goal', 'assistant')
+    assert (await client.get(url, params={'goal_id': other.id})).status == 404
+    assert (await client.get(url, params={'goal_id': goal.id, 'before': '-1'})).status == 400
+    enabled['value'] = False
+    assert (await client.get(url, params={'goal_id': goal.id})).status == 404

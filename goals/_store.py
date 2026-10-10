@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import builtins
-import os
 import re
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -14,8 +13,10 @@ from uuid import uuid4
 
 from ._models import (
     Goal, GoalAnswer, GoalAnswerSubmission, GoalKind, GoalProgress, GoalQuestion,
-    GoalQuestionChange, GoalQuestionVersion, TERMINAL_STATUSES, utc_now, utc_timestamp,
+    GoalQuestionChange, TERMINAL_STATUSES, utc_now, utc_timestamp,
 )
+
+from ._database import GoalDatabase
 
 GOALS_SUBDIR = "session-goals"
 
@@ -33,7 +34,7 @@ class GoalStateError(ValueError):
 
 
 class GoalStore:
-    """Persist goals and their wakes as one atomic record per goal."""
+    """Persist current state and historical events in one transaction."""
 
     _locks: ClassVar[dict[Path, RLock]] = {}
     _locks_guard: ClassVar[RLock] = RLock()
@@ -42,38 +43,31 @@ class GoalStore:
         self._base = base_dir.resolve()
         with self._locks_guard:
             self._lock = self._locks.setdefault(self._base, RLock())
+        with self._lock:
+            self._db = GoalDatabase(self._base)
 
-    def _path(self, goal_id: str) -> Path:
-        if not re.fullmatch(r"[a-f0-9]{32}", goal_id):
-            raise ValueError("Invalid goal ID")
-        return self._base / f"{goal_id}.json"
-
-    def _write(self, goal: Goal) -> Goal:
-        validated = Goal.model_validate(goal.model_dump())
-        self._base.mkdir(parents=True, exist_ok=True)
-        target = self._path(goal.id)
-        temporary = target.with_name(f".{goal.id}.{uuid4().hex}.tmp")
-        try:
-            with temporary.open("w", encoding="utf-8") as stream:
-                stream.write(validated.model_dump_json(indent=2))
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(target)
-        finally:
-            temporary.unlink(missing_ok=True)
-        return validated
+    def _write(self, goal: Goal, reason: str = "") -> Goal:
+        return self._db.save(goal, reason)
 
     def get(self, goal_id: str) -> Goal | None:
+        if not re.fullmatch(r"[a-f0-9]{32}", goal_id):
+            raise ValueError("Invalid goal ID")
         with self._lock:
-            path = self._path(goal_id)
-            if not path.exists():
-                return None
-            return Goal.model_validate_json(path.read_text(encoding="utf-8"))
+            return self._db.get(goal_id)
 
     def list(self) -> builtins.list[Goal]:
         with self._lock:
-            goals = [Goal.model_validate_json(path.read_text(encoding="utf-8")) for path in self._base.glob("*.json")]
-            return sorted(goals, key=lambda goal: goal.created_at, reverse=True)
+            return self._db.list()
+
+    def read_history(self, goal_id: str, query: str = "", before: int | None = None) -> dict:
+        with self._lock:
+            self._require(goal_id)
+            return self._db.read_history(goal_id, query.strip(), before)
+
+    def question(self, goal_id: str, question_id: str) -> GoalQuestion | None:
+        with self._lock:
+            self._require(goal_id)
+            return self._db.question(goal_id, question_id)
 
     def history(self, conversation_id: str) -> builtins.list[Goal]:
         return [goal for goal in self.list() if goal.conversation_id == conversation_id]
@@ -107,7 +101,7 @@ class GoalStore:
 
     def _mutate(
         self, goal_id: str, change: Callable[[Goal], None], *, expected_revision: int | None = None,
-        claim_id: str | None = None, allow_terminal: bool = False,
+        claim_id: str | None = None, allow_terminal: bool = False, reason: str = "",
     ) -> Goal:
         with self._lock:
             goal = self._require(goal_id)
@@ -123,19 +117,19 @@ class GoalStore:
             change(goal)
             goal.revision += 1
             goal.updated_at = utc_now()
-            return self._write(goal)
+            return self._write(goal, reason)
 
-    def update(self, goal_id: str, expected_revision: int, *, claim_id: str | None = None, **fields: object) -> Goal:
-        allowed = {"objective", "kind", "profile_id", "constraints", "success_criteria", "plan", "next_action"}
+    def update(self, goal_id: str, expected_revision: int, *, claim_id: str | None = None, reason: str = "Goal edited", **fields: object) -> Goal:
+        allowed = {"objective", "kind", "profile_id", "constraints", "success_criteria", "plan", "next_action", "summary"}
         if fields.keys() - allowed:
-            raise ValueError("Only objective, kind, profile, constraints, success criteria, plan, and next action are editable")
+            raise ValueError("Only objective, kind, profile, constraints, success criteria, plan, summary, and next action are editable")
 
         def change(goal: Goal) -> None:
             updated = Goal.model_validate({**goal.model_dump(), **fields})
             for name in fields:
                 setattr(goal, name, getattr(updated, name))
 
-        return self._mutate(goal_id, change, expected_revision=expected_revision, claim_id=claim_id)
+        return self._mutate(goal_id, change, expected_revision=expected_revision, claim_id=claim_id, reason=reason)
 
     @staticmethod
     def _clear_wake(goal: Goal) -> None:
@@ -212,12 +206,12 @@ class GoalStore:
             for item in changes:
                 previous = next((question for question in goal.questions if question.id == item.id), None)
                 if previous is None:
+                    previous = self._db.question(goal_id, item.id)
+                    if previous is not None:
+                        goal.questions.append(previous)
+                if previous is None:
                     goal.questions.append(GoalQuestion(**item.model_dump()))
                     continue
-                previous.history.append(GoalQuestionVersion(
-                    **{name: getattr(previous, name) for name in GoalQuestionChange.model_fields},
-                    revision=previous.revision, updated_at=previous.updated_at,
-                ))
                 for name, value in item.model_dump().items():
                     setattr(previous, name, value)
                 previous.revision += 1
@@ -403,5 +397,4 @@ class GoalStore:
 
     def delete_for_conversation(self, conversation_id: str) -> None:
         with self._lock:
-            for goal in self.history(conversation_id):
-                self._path(goal.id).unlink(missing_ok=True)
+            self._db.delete_for_conversation(conversation_id)

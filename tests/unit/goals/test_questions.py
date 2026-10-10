@@ -63,7 +63,7 @@ def test_revisions_preserve_old_wording_and_reject_stale_or_cross_chat_answers_a
         store.submit_answers("other", GoalAnswerSubmission(goal_id=goal.id, answers=[
             {"question_id": "insurance", "question_revision": 2, "answer": "Aetna"},
         ]))
-    assert store.get(goal.id).questions[0].history[0].question == "Which insurance plan?"
+    assert any(entry["data"].get("question") == "Which insurance plan?" for entry in store.read_history(goal.id)["entries"])
 
 
 def test_uncertain_answers_can_be_reviewed_and_question_withdrawal_keeps_history(owner):
@@ -77,8 +77,9 @@ def test_uncertain_answers_can_be_reviewed_and_question_withdrawal_keeps_history
     goal = store.get(goal.id)
     goal = store.update_questions(goal.id, [question(status="withdrawn")], "Find cash-pay options.", goal.revision, claim_id="claim")
     restored = GoalStore(store._base).get(goal.id)
-    assert restored.questions[0].answers[0].answer == "Not sure"
-    assert restored.questions[0].status == "withdrawn"
+    assert restored.questions == []
+    assert store.question(goal.id, "insurance").status == "withdrawn"
+    assert any(entry["data"].get("answer") == "Not sure" for entry in store.read_history(goal.id)["entries"])
     assert restored.blocking_question_ids == []
     with pytest.raises(GoalStateError):
         store.wait_for_input(goal.id, ["insurance"], claim_id="claim")
@@ -102,10 +103,10 @@ async def test_tool_results_and_model_context_exclude_archives_until_explicit_re
     tools = {fn.__name__: fn for fn in make_goal_tools(store, goal.id, context.execution_id, claim_id="claim")}
     with context.bind("Test", AgentCapabilities([])):
         current = json.loads(await tools["read_goal"]())
-        assert current["questions"] == [] and current["archived_question_count"] == 45
+        assert current["questions"] == [] and current["history_count"] >= 45
         assert "Question 0" not in json.dumps(current)
-        history = json.loads(await tools["read_goal"](question_history_offset=20))
-        assert len(history["question_history"]) == 20 and history["question_history_total"] == 45
-        assert history["question_history"][0]["id"] == "20"
+        history = json.loads(await tools["read_goal_history"](query="Question"))
+        assert len(history["entries"]) == 20 and history["next_before"]
+        assert history["entries"][0]["data"]["id"] == "44"
         progress = json.loads(await tools["record_goal_progress"]("Checked evidence", "Continue"))
         assert progress["questions"] == []

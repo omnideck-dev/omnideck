@@ -51,10 +51,10 @@ async def test_plan_and_progress_use_revision_and_never_implicitly_schedule(owne
     with context.bind("Agent", AgentCapabilities([])):
         snapshot = json.loads(await tools["read_goal"]())
         updated = json.loads(await tools["update_goal_plan"](
-            [GoalStep(id="calendar", title="Check the school calendar")], snapshot["revision"],
+            [GoalStep(id="calendar", title="Check the school calendar")], "Check upcoming school dates", snapshot["revision"],
         ))
         with pytest.raises(GoalConflictError):
-            await tools["update_goal_plan"]([], snapshot["revision"])
+            await tools["update_goal_plan"]([], "Plan changed", snapshot["revision"])
         progress = json.loads(await tools["record_goal_progress"]("Found the school calendar", "Draft next week"))
     assert updated["plan"][0]["id"] == "calendar"
     assert progress["progress"][0]["summary"] == "Found the school calendar"
@@ -147,7 +147,7 @@ async def test_plan_tool_validates_json_as_steps_before_invocation(owned_goal):
     tool = tools["update_goal_plan"]
     arguments = _prepare_tool_arguments(tool, {
         "plan": [{"id": "review", "title": "Review calendar", "status": "pending"}],
-        "expected_revision": revision,
+        "expected_revision": revision, "reason": "Check upcoming school dates",
     })
     assert isinstance(arguments["plan"][0], GoalStep)
     with context.bind("Agent", AgentCapabilities([])):

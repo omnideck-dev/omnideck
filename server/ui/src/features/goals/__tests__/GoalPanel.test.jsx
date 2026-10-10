@@ -22,6 +22,7 @@ function setup(props = {}) {
 beforeEach(() => {
     currentGoal = structuredClone(baseGoal);
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
+        if (url.includes('/goal/history?')) return response({ entries: [{ ...baseGoal.progress[0], kind: 'progress', data: baseGoal.progress[0] }], next_before: null });
         if (url === '/api/goals') return response({ goals: currentGoal ? [currentGoal] : [] });
         if (url === '/api/conversations/sessions' || url.endsWith('/folders')) return response([]);
         if (options.method === 'POST') {
@@ -43,8 +44,8 @@ describe('conversation goals', () => {
         expect(screen.getAllByText(/Back /).length).toBeGreaterThan(0);
         expect(screen.getByText('1 of 2 steps done', { exact: false })).toBeInTheDocument();
         expect(screen.getByText('Collect school dates')).toBeInTheDocument();
-        fireEvent.click(screen.getByText('Progress updates'));
-        expect(screen.getByText('Collected the school schedule.')).toBeVisible();
+        fireEvent.click(screen.getByText('Goal history'));
+        expect(await screen.findByText('Collected the school schedule.')).toBeVisible();
         expect(screen.getByText('Keep evenings free')).toBeInTheDocument();
     });
 

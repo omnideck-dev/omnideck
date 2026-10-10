@@ -33,9 +33,12 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const [sendingAnswers, setSendingAnswers] = useState(false);
     const submittedAnswers = useRef([]);
     useEffect(() => {
-        if (submittedAnswers.current.length && submittedAnswers.current.every((answer) =>
-            goal?.questions?.find((q) => q.id === answer.question_id)?.answers.some((saved) =>
-                saved.question_revision === answer.question_revision && saved.answer === answer.answer))) {
+        if (goal && submittedAnswers.current.length && submittedAnswers.current.every((answer) => {
+            const question = goal.questions.find((q) => q.id === answer.question_id);
+            // Resolved/withdrawn questions have moved out of the working snapshot.
+            return !question || question.answers.some((saved) =>
+                saved.question_revision === answer.question_revision && saved.answer === answer.answer);
+        })) {
             setSendingAnswers(false);
             submittedAnswers.current = [];
         }

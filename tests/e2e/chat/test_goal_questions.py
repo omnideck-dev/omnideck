@@ -94,3 +94,52 @@ def test_goal_question_carousel_submits_partial_answers_and_preserves_transcript
         page.request.post(base + "/cancel", data={})
         page.request.delete(f"/api/conversations/sessions/{conversation_id}")
         page.request.put("/api/settings", data={"goals_enabled": settings.get("goals_enabled", False)})
+
+
+def test_goal_history_loads_older_work_on_demand_and_keeps_current_state_small(page: Page, output_path: str) -> None:
+    settings = page.request.get('/api/settings').json()
+    assert page.request.put('/api/settings', data={'goals_enabled': True}).ok
+    captured = {}
+    page.on('request', lambda request: captured.update(json.loads(request.post_data))
+            if request.method == 'POST' and request.url.endswith('/api/chat') else None)
+    chat = ChatView(page).goto().new_conversation()
+    chat.send(say('Reviewing the newsletter campaign.')).wait_streaming()
+    conversation_id = captured['conversation_id']
+    base = f'/api/conversations/sessions/{conversation_id}/goal'
+    history_requests = []
+    page.on('request', lambda request: history_requests.append(request.url) if '/goal/history?' in request.url else None)
+    try:
+        container_exec(textwrap.dedent(f'''
+            from pathlib import Path
+            from config import load_config
+            from goals import GoalStore, GoalStep
+            store = GoalStore(Path(load_config().settings.home_dir) / 'session-goals')
+            goal = store.create({conversation_id!r}, 'Grow the neighborhood newsletter', {settings['default_agent']!r}, kind='ongoing')
+            store.pause(goal.id)
+            for index in range(65):
+                store.record_progress(goal.id, f'Campaign review {{index}}: checked signups', 'Review next week')
+            goal = store.get(goal.id)
+            store.update(goal.id, goal.revision, summary='Library referrals brought in new subscribers. Continue the partnership.',
+                plan=[GoalStep(id='library', title='Expand the library partnership')], reason='Referrals outperformed paid ads')
+        '''))
+        page.reload()
+        page.get_by_label('Goal: Paused').last.click()
+        expect(page.get_by_text('Library referrals brought in new subscribers. Continue the partnership.')).to_be_visible()
+        assert history_requests == []
+        page.get_by_text('Goal history', exact=True).click()
+        expect(page.get_by_text('Campaign review 64: checked signups', exact=True)).to_be_visible()
+        assert len(history_requests) == 1
+        page.get_by_role('button', name='Load older entries').click()
+        expect(page.get_by_text('Campaign review 30: checked signups', exact=True)).to_be_attached()
+        page.get_by_role('searchbox', name='Search goal history').fill('Campaign review 0:')
+        page.get_by_role('button', name='Search', exact=True).click()
+        expect(page.get_by_text('Campaign review 0: checked signups', exact=True)).to_be_visible()
+        expect(page.get_by_text('Campaign review 64: checked signups', exact=True)).to_have_count(0)
+        page.screenshot(path=str(Path(output_path) / 'goal-history-search.png'))
+        snapshot = page.request.get(base).json()['goal']
+        assert len(snapshot['progress']) == 20 and snapshot['progress_count'] == 65
+        assert snapshot['summary'].startswith('Library referrals')
+    finally:
+        page.request.post(base + '/cancel', data={})
+        page.request.delete(f'/api/conversations/sessions/{conversation_id}')
+        page.request.put('/api/settings', data={'goals_enabled': settings.get('goals_enabled', False)})

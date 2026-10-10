@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents import get_agent_profile, get_default_profile
 from conversations import conversation_exists, ensure_conversation, load_conversation_profile
-from goals import Goal, GoalConflictError, GoalKind, GoalStateError, GoalStep
+from goals import Goal, GoalConflictError, GoalKind, GoalNotFoundError, GoalStateError, GoalStep
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goals import GOAL_STORE_KEY
 from settings import goals_enabled
@@ -81,7 +81,8 @@ def _snapshot(request: web.Request, conversation_id: str, *, status: int = 200) 
     view = _view(request, goal) if goal is not None else None
     return web.json_response({
         "goal": view.model_dump(mode="json") if view else None,
-        "history": [item.model_dump(mode="json") for item in store.history(conversation_id)],
+        "history": [item.model_dump(mode="json", include={"id", "objective", "status", "outcome", "created_at"})
+                    for item in store.history(conversation_id) if goal is None or item.id != goal.id],
         "running": view.running if view else False,
     }, status=status)
 
@@ -105,6 +106,21 @@ async def get_goal_handler(request: web.Request) -> web.Response:
     try:
         return _snapshot(request, _conversation_id(request))
     except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+async def goal_history_handler(request: web.Request) -> web.Response:
+    """Load one page of a specific goal's journal, scoped to this conversation."""
+    _require_enabled()
+    try:
+        conversation_id = _conversation_id(request)
+        store = request.app[GOAL_STORE_KEY]
+        goal = store.get(request.query.get("goal_id", ""))
+        if goal is None or goal.conversation_id != conversation_id:
+            return web.json_response({"error": "Goal not found in this conversation."}, status=404)
+        cursor = request.query.get("before")
+        return web.json_response(store.read_history(goal.id, request.query.get("q", ""), int(cursor) if cursor else None))
+    except (ValueError, GoalNotFoundError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
 
 
@@ -203,6 +219,7 @@ def register_goal_routes(app: web.Application) -> None:
     base = "/api/conversations/sessions/{conversation_id}/goal"
     app.router.add_get("/api/goals", list_goals_handler)
     app.router.add_get(base, get_goal_handler)
+    app.router.add_get(base + "/history", goal_history_handler)
     app.router.add_post(base, assign_goal_handler)
     app.router.add_patch(base, edit_goal_handler)
     app.router.add_post(base + "/{action:pause|resume|cancel}", control_goal_handler)

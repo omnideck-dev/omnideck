@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatInput from '../../../components/ChatInput.jsx';
@@ -83,6 +83,20 @@ describe('goal questions in the composer', () => {
         expect(onSend).toHaveBeenCalledWith('Actually, look near my office', null);
         await user.click(screen.getByRole('button', { name: 'Answer questions' }));
         expect(screen.getByRole('textbox')).toHaveValue('Aetna');
+    });
+
+    it('accepts another answer when the previous question is archived during the same run', async () => {
+        const user = userEvent.setup();
+        let finish;
+        const onSend = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+        const current = goal();
+        const { rerender } = render(<ChatInput goal={current} conversationId="chat" onSend={onSend} />);
+        await user.type(screen.getByRole('textbox'), 'Aetna');
+        await user.click(screen.getByRole('button', { name: 'Send answers & resume' }));
+        rerender(<ChatInput goal={{ ...current, questions: [current.questions[1]] }} isStreaming conversationId="chat" onSend={onSend} />);
+        await user.type(screen.getByRole('textbox'), 'Ten miles');
+        expect(screen.getByRole('button', { name: 'Send answers', exact: true })).toBeEnabled();
+        await act(async () => finish());
     });
 
     it('retains resolved and withdrawn question updates in the transcript', () => {

@@ -38,22 +38,33 @@ def make_goal_tools(
     def result(goal: Goal) -> str:
         return json.dumps(goal_context(goal))
 
-    async def read_goal(question_history_offset: int | None = None) -> str:
-        """Read current goal state; optionally retrieve older questions and their answers.
+    async def read_goal() -> str:
+        """Read the compact goal state: summary, working plan, open questions and recent progress."""
+        goal, _owner = require_owner()
+        return result(goal)
+
+    async def read_goal_history(query: str = "", before: int | None = None) -> str:
+        """Search or browse preserved progress, decisions, plan revisions, questions and answers.
 
         Args:
-            question_history_offset: Omit for current state. Use zero for the first page
-                of 20 historical questions, then advance by 20 while more remain.
+            query: Literal text to find in the journal; empty returns all types of entries.
+            before: Omit for the newest page. Pass next_before from the previous result
+                to read older entries with the same query. Each page contains at most 20 entries.
         """
-        goal, _owner = require_owner()
-        snapshot = goal_context(goal)
-        if question_history_offset is not None:
-            if question_history_offset < 0:
-                raise ValueError("History offset cannot be negative")
-            snapshot["question_history"] = [question.model_dump(mode="json") for question in
-                                            goal.questions[question_history_offset:question_history_offset + 20]]
-            snapshot["question_history_total"] = len(goal.questions)
-        return json.dumps(snapshot)
+        require_owner()
+        return json.dumps(store.read_history(goal_id, query, before))
+
+    async def update_goal_summary(summary: str, expected_revision: int) -> str:
+        """Replace the compact handoff summary without deleting underlying history.
+
+        Args:
+            summary: Current outcomes, decisions and reasons, failed approaches to avoid,
+                remaining work and relevant evidence references. Keep concise; at most 12000 characters.
+            expected_revision: Revision from the latest goal read or update. Re-read if stale.
+        """
+        _goal, owner = require_owner()
+        return result(store.update(goal_id, expected_revision, claim_id=owner,
+                                   reason="Goal summary updated", summary=summary))
 
     async def update_goal_questions(
         changes: list[GoalQuestionChange], known_facts: str, expected_revision: int,
@@ -73,22 +84,28 @@ def make_goal_tools(
         _goal, owner = require_owner()
         goal = store.update_questions(goal_id, changes, known_facts, expected_revision, claim_id=owner)
         snapshot = goal_context(goal)
-        snapshot["question_updates"] = [question.model_dump(mode="json", exclude={"history", "answers"})
-                                        for question in goal.questions if question.id in {item.id for item in changes}]
+        snapshot["question_updates"] = []
+        for item in changes:
+            question = store.question(goal_id, item.id)
+            assert question is not None  # Persisted by the transaction above.
+            snapshot["question_updates"].append(question.model_dump(mode="json", exclude={"answers"}))
         return json.dumps(snapshot)
 
-    async def update_goal_plan(plan: list[GoalStep], expected_revision: int) -> str:
+    async def update_goal_plan(plan: list[GoalStep], reason: str, expected_revision: int) -> str:
         """Replace the goal checklist while preserving IDs for existing steps.
 
         Args:
             plan: Complete ordered checklist. Each item needs a stable id and title;
                 status is pending, in_progress, done, blocked, or skipped. Optional
                 notes describe evidence or blockers; depends_on lists other step IDs.
+            reason: Why the approach or steps changed, including evidence or decisions.
             expected_revision: Revision returned by the latest goal read or update.
                 Read again and reconcile changes if the revision is stale.
         """
         _goal, owner = require_owner()
-        return result(store.update(goal_id, expected_revision, claim_id=owner, plan=plan))
+        if not reason.strip():
+            raise ValueError("Explain why the plan changed")
+        return result(store.update(goal_id, expected_revision, claim_id=owner, reason=reason.strip(), plan=plan))
 
     async def record_goal_progress(summary: str, next_action: str) -> str:
         """Record durable progress and the next intended action without scheduling a turn.
@@ -140,5 +157,5 @@ def make_goal_tools(
         _goal, owner = require_owner()
         return result(store.complete(goal_id, outcome, claim_id=owner))
 
-    return [read_goal, update_goal_questions, update_goal_plan, record_goal_progress, continue_goal, schedule_goal_resume,
+    return [read_goal, read_goal_history, update_goal_summary, update_goal_questions, update_goal_plan, record_goal_progress, continue_goal, schedule_goal_resume,
             wait_for_goal_input, complete_goal]

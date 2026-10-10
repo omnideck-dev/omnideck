@@ -28,11 +28,11 @@ def claim(store, goal):
     return claimed
 
 
-def test_constructor_and_reads_do_not_create_state_directory(tmp_path):
+def test_constructor_initializes_transactional_database_without_creating_goals(tmp_path):
     path = tmp_path / "goals"
     store = GoalStore(path)
     assert store.list() == []
-    assert not path.exists()
+    assert (path / "goals.sqlite3").exists()
 
 
 def test_assignment_is_durable_and_queues_one_immediate_wake(store):

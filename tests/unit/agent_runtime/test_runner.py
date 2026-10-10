@@ -420,13 +420,13 @@ async def test_goal_provider_tool_sequence_schedules_then_completes_same_chat(mo
         assert f'"revision": {current.revision}' in system
         calls.append(kwargs["messages"])
         sequence = [
-            ("update_goal_plan", {"plan": [{"id": "appointments", "title": "Confirm appointment time"}],
+            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time"}],
                                   "expected_revision": current.revision}),
             ("record_goal_progress", {"summary": "Requested appointment availability", "next_action": "Check reply"}),
             ("schedule_goal_resume", {"resume_at": "2099-01-01T12:00:00+00:00",
                                       "reason": "Waiting for an availability reply", "next_action": "Read the reply"}),
             None,
-            ("update_goal_plan", {"plan": [{"id": "appointments", "title": "Confirm appointment time", "status": "done"}],
+            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time", "status": "done"}],
                                   "expected_revision": current.revision}),
             ("complete_goal", {"outcome": "The household schedule includes the confirmed appointment"}),
             None,

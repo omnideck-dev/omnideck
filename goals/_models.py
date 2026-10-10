@@ -83,13 +83,6 @@ class GoalQuestionChange(BaseModel):
         return values
 
 
-class GoalQuestionVersion(GoalQuestionChange):
-    """Previous wording and status, retained when the agent revises a question."""
-
-    revision: int = Field(ge=1)
-    updated_at: str
-
-
 class GoalAnswerInput(BaseModel):
     """One user's answer tied to the question version they actually saw."""
 
@@ -121,13 +114,12 @@ class GoalAnswerSubmission(BaseModel):
 
 
 class GoalQuestion(GoalQuestionChange):
-    """A question's current state, immutable answers, and previous versions."""
+    """A question's current wording, pending answers and recent reviewed answers."""
 
     revision: int = Field(default=1, ge=1)
     updated_at: str = Field(default_factory=utc_now)
     answers: list[GoalAnswer] = Field(default_factory=list)
     reviewed_answer_count: int = Field(default=0, ge=0)
-    history: list[GoalQuestionVersion] = Field(default_factory=list)
 
 
 class Goal(BaseModel):
@@ -145,6 +137,9 @@ class Goal(BaseModel):
     plan: list[GoalStep] = Field(default_factory=list)
     progress: list[GoalProgress] = Field(default_factory=list)
     questions: list[GoalQuestion] = Field(default_factory=list)
+    summary: str = Field(default="", max_length=12000)
+    progress_count: int = Field(default=0, ge=0)
+    history_count: int = Field(default=0, ge=0)
     known_facts: str = Field(default="", max_length=12000)
     blocking_question_ids: list[str] = Field(default_factory=list)
     next_action: str = ""

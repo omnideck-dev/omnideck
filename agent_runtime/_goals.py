@@ -29,7 +29,10 @@ known, BEFORE other work; then keep working. Asking does not select a dispositio
 Resolve sufficient answers; keep uncertain answers open; withdraw obsolete questions.
 Save useful answers in known_facts using update_goal_questions (changes may be empty).
 Include current facts only, never old values or correction history. Retrieve earlier
-answers absent from current state with read_goal(question_history_offset=0).
+details absent from current state with read_goal_history. Keep the working plan focused
+on current work; older plans are preserved in history. update_goal_summary saves a
+concise handoff: outcomes, decisions and reasons, failed approaches, remaining work
+and evidence references. Refresh it after meaningful changes before ending a turn.
 """
 
 
