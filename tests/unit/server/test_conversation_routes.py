@@ -11,6 +11,7 @@ import pytest
 import conversations._store as _store
 from agent_runtime import RunSnapshot
 from conversations import ConversationResumeState, ConversationStore
+from goals import GoalStore
 from conversations._folders import create_folder, list_folders
 from conversations._store import (
     conversation_exists,
@@ -19,6 +20,7 @@ from conversations._store import (
     save_conversation_title,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._goals import GOAL_STORE_KEY
 from server._conversation_routes import (
     archive_conversation_handler,
     create_folder_handler,
@@ -63,7 +65,10 @@ def _make_request(
     if active_run_manager is None:
         manager.active_for_conversation.return_value = None
     manager.conversations = ConversationStore()
-    req.app = {AGENT_RUNTIME_KEY: manager}
+    req.app = {
+        AGENT_RUNTIME_KEY: manager,
+        GOAL_STORE_KEY: GoalStore(_store._get_conversations_dir().parent / "session-goals"),
+    }
     return req
 
 

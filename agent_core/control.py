@@ -17,6 +17,7 @@ class ExecutionControl:
 
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     nudges: list[str] = field(default_factory=list)
+    accepting_nudges: bool = True
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -26,6 +27,8 @@ class ExecutionControl:
             raise StopRequestedError()
 
     def nudge(self, message: str) -> None:
+        if not self.accepting_nudges:
+            raise ValueError("This execution has finished. Send a new message instead.")
         self.nudges.append(message)
 
     def drain_nudges(self) -> list[str]:

@@ -21,6 +21,7 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
     AGENT_COMPLETED: 'agent_completed',
     ERROR: 'error',
     USER_MESSAGE: 'user_message',
+    GOAL_WAKEUP: 'goal_wakeup',
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     COMPACTION: 'compaction',
@@ -29,6 +30,7 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
 /** Item names understood by the chat transcript's Turn renderer. */
 export const TRANSCRIPT_ITEM_KINDS = Object.freeze(/** @type {const} */ ({
     USER_PROMPT: 'user_prompt',
+    GOAL_WAKEUP: 'goal_wakeup',
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     FILE_OUTPUT: 'file_output',

@@ -10,7 +10,9 @@ import logging
 import re
 import types
 from collections.abc import Callable
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Union, cast, get_args, get_origin
+
+from pydantic import BaseModel
 
 # Match the context estimator.
 _CHARS_PER_TOKEN = 4
@@ -107,6 +109,9 @@ def _python_type_to_json_schema(annotation: Any) -> dict[str, Any]:
     if annotation is inspect.Parameter.empty or annotation is Any:
         return {"type": "string"}
 
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return cast(type[BaseModel], annotation).model_json_schema()
+
     origin = get_origin(annotation)
     if origin is list:
         args = get_args(annotation)
@@ -169,9 +174,24 @@ def callable_to_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
     arg_descs = _parse_arg_descriptions(docstring)
     properties: dict[str, Any] = {}
     required: list[str] = []
+    definitions: dict[str, Any] = {}
+
+    def collect_definitions(value: Any) -> None:
+        if isinstance(value, dict):
+            for name, definition in value.pop("$defs", {}).items():
+                if name in definitions and definitions[name] != definition:
+                    raise ValueError(f"Conflicting tool schema definitions for '{name}'")
+                definitions[name] = definition
+                collect_definitions(definition)
+            for child in value.values():
+                collect_definitions(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect_definitions(child)
 
     for name, param in sig.parameters.items():
         prop = _python_type_to_json_schema(param.annotation)
+        collect_definitions(prop)
         desc = arg_descs.get(name)
         if desc:
             prop["description"] = desc
@@ -188,6 +208,7 @@ def callable_to_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
                 "type": "object",
                 "properties": properties,
                 "required": required,
+                **({"$defs": definitions} if definitions else {}),
             },
         },
     }

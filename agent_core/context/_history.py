@@ -2,7 +2,7 @@
 
 The history surface other code sees — ``messages``, ``system_message``,
 ``non_system_messages`` — is computed on demand from two pieces of
-state:
+state, plus a non-persisted runtime-context suffix:
 
 - ``_system_message``: the system prompt currently active for this
   agent. Held outside the event log because the system prompt is
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # resumed from the warm cache loses them while a cold disk resume keeps them.
 _RETAINED_EVENT_TYPES: frozenset[str] = frozenset({
     "user_message",
+    "goal_wakeup",
     "iteration",
     "tool_result",
     "compaction",
@@ -65,6 +66,7 @@ class ConversationHistory:
         self._system_message: dict[str, Any] | None = (
             {"role": "system", "content": system_message} if system_message else None
         )
+        self._runtime_context: str | None = None
         self._conversation_id = conversation_id
         # None = root view (depth-0 agents only). Set explicitly for sub-agents.
         self._agent_id = agent_id
@@ -79,8 +81,10 @@ class ConversationHistory:
 
     @property
     def messages(self) -> list[dict[str, Any]]:
-        """LLM-ready message list: system message + derived conversation."""
+        """LLM-ready messages, with transient task data after the stable conversation."""
         body = self.derived_messages
+        if self._runtime_context is not None:
+            body.append({"role": "user", "content": self._runtime_context, "_runtime_context": True})
         if self._system_message is None:
             return body
         return [dict(self._system_message), *body]
@@ -126,6 +130,14 @@ class ConversationHistory:
     def set_system_message(self, content: str) -> None:
         """Replace or set the system message."""
         self._system_message = {"role": "system", "content": content}
+
+    def set_runtime_context(self, content: str | None) -> None:
+        """Set model-only task data; never emit, persist, or show it in the transcript.
+
+        Replaces the previous suffix instead of accumulating snapshots. Providers
+        strip the internal marker and may cache the stable prefix before it.
+        """
+        self._runtime_context = content
 
     def seed_events(self, events: list[dict[str, Any]]) -> None:
         """Replace the in-memory event log with *events*.

@@ -69,7 +69,7 @@ def build_llm_view(
     sandbox. This is the list sent to the provider.
     """
     evs = events_for_agent(events, agent_filter)
-    first_user = next((e for e in evs if e["type"] == "user_message"), None)
+    first_user = next((e for e in evs if e["type"] in {"user_message", "goal_wakeup"}), None)
     if first_user is None:
         return []
     agent_names = _agent_names(events)
@@ -84,6 +84,8 @@ def build_llm_view(
     # else the user's text with the attachment block appended.
     if latest_compaction and latest_compaction.get("user_intent_summary"):
         user_content = _INTENT_PREFIX + latest_compaction["user_intent_summary"]
+    elif first_user["type"] == "goal_wakeup":
+        user_content = _goal_wakeup_content(first_user)
     elif first_user.get("attachments"):
         user_content = _augment_with_attachments(
             first_user["content"], first_user["attachments"],
@@ -122,16 +124,7 @@ def build_transcript_view(
     frontend renders this and draws compaction chips at their points.
     """
     evs = events_for_agent(events, agent_filter)
-    first_user = next((e for e in evs if e["type"] == "user_message"), None)
-    if first_user is None:
-        return []
-    agent_names = _agent_names(events)
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": first_user["content"]},
-    ]
-    tail = evs[evs.index(first_user) + 1:]
-    messages.extend(_walk(tail, agent_names, augment=False))
-    return messages
+    return _walk(evs, _agent_names(events), augment=False)
 
 
 def _agent_names(events: list[dict[str, Any]]) -> dict[str, str | None]:
@@ -164,6 +157,8 @@ def _walk(
             if e.get("attachments") and augment:
                 content = _augment_with_attachments(content, e["attachments"])
             out.append({"role": "user", "content": content})
+        elif t == "goal_wakeup" and augment:
+            out.append({"role": "user", "content": _goal_wakeup_content(e)})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
             # a thinking-only partial captured when the user stopped
@@ -198,6 +193,16 @@ def _walk(
                 "content": e["content"],
             })
     return out
+
+
+def _goal_wakeup_content(event: dict[str, Any]) -> str:
+    return (
+        "[System activity: goal wakeup]\n"
+        f"Reason: {event['reason']}\n"
+        f"Next action: {event['next_action']}\n"
+        "Read the current goal state and saved progress before acting. "
+        "Check the outcome of interrupted actions before repeating them."
+    )
 
 
 def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -> str:

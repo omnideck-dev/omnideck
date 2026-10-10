@@ -9,6 +9,7 @@ from settings import (
     SettingsUpdate,
     custom_apps_enabled,
     custom_tools_enabled,
+    goals_enabled,
     load_settings,
     save_settings,
 )
@@ -41,6 +42,7 @@ class TestLoadSettings:
         assert s["title_model"] == ""
         assert s["custom_apps_enabled"] is False
         assert s["custom_tools_enabled"] is False
+        assert s["goals_enabled"] is False
         assert s["home_app_slug"] is None
 
     def test_missing_custom_apps_setting_is_disabled(self, tmp_path):
@@ -52,6 +54,15 @@ class TestLoadSettings:
         """Existing settings files predate the toggle and remain safely off."""
         (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
         assert custom_tools_enabled() is False
+
+    def test_missing_goals_setting_is_disabled(self, tmp_path):
+        (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
+        assert goals_enabled() is False
+
+    def test_goals_toggle_is_persisted(self):
+        update = SettingsUpdate(goals_enabled=True)
+        save_settings(update.model_dump(exclude_unset=True))
+        assert goals_enabled() is True
 
     def test_loads_from_disk(self, tmp_path):
         """Reads saved settings."""

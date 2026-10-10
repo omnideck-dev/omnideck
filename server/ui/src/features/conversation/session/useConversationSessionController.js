@@ -34,6 +34,7 @@ import useStreamStall from '../../../hooks/useStreamStall.js';
  * @property {(action: import('../events/frontendTypes').AgentAction) => void} [agentDispatch]
  * @property {(action: import('../events/frontendTypes').WorkspaceAction) => void} [workspaceDispatch]
  * @property {(effect: import('../../app/appEffects.types').AppEffect) => void} [appEffectDispatch]
+ * @property {(conversationId: string) => boolean} [keepRunningConversation]
  */
 
 function _uuid() {
@@ -186,7 +187,10 @@ export default function useConversationSessionController({
     agentDispatch,
     workspaceDispatch,
     appEffectDispatch,
+    keepRunningConversation,
 } = {}) {
+    const keepRunningRef = useRef(keepRunningConversation);
+    keepRunningRef.current = keepRunningConversation;
     // ── Unified state for chat rendering ───────────────────────────────
     // ``events`` is the source of truth for the open conversation's
     // transcript: resume seeds saved canonical records and live handling
@@ -234,6 +238,7 @@ export default function useConversationSessionController({
     }, []);
     const abortControllerRef = useRef(null);
     const requestControllerRef = useRef(null);
+    const backgroundRefreshControllerRef = useRef(null);
     const [isOffline, setIsOffline] = useState(browserIsOffline);
     useEffect(() => {
         const onOffline = () => {
@@ -258,6 +263,8 @@ export default function useConversationSessionController({
         abortControllerRef.current = null;
         requestControllerRef.current?.abort();
         requestControllerRef.current = null;
+        backgroundRefreshControllerRef.current?.abort();
+        backgroundRefreshControllerRef.current = null;
         controller?.abort();
     }, []);
     // The open conversation id is this hook's primary key — every request it
@@ -337,10 +344,11 @@ export default function useConversationSessionController({
         }
         return addedEventCount;
     }, [workspaceDispatch]);
-    const sendNudge = useCallback(async (message, agentId) => {
+    const sendNudge = useCallback(async (message, agentId, goalAnswers) => {
         if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
             message,
+            ...(goalAnswers ? { goal_answers: goalAnswers } : {}),
             conversation_id: conversationIdRef.current,
             agent_id: agentId || rootAgentIdRef.current,
         };
@@ -613,7 +621,7 @@ export default function useConversationSessionController({
         setStopRequested,
     ]);
 
-    const sendMessage = useCallback(async (message, attachments, profileId) => {
+    const sendMessage = useCallback(async (message, attachments, profileId, goalAnswers) => {
         if (
             (!message && !attachments?.length)
             || isStreamingRef.current
@@ -648,7 +656,7 @@ export default function useConversationSessionController({
         await runConnection({
             conversationId: conversationIdRef.current,
             controller,
-            initialRequest: { message, attachments, profileId },
+            initialRequest: { message, attachments, profileId, goalAnswers },
             persistedEvents: eventsRef.current,
         });
     }, [runConnection]);
@@ -677,6 +685,7 @@ export default function useConversationSessionController({
             previousWasStreaming
             && previousConversationId !== conversationId
             && !browserIsOffline()
+            && !keepRunningRef.current?.(previousConversationId)
         ) {
             fetch(
                 `/api/chat/stop?conversation_id=${encodeURIComponent(previousConversationId)}`,
@@ -741,6 +750,32 @@ export default function useConversationSessionController({
         });
     }, [runConnection]);
 
+    const refreshingRef = useRef(false);
+    /** Refresh autonomous work without clearing the user's composer or workspace. */
+    const refreshActiveConversation = useCallback(async () => {
+        if (isStreamingRef.current || abortControllerRef.current || refreshingRef.current || browserIsOffline()) return null;
+        refreshingRef.current = true;
+        const conversationId = conversationIdRef.current;
+        const controller = new AbortController();
+        backgroundRefreshControllerRef.current = controller;
+        try {
+            const raw = await fetchConversationSnapshot(conversationId, controller.signal);
+            if (controller.signal.aborted || conversationId !== conversationIdRef.current || isStreamingRef.current || abortControllerRef.current) return null;
+            const snapshot = normalizeConversationLoadData(conversationId, raw);
+            const delivery = createEventDelivery();
+            applySnapshotGap(snapshot, canonicalEventIdsRef.current, delivery);
+            delivery.flush();
+            delivery.cancel();
+            if (snapshot.activeRun) void reattachActiveRun(snapshot);
+            return snapshot;
+        } catch {
+            return null;
+        } finally {
+            refreshingRef.current = false;
+            if (backgroundRefreshControllerRef.current === controller) backgroundRefreshControllerRef.current = null;
+        }
+    }, [applySnapshotGap, createEventDelivery, reattachActiveRun]);
+
     /** Clear session state and switch to a fresh conversation ID.
      *
      * Sends a best-effort stop for the previous conversation. The server
@@ -753,7 +788,7 @@ export default function useConversationSessionController({
             abortControllerRef.current = null;
         }
         const oldConversationId = conversationIdRef.current;
-        if (!browserIsOffline()) {
+        if (!browserIsOffline() && !keepRunningRef.current?.(oldConversationId)) {
             fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
         }
         setIsStreaming(false);
@@ -827,6 +862,7 @@ export default function useConversationSessionController({
         stopGeneration,
         loadConversation,
         reattachActiveRun,
+        refreshActiveConversation,
         newConversation,
     };
 }

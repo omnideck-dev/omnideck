@@ -30,6 +30,12 @@ const _compaction = (id, opts = {}) => ({
 });
 
 describe('Turn', () => {
+    it('shows an autonomous goal wake as activity rather than a user message', () => {
+        render(<Turn turn={_turn([{ kind: 'goal_wakeup', id: 'wake-1', reason: 'School dates are available', nextAction: 'Update the shared schedule' }, _iteration('iter1', { content: 'I checked the new dates.' })])} />);
+        expect(screen.getByTestId('goal-wakeup')).toHaveTextContent('Goal resumed · School dates are available');
+        expect(screen.queryByTestId('message-user')).not.toBeInTheDocument();
+        expect(screen.getByTestId('message-assistant')).toHaveTextContent('I checked the new dates.');
+    });
     it('returns null for missing turn', () => {
         const { container } = render(<Turn turn={null} />);
         expect(container).toBeEmptyDOMElement();

@@ -11,7 +11,7 @@ from server._feature_routes import register_feature_routes
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("setting_name", ["custom_apps", "custom_tools"])
+@pytest.mark.parametrize("setting_name", ["custom_apps", "custom_tools", "goals"])
 @pytest.mark.parametrize("enabled", [False, True])
 async def test_user_feature_comes_from_settings(
     monkeypatch, setting_name: str, enabled: bool,

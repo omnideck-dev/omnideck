@@ -167,6 +167,14 @@ export interface UserMessagePayload {
     is_nudge: boolean;
 }
 
+export interface GoalWakeupPayload {
+    type: 'goal_wakeup';
+    goal_id: string;
+    wake_id: string;
+    reason: string;
+    next_action: string;
+}
+
 export interface IterationPayload {
     type: 'iteration';
     iteration_index: number;
@@ -214,6 +222,7 @@ export type ConversationEventPayload =
     | AgentCompletedPayload
     | SpawnRequestedPayload
     | UserMessagePayload
+    | GoalWakeupPayload
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
@@ -235,6 +244,7 @@ export type ConversationEvent =
     | (ConversationEventMetadata & AgentCompletedPayload)
     | (ConversationEventMetadata & SpawnRequestedPayload)
     | (ConversationEventMetadata & UserMessagePayload)
+    | (ConversationEventMetadata & GoalWakeupPayload)
     | (ConversationEventMetadata & IterationPayload)
     | (ConversationEventMetadata & ToolResultPayload)
     | (ConversationEventMetadata & CompactionPayload)

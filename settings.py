@@ -58,6 +58,7 @@ _DEFAULTS: dict[str, Any] = {
     "title_model": "",
     "custom_apps_enabled": False,
     "custom_tools_enabled": False,
+    "goals_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
     # Install updates without being asked. Only the desktop application acts on
@@ -111,6 +112,7 @@ class SettingsUpdate(BaseModel):
     title_model: str | None = None
     custom_apps_enabled: bool | None = None
     custom_tools_enabled: bool | None = None
+    goals_enabled: bool | None = None
     home_app_slug: str | None = None
     software_updates_automatic: bool | None = None
     software_updates_notify: bool | None = None
@@ -201,10 +203,16 @@ def custom_tools_enabled() -> bool:
     return load_settings().get("custom_tools_enabled", False) is True
 
 
+def goals_enabled() -> bool:
+    """Return whether the user has enabled experimental chat goals."""
+    return load_settings().get("goals_enabled", False) is True
+
+
 __all__ = [
     "SettingsUpdate",
     "custom_apps_enabled",
     "custom_tools_enabled",
+    "goals_enabled",
     "load_settings",
     "save_settings",
 ]
