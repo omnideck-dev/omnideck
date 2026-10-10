@@ -32,3 +32,25 @@ def goal_context(goal: Goal) -> dict:
         # Past next_action values are superseded by the current next_action above.
         snapshot["progress"] = [{"created_at": entry.created_at, "summary": entry.summary} for entry in recent]
     return snapshot
+
+
+def goal_brief(goal: Goal) -> dict:
+    """Default per-call view; full working details are available through read_goal."""
+    brief: dict = {"objective": goal.objective, "kind": goal.kind, "status": goal.status, "revision": goal.revision}
+    for name in ("summary", "known_facts", "next_action", "blocking_question_ids", "resume_at", "wake_reason", "outcome"):
+        value = getattr(goal, name)
+        if value:
+            brief[name] = value
+    if goal.plan:
+        brief["plan_steps"] = len(goal.plan)
+    if goal.progress:
+        brief["latest_progress"] = goal.progress[-1].summary
+    if goal.questions:
+        brief["questions"] = []
+        for question in goal.questions:
+            item: dict = {"id": question.id, "question": question.question}
+            pending = question.answers[question.reviewed_answer_count:]
+            if pending:
+                item["answers"] = [answer.answer for answer in pending]
+            brief["questions"].append(item)
+    return brief

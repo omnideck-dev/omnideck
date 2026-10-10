@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from agent_core.turn import get_execution_context
 
 from ._context import goal_context
-from ._models import Goal, GoalQuestionChange, GoalStep, TERMINAL_STATUSES, utc_now
+from ._models import Goal, GoalQuestionChange, GoalPlanStep, TERMINAL_STATUSES, utc_now
 from ._store import GoalConflictError, GoalNotFoundError, GoalStateError, GoalStore
 
 GoalTool = Callable[..., Awaitable[str]]
@@ -46,7 +46,10 @@ def make_goal_tools(
         return json.dumps(receipt)
 
     async def read_goal() -> str:
-        """Read the compact goal state: summary, full working plan, open questions and last three progress entries."""
+        """Read full working state: plan with notes and dependencies, question details and recent progress.
+
+        Read before replacing an existing plan; the default brief omits its steps.
+        """
         goal, _owner = require_owner()
         return json.dumps(goal_context(goal))
 
@@ -83,7 +86,8 @@ def make_goal_tools(
                 choices. Omitted questions are unchanged. Resolve sufficient answers;
                 withdraw questions that no longer apply. Updating acknowledges received answers.
             known_facts: Complete concise CURRENT facts learned from answers, including useful
-                earlier facts. Replaces the summary; exclude superseded values and change history.
+                earlier facts. Only current values: no previous values, comparisons, or correction
+                history. Put historical changes in progress or the handoff summary instead.
                 Changes may be empty when only the facts need updating.
             expected_revision: Revision from the latest goal read or successful update.
                 Read again and reconcile if stale, including newly submitted answers.
@@ -98,13 +102,14 @@ def make_goal_tools(
             snapshot["question_updates"].append(question.model_dump(mode="json", exclude={"answers"}))
         return json.dumps(snapshot)
 
-    async def update_goal_plan(plan: list[GoalStep], reason: str, expected_revision: int) -> str:
+    async def update_goal_plan(plan: list[GoalPlanStep], reason: str, expected_revision: int) -> str:
         """Replace the goal checklist while preserving IDs for existing steps.
 
         Args:
-            plan: Complete ordered checklist. Each item needs a stable id and title;
-                status is pending, in_progress, done, blocked, or skipped. Optional
-                notes describe evidence or blockers; depends_on lists other step IDs.
+            plan: Complete ordered checklist. Every item must include id, title, status,
+                notes and depends_on (use empty values when appropriate). Status is pending,
+                in_progress, done, blocked or skipped. Notes hold evidence or blockers.
+                Copy unchanged step fields exactly, including dependencies on completed steps.
             reason: Why the approach or steps changed, including evidence or decisions.
             expected_revision: Revision returned by the latest goal read or update.
                 Read again and reconcile changes if the revision is stale.

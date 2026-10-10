@@ -5,7 +5,7 @@ import json
 from agent_core.context import ConversationHistory
 from agent_runtime._goals import GoalContextHook
 from goals import GoalStep, GoalStore
-from goals._context import goal_context
+from goals._context import goal_brief, goal_context
 from goals._models import Goal, GoalAnswer, GoalProgress, GoalQuestion
 
 
@@ -71,7 +71,39 @@ async def test_hook_refreshes_state_after_small_mutation_receipt(tmp_path):
         receipt = json.loads(await tools["update_goal_summary"]("Avoid paid ads; use library referrals.", goal.revision))
         assert "summary" not in receipt
         await hook.before_model(history, 1, "Test")
-        state = json.loads(history.messages[0]["content"].split("(task data):\n")[1])
+        state = json.loads(history.messages[-1]["content"].split("(task data):\n")[1])
         assert state["summary"] == "Avoid paid ads; use library referrals."
         assert state["revision"] == receipt["revision"]
-        assert json.loads(await tools["read_goal"]()) == state
+        assert goal_brief(store.get(goal.id)) == state
+        assert json.loads(await tools["read_goal"]())["summary"] == state["summary"]
+        assert history.system_message["content"] == "Base prompt"
+        assert history.recorded_events == []
+
+
+def test_brief_keeps_pending_answers_but_loads_working_details_on_demand():
+    goal = Goal(conversation_id="chat", profile_id="assistant", objective="Book a dentist",
+        summary="Clinic accepts insurance.", known_facts="Afternoons only.",
+        plan=[GoalStep(id="book", title="Book", notes="Use reservation ID 123")],
+        questions=[GoalQuestion(id="day", question="Which day?", status="open", reviewed_answer_count=1,
+            answers=[GoalAnswer(question_id="day", question_revision=1, answer=value)
+                     for value in ["Uncertain", "Tuesday", "Correction: Wednesday"]])],
+        progress=[GoalProgress(summary="Checked insurance"), GoalProgress(summary="Reservation held until Friday")])
+    brief = goal_brief(goal)
+    assert brief["questions"] == [{"id": "day", "question": "Which day?", "answers": ["Tuesday", "Correction: Wednesday"]}]
+    assert brief["plan_steps"] == 1 and "plan" not in brief
+    assert brief["latest_progress"] == "Reservation held until Friday"
+    assert brief["summary"] == goal.summary and brief["known_facts"] == goal.known_facts
+    assert goal_context(goal)["plan"][0]["notes"] == "Use reservation ID 123"
+    assert "history_count" not in brief and "earlier_progress_entries" not in brief
+
+
+async def test_deleted_nonowned_goal_removes_transient_context(tmp_path):
+    store = GoalStore(tmp_path)
+    goal = store.create("chat", "Arrange appointments", "assistant")
+    history = ConversationHistory(system_message="Base", conversation_id="chat")
+    hook = GoalContextHook(store, goal.id, "Base", None, enabled=lambda: True)
+    await hook.before_model(history, 1, "Agent")
+    assert history.messages[-1]["_runtime_context"]
+    store.delete_for_conversation("chat")
+    await hook.before_model(history, 2, "Agent")
+    assert history.messages == [{"role": "system", "content": "Base"}]

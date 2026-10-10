@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import Any
 from agent_core.turn import ExecutionResult
@@ -315,12 +316,12 @@ async def test_goal_tools_and_fresh_state_belong_only_to_owning_root(monkeypatch
         for hook in hooks:
             if hasattr(hook, "before_model"):
                 await hook.before_model(kwargs["history"], 1, "TEST")
-        assert "Organize household appointments" in kwargs["history"].system_message["content"]
+        assert "Organize household appointments" in kwargs["history"].messages[-1]["content"]
         await tools["record_goal_progress"]("Confirmed clinic opening times", "Choose appointment")
         for hook in hooks:
             if hasattr(hook, "before_model"):
                 await hook.before_model(kwargs["history"], 2, "TEST")
-        assert "Confirmed clinic opening times" in kwargs["history"].system_message["content"]
+        assert "Confirmed clinic opening times" in kwargs["history"].messages[-1]["content"]
         await tools["spawn_agent"]("Find available times", "profile-1", "HELPER")
         await tools["complete_goal"]("Appointments arranged")
         # Completion remains visible while the owner produces its final response.
@@ -416,17 +417,17 @@ async def test_goal_provider_tool_sequence_schedules_then_completes_same_chat(mo
     async def chat_stream(**kwargs):
         nonlocal step
         current = store.get(goal.id)
-        system = kwargs["messages"][0]["content"]
-        assert f'"revision": {current.revision}' in system
+        state = json.loads(kwargs["messages"][-1]["content"].split("(task data):\n")[1])
+        assert state["revision"] == current.revision
         calls.append(kwargs["messages"])
         sequence = [
-            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time"}],
+            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time", "status": "pending", "notes": "", "depends_on": []}],
                                   "expected_revision": current.revision}),
             ("record_goal_progress", {"summary": "Requested appointment availability", "next_action": "Check reply"}),
             ("schedule_goal_resume", {"resume_at": "2099-01-01T12:00:00+00:00",
                                       "reason": "Waiting for an availability reply", "next_action": "Read the reply"}),
             None,
-            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time", "status": "done"}],
+            ("update_goal_plan", {"reason": "Appointment planning", "plan": [{"id": "appointments", "title": "Confirm appointment time", "status": "done", "notes": "", "depends_on": []}],
                                   "expected_revision": current.revision}),
             ("complete_goal", {"outcome": "The household schedule includes the confirmed appointment"}),
             None,

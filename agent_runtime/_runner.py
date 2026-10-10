@@ -113,6 +113,7 @@ class AgentRunner:
         """Use explicit session-owned identity, controls, history, and event delivery."""
         prepared = None
         child_history = None
+        history = None
         cancelled = False
         result = ExecutionResult("error", error="Execution did not complete")
         try:
@@ -136,6 +137,7 @@ class AgentRunner:
                 session.subscribe(history.handle_event)
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
+            history.set_runtime_context(None)
             history.set_system_message(prepared.system_prompt)
             ctx_manager = ContextManager(
                 history=history,
@@ -222,6 +224,8 @@ class AgentRunner:
             result = ExecutionResult("error", error=str(exc))
             raise
         finally:
+            if history is not None:
+                history.set_runtime_context(None)
             session.finish_execution(context, result)
             if child_history is not None:
                 session.unsubscribe(child_history.handle_event)

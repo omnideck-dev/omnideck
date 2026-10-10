@@ -100,14 +100,14 @@ class TestGetProvider:
         from agent_core.providers._openai import OpenAIProvider
         assert isinstance(provider, OpenAIProvider)
 
-    def test_openrouter_uses_openai_provider(self, tmp_path):
-        """openrouter maps to OpenAIProvider (OpenAI-compatible API)."""
+    def test_openrouter_uses_routing_aware_provider(self, tmp_path):
+        """OpenRouter retains its own cache controls through the broker."""
         (tmp_path / "llm_openrouter.sock").touch()
         with patch("providers.load_settings", return_value={}), \
              patch("providers.load_config", return_value=_fake_config(str(tmp_path))):
             provider = get_provider("openrouter")
-        from agent_core.providers._openai import OpenAIProvider
-        assert isinstance(provider, OpenAIProvider)
+        from agent_core.providers._openrouter import OpenRouterProvider
+        assert isinstance(provider, OpenRouterProvider)
 
     def test_not_configured_raises(self):
         """A provider with no direct entry and no broker socket gives a clear error."""

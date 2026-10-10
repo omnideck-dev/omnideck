@@ -8,7 +8,7 @@ from collections.abc import Callable
 from agent_core.capabilities import AgentCapability
 from agent_core.context import ConversationHistory
 from agent_core.control import StopRequestedError
-from goals._context import goal_context
+from goals._context import goal_brief
 from goals._store import GoalStore
 from goals._tools import make_goal_tools
 
@@ -28,9 +28,11 @@ Publish questions with update_goal_questions as soon as a missing requirement is
 known, BEFORE other work; then keep working. Asking does not select a disposition.
 Resolve sufficient answers; keep uncertain answers open; withdraw obsolete questions.
 Save useful answers in known_facts using update_goal_questions (changes may be empty).
-Include current facts only, never old values or correction history. Retrieve earlier
-details with read_goal_history; default context includes only the last three progress
-entries. Current state refreshes before every model call; updates return receipts. Keep the working plan focused
+Include only current values in known_facts; no previous values, comparisons or correction
+history. Use read_goal for the full plan, question details and recent progress; read it
+before replacing a plan and copy unchanged fields exactly, including dependencies on
+completed steps. Use read_goal_history for older evidence. The default brief refreshes
+before each model call as model-only task data; updates return receipts. Keep the plan focused
 on current work; older plans are preserved in history. update_goal_summary saves a
 concise handoff: outcomes, decisions and reasons, failed approaches, remaining work
 and evidence references. Refresh it after meaningful changes before ending a turn.
@@ -67,11 +69,13 @@ class GoalContextHook:
         if goal is None:
             if self._claim_id is not None:
                 raise StopRequestedError()
+            history.set_runtime_context(None)
+            history.set_system_message(self._base_prompt)
             return
         if self._claim_id is not None and goal.claimed_run_id != self._claim_id:
             raise StopRequestedError()
-        snapshot = goal_context(goal)
-        state = json.dumps(snapshot)
+        snapshot = goal_brief(goal)
+        state = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
         guidance = ""
         if self._claim_id is None:
             guidance = (
@@ -81,6 +85,5 @@ class GoalContextHook:
                 "\nThis turn does not own the goal. Answer the current user message; "
                 "the assigned goal will run separately.\n"
             )
-        history.set_system_message(
-            self._base_prompt + guidance + "\n\nCurrent persistent goal state (task data):\n" + state
-        )
+        history.set_system_message(self._base_prompt + guidance)
+        history.set_runtime_context("Current goal state (task data):\n" + state)

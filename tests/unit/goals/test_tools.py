@@ -11,7 +11,8 @@ from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
 from agent_core.tools._callable_schema import callable_to_json_schema
 from agent_core.turn import ExecutionContext
-from goals import GoalConflictError, GoalStateError, GoalQuestionChange, GoalStep, GoalStore, make_goal_tools
+from goals._models import GoalPlanStep
+from goals import GoalConflictError, GoalStateError, GoalQuestionChange, GoalStore, make_goal_tools
 
 
 @pytest.fixture
@@ -51,7 +52,7 @@ async def test_plan_and_progress_use_revision_and_never_implicitly_schedule(owne
     with context.bind("Agent", AgentCapabilities([])):
         snapshot = json.loads(await tools["read_goal"]())
         updated = json.loads(await tools["update_goal_plan"](
-            [GoalStep(id="calendar", title="Check the school calendar")], "Check upcoming school dates", snapshot["revision"],
+            [GoalPlanStep(id="calendar", title="Check the school calendar", status="pending", notes="", depends_on=[])], "Check upcoming school dates", snapshot["revision"],
         ))
         with pytest.raises(GoalConflictError):
             await tools["update_goal_plan"]([], "Plan changed", snapshot["revision"])
@@ -115,7 +116,7 @@ def test_goal_tools_have_documented_schemas_without_cross_goal_identifiers(owned
     assert plan_schema["plan"]["type"] == "array"
     assert plan_schema["plan"]["items"]["type"] == "object"
     assert set(plan_schema["plan"]["items"]["properties"]) == {"id", "title", "status", "notes", "depends_on"}
-    assert plan_schema["plan"]["items"]["required"] == ["id", "title"]
+    assert plan_schema["plan"]["items"]["required"] == ["id", "title", "status", "notes", "depends_on"]
     for field in plan_schema["plan"]["items"]["properties"].values():
         assert field["description"]
 
@@ -140,7 +141,7 @@ def test_plan_schema_survives_all_provider_conversions(owned_goal):
     for schema in schemas:
         plan = schema["properties"]["plan"]
         assert plan["type"] == "array"
-        assert plan["items"]["required"] == ["id", "title"]
+        assert plan["items"]["required"] == ["id", "title", "status", "notes", "depends_on"]
         assert plan["items"]["properties"]["status"]["enum"] == [
             "pending", "in_progress", "done", "blocked", "skipped",
         ]
@@ -153,12 +154,23 @@ async def test_plan_tool_validates_json_as_steps_before_invocation(owned_goal):
     revision = store.get(goal.id).revision
     tool = tools["update_goal_plan"]
     arguments = _prepare_tool_arguments(tool, {
-        "plan": [{"id": "review", "title": "Review calendar", "status": "pending"}],
+        "plan": [{"id": "review", "title": "Review calendar", "status": "pending", "notes": "", "depends_on": []}],
         "expected_revision": revision, "reason": "Check upcoming school dates",
     })
-    assert isinstance(arguments["plan"][0], GoalStep)
+    assert isinstance(arguments["plan"][0], GoalPlanStep)
     with context.bind("Agent", AgentCapabilities([])):
         await tool(**arguments)
     assert store.get(goal.id).plan[0].id == "review"
     with pytest.raises(ValueError, match="Invalid value for parameter 'plan'"):
         _prepare_tool_arguments(tool, {"plan": [{"title": "No stable ID"}], "expected_revision": revision})
+
+
+@pytest.mark.parametrize("missing", ["status", "notes", "depends_on"])
+def test_plan_replacement_requires_explicit_preservation_fields(owned_goal, missing):
+    from agent_core.tools._helpers import _prepare_tool_arguments
+
+    _store, _goal, _context, tools = owned_goal
+    step = {"id": "book", "title": "Book", "status": "pending", "notes": "Reservation 123", "depends_on": ["check"]}
+    del step[missing]
+    with pytest.raises(ValueError, match="Invalid value for parameter 'plan'"):
+        _prepare_tool_arguments(tools["update_goal_plan"], {"plan": [step], "reason": "Update", "expected_revision": 1})

@@ -78,6 +78,7 @@ def test_goal_question_carousel_submits_partial_answers_and_preserves_transcript
         assert current["questions"][0]["status"] == "open"
         assert current["questions"][1]["answers"] == []
         chat.wait_streaming()
+        expect(page.get_by_text("Current goal state (task data):", exact=False)).to_have_count(0)
         # The real tool closes one question and withdraws the other; history is rendered.
         current = page.request.get(base).json()["goal"]
         message = call_tool("update_goal_questions", changes=[
@@ -89,6 +90,7 @@ def test_goal_question_carousel_submits_partial_answers_and_preserves_transcript
         page.reload()
         expect(page.get_by_label("Goal question update")).to_contain_text("No longer needed", timeout=10000)
         expect(page.get_by_label("Goal questions")).to_have_count(0)
+        expect(page.get_by_text("Current goal state (task data):", exact=False)).to_have_count(0)
         expect(page.get_by_test_id("message-user").filter(has_text="Aetna Dental PPO").first).to_be_visible()
     finally:
         page.request.post(base + "/cancel", data={})

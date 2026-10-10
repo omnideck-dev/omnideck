@@ -37,8 +37,8 @@ class GoalStep(BaseModel):
     status: Literal["pending", "in_progress", "done", "blocked", "skipped"] = Field(
         default="pending", description="Current progress of this step.",
     )
-    notes: str = Field(default="", description="Evidence, results, or blockers relevant to the step.")
-    depends_on: list[str] = Field(default_factory=list, description="IDs of steps that must happen first.")
+    notes: str = Field(default="", description="Evidence, results, or blockers. Preserve existing notes unless explicitly revising them.")
+    depends_on: list[str] = Field(default_factory=list, description="Dependency step IDs. Preserve existing dependencies even when those steps are done, unless explicitly asked to change them.")
 
     @field_validator("title")
     @classmethod
@@ -46,6 +46,16 @@ class GoalStep(BaseModel):
         if not value.strip():
             raise ValueError("Step title cannot be blank")
         return value.strip()
+
+
+class GoalPlanStep(GoalStep):
+    """Complete agent replacement input: omissions cannot erase saved step details."""
+
+    status: Literal["pending", "in_progress", "done", "blocked", "skipped"] = Field(
+        description=GoalStep.model_fields["status"].description,
+    )
+    notes: str = Field(description=GoalStep.model_fields["notes"].description)
+    depends_on: list[str] = Field(description=GoalStep.model_fields["depends_on"].description)
 
 
 class GoalProgress(BaseModel):
