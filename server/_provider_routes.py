@@ -18,13 +18,18 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Any
 
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from brokering.supervisor_client import SupervisorError
 from providers import get_provider, reset_provider
-from agent_core.providers import ProviderError
+from agent_core.providers import ModelInfo, ProviderError
+from agent_core.providers._anthropic import AnthropicProvider
+from agent_core.providers._ollama import OllamaProvider
+from agent_core.providers._openai import OpenAIProvider
+from agent_core.providers._openai_responses import OpenAIResponsesProvider
 from server._brokering import supervisor_call as _supervisor_call
 from settings import _validate_base_url, load_settings, save_settings
 
@@ -83,6 +88,79 @@ async def _brokered_provider_connections() -> list[dict[str, object]]:
     """Read model-provider records from their supervisor domain."""
     result = await _supervisor_call("list", {"kind": "model_provider"})
     return list(result["connections"])
+
+
+_DEFAULT_PROBE_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+
+
+def _ephemeral_provider(
+    name: str,
+    *,
+    base_url: str | None,
+    api_key: str | None,
+) -> Any:
+    """Build a one-shot provider that talks upstream without vault/settings.
+
+    Used to probe credentials before persisting them so a failed "Test & add"
+    leaves no orphan configuration.
+    """
+    if name == "ollama":
+        return OllamaProvider(host=base_url)
+    if name == "openai":
+        return OpenAIResponsesProvider(
+            api_key=api_key,
+            base_url=base_url or _DEFAULT_PROBE_BASE_URLS["openai"],
+        )
+    if name == "anthropic":
+        return AnthropicProvider(
+            api_key=api_key,
+            base_url=base_url or _DEFAULT_PROBE_BASE_URLS["anthropic"],
+        )
+    if name == "openrouter":
+        return OpenAIProvider(
+            api_key=api_key,
+            base_url=base_url or _DEFAULT_PROBE_BASE_URLS["openrouter"],
+        )
+    if name == "openai_compat":
+        return OpenAIProvider(api_key=api_key, base_url=base_url)
+    msg = f"Unknown provider: {name!r}"
+    raise ValueError(msg)
+
+
+async def _probe_models(
+    name: str,
+    *,
+    base_url: str | None,
+    api_key: str | None,
+) -> list[ModelInfo] | web.Response:
+    """Probe upstream; return models or a 503 JSON response."""
+    try:
+        provider = _ephemeral_provider(name, base_url=base_url, api_key=api_key)
+        return await provider.list_models()
+    except ProviderError as exc:
+        return web.json_response(
+            {
+                "error": "provider_unreachable",
+                "message": _sanitize(str(exc)),
+                "provider": name,
+            },
+            status=503,
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure here is "couldn't reach"
+        return web.json_response(
+            {
+                "error": "provider_unreachable",
+                "message": _sanitize(str(exc)),
+                "provider": name,
+            },
+            status=503,
+        )
+
+
 
 
 # ── GET ──────────────────────────────────────────────────────────────────
@@ -150,13 +228,13 @@ class _AddProviderBody(BaseModel):
 
 
 async def handle_add_provider(request: web.Request) -> web.Response:
-    """Configure a provider, probe it, return its model list.
+    """Configure a provider only after a successful upstream probe.
 
     Storage choice is implicit: ``api_key`` present → brokered (vault
     integration); absent → direct (``settings.direct_providers`` entry).
-    The probe is a single ``list_models()`` call against the just-created
-    provider — if it fails the configuration still persists, the caller
-    just sees the 503 and can fix the URL/key.
+    The endpoint is probed with the supplied URL/key first; nothing is
+    written until that probe succeeds, so a failed "Test & add" leaves no
+    orphan configuration.
     """
     try:
         body = await request.json()
@@ -178,12 +256,26 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             status=400,
         )
 
+    if not spec.api_key and not spec.base_url:
+        return web.json_response(
+            {"error": "base_url is required when no api_key is provided"},
+            status=400,
+        )
+    if spec.base_url:
+        try:
+            _validate_base_url(spec.base_url)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    probed = await _probe_models(name, base_url=spec.base_url, api_key=spec.api_key)
+    if isinstance(probed, web.Response):
+        return probed
+    models = probed
+
     if spec.api_key:
         # Brokered: create the llm_<name> integration in the vault.
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
         if spec.base_url:
-            # OpenAI-compat with a key needs the upstream URL stored alongside
-            # the key so the broker knows where to forward.
             auth_blob["base_url"] = spec.base_url
         try:
             await _supervisor_call("add", {
@@ -200,61 +292,30 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             )
         except SupervisorError as exc:
             return web.json_response({"error": _sanitize(exc.message)}, status=400)
+        kind = "brokered"
+        stored_base_url = None
     else:
-        # Direct: write the settings.direct_providers entry.
-        if not spec.base_url:
-            return web.json_response(
-                {"error": "base_url is required when no api_key is provided"},
-                status=400,
-            )
-        try:
-            _validate_base_url(spec.base_url)
-        except ValueError as exc:
-            return web.json_response({"error": str(exc)}, status=400)
         settings = load_settings()
         direct = dict(settings.get("direct_providers") or {})
         direct[name] = {"base_url": spec.base_url}
         save_settings({"direct_providers": direct})
+        kind = "direct"
+        stored_base_url = spec.base_url
 
-    # Force the next get_provider(name) to re-build, then probe.
     reset_provider(name)
-    try:
-        models = await get_provider(name).list_models()
-    except ProviderError as exc:
-        return web.json_response(
-            {
-                "error": "provider_unreachable",
-                "message": _sanitize(str(exc)),
-                "provider": name,
-            },
-            status=503,
-        )
-    except Exception as exc:  # noqa: BLE001 - any failure here is "couldn't reach"
-        return web.json_response(
-            {
-                "error": "provider_unreachable",
-                "message": _sanitize(str(exc)),
-                "provider": name,
-            },
-            status=503,
-        )
-
     return web.json_response(
         {
             "provider": {
                 "name": name,
                 "label": _label(name),
-                "kind": "brokered" if spec.api_key else "direct",
-                "base_url": spec.base_url if not spec.api_key else None,
+                "kind": kind,
+                "base_url": stored_base_url,
                 "status": "connected",
             },
             "models": [m.model_dump() for m in models],
         },
         status=201,
     )
-
-
-# ── DELETE ───────────────────────────────────────────────────────────────
 
 
 async def handle_remove_provider(request: web.Request) -> web.Response:
@@ -319,11 +380,11 @@ class _UpdateProviderBody(BaseModel):
 async def handle_update_provider(request: web.Request) -> web.Response:
     """Update an existing provider's connection details.
 
-    For a direct provider, rewrites its ``settings.direct_providers``
-    entry (and validates the new URL). For a brokered one, the supervisor
-    transactionally replaces its credentials and process while retaining the
-    previous connection on failure. Either way the cache is dropped and a
-    probe is run; the response shape matches ``POST /api/providers``.
+    Credentials are probed first so a bad URL/key does not replace a working
+    configuration. For a direct provider, rewrites its
+    ``settings.direct_providers`` entry. For a brokered one, the supervisor
+    transactionally replaces credentials while retaining the previous
+    connection on failure. Response shape matches ``POST /api/providers``.
     """
     name = request.match_info["name"]
     if name not in _KNOWN_PROVIDERS:
@@ -344,7 +405,6 @@ async def handle_update_provider(request: web.Request) -> web.Response:
     direct = dict(settings.get("direct_providers") or {})
 
     if name in direct:
-        # Direct kind — update the base_url.
         if not spec.base_url:
             return web.json_response(
                 {"error": "base_url is required to update a direct provider"},
@@ -354,12 +414,15 @@ async def handle_update_provider(request: web.Request) -> web.Response:
             _validate_base_url(spec.base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
+        probed = await _probe_models(name, base_url=spec.base_url, api_key=None)
+        if isinstance(probed, web.Response):
+            return probed
+        models = probed
         direct[name] = {"base_url": spec.base_url}
         save_settings({"direct_providers": direct})
         kind = "direct"
         stored_base_url: str | None = spec.base_url
     else:
-        # Brokered kind — must currently exist as an llm_<name> integration.
         try:
             connections = await _brokered_provider_connections()
         except (FileNotFoundError, ConnectionRefusedError, OSError, SupervisorError) as exc:
@@ -383,12 +446,13 @@ async def handle_update_provider(request: web.Request) -> web.Response:
                 {"error": "api_key is required to update a brokered provider"},
                 status=400,
             )
+        probed = await _probe_models(name, base_url=spec.base_url, api_key=spec.api_key)
+        if isinstance(probed, web.Response):
+            return probed
+        models = probed
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
         if spec.base_url:
             auth_blob["base_url"] = spec.base_url
-        # Credential replacement is transactional in the supervisor. If the
-        # replacement broker cannot start, the prior encrypted credentials
-        # and live broker are restored before this request fails.
         try:
             await _supervisor_call("reconnect", {
                 "id": existing.get("id"),
@@ -407,18 +471,6 @@ async def handle_update_provider(request: web.Request) -> web.Response:
         stored_base_url = None
 
     reset_provider(name)
-    try:
-        models = await get_provider(name).list_models()
-    except Exception as exc:  # noqa: BLE001 - any failure here is "couldn't reach"
-        return web.json_response(
-            {
-                "error": "provider_unreachable",
-                "message": _sanitize(str(exc)),
-                "provider": name,
-            },
-            status=503,
-        )
-
     return web.json_response({
         "provider": {
             "name": name,

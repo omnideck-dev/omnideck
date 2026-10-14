@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -153,3 +155,122 @@ async def test_brokered_provider_update_uses_transactional_reconnect(monkeypatch
         },
     )
     assert all(verb != "remove" for verb, _args in calls)
+
+
+def _make_request(body: dict | None = None, *, name: str | None = None) -> MagicMock:
+    req = MagicMock()
+    if body is not None:
+        req.json = AsyncMock(return_value=body)
+    if name is not None:
+        req.match_info = {"name": name}
+    return req
+
+
+# ── handle_add_provider — probe before persist ───────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_direct_does_not_persist_when_probe_fails() -> None:
+    """Failed Test & add must leave settings untouched."""
+    body = {"name": "ollama", "base_url": "http://localhost:9999"}
+    save = MagicMock()
+
+    with (
+        patch("server._provider_routes.load_settings", return_value={"direct_providers": {}}),
+        patch("server._provider_routes.save_settings", save),
+        patch(
+            "server._provider_routes._probe_models",
+            new=AsyncMock(
+                return_value=__import__("aiohttp").web.json_response(
+                    {"error": "provider_unreachable", "message": "down", "provider": "ollama"},
+                    status=503,
+                ),
+            ),
+        ),
+        patch("server._provider_routes._supervisor_call", new=AsyncMock()) as supervisor,
+    ):
+        resp = await handle_add_provider(_make_request(body))
+
+    assert resp.status == 503
+    save.assert_not_called()
+    supervisor.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_direct_persists_only_after_successful_probe() -> None:
+    body = {"name": "ollama", "base_url": "http://localhost:11434"}
+    save = MagicMock()
+    models = [SimpleNamespace(model_dump=lambda: {"id": "llama"})]
+
+    with (
+        patch("server._provider_routes.load_settings", return_value={"direct_providers": {}}),
+        patch("server._provider_routes.save_settings", save),
+        patch("server._provider_routes._probe_models", new=AsyncMock(return_value=models)),
+        patch("server._provider_routes.reset_provider") as reset,
+    ):
+        resp = await handle_add_provider(_make_request(body))
+
+    assert resp.status == 201
+    save.assert_called_once_with(
+        {"direct_providers": {"ollama": {"base_url": "http://localhost:11434"}}},
+    )
+    reset.assert_called_once_with("ollama")
+    data = json.loads(resp.body)
+    assert data["provider"]["name"] == "ollama"
+    assert data["provider"]["kind"] == "direct"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_add_brokered_does_not_call_supervisor_when_probe_fails() -> None:
+    body = {"name": "openai", "api_key": "sk-test"}
+    save = MagicMock()
+    supervisor = AsyncMock()
+
+    with (
+        patch("server._provider_routes.load_settings", return_value={"direct_providers": {}}),
+        patch("server._provider_routes.save_settings", save),
+        patch(
+            "server._provider_routes._probe_models",
+            new=AsyncMock(
+                return_value=__import__("aiohttp").web.json_response(
+                    {"error": "provider_unreachable", "message": "down", "provider": "openai"},
+                    status=503,
+                ),
+            ),
+        ),
+        patch("server._provider_routes._supervisor_call", supervisor),
+    ):
+        resp = await handle_add_provider(_make_request(body))
+
+    assert resp.status == 503
+    supervisor.assert_not_called()
+    save.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_direct_does_not_persist_when_probe_fails(monkeypatch) -> None:
+    body = {"base_url": "http://localhost:9999"}
+    save = MagicMock()
+
+    monkeypatch.setattr(
+        "server._provider_routes.load_settings",
+        lambda: {"direct_providers": {"ollama": {"base_url": "http://localhost:11434"}}},
+    )
+    monkeypatch.setattr("server._provider_routes.save_settings", save)
+    monkeypatch.setattr(
+        "server._provider_routes._probe_models",
+        AsyncMock(
+            return_value=__import__("aiohttp").web.json_response(
+                {"error": "provider_unreachable", "message": "down", "provider": "ollama"},
+                status=503,
+            ),
+        ),
+    )
+
+    resp = await handle_update_provider(_make_request(body, name="ollama"))
+    assert resp.status == 503
+    save.assert_not_called()
