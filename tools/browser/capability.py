@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cache
 from importlib.resources import files
 from typing import Any
 
 from agent_core.capabilities import AgentCapability
-from skills._tool_categories import tool_categories
+from skills._tool_categories import ToolCategory, tool_categories
 
 
 @cache
@@ -21,10 +21,13 @@ def _definition() -> dict[str, Any]:
     return value
 
 
-async def browser_capability() -> AgentCapability:
+async def browser_capability(
+    categories: Mapping[str, ToolCategory] | None = None,
+) -> AgentCapability:
     """Build the application-controlled capability for Browser tools."""
     definition = _definition()
-    categories = await tool_categories()
+    if categories is None:
+        categories = await tool_categories()
     tools: list[Callable[..., Any]] = []
     for category_id in definition.get("tool_categories", []):
         category = categories.get(str(category_id))

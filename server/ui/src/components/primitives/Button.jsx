@@ -4,9 +4,9 @@ import styles from './Button.module.css';
  * Canonical 32px text button matching the SIGNAL design language.
  *
  * Variants:
- *   outline (default) — secondary actions (Cancel, Back). Most buttons.
+ *   outline (default) — secondary actions (Back, legacy Cancel).
  *   filled            — single primary action per surface (Save, Connect).
- *   ghost             — tertiary / quiet (Skip, dismiss).
+ *   ghost             — quiet actions (Skip, dismiss, Cancel alongside Save).
  *   danger            — destructive (Delete, Disconnect).
  *
  * Icon API is children-based: <Button><Icon /> Label</Button>.

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Form child properties</title></head>
+<body>
+  <form>
+    Before field
+    <label for="passengers">Passenger count</label>
+    <input id="passengers" name="children" aria-label="Passenger count" value="2">
+    After field
+    <button type="button">Search flights</button>
+    <p id="result">Ready to search</p>
+  </form>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const form = document.querySelector('form');
+    const field = document.querySelector('input');
+    const button = document.querySelector('button');
+    const result = document.querySelector('#result');
+    if (params.get('collision') === 'childNodes') field.name = 'childNodes';
+    if (params.get('collision') === 'own') {
+      field.name = 'passengers';
+      Object.defineProperty(form, 'children', {value: []});
+    }
+    if (params.get('layout') === 'hidden') {
+      form.style.visibility = 'hidden';
+      for (const el of form.querySelectorAll('*')) el.style.visibility = 'visible';
+    }
+    if (params.get('layout') === 'offscreen') {
+      form.style.cssText = 'position:absolute;top:2000px';
+      button.style.cssText = 'position:fixed;top:20px;left:20px';
+      field.style.cssText = 'position:fixed;top:60px;left:20px';
+      result.style.cssText = 'position:fixed;top:100px;left:20px';
+    }
+    if (params.get('layout') === 'shadow') {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      host.attachShadow({mode: 'open'}).appendChild(form);
+    }
+    if (params.get('layout') === 'dialog') {
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      while (form.firstChild) dialog.appendChild(form.firstChild);
+      form.appendChild(dialog);
+    }
+    button.addEventListener('click', () => { result.textContent = 'Flight search submitted'; });
+  </script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import styles from './SearchInput.module.css';
  *   testId       — data-testid for the input (optional)
  *   clearTestId  — data-testid for the clear button (optional)
  *   clearable    — show a clear (✕) button when non-empty (default true)
+ *   disabled     — disable editing and clearing (default false)
  *   className    — merged onto the container for layout/spacing (optional)
  */
 export default function SearchInput({
@@ -23,10 +24,15 @@ export default function SearchInput({
     testId,
     clearTestId,
     clearable = true,
+    disabled = false,
     className,
 }) {
     return (
-        <div className={[styles.search, className].filter(Boolean).join(' ')}>
+        <div className={[
+            styles.search,
+            disabled ? styles.disabled : '',
+            className,
+        ].filter(Boolean).join(' ')}>
             <i className={`bi bi-search ${styles.icon}`} aria-hidden="true" />
             <input
                 type="search"
@@ -36,8 +42,9 @@ export default function SearchInput({
                 aria-label={ariaLabel}
                 data-testid={testId}
                 onChange={(event) => onChange(event.target.value)}
+                disabled={disabled}
             />
-            {clearable && value && (
+            {clearable && value && !disabled && (
                 <button
                     type="button"
                     className={styles.clear}

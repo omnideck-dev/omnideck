@@ -1,0 +1,139 @@
+.instructions {
+    overflow: hidden;
+    color: var(--text-secondary);
+    background: var(--canvas);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    font-size: 11px;
+    line-height: 1.55;
+}
+
+.instructionsSummary {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+    list-style: none;
+    cursor: pointer;
+}
+
+.instructionsSummary::-webkit-details-marker {
+    display: none;
+}
+
+.instructionsSummary > span {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.instructionsSummary strong {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.instructionsSummary small {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.instructionsSummary > i {
+    color: var(--text-tertiary);
+    transition: transform 150ms var(--ease);
+}
+
+.instructions[open] > .instructionsSummary {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.instructions[open] > .instructionsSummary > i {
+    transform: rotate(180deg);
+}
+
+.stepBody p {
+    margin: 5px 0 0;
+}
+
+.step + .step {
+    border-top: 1px solid var(--border-subtle);
+}
+
+.step summary {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 10px var(--sp-3);
+    color: var(--text-primary);
+    font-weight: 600;
+    list-style: none;
+    cursor: pointer;
+}
+
+.step summary::-webkit-details-marker {
+    display: none;
+}
+
+.step summary > i {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    transition: transform 150ms var(--ease);
+}
+
+.step[open] summary > i {
+    transform: rotate(180deg);
+}
+
+.step summary > span {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    color: var(--accent);
+    background: var(--accent-muted);
+    border-radius: 50%;
+    font: 600 9px var(--font-brand);
+}
+
+.stepBody {
+    padding: 0 var(--sp-3) var(--sp-3) calc(var(--sp-3) + 28px);
+}
+
+.stepBody ul {
+    margin: var(--sp-2) 0 0;
+    padding-left: 18px;
+}
+
+.stepBody li + li {
+    margin-top: 3px;
+}
+
+.consoleLink {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    color: var(--accent);
+    background: var(--accent-muted);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+}
+
+.consoleLink:hover {
+    border-color: var(--accent);
+}
+
+.consoleLink small {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

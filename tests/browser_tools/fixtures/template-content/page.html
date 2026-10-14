@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Template content</title></head>
+<body>
+  <h1>News</h1>
+  <template id="article-template">
+    <article><h2><a href="{{permalink}}">{{headline}}</a></h2></article>
+    <template><p>{{nestedPlaceholder}}</p></template>
+    <p>{{trailingPlaceholder}}</p>
+  </template>
+  <p>Published news appears here.</p>
+  <template id="published-template"><p>Instantiated article.</p></template>
+  <section id="published"></section>
+  <div id="component"></div>
+  <p>News footer.</p>
+  <script>
+    document.querySelector('#published').appendChild(
+      document.querySelector('#published-template').content.cloneNode(true)
+    );
+    document.querySelector('#component').attachShadow({mode: 'open'}).innerHTML = `
+      <template><p>{{shadowPlaceholder}}</p></template>
+      <p>Published component content.</p>`;
+  </script>
+</body>
+</html>

@@ -150,6 +150,39 @@ describe('desktop view actions', () => {
         );
     });
 
+    it('omits the move-to-other-side action on mobile', () => {
+        const commandSet = commands();
+        const items = createDesktopViewActions({
+            view: CUSTOM_APP,
+            tabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            tabGroup: {
+                viewIds: [CHAT.id, CUSTOM_APP.id],
+                views: [CHAT, CUSTOM_APP],
+            },
+            commands: commandSet,
+            isMobile: true,
+        });
+
+        expect(items.find((item) => item.id === 'move')).toBeUndefined();
+        expect(items.find((item) => item.id === 'float')).toBeDefined();
+        expect(items.find((item) => item.id === 'fullscreen')).toBeDefined();
+    });
+
+    it('omits the dock-right floating action on mobile', () => {
+        const commandSet = commands();
+        const items = createDesktopViewActions({
+            view: CUSTOM_APP,
+            tabGroupId: null,
+            tabGroup: null,
+            floating: true,
+            commands: commandSet,
+            isMobile: true,
+        });
+
+        expect(items.find((item) => item.id === 'dock-right')).toBeUndefined();
+        expect(items.find((item) => item.id === 'dock-left')).toBeDefined();
+    });
+
     it('preserves domain-owned action presentation metadata', () => {
         const artifact = {
             id: 'artifact-1',

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
@@ -27,7 +27,13 @@ class AgentCapabilities:
     prompt section for system message injection.
     """
 
-    def __init__(self, base_tools: list[Callable[..., Any]]) -> None:
+    def __init__(
+        self, base_tools: list[Callable[..., Any]], *,
+        skill_resolver: Callable[[str], Awaitable[Skill | None]] | None = None,
+    ) -> None:
+        # Application-supplied resolver binds dynamic skill loads to the same
+        # tool catalog as initial preparation, without importing app discovery.
+        self.skill_resolver = skill_resolver
         self._base_tools: list[Callable[..., Any]] = list(base_tools)
         self._capabilities: dict[str, AgentCapability] = {}
         self._skills: dict[str, Skill] = {}  # keyed by skill id

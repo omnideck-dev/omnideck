@@ -1,16 +1,3 @@
-.modal {
-    background: var(--elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    max-width: 90%;
-    max-height: calc(100vh - 120px);
-    padding: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
 .header {
     padding: var(--sp-4) var(--sp-5);
     border-bottom: 1px solid var(--border-subtle);
@@ -30,23 +17,7 @@
     color: var(--text-primary);
 }
 
-.iconBtn {
-    width: 28px;
-    height: 28px;
-    border: 0;
-    background: transparent;
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-}
-.iconBtn:hover {
-    background: var(--surface);
-    color: var(--text-primary);
-}
+
 
 .body {
     padding: var(--sp-4) var(--sp-5);

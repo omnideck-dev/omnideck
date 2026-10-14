@@ -17,6 +17,10 @@
     box-shadow: var(--shadow-glow);
 }
 
+.disabled {
+    opacity: 0.4;
+}
+
 .icon {
     font-size: 13px;
     flex-shrink: 0;

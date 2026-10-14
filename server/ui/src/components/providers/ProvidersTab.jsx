@@ -4,7 +4,9 @@ import { useAppData } from '../../contexts/AppData.jsx';
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
-import StatusDot from '../StatusDot.jsx';
+import ConnectionStatus from '../ConnectionStatus.jsx';
+import ListItem from '../ListItem.jsx';
+import SplitPanel from '../SplitPanel.jsx';
 import { invalidateModelCache } from '../ModelPicker.jsx';
 import AddProviderModal from './AddProviderModal.jsx';
 import styles from './ProvidersTab.module.css';
@@ -19,23 +21,23 @@ const PROVIDER_META = {
     openrouter: { label: 'OpenRouter', icon: 'bi-router' },
 };
 
-// Backend status → StatusDot status + user-facing label. The supervisor
+// Backend status → shared status tone + user-facing label. The supervisor
 // reports brokered states (running / auth_failed / broken); direct
 // providers are always "configured" at rest and "connected" after a probe.
 const STATUS_VIEW = {
-    connected: { dot: 'ready', label: 'connected' },
-    configured: { dot: 'ready', label: 'configured' },
-    running: { dot: 'ready', label: 'connected' },
-    auth_failed: { dot: 'error', label: 'auth failed' },
-    broken: { dot: 'error', label: 'not running' },
-    unreachable: { dot: 'warn', label: "couldn't reach" },
+    connected: { tone: 'success', label: 'Connected' },
+    configured: { tone: 'success', label: 'Configured' },
+    running: { tone: 'success', label: 'Connected' },
+    auth_failed: { tone: 'danger', label: 'Sign-in failed' },
+    broken: { tone: 'danger', label: 'Not running' },
+    unreachable: { tone: 'warning', label: "Couldn't connect" },
 };
 
 function _meta(name) {
     return PROVIDER_META[name] ?? { label: name, icon: 'bi-plug' };
 }
 function _statusView(status) {
-    return STATUS_VIEW[status] ?? { dot: 'warn', label: status };
+    return STATUS_VIEW[status] ?? { tone: 'warning', label: 'Status unknown' };
 }
 
 export default function ProvidersTab() {
@@ -136,45 +138,49 @@ export default function ProvidersTab() {
             ) : providers.length === 0 ? (
                 <EmptyState onAdd={() => setModalOpen(true)} />
             ) : (
-                <div className={styles.split}>
-                    <ListPane
-                        providers={providers}
-                        statusOverrides={statusOverrides}
-                        modelCounts={modelCounts}
-                        selectedName={selectedName}
-                        onSelect={setSelectedName}
-                        onAdd={() => setModalOpen(true)}
-                    />
-                    {selected && (
-                        <DetailPane
-                            key={selected.name}
-                            provider={selected}
-                            status={statusOverrides[selected.name] || selected.status}
-                            modelCount={modelCounts[selected.name]}
-                            onSaved={(probeResult) => {
-                                // Reflect the freshly-probed state.
-                                setStatusOverrides(prev => ({ ...prev, [selected.name]: 'connected' }));
-                                if (probeResult?.models) {
-                                    setModelCounts(prev => ({ ...prev, [selected.name]: probeResult.models.length }));
-                                }
-                                invalidateModelCache(selected.name);
-                                setOperationError(null);
-                                fetchProviders();
-                            }}
-                            onTested={(ok, count) => {
-                                setStatusOverrides(prev => ({
-                                    ...prev,
-                                    [selected.name]: ok ? 'connected' : 'unreachable',
-                                }));
-                                if (ok && count != null) {
-                                    setModelCounts(prev => ({ ...prev, [selected.name]: count }));
-                                    invalidateModelCache(selected.name);
-                                }
-                            }}
-                            onRemove={() => handleRemove(selected.name)}
+                <SplitPanel>
+                    <SplitPanel.List>
+                        <ListPane
+                            providers={providers}
+                            statusOverrides={statusOverrides}
+                            modelCounts={modelCounts}
+                            selectedName={selectedName}
+                            onSelect={setSelectedName}
+                            onAdd={() => setModalOpen(true)}
                         />
-                    )}
-                </div>
+                    </SplitPanel.List>
+                    <SplitPanel.Detail>
+                        {selected && (
+                            <DetailPane
+                                key={selected.name}
+                                provider={selected}
+                                status={statusOverrides[selected.name] || selected.status}
+                                modelCount={modelCounts[selected.name]}
+                                onSaved={(probeResult) => {
+                                    // Reflect the freshly-probed state.
+                                    setStatusOverrides(prev => ({ ...prev, [selected.name]: 'connected' }));
+                                    if (probeResult?.models) {
+                                        setModelCounts(prev => ({ ...prev, [selected.name]: probeResult.models.length }));
+                                    }
+                                    invalidateModelCache(selected.name);
+                                    setOperationError(null);
+                                    fetchProviders();
+                                }}
+                                onTested={(ok, count) => {
+                                    setStatusOverrides(prev => ({
+                                        ...prev,
+                                        [selected.name]: ok ? 'connected' : 'unreachable',
+                                    }));
+                                    if (ok && count != null) {
+                                        setModelCounts(prev => ({ ...prev, [selected.name]: count }));
+                                        invalidateModelCache(selected.name);
+                                    }
+                                }}
+                                onRemove={() => handleRemove(selected.name)}
+                            />
+                        )}
+                    </SplitPanel.Detail>
+                </SplitPanel>
             )}
 
             {modalOpen && (
@@ -193,48 +199,41 @@ export default function ProvidersTab() {
 
 function ListPane({ providers, statusOverrides, modelCounts, selectedName, onSelect, onAdd }) {
     return (
-        <div className={styles.listPane}>
-            <div className={styles.listHeader}>
-                <div className={styles.listTitle}>Providers · {providers.length}</div>
-                <button
-                    type="button"
-                    className={styles.listAddBtn}
+        <>
+            <SplitPanel.Header actions={
+                <Button
+                    variant="ghost"
                     onClick={onAdd}
                     data-testid="providers-add-btn"
                 >
                     <i className="bi bi-plus-lg" /> Add
-                </button>
+                </Button>
+            }>Providers · {providers.length}</SplitPanel.Header>
+            <div className={styles.listBody}>
+                {providers.map((p) => {
+                    const meta = _meta(p.name);
+                    const effectiveStatus = statusOverrides[p.name] || p.status;
+                    const view = _statusView(effectiveStatus);
+                    const count = modelCounts[p.name];
+                    const selected = p.name === selectedName;
+                    return (
+                        <ListItem
+                            key={p.name}
+                            active={selected}
+                            aria-current={selected ? 'true' : undefined}
+                            icon={<i className={`bi ${meta.icon}`} />}
+                            name={meta.label}
+                            description={count == null ? undefined : `${count} ${count === 1 ? 'model' : 'models'}`}
+                            badges={view.tone !== 'success'
+                                ? <ConnectionStatus tone={view.tone}>{view.label}</ConnectionStatus>
+                                : undefined}
+                            onClick={() => onSelect(p.name)}
+                            data-testid={`provider-row-${p.name}`}
+                        />
+                    );
+                })}
             </div>
-            {providers.map((p) => {
-                const meta = _meta(p.name);
-                const effectiveStatus = statusOverrides[p.name] || p.status;
-                const view = _statusView(effectiveStatus);
-                const count = modelCounts[p.name];
-                const selected = p.name === selectedName;
-                return (
-                    <button
-                        key={p.name}
-                        type="button"
-                        className={`${styles.listRow} ${selected ? styles.listRowSelected : ''}`}
-                        onClick={() => onSelect(p.name)}
-                        data-testid={`provider-row-${p.name}`}
-                    >
-                        <div className={styles.listIcon}>
-                            <i className={`bi ${meta.icon}`} />
-                        </div>
-                        <div className={styles.listMain}>
-                            <div className={styles.listName}>{meta.label}</div>
-                            <div className={styles.listMeta}>
-                                <StatusDot status={view.dot} /> {view.label}
-                            </div>
-                        </div>
-                        <div className={styles.listCount}>
-                            {count == null ? '—' : `${count} m`}
-                        </div>
-                    </button>
-                );
-            })}
-        </div>
+        </>
     );
 }
 
@@ -311,9 +310,7 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                 <div>
                     <div className={styles.detailName}>{meta.label}</div>
                     <div className={styles.detailStatusLine}>
-                        <span className={`${styles.badge} ${view.dot === 'ready' ? styles.badgeSuccess : view.dot === 'error' ? styles.badgeDanger : styles.badgeWarn}`}>
-                            {view.label}
-                        </span>
+                        <ConnectionStatus tone={view.tone} data-testid="provider-status">{view.label}</ConnectionStatus>
                         {modelCount != null && <span>· {modelCount} models</span>}
                     </div>
                 </div>
@@ -356,8 +353,8 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                     </Button>
                 </div>
                 {testResult && testResult.ok && (
-                    <div className={`${styles.resultChip} ${styles.resultChipOk}`}>
-                        <i className="bi bi-check-circle-fill" /> Connected · {testResult.count} models
+                    <div className={styles.testResult}>
+                        <ConnectionStatus>Connected · {testResult.count} models</ConnectionStatus>
                     </div>
                 )}
                 {testResult && !testResult.ok && (
@@ -373,7 +370,6 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                     confirmLabel="Confirm remove?"
                     icon="bi-trash"
                     onConfirm={onRemove}
-                    className={styles.removeBtn}
                     data-testid="provider-remove-btn"
                 />
             </div>

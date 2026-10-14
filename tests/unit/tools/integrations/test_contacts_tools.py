@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.contacts.list_contacts import list_contacts
 from tools.integrations.contacts.search_contacts import search_contacts
 

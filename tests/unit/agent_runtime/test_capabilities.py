@@ -50,10 +50,11 @@ def _isolate(tmp_path, monkeypatch):
     """Temp skill store, and a fixed set of resolved tool categories."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
 
-    async def _cats():
+    async def _cats(*_args):
         return _categories()
 
     monkeypatch.setattr("skills._resolve.tool_categories", _cats)
+    monkeypatch.setattr("agent_runtime._factory.tool_categories", _cats)
     monkeypatch.setattr("tools.browser.capability.tool_categories", _cats)
 
 

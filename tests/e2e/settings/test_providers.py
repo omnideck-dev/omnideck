@@ -18,6 +18,26 @@ def test_providers_tab_shows_seeded_ollama(page: Page):
 
     row = page.get_by_test_id("provider-row-ollama")
     expect(row).to_be_visible()
+    expect(row).not_to_contain_text("Configured")
+    expect(row).not_to_contain_text("Connected")
+    expect(page.get_by_test_id("provider-status")).to_have_text("Configured")
+
+    original_viewport = page.viewport_size
+    assert original_viewport is not None
+    try:
+        for width in (1440, 700, 390):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert row.evaluate("""element => {
+                const host = element.closest('[data-testid="providers-tab"]');
+                const gutter = parseFloat(getComputedStyle(element).getPropertyValue('--sp-5'));
+                return Math.abs(element.getBoundingClientRect().left
+                    - host.getBoundingClientRect().left - gutter) < 1
+                    && host.scrollWidth <= host.clientWidth + 1;
+            }""")
+            page.get_by_test_id("provider-test-btn").scroll_into_view_if_needed()
+            expect(page.get_by_test_id("provider-test-btn")).to_be_in_viewport()
+    finally:
+        page.set_viewport_size(original_viewport)
 
 
 def test_add_modal_opens_from_add_button(page: Page):

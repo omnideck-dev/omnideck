@@ -14,9 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from typing import Any
-
-from integrations.permissions import Capability
-
+from integrations.connection_cache import ConnectionSnapshot
 
 @dataclass(frozen=True)
 class ToolCategory:
@@ -39,17 +37,17 @@ class ToolCategory:
     connected: bool | None = None
 
 
-async def tool_categories() -> dict[str, ToolCategory]:
+async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, ToolCategory]:
     """Every tool category keyed by id, each with the tools it currently grants.
 
     Config-gated static categories are built once and held. Settings-backed
-    categories and integration-backed categories resolve their current state
-    on every call, so runtime changes take effect without restarting.
+    categories resolve current settings; integration categories use only the
+    supplied snapshot. This function never performs discovery I/O.
     """
     # Imported here, not at module top: reaching into the tools package runs its
     # __init__, which pulls tools.browser -> agent_core.events -> this package — a
     # load-time cycle. By call time agent_core.events is fully initialized.
-    from tools.integrations import CapabilityTools, integration_tools_by_capability
+    from tools.integrations import OperationTools, integration_tools_by_category
 
     categories = dict(_static_tool_categories())
     from settings import custom_tools_enabled
@@ -57,10 +55,10 @@ async def tool_categories() -> dict[str, ToolCategory]:
     if custom_tools_enabled():
         categories["custom_tools"] = _custom_tools_category()
 
-    by_capability = await integration_tools_by_capability()
+    by_category = integration_tools_by_category(connections)
     for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
-        backed = by_capability.get(integration.capability, CapabilityTools([], available=False))
-        # The category is "connected" when a connected integration makes its capability available.
+        backed = by_category.get(cid, OperationTools([], available=False))
+        # A category is connected when at least one granted operation supplies a tool.
         categories[cid] = ToolCategory(
             cid,
             integration.label,
@@ -245,22 +243,21 @@ def _custom_tools_category() -> ToolCategory:
     )
 
 
-# ── Integration categories: a capability per id, tools resolved per turn ──────
+# ── Integration categories: operation-backed tools resolved per turn ──────────
 
 
 @dataclass(frozen=True)
 class _IntegrationToolCategory:
     label: str
     description: str
-    capability: Capability
 
 
 _INTEGRATION_TOOL_CATEGORIES: dict[str, _IntegrationToolCategory] = {
-    "email": _IntegrationToolCategory("Email", "Read, search, and send mail.", Capability.EMAIL),
-    "calendar": _IntegrationToolCategory("Calendar", "Manage calendar events.", Capability.CALENDAR),
-    "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files.", Capability.DRIVE),
-    "contacts": _IntegrationToolCategory("Contacts", "Look up contacts.", Capability.CONTACTS),
-    "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs.", Capability.HTTP),
+    "email": _IntegrationToolCategory("Email", "Read, search, and send mail."),
+    "calendar": _IntegrationToolCategory("Calendar", "Manage calendar events."),
+    "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files."),
+    "contacts": _IntegrationToolCategory("Contacts", "Look up contacts."),
+    "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs."),
 }
 
 

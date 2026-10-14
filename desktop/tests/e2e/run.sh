@@ -316,6 +316,7 @@ install -m 0755 "${script_dir}/custom_app_fixture.py" "$payload_dir/custom_app_f
 install -m 0755 "${script_dir}/host_boundary_client.py" "$payload_dir/host_boundary_client.py"
 install -m 0755 "${script_dir}/polkit_agent.py" "$payload_dir/polkit_agent.py"
 install -m 0755 "${script_dir}/linux_guest.sh" "$payload_dir/linux_guest.sh"
+install -m 0644 "${script_dir}/verify_linux_smoke.py" "$payload_dir/verify_linux_smoke.py"
 install -m 0644 "${desktop_root}/src-tauri/setup-parity.json" "$payload_dir/setup-parity.json"
 install -m 0644 "${desktop_root}/tests/fixtures/electron-setup/setup-parity.json" "$payload_dir/mockup-parity.json"
 install -m 0644 "${desktop_root}/tests/fixtures/electron-setup/index.html" "$payload_dir/mockup-index.html"

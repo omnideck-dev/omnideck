@@ -240,11 +240,15 @@ launch_application() {
         fi
       fi
     fi
-    printf 'Application launched without an accessible window; retrying (%s of 3).\n' "$attempt" >&2
+    # Preserve the live window before stopping it; the exit trap runs after the
+    # final retry has cleared application_pid and cannot recover this evidence.
+    dump_accessibility "${attempt_label}-failure" || true
+    capture "${attempt_label}-failure" || true
+    printf 'Application did not expose the expected accessible content; retrying (%s of 3).\n' "$attempt" >&2
     stop_application
     sleep 1
   done
-  printf 'Application did not expose a window after 3 launch attempts.\n' >&2
+  printf 'Application did not expose the expected accessible content after 3 launch attempts.\n' >&2
   return 1
 }
 
@@ -586,7 +590,20 @@ current_step='native artifact download and toast'
 "$driver" click "$application" 'Table view' 30
 "$driver" wait-text "$application" "$artifact_filename" 30
 mouse_click "$artifact_filename"
+# Another tab group may contain a file preview with the same Download label.
+# Isolate the named artifact through the real UI and fail closed if ambiguous.
+"$driver" click "$application" "Actions for $artifact_filename tab" 30
+"$driver" click-in "$application" 'Tab actions' 'Enter full screen' 30
+"$driver" wait-text "$application" 'Exit full screen' 30
 "$driver" wait-text "$application" 'Download file' 30
+dump_accessibility artifact-download-target
+python3 - "$result_dir/accessibility/artifact-download-target.json" "$artifact_filename" <<'PY'
+import json, sys
+records=json.load(open(sys.argv[1], encoding='utf-8'))
+assert any(record.get('role') == 'AXStaticText' and record.get('value') == sys.argv[2] for record in records), 'Expected artifact preview is not visible'
+buttons=[record for record in records if record.get('role') == 'AXButton' and 'Download file' in (record.get('title'), record.get('description'))]
+assert len(buttons) == 1, f'Expected one artifact download button, found {len(buttons)}'
+PY
 [[ ! -e "$artifact_download_path" ]]
 "$driver" click "$application" 'Download file' 30
 if ! "$driver" wait-text "$application" "$artifact_filename was saved to Downloads." 10; then

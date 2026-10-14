@@ -1,0 +1,96 @@
+.container {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.loading {
+    padding: var(--sp-8);
+    color: var(--text-tertiary);
+    font-size: 13px;
+    text-align: center;
+}
+
+.loadError {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    width: min(540px, 100%);
+    margin: var(--sp-8) auto;
+}
+
+.loadError button {
+    align-self: flex-start;
+}
+
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    width: min(540px, 100%);
+    margin: 32px auto;
+    padding: 48px 24px;
+    background: var(--canvas);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.emptyState h1 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.emptyState p {
+    max-width: 430px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.emptyIcon {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--sp-1);
+    color: var(--accent);
+    background: var(--accent-muted);
+    border-radius: 50%;
+    font-size: 26px;
+}
+
+.emptyIconMuted {
+    color: var(--text-tertiary);
+    background: var(--border-subtle);
+}
+
+.listBody {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--sp-3);
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.listGroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+}
+
+.listGroupLabel {
+    margin-bottom: var(--sp-1);
+    color: var(--text-tertiary);
+    font: 600 10px var(--font-brand);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}

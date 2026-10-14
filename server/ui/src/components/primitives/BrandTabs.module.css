@@ -1,0 +1,52 @@
+/* SIGNAL §14 brand tabs. Keep the button reset local to prevent global radius drift. */
+
+.tabs {
+    display: flex;
+    flex: 0 0 auto;
+    padding: 0 var(--sp-4);
+    overflow-x: auto;
+    background: var(--canvas);
+    border-bottom: 1px solid var(--border);
+}
+
+.tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 10px var(--sp-4);
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    box-shadow: none;
+    opacity: 0.4;
+    font-family: var(--font-brand);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: opacity 150ms var(--ease), border-color 150ms var(--ease);
+}
+
+.tab:hover:not(:disabled) {
+    opacity: 0.7;
+}
+
+.tab:active:not(:disabled) {
+    transform: none;
+}
+
+.active {
+    border-bottom-color: var(--accent);
+    opacity: 1;
+}
+
+.count {
+    opacity: 0.6;
+    font-size: 10px;
+    font-weight: 500;
+}

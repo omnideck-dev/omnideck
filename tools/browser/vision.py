@@ -105,7 +105,7 @@ async def inspect_page(
         raise BrowserToolError(str(exc), tool=_SCREENSHOT_TOOL_NAME) from exc
     except ProviderError as exc:
         logger.exception("Failed to generate answer for screenshot question")
-        msg = "Failed to generate answer from screenshot."
+        msg = f"Failed to generate answer from screenshot: {exc}"
         raise BrowserToolError(msg, tool=_SCREENSHOT_TOOL_NAME) from exc
 
     if not answer:

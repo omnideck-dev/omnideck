@@ -309,4 +309,92 @@ describe('desktopLayoutReducer', () => {
         expect(focused.floatingByViewId[APP.id].zIndex).toBe(2);
         expect(focused.floatingZCounter).toBe(2);
     });
+
+    it('merges a tab group without stealing the destination\'s active tab or touching floating focus', () => {
+        const placed = reduce([
+            {
+                type: 'OPEN_VIEW',
+                view: APP,
+                tabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            },
+            {
+                type: 'OPEN_VIEW',
+                view: TERMINAL,
+                tabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+                activate: false,
+            },
+        ]);
+        const floating = desktopLayoutReducer(placed, {
+            type: 'FLOAT_VIEW',
+            viewId: TERMINAL.id,
+        });
+        // CHAT is left's existing active tab; APP is the only view on the
+        // right. Merging right into left must keep CHAT active - unlike
+        // MOVE_VIEW, an automatic reconciliation has no reason to steal
+        // focus onto whatever happened to be on the hidden pane.
+        const merged = desktopLayoutReducer(floating, {
+            type: 'MERGE_TAB_GROUP',
+            fromTabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            toTabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+        });
+
+        expect(merged.tabGroups.left.viewIds).toEqual([CHAT.id, APP.id]);
+        expect(merged.tabGroups.left.activeViewId).toBe(CHAT.id);
+        expect(merged.tabGroups.right).toEqual({ viewIds: [], activeViewId: null });
+        expect(merged.focusedFloatingViewId).toBe(floating.focusedFloatingViewId);
+        expect(merged.floatingByViewId[TERMINAL.id]).toBe(floating.floatingByViewId[TERMINAL.id]);
+    });
+
+    it('falls back to the source\'s active view when the merge destination was empty', () => {
+        const placed = reduce(
+            [{ type: 'OPEN_VIEW', view: APP, tabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT }],
+            createInitialDesktopLayoutState(),
+        );
+        const merged = desktopLayoutReducer(placed, {
+            type: 'MERGE_TAB_GROUP',
+            fromTabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            toTabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+        });
+
+        expect(merged.tabGroups.left.viewIds).toEqual([APP.id]);
+        expect(merged.tabGroups.left.activeViewId).toBe(APP.id);
+    });
+
+    it('redirects focus away from an emptied merge source, and leaves it alone otherwise', () => {
+        const placed = reduce([
+            { type: 'OPEN_VIEW', view: APP, tabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT },
+        ]);
+        expect(placed.focusedTabGroupId).toBe(DESKTOP_TAB_GROUP_IDS.RIGHT);
+
+        const merged = desktopLayoutReducer(placed, {
+            type: 'MERGE_TAB_GROUP',
+            fromTabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            toTabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+        });
+        expect(merged.focusedTabGroupId).toBe(DESKTOP_TAB_GROUP_IDS.LEFT);
+
+        const focusedOnLeft = desktopLayoutReducer(placed, {
+            type: 'SELECT_VIEW',
+            tabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+            viewId: CHAT.id,
+        });
+        expect(focusedOnLeft.focusedTabGroupId).toBe(DESKTOP_TAB_GROUP_IDS.LEFT);
+
+        const mergedWhileFocusedElsewhere = desktopLayoutReducer(focusedOnLeft, {
+            type: 'MERGE_TAB_GROUP',
+            fromTabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            toTabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+        });
+        expect(mergedWhileFocusedElsewhere.focusedTabGroupId).toBe(DESKTOP_TAB_GROUP_IDS.LEFT);
+    });
+
+    it('is a no-op when the merge source is already empty', () => {
+        const state = createInitialDesktopLayoutState(CHAT);
+        const merged = desktopLayoutReducer(state, {
+            type: 'MERGE_TAB_GROUP',
+            fromTabGroupId: DESKTOP_TAB_GROUP_IDS.RIGHT,
+            toTabGroupId: DESKTOP_TAB_GROUP_IDS.LEFT,
+        });
+        expect(merged).toBe(state);
+    });
 });

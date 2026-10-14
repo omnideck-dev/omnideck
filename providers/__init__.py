@@ -37,7 +37,7 @@ _provider_cache: dict[str, Provider] = {}
 def _proxy_socket_path(provider: str) -> Path:
     """Return the broker socket path for the given provider.
 
-    LLM integrations are singletons — no suffix — so the integration ID
+    Brokered model providers are singletons — no suffix — so the connection ID
     is just ``llm_{provider}`` and the socket is ``llm_{provider}.sock``.
     """
     sockets_dir = Path(load_config().integrations.sockets_dir)
@@ -60,7 +60,7 @@ def _create_provider(provider_name: str) -> Provider:
 
     Direct providers (Ollama, no-auth OpenAI-compatible) are configured in
     ``settings.direct_providers`` and connect straight to their base URL.
-    Everything else is a brokered integration reached through a Unix socket.
+    Everything else is a brokered model-provider connection reached through a Unix socket.
     A name with neither is not configured.
     """
     cls = _provider_class(provider_name)

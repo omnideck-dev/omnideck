@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
+from playwright.async_api import Error as PlaywrightError
 
 from browser.core.document import Document, ResolvedElement
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
@@ -62,3 +65,23 @@ async def test_click_ref_not_found(
     browser_tool_harness(page)
     result = await click("99", tab="1")
     assert "Ref 99 not found" in result
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_stage", ["action", "render"])
+async def test_click_preserves_playwright_error(monkeypatch, browser_tool_harness, failure_stage):
+    page = StubPage(url="https://example.test/page")
+    page.add_ref_locator(1, tag="button")
+    browser_tool_harness(page)
+    cause = PlaywrightError(
+        "Element is not attached to the DOM" if failure_stage == "action" else "Target page has been closed"
+    )
+    monkeypatch.setattr(Document, "click", AsyncMock(side_effect=cause if failure_stage == "action" else None))
+    if failure_stage == "render":
+        monkeypatch.setattr("tools.browser.interactions.format_action_result", AsyncMock(side_effect=cause))
+
+    result = await click("1", tab="1")
+
+    assert result.startswith("[click] Failed to complete click operation:")
+    assert str(cause) in result

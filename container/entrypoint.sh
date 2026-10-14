@@ -117,7 +117,7 @@ fi
 # can't read decrypted credentials. `omnideck` is in the `broker` group, so
 # the runtime dir is traversable and app.sock is connectable.
 #
-# Modes here MUST stay in sync with integrations/_perms.py — that module is
+# Modes here MUST stay in sync with brokering/_perms.py — that module is
 # the canonical reference and the in-process chmod calls reference it.
 mkdir -p /var/lib/omnideck/vault /run/cvault
 chown -R broker:broker /var/lib/omnideck/vault
@@ -140,7 +140,7 @@ if [ "${DEV_MODE:-false}" = "true" ]; then
 
     (while true; do
         echo "Starting integrations supervisor..."
-        gosu broker python3.12 -m integrations.supervisor || true
+        gosu broker python3.12 -m brokering.supervisor || true
         sleep 1
     done) &
 
@@ -155,7 +155,7 @@ else
     trap 'kill -TERM "$SUPERVISOR_PID" "$APP_PID" 2>/dev/null || true; wait' EXIT
 
     echo "Starting integrations supervisor..."
-    gosu broker python3.12 -m integrations.supervisor &
+    gosu broker python3.12 -m brokering.supervisor &
     SUPERVISOR_PID=$!
 
     echo "Starting app server..."

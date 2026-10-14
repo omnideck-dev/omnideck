@@ -15,7 +15,9 @@ def _tokens(value):
 
 def test_sub_agent_compaction_shows_in_activity_view(page: Page):
     conversation = f"e2e_activity_compaction_{time.time_ns()}"
-    with compaction_settings(), agent_profile(context_window=1000, compaction_threshold=0.01) as profile:
+    # Allow the 2.5 KB tool fixture to stay inline for the summarizer, while
+    # keeping the same 10-token compaction trigger as the smaller profiles.
+    with compaction_settings(), agent_profile(context_window=16000, compaction_threshold=0.000625) as profile:
         try:
             run_turn(conversation, spawn(compaction_script(), profile=profile["id"], name="CODE_REVIEWER") + say("root done"))
             events = resume(conversation)["events"]

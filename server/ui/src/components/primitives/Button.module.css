@@ -17,6 +17,7 @@
     font-family: var(--font-body);
     font-size: 13px;
     font-weight: 500;
+    white-space: nowrap;
     border: 1px solid transparent;
 }
 
@@ -32,7 +33,7 @@
 
 .filled {
     background: var(--accent);
-    color: #fff;
+    color: var(--text-on-accent);
 }
 .filled:hover:not(:disabled) {
     background: var(--accent-hover);
@@ -53,7 +54,7 @@
     color: var(--danger);
 }
 .danger:hover:not(:disabled) {
-    background: rgba(220, 38, 38, 0.15);
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
 }
 
 .spinner {

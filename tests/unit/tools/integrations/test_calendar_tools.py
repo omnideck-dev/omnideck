@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.create_event import create_event
 from tools.integrations.delete_event import delete_event
 from tools.integrations.delete_event_series import delete_event_series
@@ -40,7 +40,7 @@ def _patch_call(monkeypatch: pytest.MonkeyPatch, *, result: Any = None, exc: Exc
 @pytest.mark.asyncio
 async def test_list_calendars_renders_each_calendar_with_url(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each calendar renders one line: ``- name  —  url``. The url is
-    what the agent passes to ``list_events`` to scope a query.
+    what the agent passes to ``calendar.events.list`` to scope a query.
     """
     _patch_call(
         monkeypatch,
@@ -265,7 +265,7 @@ async def test_search_events_passes_default_range(monkeypatch: pytest.MonkeyPatc
 
     assert captured == {
         "integration_id": "icloud_personal",
-        "verb": "search_events",
+        "verb": "calendar.events.search",
         "args": {
             "calendar_ref": "calendar-ref",
             "query": "planning",
@@ -405,7 +405,7 @@ async def test_create_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_create_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("gw_work"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("gw_work"))
     out = await create_event(
         "gw_work", "primary", "Meeting",
         "2026-05-10T09:00:00Z", "2026-05-10T10:00:00Z",
@@ -487,7 +487,7 @@ async def test_update_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("gw_work"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("gw_work"))
     out = await update_event("gw_work", "event-1", summary="Changed")
     assert "disabled" in out.lower()
 
@@ -551,7 +551,7 @@ async def test_delete_event_not_connected(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_delete_event_write_denied(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("gw_work"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("gw_work"))
     out = await delete_event("gw_work", "event-1")
     assert "disabled" in out.lower()
 
@@ -587,7 +587,7 @@ async def test_update_event_series_passes_series_ref(monkeypatch: pytest.MonkeyP
     )
 
     assert captured == {
-        "verb": "update_event_series",
+        "verb": "calendar.series.update",
         "args": {
             "series_ref": "series-1",
             "summary": "Weekly sync",
@@ -616,7 +616,7 @@ async def test_delete_event_series_passes_series_ref(monkeypatch: pytest.MonkeyP
     out = await delete_event_series("gw_work", "series-1")
 
     assert captured == {
-        "verb": "delete_event_series",
+        "verb": "calendar.series.delete",
         "args": {"series_ref": "series-1"},
     }
     assert "series-1" in out

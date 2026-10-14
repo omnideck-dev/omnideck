@@ -22,7 +22,7 @@ persistent software-update notice remains in its quieter bottom-right location.
 
 ## Bundled CLI
 
-The official `omnideck-dev/cli` `v0.11.0-beta.5` release is bundled for x64
+The official `omnideck-dev/cli` `v0.11.0-beta.6` release is bundled for x64
 and ARM64 on Windows, macOS, and Linux. The executables are not committed to
 this repository. `src-tauri/binaries/vendor-manifest.json` pins the release URL,
 archive checksums, extracted-binary checksums, version, commit, and SBOM

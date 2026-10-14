@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from browser.core.tab import Tab
+from browser.core.document import Document
+from browser.core.challenges import ChallengeInfo
+from browser.core.settling import SettleTimings
+from config import BrowserWaitConfig
 
 
 class _FakeFrameElement:
@@ -270,3 +275,62 @@ async def test_unmeasurable_window_returns_none() -> None:
     page = _FakePage(frames=[frame], window={"width": 0, "height": 0})
     result = await _make_tab(page)._detect_embedded_content_frame()
     assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_loaded_content", [True, False])
+async def test_render_reselects_loaded_frame_without_replacing_unchanged_root(
+    monkeypatch: pytest.MonkeyPatch, has_loaded_content: bool,
+) -> None:
+    frame = _FakeFrame(
+        box={"x": 0, "y": 0, "width": 1200, "height": 700}, child_count=0,
+    )
+    tab = _make_tab(_FakePage(frames=[frame]))
+    root = await tab.document()
+    settled: list[Document] = []
+
+    async def settle(document: Document, waits: BrowserWaitConfig) -> SettleTimings:
+        settled.append(document)
+        frame._child_count = 5 if has_loaded_content else 0
+        return SettleTimings()
+
+    render = AsyncMock()
+    monkeypatch.setattr(Document, "settle", settle)
+    monkeypatch.setattr("browser.core.rendering.render_document", render)
+    await tab.render_document()
+
+    current = await tab.document()
+    if has_loaded_content:
+        assert current is not root
+        assert current._frame is frame
+        assert settled == [root, current]
+    else:
+        assert current is root
+        assert settled == [root]
+    render.assert_awaited_once()
+    assert render.call_args.args[1] is current
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_render_reselection_keeps_challenge_ahead_of_loaded_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = _FakeFrame(box={"x": 0, "y": 0, "width": 1200, "height": 700}, child_count=0)
+    page = _FakePage(frames=[frame])
+    tab = _make_tab(page)
+    challenge = ChallengeInfo(vendor="cloudflare", banner="Verification required")
+
+    async def settle(document: Document, waits: BrowserWaitConfig) -> SettleTimings:
+        frame._child_count = 5
+        return SettleTimings()
+
+    monkeypatch.setattr(Document, "settle", settle)
+    monkeypatch.setattr("browser.core.tab.detect_challenge", AsyncMock(side_effect=[None, challenge, challenge]))
+    render = AsyncMock()
+    monkeypatch.setattr("browser.core.rendering.render_document", render)
+    await tab.render_document()
+
+    assert tab.challenge is challenge
+    assert (await tab.document())._frame is page.main_frame
+    render.assert_awaited_once()
+    assert render.call_args.kwargs["settle_timings"] is None

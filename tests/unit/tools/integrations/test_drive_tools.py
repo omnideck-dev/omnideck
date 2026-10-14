@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from integrations import broker_client
+from brokering import broker_client
 from tools.integrations.drive.create_folder import create_drive_folder
 from tools.integrations.drive.share_file import share_drive_file
 from tools.integrations.drive.trash_file import trash_drive_file
@@ -164,11 +164,11 @@ async def test_upload_reports_not_connected(
 async def test_upload_reports_write_denied(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     f = tmp_path / "f.txt"
     f.write_text("x")
     out = await upload_drive_file("gw_work", str(f))
-    assert out == "Writes are disabled for 'gw_work'."
+    assert out == "Tool access is disabled for 'gw_work'."
 
 
 @pytest.mark.unit
@@ -235,9 +235,9 @@ async def test_create_folder_reports_not_connected(
 async def test_create_folder_reports_write_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await create_drive_folder("gw_work", "Folder")
-    assert out == "Writes are disabled for 'gw_work'."
+    assert out == "Tool access is disabled for 'gw_work'."
 
 
 @pytest.mark.unit
@@ -351,9 +351,9 @@ async def test_update_file_reports_not_connected(
 async def test_update_file_reports_write_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await update_drive_file("gw_work", "abc", name="x")
-    assert out == "Writes are disabled for 'gw_work'."
+    assert out == "Tool access is disabled for 'gw_work'."
 
 
 @pytest.mark.unit
@@ -399,7 +399,7 @@ async def test_trash_file_passes_file_id(
 
     monkeypatch.setattr(broker_client, "call", _capture)
     await trash_drive_file("gw_work", "abc")
-    assert captured["verb"] == "trash_drive_file"
+    assert captured["verb"] == "drive.files.trash"
     assert captured["args"]["file_id"] == "abc"
 
 
@@ -418,9 +418,9 @@ async def test_trash_file_reports_not_connected(
 async def test_trash_file_reports_write_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await trash_drive_file("gw_work", "abc")
-    assert out == "Writes are disabled for 'gw_work'."
+    assert out == "Tool access is disabled for 'gw_work'."
 
 
 @pytest.mark.unit
@@ -565,11 +565,11 @@ async def test_share_file_reports_not_connected(
 async def test_share_file_reports_write_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_call(monkeypatch, exc=broker_client.IntegrationWriteDenied("denied"))
+    _patch_call(monkeypatch, exc=broker_client.IntegrationPermissionDenied("denied"))
     out = await share_drive_file(
         "gw_work", "abc", role="reader", share_type="anyone",
     )
-    assert out == "Writes are disabled for 'gw_work'."
+    assert out == "Tool access is disabled for 'gw_work'."
 
 
 @pytest.mark.unit

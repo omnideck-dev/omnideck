@@ -13,14 +13,13 @@ from types import SimpleNamespace
 import pytest
 
 from config import FeaturesConfig
-from integrations.permissions import Access, Capability
 from agent_runtime._factory import _base_tools
 from agent_runtime._spawn import make_spawn_tool
 from skills._tool_categories import _custom_tools_category
 from skills._tool_categories import _static_tool_categories, tool_categories
 from agent_core.tools._callable_schema import callable_to_json_schema
 from tools.integrations._tool_resolution import _BUILDERS
-from tools.integrations.types import RegisteredIntegration
+from integrations.connection_cache import IntegrationConnection
 
 _STATIC_IDS = {
     "coding",
@@ -53,10 +52,6 @@ def _isolate(monkeypatch):
     _set_flags(monkeypatch)
     monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
 
-    async def _none():
-        return {}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _none)
     yield
     _static_tool_categories.cache_clear()
 
@@ -66,11 +61,10 @@ def _set_flags(monkeypatch, **overrides):
     _static_tool_categories.cache_clear()
 
 
-def _connect(monkeypatch, cap, access=Access.READ):
-    async def _get():
-        return {"acct-1": RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access})}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _get)
+def _connections(*operation_ids):
+    return (IntegrationConnection(
+        id="acct-1", slug="acct", operation_grants=frozenset(operation_ids),
+    ),)
 
 
 def _names(tools):
@@ -101,9 +95,7 @@ async def test_agent_tools_have_schema_ready_google_docstrings():
     for category in (await tool_categories()).values():
         exposed_tools.extend(category.tools)
     exposed_tools.extend(_custom_tools_category().tools)
-    for tiers in _BUILDERS.values():
-        for builders in tiers.values():
-            exposed_tools.extend(build(["example"]) for build in builders)
+    exposed_tools.extend(build(["example"]) for build in _BUILDERS.values())
 
     errors: list[str] = []
     for tool in {tool.__name__: tool for tool in exposed_tools}.values():
@@ -172,21 +164,19 @@ async def test_integration_category_empty_when_disconnected():
 
 
 @pytest.mark.unit
-async def test_integration_category_resolves_when_connected(monkeypatch):
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
-    email = (await tool_categories())["email"]
+async def test_integration_category_resolves_when_connected():
+    email = (await tool_categories(_connections("email.messages.search")))["email"]
     names = _names(email.tools)
     assert "search_email" in names
     assert "send_email" not in names  # read tier only
 
 
 @pytest.mark.unit
-async def test_connected_flag_tracks_integration_state(monkeypatch):
+async def test_connected_flag_tracks_integration_state():
     cats = await tool_categories()
     assert cats["coding"].connected is None  # static: no connection concept
     assert cats["email"].connected is False  # integration, nothing connected
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
-    assert (await tool_categories())["email"].connected is True
+    assert (await tool_categories(_connections("email.messages.search")))["email"].connected is True
 
 
 @pytest.mark.unit

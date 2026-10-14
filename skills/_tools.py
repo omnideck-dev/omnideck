@@ -113,7 +113,8 @@ async def load_skill(name: str) -> str:
         (item for item in list_skill_records() if item.name == name and not is_reserved_skill_id(item.id)),
         None,
     )
-    skill = await resolve_skill_by_name(name) if record is not None else None
+    resolver = agent_capabilities.skill_resolver or resolve_skill_by_name
+    skill = await resolver(name) if record is not None else None
     if skill is None:
         available = ", ".join(_available_skill_names())
         error_msg = f"Unknown skill '{name}'. Available: {available}"

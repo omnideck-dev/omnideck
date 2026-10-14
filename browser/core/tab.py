@@ -275,6 +275,15 @@ class Tab:
 
             if settle:
                 timings = await document.settle(waits)
+                # Initial selection can see an empty/loading iframe and cache
+                # the host. Root load waits include its child frames, so check
+                # again now that they can have content. Preserve document
+                # identity when selection is unchanged; a new frame follows
+                # the existing bounded retry and gets its own settle pass.
+                if self._document is document and self._content_frame is None:
+                    frame, challenge = await self._select_frame()
+                    self._set_challenge(challenge)
+                    self._set_content_frame(frame if frame is not self._page.main_frame else None)
                 current = await self.document()
                 settle_failed = timings.error is not None
                 document_changed = document is not current

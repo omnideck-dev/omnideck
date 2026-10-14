@@ -23,7 +23,6 @@ Kept out of the default unit ``testpaths``; run with ``just browser-tools``.
 
 from __future__ import annotations
 
-import socket
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,15 +37,8 @@ from tools.browser import new_tab
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def _free_port() -> int:
-    """Grab an ephemeral localhost port for a fixture server to bind to."""
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-async def _serve(port: int) -> web.AppRunner:
-    """Start a static file server (plus a download endpoint) for *port*."""
+async def _serve() -> tuple[web.AppRunner, str]:
+    """Start a fixture server and return its bound origin."""
     app = web.Application()
 
     async def _attachment(request: web.Request) -> web.Response:
@@ -65,9 +57,15 @@ async def _serve(port: int) -> web.AppRunner:
     app.router.add_static("/", str(FIXTURES_DIR))
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", port)
-    await site.start()
-    return runner
+    # Let the listening socket allocate the port atomically. Finding a free
+    # port and closing it first lets another parallel worker claim it.
+    try:
+        await web.TCPSite(runner, "127.0.0.1", 0).start()
+    except BaseException:
+        await runner.cleanup()
+        raise
+    port = runner.addresses[0][1]
+    return runner, f"http://127.0.0.1:{port}"
 
 
 @dataclass(frozen=True)
@@ -107,19 +105,15 @@ class Servers:
 @pytest.fixture
 async def servers() -> AsyncIterator[Servers]:
     """Serve the fixtures dir on two localhost ports (two origins)."""
-    primary_port = _free_port()
-    secondary_port = _free_port()
-
-    primary_runner = await _serve(primary_port)
-    secondary_runner = await _serve(secondary_port)
+    primary_runner, primary_url = await _serve()
     try:
-        yield Servers(
-            primary=f"http://127.0.0.1:{primary_port}",
-            secondary=f"http://127.0.0.1:{secondary_port}",
-        )
+        secondary_runner, secondary_url = await _serve()
+        try:
+            yield Servers(primary=primary_url, secondary=secondary_url)
+        finally:
+            await secondary_runner.cleanup()
     finally:
         await primary_runner.cleanup()
-        await secondary_runner.cleanup()
 
 
 def _tab_id_from_output(output: str) -> str:

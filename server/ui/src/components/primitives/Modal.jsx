@@ -10,12 +10,15 @@ import styles from './Modal.module.css';
  * open — so callers supply only the contents. `width` overrides the default
  * panel width for wider modals; `labelledBy` points at the id of the caller's
  * title element for accessible naming.
+ * `layout="contained"` removes panel padding and bounds its height for caller-owned
+ * headers, scrolling bodies, and footers; the default remains a padded panel.
  */
 export default function Modal({
     onClose,
     children,
     width,
     labelledBy,
+    layout = 'padded',
     className = '',
     testId,
 }) {
@@ -42,7 +45,7 @@ export default function Modal({
         >
             <div
                 ref={panelRef}
-                className={`${styles.modal} ${className}`}
+                className={`${styles.modal} ${layout === 'contained' ? styles.contained : ''} ${className}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={labelledBy}

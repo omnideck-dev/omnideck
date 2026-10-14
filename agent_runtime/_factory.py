@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from agents import AgentProfile, get_agent_profile
@@ -12,6 +13,8 @@ from agent_core.agent import Agent
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.providers import Provider
 from providers import get_provider
+from integrations.connection_cache import ConnectionSnapshot
+from skills._tool_categories import ToolCategory, tool_categories
 from tools.memory import load_memory
 
 logger = logging.getLogger(__name__)
@@ -50,12 +53,14 @@ class AgentFactory:
         name: str | None = None,
         restore_from_conversation: str | None = None,
         include_memory: bool = False,
+        connections: ConnectionSnapshot = (),
     ) -> PreparedAgent:
         agent = self.build_agent(profile, name=name)
         capabilities = await self.build_capabilities(
             profile,
             spawn_agent=spawn_agent,
             conversation_id=restore_from_conversation,
+            connections=connections,
         )
         instruction = agent.instruction
         memory = load_memory() if include_memory else {}
@@ -73,22 +78,26 @@ class AgentFactory:
         *,
         spawn_agent: Callable[..., Any],
         conversation_id: str | None = None,
+        connections: ConnectionSnapshot = (),
     ) -> AgentCapabilities:
         """Build one run's state from agent settings, capabilities, and skills."""
         from skills._policy import is_reserved_skill_id
-        from skills._resolve import resolve_skill
+        from skills._resolve import resolve_skill, resolve_skill_by_name
+
+        categories = await tool_categories(connections)
 
         state = AgentCapabilities(
             _base_tools(
                 allow_spawn=profile.allow_spawn,
                 spawn_agent=spawn_agent,
                 allow_load_skills=profile.allow_load_skills,
-            )
+            ),
+            skill_resolver=partial(resolve_skill_by_name, categories=categories),
         )
         for skill_id in profile.skills:
             if is_reserved_skill_id(skill_id):
                 continue
-            skill = await resolve_skill(skill_id)
+            skill = await resolve_skill(skill_id, categories=categories)
             if skill is None:
                 logger.warning(
                     "profile %r references unknown skill %r; skipping",
@@ -101,7 +110,7 @@ class AgentFactory:
         if profile.browser_profile_id is not None:
             from tools.browser.capability import browser_capability
 
-            state.add_capability(await browser_capability())
+            state.add_capability(await browser_capability(categories))
 
         if conversation_id is not None:
             from conversations import load_loaded_skills
@@ -109,6 +118,7 @@ class AgentFactory:
             await _restore_persisted_loaded_skills(
                 state,
                 load_loaded_skills(conversation_id),
+                categories=categories,
             )
         return state
 
@@ -190,6 +200,7 @@ def _base_tools(
 async def _restore_persisted_loaded_skills(
     agent_capabilities: AgentCapabilities,
     skill_ids: Iterable[str],
+    *, categories: Mapping[str, ToolCategory] | None = None,
 ) -> None:
     """Resolve and restore the conversation's dynamically loaded skills."""
     from skills._policy import is_reserved_skill_id
@@ -198,7 +209,7 @@ async def _restore_persisted_loaded_skills(
     for skill_id in skill_ids:
         if is_reserved_skill_id(skill_id) or skill_id in agent_capabilities.skill_ids:
             continue
-        skill = await resolve_skill(skill_id)
+        skill = await resolve_skill(skill_id, categories=categories)
         if skill is None:
             logger.warning("loaded skill %r no longer resolves; skipping", skill_id)
             continue

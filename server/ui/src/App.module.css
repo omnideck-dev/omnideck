@@ -94,6 +94,10 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    /* Mobile browsers don't shrink 100vh when their address bar is showing,
+       which clips the composer below the visible viewport. dvh tracks the
+       real visible area; browsers without it keep the line above. */
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -124,6 +128,16 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* Below 320px min-width's own breakpoint, an expanded sidebar (264px) leaves
+   the chat column less room than its floor, and ancestor overflow:hidden
+   clips the overflow instead of scrolling — silently cutting off the
+   composer's right edge instead of shrinking to fit. */
+@media (max-width: 768px) {
+    .chatColumn {
+        min-width: 0;
+    }
 }
 
 .hidden {

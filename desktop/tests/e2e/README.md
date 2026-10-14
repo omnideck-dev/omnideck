@@ -91,6 +91,12 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
+Windows qualification also records Security event IDs across the candidate's
+repeated launches and rejects failed Windows sign-ins originating in WebView2.
+This catches upstream browser-runtime regressions that can lock out a local
+account. The harness enables failure auditing but never relaxes account-lockout
+policy or injects browser feature overrides; mitigation must be in the package.
+
 When an upgrade-from artifact is supplied, the native package lanes first
 install the previous release into the clean guest, seed a marker in Desktop's
 normal user-data root, and install the candidate directly over it. The journey
@@ -134,6 +140,14 @@ fixture image in the full Desktop journey. This makes the hosted proof a check
 of the same application image the package declares, at the cost of a larger
 first pull inside the disposable overlay.
 
+The Linux candidate-update scenario removes its namespaced container and the
+exact immutable image from the disposable guest cache, preserving the data
+volumes. This exercises a real cold-cache update and makes download progress
+observable; a fully cached same-image reconciliation can finish between native
+WebDriver samples. Image removal does not use force and refuses images still
+used by another container. The update copy, bridge, Ready, and hosted-app
+assertions remain unchanged. The preconditions are recorded in the evidence.
+
 The matrix builds each requested package once, then reuses a persistent
 builder-image-keyed Cargo target, Cargo home, pnpm store, and XDG cache owned by
 the VM lab. Source is still copied into an isolated build container, and the
@@ -165,8 +179,8 @@ stages one compressed, SHA-256-verified payload containing locked
 matches the active EdgeWebView client's registry `pv`, rejects a driver with a
 different major version, and creates/removes the Windows interactive driver
 task. This avoids selecting an inactive update directory left beside the
-runtime Tauri actually loads. The active value is checked again after a real
-reboot so an Evergreen update refreshes the staged driver before the next
+runtime Tauri actually loads. The active value is checked again after first
+setup (including a real reboot) so an Evergreen update refreshes the staged driver before the next
 WebDriver session. That task also starts Podman's WSL networking helper
 inside the logged-in desktop session and proves registry DNS before exposing
 the driver. A golden image can therefore be refreshed without silently
@@ -318,6 +332,11 @@ pnpm run test:vm-smoke -- \
   --vm appimage \
   --artifact /absolute/path/omnideck-0.1.0-1.x86_64.rpm
 ```
+
+Linux smoke checks also reject known fatal renderer errors in the host's
+stderr, even when the independent CLI proof succeeds. This is a crash guard,
+not proof that the interface rendered correctly; review the launch screenshot
+and keep the full UI journey as a separate gate.
 
 Run every non-native combination for the artifacts you supply with:
 

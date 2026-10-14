@@ -11,7 +11,7 @@ re-deriving the context.
 
 The SIGNAL design language now defines a `Callout` primitive
 (`server/ui/src/components/primitives/Callout.jsx`) for inline, panel-level
-status messages. Three pre-existing call sites still hand-roll an inline
+status messages. Two pre-existing call sites still hand-roll an inline
 "error block" with their own CSS. Each was the right shape at the time but
 none share visual treatment, padding, or tone-handling.
 
@@ -26,13 +26,7 @@ Migrate them one at a time. Each migration is independent and small.
    `default_agent_cannot_be_disabled` save error. Should become a `tone="danger"`
    Callout sitting in the same slot.
 
-2. **`AddIntegrationModal.errorBox`** —
-   `server/ui/src/components/integrations/AddIntegrationModal.module.css`
-   defines `.errorBox` (left rail + danger-muted background) used by the form
-   to surface auth/credential validation failures. Replace with a `tone="danger"`
-   Callout. Drop the bespoke CSS.
-
-3. **`RoutinesView.errorBanner`** —
+2. **`RoutinesView.errorBanner`** —
    `server/ui/src/components/routines/RoutinesView.module.css` defines
    `.errorBanner` (a sticky-top danger band) used when `setError(err.message)`
    trips. Replace with a `tone="danger"` Callout placed in the same flow
@@ -41,8 +35,8 @@ Migrate them one at a time. Each migration is independent and small.
 
 ### Why
 
-- Three near-identical patterns, three different CSS modules. A change to
-  the agreed-upon error visual today touches three files and risks visual
+- Two near-identical patterns in different CSS modules. A change to
+  the agreed-upon error visual today touches both files and risks visual
   drift.
 - The `Callout` primitive already handles tones, dismissal, structured
   bodies (`Callout.List` / `Callout.Footnote`), and animation. Hand-rolled

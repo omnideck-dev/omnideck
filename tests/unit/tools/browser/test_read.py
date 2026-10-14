@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+from browser.core._content import CONTENT_HTML_JS
 from browser.core.document import Document
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
 from tools.browser import BrowserToolError
@@ -56,8 +59,10 @@ class _ReadContentPage(StubPage):
         super().__init__(title=title, body_text="", url=url)
         self._html = html
 
-    async def content(self) -> str:
-        return self._html
+    async def evaluate(self, script: str, arg: Any = None) -> Any:
+        if script == CONTENT_HTML_JS:
+            return self._html
+        return await super().evaluate(script, arg)
 
 
 def _patch_view(monkeypatch: pytest.MonkeyPatch, page: _ReadContentPage) -> None:

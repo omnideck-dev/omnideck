@@ -12,6 +12,8 @@ import pytest
 
 from skills import ToolCategory
 from server._tool_category_routes import handle_list_tool_categories
+from server._integration_cache import INTEGRATION_CACHE_KEY
+from integrations.connection_cache import IntegrationConnection
 
 
 def _tool(name):
@@ -27,7 +29,7 @@ def _catalog(monkeypatch):
     """A fixed catalog: one static category, one connected and one disconnected
     integration category."""
 
-    async def _cats():
+    async def _cats(*_args):
         return {
             "coding": ToolCategory("coding", "Coding", "Write code.", [_tool("read_file"), _tool("run_bash_cmd")]),
             "email": ToolCategory("email", "Email", "Read mail.", [_tool("search_email")], connected=True),
@@ -68,3 +70,27 @@ async def test_integration_connection_state_reported():
     assert by_id["email"]["connected"] is True
     assert by_id["calendar"]["connected"] is False
     assert by_id["calendar"]["tool_count"] == 0
+
+
+@pytest.mark.unit
+async def test_route_passes_current_app_snapshot_without_discovery_io(monkeypatch):
+    from skills._tool_categories import tool_categories
+
+    snapshot = (IntegrationConnection(
+        id="work", slug="gmail", operation_grants=frozenset({"email.messages.search"}),
+    ),)
+    cache = MagicMock()
+    cache.snapshot.return_value = snapshot
+    request = MagicMock()
+    request.app = {INTEGRATION_CACHE_KEY: cache}
+
+    async def categories(connections):
+        assert connections is snapshot
+        return await tool_categories(connections)
+
+    monkeypatch.setattr("server._tool_category_routes.tool_categories", categories)
+    body = json.loads((await handle_list_tool_categories(request)).body)
+    email = next(category for category in body if category["id"] == "email")
+    assert email["tools"] == ["search_email"]
+    cache.snapshot.assert_called_once_with()
+    cache.refresh.assert_not_called()

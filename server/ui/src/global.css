@@ -30,6 +30,7 @@
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-tertiary: #94a3b8;
+  --text-on-accent: #ffffff;
 
   /* Borders */
   --border: #e2e8f0;
@@ -190,6 +191,7 @@ html, body {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   background: var(--canvas);
   font-family: var(--font-body);
