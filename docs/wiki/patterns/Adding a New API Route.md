@@ -3,8 +3,8 @@ title: Adding a New API Route
 type: pattern
 tags: [server, http, api, extension]
 created: 2026-07-07
-updated: 2026-07-07
-verified_commit: 6a5625d
+updated: 2026-10-18
+verified_commit: 3b839a12
 paths:
   - "server/"
   - "server/aiohttp_app.py"
@@ -14,7 +14,7 @@ paths:
 
 ## Overview
 
-Routes are grouped by feature domain into `server/_*_routes.py` modules. Each module exports a `register_*_routes(app)` function that mounts its routes on the aiohttp `Application`. The main factory (`create_app()`) calls each one.
+Routes are grouped by feature domain into `server/_*_routes.py` modules. Each module exports a `register_*_routes(app)` function that mounts its routes on the aiohttp `Application`. The main factory (`create_app()`) calls each one. Re-verified against current `create_app()` — now 23 route modules (was 10 at the previous wiki pass), but the pattern itself is unchanged. See [[API Routes]] for the full current inventory.
 
 ## Where It's Used
 
@@ -80,6 +80,7 @@ If the route is called from the React UI, add the `fetch` call in the appropriat
 - CORS and CSRF are handled globally by `cors_and_error_middleware` — don't add them per-handler.
 - aiohttp routes don't use class-based views — plain async functions only.
 - `ValidationError` from Pydantic doesn't need a try/except in each handler — the middleware catches it.
+- **The CSRF check's method set is `{POST, PUT, DELETE}` — it does not include `PATCH`.** Several existing routes (e.g. conversation/folder/provider updates) use PATCH and are therefore not CSRF-gated today. If you add a mutating PATCH route, treat this as a known gap rather than an intentional exemption — don't assume PATCH is protected the way POST/PUT/DELETE are.
 
 ## Related Entities
 

@@ -3,8 +3,8 @@ title: Using Omnideck at Work — A Guide for IT and Security Reviewers
 type: guide
 tags: [security, it, compliance, one-pager, work, marketing, faq]
 created: 2026-09-23
-updated: 2026-09-24
-sources: ["[[Source - README.md]]", "[[Integration Supervisor and Broker Pattern]]", "[[Provider Abstraction]]", "[[Sandboxed Code Execution]]"]
+updated: 2026-10-18
+sources: ["README.md", "[[Credential Brokering]]", "[[Provider Abstraction]]", "[[Sandboxed Code Execution]]"]
 ---
 
 # Using Omnideck at Work
@@ -32,7 +32,7 @@ If your company's answer to "can I use Claude/ChatGPT for work" is already yes, 
 The full source is available for review under the Apache License 2.0 — a standard, OSI-approved permissive license, not a source-available license with usage restrictions. Nothing is a black box; your security team can read exactly what the agent can and cannot do before anyone runs it, rather than taking a vendor's word for it.
 
 **2. Containerized.**
-Omnideck runs as a single container image. It doesn't install anything into the host OS, doesn't require elevated host privileges to operate, and can be stopped, removed, or rebuilt cleanly. State (conversations, memory, settings) lives in a named container volume, not a shared host directory — the agent's filesystem is isolated from the rest of your machine by the container boundary itself, so it can't reach or modify local files outside what you've explicitly exposed to it. `omnideck uninstall` can back up and delete that volume for you.
+Omnideck runs as a single container image. It doesn't install anything into the host OS, doesn't require elevated host privileges to operate, and can be stopped, removed, or rebuilt cleanly. State (conversations, memory, settings) lives in one dedicated host directory (`~/Omnideck`) that's bind-mounted into the container — the container only ever sees that one directory, so the agent's filesystem is isolated from the rest of your machine by the container boundary itself, and it can't reach or modify local files outside what you've explicitly exposed to it. `omnideck uninstall` can back up and delete that directory for you.
 
 **3. Secrets never reach the model.**
 This is the part worth walking your CTO through directly. API keys and OAuth tokens (for the LLM provider itself, and for any connected integration like email or calendar) are held by a separate, privilege-separated supervisor process — not the process that talks to the LLM. When the agent needs to call an API, the request is proxied through the supervisor over a local Unix socket, and the supervisor attaches the real credential on the way out. The application code the LLM's tool calls run through never holds a decrypted key in memory. Concretely: **even if the LLM tried to exfiltrate a credential, or the agent process were fully compromised, there is no decrypted secret sitting in a place either could read.** This is a stronger isolation guarantee than most SaaS AI tools offer, where your API key is typically just an environment variable next to your application code.
@@ -73,5 +73,5 @@ Encrypted with AES-256-GCM in a vault directory, decrypted only inside the separ
 No, and structurally it can't — those certifications apply to a vendor processing your data on their infrastructure, and there is no vendor in this data path. Self-hosting means your organization's existing infrastructure controls are what apply, the same as for any other self-hosted open-source tool you already run (a database, a CI runner, an internal dashboard).
 
 **Where does my data actually live, and how do I get rid of it?**
-Everything — conversations, memory, settings — lives in a named container volume, not a plain folder on your host filesystem. That's a deliberate isolation boundary, not just a storage detail: the container (and the agent running inside it) is walled off from your local machine, so it can't read, write, or bypass files elsewhere on your system beyond what you've explicitly exposed to it. There's no remote copy to separately request deletion of — `omnideck uninstall` can back up and then delete that volume in one step.
+Everything — conversations, memory, settings — lives in `~/Omnideck`, a single host directory bind-mounted into the container. That's a deliberate isolation boundary, not just a storage detail: the container (and the agent running inside it) only ever sees that one directory, so it can't read, write, or bypass files elsewhere on your system beyond what you've explicitly exposed to it. There's no remote copy to separately request deletion of — `omnideck uninstall` can back up and then delete that directory in one step.
 

@@ -1,117 +1,150 @@
 ---
 title: Integrations Architecture
 type: concept
-tags: [integrations, security, broker, supervisor, vault]
+tags: [integrations, catalog, operations, grants, oauth]
 created: 2026-07-07
-updated: 2026-07-07
-verified_commit: 6a5625d
+updated: 2026-10-18
+verified_commit: 3b839a12
 paths:
   - "integrations/"
-  - "tools/integrations/"
   - "server/_integrations_routes.py"
+  - "server/_integrations_oauth_routes.py"
+  - "server/_brokering.py"
 ---
 
 # Integrations Architecture
 
 ## Overview
 
-Integrations connect the agent to external services (currently Gmail and iCloud email/calendar). Each integration runs as an isolated broker subprocess under a separate OS user (`broker`, UID 1001), preventing the agent process (`computron`, UID 1000) from accessing credentials directly. The aiohttp app and agent tools communicate with brokers over Unix Domain Sockets.
+An **integration** is a credentialed connection to an external service (Gmail,
+iCloud, Google Workspace, or any custom HTTP API) that agent tools can call.
+This page covers the **application layer**: the catalog of installable
+presets, the canonical operation IDs tools invoke, and the per-connection
+permission grants a user sets. The actual credential storage, broker
+subprocess lifecycle, and wire protocol live one layer down in
+[[Credential Brokering]] — this package (`integrations/`) never touches
+decrypted secrets itself.
 
-## Process Model
+This is a real package split, confirmed by `integrations/__init__.py`'s own
+docstring: *"Application callers use `integrations.service`. Credential
+storage, process lifecycle, and transport clients belong to `brokering`."*
+Formerly, integration and broker concerns lived together under
+`integrations/supervisor/` and `integrations/brokers/`; that code has moved to
+the standalone `brokering/` package, and `integrations/` now holds only the
+catalog/policy/application layer described here.
 
-```
-computron (UID 1000)          broker (UID 1001)
-────────────────────          ─────────────────
-aiohttp app                   supervisor
-  HTTP routes ─────────────►    (vault, spawn, RPC dispatch)
-  agent tools ─────────────►    ├── email_broker[gmail]
-    via /run/cvault/              │     └── IMAP/SMTP → gmail
-    <id>.sock                     └── email_broker[icloud]
-                                        └── IMAP/SMTP/CalDAV → icloud
-```
+## How It Works
 
-Three OS users exist: `root` (container init only, drops via gosu), `broker` (supervisor + all brokers + vault), `computron` (app + agent). `computron` is in the `broker` group and can connect to broker sockets but cannot read the vault directory (`0700 broker:broker`).
+### 1. Catalog
 
-## Components
+`integrations/catalog/_defaults.py` defines `IntegrationCatalogEntry` presets:
+`icloud`, `gmail`, `google_workspace`, `http` (generic REST), and a
+development-only `test` entry gated by `OMNIDECK_ENABLE_TEST_INTEGRATIONS`.
+Each entry names a `BrokerDriver` (which broker subprocess to spawn — see
+[[Credential Brokering]]), the operations it unconditionally exposes, and for
+OAuth-scoped entries like `google_workspace`, a `scope_operations` map from a
+granted OAuth scope to the operation IDs it unlocks.
 
-### Supervisor (`integrations/supervisor/`)
+### 2. Canonical Operations
 
-Long-lived process owning:
-- The encrypted credential vault at `/var/lib/computron/vault/`
-- Lifecycle management for broker subprocesses (spawn, respawn with exponential backoff, SIGTERM on delete)
-- The `app.sock` UDS at `/run/cvault/app.sock` — receives CRUD operations from the aiohttp app
-- Integration state machine (pending → running / auth_failed / broken)
+`integrations/operations.py` defines `NATIVE_OPERATIONS` — a flat, versioned
+list of operation IDs (`email.messages.send`, `calendar.events.create`,
+`drive.files.upload`, `http.request`, …) grouped by namespace
+(`OPERATIONS_BY_GROUP`). An operation ID is the single stable contract shared
+across the integration service, broker RPC dispatch, and persisted grants —
+the LLM-facing tool name in `tools/integrations/` is a presentation detail
+layered on top of the same ID.
 
-### Brokers (`integrations/brokers/`)
+### 3. Availability vs. Grants
 
-Short-lived per-integration processes that:
-- Receive credentials as env vars at spawn, then `os.environ.pop()` them into client state
-- Bind a per-broker UDS at `/run/cvault/<id>.sock`
-- Execute verb calls (e.g., `list_mailboxes`, `send_email`) on behalf of agent tools
-- Enforce `WRITE_ALLOWED` gate — write verbs are refused locally when the flag is false
-- Handle idle reconnection: catch stale IMAP connection, re-LOGIN, retry once
+Two distinct sets govern whether an agent can call an operation on a
+connection:
 
-### Credential Vault
+- **Available operations** — what the connected account's scopes/plan make
+  possible at all. Computed by `IntegrationCatalogEntry.resolve_operations()`
+  from the entry's unconditional `operations` plus any `scope_operations`
+  unlocked by the OAuth scopes actually granted.
+- **Agent operation grants** (`integrations/operation_grants.py`) — the exact
+  subset of available operations the user has explicitly allowed the agent to
+  use for this connection, persisted per-connection and enforced broker-side
+  (see [[Credential Brokering]]). `normalize_operation_grants()` always
+  intersects a requested grant set against what's currently available, so a
+  stale grant can never outlive the scope that unlocked it.
 
-AES-256-GCM encrypted files per integration:
-- `<id>.meta` — plaintext JSON: id, slug, label, `write_allowed`, timestamps
-- `<id>.enc` — encrypted credential blob (email + password)
-- `master.key` — 32-byte key, written once at first supervisor boot, not rotated in v1
+### 4. Invocation
 
-The supervisor decrypts at broker spawn time and passes fields as env vars.
+`integrations/service.py`'s `IntegrationService` is the only supported entry
+point for application code:
 
-### Broker Client (`integrations/broker_client/`)
+- `list_connections()` — calls `brokering.supervisor_client` to list
+  non-secret connection metadata (id, slug, kind, grants, state).
+- `invoke(connection_id, operation_id, arguments)` — validates the operation
+  ID is a known canonical operation, then calls `brokering.broker_client`,
+  which resolves the connection to a live broker socket and sends the
+  operation as the RPC `verb`.
 
-Called by agent tools to invoke broker verbs:
-```python
-from integrations import broker_client
-result = await broker_client.call("gmail_personal", "list_mailboxes", {}, app_sock_path=...)
-```
-Short-circuits denied writes with `IntegrationWriteDenied` before a socket round-trip.
+`integrations/connection_cache.py`'s `IntegrationConnectionCache` polls
+`list_connections()` on a timer (default every 5s) and publishes immutable
+snapshots for tool discovery, so a running turn's view of "which integrations
+exist and what are they allowed to do" doesn't require a supervisor round
+trip per tool call.
 
-### Agent Tool Wrappers (`tools/integrations/`)
+### 5. Calendar References
 
-One file per tool: `list_email_messages.py`, `send_email.py`, `list_events.py`, etc. Each tool:
-- Takes an explicit `integration_id` argument so the agent picks which account to use
-- Calls `broker_client.call()` with the appropriate verb
-- Formats the response for human-readable LLM consumption
+Calendar operations deal with provider-specific identifiers (CalDAV hrefs +
+`RECURRENCE-ID`, Google event IDs) that the agent shouldn't need to
+understand. `integrations/calendar_refs.py` and `calendar_recurrence.py`
+define an opaque, base64-encoded reference type that brokers emit and decode
+internally — the agent passes the reference back verbatim; it never
+constructs or parses one.
 
-## Permissions Model
+### 6. HTTP Surface
 
-Two-layer write enforcement:
-1. **Broker-side (real security boundary):** supervisor passes `WRITE_ALLOWED` env var at spawn; broker refuses write verbs locally regardless of who called it
-2. **App-server-side (UX):** write tools are hidden from the agent's tool registry when `write_allowed=false`
-
-Toggling `write_allowed` triggers broker respawn (1–3 seconds of downtime).
-
-## Integration State Machine
-
-`pending` → `running` (happy path)
-`pending` → `auth_failed` (exit code 77 — bad credential, sticky, no respawn)
-`pending` / `running` → `broken` (3 consecutive non-77 crashes, respawn stops)
-
-Exponential backoff for generic crashes: 1s → 2s → 4s → 8s → 16s, capped at 30s.
+- `server/_integrations_routes.py` — CRUD for connections (list catalog, add,
+  update grants/label, remove, reconnect with new credentials).
+- `server/_integrations_oauth_routes.py` — the loopback OAuth start/callback/
+  status flow for scoped providers (Google Workspace), separate from the CRUD
+  routes; both call through `server/_brokering.py`'s `supervisor_call()`
+  helper, which wraps `brokering.supervisor_client.call()` with a 90s timeout
+  (generous enough for a credential prepare/activate round trip).
 
 ## Where It Lives
 
 | Path | Role |
 |------|------|
-| `integrations/supervisor/` | Supervisor process and vault |
-| `integrations/brokers/` | Broker subprocess implementations |
-| `integrations/broker_client/` | App-side broker call helper |
-| `integrations/supervisor_client/` | App-side supervisor management calls |
-| `integrations/_rpc.py` | Wire framing (length-prefixed frames over UDS) |
-| `integrations/_perms.py` | `umask`, `setrlimit` security setup |
-| `tools/integrations/` | Agent tool wrappers |
-| `server/_integrations_routes.py` | HTTP routes for integration CRUD |
-| `server/_integrations_oauth_routes.py` | OAuth flow routes (for providers that need it) |
-| `server/ui/src/components/integrations/` | React UI for Integrations settings |
+| `integrations/catalog/` | `IntegrationCatalogEntry` presets (`icloud`, `gmail`, `google_workspace`, `http`, `test`) |
+| `integrations/operations.py` | Canonical operation ID registry, grouped by namespace |
+| `integrations/operation_grants.py` | Grant validation/normalization against available operations |
+| `integrations/service.py` | `IntegrationService` — the supported application API |
+| `integrations/connection_cache.py` | Polling cache publishing immutable connection snapshots |
+| `integrations/calendar_refs.py`, `calendar_recurrence.py` | Opaque calendar event/series references |
+| `server/_integrations_routes.py` | HTTP CRUD routes |
+| `server/_integrations_oauth_routes.py` | OAuth start/callback/status routes |
+| `server/_brokering.py` | Shared `supervisor_call()` helper for both route families |
+| `tools/integrations/` | Agent tool wrappers around `IntegrationService.invoke()` |
+
+## Key Details
+
+- **`integrations/` never imports broker internals directly except through
+  `brokering`'s public client modules** (`broker_client`, `supervisor_client`)
+  — it has no access to the vault, master key, or raw credentials.
+- **Grants are re-validated against availability on every update**, not just
+  at creation — if a user later narrows the OAuth scopes they grant (e.g. via
+  re-auth), stale grants for now-unavailable operations are silently dropped
+  rather than enforced incorrectly.
+- **The `test` catalog entry is deliberately registered in production code**
+  (gated by an env var, not a build flag) so the full invocation path
+  (service → broker client → broker) is exercised in E2E tests without a
+  separate test-only code path.
 
 ## Open Questions
 
-- Master key rotation is not implemented in v1 (noted in `plans/integrations-followups.md`).
-- MCP server support is planned; per-integration egress allowlists are a future hardening item.
+- Per-integration egress allowlisting is a planned hardening item (see
+  `plans/`, which isn't authoritative for current behavior).
+- Whether `google_workspace` will be the template for further OAuth-scoped
+  providers, or whether each gets its own catalog/broker pairing, wasn't
+  resolved in source alone.
 
 ## Sources
 
-- `docs/integrations.md` — full architecture spec with security analysis
+- `docs/integrations.md` — package-boundary and terminology reference

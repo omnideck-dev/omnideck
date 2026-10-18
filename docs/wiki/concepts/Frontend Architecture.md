@@ -1,105 +1,107 @@
 ---
 title: Frontend Architecture
 type: concept
-tags: [frontend, react, ui, streaming]
+tags: [frontend, react, ui, streaming, typescript]
 created: 2026-07-07
-updated: 2026-07-07
-verified_commit: 6a5625d
+updated: 2026-10-18
+verified_commit: 3b839a12
 paths:
   - "server/ui/src/"
+  - "scripts/generate_ui_event_types.py"
 ---
 
 # Frontend Architecture
 
 ## Overview
 
-The frontend is a React 18 SPA built with Vite. It connects to the backend via a persistent SSE stream for streaming chat and uses `fetch` for REST calls. CSS Modules are used for component-scoped styles. No TypeScript — plain JSX throughout.
+The frontend is a React 18 SPA built with Vite, using CSS Modules for component-scoped styles. **This page is a substantial rewrite** — the shell, state management, and component tree described in the previous wiki pass (a single `DesktopApp.jsx` + `useAgentState.jsx` reducer + `AppData` context) no longer exist. The app has moved to a feature-folder architecture under `server/ui/src/features/`, each feature owning its own domain state via a React context provider, plus a small but real typed boundary in TypeScript for conversation events — the previous page's "no TypeScript" claim is now wrong.
 
-## Component Tree
+## How It Works
+
+### 1. Composition root
+
+`App.jsx` is now just composition, not a shell with view logic:
 
 ```
-App.jsx                    ← theme detection, renders DesktopApp
-└── DesktopApp.jsx         ← main shell: view routing, global state
-    ├── Sidebar.jsx        ← nav rail (Chat, Goals/Routines, Agents, Settings)
-    ├── ChatPanel.jsx      ← conversation list + active chat view
-    │   ├── ChatMessages.jsx
-    │   ├── ChatInput.jsx
-    │   └── PreviewPanel.jsx  ← browser tabs, terminal, file outputs
-    ├── GoalsView.jsx      ← autonomous task management
-    ├── AgentNetwork.jsx   ← sub-agent tree visualization
-    ├── AgentActivityView.jsx ← per-agent event stream
-    ├── SettingsPage.jsx   ← tabbed settings (providers, profiles, integrations, etc.)
-    └── SetupWizard.jsx    ← first-run provider/model selection
+App.jsx
+└── OmnideckHostProvider
+    └── AppSettingsProvider
+        └── SetupGate                      ← blocks UI until setup is complete
+            └── AppStateProviders
+                └── Desktop                 ← features/desktop/Desktop.jsx
 ```
 
-## State Architecture
+`AppStateProviders` (`features/app/AppStateProviders.jsx`) nests the domain providers in a fixed order: `AppEffectsProvider` → `AgentProvider` → `WorkspaceProvider` → `ConversationCatalogProvider` → `ConversationSessionProvider` → `CustomAppsProvider`.
 
-### AgentState Reducer (`hooks/useAgentState.jsx`)
+### 2. Per-domain state ownership
 
-The single source of truth for all agent runtime state:
-- Per-agent browser screenshots (keyed by `agent_id`)
-- Per-agent terminal output
-- Per-agent file outputs
-- Agent hierarchy (parent/child relationships for AgentNetwork)
-- Selected agent for detail view
+Rather than one global reducer, each domain owns its own provider (documented in `features/conversation/README.md`, the closest thing to an authoritative frontend spec in-repo):
 
-`DesktopApp.jsx` dispatches actions from SSE event callbacks. All preview components read from the reducer.
+| Owner | Responsibility |
+|-------|-----------------|
+| `ConversationCatalogProvider` | Conversation lists and list mutations |
+| `ConversationSessionProvider` | The open conversation: ID, draft, stream lifecycle, pending input, event records |
+| `AgentProvider` | Agent identities, parent/child relationships, lifecycle status, context usage, sub-agent activity |
+| `WorkspaceProvider` | Browser, terminal, file, generation, and remote-desktop state, per conversation and per agent |
+| `AppEffectsProvider` | One-time typed "application effects" (e.g. request audio playback, refresh a resource list) delivered to feature owners without becoming retained global state |
+| `DesktopNavigationProvider` | Translates named navigation commands into Desktop View commands; holds no parallel location state |
+| `useDesktopLayout` (hook, not a context) | Two equivalent tab groups, View placement/focus, split ratio, floating placement, fullscreen |
 
-### AppData Context (`contexts/AppData.jsx`)
+Root-agent activity is *projected* from the conversation transcript rather than retained twice; sub-agent output is excluded from the main transcript and lives only in the agent model (powers `AgentNetwork`/`AgentActivityView`).
 
-Global data loaded at startup: features flags, agent profiles, available models. Shared via React context so all components can access it without prop-drilling.
+### 3. The typed conversation-event boundary
 
-### Key Custom Hooks
+Live data follows one path, normalized to a single canonical shape before anything downstream sees it:
 
-| Hook | File | Role |
-|------|------|------|
-| `useStreamingChat` | `hooks/useStreamingChat.js` | SSE connection, event parsing, chat send |
-| `useAgentState` / `useAgentDispatch` | `hooks/useAgentState.jsx` | Agent tree reducer |
-| `usePreviewState` | `hooks/usePreviewState.jsx` | Preview panel open/active tab state |
-| `useBrowserTabs` | `hooks/useBrowserTabs.js` | Browser screenshot tab management |
-| `useGoals` | `hooks/useGoals.js` | Goals/routines data fetching |
-| `useAgentProfiles` | `hooks/useAgentProfiles.js` | Profile CRUD |
-| `useStreamingChat` | `hooks/useStreamingChat.js` | Chat streaming and conversation management |
+```
+/api/chat
+  → chatClient (features/conversation/transport/chatClient.js — request + JSONL stream)
+  → normalizeLiveEvent (features/conversation/events/ — canonical "conversation event")
+  → mapConversationEventToActions
+      ├── session reducer actions
+      ├── agent reducer actions
+      ├── workspace reducer actions
+      └── application effects (live delivery only)
+```
 
-## SSE Event Handling
+Conversation restore (loading a past conversation) reads saved canonical events and calls the *same* `mapConversationEventToActions` function — saved browser/terminal snapshots and preview metadata become explicit workspace-restore actions, and restoration deliberately skips re-firing application effects (e.g. it won't replay an audio-playback effect from history).
 
-`useStreamingChat.js` opens a streaming fetch to `POST /api/chat` and parses the JSONL response line-by-line. Each line is a JSON `AgentEvent` object. The hook routes events:
+`features/conversation/events/conversationEvents.generated.ts` is machine-generated by `scripts/generate_ui_event_types.py` from `agent_core/events/_models.py` (`AgentEventPayload`) — this is the "typed React event boundary" `just typecheck` checks per CLAUDE.md. **Do not hand-edit this file.** `frontendTypes.ts` and `appEffects.types.ts` are the hand-written TypeScript around it (payload unions, effect types); the rest of the UI is still plain JSX.
 
-- `content` / `thinking` → append to messages
-- `turn_end` → mark turn complete
-- `browser_screenshot` → dispatch to agent reducer
-- `terminal_output` → dispatch to agent reducer
-- `file_output` → dispatch to agent reducer
-- `agent_started` / `agent_completed` → dispatch hierarchy update
-- `context_usage` → update context meter
+### 4. Desktop layout and navigation
 
-## Conversation Resume
-
-On conversation load, the frontend calls `GET /api/conversations/{id}/resume`. The response includes:
-- `messages` — full LLM history
-- `events` — saved agent events (file outputs, browser screenshots, terminal blocks) for replay into the reducer
-- `preview_state` — which files are open in the preview panel
+`features/desktop/Desktop.jsx` owns the layout reducer (`useDesktopLayout`) and renders through a generic "View" command interface — any feature (conversation, custom app, workspace resource) contributes a serializable View description rather than passing React content around. Views have stable IDs and can move between the two tab groups or go fullscreen/floating. There is no URL router yet; the navigation-target interface is designed so one could be added later without changing feature components.
 
 ## Where It Lives
 
 | Path | Role |
 |------|------|
-| `server/ui/src/App.jsx` | Theme detection, root component |
-| `server/ui/src/DesktopApp.jsx` | Main shell, view routing, event callbacks |
-| `server/ui/src/components/` | All UI components |
-| `server/ui/src/hooks/` | Custom React hooks |
-| `server/ui/src/contexts/AppData.jsx` | Global app data context |
-| `server/ui/src/utils/` | Pure utilities (file types, highlight, clipboard) |
+| `server/ui/src/App.jsx` | Composition root only |
+| `server/ui/src/features/app/` | `AppStateProviders`, `AppSettings`, `AppEffects`, `OmnideckHost`, `SetupGate` |
+| `server/ui/src/features/conversation/` | Catalog, session, transport, and the typed event boundary (`events/`) — see its `README.md` |
+| `server/ui/src/features/agent/` | Agent graph / activity state |
+| `server/ui/src/features/workspace/` | Browser/terminal/file/generation/remote-desktop state |
+| `server/ui/src/features/desktop/` | Layout, navigation-command handling, the `Desktop` root component |
+| `server/ui/src/features/navigation/` | `DesktopNavigationProvider`, sidebar navigation views |
+| `server/ui/src/features/browser/`, `customApps/`, `customTools/`, `routines/`, `integrations/`, `remoteDesktop/` | Per-domain feature folders |
+| `server/ui/src/components/` | Shared presentational components (not domain state owners) |
+| `server/ui/src/hooks/` | Smaller cross-cutting hooks (`useRoutines`, `useProviders`, `useSkills`, `useArtifacts`, etc. — note the goals→routines rename reflected here too) |
+| `server/ui/src/contexts/AppData.jsx`, `Theme.jsx` | Remaining top-level contexts (app data bootstrap, theme) |
+| `scripts/generate_ui_event_types.py` | Generates `conversationEvents.generated.ts` from backend event models |
 | `server/ui/vite.config.js` | Build config |
-| `server/ui/src/__tests__/` | Vitest component tests |
 
 ## Key Details
 
-- **Profile selection is per-conversation.** `convProfile` in `DesktopApp.jsx` holds the in-view conversation's profile; it's initialized from the backend on resume, not global.
-- **Preview panel** tracks open file tabs separately from browser tabs — both are sub-states of `usePreviewState`.
-- **Sidebar navigation** uses `view` state (`'chat' | 'settings' | 'goals' | 'network'`) to switch the main content area. Agent detail is a sub-state of `'network'`.
-- **`SetupWizard`** blocks the main UI until `setup_complete` is true (from `GET /api/settings`).
+- **Renamed/removed:** `DesktopApp.jsx`, `useAgentState.jsx`/`useAgentDispatch`, `useStreamingChat`, `usePreviewState`, `useBrowserTabs`, and the single `AppData`-context-is-everything model are all gone. If you see them referenced in old notes or an old PR, that's the pre-feature-folder architecture.
+- **Goals → Routines rename** is reflected in the frontend too: `useGoals` → `useRoutines`, `GoalsView` equivalent now lives under `features/routines/`.
+- **Restoration and live delivery intentionally share code** (`mapConversationEventToActions`) — a bug fix to live event handling almost always needs the same fix applied to (or already covered by) the restore path, since both funnel through the same function.
+- **`SetupWizard`'s gating is now `SetupGate`** (`features/app/SetupGate.jsx`), wrapping the providers rather than being a conditionally-rendered sibling.
 
 ## Open Questions
 
-- No TypeScript; type safety relies on runtime Pydantic validation on the backend and careful prop naming in JSX.
+- Whether `features/remoteDesktop/` and `features/customApps/` have their own dedicated wiki coverage elsewhere, or should get one — they're referenced here only as providers/consumers of the architecture, not documented in depth.
+- Exact shape of `appEffects.types.ts` / the full set of application-effect kinds wasn't enumerated — only confirmed the mechanism exists and is typed.
+
+## Sources
+
+- `server/ui/src/features/conversation/README.md` — the closest thing to an authoritative frontend architecture doc in-repo

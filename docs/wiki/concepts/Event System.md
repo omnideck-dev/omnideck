@@ -1,87 +1,124 @@
 ---
 title: Event System
 type: concept
-tags: [sdk, events, streaming, sse, ui]
+tags: [agent-core, events, sse, persistence]
 created: 2026-07-07
-updated: 2026-07-07
-verified_commit: 6a5625d
+updated: 2026-10-18
+verified_commit: 3b839a12
 paths:
-  - "sdk/events/"
-  - "server/aiohttp_app.py"
+  - "agent_core/events/"
+  - "agent_core/context/_history.py"
+  - "agent_runtime/_session.py"
+  - "conversations/"
 ---
 
 # Event System
 
 ## Overview
 
-The event system is the mechanism by which agent activity — text output, tool calls, browser screenshots, file outputs, terminal commands, generation progress — flows from the backend to the React UI in real time. It uses a ContextVar-scoped `EventDispatcher` that fans events out to subscribers, bridged over Server-Sent Events (SSE) as JSONL.
+Events are the single source of truth for a conversation. `AgentEvent` objects aren't
+transient UI notifications layered on top of some other state — they *are* the state.
+`ConversationHistory` (the LLM-facing message list), the on-disk `events.jsonl` log, and
+the UI's live stream are all different views over the same append-only sequence of
+events. This event-sourced design replaced an earlier mutable-message-list model (the
+previous wiki described `ConversationHistory` as "an in-memory ordered list of LLM
+messages" persisted as `history.json` — that's no longer accurate; see
+[[ConversationHistory]], which a different pass of this regeneration should reconcile
+with `agent_core/context/_history.py`).
 
 ## How It Works
 
-### Event Types
+### Payload types
 
-All events are instances of `AgentEvent`, a thin envelope wrapping one `AgentEventPayload`. Payloads are a discriminated union on the `type` field:
+`agent_core/events/_models.py` defines one Pydantic model per event kind, joined into a
+discriminated union `AgentEventPayload` on a `type` field. As of this page's
+`verified_commit`, the union has 18 members, including: `ContentPayload` (streamed
+text/thinking), `IterationPayload` (one full model iteration — thinking + content + tool
+calls), `ToolResultPayload`, `UserMessagePayload` (opening message or mid-turn nudge),
+`AgentStartedPayload`/`AgentCompletedPayload` (agent-span lifecycle), `SpawnRequestedPayload`
+(sub-agent spawn correlation), `CompactionPayload` (see [[Context Compaction]]),
+`ContextUsagePayload`, `BrowserScreenshotPayload`, `FileOutputPayload`,
+`TerminalOutputPayload`, `GenerationPreviewPayload`, `AudioPlaybackPayload`,
+`DesktopActivePayload`, `ToolCreatedPayload`, `ErrorPayload`, and `TurnEndPayload`.
 
-| Payload type | When emitted |
-|---|---|
-| `content` | LLM text delta or complete chunk (with optional `thinking`) |
-| `turn_end` | Root agent finished responding |
-| `tool_call` | Before a tool executes |
-| `browser_screenshot` | After a browser action captures the viewport |
-| `file_output` | When a file is produced in the virtual computer |
-| `terminal_output` | Bash command start/end in the virtual computer |
-| `context_usage` | After each LLM call — token counts and fill ratio |
-| `agent_started` | An agent span begins (root or sub-agent) |
-| `agent_completed` | An agent span ends |
-| `spawn_requested` | The `spawn_agent` tool begins spawning a sub-agent |
-| `generation_preview` | Image/video generation progress |
-| `audio_playback` | Agent wants to play audio in the browser |
-| `desktop_active` | Desktop environment started |
-| `tool_created` | A new custom tool was created |
+`AgentEvent` is the thin envelope: a stable `id`, UTC `timestamp`, `agent_name`/`agent_id`/
+`depth` attribution, and one payload. `to_flat_dict()` merges envelope + payload into the
+flat one-line-JSON shape written to `events.jsonl`.
 
 ### Publishing
 
-Tools and the turn loop call `publish_event(payload)` from `sdk/events/_context.py`. The function:
-1. Reads the current `AgentEvent` context (dispatcher + agent span) from ContextVars
-2. Wraps the payload in an `AgentEvent` envelope with `agent_name`, `agent_id`, and `depth`
-3. Calls `dispatcher.dispatch(event)` which delivers to all registered subscribers
+`agent_core.events.publish_event(event)` (`_context.py`) is the only way code emits an
+event. It reads a `ContextVar`-bound stack of `(context_id, agent_name)` frames to fill
+in `agent_name`/`agent_id`/`depth` automatically, then calls `add_event()` on whatever
+`EventSink` is bound to the current coroutine context via `set_current_conversation()`.
+If nothing is bound (e.g. a unit test with no turn running), it's a silent no-op.
 
-### Dispatch
+`agent_span(agent_name, instruction, ...)` is an async context manager that pushes a
+frame onto that stack and publishes the matching `AgentStartedPayload` /
+`AgentCompletedPayload` pair around whatever runs inside it — this is what gives every
+event its agent attribution and nesting depth.
 
-`EventDispatcher` (`sdk/events/_dispatcher.py`) maintains a list of async subscriber callables. Subscribers are per-turn — a new dispatcher is created for each turn inside `turn_scope()`. Multiple subscribers can be active simultaneously (e.g., the SSE bridge and the `AgentEventBufferHook` that saves events for conversation resume).
+### The sink: `ConversationHistory`
 
-### SSE Bridge
+`agent_core/context/_history.py`'s `ConversationHistory` implements `EventSink`:
+`add_event()` appends the event to an in-memory list (for retained types — see
+`_RETAINED_EVENT_TYPES`) and synchronously fans it out to subscribed observers. Reading
+`.messages` doesn't return a stored list — it calls `build_llm_view()` (`_view.py`) to
+derive the LLM-shaped message array from the event log on demand, scoped to a specific
+`agent_id` for sub-agent threads.
 
-In `server/message_handler.py:handle_user_message()`, a subscriber bridges the dispatcher to an `asyncio.Queue`. The queue is drained by `stream_events()` in `server/aiohttp_app.py`, which serializes each event as `model_dump(mode="json") + "\n"` and writes it to the HTTP response stream.
+### Observers (fan-out)
 
-The frontend reads the SSE stream in `useStreamingChat.js` and dispatches each event to the React agent reducer.
+`RunSession.__aenter__` (`agent_runtime/_session.py`) subscribes several observers to
+the history before a run starts:
+- `EventsLogWriter` — appends each event to `events.jsonl` on disk
+- `BrowserTabsWriter`, `TerminalWriter`, `ArtifactsIndexWriter` — maintain derived
+  per-conversation indexes (open tabs, terminal blocks, generated files)
+- `RunSession._record` — assigns a run-scoped sequence number for SSE replay (see
+  [[Turn Lifecycle]])
 
-### Agent Span Attribution
+Observers can be sync or async; async ones run as tracked `asyncio.Task`s that
+`drain_observers()` waits on before the run's resources close.
 
-Every published event automatically carries the emitting agent's `agent_name`, `agent_id` (a hierarchical dot-notation ID like `root.browser_agent.1`), and `depth` (0 = root, 1+ = sub-agents). This lets the UI route events to the correct agent card in the network view without the tool code knowing anything about the UI layout.
+### Reaching the UI
+
+The UI consumes events over the chat run's SSE stream, reading `RunHandle.events()`
+from the owning `RunSession`'s sequence-numbered buffer, which supports reconnect/replay
+without gaps or duplicates.
 
 ## Where It Lives
 
 | File | Role |
 |------|------|
-| `sdk/events/_models.py` | `AgentEvent` + all payload types |
-| `sdk/events/_dispatcher.py` | `EventDispatcher` |
-| `sdk/events/_context.py` | `agent_span()`, `publish_event()`, ContextVar management |
-| `sdk/events/__init__.py` | Re-exports for consumers |
-| `server/aiohttp_app.py:stream_events()` | SSE serialization |
-| `server/ui/src/hooks/useStreamingChat.js` | Frontend SSE consumer |
+| `agent_core/events/_models.py` | Payload types, `AgentEvent` envelope |
+| `agent_core/events/_context.py` | `publish_event()`, `agent_span()`, context-stack accessors |
+| `agent_core/context/_history.py` | `ConversationHistory` — the canonical `EventSink` |
+| `agent_core/context/_view.py` | `build_llm_view()` — derives the LLM message list from events |
+| `agent_runtime/_session.py` | Wires disk/UI observers onto the history for a run |
+| `conversations/` | `EventsLogWriter` and friends — disk persistence of the event log |
 
 ## Key Details
 
-- **JSONL format:** each event is one JSON object per line, flushed immediately. The UI can render partial output as it arrives.
-- **`exclude_none=True, exclude_defaults=True`** in serialization keeps the wire format lean — fields that weren't set don't appear.
-- **`AgentEventBufferHook`** accumulates events during the turn and saves them to `events.json` after the turn completes, so the preview panel (browser tabs, terminal output, file blocks) can be restored when a conversation is resumed.
-- **Disconnection handling:** `ConnectionResetError` during stream write is caught silently — the agent turn continues even if the user closes the browser tab.
+- **Events are derived from, not accompanying, the message history.** There is no
+  separate "append a message" API — publish an event and the next read of `.messages`
+  reflects it.
+- **Retained vs. full log:** the in-memory copy on `ConversationHistory` only keeps
+  types in `_RETAINED_EVENT_TYPES` (enough to rebuild the LLM view and support warm UI
+  resume); the full event stream — including UI-only events like screenshots — still
+  reaches disk writers and the SSE bridge via the observer fan-out, it just isn't kept
+  in the in-memory list.
+- **Sub-agent scoping:** a child `ConversationHistory` is constructed with
+  `agent_id=<execution_id>`; `build_llm_view()` filters to just that agent's events so a
+  sub-agent's model calls never see the parent's (or siblings') history.
+- **Attribution is automatic, not passed explicitly.** Any code that calls
+  `publish_event()` inside an `agent_span()` gets correct `agent_name`/`agent_id`/`depth`
+  for free — this is why tool implementations never need to know which agent is running
+  them.
 
 ## Open Questions
 
-- There is no backpressure from the SSE stream back to the agent loop. A very fast agent could theoretically fill the queue unboundedly on a slow client.
+- None identified this pass.
 
 ## Sources
 
-- `docs/sdk_semantics.md` — canonical description of Event concept
+- None beyond source code for this pass.
