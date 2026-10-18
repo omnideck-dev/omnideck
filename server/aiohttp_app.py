@@ -58,14 +58,14 @@ logger = logging.getLogger(__name__)
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS, GET, DELETE",
+    "Access-Control-Allow-Methods": "POST, PUT, PATCH, OPTIONS, GET, DELETE",
     # X-Requested-With is intentionally NOT listed here — cross-origin requests
     # cannot set it (browser blocks them at preflight), so its presence signals
     # that a request is same-origin. This is a lightweight CSRF guard.
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-_CSRF_METHODS = {"POST", "PUT", "DELETE"}
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 @web.middleware

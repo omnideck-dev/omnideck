@@ -11,6 +11,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 
 from agent_runtime import RunConflictError
 from server._agent_run_routes import (
@@ -19,6 +21,7 @@ from server._agent_run_routes import (
     stop_handler,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server.aiohttp_app import cors_and_error_middleware
 from server._ui_routes import index_handler, manifest_handler
 
 
@@ -212,3 +215,45 @@ async def test_manifest_handler_404s_when_missing(monkeypatch, tmp_path) -> None
     resp = await manifest_handler(_make_request())
 
     assert resp.status == 404
+
+
+# -- cors_and_error_middleware (CSRF guard) ----------------------------------
+
+
+async def _make_csrf_test_client() -> TestClient:
+    """A minimal app with only the real middleware and a no-op echo route."""
+    async def echo_handler(request: web.Request) -> web.Response:
+        return web.Response(status=200)
+
+    app = web.Application(middlewares=[cors_and_error_middleware])
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        app.router.add_route(method, "/probe", echo_handler)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    return client
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+async def test_csrf_guard_rejects_mutating_request_without_header(method: str) -> None:
+    """Every mutating method needs X-Requested-With, PATCH included."""
+    client = await _make_csrf_test_client()
+    try:
+        resp = await client.request(method, "/probe")
+        assert resp.status == 403
+    finally:
+        await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+async def test_csrf_guard_allows_mutating_request_with_header(method: str) -> None:
+    """The same-origin signal header lets the request reach the handler."""
+    client = await _make_csrf_test_client()
+    try:
+        resp = await client.request(
+            method, "/probe", headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        assert resp.status == 200
+    finally:
+        await client.close()
